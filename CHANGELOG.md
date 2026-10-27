@@ -11,6 +11,27 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.64 — publication tracked separately
+
+- Restore useful work reasons, results and remaining tasks with exact original
+  references and bounded excerpts. Current direction, cancellation and uncertainty
+  remain distinct from historical evidence; routine entry does not require a save.
+- Continue exact graph and historical-record reads without a whole inventory scan.
+  Optional raw artifact inventory has explicit byte/entry limits and coverage;
+  discovery never promotes evidence into approval or recovery direction.
+- Reuse minimal entry guidance and preserve user-owned installation files. Protect
+  supported Claude/OpenCode child state writes only with verified call provenance;
+  explicit policy settings and ordinary direct work keep their existing semantics.
+- Add exact process-witnessed Claude clear continuity and request-scoped packaged
+  MCP composition. Missing proof keeps normal explicit recovery and project setup
+  available. Owned installed MCP launchers follow verified upgrade/rollback pointers.
+- Distinguish ordinary native recovery from the optional managed compaction
+  lifecycle. Offer existing Session discovery only when dependent context is
+  missing; current common direction keeps its original-read expansion priority.
+- Local synthetic consumer and independent source checks are recorded separately
+  from actual installed Host/model behavior, CI, marketplace publication and local
+  reload. Preserve beta.63 payloads; intermediate release tags are not backfilled.
+
 ## 0.3.0-beta.63 — publication tracked separately
 
 - Run the existing checks for every pull request targeting main, regardless of
