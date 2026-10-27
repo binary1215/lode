@@ -11,6 +11,15 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.63 — publication tracked separately
+
+- Run the existing checks for every pull request targeting main, regardless of
+  changed paths. Preserve push filters, required checks, permissions and
+  publication conditions; runtime behavior is unchanged.
+- Use a new beta version because publication integrity includes the workflow
+  recipe. Preserve existing beta.62 packages and publication safeguards.
+  Marketplace publication and local installation remain separately verified.
+
 ## 0.3.0-beta.62 — publication tracked separately
 
 - Restore selected Session work and Todo context with exact original references.
