@@ -9,7 +9,7 @@ import { createHeadSession, withSessionRoute } from "../scripts/lib/session-rout
 import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
 import { sessionStartContext } from "../scripts/session-host-hook.mjs";
 import { createNativeObservationStore, NATIVE_OBSERVATION_LIMITS } from "../scripts/lib/native-session-observations.mjs";
-import { recordSessionWorkEvidence, readSessionWorkList } from "../scripts/lib/session-work-context.mjs";
+import { recordSessionWorkEvidence, readSessionWorkList, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
 import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
@@ -299,7 +299,7 @@ test("large startup direction/evidence is disclosed, bounded and never silently 
   const { root, host, environment } = fixture(t);
   host("large").select({ root, sessionId: "", expectedRevision: 0 });
   updateProjectDirection({ root, input: { goal: "Preserve current scope", constraints: ["x".repeat(40000)], cancelledActions: ["deploy"] } });
-  recordSessionWorkEvidence({ root, input: { unknowns: ["u".repeat(40000)] } });
+  const saved = recordSessionWorkEvidence({ root, input: { unknowns: ["u".repeat(40000)] } });
   const output = sessionStartContext({ runtime: "codex", environment,
     event: { hook_event_name: "SessionStart", source: "compact", session_id: "large", cwd: root } });
   assert.ok(output.hookSpecificOutput.additionalContext.length <= 32768);
@@ -307,7 +307,19 @@ test("large startup direction/evidence is disclosed, bounded and never silently 
   assert.equal(context.currentProjectDirection.contentIncluded, false);
   assert.match(context.requiredSourceExpansion, /no constraint or cancellation is assumed absent/i);
   assert.equal(context.omittedEvidenceIds.length, 0); // The reader, not this Hook, excluded the oversized original.
-  assert.equal(context.workCoverage.omissions.byBudget, 1);
+  assert.equal(readSessionWorkContext({ root }).omissions.byBudget, 1);
+  assert.equal(context.omittedEvidenceCount, 1);
+  const excerpt = context.recordExcerpts.find(item => item.source.evidenceId === saved.evidence.evidenceId);
+  assert(excerpt); assert.equal(excerpt.source.evidenceDigest, saved.evidence.evidenceDigest);
+  assert.equal(excerpt.partial, true); assert.equal(excerpt.coverage.conditionsMayBeOmitted, true);
+  if (context.workCoverage.omissions) assert.equal(context.workCoverage.omissions.byBudget, 1);
+  else {
+    assert.equal(context.workCoverage.omitted, true);
+    assert.equal(context.workCoverage.sourceOriginals, 1);
+    assert.equal(context.workCoverage.sourceInspected, 1);
+    assert.equal(context.workCoverage.sourceIncluded, 0);
+    assert.equal(context.workCoverage.sourceExcerpted, 1);
+  }
   assert.equal(context.persisted, false);
 });
 

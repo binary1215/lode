@@ -13,8 +13,11 @@ import { fixture, exact, link, citation, representative, snapshot, sha, encoded,
 // explicit exact/page delivery. Untouched archive hints are not current proofs.
 function accounting(value, maxRecords = value.coverage.maxRecords, maxCharacters = value.coverage.maxCharacters, scoped = false) {
   assert.ok(value.records.length <= maxRecords);
-  assert.ok(JSON.stringify(value.records).length <= maxCharacters);
-  assert.equal(value.coverage.usedCharacters, JSON.stringify(value.records).length);
+  const delivered = value.recordExcerpts?.length
+    ? JSON.stringify({ records: value.records, recordExcerpts: value.recordExcerpts }) : JSON.stringify(value.records);
+  assert.ok(delivered.length <= maxCharacters);
+  assert.equal(value.coverage.usedCharacters, delivered.length);
+  assert.ok(value.records.length + (value.recordExcerpts?.length || 0) <= maxRecords);
   assert.equal(value.coverage.inspected, value.coverage.valid + value.coverage.unavailable);
   assert.ok(value.coverage.included <= value.coverage.valid);
   assert.equal(value.coverage.included, value.records.length);

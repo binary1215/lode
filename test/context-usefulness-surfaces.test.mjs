@@ -38,7 +38,7 @@ function assertCommonRecords(text,records){
  return expected;
 }
 function assertWorkPresentation(text,value){
- assert.match(text,/Recorded Session work \(historical P3\)/u);
+ assert.match(text,/Recorded Session work \(historical P3\)|Selected Session work evidence \(P3, not current direction or permission\)/u);
  const common=assertCommonRecords(text,value.records);
  for(const key of ['status','projectId','sessionId'])if(value[key]!==undefined)assert.ok(text.includes(`${key}: ${JSON.stringify(value[key])}`),key);
  for(const key of ['coverage','omissions','nextAfterEvidenceId']){
