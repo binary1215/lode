@@ -15,6 +15,7 @@ import { dispatch } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { createSessionCallContext } from "../scripts/lib/session-routing.mjs";
 import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
+import { startupProjection } from "../scripts/lib/session-host-context-projection.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -240,7 +241,8 @@ test("typed MCP and CLI preserve -> entry -> expand agree, including text-only c
   const call = (name, args = {}) => dispatch({ jsonrpc: "2.0", id: "work-context-fixture", method: "tools/call",
     params: { name, arguments: { project_root: root, session_id: a.sessionId, ...args } } });
   const input = { judgments: [{ assessment: "Keep original provenance", reason: "Derived caches can disappear", alternatives: ["Use cache as unique truth"] }],
-    unknowns: ["Installed provider behavior not verified"] };
+    unknowns: ["Installed provider behavior not verified"], todos: [{ todoId: "todo-retained-task", task: "Verify original provenance", status: "pending",
+      nextAction: "Inspect exact evidence", origin: "user-directed" }] };
   const retained = await call("head_session_work_record", { evidence: input });
   assert.equal(retained.result.structuredContent.writes, 1);
   const before = originals(root);
@@ -248,13 +250,91 @@ test("typed MCP and CLI preserve -> entry -> expand agree, including text-only c
   assert.equal(entry.result.structuredContent.workContext.records[0].evidenceId, retained.result.structuredContent.evidence.evidenceId);
   assert.match(entry.result.content[0].text, /Derived caches can disappear/);
   assert.match(entry.result.content[0].text, /not current direction or permission/);
+  assert.match(entry.result.content[0].text, /todo-retained-task \[pending\]/);
+  assert.equal(entry.result.structuredContent.workContext.todoContext.items[0].todoId, "todo-retained-task");
   const cliEntry = runCommand(["conversation-enter", root, "--session", a.sessionId]);
   assert.deepEqual(cliEntry.workContext, entry.result.structuredContent.workContext);
   assert.match(formatCliResult("conversation-enter", cliEntry), /Installed provider behavior not verified/);
   const read = await call("head_session_work_read", { evidence_ids: [retained.result.structuredContent.evidence.evidenceId] });
   assert.equal(read.result.structuredContent.records.length, 1);
   assert.deepEqual(runCommand(["session-work-read", root, "--session", a.sessionId]).records, read.result.structuredContent.records);
+  const todoRead = await dispatch({ jsonrpc: "2.0", id: "todo-router", method: "tools/call", params: {
+    name: "head_tools_read", arguments: { name: "head_session_work_read", arguments: { project_root: root, session_id: a.sessionId, todo_id: "todo-retained-task" } } } });
+  assert.equal(todoRead.result.structuredContent.todoContext.items[0].task, "Verify original provenance");
   assert.deepEqual(originals(root), before);
+});
+
+test("explicit Todo revisions outlive recent work and preserve conflicting branches without P2 changes", t => {
+  const { root, storage } = project(t), session = createHeadSession({ root, purpose: "Inspect locally; no deployment" });
+  withSessionRoute(root, session.sessionId, () => {
+    const state = fs.readFileSync(sessionStatePath(root, storage));
+    const save = todos => recordSessionWorkEvidence({ root, input: { todos } });
+    const exact = saved => ({ evidenceId: saved.evidence.evidenceId, evidenceDigest: saved.evidence.evidenceDigest });
+    const item = { todoId: "todo-old-open", task: "Finish bounded validation", status: "pending", nextAction: "Run focused validation", origin: "user-directed" };
+    const first = save([item]), firstBytes = fs.readFileSync(first.file);
+    for (let index = 0; index < 10; index++) recordSessionWorkEvidence({ root, input: { summary: "Unrelated later note " + index } });
+    const entry = enterConversationRecovery({ root });
+    assert.equal(entry.workContext.todoContext.items[0].todoId, item.todoId);
+    assert.equal(entry.workContext.todoContext.coverage.recentWorkLimitApplied, false);
+    assert.match(startupProjection(entry, root, "claude"), /todo-old-open/);
+    const partial = save([{ ...item, status: "partial", progress: "Observed the first case", prior: exact(first) }]);
+    const waiting = save([{ ...item, status: "waiting", reason: "Waiting for independent evidence", prior: exact(partial) }]);
+    assert.equal(readSessionWorkContext({ root }).todoContext.items[0].status, "waiting");
+    const completed = { ...item, status: "completed", progress: "Focused validation evidence retained", prior: exact(waiting) };
+    const done = save([completed]);
+    assert.equal(save([completed]).evidence.evidenceId, done.evidence.evidenceId);
+    assert.equal(save([item]).evidence.evidenceId, first.evidence.evidenceId, "Retry cannot reopen an old revision");
+    assert.equal(readSessionWorkContext({ root }).todoContext.items.length, 0);
+    const cancelled = save([{ ...item, status: "cancelled", reason: "User changed scope", prior: exact(waiting) }]);
+    const conflict = readSessionWorkContext({ root }).todoContext.items[0];
+    assert.equal(conflict.status, "conflict");
+    assert.deepEqual(conflict.revisions.map(value => value.status).sort(), ["cancelled", "completed"]);
+    assert.throws(() => save([{ ...item, todoId: "todo-different", prior: exact(cancelled) }]), { code: "SESSION_TODO_PRIOR_MISMATCH" });
+    assert.deepEqual(fs.readFileSync(first.file), firstBytes);
+    assert.deepEqual(fs.readFileSync(sessionStatePath(root, storage)), state);
+    assert.equal(readProjectDirection({ root }), null);
+    const indexPath = path.join(root, storage.directory, "graph-discovery/index.json"), indexBytes = fs.readFileSync(indexPath);
+    fs.unlinkSync(indexPath);
+    const unknown = readSessionWorkContext({ root });
+    assert.equal(unknown.todoContext.coverage.indexCoverage, "unknown");
+    assert.equal(unknown.todoContext.items[0].status, "conflict", "Reuse already verified originals without treating index loss as empty");
+    assert.equal(unknown.ordinaryWorkBlocked, false);
+    const scanned = readSessionWorkContext({ root, scanTodos: true, todoId: item.todoId });
+    assert.equal(scanned.todoContext.items[0].status, "conflict");
+    fs.writeFileSync(indexPath, indexBytes);
+    save([{ ...item, status: "pending", reason: "Current scope keeps local verification open", prior: exact(done), resolves: [exact(cancelled)] }]);
+    const resolved = readSessionWorkContext({ root }).todoContext;
+    assert.equal(resolved.items[0].status, "pending");
+    assert.equal(resolved.coverage.inspectedOriginals, 1, "Read the indexed head, not the entire Todo revision history");
+    const pageSave = save(Array.from({ length: 12 }, (_, index) => ({ ...item, todoId: "todo-page-" + String(index).padStart(2, "0") })));
+    const page = readSessionWorkContext({ root, maxRecords: 2 }).todoContext;
+    assert.equal(page.items.length, 2); assert.equal(page.knownOpenCount, 13); assert(page.nextAfterTodoId);
+    const next = readSessionWorkContext({ root, maxRecords: 2, afterTodoId: page.nextAfterTodoId }).todoContext;
+    assert(next.items.every(value => value.todoId > page.nextAfterTodoId));
+    assert.equal(readSessionWorkContext({ root, todoId: "todo-page-11" }).todoContext.items[0].todoId, "todo-page-11");
+    const tiny = readSessionWorkContext({ root, maxCharacters: 2 }).todoContext;
+    assert.equal(tiny.items.length, 0); assert.equal(tiny.coverage.omittedItems, 13); assert(tiny.coverage.omittedItemIds.length);
+    const healthy = fs.readFileSync(indexPath), forged = JSON.parse(healthy);
+    const row = forged.sessionTodoNavigation.rows.find(value => value.todoRevisions.some(todo => todo.todoId === "todo-page-11"));
+    row.todoRevisions[0].status = "cancelled"; fs.writeFileSync(indexPath, JSON.stringify(forged));
+    const forgedBytes = fs.readFileSync(indexPath);
+    const drift = readSessionWorkContext({ root, todoId: "todo-page-11" }).todoContext;
+    assert.equal(drift.items[0].status, "pending", "A fresh original overrides the untrusted index hint");
+    assert.equal(drift.coverage.indexHintMismatchCount, 1);
+    assert.deepEqual(fs.readFileSync(indexPath), forgedBytes, "Reading does not repair the index");
+    fs.writeFileSync(indexPath, healthy);
+    const rename = fs.renameSync; let deferred;
+    fs.renameSync = (from, to, ...args) => {
+      if (path.resolve(to) === indexPath) throw Object.assign(new Error("Synthetic deferred index"), { code: "EACCES" });
+      return rename(from, to, ...args);
+    };
+    try { deferred = save([{ ...item, todoId: "todo-page-11", status: "waiting", reason: "Await local evidence", prior: exact(pageSave) }]); }
+    finally { fs.renameSync = rename; }
+    assert.equal(deferred.graphIndex.status, "deferred");
+    const recovered = readSessionWorkContext({ root, todoId: "todo-page-11" }).todoContext;
+    assert.equal(recovered.items[0].status, "waiting", "An unindexed canonical revision joins this same read");
+    assert.equal(recovered.items[0].revision.evidenceId, deferred.evidence.evidenceId);
+  });
 });
 
 test("new work calls preserve known-loss boundaries without blocking independent Project facts", async (t) => {

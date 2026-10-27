@@ -8,7 +8,8 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
+import { createHeadSession, withSessionRoute, sessionStatePath } from "../scripts/lib/session-routing.mjs";
+import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
 import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
 import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
 import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session-host-request.mjs";
@@ -178,14 +179,42 @@ test("own fork/header -> observed parent S1 -> actual useful P3 entry text; late
   await observeNativeHook({ runtime: "codex", event: fork, environment: f.environment });
   select(parent, f.root, s2);
   await observeNativeHook({ runtime: "codex", event: fork, environment: f.environment });
+  const later = withSessionRoute(f.root, s1, () => recordSessionWorkEvidence({ root: f.root, input: {
+    summary: "POST-FORK later reference; never proven historical input" } }));
+  updateProjectDirection({ root: f.root, input: { goal: "Inspect only", cancelledActions: ["deploy"] } });
   const before = tree(f.root).concat(tree(f.operational));
   const res = await invoke(native, request(f.root, "head_conversation_enter", {}, "child"));
   const related = res.result.structuredContent.relatedNativeWorkContext;
   assert.equal(related.sources.length, 1); assert.equal(related.sources[0].workContext.sessionId, s1);
+  assert.ok(related.sources[0].workContext.records.some(record => record.evidenceId === later.evidence.evidenceId));
+  assert.equal(related.sources[0].selectionBasis.sessionId, s1);
+  assert.equal(related.sources[0].recordRead.scope, "later-reference-read");
+  assert.equal(related.sources[0].recordRead.historicalInput, "unknown");
+  for (const field of ["preparedInput", "delivery", "modelUse"]) assert.equal(related.sources[0].recordRead[field], "not-established");
+  assert.match(res.result.content[0].text, /records read later/u);
+  assert.deepEqual(res.result.structuredContent.projectStatus.currentProjectDirection.input.cancelledActions, ["deploy"]);
   assert.ok(res.result.content[0].text.includes("A later binding is not the old fork source"));
   assert.ok(res.result.content[0].text.includes("Deployment effect remains unknown"));
   assert.equal(JSON.stringify(related).includes("PARENT P2 MUST NOT INHERIT"), false);
   assert.equal(res.result.structuredContent.workContext.sessionId, child);
+  assert.deepEqual(tree(f.root).concat(tree(f.operational)), before);
+});
+
+test("S1-S6: native direct/router preview leaves persisted binding and outer route unchanged", async t => {
+  const f = fixture(t), native = createNativeSessionHostBridge({ runtime: "codex", environment: f.environment });
+  const a = createHeadSession({ root: f.root, purpose: "Same title" }), b = createHeadSession({ root: f.root, purpose: "Same title" });
+  const adapter = createSessionHostAdapter({ ...caller, environment: f.environment }); select(adapter, f.root, a.sessionId);
+  const selected = adapter.read({ root: f.root }), before = tree(f.root).concat(tree(f.operational));
+  await withSessionRoute(f.root, a.sessionId, async () => {
+    const file = sessionStatePath(f.root, f.storage);
+    for (const router of [null, "head_tools_read", "head_tools_call"]) {
+      const response = await invoke(native, request(f.root, "head_session_list", { session_id: b.sessionId }, caller.nativeSessionId, router));
+      assert.equal(response.result.structuredContent.preview.sessionId, b.sessionId);
+      assert.equal(response.result.structuredContent.preview.workContext.sessionId, b.sessionId);
+      assert.deepEqual(adapter.read({ root: f.root }), selected);
+      assert.equal(sessionStatePath(f.root, f.storage), file);
+    }
+  });
   assert.deepEqual(tree(f.root).concat(tree(f.operational)), before);
 });
 

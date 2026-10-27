@@ -58,16 +58,17 @@ function exactOriginal(root, reference, remaining) {
 }
 
 // UI-private projection. No Session selection, initialization or refresh occurs.
-export async function buildGraphExplorerSnapshot({ root = ".", query = "", history = false, share = false } = {}) {
+export async function buildGraphExplorerSnapshot({ root = ".", query = "", anchorIds = [], paths = [], layer = "project", history = false, share = false } = {}) {
   if (typeof share !== "boolean") fail("GRAPH_EXPLORER_INVALID_SHARE_OPTION");
+  if (!["project", "code"].includes(layer)) fail("GRAPH_EXPLORER_INVALID_LAYER");
   const started = performance.now(), owner = readGraphProject(root), projectRoot = owner.projectRoot;
   const adapterOwner = { projectRoot, storage: owner.storage };
   const worldAdapter = readOnlyLocalAdapter(LocalJsonWorldModelStoreAdapter, adapterOwner, "world-model");
   const queryStarted = performance.now();
-  const inventory = await collectGraphExplorerInventory({ root: projectRoot, query, storeAdapter: worldAdapter });
-  const { structural, detailSelection, ...navigation } = inventory;
+  const inventory = await collectGraphExplorerInventory({ root: projectRoot, query, anchorIds, paths, layer, storeAdapter: worldAdapter });
+  const { structural, detailSelection, codeSelection, ...navigation } = inventory;
   const selected = new Map((detailSelection?.nodes || []).map(node => [node.nodeId, node]));
-  const graph = { ...navigation, query: { query, details: true },
+  const graph = { ...navigation, query: detailSelection.query,
     nodes: inventory.nodes.map(node => {
       if (selected.has(node.nodeId)) return { ...selected.get(node.nodeId), detailCoverage: "selected-detail" };
       // Recorded pending/unknown/conditions remain visible even outside the
@@ -75,8 +76,11 @@ export async function buildGraphExplorerSnapshot({ root = ".", query = "", histo
       return { ...node,
         detailCoverage: "metadata-only", detailReasonCode: "DETAIL_NOT_INCLUDED_FOR_THIS_SELECTION" };
     }), contextLineage: detailSelection?.contextLineage || null,
-    initialNodeId: detailSelection?.nodes[0]?.nodeId || null,
-    detailScope: "Bounded exact comparisons/originals for the export query; missing detail is not proof of no change." };
+    initialNodeId: layer === "code" ? null : detailSelection.query.anchorIds.find(id => selected.has(id)) || detailSelection?.nodes[0]?.nodeId || null,
+    detailSelection: { anchorIds: detailSelection.query.anchorIds, paths: detailSelection.query.paths,
+      unmatchedAnchorIds: detailSelection.unmatchedAnchorIds, truncated: detailSelection.truncated,
+      omittedMatchCount: detailSelection.omittedMatchCount, basis: navigation.basis },
+    detailScope: "Bounded exact comparisons/originals for the export selection; missing detail is not proof of no change." };
   const queryMs = performance.now() - queryStarted;
   if (owner.project && graph.basis?.projectId && graph.basis.projectId !== owner.project.projectId) fail("GRAPH_EXPLORER_PROJECT_MISMATCH");
   // The temporal and structural graphs keep their own exact identities.
@@ -98,13 +102,16 @@ export async function buildGraphExplorerSnapshot({ root = ".", query = "", histo
         edges: code.edges.map(edge => ({ ...edge, edgeId: edge.id, sourceReference: edge.evidence, currentTraversalEligible: current,
           freshness: current ? "snapshot-evidence" : "domain-not-current" })), omittedEdgeCount: 0, truncated: false };
   }
+  codeGraph.focusSelection = codeSelection || { requestedIds: [], resolvedIds: [], unmatchedIds: [] };
+  codeGraph.initialNodeId = codeSelection?.resolvedIds[0] || null;
   const codeQueryMs = performance.now() - codeStarted;
   const originals = {}, unavailable = [], seen = new Set(); let originalBytes = 0, originalReadCount = 0;
   // Metadata is complete over verified available layers. Original text remains
   // a separately bounded focused bundle, not an all-originals export promise.
   const codeReferences = new Map(), needle = String(query || "").trim().toLocaleLowerCase();
+  const focusedCodeReferences = new Set((codeSelection?.sourceBindings || []).map(explorerReferenceKey));
   for (const node of codeGraph.nodes) if (node.sourceReference?.path && node.sourceReference.digest) {
-    const key = explorerReferenceKey(node.sourceReference), match = Boolean(needle && [node.path, node.name, node.qualifiedName, node.id]
+    const key = explorerReferenceKey(node.sourceReference), match = focusedCodeReferences.has(key) || Boolean(needle && [node.path, node.name, node.qualifiedName, node.id]
       .some(value => typeof value === "string" && value.toLocaleLowerCase().includes(needle)));
     const existing = codeReferences.get(key);
     if (!existing || match && !existing.match) codeReferences.set(key, { node, match });
@@ -152,7 +159,7 @@ export async function buildGraphExplorerSnapshot({ root = ".", query = "", histo
     metadataPolicy: { mode: share ? "share-generated-metadata" : "local", anonymized: false,
       omitted: share ? ["project.root", "regenerate.argv", "nodes.originalExpansion.arguments.project_root"] : [],
       notice: "Original evidence, source text, historical records and identifiers are retained and may contain sensitive paths or content. Review before sharing; this is not anonymization." },
-    focus: { kind: "project", nativeSessionSelectionClaimed: false }, graph, codeGraph, originals, history: retainedHistory, unavailable,
+    focus: { kind: layer, nativeSessionSelectionClaimed: false }, initialLayer: layer, graph, codeGraph, originals, history: retainedHistory, unavailable,
     regenerate: { ...(!share ? { argv: [process.execPath, path.resolve(import.meta.dirname, "../lode.mjs"), "graph-explorer", projectRoot] } : { requiresExplicitLocalPaths: true }),
       shell: process.platform === "win32" ? "powershell" : "posix", scope: "Explicitly generate another create-only report; never executed by this file." },
     bounds: { maxProjectNodes: null, maxProjectEdges: null, maxCodeNodes: null, maxCodeEdges: null,
@@ -164,7 +171,7 @@ export async function buildGraphExplorerSnapshot({ root = ".", query = "", histo
   };
 }
 
-export async function exportGraphExplorer({ root = ".", query = "", history = false, share = false, output = null } = {}) {
+export async function exportGraphExplorer({ root = ".", query = "", anchorIds = [], paths = [], layer = "project", history = false, share = false, output = null } = {}) {
   // Validate explicit output before doing potentially expensive reads. Only the
   // newly requested report is writable; no canonical/runtime directory is used.
   let file = output ? path.resolve(output) : null;
@@ -177,7 +184,7 @@ export async function exportGraphExplorer({ root = ".", query = "", history = fa
     file = path.resolve(resolved, path.relative(ancestor, file));
   }
   if (file && fs.existsSync(file)) fail("GRAPH_EXPLORER_OUTPUT_EXISTS");
-  const snapshot = await buildGraphExplorerSnapshot({ root, query, history, share }), html = renderGraphExplorer(snapshot);
+  const snapshot = await buildGraphExplorerSnapshot({ root, query, anchorIds, paths, layer, history, share }), html = renderGraphExplorer(snapshot);
   const bytes = Buffer.byteLength(html);
   if (!file) file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "lode-graph-explorer-")), "index.html");
   fs.mkdirSync(path.dirname(file), { recursive: true });

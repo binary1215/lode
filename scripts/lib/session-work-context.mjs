@@ -4,7 +4,8 @@ import path from "node:path";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
 import { artifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
-import { safeSessionPath, sessionStatePath, withSessionRoute } from "./session-routing.mjs";
+import { safeSessionPath, sessionStatePath, withSessionRoute, listLodeSessions } from "./session-routing.mjs";
+import { readProjectDirectionView } from "./project-direction-view.mjs";
 
 // Selected HEAD-authored P3 evidence, not a transcript, direction store, or
 // inference engine. Entry never repairs or writes these originals.
@@ -12,9 +13,10 @@ import { SESSION_WORK_CONTEXT_VERSION, PROTOCOL, DEFAULT_SCAN, sha, encoded, fai
   normalizeSessionWorkEvidence, inputIdentity, verifySessionWorkEvidenceOwner,
   readSessionWorkEvidenceOriginalFile, inspectSessionWorkReference, createSessionWorkReadContext,
   readSessionWorkFileBytes, MAX_RECORD_BYTES,
-  SESSION_WORK_DEFAULT_CHARACTERS, SESSION_WORK_MAX_CHARACTERS } from "./session-work-evidence-original.mjs";
+  SESSION_WORK_DEFAULT_CHARACTERS, SESSION_WORK_MAX_CHARACTERS, sessionTodoDeclarations } from "./session-work-evidence-original.mjs";
 import { noteProjectGraphChange, readSessionWorkNavigationHints } from "./discovery-index.mjs";
 import { fitSelectedBodyGroups, workBodyTuples } from "./session-work-body-organization.mjs";
+import { readSessionWorkTodos } from "./session-work-todo.mjs";
 export { SESSION_WORK_CONTEXT_VERSION, normalizeSessionWorkEvidence };
 function identity(root, storage) {
   const base = fs.realpathSync(path.resolve(root));
@@ -46,6 +48,36 @@ export function readSessionWorkEvidenceOwner({ root, sessionId, storage }) {
   if (!sessionId) fail("An exact logical owner is required.", "HEAD_SESSION_IDENTITY_MISMATCH");
   return withSessionRoute(root, sessionId, () => identity(root, storage));
 }
+
+// Existing list consumer composition. A preview never selects a Host binding,
+// falls back to default, or reads the bodies of every listed Session.
+export function readSessionWorkList({ root = ".", sessionId = null, maxSessions = 16, afterSessionId = null } = {}) {
+  const list = listLodeSessions({ root, maxSessions, afterSessionId });
+  if (sessionId === null) return list;
+  let preview;
+  try {
+    if (!sessionId) fail("An exact preview Session is required.", "INVALID_HEAD_SESSION_ID");
+    preview = withSessionRoute(root, sessionId, () => {
+      const workContext = readSessionWorkContext({ root, expectedSessionId: sessionId, maxRecords: 8, maxCharacters: 16384 });
+      return { status: workContext.status, sessionId, workContext,
+        conclusion: { scope: "recent-recorded-results", representativeResult: "not-designated",
+          evidence: workContext.records.map(record => ({ evidenceId: record.evidenceId, evidenceDigest: record.evidenceDigest })),
+          interpretation: "Read each original summary with its judgments, pending work and unknowns. Latest, ended, empty pending and PASS do not establish whole-work completion." },
+        inputProvenance: "reference-read-now-not-proven-historical-handoff-or-model-input" };
+    });
+  } catch (error) {
+    // Common identity errors cannot be dressed up as a valid Project preview.
+    if (["PROJECT_IDENTITY_MISMATCH", "PROJECT_STORAGE_IDENTITY_MISMATCH"].includes(error.code)) throw error;
+    preview = { status: "unavailable", sessionId, reasonCode: error.code || "SESSION_READ_UNAVAILABLE" };
+  }
+  const projectBytes = fs.readFileSync(safeSessionPath(root, list.projectSource.path));
+  if (sha(projectBytes) !== list.projectSource.sha256) fail("Project identity changed during preview.", "PROJECT_IDENTITY_MISMATCH");
+  // Read common corrections/cancellation after historical bodies, not before
+  // them. This remains an at-check view, never an atomic snapshot or authority.
+  preview = { ...preview, ...readProjectDirectionView({ root }) };
+  return { ...list, preview, previewBounds: { sessions: 1, maxRecords: 8, maxCharactersPerBodyCollection: 16384 },
+    interpretation: "Stored evidence for discovery, not an owner assignment, current Host target, whole-work completion or permission. Preview preserves all selections." };
+}
 export function recordSessionWorkEvidence({ root = ".", input, storage } = {}) {
   const content = normalizeSessionWorkEvidence(input);
   return withProjectMutation({ root, storage, scope: "session-recovery" }, () => {
@@ -74,6 +106,14 @@ export function recordSessionWorkEvidence({ root = ".", input, storage } = {}) {
       }
     }
     if (content.executionObservation?.target) endpoint(content.executionObservation.target);
+    for (const todo of content.todos || []) {
+      for (const prior of [todo.prior, ...(todo.resolves || [])].filter(Boolean)) {
+        if (!endpoint(prior).content.todos?.some(previous => previous.todoId === todo.todoId)) {
+          fail("Todo prior does not name the same item in this exact Session.", "SESSION_TODO_PRIOR_MISMATCH");
+        }
+      }
+      for (const related of todo.relatedEvidence || []) endpoint(related);
+    }
     content.references.forEach((ref) => reference(owner, ref, { saving: true }));
     if (identity(owner.root, owner.storage).basis !== owner.basis) fail("Session changed before work evidence publication.", "SESSION_WORK_OBSERVATION_CHANGED");
     const payload = { schemaVersion: 1, kind: "Evidence", subtype: "SessionWorkEvidence", protocol: { ...PROTOCOL, name: formatForVerifiedOwner(owner.storage).protocol(PROTOCOL.name) },
@@ -261,7 +301,8 @@ function readDefaultWorkContext(owner, maxRecords, maxCharacters, context) {
   names = names.filter(entry => /^work-evidence-[a-f0-9]{24}\.json$/.test(entry.name)).sort((a, b) => a.name.localeCompare(b.name));
   const discovered = new Set(names.map(entry => entry.name.slice(0, -5)));
   const regularIds = new Set(names.filter(entry => entry.isFile()).map(entry => entry.name.slice(0, -5)));
-  const hints = discovered.size ? readSessionWorkNavigationHints(owner, regularIds) : new Map();
+  context.todoInventory = [...discovered];
+  const hints = discovered.size ? readSessionWorkNavigationHints(owner, regularIds, context) : new Map();
   const inspected = new Set(), observations = new Map(), errors = new Map(), failedQualifiers = new Map();
   const hintMismatch = new Error("Historical navigation differs from a healthy current original.");
   const select = (headers) => {
@@ -271,6 +312,7 @@ function readDefaultWorkContext(owner, maxRecords, maxCharacters, context) {
   const selected = [], roles = new Map(), attempted = new Set(), deferred = new Set();
   let relatedReads = 0, organization;
   const reject = (id, error) => {
+    context.todoObservedRows?.delete(id);
     errors.set(id, error);
     unavailableIds.add(id);
     budget.delete(id);
@@ -297,6 +339,11 @@ function readDefaultWorkContext(owner, maxRecords, maxCharacters, context) {
     const header = headers.get(id);
     if (header && (header.rawDigest !== byteDigest || header.recordedAt !== record.recordedAt
       || header.observationTargetId !== (record.content.executionObservation?.target?.evidenceId || null))) throw hintMismatch;
+    if (discovered.has(id)) {
+      context.todoObservedRows ||= new Map();
+      context.todoObservedRows.set(id, { path: owner.workDirectory + "/" + id + ".json", rawDigest: byteDigest,
+        ownerSessionId: owner.sessionId, evidenceDigest: record.evidenceDigest, todoRevisions: sessionTodoDeclarations(record.content) });
+    }
     return { record, bytes, metadata: m, byteDigest };
   };
   for (const id of discovered) {
@@ -481,11 +528,14 @@ function readDefaultWorkContext(owner, maxRecords, maxCharacters, context) {
 }
 
 export function readSessionWorkContext({ root = ".", evidenceIds = null, maxRecords = 8, maxCharacters = SESSION_WORK_DEFAULT_CHARACTERS,
-  afterEvidenceId = null, expectedSessionId = null, expectedCheckpointId = undefined, storage } = {}) {
+  afterEvidenceId = null, expectedSessionId = null, expectedCheckpointId = undefined, storage,
+  todoId = null, afterTodoId = null, scanTodos = false } = {}) {
   if (!Number.isSafeInteger(maxRecords) || maxRecords < 1 || maxRecords > DEFAULT_SCAN
     || !Number.isSafeInteger(maxCharacters) || maxCharacters < 2 || maxCharacters > SESSION_WORK_MAX_CHARACTERS
     || evidenceIds !== null && (!Array.isArray(evidenceIds) || evidenceIds.length > DEFAULT_SCAN)
-    || afterEvidenceId !== null && (!/^work-evidence-[a-f0-9]{24}$/.test(afterEvidenceId) || evidenceIds !== null)) fail("Invalid work context read bounds.");
+    || afterEvidenceId !== null && (!/^work-evidence-[a-f0-9]{24}$/.test(afterEvidenceId) || evidenceIds !== null)
+    || [todoId, afterTodoId].some(value => value !== null && !/^todo-[a-z0-9][a-z0-9-]{0,79}$/.test(value))
+    || typeof scanTodos !== "boolean") fail("Invalid work context read bounds.");
   const owner = identity(root, storage);
   const shell = { kind: "SessionWorkContextProjection", authorityPlane: "P4", projectId: owner.projectId, sessionId: owner.sessionId,
     sessionPurpose: owner.state.purpose || null, basis: owner.basis, latestCheckpointId: owner.state.latestCheckpoint || null,
@@ -497,10 +547,14 @@ export function readSessionWorkContext({ root = ".", evidenceIds = null, maxReco
     return { ...shell, status: "work_context_basis_changed", records: [], omissions: { basisChanged: true } };
   }
   const context = createSessionWorkReadContext(owner.root, owner.storage);
+  // Sparse originals or indexed hints, not every-turn full history/body reads.
+  // Explicit exact-evidence reads keep their existing no-inventory guarantee.
   if (evidenceIds === null && afterEvidenceId === null) {
     const result = readDefaultWorkContext(owner, maxRecords, maxCharacters, context);
+    const todoContext = readSessionWorkTodos(owner, { maxRecords, maxCharacters, todoId, afterTodoId, scanTodos, afterEvidenceId,
+      context, inventory: context.todoInventory, hints: context.todoHints || new Map() });
     if (identity(owner.root, owner.storage).basis !== owner.basis) return { ...shell, status: "work_context_basis_changed", records: [], omissions: { basisChanged: true } };
-    return { ...shell, ...result, ...fitSelectedBodyGroups(workBodyTuples(result.records, owner),
+    return { ...shell, ...result, ...(todoContext ? { todoContext } : {}), ...fitSelectedBodyGroups(workBodyTuples(result.records, owner),
       maxCharacters - JSON.stringify(result.records).length) };
   }
   const directoryPath = directory(owner.root, owner.storage);
@@ -563,11 +617,13 @@ export function readSessionWorkContext({ root = ".", evidenceIds = null, maxReco
     used = nextSize;
     records.push(selected);
   }
+  const todoContext = evidenceIds === null ? readSessionWorkTodos(owner, { maxRecords, maxCharacters, todoId, afterTodoId, scanTodos, afterEvidenceId,
+    context, inventory: names.map(name => name.slice(0, -5)) }) : undefined;
   if (identity(owner.root, owner.storage).basis !== owner.basis) return { ...shell, status: "work_context_basis_changed", records: [], omissions: { basisChanged: true } };
   const organizationSummary = organization?.summary();
   return { ...shell, status: unavailableCount || evidenceIds === null && remainingNames.length > ids.length || omittedByBudget
       || organizationSummary?.unavailableRelations || organizationSummary?.uninspectedRelations ? "work_context_partial" : records.length ? "work_context_available" : "work_context_not_recorded",
-    records, unavailable, ...fitSelectedBodyGroups(workBodyTuples(records, owner), maxCharacters - used),
+    records, unavailable, ...(todoContext ? { todoContext } : {}), ...fitSelectedBodyGroups(workBodyTuples(records, owner), maxCharacters - used),
     ...(organization ? { organization: { ...organizationSummary, relatedReadAttempts: 0, relatedExpansionDeferred: 0 } } : {}),
     coverage: { originals: names?.length ?? null, inspected: ids.length, valid, unavailable: unavailableCount, included: records.length, maxRecords, maxCharacters, usedCharacters: used,
       characterBudgetScope: "JSON.stringify(records).length; separate bounded metadata envelope excluded",

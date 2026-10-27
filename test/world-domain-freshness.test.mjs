@@ -96,6 +96,97 @@ function retainedStore(snapshot) {
     listSnapshotIds() { return [snapshot.worldModelId]; }, writePointer() { throw Error("read-only"); }, writeSnapshot() { throw Error("read-only"); } };
 }
 
+test("temporal verification scopes own immutable copies without trusting frozen lookalikes or closed scopes", async t => {
+  const { root } = await fixture(t), snapshot = readWorldModelForDiscovery({ root }).snapshot;
+  const api = await import("../scripts/lib/temporal-provenance.mjs");
+  assert.equal(typeof api.createTemporalVerificationScope, "function");
+  const scope = api.createTemporalVerificationScope(), nested = api.createTemporalVerificationScope();
+  const createHash = crypto.createHash;
+  let hashes = 0;
+  const hashProbe = t.mock.method(crypto, "createHash", function(...args) { hashes += 1; return createHash.apply(this, args); });
+  try {
+    const owned = api.ownWorldSnapshotForTemporalScope(scope, snapshot);
+    assert.notEqual(owned, snapshot);
+    assert.notEqual(owned.temporalProvenanceGraph, snapshot.temporalProvenanceGraph);
+    api.verifyTemporalProvenanceGraph(owned.temporalProvenanceGraph);
+    assert(hashes > 0, "the first owned graph check must verify the actual hash");
+    hashes = 0; api.verifyTemporalProvenanceGraph(owned.temporalProvenanceGraph);
+    assert.equal(hashes, 0, "only this exact owned immutable graph reuses verification");
+    assert(Object.isFrozen(owned.temporalProvenanceGraph.nodes[0]));
+    const projection = api.queryTemporalProvenanceGraph(owned.temporalProvenanceGraph, { query: "main.mjs" });
+    assert(projection.nodes.length);
+    assert(projection.nodes.every(node => !Object.isFrozen(node)));
+    projection.nodes[0].name = "caller-local projection change";
+    assert(!owned.temporalProvenanceGraph.nodes.some(node => node.name === "caller-local projection change"));
+    const sibling = api.ownWorldSnapshotForTemporalScope(nested, snapshot);
+    api.verifyTemporalProvenanceGraph(sibling.temporalProvenanceGraph);
+    scope.close();
+    hashes = 0; api.verifyTemporalProvenanceGraph(owned.temporalProvenanceGraph);
+    assert(hashes > 0, "closing the scope discards its verification memo");
+    hashes = 0;
+    assert.equal(api.verifyTemporalProvenanceGraph(sibling.temporalProvenanceGraph), sibling.temporalProvenanceGraph);
+    assert.equal(hashes, 0, "closing a different scope cannot disturb a nested request");
+    assert.throws(() => api.ownWorldSnapshotForTemporalScope(scope, snapshot), { code: "TEMPORAL_VERIFICATION_SCOPE_CLOSED" });
+    assert.throws(() => api.ownWorldSnapshotForTemporalScope({ ownSnapshot: () => snapshot }, snapshot), { code: "INVALID_TEMPORAL_VERIFICATION_SCOPE" });
+    const tampered = structuredClone(snapshot.temporalProvenanceGraph);
+    tampered.nodes[0].name = "forged nested alias";
+    Object.freeze(tampered);
+    assert.throws(() => api.verifyTemporalProvenanceGraph(tampered), { code: "TEMPORAL_GRAPH_DIGEST_MISMATCH" });
+    const ownedTamper = api.ownWorldSnapshotForTemporalScope(nested, { ...snapshot, temporalProvenanceGraph: tampered });
+    assert.throws(() => api.verifyTemporalProvenanceGraph(ownedTamper.temporalProvenanceGraph), { code: "TEMPORAL_GRAPH_DIGEST_MISMATCH" });
+    // An unused outer function is omitted by the existing canonical JSON
+    // contract. Request-local optimization must not reject an accepted store.
+    const extended = { ...snapshot, unusedInspectionHelper() { return "not graph evidence"; } };
+    const extendedStore = retainedStore(extended);
+    assert.equal(readWorldModelForDiscovery({ root, storeAdapter: extendedStore }).snapshot, extended);
+    const extendedRead = readWorldModelForDiscovery({ root, storeAdapter: extendedStore, temporalVerificationScope: nested });
+    assert.equal(extendedRead.snapshot, extended, "uncloneable accepted input must retain the ordinary full-verification path");
+    assert.equal(Object.isFrozen(extended.temporalProvenanceGraph.nodes[0]), false);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      hashes = 0; api.verifyTemporalProvenanceGraph(extended.temporalProvenanceGraph);
+      assert(hashes > 0, "fallback graphs must never acquire a verification memo");
+    }
+    const originalName = extended.temporalProvenanceGraph.nodes[0].name;
+    try {
+      extended.temporalProvenanceGraph.nodes[0].name = "later external mutation";
+      assert.throws(() => api.verifyTemporalProvenanceGraph(extended.temporalProvenanceGraph), { code: "TEMPORAL_GRAPH_DIGEST_MISMATCH" });
+    } finally {
+      if (originalName === undefined) delete extended.temporalProvenanceGraph.nodes[0].name;
+      else extended.temporalProvenanceGraph.nodes[0].name = originalName;
+    }
+  } finally { hashProbe.mock.restore(); scope.close(); nested.close(); }
+});
+
+test("project graph isolates retained adapter aliases before await and leaves returned projections mutable", async t => {
+  const { root } = await fixture(t), snapshot = readWorldModelForDiscovery({ root }).snapshot;
+  const { queryProjectGraph } = await import("../scripts/lib/project-graph.mjs");
+  const store = retainedStore(snapshot), read = store.readSnapshot;
+  store.readSnapshot = function(id) {
+    const entry = read.call(this, id);
+    queueMicrotask(() => { snapshot.temporalProvenanceGraph.nodes[0].name = "unverified microtask mutation"; });
+    return entry;
+  };
+  const result = await queryProjectGraph({ root, storeAdapter: store, query: "main.mjs", depth: 1, details: true });
+  assert.equal(result.adapter.status, "verified", JSON.stringify(result.adapter));
+  assert(!result.integrity.excluded.some(entry => entry.layer === "world"));
+  assert(!result.nodes.some(node => node.name === "unverified microtask mutation"));
+  assert(result.nodes.length);
+  const checkMutable = (value, at) => {
+    if (!value || typeof value !== "object") return;
+    assert.equal(Object.isFrozen(value), false, at);
+    for (const [key, nested] of Object.entries(value)) checkMutable(nested, `${at}.${key}`);
+  };
+  // Authority metadata was already intentionally frozen before this change.
+  // Owned evidence, not those preexisting contracts, must remain mutable.
+  assert.equal(Object.isFrozen(result.authorityBoundary), true);
+  assert.equal(Object.isFrozen(result.authority), true);
+  checkMutable(result.nodes, "nodes"); checkMutable(result.edges, "edges");
+  result.nodes[0].sourceReference.path = "caller-only-change";
+  assert.throws(() => readWorldModelForDiscovery({ root, storeAdapter: store }), { code: "WORLD_MODEL_DIGEST_MISMATCH" });
+  assert.equal(Object.isFrozen(snapshot), false);
+  assert.equal(Object.isFrozen(snapshot.temporalProvenanceGraph.nodes[0]), false);
+});
+
 test("runtime/checkpoint drift preserves code query and Context; reads leave every byte unchanged", async t => {
   const { root, storage } = await fixture(t), original = readWorldModelForDiscovery({ root }).snapshot;
   assert.equal(inspectWorldModel({ root }).status, "current");

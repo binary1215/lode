@@ -288,7 +288,21 @@ export function verifyProductModelRevisionForProjection(document, storage = null
   if (document.productModelId !== model.productModelId || document.productModelHash !== model.productModelHash) {
     fail("Product Model revision digest verification failed.", "ONBOARDING_PRODUCT_REVISION_DIGEST_MISMATCH");
   }
+  if (document.projectId !== undefined && (typeof document.projectId !== "string" || !document.projectId
+    || storage?.projectId && document.projectId !== storage.projectId)) {
+    fail("Product Model revision Project identity differs.", "ONBOARDING_PRODUCT_REVISION_PROJECT_MISMATCH");
+  }
   return document;
+}
+
+// Add owner metadata only to new originals. An identical historical ownerless
+// revision can be reused by its writer, but is never rewritten or made citable.
+export function productModelRevisionForImmutableRetry(existing, intended, storage) {
+  verifyProductModelRevisionForProjection(existing, storage);
+  verifyProductModelRevisionForProjection(intended, storage);
+  const { projectId, ...withoutOwner } = intended;
+  return existing.projectId === undefined && projectId
+    && onboardingCanonicalJson(existing) === onboardingCanonicalJson(withoutOwner) ? existing : intended;
 }
 
 function safeDirectory(projectRoot, relativeDirectory) {

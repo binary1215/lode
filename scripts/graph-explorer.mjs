@@ -6,13 +6,13 @@ try {
   for (let index = 0; index < args.length; index++) {
     const flag = args[index];
     if (flag === "--help") {
-      process.stdout.write("Usage: node scripts/graph-explorer.mjs [--root project] [--query text] [--history] [--output new-file.html]\nCreates a local read-only HTML snapshot; no server, setup, Session binding or refresh.\n");
+      process.stdout.write("Usage: node scripts/graph-explorer.mjs [--root project] [--layer project|code] [--query text] [--anchors id,...] [--paths path,...] [--history] [--output new-file.html]\nCreates a local read-only HTML snapshot; no server, setup, Session binding or refresh.\n");
       process.exit(0);
     }
-    const key = { "--root": "root", "--query": "query", "--output": "output", "--history": "history" }[flag];
+    const key = { "--root": "root", "--layer": "layer", "--query": "query", "--anchors": "anchorIds", "--paths": "paths", "--output": "output", "--history": "history" }[flag];
     if (!key || Object.hasOwn(options, key)) throw new Error("Unsupported or duplicate option.");
     if (key === "history") options.history = true;
-    else { const value = args[++index]; if (!value || value.startsWith("--")) throw new Error("Option value is missing."); options[key] = value; }
+    else { const value = args[++index]; if (!value || value.startsWith("--")) throw new Error("Option value is missing."); options[key] = ["anchorIds", "paths"].includes(key) ? value.split(",") : value; }
   }
   process.stdout.write(`${JSON.stringify(await exportGraphExplorer(options), null, 2)}\n`);
 } catch (error) {

@@ -16,9 +16,139 @@ import { startRun, finishRun } from "../scripts/lib/run-lineage.mjs";
 import { sessionStartContext } from "../scripts/session-host-hook.mjs";
 import { startupProjection } from "../scripts/lib/session-host-context-projection.mjs";
 import { fitSelectedBodyGroups } from "../scripts/lib/session-work-body-organization.mjs";
+import { createSessionCallContext, withSessionCallContext, withSessionRoute, sessionStatePath, createHeadSession } from "../scripts/lib/session-routing.mjs";
+import { inspectProject } from "../scripts/lib/head-core.mjs";
+import { readSessionWorkList } from "../scripts/lib/session-work-context.mjs";
 import { fixture, exact, link, representative, snapshot, recordFor, accounting, pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 
 const directionView = value => value ? Object.fromEntries(["directionId", "directionHash", "input"].filter(key => value[key] !== undefined).map(key => [key, value[key]])) : null;
+
+test("A-D: concise Work/Todo text preserves exact branches, old tasks, unknown fields and unchanged CLI/MCP JSON", async t => {
+  const f = fixture(t, "PurposeFirstQjvm7812"), task = { todoId: "todo-readable", task: "ReadableTaskMarkerXgvm8821", origin: "user-directed", nextAction: "NextActionMarkerMhvn1422", priority: "Original priority, no score" };
+  const base = f.save({ summary: "RecentChoiceMarkerKfvn5731", todos: [{ ...task, status: "pending" }] });
+  f.save({ todos: [{ ...task, status: "partial", progress: "ProgressMarkerQjdn9713", prior: exact(base) }] });
+  f.save({ todos: [{ ...task, status: "waiting", reason: "ReasonMarkerPnvm6822", prior: exact(base) }] });
+  const before = snapshot(f.base), work = f.read(), encoded = JSON.stringify(work);
+  const text = formatCliResult("session-work-read", work);
+  assert.equal(JSON.stringify(work), encoded);
+  assert.ok(text.indexOf("PurposeFirstQjvm7812") < text.indexOf("RecentChoiceMarkerKfvn5731"));
+  const bodyOccurrences = work.records.flatMap(record => record.content.todos || []).filter(todo => todo.task === task.task).length;
+  assert.equal(text.split(task.task).length - 1, bodyOccurrences, "Only the exact already-shown original may replace aggregate repetition");
+  assert.match(text, /Exact task fields already displayed/u); assert.match(text, /conflict/u);
+  for (const value of [task.priority, task.nextAction, "ProgressMarkerQjdn9713", "ReasonMarkerPnvm6822", base.evidence.evidenceDigest]) assert.ok(text.includes(value));
+  assert.equal(text.includes("workContext.todoContext: {"), false);
+  for (const routed of [false, true]) {
+    const result = await call(f, "head_session_work_read", {}, routed);
+    assert.deepEqual(result.structuredContent, work); assert.equal(result.content[0].text, text);
+  }
+  const unknown = structuredClone(work); unknown.todoContext.futureCoverage = { marker: "UnknownCoverageMarkerXqvr1933" };
+  unknown.todoContext.items[0].futureTask = "UnknownTaskMarkerBvnq7831";
+  const unknownBefore = JSON.stringify(unknown), unknownText = formatCliResult("session-work-read", unknown);
+  assert.ok(unknownText.includes("UnknownCoverageMarkerXqvr1933")); assert.ok(unknownText.includes("UnknownTaskMarkerBvnq7831"));
+  assert.equal(JSON.stringify(unknown), unknownBefore);
+  const list = runCommand(["session-list", f.root]), listBefore = JSON.stringify(list), listText = formatCliResult("session-list", list);
+  assert.equal(listText.split("PurposeFirstQjvm7812").length - 1, 1);
+  assert.match(listText, /remaining tasks are uninspected/u); assert.match(listText, /existing list session_id/u);
+  assert.equal(JSON.stringify(list), listBefore); assert.deepEqual(snapshot(f.base), before);
+  // Keep older independent tasks visible without reprinting every history body.
+  for (let i = 0; i < 9; i++) f.save({ summary: `Unrelated recent note ${i}` });
+  fs.unlinkSync(base.file); // Fixture-only missing prior, never reader repair.
+  const afterSetup = snapshot(f.base), older = f.read(), olderText = formatCliResult("session-work-read", older);
+  for (const value of [task.task, task.priority, task.nextAction, "ReasonMarkerPnvm6822", "missingPriors", base.evidence.evidenceId]) assert.ok(olderText.includes(value));
+  assert.ok(older.todoContext.items[0].missingPriors.length > 0);
+  assert.deepEqual(snapshot(f.base), afterSetup);
+});
+
+test("S1-S6: CLI and direct/router MCP previews preserve bound/unselected/lost context and concurrent outer routes", async t => {
+  const f = fixture(t, "Same title"), a = createHeadSession({ root: f.root, purpose: "Same title" });
+  f.save({ summary: "B original conclusion", unknowns: ["Effect unknown"], pending: ["B remains"] });
+  const before = snapshot(f.base);
+  const request = (sessionId, router = null) => ({ id: 1, method: "tools/call", params: {
+    name: router || "head_session_list", arguments: router
+      ? { name: "head_session_list", arguments: { project_root: f.root, session_id: sessionId, max_sessions: 1 } }
+      : { project_root: f.root, session_id: sessionId, max_sessions: 1 } } });
+  for (const state of ["bound", "unselected", "lost"]) {
+    const context = createSessionCallContext();
+    if (state === "bound") context.select(f.root, a.sessionId);
+    if (state === "lost") context.lose(f.root);
+    const selection = context.read(f.root);
+    await withSessionRoute(f.root, a.sessionId, async () => {
+      const aPath = sessionStatePath(f.root, f.storage);
+      const cli = runCommand(["session-list", f.root, "--session", f.session.sessionId, "--max-sessions", "1"], { sessionContext: context });
+      assert.equal(cli.preview.workContext.sessionId, f.session.sessionId);
+      assert.equal(cli.preview.conclusion.representativeResult, "not-designated");
+      assert.match(formatCliResult("session-list", cli), /B original conclusion/u);
+      assert.deepEqual(context.read(f.root), selection); assert.equal(sessionStatePath(f.root, f.storage), aPath);
+      let resolutions = 0;
+      for (const router of [null, "head_tools_read", "head_tools_call"]) {
+        const options = { sessionContext: context, resolveSessionContext() { resolutions++; throw new Error("Preview must not resolve a binding"); } };
+        const [b, other] = await Promise.all([dispatch(request(f.session.sessionId, router), options), dispatch(request(a.sessionId, router), options)]);
+        assert.equal(b.result.structuredContent.preview.workContext.sessionId, f.session.sessionId);
+        assert.equal(other.result.structuredContent.preview.workContext.sessionId, a.sessionId);
+        assert.equal(b.result.structuredContent.sessions.length, 1);
+        const bad = await dispatch(request("../invalid", router), options);
+        assert.equal(bad.result.structuredContent.preview.status, "unavailable");
+        assert.equal(bad.result.structuredContent.preview.reasonCode, "INVALID_HEAD_SESSION_ID");
+        assert.deepEqual(context.read(f.root), selection); assert.equal(sessionStatePath(f.root, f.storage), aPath);
+      }
+      assert.equal(resolutions, 0);
+      const open = fs.openSync;
+      fs.openSync = function(file, ...args) {
+        assert.equal(String(file).includes("work-evidence"), false, "List-only must not preload work bodies");
+        return open.call(this, file, ...args);
+      };
+      let listOnly;
+      try { listOnly = runCommand(["session-list", f.root], { sessionContext: context }); }
+      finally { fs.openSync = open; }
+      assert.equal(listOnly.preview, undefined);
+      await assert.rejects(withSessionRoute(f.root, f.session.sessionId, async () => {
+        await Promise.resolve(); throw new Error("Synthetic async preview failure");
+      }), /Synthetic async preview failure/u);
+      assert.equal(sessionStatePath(f.root, f.storage), aPath);
+    });
+    if (state === "bound") assert.equal(withSessionCallContext({ root: f.root, context }, () => inspectProject(f.root).state.sessionId), a.sessionId);
+    assert.deepEqual(context.read(f.root), selection);
+  }
+  assert.deepEqual(snapshot(f.base), before);
+});
+
+test("S1-S6: preview retains older conflicted Todo, source conditions, partial coverage and current cancellation", async t => {
+  const f = fixture(t), task = { todoId: "todo-open", task: "Unfinished synthetic task", origin: "user-directed", nextAction: "Inspect remaining evidence" };
+  const first = f.save({ summary: "Old task", todos: [{ ...task, status: "pending" }] });
+  f.save({ summary: "Partial branch", todos: [{ ...task, status: "partial", prior: exact(first), progress: "One part" }] });
+  f.save({ summary: "Waiting branch", todos: [{ ...task, status: "waiting", prior: exact(first), reason: "Needs evidence" }] });
+  for (let i = 0; i < 9; i++) f.save({ summary: `Later unrelated PASS ${i}`, pending: [] });
+  const direction = updateProjectDirection({ root: f.root, input: { goal: "Inspect only", cancelledActions: ["deploy"] } });
+  let before = snapshot(f.base), preview = readSessionWorkList({ root: f.root, sessionId: f.session.sessionId }).preview;
+  assert.equal(preview.workContext.records.some(record => record.evidenceId === first.evidence.evidenceId), false);
+  assert.equal(preview.workContext.todoContext.items[0].status, "conflict");
+  assert.equal(preview.conclusion.representativeResult, "not-designated");
+  assert.deepEqual(preview.currentProjectDirection.input.cancelledActions, ["deploy"]);
+  assert.deepEqual(snapshot(f.base), before);
+  const indexFile = path.join(f.root, f.layout.directory, "graph-discovery/index.json"), index = JSON.parse(fs.readFileSync(indexFile));
+  delete index.sessionTodoNavigation; fs.writeFileSync(indexFile, JSON.stringify(index));
+  before = snapshot(f.base); preview = readSessionWorkList({ root: f.root, sessionId: f.session.sessionId }).preview;
+  assert.notEqual(preview.workContext.todoContext.status, "complete");
+  assert.equal(preview.workContext.todoContext.coverage.indexIsAuthority, false);
+  assert.deepEqual(preview.currentProjectDirection.input.cancelledActions, ["deploy"]);
+  const text = formatMcpToolContent("head_session_list", { sessions: [], preview });
+  assert.match(text, /not-designated/u); assert.match(text, /deploy/u); assert.match(text, /coverage/u);
+  assert.deepEqual(snapshot(f.base), before);
+  const open = fs.openSync; let correctedDuringRead = false;
+  fs.openSync = function(file, ...args) {
+    if (!correctedDuringRead && String(file).includes("work-evidence") && String(file).endsWith(".json")) {
+      correctedDuringRead = true;
+      updateProjectDirection({ root: f.root, expectedDirectionId: direction.direction.directionId,
+        input: { goal: "Inspect only", cancelledActions: ["deploy", "publish"] } });
+    }
+    return open.call(this, file, ...args);
+  };
+  let corrected;
+  try { corrected = readSessionWorkList({ root: f.root, sessionId: f.session.sessionId }); }
+  finally { fs.openSync = open; }
+  assert.equal(correctedDuringRead, true);
+  assert.deepEqual(corrected.preview.currentProjectDirection.input.cancelledActions, ["deploy", "publish"]);
+});
 
 // Real local API/serializer fixtures, not native Host/model compliance evidence.
 async function call(f, name, args = {}, routed = false) {

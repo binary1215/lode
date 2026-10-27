@@ -10,7 +10,7 @@ import { assessSubagentStateWrite, subagentWriteGuardEnabled } from "./lib/subag
 import { resolveProjectStorage, assertProjectStorageUnchanged } from "./lib/project-storage-format.mjs";
 import { safeGraphFile } from "./lib/discovery-index.mjs";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
-import { appendUserPromptReference, captureUserPrompt, freezeUserPromptReference, takeUserPromptReference } from "./lib/user-prompt-reference.mjs";
+import { appendUserPromptReference, captureUserPrompt, freezeUserPromptReference, prepareUserPromptReference, acknowledgeUserPromptReference } from "./lib/user-prompt-reference.mjs";
 
 // Dependency-free OpenCode V1 server entry, source-shaped against v1.19.0.
 // No client creation, daemon, auth/config edits or canonical HEAD mutation.
@@ -145,19 +145,22 @@ export default {
             && Object.getOwnPropertyDescriptor(system, String(previous.index))?.writable;
           // Only our own slot may be refreshed. Other plugins' strings/order and
           // the caller's array stay intact. No last-Session or basis cache.
-          const delivery = { index: ownsSlot ? previous.index : null, text: "" };
+          const delivery = { index: ownsSlot ? previous.index : null, text: "", sessionID: input?.sessionID, reference: "" };
           deliveries.set(system, delivery);
           if (ownsSlot) system[delivery.index] = "";
           if (disposed || !contextSupported || !nativeId(input?.sessionID)) return;
           const session = await exactSession(input.sessionID);
           if (!session || disposed || !contextSupported || deliveries.get(system) !== delivery) return;
           if (![".head", ".lode"].some(name => fs.existsSync(path.join(directory, name, "project.json")))) return;
-          let text;
+          let text, prepared;
           try {
             const adapter = createSessionHostAdapter({ runtime: "opencode", nativeSessionId: session.id, environment });
             text = startupProjection(adapter.enter({ root: directory }), directory, "opencode");
             if (text.length > MAX_CONTEXT_CHARACTERS.opencode) throw new Error("Context exceeds its delivery bound.");
-            const reference = takeUserPromptReference({ root: directory, runtime: "opencode", nativeSessionId: session.id, environment });
+            prepared = prepareUserPromptReference({ root: directory, runtime: "opencode", nativeSessionId: session.id, environment,
+              additionalContext: text, limit: MAX_CONTEXT_CHARACTERS.opencode });
+            const reference = prepared?.text || (ownsSlot && previous.sessionID === session.id ? previous.reference : "") || "";
+            delivery.reference = reference;
             text = appendUserPromptReference(text, reference, MAX_CONTEXT_CHARACTERS.opencode);
           } catch (error) {
             const code = typeof error?.code === "string" && /^[A-Z0-9_]{1,128}$/.test(error.code)
@@ -175,6 +178,8 @@ export default {
             system[delivery.index] = text;
           }
           delivery.text = text;
+          if (prepared && output.system === system && system[delivery.index] === text
+            && deliveries.get(system) === delivery && !disposed && contextSupported) acknowledgeUserPromptReference(prepared);
         } catch { /* Unsupported optional delivery never blocks the Host request. */ }
       },
       async event({ event }) {

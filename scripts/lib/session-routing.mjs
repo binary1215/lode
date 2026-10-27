@@ -234,22 +234,100 @@ export function createLodeSession({ root = ".", sessionId = `session-${crypto.ra
   });
 }
 
-export function listLodeSessions({ root = "." } = {}) {
+export function listLodeSessions({ root = ".", maxSessions = 16, afterSessionId = null } = {}) {
+  if (!Number.isInteger(maxSessions) || maxSessions < 1 || maxSessions > 64
+    || afterSessionId !== null && (typeof afterSessionId !== "string" || afterSessionId.length > 512)) {
+    fail("Invalid bounded Session page.", "INVALID_HEAD_SESSION_INPUT");
+  }
   const base = canonicalRoot(root);
   const storage = resolveProjectStorage(base);
   const managementDirectory = formatForVerifiedOwner(storage).directory;
-  const project = read(safeSessionPath(base, managementDirectory, "project.json"));
-  if (project.projectRoot !== base) fail("Project root identity differs.", "PROJECT_IDENTITY_MISMATCH");
-  const defaultState = read(defaultSessionStatePath(base, storage));
-  const sessions = [{ sessionId: defaultState.sessionId, purpose: defaultState.purpose || "", default: true, state: defaultState }];
-  const directory = safeSessionPath(base, managementDirectory, "sessions", "by-id");
-  if (fs.existsSync(directory)) for (const id of fs.readdirSync(directory).sort()) {
-    if (!validId(id)) fail("Unexpected entry in logical Sessions.", "INVALID_HEAD_SESSION_ID");
-    const state = read(safeSessionPath(base, managementDirectory, "sessions", "by-id", id, "current.json"));
-    if (state.sessionId !== id || state.projectId !== project.projectId) fail("Session belongs to another Project.", "HEAD_SESSION_IDENTITY_MISMATCH");
-    sessions.push({ sessionId: id, purpose: state.purpose || "", default: false, state });
+  const projectFile = safeSessionPath(base, managementDirectory, "project.json");
+  const projectBytes = fs.readFileSync(projectFile), project = read(projectFile);
+  if (project.schemaVersion !== 1 || typeof project.projectId !== "string" || !project.projectId || project.projectRoot !== base) fail("Project identity differs.", "PROJECT_IDENTITY_MISMATCH");
+  const unavailable = [], sessions = [];
+  const diagnostic = (key, error) => ({ entry: key, sessionId: validId(key) ? key : null,
+    status: "unavailable", reasonCode: error.code || "SESSION_READ_UNAVAILABLE" });
+  const inspect = (key) => {
+    if (key !== "default" && !validId(key)) fail("Unexpected entry in logical Sessions.", "INVALID_HEAD_SESSION_ID");
+    const file = key === "default" ? defaultSessionStatePath(base, storage)
+      : safeSessionPath(base, managementDirectory, "sessions", "by-id", key, "current.json");
+    const fd = fs.openSync(file, "r");
+    let bytes;
+    try {
+      if (!fs.fstatSync(fd).isFile()) fail("Session state is not a file.", "INVALID_SESSION_CANON");
+      const buffer = Buffer.alloc(65537), count = fs.readSync(fd, buffer, 0, buffer.length, 0);
+      if (count > 65536) fail("Session state exceeds bounded discovery; inspect the exact Session separately.", "SESSION_LIST_ITEM_TOO_LARGE");
+      bytes = buffer.subarray(0, count);
+    } finally { fs.closeSync(fd); }
+    let state;
+    try { state = JSON.parse(bytes); } catch { fail("Session state is malformed.", "INVALID_SESSION_CANON"); }
+    if (state?.schemaVersion !== 1 || !validId(state.sessionId)
+      || key !== "default" && state.sessionId !== key
+      || (key === "default" ? state.projectId && state.projectId !== project.projectId : state.projectId !== project.projectId)) {
+      fail("Session identity differs.", "HEAD_SESSION_IDENTITY_MISMATCH");
+    }
+    safeSessionPath(base, path.relative(base, file));
+    return { sessionId: state.sessionId, purpose: state.purpose || "", default: key === "default", state,
+      source: { path: path.relative(base, file).replaceAll("\\", "/"), bytes: bytes.length,
+        sha256: crypto.createHash("sha256").update(bytes).digest("hex") } };
+  };
+  let defaultRow = null, defaultError = null;
+  try { defaultRow = inspect("default"); } catch (error) { defaultError = diagnostic("default", error); }
+  let entries = [{ key: "default", id: null }], directoryError = null, directoryStatus = "enumerated";
+  try {
+    const directory = safeSessionPath(base, managementDirectory, "sessions", "by-id");
+    entries.push(...fs.readdirSync(directory).sort().map(id => ({ key: validId(id) ? id : `entry:${id}`, id })));
+  } catch (error) {
+    if (error.code === "ENOENT") directoryStatus = "not-present-at-check";
+    else directoryError = { status: "unavailable", reasonCode: error.code || "SESSION_DIRECTORY_UNAVAILABLE" };
   }
-  return { projectId: project.projectId, defaultSessionId: defaultState.sessionId, sessions };
+  // Exact routing cannot use a default identity also occupied by a named
+  // current.json. Do not advertise either identity as healthy in discovery.
+  const defaultIdentity = defaultRow?.sessionId;
+  if (defaultIdentity) {
+    try {
+      const duplicate = safeSessionPath(base, managementDirectory, "sessions", "by-id", defaultIdentity, "current.json");
+      if (fs.existsSync(duplicate)) fail("Default and named Session identities collide.", "HEAD_SESSION_IDENTITY_MISMATCH");
+    } catch (error) { defaultRow = null; defaultError = diagnostic("default", error); }
+  }
+  const cursor = afterSessionId === null ? -1 : entries.findIndex(entry => entry.key === afterSessionId);
+  if (afterSessionId !== null && cursor < 0) fail("Session page cursor is no longer present; read the first page again.", "HEAD_SESSION_LIST_CURSOR_CHANGED");
+  let inspected = 0, returned = 0, characters = 0, last = null;
+  for (const { key, id } of entries.slice(cursor + 1, cursor + 1 + maxSessions)) {
+    inspected += 1;
+    let row, error;
+    try {
+      if (id === null) { row = defaultRow; error = defaultError; }
+      else {
+        if (!validId(id)) fail("Unexpected entry in logical Sessions.", "INVALID_HEAD_SESSION_ID");
+        row = inspect(id);
+        if (row.sessionId === defaultIdentity) fail("Default and named Session identities collide.", "HEAD_SESSION_IDENTITY_MISMATCH");
+      }
+    } catch (caught) { row = null; error = diagnostic(id ?? "default", caught); }
+    // Bound full metadata, not just row count. Oversized states remain available
+    // to an exact reader; no condition is silently cut from a displayed state.
+    if (row && JSON.stringify(row).length > 30000) { row = null; error = diagnostic(id ?? "default", { code: "SESSION_LIST_ITEM_TOO_LARGE" }); }
+    if (error) error = { ...error, traversalKey: key };
+    const cost = JSON.stringify(row || error).length;
+    if (returned && characters + cost > 32768) break;
+    if (row) sessions.push(row); else unavailable.push(error);
+    characters += cost; returned += 1; last = key;
+  }
+  safeSessionPath(base, managementDirectory, "project.json");
+  if (!fs.readFileSync(projectFile).equals(projectBytes)) fail("Project identity changed during discovery.", "PROJECT_IDENTITY_MISMATCH");
+  const remaining = Math.max(0, entries.length - (cursor + 1 + returned));
+  return { projectId: project.projectId, defaultSessionId: defaultRow?.sessionId || null, sessions,
+    projectSource: { path: path.relative(base, projectFile).replaceAll("\\", "/"), sha256: crypto.createHash("sha256").update(projectBytes).digest("hex") },
+    status: directoryError || defaultError || unavailable.length || remaining ? "partial" : "inspected-page",
+    unavailable, ...(defaultError ? { defaultAvailability: defaultError } : {}),
+    coverage: { discoveredEntries: entries.length, inspectedEntries: inspected, returnedEntries: returned,
+      readButNotReturnedEntries: inspected - returned, remainingEntries: remaining,
+      directory: directoryError || { status: directoryStatus }, contents: "stored-session-state-only-not-live-work-or-completion",
+      maxSessions, maxCharacters: 32768, defaultIdentityInspected: true,
+      inspectionScope: "requested-page-slots; default-identity-also-checked-separately", snapshot: false },
+    nextAfterSessionId: remaining ? last : null,
+    persisted: false, recoveryAuthority: false, instructionAuthority: false, ordinaryWorkBlocked: false };
 }
 
 // Exact historical exports only; execution has one implementation.

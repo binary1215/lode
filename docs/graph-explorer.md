@@ -25,6 +25,38 @@ The executable belongs to the plugin, but `<project-directory>` is the project
 you are working on. Always pass it explicitly. Missing Project, World or source
 evidence is disclosed; the exporter does not substitute Lode's code or a demo.
 
+## Follow a recorded decision
+
+Ask for the work or review you want to follow. The same exporter accepts exact
+record IDs and source paths, without requiring a Run or another approval:
+
+```powershell
+node scripts/lode.mjs graph-explorer "<project-directory>" --anchors "<exact-work-or-review-id>" --paths "src/service.mjs"
+node scripts/lode.mjs graph-explorer "<project-directory>" --layer code --anchors "<exact-structural-node-id>"
+```
+
+The explicit anchors choose the detail bundle; selected work also supplies its
+recorded source citations. All verified available navigation metadata remains
+searchable. A comparison lists work citing each exact before/after path and
+digest, including unselected work. Read citing work returns to that record
+without claiming it caused the change. A document citation links to its verified
+original container, not every decision or candidate contained in those bytes.
+Source-layer anchors stay in the structural namespace and reopen that layer.
+Only verified same-snapshot path+digest bindings select corresponding source
+details; no new Project node or cross-layer edge is created. An unavailable
+explicit anchor never falls back to selecting an unrelated first record.
+Stored parent/revision-producing and review relationships retain their distinct
+directions; a producer's revise decision is not the successor's acceptance.
+
+When a detail is absent, Exact detail options shows an exact-anchor regeneration
+request, not a command executed by the HTML. The new report re-observes evidence
+at a new basis; it is never silently merged into the old snapshot. Missing detail
+does not mean no recorded work or no change. Result verification/evidence/impact
+and review next actions are readable from included exact originals; they are
+recorded claims, not checks re-run by this view or fresh effect permission.
+Navigation excerpts and structured originals disclose truncation; raw originals
+remain separately bounded and can themselves be omitted.
+
 ## Explore the evidence
 
 The Project layer shows recorded purposes, decisions, work and retained lineage.
@@ -38,6 +70,14 @@ neighbors. Ctrl/Cmd-click, a checkbox or Space toggles membership. Use Clear
 selection or Select only focus explicitly. Shift-drag the map background, or turn
 on Rectangle select, to add visible records; the list and keyboard can select the
 same set. Escape cancels a gesture/calculation without clearing prior selection.
+
+Open direct connections, a double-click on a map title, or Shift+Enter on its map
+card opens exactly that record's one-hop adjacency. It does not advance to the
+next unseen layer on repeat. Large neighborhoods yield and can be cancelled;
+only first-screen positions are prepared, with all other records and relationship
+pages still accessible. Existing selection, pins and prior coordinates remain.
+This explicit action may center a readable card; ordinary Read keeps the camera.
+Newer user pan/zoom input during calculation is preserved on completion.
 
 Expand next boundary adds the next unseen layer from the selected set. Repeating
 it advances through the already exposed boundary, rather than repeatedly opening
@@ -60,7 +100,11 @@ when starting from a disconnected record. Manual dragging can intentionally plac
 nodes together; expanding another node does not undo your positioning.
 The initial record and a starting neighborhood open automatically. Focus selection
 explicitly centers the reading focus; off-screen connections remain in the complete
-paged list. Explored map explicitly fits exposed records. All evidence shows
+paged list. A direct relationship's **Show on map: endpoint** action moves to that
+record at readable card scale, retaining other selections and pinned coordinates.
+Back/forward restores the camera step. This explicit action does not expand filters;
+an endpoint outside the current scope retains the existing restore guidance.
+Explored map explicitly fits exposed records. All evidence shows
 the whole exported inventory in a Canvas overview, without creating an SVG
 element for every record. Select a point or search any exact ID to focus it.
 Search covers every exported record; list and connection pages are display
@@ -197,6 +241,17 @@ is not a live view. Empty results do not prove that no other evidence exists.
 Old revisions are not replaced with current files: if the expected digest differs,
 the original panel says that the exact revision is unavailable. Stale code keeps
 the original-source fallback while other verified records remain available.
+The common code-comparison reader can separately recover exact historical bytes
+from a verified retained source observation before trying local Git. Project,
+path, digest and UTF-8 checks still apply; bounded or missing lookups remain
+explicit. Retained before-only text with a missing current file does not prove
+deletion, a Run's actions or the cause of a change.
+
+Ordinary graph queries observe current source bytes for returned records and
+relationship endpoints; the Explorer inventory observes its complete returned
+inventory. Repeated graph verification is reused only for a request-owned,
+verified immutable copy, not by trusting file mtimes or a caller's graph hash.
+Current source bytes are checked again on subsequent requests.
 
 There is no fixed node/edge count cutoff or arbitrary HTML-size cutoff for the
 viewer inventory. The same typed readers verify the available layers; damaged
@@ -302,3 +357,29 @@ exact-byte move observation and the cited digest. It is historical evidence, not
 verified logical continuity, current-path availability, fulfillment or cause.
 Content-changing or unrecorded moves are not guessed. Candidate lookup follows
 primary source reads and cannot consume their remaining command budget first.
+
+### Follow explicit document links
+
+An exact cited Markdown design document can expose its explicit local inline
+links in the recorded-context panel. Read the cited document revision, then a
+linked implementation/test excerpt or another included document's references.
+Panels keep their open/reading state and navigation does not move the map camera.
+Existing exported target records remain selectable; no invented graph edge or
+node is added to make a link look like implementation or approval.
+
+Links are extracted only from the exact cited digest through the common source
+reader. An unavailable old document stays unavailable instead of using today's
+text. Links without a target digest name a **current file at that path**, even if
+the source document came from Git; the target's historical version is not proven.
+Each reference retains its document digest and line/column. Duplicate versions
+share reading but retain each source location; different digests remain distinct.
+
+Navigation is bounded to 32 source reads, 64 links, depth 2, 256 KiB of delivered
+source text and 512-character target excerpts. These are optional report resource
+bounds, not semantic sufficiency or permission gates. Counts, pending paths,
+depth/byte limits and excerpt omissions remain visible. Explicit inline Markdown
+links are supported; fenced/indented/inline code, images and ambiguous paths are
+not guessed. Resolve links from the document directory inside verified Project
+source; root escapes, external/drive/UNC/stream paths, unsafe links and managed
+namespaces are rejected locally. No external URL is downloaded, no World refresh
+or canonical write is performed, and unrelated work stays available.

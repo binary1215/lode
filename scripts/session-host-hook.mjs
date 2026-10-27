@@ -4,7 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createSessionHostAdapter } from "./lib/session-host-adapter.mjs";
 import { startupProjection, MAX_CONTEXT_CHARACTERS } from "./lib/session-host-context-projection.mjs";
-import { appendUserPromptReference, captureUserPrompt, freezeUserPromptReference, takeUserPromptReference } from "./lib/user-prompt-reference.mjs";
+import { appendUserPromptReference, captureUserPrompt, captureVisibleAssistantReference, freezeUserPromptReference, prepareUserPromptReference, acknowledgeUserPromptReference } from "./lib/user-prompt-reference.mjs";
 
 // A read-only command Hook renderer. The outer command also records optional P5
 // observations, but never creates selection bindings or changes this rendering.
@@ -42,28 +42,50 @@ function noteNativePrompt(runtime, event, environment) {
   const caller = promptCaller(runtime, event);
   if (!caller) return;
   if (event.hook_event_name === "UserPromptSubmit" && typeof event.prompt === "string") {
-    captureUserPrompt({ root: event.cwd, ...caller, text: event.prompt, environment });
+    captureUserPrompt({ root: event.cwd, ...caller, text: event.prompt,
+      messageId: runtime === "codex" && typeof event.turn_id === "string" ? event.turn_id : null, environment });
   }
+  if (event.hook_event_name === "Stop") captureVisibleAssistantReference({ root: event.cwd, ...caller,
+    text: event.last_assistant_message, turnId: event.turn_id, environment });
   if (event.hook_event_name === "PreCompact") freezeUserPromptReference({ root: event.cwd, ...caller, environment });
 }
 
-export async function runSessionHostHook({ runtime, event, environment = process.env, observeOnly = false } = {}) {
+export async function runSessionHostHook({ runtime, event, environment = process.env, observeOnly = false, deliver } = {}) {
   try {
     const { observeNativeHook } = await import("./lib/native-session-observations.mjs");
     await observeNativeHook({ runtime, event, environment });
   } catch { /* Observations cannot block native flow or existing recovery. */ }
   try { noteNativePrompt(runtime, event, environment); }
   catch { /* A missing prompt reference never blocks the host. */ }
-  if (observeOnly) return {};
-  const context = sessionStartContext({ runtime, event, environment });
-  if (!context.hookSpecificOutput?.additionalContext || !["compact", "clear"].includes(event?.source)) return context;
-  try {
+  let context = observeOnly ? {} : sessionStartContext({ runtime, event, environment }), prepared;
+  if (context.hookSpecificOutput?.additionalContext && ["compact", "clear"].includes(event?.source)) try {
     const caller = promptCaller(runtime, event);
-    const reference = caller ? takeUserPromptReference({ root: event.cwd, ...caller, environment, force: true }) : "";
-    const next = appendUserPromptReference(context.hookSpecificOutput.additionalContext, reference, MAX_CONTEXT_CHARACTERS[runtime] || 0);
-    if (next === context.hookSpecificOutput.additionalContext) return context;
-    return { hookSpecificOutput: { ...context.hookSpecificOutput, additionalContext: next } };
-  } catch { return context; }
+    prepared = caller && prepareUserPromptReference({ root: event.cwd, ...caller, environment, force: true,
+      additionalContext: context.hookSpecificOutput.additionalContext, limit: MAX_CONTEXT_CHARACTERS[runtime] || 0 });
+    if (prepared) context = { hookSpecificOutput: { ...context.hookSpecificOutput,
+      additionalContext: appendUserPromptReference(context.hookSpecificOutput.additionalContext, prepared.text, MAX_CONTEXT_CHARACTERS[runtime] || 0) } };
+  } catch { /* Preserve primary context and the undelivered reference. */ }
+  // Direct callers receive a constructed local object. Command Hooks use the
+  // stdout callback instead. Neither boundary proves Host or model reception.
+  if (deliver) await deliver(context);
+  if (prepared) acknowledgeUserPromptReference(prepared);
+  return context;
+}
+
+export function writeSessionHostOutput(output, sink) {
+  const text = JSON.stringify(output) + "\n";
+  return new Promise((resolve, reject) => {
+    const onError = error => reject(error);
+    sink.once("error", onError);
+    try {
+      // false means backpressure. The callback, not the boolean, determines
+      // whether these bytes reached the local stream's completion boundary.
+      sink.write(text, error => {
+        if (error) reject(error);
+        else { sink.removeListener("error", onError); resolve(); }
+      });
+    } catch (error) { sink.removeListener("error", onError); reject(error); }
+  });
 }
 
 async function main() {
@@ -71,11 +93,14 @@ async function main() {
   let bytes = 0; const chunks = [];
   for await (const chunk of process.stdin) {
     bytes += chunk.length;
-    if (bytes > 64 * 1024) { process.stdout.write("{}\n"); return; }
+    if (bytes > 64 * 1024) { await writeSessionHostOutput({}, process.stdout).catch(() => {}); return; }
     chunks.push(chunk);
   }
-  try { process.stdout.write(JSON.stringify(await runSessionHostHook({ runtime: args[index + 1],
-    event: JSON.parse(Buffer.concat(chunks).toString("utf8")), observeOnly: args.includes("--observe-only") })) + "\n"); }
-  catch { process.stdout.write("{}\n"); }
+  let event;
+  try { event = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  catch { await writeSessionHostOutput({}, process.stdout).catch(() => {}); return; }
+  try { await runSessionHostHook({ runtime: args[index + 1], event, observeOnly: args.includes("--observe-only"),
+    deliver: output => writeSessionHostOutput(output, process.stdout) }); }
+  catch { /* A failed local stream leaves its reference available for retry. */ }
 }
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) await main();

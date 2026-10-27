@@ -14,7 +14,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
-import { verifyProductModelRevisionForProjection } from "./onboarding-projection.mjs";
+import { verifyProductModelRevisionForProjection, productModelRevisionForImmutableRetry } from "./onboarding-projection.mjs";
 import {
   normalizeProductModelDocument,
   productModelDocument,
@@ -130,14 +130,22 @@ function revisionFile(projectRoot, productModelId, storage = null) {
 }
 
 function productRevision(model, storage = null) {
+  if (!storage?.projectId) fail("Product revision requires a verified Project owner.", "PROJECT_IDENTITY_MISMATCH");
   return verifyProductModelRevisionForProjection({
     schemaVersion: SCHEMA_VERSION,
     kind: "ProductModelRevision",
+    projectId: storage.projectId,
     productModelId: model.productModelId,
     productModelHash: model.productModelHash,
     document: productModelDocument(model),
     authority: "user-owned-project-canon-revision",
   }, storage);
+}
+
+function persistProductRevision(root, model, storage) {
+  const file = revisionFile(root, model.productModelId, storage), revision = productRevision(model, storage);
+  const intended = fs.existsSync(file) ? productModelRevisionForImmutableRetry(readJson(file, "Product Model revision"), revision, storage) : revision;
+  return persistImmutable(file, intended, value => verifyProductModelRevisionForProjection(value, storage), "Product Model revision");
 }
 
 
@@ -301,8 +309,8 @@ export async function reviewProductPolicy({ root = ".", candidateId, disposition
       const entry = persistImmutable(reviewFile(inspected.project.projectRoot, review.reviewDecisionId, inspected.storage), review, (value) => verifyProductPolicyReviewDecision(value, candidate, inspected.project.projectId, inspected.storage), "Product Policy ReviewDecision");
       const baseModel = normalizeProductModelDocument(candidate.baseProductModelDocument, inspected.storage);
       const resultModel = normalizeProductModelDocument(candidate.resultingProductModelDocument, inspected.storage);
-      persistImmutable(revisionFile(inspected.project.projectRoot, baseModel.productModelId, inspected.storage), productRevision(baseModel, inspected.storage), (value) => verifyProductModelRevisionForProjection(value, inspected.storage), "Product Model revision");
-      persistImmutable(revisionFile(inspected.project.projectRoot, resultModel.productModelId, inspected.storage), productRevision(resultModel, inspected.storage), (value) => verifyProductModelRevisionForProjection(value, inspected.storage), "Product Model revision");
+      persistProductRevision(inspected.project.projectRoot, baseModel, inspected.storage);
+      persistProductRevision(inspected.project.projectRoot, resultModel, inspected.storage);
       if (atBase) atomicWrite(safeFile(inspected.project.projectRoot, relativeProjectArtifact(inspected.storage, "context", "product-model.json")), json(productModelDocument(resultModel)));
       return { status: "accepted", inspected, candidate, review, reviewFile: entry.file, canonChanged: atBase, evidenceCheck };
     });

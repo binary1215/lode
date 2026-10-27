@@ -18,6 +18,77 @@ test("narrow controls preserve selection and card rectangles replace compressed 
   assert.doesNotMatch(source, /textLength|spacingAndGlyphs|svg\("circle"/);
 });
 
+test("explicit direct-neighbor map navigation keeps narrow cards readable, selection, pins and one-step camera history", async () => {
+  const snapshot = fixture(3), original = JSON.stringify(snapshot), ui = explorerDom(snapshot, { narrow: true, cardMeasure: () => 100 });
+  await ui.settle();
+  const mapNode = id => ui.ids.get("graph").children.find(element => element.getAttribute("data-node") === id);
+  const displaced = mapNode("generic-2"); assert(displaced);
+  const position = /translate\(([^,]+),([^\)]+)\)/.exec(displaced.getAttribute("transform"));
+  for (let i = 0; i < 50; i++) ui.event(displaced, "keydown", { shiftKey: true, key: "ArrowRight" });
+  const targetPin = `translate(${Number(position[1]) + 1000},${Number(position[2])})`;
+  ui.rectangle("graph", { left: 0, top: 0, width: 390, height: 440 }); ui.windowEvent("resize"); await ui.settle();
+  ui.event("focus");
+  ui.event(mapNode("generic-0"), "keydown", { shiftKey: true, key: "ArrowRight" });
+  const pinned = mapNode("generic-0").getAttribute("transform");
+  ui.event(ui.ids.get("records").children[1].children[0]);
+  const camera = ui.ids.get("graph").getAttribute("viewBox"), rootCard = ui.ids.get("selection-cards").children[0];
+  rootCard.open = true;
+  const actions = rootCard.querySelectorAll("[data-map-neighbor]");
+  const go = actions.find(control => control.getAttribute("data-map-neighbor") === "generic-2");
+  assert(go, "Every exported direct endpoint needs an explicit Show on map action in its reading card");
+  assert(!mapNode("generic-2"), "The exact linked record starts off-screen, not absent from the snapshot");
+  ui.event(go); await ui.settle();
+  assert.match(ui.ids.get("selection-count").textContent, /3/);
+  const target = mapNode("generic-2"); assert(target);
+  assert.equal(target.getAttribute("transform"), targetPin); assert.equal(target.dataset.pinned, "true");
+  assert.equal(target.dataset.expanded, "false", "Navigation must not expand title-only cards");
+  assert.equal(ui.ids.get("graph").getAttribute("viewBox").split(" ").slice(2).join(" "), "390 440", "Center at readable 1:1 scale, never whole-map fit");
+  assert.equal(ui.stats.focused, "generic-2"); assert.equal(ui.stats.scrolled, target, "Scroll the actual target, not the start of a tall mobile map");
+  assert(rootCard.open); assert.equal(ui.ids.get("selection-cards").children[0], rootCard);
+  const reached = ui.ids.get("graph").getAttribute("viewBox");
+  ui.event("back"); assert.equal(ui.ids.get("graph").getAttribute("viewBox"), camera);
+  assert.match(ui.ids.get("selection-count").textContent, /2/); assert.equal(mapNode("generic-0").getAttribute("transform"), pinned);
+  ui.event("forward"); assert.equal(ui.ids.get("graph").getAttribute("viewBox"), reached);
+  assert.match(ui.ids.get("selection-count").textContent, /3/);
+  const endpoint = ui.ids.get("relations").children.flatMap(row => row.children).find(control => control.getAttribute("data-map-neighbor") === "generic-0");
+  assert(endpoint, "The focused inspector offers the same exact-endpoint navigation"); ui.event(endpoint);
+  assert.equal(mapNode("generic-0").getAttribute("transform"), pinned); assert.equal(mapNode("generic-0").dataset.pinned, "true");
+  assert.equal(JSON.stringify(snapshot), original);
+});
+
+test("direct connection gestures stay exactly one hop and high-degree cancel preserves readable state", async t => {
+  const snapshot = fixture(1500); snapshot.graph.edges = [
+    { edgeId: "first", from: "generic-0", to: "generic-1", type: "NEXT" },
+    ...snapshot.graph.nodes.slice(2, -1).map(node => ({ edgeId: node.nodeId, from: "generic-1", to: node.nodeId, type: "NEXT" })),
+    { edgeId: "second-hop", from: "generic-2", to: "generic-1499", type: "NEXT" }];
+  const before = JSON.stringify(snapshot), ui = explorerDom(snapshot, { cardMeasure: () => 100 }); await ui.settle();
+  const mapNode = id => ui.ids.get("graph").children.find(el => el.getAttribute("data-node") === id);
+  ui.event(mapNode("generic-0"), "keydown", { shiftKey: true, key: "ArrowRight" });
+  const pinned = mapNode("generic-0").getAttribute("transform"), initialCamera = ui.ids.get("graph").getAttribute("viewBox");
+  // Read keeps the camera; explicit direct expansion may center a readable card.
+  ui.event(ui.ids.get("records").children[1].children[0]); assert.equal(ui.ids.get("graph").getAttribute("viewBox"), initialCamera);
+  ui.event("expand-direct"); ui.event("cancel-work"); await ui.settle();
+  assert.match(ui.ids.get("operation-status").textContent, /Cancelled/); assert.equal(mapNode("generic-0").getAttribute("transform"), pinned);
+  const created = ui.stats.created, at = performance.now();
+  ui.event(mapNode("generic-1"), "dblclick");
+  ui.event("graph", "keydown", { key: "ArrowRight" }); ui.event("zoom-out");
+  const newerCamera = ui.ids.get("graph").getAttribute("viewBox"); await ui.settle();
+  assert.equal(ui.ids.get("graph").getAttribute("viewBox"), newerCamera, "Direct completion must not overwrite newer pan/zoom input");
+  assert.match(ui.ids.get("operation-status").textContent, /1498 exact direct relationships/);
+  assert(!/1499 neighboring/.test(ui.ids.get("operation-status").textContent));
+  assert.equal(mapNode("generic-0").getAttribute("transform"), pinned); assert.equal(mapNode("generic-0").dataset.pinned, "true");
+  assert(ui.ids.get("records").children.length <= 100); assert(ui.ids.get("relations").children.length <= 100);
+  ui.event("expand-direct"); await ui.settle();
+  const expandedCamera = ui.ids.get("graph").getAttribute("viewBox");
+  ui.event("back"); assert.equal(ui.ids.get("graph").getAttribute("viewBox"), newerCamera);
+  ui.event("forward"); assert.equal(ui.ids.get("graph").getAttribute("viewBox"), expandedCamera);
+  ui.event(mapNode("generic-1"), "keydown", { shiftKey: true, key: "Enter" }); await ui.settle();
+  assert.match(ui.ids.get("operation-status").textContent, /1498 exact direct relationships/);
+  assert.equal(JSON.stringify(snapshot), before);
+  t.diagnostic(JSON.stringify({ model: "DOM-double-not-browser-speed", nodes: snapshot.graph.nodes.length, edges: snapshot.graph.edges.length,
+    elapsedMs: performance.now() - at, createdElements: ui.stats.created - created, queuedFrames: ui.pendingFrames() }));
+});
+
 test("missing current source displays exact retained text without manufacturing an empty after-version", () => {
   const snapshot = fixture(12), digest = "a".repeat(64);
   snapshot.graph.contextLineage = { events: [], recordedReasons: [], canonChanges: [], files: [{ path: "src/generic-0.mjs",

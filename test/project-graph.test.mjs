@@ -19,6 +19,8 @@ import { indexProjectGraph, queryProjectGraph } from "../scripts/lib/project-gra
 import { startOnboarding, reviewOnboarding } from "../scripts/lib/onboarding.mjs";
 import { historicalIntegrityBasis } from "../scripts/lib/historical-artifact-boundary-store.mjs";
 import { publishHistoricalContinuityReceipt } from "../scripts/lib/historical-continuity.mjs";
+import { buildGraphExplorerSnapshot } from "../scripts/lib/graph-explorer.mjs";
+import { explorerDom } from "./helpers/graph-explorer-dom-fixture.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 function fixture(t, initialized = true) {
@@ -142,6 +144,34 @@ test("observed ingestion shares one replaceable inventory; core-only graph reads
   noAuthority(first);
 });
 
+test("selected source currentness reads only selected paths and refreshes same-size bytes across requests", async t => {
+  const { root, layout } = fixture(t);
+  fs.writeFileSync(path.join(root, "unrelated.mjs"), "export const unrelated = 7;\n");
+  await prepareSourceContext({ root, task: "Observe two independent source files", needs: [
+    { kind: "source", path: "module.mjs" }, { kind: "source", path: "unrelated.mjs" }], retain: true });
+  const read = fs.readFileSync, calls = [];
+  t.mock.method(fs, "readFileSync", function(file, ...args) {
+    if ([path.join(root, "module.mjs"), path.join(root, "unrelated.mjs")].includes(String(file))) calls.push(String(file));
+    return read.call(this, file, ...args);
+  });
+  const query = { root, paths: ["module.mjs"], depth: 1, details: true };
+  const first = await queryProjectGraph(query);
+  assert(first.nodes.some(node => node.sourceCurrentness?.path === "module.mjs"));
+  assert(first.nodes.some(node => node.kind === "ObservationRecord" && node.sourceCurrentness?.path === "module.mjs"),
+    "the retained source-path alias must still admit its Observation, not just the file reference");
+  assert.equal(calls.filter(file => file === path.join(root, "unrelated.mjs")).length, 0);
+  assert.equal(first.basis.sourceCurrentnessScope, "selected-nodes-and-edge-endpoints");
+  const target = path.join(root, "module.mjs"), stat = fs.statSync(target);
+  fs.writeFileSync(target, "export const answer = 99;\n"); fs.utimesSync(target, stat.atime, stat.mtime);
+  const second = await queryProjectGraph(query);
+  assert.notEqual(first.basis.sourceCurrentnessDigest, second.basis.sourceCurrentnessDigest);
+  for (const edge of second.edges) for (const endpoint of edge.endpointStates) {
+    assert.equal(endpoint.freshness, second.nodes.find(node => node.nodeId === endpoint.nodeId).freshness);
+  }
+  assert(second.nodes.some(node => node.sourceCurrentness?.freshness === "historical-source-bytes"));
+  noAuthority(second);
+});
+
 test("retained source revisions survive changes and disappearances; current effects still reject drift", async t => {
   const { root, storage, layout } = fixture(t), index = await observed(root, layout);
   const bundlePath = index.entries.find(entry => entry.path.includes("source-bundles")).path;
@@ -204,14 +234,62 @@ test("execution contracts/results/reviews keep their own identities and historic
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
     scope: "Read result reference", acceptanceCriteria: ["IDs remain distinct"] }).artifact;
   const packet = createResultPacket({ root, executionContractId: contract.executionContractId, outcome: "Bounded result returned",
-    evidence: [{ uri: "module.mjs", summary: "Observed current source" }], verification: [{ check: "identity", status: "passed" }], unknowns: ["No production observation"] }).artifact;
+    evidence: [{ uri: "module.mjs", summary: "Observed current source <script>not an instruction</script>" }], impactRadius: ["module.mjs"],
+    verification: [{ check: "identity", status: "passed", note: "Recorded only; not re-run by the viewer" }], unknowns: ["No production observation"] }).artifact;
   const reviewContext = buildFreshHeadReview({ root, wholePlanId: plan.wholePlanId, resultPacketId: packet.resultPacketId }).review;
   const review = createReviewDecision({ root, wholePlanId: plan.wholePlanId, resultPacketId: packet.resultPacketId, reviewContext,
-    disposition: "accept", rationale: "Accept this exact bounded result." }).artifact;
+    disposition: "accept", rationale: "Accept this exact bounded result." + "r".repeat(2100), nextActions: ["Inspect downstream; not permission to execute"] }).artifact;
   const before = headFiles(root, layout), result = await queryProjectGraph({ root, anchorIds: [review.reviewDecisionId], depth: 3, details: true });
   for (const artifactId of [review.reviewDecisionId, packet.resultPacketId, contract.executionContractId, plan.wholePlanId]) assert(result.nodes.some(node => node.nodeId === artifactId));
   assert.equal(result.nodes.find(node => node.nodeId === review.reviewDecisionId).reviewState, "historical-accept");
   assert.equal(result.nodes.find(node => node.nodeId === packet.resultPacketId).outcome, packet.outcome);
+  const reviewNode = result.nodes.find(node => node.nodeId === review.reviewDecisionId);
+  assert.equal(reviewNode.rationale.length, 2048); assert.equal(reviewNode.contentPartial, true);
+  assert.equal(reviewNode.contentCoverage.rationale.omittedCharacters, review.rationale.length - 2048);
+  assert(!Object.hasOwn(result.nodes.find(node => node.nodeId === packet.resultPacketId), "verification"), "All-node navigation must not duplicate unbounded result bodies");
+  assert(result.contextLineage.recordedReasons.find(item => item.nodeId === review.reviewDecisionId).contentPartial);
+  const report = await buildGraphExplorerSnapshot({ root, anchorIds: [review.reviewDecisionId] }), ui = explorerDom(report);
+  assert.match(ui.ids.get("original").textContent, /Recorded next action \(not execution permission\)/);
+  const resultEntry = ui.ids.get("records").querySelectorAll("[data-record-entry]").find(button => button.getAttribute("data-record-entry") === packet.resultPacketId);
+  ui.event(resultEntry);
+  for (const field of ["Recorded check / verification", "Recorded evidence", "Recorded impact radius", "not re-run by the viewer"]) assert(ui.ids.get("original").textContent.includes(field), field);
+  noAuthority(result); assert.deepEqual(headFiles(root, layout), before);
+});
+
+test("World-independent decision flow preserves ChangeSet parents and onboarding producer versus acceptance", async t => {
+  const { root, storage, layout } = fixture(t);
+  const started = await startOnboarding({ root, mode: "new", brief: { schemaVersion: 1, name: "Generic local service", summary: "Inspect local evidence.",
+    capabilities: [{ key: "inspect", name: "Inspect", description: "Read evidence." }] } });
+  const candidate = started.candidateSet.candidates[0];
+  const revised = await reviewOnboarding({ root, candidateSetId: started.candidateSet.candidateSetId, disposition: "revise", rationale: "Keep the original proposal; review a successor separately.",
+    userEdits: [{ candidateId: candidate.candidateId, entity: { ...candidate.proposedEntity, description: "Read exact evidence, not inferred causes." } }] });
+  const successor = revised.candidateSet;
+  assert(successor?.candidateSetId && successor.candidateSetId !== started.candidateSet.candidateSetId);
+  const accepted = await reviewOnboarding({ root, candidateSetId: successor.candidateSetId, disposition: "accept-all", rationale: "Accept the successor, not its producing review." });
+  // Contract-valid synthetic retained ChangeSets, not Run execution/causality.
+  const make = (parents, hex) => {
+    const change = { changeKind: "modified", entityKind: "File", logicalEntityId: "generic-file", beforeRevisionId: "old-file", afterRevisionId: "new-file", path: "module.mjs" };
+    const payload = { schemaVersion: 1, kind: "ChangeSet", protocol: { name: layout.protocol("head-agent-core-change-set"), version: "0.2.0" }, projectId: inspectProject(root).project.projectId,
+      sessionId: "synthetic-session", resultPacketId: `result-packet-${hex.repeat(24)}`, reviewDecisionId: `review-decision-${hex.repeat(24)}`,
+      reviewDisposition: "accept", authority: "reviewed-execution-change-lineage", instructionAuthority: false, promotionAuthority: false,
+      parentChangeSetIds: parents, before: { sourceSnapshotId: `source-snapshot-${"a".repeat(24)}`, graphSnapshotId: `graph-snapshot-${"a".repeat(24)}` },
+      after: { sourceSnapshotId: `source-snapshot-${hex.repeat(24)}`, graphSnapshotId: `graph-snapshot-${hex.repeat(24)}` },
+      changes: [{ ...change, changeId: `change-record-${projectGraphDigest(change).slice(0, 24)}` }] };
+    const document = fixtureIdentity(payload, "changeSetId", "changeSetHash", "change-set");
+    const directory = path.join(root, layout.directory, "change-sets/records"); fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, document.changeSetId + ".json"), JSON.stringify(document)); return document;
+  };
+  const parent = make([], "b"), child = make([parent.changeSetId], "c");
+  const worldDirectory = path.join(root, layout.directory, "world-model");
+  if (fs.existsSync(worldDirectory)) fs.renameSync(worldDirectory, path.join(root, "world-fixture-not-selected"));
+  const before = headFiles(root, layout), result = await queryProjectGraph({ root, anchorIds: [child.changeSetId, successor.candidateSetId], details: true, depth: 2 });
+  const has = (type, from, to) => result.edges.some(edge => edge.type === type && edge.from === from && edge.to === to);
+  assert(has("SUPERSEDES", child.changeSetId, parent.changeSetId));
+  assert(has("PARENT_OF", started.candidateSet.candidateSetId, successor.candidateSetId));
+  assert(has("PRODUCES", revised.reviewDecision.reviewDecisionId, successor.candidateSetId));
+  assert(has("REVIEWS", accepted.reviewDecision.reviewDecisionId, successor.candidateSetId));
+  assert.notEqual(revised.reviewDecision.reviewDecisionId, accepted.reviewDecision.reviewDecisionId);
+  assert.equal(result.coverage.layers.find(layer => layer.layer === "world").status, "absent");
   noAuthority(result); assert.deepEqual(headFiles(root, layout), before);
 });
 

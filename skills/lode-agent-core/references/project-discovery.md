@@ -5,6 +5,55 @@ results. Read bounded nearby relations, original state, integrity, freshness and
 coverage. Use original sources when needed; no whole-World/Product/Run/DB gate.
 Historical approval remains evidence and effects recheck current authority.
 
+## Installation and adoption
+
+For an explicit authorized install/update, use the chosen client's official path
+in [Install](../../../README.md#install). Perform available permitted actions and
+check the existing installation inventory or returned result, rather than merely
+returning commands you can execute. Reuse valid installations and the user's
+runtime/link/preserve choice. Reuse an initialized Project's recorded runtime set;
+choose a client subset only for a new Project. Login, Host approval, unavailable
+actions or a user-controlled restart may need human action. Do not restart the
+app, rewrite cache/config, weaken trust, install other clients or infer permission
+for model calls. A declined installation leaves ordinary work available.
+
+Installed files, Project initialization, optional instruction linking and actual
+Host loading/use are separate observations. A CLI version/generated file does
+not prove loading. Check an already available tool when useful; unknown loading
+does not block independent work or require another setup/doctor ritual. Users
+without this Skill can follow the README directly.
+
+## Existing work and recorded conclusions
+
+Reuse sufficient supplied context. When missing, `lode_session_list` reads a
+bounded page of stored Session states. Its existing `session_id` previews one
+exact Session's Work and Todo without selecting it, even with a lost/unselected
+Host binding. CLI: `session-list <project> --session <id>`. Use `max_sessions`
+(CLI `--max-sessions`, default 16, maximum 64) and returned `nextAfterSessionId`
+as `after_session_id` (CLI `--after-session`) only for useful remaining pages.
+The cursor identifies an entry: `default`, a Session ID, or `entry:<name>` for an
+invalid directory name. It is not a route, and an actual directory named
+`default` has the distinct key `entry:default`.
+Concurrent discovery is non-atomic: a missing cursor requires a fresh page.
+
+The list reads metadata only; a preview reads at most eight recent bodies plus
+the existing independently selected Todo projection. Honor its partial/conflict/
+unknown coverage, and expand needed originals using `lode_session_work_read`.
+No body or failed metadata outside the page is assumed absent or complete.
+Per-Session errors preserve healthy rows. An unreadable shared directory is
+unavailable, not an empty complete inventory; an invalid common Project identity
+cannot establish ownership. Reads never repair, bind or initialize anything.
+
+Show the selected record's conclusion or recent recorded results alongside exact
+IDs/digests, judgments, pending work, uncertainty and current cancellation. Default
+ordering, a declared work root, ended observation, empty pending or passing tests
+does not designate a whole-work representative result or prove completion. Keep
+conflicting branches and same-title work with different owners separate. Expand
+exact linked ResultPackets/ReviewDecisions only for their verified scope. Label
+model synthesis as derived and cite its originals. No mandatory recap save is
+needed. For actual conversations see
+[continuing work](runtime-composition.md#continuing-in-an-existing-conversation).
+
 Search matches bounded display/domain values and ranks lexical evidence; it
 does not infer semantic relevance or sufficient context. Lode can use exact
 names, paths or anchors without asking the user for a query form. Shared direction

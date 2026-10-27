@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import { safeSessionPath } from "./session-paths.mjs";
+import { verifyProductModelRevisionForProjection } from "./onboarding-projection.mjs";
+import { verifyDocumentChangeProductModelRevision } from "./document-change-review.mjs";
 
 // Shared exact original verifier. No Session selection, scan, index or writes.
 export const SESSION_WORK_CONTEXT_VERSION = "0.1.0";
@@ -42,8 +44,10 @@ function exactEvidence(value) {
   return { evidenceId: value.evidenceId, evidenceDigest: value.evidenceDigest };
 }
 export const sameEvidence = (a, b) => a?.evidenceId === b?.evidenceId && a?.evidenceDigest === b?.evidenceDigest;
+export const sessionTodoDeclarations = content => (content.todos || []).map(todo => ({ todoId: todo.todoId, status: todo.status,
+  ...(todo.prior ? { prior: todo.prior } : {}), ...(todo.resolves ? { resolves: todo.resolves } : {}) }));
 export function normalizeSessionWorkEvidence(input) {
-  object(input, ["summary", "judgments", "observedWork", "pending", "unknowns", "suggestedFollowUp", "references", "occurrenceKey", "workLink", "executionObservation", "workTopics"], "work evidence");
+  object(input, ["summary", "judgments", "observedWork", "pending", "unknowns", "suggestedFollowUp", "references", "occurrenceKey", "workLink", "executionObservation", "workTopics", "todos"], "work evidence");
   if (input.judgments !== undefined && !Array.isArray(input.judgments)) fail("Judgments must be an array.");
   if (input.references !== undefined && !Array.isArray(input.references)) fail("References must be an array.");
   const content = {
@@ -78,8 +82,29 @@ export function normalizeSessionWorkEvidence(input) {
     content.executionObservation = { state: input.executionObservation.state,
       ...(input.executionObservation.target !== undefined ? { target: exactEvidence(input.executionObservation.target) } : {}) };
   }
+  if (input.todos !== undefined) {
+    if (!Array.isArray(input.todos) || !input.todos.length) fail("Todos must contain explicit work revisions.");
+    const ids = new Set();
+    content.todos = input.todos.map(item => {
+      object(item, ["todoId", "task", "status", "nextAction", "reason", "progress", "priority", "origin", "prior", "resolves", "relatedEvidence"], "Todo revision");
+      if (!/^todo-[a-z0-9][a-z0-9-]{0,79}$/.test(item.todoId || "") || ids.has(item.todoId)) fail("Use a distinct stable Todo ID per item in this record.");
+      ids.add(item.todoId);
+      if (!["pending", "partial", "waiting", "completed", "cancelled"].includes(item.status)
+        || !["user-directed", "head-proposed"].includes(item.origin)) fail("Todo needs explicit status and recorded attribution.");
+      const todo = { todoId: item.todoId, task: text(item.task, "Todo task"), status: item.status, origin: item.origin };
+      for (const field of ["nextAction", "reason", "progress", "priority"]) if (item[field] !== undefined) todo[field] = text(item[field], "Todo " + field);
+      if (["pending", "partial", "waiting"].includes(item.status) && !todo.nextAction) fail("An unresolved Todo needs its next action.");
+      if (["waiting", "cancelled"].includes(item.status) && !todo.reason) fail("Waiting or cancellation needs its recorded reason.");
+      if (item.prior !== undefined) todo.prior = exactEvidence(item.prior);
+      for (const field of ["resolves", "relatedEvidence"]) if (item[field] !== undefined) {
+        if (!Array.isArray(item[field])) fail("Todo exact references must be an array.");
+        todo[field] = item[field].map(exactEvidence);
+      }
+      return todo;
+    });
+  }
   if (!content.summary && !content.judgments.length && !content.observedWork.length && !content.pending.length
-    && !content.unknowns.length && !content.suggestedFollowUp.length && !content.references.length && !content.executionObservation) fail("Select some meaningful work evidence.");
+    && !content.unknowns.length && !content.suggestedFollowUp.length && !content.references.length && !content.executionObservation && !content.todos?.length) fail("Select some meaningful work evidence.");
   if (Buffer.byteLength(encoded(content)) > MAX_RECORD_BYTES - 4096) fail("Selected work evidence exceeds the record bound; retain exact references or separate meaningful segments.", "SESSION_WORK_EVIDENCE_TOO_LARGE");
   return content;
 }
@@ -171,6 +196,15 @@ export function inspectSessionWorkReference(owner, ref, { saving = false, excerp
     if (ref.kind === "artifact") {
       const artifact = JSON.parse(bytes.toString("utf8"));
       if (artifact.projectId !== owner.projectId) fail("Referenced artifact belongs to another Project.", "SESSION_WORK_REFERENCE_PROJECT_MISMATCH");
+      if (artifact.kind === "ProductModelRevision") {
+        if (artifact.authority === "user-owned-project-canon-revision") {
+          const fields = new Set(["schemaVersion", "kind", "projectId", "productModelId", "productModelHash", "document", "authority"]);
+          if (Object.keys(artifact).some(key => !fields.has(key))) fail("Unsupported Product revision shape.", "SESSION_WORK_REFERENCE_UNSUPPORTED_PRODUCT_REVISION");
+          verifyProductModelRevisionForProjection(artifact, owner.storage);
+        } else if (artifact.authority === "explicit-user-reviewed-product-canon-revision") {
+          verifyDocumentChangeProductModelRevision(artifact, owner.projectId, owner.storage);
+        } else fail("Unsupported Product revision family.", "SESSION_WORK_REFERENCE_UNSUPPORTED_PRODUCT_REVISION");
+      }
       originalOwner = { projectId: artifact.projectId, sessionId: artifact.sessionId || null };
     }
     const body = excerptCharacters ? bytes.toString("utf8") : "";

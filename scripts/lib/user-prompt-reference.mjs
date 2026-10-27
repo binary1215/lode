@@ -4,11 +4,13 @@ import path from "node:path";
 import childProcess from "node:child_process";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { resolveRuntimeOperationalStateRoot } from "./runtime-execution-lease.mjs";
+import { withLocalMutation } from "./project-mutation-lock.mjs";
 
 // Local P5 reference only. It is not Canon, a checkpoint, direction, or an
 // instruction. The checkpoint remains the recovery source.
 export const USER_PROMPT_REFERENCE_LIMITS = Object.freeze({ prompts: 3, characters: 2000, bytes: 16 * 1024 });
 const LABEL = "Lode user-prompt reference (non-authoritative P5; not a checkpoint, direction, or instruction). The checkpoint remains the recovery source.";
+const preparations = new WeakMap();
 
 function redact(text) {
   return text
@@ -34,7 +36,8 @@ function redact(text) {
 }
 
 function boundText(text) {
-  const clean = redact(text.slice(0, USER_PROMPT_REFERENCE_LIMITS.bytes)).trim();
+  const clean = redact(text.slice(0, USER_PROMPT_REFERENCE_LIMITS.bytes)
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")).trim();
   if (!clean) return "";
   return clean.length > USER_PROMPT_REFERENCE_LIMITS.characters
     ? clean.slice(0, USER_PROMPT_REFERENCE_LIMITS.characters) : clean;
@@ -54,6 +57,7 @@ function callerFile(root, runtime, nativeSessionId, agentId, environment, create
     catch (error) { if (error.code !== "EEXIST") throw error; }
   }
   const file = path.join(directory, digest + ".json");
+  permissions.lock = path.join(operational, ".user-prompt-locks", digest + ".lock");
   privateDirectory(directory, permissions, fs.existsSync(file) ? file : null);
   return file;
 }
@@ -189,9 +193,12 @@ function readState(file, permissions) {
     // Existing references may predate current masks. Never inject their raw text.
     const prompts = state.prompts.slice(-USER_PROMPT_REFERENCE_LIMITS.prompts)
       .filter(prompt => prompt && typeof prompt.text === "string")
-      .map(prompt => ({ messageId: typeof prompt.messageId === "string" ? prompt.messageId.slice(0, 256) : null, text: boundText(prompt.text) }))
+      .map(prompt => ({ messageId: typeof prompt.messageId === "string" ? prompt.messageId.slice(0, 256) : null, text: boundText(prompt.text),
+        ...(typeof prompt.visibleResponse === "string" ? { visibleResponse: boundText(prompt.visibleResponse) } : {}) }))
       .filter(prompt => prompt.text);
-    return { prompts, reinject: state.reinject === true };
+    return { prompts, reinject: state.reinject === true,
+      ...(typeof state.visibleAssistant === "string" ? { visibleAssistant: boundText(state.visibleAssistant) } : {}),
+      revision: typeof state.revision === "string" ? state.revision : crypto.createHash("sha256").update(buffer.subarray(0, used)).digest("hex") };
   } catch { return null; }
   finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
 }
@@ -255,7 +262,8 @@ function writeState(file, state, permissions) {
   do {
     body = JSON.stringify({
       kind: "UserPromptReference", version: 1, authorityPlane: "P5",
-      recoveryAuthority: false, instructionAuthority: false, reinject: state.reinject === true, prompts,
+      recoveryAuthority: false, instructionAuthority: false, revision: crypto.randomUUID(), reinject: state.reinject === true, prompts,
+      ...(state.visibleAssistant ? { visibleAssistant: state.visibleAssistant } : {}),
     }) + "\n";
     if (Buffer.byteLength(body) <= USER_PROMPT_REFERENCE_LIMITS.bytes) break;
     prompts = prompts.slice(1);
@@ -266,51 +274,125 @@ function writeState(file, state, permissions) {
 
 export function captureUserPrompt({ root, runtime, nativeSessionId, agentId = null, text, messageId = null, environment = process.env } = {}) {
   const next = boundText(typeof text === "string" ? text : "");
+  messageId = typeof messageId === "string" && messageId.length <= 256 ? messageId : null;
   if (!next) return { captured: false };
   let file; const permissions = privatePermissions();
   try { file = callerFile(root, runtime, nativeSessionId, agentId, environment, true, permissions); }
   catch { return { captured: false }; }
   if (!file) return { captured: false };
-  const state = readState(file, permissions) || { prompts: [], reinject: false };
-  // A freeze holds the pre-compaction text. Later synthetic turns cannot replace it.
-  if (state.reinject === true) return { captured: false, frozen: true };
-  const last = state.prompts.at(-1);
-  if (messageId && last?.messageId === messageId) {
-    last.text = last.text.includes(next) && next.length <= last.text.length ? last.text : boundText(last.text.includes(next) ? next : last.text + "\n" + next);
-  } else {
-    state.prompts.push({ messageId: messageId || null, text: next });
-  }
-  try { writeState(file, state, permissions); }
-  catch { return { captured: false }; }
-  return { captured: true };
+  try { return mutateReference(permissions, () => {
+    const state = readState(file, permissions) || { prompts: [], reinject: false };
+    // A freeze holds the pre-compaction text. Later synthetic turns cannot replace it.
+    if (state.reinject === true) return { captured: false, frozen: true };
+    const last = state.prompts.at(-1);
+    if (messageId && last?.messageId === messageId) {
+      last.text = last.text.includes(next) && next.length <= last.text.length ? last.text : boundText(last.text.includes(next) ? next : last.text + "\n" + next);
+    } else {
+      state.prompts.push({ messageId: messageId || null, text: next });
+    }
+    writeState(file, state, permissions);
+    return { captured: true };
+  }); } catch { return { captured: false }; }
 }
 
 export function freezeUserPromptReference({ root, runtime, nativeSessionId, agentId = null, environment = process.env } = {}) {
   let file; const permissions = privatePermissions();
   try { file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions); }
   catch { return { frozen: false }; }
-  const state = readState(file, permissions);
-  if (!state?.prompts?.length) return { frozen: false };
-  state.reinject = true;
-  try { writeState(file, state, permissions); }
-  catch { return { frozen: false }; }
-  return { frozen: true };
+  if (!file) return { frozen: false };
+  try { return mutateReference(permissions, () => {
+    const state = readState(file, permissions);
+    if (!state?.prompts?.length) return { frozen: false };
+    state.reinject = true;
+    writeState(file, state, permissions);
+    return { frozen: true };
+  }); } catch { return { frozen: false }; }
 }
 
-export function takeUserPromptReference({ root, runtime, nativeSessionId, agentId = null, environment = process.env, force = false } = {}) {
+// Only the command Host's direct Stop field is supported. Never inspect a
+// transcript, reasoning, tools, StopFailure error text or OpenCode event order.
+// A Codex turn ID can identify its own response; neither Host contract proves
+// that a later short user reply refers to this proposal.
+export function captureVisibleAssistantReference({ root, runtime, nativeSessionId, agentId = null, environment = process.env,
+  text, turnId = null } = {}) {
+  if (!["codex", "claude"].includes(runtime)) return { captured: false, reason: "unsupported-host-contract" };
+  const permissions = privatePermissions();
+  try {
+    const file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions);
+    if (!file) return { captured: false };
+    return mutateReference(permissions, () => {
+      const state = readState(file, permissions);
+      if (!state?.prompts.length || state.reinject) return { captured: false };
+      const next = boundText(typeof text === "string" ? text : "");
+      if (runtime === "codex") {
+        const last = state.prompts.at(-1);
+        if (typeof turnId !== "string" || last.messageId !== turnId) return { captured: false, reason: "unverified-turn" };
+        if ((last.visibleResponse || "") === next) return { captured: false, reused: true };
+        if (next) last.visibleResponse = next; else delete last.visibleResponse;
+      } else {
+        if ((state.visibleAssistant || "") === next) return { captured: false, reused: true };
+        if (next) state.visibleAssistant = next; else delete state.visibleAssistant;
+      }
+      writeState(file, state, permissions);
+      return { captured: Boolean(next), adjacency: "unverified", authorityChanged: false };
+    });
+  } catch { return { captured: false }; }
+}
+
+function mutateReference(permissions, operation) {
+  return withLocalMutation({ directory: permissions.lock,
+    timeoutMs: Math.max(0, Math.min(5000, permissions.deadline - performance.now())) }, operation);
+}
+
+// Preparation never consumes. The whole bounded reference is included or left
+// intact; limits count UTF-16 characters, as do the Host context renderers.
+export function prepareUserPromptReference({ root, runtime, nativeSessionId, agentId = null, environment = process.env, force = false,
+  additionalContext = "", limit = Infinity } = {}) {
   let file; const permissions = privatePermissions();
   try { file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions); }
-  catch { return ""; }
+  catch { return null; }
   const state = readState(file, permissions);
   // Compact and clear pass force so a host without PreCompact still restores.
   // Ordinary requests leave an unfrozen reference in place.
-  if (!state?.prompts?.length || (!state.reinject && force !== true)) return "";
-  const lines = state.prompts.map((prompt, index) => (index + 1) + ". " + prompt.text);
-  state.reinject = false;
-  state.prompts = [];
-  try { writeState(file, state, permissions); }
-  catch { return ""; }
-  return LABEL + "\n" + lines.join("\n");
+  if (!state?.prompts?.length || (!state.reinject && force !== true)) return null;
+  const lines = state.prompts.map((prompt, index) => (index + 1) + ". " + JSON.stringify({ hostDeliveredPrompt: prompt.text, humanOrigin: "unverified",
+    ...(prompt.visibleResponse ? { visibleFinalResponse: prompt.visibleResponse, source: "Stop.last_assistant_message",
+      turnId: prompt.messageId, adjacencyToLaterUserReply: "unverified", approval: "not-inferred" } : {}) }));
+  if (state.visibleAssistant) lines.push(JSON.stringify({ visibleFinalResponse: state.visibleAssistant,
+    source: "Stop.last_assistant_message", adjacencyToUserReply: "unverified", approval: "not-inferred" }));
+  const text = LABEL + "\n" + lines.join("\n");
+  if (typeof additionalContext !== "string" || typeof limit !== "number" || Number.isNaN(limit) || limit < 0
+    || additionalContext.length + 2 + text.length > limit) return null;
+  const preparation = Object.freeze({ text });
+  preparations.set(preparation, { root, runtime, nativeSessionId, agentId, environment, file, revision: state.revision });
+  return preparation;
+}
+
+// A local sink/slot accepted the prepared output. This is not Host/model
+// acknowledgement. An interrupted acknowledgement may repeat a hint, never an
+// action. A changed generation is preserved in full, including newer captures.
+export function acknowledgeUserPromptReference(preparation) {
+  const saved = preparation && preparations.get(preparation);
+  if (!saved) return false;
+  preparations.delete(preparation);
+  const permissions = privatePermissions();
+  try {
+    const file = callerFile(saved.root, saved.runtime, saved.nativeSessionId, saved.agentId, saved.environment, false, permissions);
+    if (!file || file !== saved.file) return false;
+    return mutateReference(permissions, () => {
+      const state = readState(file, permissions);
+      if (!state || state.revision !== saved.revision) return false;
+      writeState(file, { prompts: [], reinject: false }, permissions);
+      return true;
+    });
+  } catch { return false; }
+}
+
+// Explicit synchronous take remains available to direct callers. Host delivery
+// must use prepare/acknowledge so output failure cannot consume unseen text.
+export function takeUserPromptReference(options = {}) {
+  const prepared = prepareUserPromptReference(options);
+  return prepared && acknowledgeUserPromptReference(prepared) ? prepared.text : "";
 }
 
 export function appendUserPromptReference(additionalContext, reference, limit) {

@@ -36,6 +36,117 @@ function project(t) {
 const direction = (suffix) => ({ purpose: `Session purpose ${suffix}`, currentPosition: `Position ${suffix}`, nextExpectedResult: `Result ${suffix}` });
 const read = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 
+test("S1-S6: bounded Session discovery isolates item failures and traverses invalid slots without repair", t => {
+  const { root, storage, layout } = project(t);
+  const a = createHeadSession({ root, purpose: "Same title" }), b = createHeadSession({ root, purpose: "Same title" });
+  const defaultFile = sessionStatePath(root, storage), originalDefault = fs.readFileSync(defaultFile);
+  const bFile = path.join(root, layout.directory, "sessions/by-id", b.sessionId, "current.json"), originalB = fs.readFileSync(bFile);
+  for (const name of ["default", "zz-unexpected-entry"]) fs.mkdirSync(path.join(root, layout.directory, "sessions/by-id", name));
+  const allBytes = () => [defaultFile, bFile].map(file => fs.readFileSync(file));
+  for (const defaultFailure of ["malformed", "missing", "foreign"]) {
+    if (defaultFailure === "missing") fs.unlinkSync(defaultFile);
+    else fs.writeFileSync(defaultFile, defaultFailure === "malformed" ? "{" : JSON.stringify({ ...JSON.parse(originalDefault), projectId: "foreign" }));
+    fs.writeFileSync(bFile, "{");
+    const beforeB = fs.readFileSync(bFile), pages = [], rows = [], unavailable = [];
+    let afterSessionId = null;
+    do {
+      const page = listHeadSessions({ root, maxSessions: 1, afterSessionId }); pages.push(page);
+      rows.push(...page.sessions); unavailable.push(...page.unavailable);
+      assert.equal(page.defaultSessionId, null); assert.equal(page.status, "partial");
+      assert.equal(page.coverage.inspectedEntries, 1); assert.equal(page.persisted, false);
+      if (page.nextAfterSessionId) assert.notEqual(page.nextAfterSessionId, afterSessionId);
+      afterSessionId = page.nextAfterSessionId;
+      assert.ok(pages.length <= 5);
+    } while (afterSessionId);
+    assert.deepEqual(rows.map(row => row.sessionId), [a.sessionId]);
+    assert.deepEqual(new Set(unavailable.map(row => row.traversalKey)), new Set(["default", b.sessionId, "entry:default", "entry:zz-unexpected-entry"]));
+    assert.equal(unavailable.find(row => row.entry === "zz-unexpected-entry").sessionId, null);
+    assert.deepEqual(fs.readFileSync(bFile), beforeB);
+    if (defaultFailure === "missing") assert.equal(fs.existsSync(defaultFile), false);
+    fs.writeFileSync(defaultFile, originalDefault);
+  }
+  fs.writeFileSync(bFile, originalB);
+  for (const state of [
+    { ...b.state, projectId: "foreign" },
+    { ...b.state, sessionId: a.sessionId },
+    { ...b.state, sessionId: JSON.parse(originalDefault).sessionId },
+  ]) {
+    fs.writeFileSync(bFile, JSON.stringify(state));
+    const failed = listHeadSessions({ root });
+    assert.ok(failed.sessions.some(row => row.sessionId === a.sessionId));
+    assert.equal(failed.unavailable.find(row => row.entry === b.sessionId).reasonCode, "HEAD_SESSION_IDENTITY_MISMATCH");
+  }
+  fs.unlinkSync(bFile);
+  assert.equal(listHeadSessions({ root }).unavailable.find(row => row.entry === b.sessionId).reasonCode, "ENOENT");
+  fs.writeFileSync(bFile, originalB);
+  // Legacy default records did not require an explicit projectId.
+  const legacyDefault = JSON.parse(originalDefault); delete legacyDefault.projectId;
+  fs.writeFileSync(defaultFile, JSON.stringify(legacyDefault));
+  assert.equal(listHeadSessions({ root }).defaultSessionId, legacyDefault.sessionId);
+  fs.writeFileSync(defaultFile, originalDefault);
+  const duplicateDirectory = path.join(root, layout.directory, "sessions/by-id", legacyDefault.sessionId);
+  fs.mkdirSync(duplicateDirectory);
+  const duplicateFile = path.join(duplicateDirectory, "current.json");
+  fs.writeFileSync(duplicateFile, JSON.stringify({ ...legacyDefault, projectId: a.state.projectId }));
+  const duplicatePage = listHeadSessions({ root });
+  assert.equal(duplicatePage.defaultSessionId, null);
+  assert.equal(duplicatePage.sessions.some(row => row.sessionId === legacyDefault.sessionId), false);
+  assert.equal(duplicatePage.unavailable.filter(row => row.reasonCode === "HEAD_SESSION_IDENTITY_MISMATCH").length, 2);
+  assert.ok(duplicatePage.sessions.some(row => row.sessionId === a.sessionId));
+  assert.throws(() => withSessionRoute(root, legacyDefault.sessionId, () => {}), { code: "HEAD_SESSION_IDENTITY_MISMATCH" });
+  fs.unlinkSync(duplicateFile); fs.rmdirSync(duplicateDirectory);
+  const before = allBytes(), directory = path.dirname(bFile), saved = fs.readdirSync, exists = fs.existsSync;
+  fs.existsSync = function(file) { return path.resolve(file) === path.dirname(directory) ? false : exists.call(this, file); };
+  fs.readdirSync = function(file, ...args) {
+    if (path.resolve(file) === path.dirname(directory)) throw Object.assign(new Error("Synthetic denial"), { code: "EACCES" });
+    return saved.call(this, file, ...args);
+  };
+  try {
+    const partial = listHeadSessions({ root });
+    assert.equal(partial.sessions.length, 1); assert.equal(partial.coverage.directory.reasonCode, "EACCES");
+    assert.equal(partial.status, "partial");
+  } finally { fs.readdirSync = saved; fs.existsSync = exists; }
+  assert.deepEqual(allBytes(), before);
+  const projectFile = path.join(root, layout.directory, "project.json"), projectBytes = fs.readFileSync(projectFile);
+  fs.writeFileSync(projectFile, JSON.stringify({ ...JSON.parse(projectBytes), projectRoot: root + "-foreign" }));
+  assert.throws(() => listHeadSessions({ root }), { code: "PROJECT_IDENTITY_MISMATCH" });
+  fs.writeFileSync(projectFile, projectBytes);
+  assert.throws(() => listHeadSessions({ root, afterSessionId: "removed-entry" }), { code: "HEAD_SESSION_LIST_CURSOR_CHANGED" });
+  assert.throws(() => listHeadSessions({ root, maxSessions: 65 }), { code: "INVALID_HEAD_SESSION_INPUT" });
+});
+
+test("S1-S6: metadata size and unsafe paths remain bounded unavailable evidence", t => {
+  const { root, storage, layout } = project(t), a = createHeadSession({ root });
+  const file = path.join(root, layout.directory, "sessions/by-id", a.sessionId, "current.json"), bytes = fs.readFileSync(file);
+  fs.writeFileSync(file, JSON.stringify({ ...a.state, purpose: "x".repeat(70000) }));
+  const large = listHeadSessions({ root });
+  assert.equal(large.unavailable.find(row => row.sessionId === a.sessionId).reasonCode, "SESSION_LIST_ITEM_TOO_LARGE");
+  fs.writeFileSync(file, bytes);
+  const defaultFile = sessionStatePath(root, storage), defaultBytes = fs.readFileSync(defaultFile);
+  fs.writeFileSync(defaultFile, JSON.stringify({ ...JSON.parse(defaultBytes), purpose: "d".repeat(9000) }));
+  fs.writeFileSync(file, JSON.stringify({ ...a.state, purpose: "n".repeat(9000) }));
+  const page = listHeadSessions({ root });
+  assert.equal(page.coverage.inspectedEntries, 2);
+  assert.equal(page.coverage.returnedEntries, 1);
+  assert.equal(page.coverage.readButNotReturnedEntries, 1);
+  assert.equal(page.coverage.remainingEntries, 1);
+  assert.equal(page.nextAfterSessionId, "default");
+  const rest = listHeadSessions({ root, afterSessionId: page.nextAfterSessionId });
+  assert.equal(rest.sessions[0].sessionId, a.sessionId);
+  assert.equal(rest.coverage.readButNotReturnedEntries, 0);
+  assert.equal(rest.nextAfterSessionId, null);
+  fs.writeFileSync(defaultFile, defaultBytes); fs.writeFileSync(file, bytes);
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "head-list-outside-"));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  const linkedId = "session-00000000-0000-0000-0000-000000000000", linked = path.join(root, layout.directory, "sessions/by-id", linkedId);
+  fs.symlinkSync(outside, linked, process.platform === "win32" ? "junction" : "dir");
+  try {
+    assert.equal(listHeadSessions({ root }).unavailable.find(row => row.sessionId === linkedId).reasonCode, "SESSION_PATH_ESCAPE");
+    assert.deepEqual(fs.readdirSync(outside), []);
+  } finally { fs.unlinkSync(linked); }
+  assert.deepEqual(fs.readFileSync(file), bytes);
+});
+
 test("independent async routes preserve original identity, unknown execution and approval bytes", async (t) => {
   const { root, storage, layout } = project(t);
   const originalFile = sessionStatePath(root, storage);

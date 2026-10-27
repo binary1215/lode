@@ -34,27 +34,14 @@ recovery, read [the constitution](../../docs/lode-constitution.md) and
 
 ## Enter and keep working
 
-For an explicit installation/update request, use the selected client's existing
-official path in [Install](../../README.md#install). With current Host permission,
-perform the available procedure and check its result through the existing
-installation inventory or returned status; do not merely hand back commands you
-can run. Reuse a valid installation and the user's runtime/link/preserve choice.
-For an initialized Project, reuse its recorded runtime set instead of overriding
-it with the current client; select a client subset for a new Project only.
-Only unavailable actions, Host approval, login or a user-controlled restart need
-human instructions. Do not restart the app, rewrite cache/config, weaken trust,
-install other clients or treat installation as permission for a model call.
-The README also provides an entry for users without this Skill installed.
-
-Distinguish installed files, project initialize/resume, optional instruction
-linking, and actually observed Host tools/use. A CLI/library version or generated
-file does not prove Host loading. Check an already available tool when useful;
-if loading cannot be observed, say so and continue independent authorized work.
-These are observations, not another setup/doctor/approval checklist.
-
-An existing `.head/` Project keeps its exact root, records and selected Session;
-fresh initialization uses `.lode/`. Let the existing validated Project/owner route
-select the format. Do not convert saved paths or create another canonical store.
+For an authorized installation/update request, perform the selected client's
+available official procedure and verify its result; see
+[installation and adoption](references/project-discovery.md#installation-and-adoption).
+Users without the plugin start at [Install](../../README.md#install), without an
+installed-Skill prerequisite. Preserve valid installations and runtime/link choices.
+Installed files do not prove Host loading; unavailable loading never blocks
+independent authorized work. This is not another setup or approval checklist.
+For retained storage formats see [recovery](references/recovery-workflow.md#retained-project-storage).
 
 For first Lode adoption or missing Project initialization, an explicit Session
 selection/resume, or required managed-installation convergence, use
@@ -96,6 +83,24 @@ full body plus a changed source reference does not itself require another read.
 Historical suggestions, saved completion and approvals are not current effect
 permission. Do the useful bounded work and verify its actual result.
 
+For multi-step work that must survive interruption, use the existing optional
+work-evidence `todos` at meaningful task/status/priority changes. Supply stable
+IDs, task, next action, explicit status, attribution and actual progress/exact
+references; cite an exact prior revision on update. Do not ask the user for JSON,
+save approval or a Todo ritual, and do not create a record each turn. Read
+`workContext.todoContext` independently of recent notes on entry/resume. Partial
+and waiting remain open; ended/idle/elapsed time never completes a task.
+Conflicting branches require explicit reconciliation, not a clock winner.
+Missing index coverage is unknown; expand only useful exact items or bounded
+original pages through `lode_session_work_read`, without a Run or World refresh.
+Current user direction/cancellations and P2 take precedence over every Todo.
+
+Optional Host prompt/final-response references are quoted P5 context only.
+Human origin and next-turn adjacency may be unverified; do not turn a short
+reply beside a historical proposal into approval. Use current explicit direction
+and exact original context; missing proposal fields are not permission to crawl
+transcripts. Keep the provider's normal compaction summary enabled.
+
 Returned links can connect recent work to the cited judgment or declared root.
 A saved close qualifies its exact earlier note, not a resumed sibling, another
 Session, pending review or remaining unknowns. Keep those owners and scopes
@@ -108,8 +113,11 @@ see [runtime composition](references/runtime-composition.md#native-observations-
 Missing observations never require a bind/save, ID question or extra lookup chain.
 
 Use optional `session_id` on typed calls or `--session` on CLI for request-local
-routing. `lode_session_list` and `lode_session_create` support independent
-progress when needed; these are logical identities, not provider session IDs.
+routing. On `lode_session_list` these identify a read-only preview, preserving
+native, shared caller and outer request selections. Page only when useful; inspect
+partial/error coverage and existing Todo rather than inferring no unfinished work.
+See [existing work](references/project-discovery.md#existing-work-and-recorded-conclusions).
+Logical Session identities are not provider conversations or assigned owners.
 Read shared goal/constraints/decisions/cancelled actions through
 `lode_project_direction_read`; publish current user direction through
 `lode_project_direction_update` with its exact basis. Reconcile competing
@@ -190,6 +198,10 @@ parallel work helps or long sequential execution/review could crowd out the
 context needed to judge the whole objective. Brief each worker with outcome,
 allowed context, file ownership, constraints and useful completion evidence.
 Reconcile overlapping writes and preserve other workers' and user changes.
+For continuing work, use related evidence and actual responsibility, then verify
+an available Host target and current messaging authority. A matching title/path
+or recent activity does not assign ownership. With no target or permission,
+continue authorized work here; see [existing conversations](references/runtime-composition.md#continuing-in-an-existing-conversation).
 
 Use ordinary Host delegation when sufficient. Use managed execution when durable
 ownership, interruption recovery, uncertain effects or duplicate integration

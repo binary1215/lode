@@ -7,6 +7,8 @@ import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs"
 import { buildWorldModel, materializeWorldMarkdownProjection, captureWorldMarkdownChanges, inspectWorldModel } from "../scripts/lib/world-model.mjs";
 import { applyDocumentChangeReview, reviewDocumentChanges, inspectDocumentChangeReviewStatus } from "../scripts/lib/document-change-review.mjs";
 import { readProductModelCanon } from "../scripts/lib/product-model.mjs";
+import crypto from "node:crypto";
+import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 async function fixture(disposition = "accept-all") {
@@ -24,6 +26,26 @@ async function fixture(disposition = "accept-all") {
   const reviewed = await reviewDocumentChanges({ ...request, apply: false });
   return { root, layout, request, review: reviewed.reviewDecision };
 }
+
+test("final gap: existing document-change revision family remains citable with its own hash verifier", async () => {
+  const { root, layout, review } = await fixture();
+  try {
+    await applyDocumentChangeReview({ root, reviewDecisionId: review.reviewDecisionId });
+    const relative = `${layout.directory}/document-changes/product-model-revisions/${review.resultingProductModelId}.json`;
+    const file = path.join(root, relative), bytes = fs.readFileSync(file), stat = fs.statSync(file), hash = value => crypto.createHash("sha256").update(value).digest("hex");
+    const revision = JSON.parse(bytes);
+    assert.equal(revision.authority, "explicit-user-reviewed-product-canon-revision"); assert.ok(revision.revisionHash);
+    const saved = recordSessionWorkEvidence({ root, input: { references: [{ path: relative, digest: hash(bytes), kind: "artifact" }] } });
+    const read = readSessionWorkContext({ root, evidenceIds: [saved.evidence.evidenceId], maxRecords: 1 });
+    assert.equal(read.records[0].references[0].status, "intact-retained-original");
+    assert.equal(read.records[0].references[0].originalOwner.projectId, inspectProject(root).project.projectId);
+    assert.equal(read.records[0].references[0].instructionAuthority, false);
+    const corrupt = { ...revision, revisionHash: "0".repeat(64) }, corruptBytes = Buffer.from(JSON.stringify(corrupt));
+    fs.writeFileSync(path.join(root, "forged-document-revision.json"), corruptBytes);
+    assert.throws(() => recordSessionWorkEvidence({ root, input: { references: [{ path: "forged-document-revision.json", digest: hash(corruptBytes), kind: "artifact" }] } }), { code: "DOCUMENT_CHANGE_PRODUCT_REVISION_DIGEST_MISMATCH" });
+    assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(fs.statSync(file).mode, stat.mode); assert.equal(fs.statSync(file).mtimeMs, stat.mtimeMs);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 
 function crash(root, reviewDecisionId, boundary, layout) {
   const source = `

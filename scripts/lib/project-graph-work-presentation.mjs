@@ -2,8 +2,8 @@ import { SESSION_WORK_DEFAULT_CHARACTERS as DEFAULT, SESSION_WORK_MAX_CHARACTERS
 
 export const isWorkNode = node => node.kind === "Evidence" && node.subtype === "SessionWorkEvidence";
 export function workTextEntries(content) {
-  const entries = [], add = (text, field, index = null, subfield = null, alternativeIndex = undefined) => {
-    if (typeof text === "string") entries.push({ text, field, index, subfield, ...(alternativeIndex === undefined ? {} : { alternativeIndex }) });
+  const entries = [], add = (text, field, index = null, subfield = null, alternativeIndex = undefined, context = {}) => {
+    if (typeof text === "string") entries.push({ text, field, index, subfield, ...(alternativeIndex === undefined ? {} : { alternativeIndex }), ...context });
   };
   add(content.summary, "summary");
   for (const [index, item] of content.judgments.entries()) {
@@ -12,6 +12,11 @@ export function workTextEntries(content) {
   }
   for (const field of ["observedWork", "pending", "unknowns", "suggestedFollowUp"]) content[field].forEach((text, index) => add(text, field, index));
   (content.workTopics || []).forEach((text, index) => add(text, "workTopics", index));
+  for (const [index, todo] of (content.todos || []).entries()) {
+    const context = { todoId: todo.todoId, status: todo.status, origin: todo.origin,
+      ...Object.fromEntries(["prior", "resolves", "relatedEvidence"].filter(key => Object.hasOwn(todo, key)).map(key => [key, todo[key]])) };
+    for (const field of ["task", "status", "origin", "nextAction", "reason", "progress", "priority"]) add(todo[field], "todos", index, field, undefined, context);
+  }
   return entries;
 }
 const characters = content => workTextEntries(content).reduce((n, entry) => n + entry.text.length, 0);
@@ -19,7 +24,7 @@ const cost = content => JSON.stringify({ workContent: content, workContentExcerp
 function coverage(content, included, partial, extra = {}, projected = content, excerpts = []) {
   const total = characters(content);
   const fieldItems = {};
-  for (const field of ["summary", "judgments", "observedWork", "pending", "unknowns", "suggestedFollowUp", ...(content.workTopics === undefined ? [] : ["workTopics"])]) {
+  for (const field of ["summary", "judgments", "observedWork", "pending", "unknowns", "suggestedFollowUp", ...(content.workTopics === undefined ? [] : ["workTopics"]), ...(content.todos === undefined ? [] : ["todos"])]) {
     const originalItems = field === "summary" ? Number(typeof content.summary === "string") : content[field].length;
     const completeItems = field === "summary" ? Number(typeof projected.summary === "string") : (projected[field] || []).length;
     const partialItems = new Set(excerpts.filter(entry => entry.field === field).map(entry => entry.index)).size;
@@ -33,6 +38,7 @@ function partialBody(node, capacity, terms) {
   const original = node.workContent;
   if (cost(original) <= capacity) return { ...node, workContentCoverage: coverage(original, characters(original), false), contentPartial: false };
   const content = { ...(original.summary === null ? { summary: null } : {}), judgments: [], observedWork: [], pending: [], unknowns: [], suggestedFollowUp: [], references: [],
+    ...(original.todos ? { todos: [] } : {}),
     ...(original.occurrenceKey === null ? { occurrenceKey: null } : {}),
     ...(original.workLink ? { workLink: original.workLink } : {}), ...(original.executionObservation ? { executionObservation: original.executionObservation } : {}) };
   const excerpts = [], entries = workTextEntries(original);
@@ -45,7 +51,9 @@ function partialBody(node, capacity, terms) {
   };
   const matchedJudgment = entries.find(entry => entry.field === "judgments" && matchAt(entry.text) >= 0)?.index;
   const chosenJudgment = matchedJudgment ?? (original.judgments.length ? 0 : null);
+  const chosenTodo = entries.find(entry => entry.field === "todos" && matchAt(entry.text) >= 0)?.index ?? (original.todos?.length ? 0 : null);
   const primary = entries.filter(entry => entry.field === "judgments" && entry.index === chosenJudgment
+    || entry.field === "todos" && entry.index === chosenTodo
     || ["pending", "unknowns"].includes(entry.field) && entry.index === 0);
   const ordered = [...primary, ...entries.filter(entry => !primary.includes(entry))];
   let included = 0, spent = cost(content), firstPassRemaining = primary.length;
@@ -70,7 +78,7 @@ function partialBody(node, capacity, terms) {
       const nextContent = { ...content }, nextExcerpts = [...excerpts];
       // Topics in a partial projection retain their exact original index/range,
       // even when an individual label fits whole; no compacted-array aliasing.
-      if (all && entry.field !== "judgments" && entry.field !== "workTopics") {
+      if (all && !["judgments", "workTopics", "todos"].includes(entry.field)) {
         if (entry.field === "summary") nextContent.summary = entry.text;
         else nextContent[entry.field] = [...content[entry.field], entry.text];
       } else nextExcerpts.push({ ...entry, text: entry.text.slice(start, end), start, end, totalCharacters: entry.text.length });
@@ -113,6 +121,8 @@ function partialBody(node, capacity, terms) {
   return { ...node, workContent: content, workContentExcerpts: excerpts,
     workContentCoverage: coverage(original, included, true, { omittedReferenceCount: original.references.length,
       occurrenceKeyOmitted: original.occurrenceKey !== null,
+      ...(original.todos ? { includedTodoIndices: [...new Set(excerpts.filter(entry => entry.field === "todos").map(entry => entry.index))],
+        todoProvenance: "Original record/index/ID and declared selectors only; prior/reference validity and current task state are not inferred." } : {}),
       includedJudgmentIndices: [...completeJudgments].filter(([index, fields]) => fields.length === original.judgments[index].alternatives.length + 2).map(([index]) => index) }, content, excerpts),
     contentPartial: true };
 }

@@ -1,5 +1,12 @@
 # Recovery and compaction
 
+Startup, resume and fork labels, matching IDs/digests, a bound route or a local
+stdout callback do not prove the model currently holds the needed context.
+Keep existing recovery and the provider's normal compaction summary when that
+possession evidence is absent. Factoring identical fields within one emitted
+view does not authorize skipping recovery, current constraints/cancellation or
+Todo context. No additional receipt, handshake or save is required.
+
 Read historical meaning from the exact content-addressed checkpoint alongside
 current selected Session/Run facts and `.lode/project.json`. Do not require past
 execution pointers to equal current ones or replay the historical next action.
@@ -71,3 +78,20 @@ must never rewrite purpose, approved decisions, current position, or next
 expected result. A newer user turn supersedes continuation, and an uncertain
 provider outcome is never replayed automatically. Read
 [compaction recovery](../../../docs/compaction-recovery.md) before recovery-sensitive compaction.
+
+Optional explicit tasks are P3 work evidence, not another instruction canon.
+Use `workContext.todoContext` on entry/resume to find unresolved tasks beyond the
+recent-work window. Preserve stable task IDs and exact prior selectors when
+recording actual progress, waiting, cancellation or completion. Read missing
+items via `todo_id`, `after_todo_id`, or `scan_todos` with `after_evidence_id`;
+unknown coverage never means empty or completed. Resolve competing branches
+explicitly with exact `resolves` references. No task or projection grants an
+effect, overwrites current P2 or requires a new Run, approval or user form.
+
+## Retained Project storage
+
+An existing `.head/` Project keeps its exact root, records and selected Session;
+fresh initialization uses `.lode/`. Let the validated Project/owner route choose
+the format. Do not convert saved paths, create a second canonical store or force
+re-linking merely to read retained records. Missing optional history or native
+mapping does not block ordinary work; recover only the affected dependency.

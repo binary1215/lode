@@ -5,6 +5,7 @@ import { LocalJsonWorldModelStoreAdapter } from "./world-model-store.mjs";
 import { readWorldModelForDiscovery } from "./world-model.mjs";
 import { createContextSourceReader } from "./context-source-reader.mjs";
 import { compareExactSourceVersions } from "./context-source-delta.mjs";
+import { readContextDocumentLinks } from "./context-document-links.mjs";
 
 const repositoryPath = value => typeof value === "string" && value && !/^(?:\.head|\.lode|\.git)(?:\/|$)/i.test(value);
 const validDigest = value => /^[a-f0-9]{64}$/.test(value || "");
@@ -21,8 +22,10 @@ export async function explainContextLineage({ root, project, storage, selection 
   const eventNodes = selection.nodes.filter(node => node.kind === "ProjectDirection" || node.workContent || node.kind === "ReviewDecision" || node.kind === "ResultPacket" || node.kind === "ChangeSet");
   if (!requested.length && !relevantReviews.length && !eventNodes.length) return null;
   if (selection.basis?.projectId && selection.basis.projectId !== project.projectId) throw Object.assign(new Error("Context Project mismatch"), { code: "CONTEXT_LINEAGE_PROJECT_MISMATCH" });
-  const sources = createContextSourceReader(root, project.projectId), files = [], gaps = [], canonChanges = [];
+  const sources = createContextSourceReader(root, project.projectId, { storage,
+    bundleHints: selection.nodes.map(node => node.payload?.bundleKey).filter(Boolean) }), files = [], gaps = [], canonChanges = [];
   const originals = new Map();
+  const documentSources = new Map();
   function original(node) {
     if (originals.has(node.nodeId)) return originals.get(node.nodeId);
     const ref = node.sourceReference;
@@ -85,13 +88,23 @@ export async function explainContextLineage({ root, project, storage, selection 
     const work = node.workContent;
     if (work) return (work.judgments || []).map(judgment => ({ classification: "recorded-work-judgment-not-proven-change-cause", ...reference(node),
       assessment: judgment.assessment, reason: judgment.reason, alternatives: judgment.alternatives, contentPartial: Boolean(node.contentPartial) }));
-    if (typeof node.rationale === "string") return [{ classification: "recorded-rationale-for-its-original-subject", ...reference(node), rationale: node.rationale }];
+    if (typeof node.rationale === "string") return [{ classification: "recorded-rationale-for-its-original-subject", ...reference(node), rationale: node.rationale,
+      contentPartial: Boolean(node.contentPartial), contentCoverage: node.contentCoverage?.rationale || null }];
     return [];
   });
   for (const relative of requested.slice(0, selection.query.maxNodes)) {
     const current = await sources.read(relative), citations = selection.nodes.flatMap(node => (node.referenceEvidence || [])
       .filter(ref => ref.kind === "source" && ref.path === relative).map(ref => ({ node, ref })));
     const references = selection.nodes.filter(node => node.path === relative && validDigest(node.digest)).map(node => ({ node, ref: { path: relative, digest: node.digest } }));
+    if (/\.(?:md|markdown)$/i.test(relative)) {
+      const exact = [...citations, ...references];
+      if (!exact.length && current.digest) exact.push({ node: null, ref: { path: relative, digest: current.digest } });
+      for (const { node, ref } of exact) if (validDigest(ref.digest)) {
+        const key = JSON.stringify([ref.path, ref.digest]);
+        if (!documentSources.has(key)) documentSources.set(key, { path: ref.path, digest: ref.digest, citedBy: [] });
+        if (node && !documentSources.get(key).citedBy.some(item => item.nodeId === node.nodeId)) documentSources.get(key).citedBy.push(reference(node));
+      }
+    }
     const associations = citations.map(({ node, ref }) => ({ ...reference(node), classification: "explicit-source-citation-not-decision-cause", source: ref }));
     const comparisons = [], compared = new Set();
     for (const { node, document } of changes) {
@@ -197,7 +210,9 @@ export async function explainContextLineage({ root, project, storage, selection 
     connections: selection.edges.filter(edge => edge.from === node.nodeId || edge.to === node.nodeId).map(edge => ({ edgeId: edge.edgeId, from: edge.from, to: edge.to, relation: edge.type,
       interpretation: /CITES|REFERS|OBSERVES/.test(edge.type) ? "explicit-reference-or-observation-not-fulfillment-or-cause" : "recorded-relationship-not-independently-proven-causality" })),
     missingLink: !selection.edges.some(edge => edge.from === node.nodeId || edge.to === node.nodeId) ? "No explicit connection selected; execution and outcome are unknown." : null }));
+  const documentNavigation = documentSources.size ? await readContextDocumentLinks({ root, projectId: project.projectId, sources, documents: [...documentSources.values()] }) : null;
   const payload = { projectId: project.projectId, status: "partial-recorded-context", events, files, recordedReasons, canonChanges, gaps,
+    ...(documentNavigation ? { documentNavigation } : {}),
     coverage: { requestedPaths: requested.length, includedPaths: files.length, omittedPaths: requested.slice(files.length), missingRecordsProveAbsence: false,
       precision: "Exact file bytes and independent bounded declaration ranges; no behavior equivalence or inferred historical reason." },
     sourceReads: sources.diagnostics(), authority: { plane: "P4-derived-view", persisted: false, recoveryAuthority: false, promotionAuthority: false, executionAuthority: false, ordinaryWorkBlocked: false } };

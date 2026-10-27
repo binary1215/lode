@@ -19,6 +19,8 @@ const adapterFailures = new Map();
 const adapterIds = new WeakMap();
 // Viewer-only collection capability. No JSON/MCP query argument can select it.
 const viewerInventory = Symbol("graph-explorer-inventory");
+const viewerCodeFocus = Symbol("graph-explorer-code-focus");
+const sourcePathAlias = Symbol("retained-source-path-alias");
 let adapterSequence = 0;
 const authority = Object.freeze({ plane: "P4-derived-view", persistence: "none", instructionAuthority: false,
   promotionAuthority: false, recoveryAuthority: false, executionAuthority: false, ordinaryWorkBlocked: false });
@@ -71,8 +73,19 @@ function nodeFromRecord(document, origin, views, extra = {}) {
   // never exposed as usable authorization through this view.
   const fields = ["kind", "name", "statement", "rationale", "objective", "purpose", "scope", "status", "disposition", "outcome", "planDelta", "unknowns", "explanation", "productKind", "key", "typeKey", "subject", "temporalScope", "coverage", "claim", "assessment", "sourceSnapshotId", "worldModelId", "productModelId", "sessionId", "runId", "ref", "commit", "environmentKey", "policyKey", "baseProductModelId", "previousProductModelId", "resultingProductModelId"];
   const content = Object.fromEntries(fields.filter((field) => Object.hasOwn(document, field)).map((field) => [field, document[field]]));
-  for (const key of ["statement", "rationale", "objective", "purpose", "scope", "explanation", "outcome", "planDelta"]) if (typeof content[key] === "string") content[key] = content[key].slice(0, 2048);
-  if (content.unknowns) content.unknowns = content.unknowns.slice(0, 32).map((entry) => String(entry).slice(0, 512));
+  const contentCoverage = {};
+  for (const key of ["statement", "rationale", "objective", "purpose", "scope", "explanation", "outcome", "planDelta"]) if (typeof content[key] === "string") {
+    const totalCharacters = content[key].length;
+    content[key] = content[key].slice(0, 2048);
+    contentCoverage[key] = { totalCharacters, includedCharacters: content[key].length, omittedCharacters: totalCharacters - content[key].length };
+  }
+  if (content.unknowns) {
+    const values = content.unknowns;
+    content.unknowns = values.slice(0, 32).map((entry) => String(entry).slice(0, 512));
+    contentCoverage.unknowns = { totalCount: values.length, includedCount: content.unknowns.length, omittedCount: Math.max(0, values.length - 32),
+      truncatedCount: values.slice(0, 32).filter(value => String(value).length > 512).length };
+  }
+  const contentPartial = Object.values(contentCoverage).some(value => value.omittedCharacters || value.omittedCount || value.truncatedCount);
   if (document.kind === "ProductPolicyCandidate") content.proposedPolicy = Object.fromEntries(
     ["key", "name", "statement", "description"].filter((field) => typeof document.proposedPolicy?.[field] === "string")
       .map((field) => [field, document.proposedPolicy[field].slice(0, 2048)]));
@@ -90,7 +103,7 @@ function nodeFromRecord(document, origin, views, extra = {}) {
     content.directionContentCoverage = { ...coverage, partial: coverage.goal.truncated ||
       ["constraints", "decisions", "cancelledActions"].some(field => coverage[field].omittedCount || coverage[field].truncatedCount) };
   }
-  return { nodeId, ...content, kind: document.kind || "RecordReference", views, origin,
+  return { nodeId, ...content, contentCoverage, contentPartial, kind: document.kind || "RecordReference", views, origin,
     sourceReference: { artifactId: nodeId, path: origin.path, digest: origin.digest },
     integrity: "verified", freshness: "retained-evidence", reviewState: document.disposition || "not-applicable",
     sourceAuthority: document.authority || null, ...authority, ...extra };
@@ -209,6 +222,10 @@ async function verifiedLayer(inventory, layer, entries, model) {
         for (const candidateId of document.acceptedCandidateIds || []) edges.push(relation("ACCEPTS_EVIDENCE", node.nodeId, candidateId, node.origin));
         for (const candidateId of document.rejectedCandidateIds || []) edges.push(relation("REJECTS", node.nodeId, candidateId, node.origin));
       }
+      if (document.kind === "OnboardingCandidateSet") {
+        for (const parentId of document.parentCandidateSetIds || []) edges.push(relation("PARENT_OF", parentId, node.nodeId, node.origin));
+        if (document.producerReviewDecisionId) edges.push(relation("PRODUCES", document.producerReviewDecisionId, node.nodeId, node.origin));
+      }
     }
     for (const reference of projected.historicalCoverage?.references || []) {
       nodes.push({ nodeId: reference.artifactId, kind: "HistoricalRecordReference", views: ["work", "product"],
@@ -250,6 +267,7 @@ async function verifiedLayer(inventory, layer, entries, model) {
           resultPacketId: document.resultPacketId, reviewDecisionId: document.reviewDecisionId,
           interpretation: "revision-reference changes, not proven declaration-body changes or Run causality" } } : {}) });
       if (document.kind === "ChangeSet") {
+        for (const parentId of document.parentChangeSetIds) edges.push(relation("SUPERSEDES", node.nodeId, parentId, node.origin));
         for (const change of document.changes) for (const [field, type] of [["beforeRevisionId", "OBSERVES_BEFORE_REVISION"], ["afterRevisionId", "OBSERVES_AFTER_REVISION"]]) {
           if (change[field]) edges.push(relation(type, node.nodeId, change[field], node.origin, { interpretation: "stored-revision-reference-not-body-change" }));
         }
@@ -382,7 +400,7 @@ function sourceFacts(root, sources, nodes) {
 }
 
 const foldSearch = value => value.normalize("NFKC").toLowerCase();
-const nodePaths = node => [node.path, node.sourceCurrentness?.path, node.sourceReference?.path].filter(value => typeof value === "string");
+const nodePaths = node => [node.path, node[sourcePathAlias] ?? node.sourceCurrentness?.path, node.sourceReference?.path].filter(value => typeof value === "string");
 function matchesExplicitPaths(node, paths) {
   if (nodePaths(node).some(relative => paths.includes(relative.replaceAll("\\", "/")))) return true;
   if (node.kind === "ChangeSet" && node.changeEvidence?.changes.some(change => paths.includes(change.path))) return true;
@@ -584,6 +602,8 @@ export async function queryProjectGraph(options = {}) {
   catch (error) { return fallbackProjection(normalized, reason(error)); }
   if (!inventory.project) return fallbackProjection(normalized, "PROJECT_GRAPH_NOT_INITIALIZED");
   const root = inventory.projectRoot, projectId = inventory.project.projectId, storage = inventory.storage;
+  let temporalVerificationScope = null;
+  try {
   const grouped = new Map(), nodes = [], edges = [], sources = [], unavailable = [...inventory.unavailable], layers = [];
   for (const entry of inventory.entries.filter((item) => item.path !== relativeProjectArtifact(storage, "world-model/current.json"))) {
     const layer = layerFor(entry.path, storage); if (!grouped.has(layer)) grouped.set(layer, []); grouped.get(layer).push(entry);
@@ -601,7 +621,9 @@ export async function queryProjectGraph(options = {}) {
   let world = null, adapter = { status: "not-used", fallbackUsed: false }, queryAdapter = null;
   try {
     const { inspectWorldDomainFreshness, buildWorldTraversalEligibility } = await import("./world-model.mjs");
-    world = inspectWorldDomainFreshness({ root, worldModelId: options.worldModelId || "", storeAdapter: options.storeAdapter || null });
+    const { createTemporalVerificationScope } = await import("./temporal-provenance.mjs");
+    temporalVerificationScope = createTemporalVerificationScope();
+    world = inspectWorldDomainFreshness({ root, worldModelId: options.worldModelId || "", storeAdapter: options.storeAdapter || null, temporalVerificationScope });
     const graph = world.snapshot.temporalProvenanceGraph;
     if (!graph) fail("TEMPORAL_PROVENANCE_NOT_BUILT");
     const proposedEligibility = world.historical ? null : buildWorldTraversalEligibility(world.snapshot, world.freshness.domains);
@@ -611,7 +633,7 @@ export async function queryProjectGraph(options = {}) {
     const eligibleEdges = new Set(eligibility?.edgeIds || graph.edges.map(edge => edge.edgeId));
     for (const node of graph.nodes) {
       const product = node.authorityClass === "canon-projected" || node.kind.startsWith("Product");
-      nodes.push({ ...node, views: product ? ["product", "work"] : ["work", "product"], sourceAuthority: node.authorityClass,
+      nodes.push({ ...clone(node), views: product ? ["product", "work"] : ["work", "product"], sourceAuthority: node.authorityClass,
         origin: { layer: "world", worldModelId: world.snapshot.worldModelId, graphSnapshotId: graph.graphSnapshotId },
         sourceReference: { artifactId: node.nodeId, worldModelId: world.snapshot.worldModelId, path: node.path || null, digest: node.digest || null },
         integrity: "verified", freshness: world.historical ? "historical" : eligibleNodes.has(node.nodeId) ? "snapshot-evidence" : "domain-not-current",
@@ -621,7 +643,7 @@ export async function queryProjectGraph(options = {}) {
           : node.kind.includes("Candidate") ? "candidate" : node.authorityClass === "canon-projected" ? "canon-projected" : "observed-evidence", ...authority });
       if (node.kind === "FileRevision" && node.path && node.digest) sources.push({ path: node.path, digest: node.digest, nodeId: node.nodeId });
     }
-    for (const edge of graph.edges.filter(edge => collecting || eligibleEdges.has(edge.edgeId))) edges.push({ ...edge, ...authority,
+    for (const edge of graph.edges.filter(edge => collecting || eligibleEdges.has(edge.edgeId))) edges.push({ ...clone(edge), ...authority,
       ...(collecting ? { currentTraversalEligible: eligibleEdges.has(edge.edgeId), viewerCurrentness: world.historical ? "historical" : eligibleEdges.has(edge.edgeId) ? "snapshot-evidence" : "domain-not-current" } : {}),
       provenance: { graphSnapshotId: graph.graphSnapshotId, worldModelId: world.snapshot.worldModelId } });
     queryAdapter = async () => {
@@ -670,6 +692,30 @@ export async function queryProjectGraph(options = {}) {
     else existing.projectedReferences = [...(existing.projectedReferences || []), node.sourceReference];
   }
   const allNodes = [...unique.values()];
+  // Resolve a citation to an already typed-verified original container, never to
+  // every embedded entity sharing its bytes. An excluded layer cannot seed this
+  // index. Citation navigation conveys neither approval nor causal attribution.
+  const artifactContainers = new Map();
+  for (const node of allNodes) {
+    const ref = node.sourceReference;
+    if (node.integrity !== "verified" || node.origin?.layer === "world" || !ref?.artifactId || ref.artifactId !== node.nodeId
+      || ref.entityKey || ref.candidateId) continue;
+    const key = JSON.stringify([ref.path, ref.digest]);
+    if (!artifactContainers.has(key)) artifactContainers.set(key, []);
+    artifactContainers.get(key).push(node);
+  }
+  for (const node of allNodes) if (node.subtype === "SessionWorkEvidence" && node.origin?.layer === "sessionWork") {
+    for (const ref of node.referenceEvidence || []) if (ref.kind === "artifact" && !sessionWorkPath(ref.path)) {
+      const targets = artifactContainers.get(JSON.stringify([ref.path, ref.digest])) || [];
+      const intact = ref.status === "intact-retained-original" && ref.currentDigest === ref.digest;
+      const target = intact && targets.length === 1 ? targets[0] : null;
+      node.relationCoverage.push({ type: "CITES_ARTIFACT", reference: { path: ref.path, digest: ref.digest },
+        status: target ? "verified-container-citation" : "unavailable", ...(target ? { nodeId: target.nodeId, selector: "original-container-only" }
+          : { reasonCode: !intact ? "ARTIFACT_CITATION_BYTES_UNAVAILABLE" : targets.length > 1 ? "ARTIFACT_CITATION_AMBIGUOUS" : "TYPED_ARTIFACT_NOT_AVAILABLE" }) });
+      if (target) edges.push(relation("CITES_ARTIFACT", node.nodeId, target.nodeId, { ...node.origin, reference: { path: ref.path, digest: ref.digest } },
+        { interpretation: "exact-container-citation-not-effect-authorization-or-change-cause" }));
+    }
+  }
   for (const node of allNodes) if (node.kind === "ReviewDecision") {
     for (const [field, type] of [["previousProductModelId", "REFERS_TO_PREVIOUS_CANON"], ["baseProductModelId", "REFERS_TO_BASE_CANON"], ["resultingProductModelId", "REFERS_TO_RESULT_CANON"]]) {
       if (node[field]) edges.push(relation(type, node.nodeId, node[field], node.origin));
@@ -687,9 +733,14 @@ export async function queryProjectGraph(options = {}) {
   }
   for (const [candidateId, states] of reviewedEvidenceStates) unique.get(candidateId).reviewState = states.size > 1
     ? "conflicting-reviewed-evidence" : [...states][0];
-  const sourceCurrentness = sourceFacts(root, sources, allNodes);
+  // Retained path aliases affect navigation, not freshness. Preserve the old
+  // last-source-wins search/exact-path behavior without opening source bytes.
+  for (const source of sources) {
+    const node = unique.get(source.nodeId);
+    if (node) node[sourcePathAlias] = source.path;
+  }
   const revisionKey = (relative, digest) => JSON.stringify([relative, digest]);
-  const revisions = new Map(), currentnessByRevision = new Map(sourceCurrentness.map(entry => [revisionKey(entry.path, entry.retainedDigest), entry]));
+  const revisions = new Map(), currentnessSources = [...sources];
   for (const node of allNodes) if (["FileRevision", "FileRevisionReference"].includes(node.kind)) {
     const key = revisionKey(node.path, node.digest);
     if (!revisions.has(key)) revisions.set(key, node);
@@ -700,27 +751,53 @@ export async function queryProjectGraph(options = {}) {
     let target = revisions.get(key);
     if (!target) {
       const nodeId = id("source-revision-reference", { projectId, path: source.path, digest: source.digest });
-      const currentness = currentnessByRevision.get(key);
       target = { nodeId, kind: "FileRevisionReference", path: source.path, digest: source.digest, revisionId: nodeId,
-        views: ["work", "product"], reviewState: "observed-evidence", integrity: "verified-reference", freshness: currentness?.freshness || "unavailable",
-        sourceCurrentness: currentness, sourceReference: { path: source.path, digest: source.digest }, origin: source.origin || { layer: "world" }, ...authority };
+        views: ["work", "product"], reviewState: "observed-evidence", integrity: "verified-reference", freshness: "unavailable",
+        sourceReference: { path: source.path, digest: source.digest }, origin: source.origin || { layer: "world" }, ...authority };
       allNodes.push(target); unique.set(nodeId, target);
       revisions.set(key, target);
     }
+    currentnessSources.push({ ...source, nodeId: target.nodeId });
     if (target.nodeId !== source.nodeId) edges.push(relation("OBSERVES_EXACT_REVISION", source.nodeId, target.nodeId, source.origin || { layer: "world" }));
   }
   const graphEdges = [...new Map(edges.map((edge) => [edge.edgeId, edge])).values()].sort((a, b) => a.edgeId.localeCompare(b.edgeId));
   allNodes.sort((a, b) => a.nodeId.localeCompare(b.nodeId));
+  // Structural IDs remain in their own namespace. Only this private viewer
+  // consumer can request them; exact same-snapshot path+file-digest bindings
+  // choose existing Project source details without adding any cross-layer edge.
+  let codeSelection = null, detailQuery = normalized;
+  if (collecting && options[viewerCodeFocus]?.length) {
+    const requested = options[viewerCodeFocus], semantic = world?.snapshot.semanticGraph;
+    const byId = new Map((semantic?.nodes || []).map(node => [node.id, node]));
+    const resolved = requested.map(nodeId => byId.get(nodeId)).filter(Boolean);
+    const bindings = resolved.map(node => {
+      const digest = node.digest || node.fileDigest, target = revisions.get(revisionKey(node.path, digest));
+      return { codeNodeId: node.id, path: node.path || null, digest: digest || null, projectSourceNodeId: target?.nodeId || null };
+    });
+    codeSelection = { requestedIds: requested, resolvedIds: resolved.map(node => node.id), unmatchedIds: requested.filter(id => !byId.has(id)),
+      semanticGraphId: semantic?.semanticGraphId || null, sourceBindings: bindings, interpretation: "exact-source-detail-binding-not-a-Project-node-or-graph-edge" };
+    detailQuery = { ...normalized, query: "", anchorIds: [...new Set(bindings.map(binding => binding.projectSourceNodeId).filter(Boolean))],
+      paths: [...new Set([...normalized.paths, ...bindings.filter(binding => binding.path && binding.digest).map(binding => binding.path)])].sort() };
+  }
+  const noProjectBinding = codeSelection?.requestedIds.length && !detailQuery.anchorIds.length;
+  const traversed = viewTraversal(noProjectBinding ? [] : allNodes, noProjectBinding ? [] : collecting ? graphEdges.filter(edge => edge.currentTraversalEligible !== false) : graphEdges, detailQuery);
+  const selectedIds = new Set((collecting ? allNodes : traversed.nodes).map(node => node.nodeId));
+  const sourceCurrentness = sourceFacts(root, currentnessSources.filter(source => selectedIds.has(source.nodeId)), collecting ? allNodes : traversed.nodes);
+  for (const node of allNodes) delete node[sourcePathAlias];
+  // Traversal uses evidence/review eligibility, not live-byte freshness. Rebuild
+  // endpoint state only after the returned nodes' current bytes were observed.
+  traversed.edges = traversed.edges.map(edge => ({ ...edge, endpointStates: [edge.from, edge.to]
+    .map(nodeId => ({ nodeId, ...navigationState(unique.get(nodeId)) })) }));
   const basis = { projectId, rootDigest: projectGraphDigest(root), recordsDigest: inventory.recordsDigest,
     worldModelId: world?.snapshot.worldModelId || null, graphSnapshotId: world?.snapshot.temporalProvenanceGraph?.graphSnapshotId || null,
-    sourceCurrentnessDigest: projectGraphDigest(sourceCurrentness), layerDigest: projectGraphDigest(layers.map(({ reused, ...layer }) => layer)), readConsistency: "observed-sequence-not-atomic-filesystem-snapshot" };
-  const traversed = viewTraversal(allNodes, collecting ? graphEdges.filter(edge => edge.currentTraversalEligible !== false) : graphEdges, normalized);
+    sourceCurrentnessDigest: projectGraphDigest(sourceCurrentness), sourceCurrentnessScope: collecting ? "whole-returned-inventory" : "selected-nodes-and-edge-endpoints",
+    layerDigest: projectGraphDigest(layers.map(({ reused, ...layer }) => layer)), readConsistency: "observed-sequence-not-atomic-filesystem-snapshot" };
   const withWorkContent = { ...traversed, nodes: presentSessionWorkContent(traversed.nodes, normalized) };
   let contextLineage = null;
   if (normalized.details) {
     const { explainContextLineage } = await import("./context-lineage.mjs");
     try { contextLineage = await explainContextLineage({ root, project: inventory.project, storage,
-      selection: { ...withWorkContent, query: normalized, basis } }); }
+      selection: { ...withWorkContent, query: detailQuery, basis } }); }
     catch (error) { contextLineage = { status: "unavailable", reasonCode: reason(error), ordinaryWorkBlocked: false }; }
     // Exact source availability is re-observed before result reuse. A cached
     // graph identity is not proof that old/current byte pairs still exist.
@@ -731,7 +808,8 @@ export async function queryProjectGraph(options = {}) {
     nodes: allNodes, edges: graphEdges.map(edge => ({ ...edge,
       endpointStates: [edge.from, edge.to].map(nodeId => ({ nodeId, ...(unique.has(nodeId) ? navigationState(unique.get(nodeId))
         : { reviewState: "unknown-outside-inventory", freshness: "unknown", revisionId: null }) })) })), authority,
-    detailSelection: { ...withWorkContent, ...(contextLineage ? { contextLineage } : {}) },
+    detailSelection: { ...withWorkContent, query: detailQuery, ...(contextLineage ? { contextLineage } : {}) },
+    ...(codeSelection ? { codeSelection } : {}),
     coverage: { state: inventory.complete && !unavailable.length ? "verified-available-layers" : "partial",
       inventoryBoundReached: !inventory.complete, layers, verifiedNodeCount: allNodes.length, emptyResultProvesAbsence: false },
     integrity: { verifiedLayers: layers.filter(layer => layer.status === "verified").map(layer => layer.layer), excluded: unavailable },
@@ -762,7 +840,7 @@ export async function queryProjectGraph(options = {}) {
         ...navigationState(node), sourceReference: node.sourceReference, contentCoverage: node.directionContentCoverage })),
       semantics: "navigation-evidence; relationship does not prove cause, approval, current effect authority or semantic sufficiency" },
     integrity: { verifiedLayers: layers.filter((layer) => layer.status === "verified").map((layer) => layer.layer), excluded: unavailable },
-    freshness: { scope: "referenced-source-bytes-and-retained-revisions", wholeWorldCurrentRequired: false, historicalEvidenceReadable: true,
+    freshness: { scope: "selected-node-and-edge-endpoint-source-bytes-and-retained-revisions", wholeWorldCurrentRequired: false, historicalEvidenceReadable: true,
       ...(world ? { domains: world.freshness.domains } : {}) },
     coverage: { state: "partial", inventoryBoundReached: !inventory.complete, layers: layers.map(({ reused, ...layer }) => layer), verifiedNodeCount: allNodes.length, matchedNodeCount: traversed.nodes.length,
       emptyResultProvesAbsence: false, semanticSufficiency: "HEAD-owned" },
@@ -773,12 +851,15 @@ export async function queryProjectGraph(options = {}) {
   boundedCache(resultCache, queryKey, clone(result));
   rememberScopedDiscovery({ options, normalized, inventory, result, nodes: allNodes, edges: graphEdges, world, sourceCurrentness, initialMembership });
   return result;
+  } finally { temporalVerificationScope?.close(); }
 }
 
 // Private display consumer, not a new conversational query or authority surface.
 // It reuses the typed readers above; original byte/path/integrity limits remain.
-export function collectGraphExplorerInventory({ root = ".", query = "", storeAdapter = null } = {}) {
-  return queryProjectGraph({ root, query, storeAdapter, details: true, depth: 2, [viewerInventory]: true });
+export function collectGraphExplorerInventory({ root = ".", query = "", anchorIds = [], paths = [], layer = "project", storeAdapter = null } = {}) {
+  const codeIds = layer === "code" ? limits({ anchorIds }).anchorIds : null;
+  return queryProjectGraph({ root, query, anchorIds: codeIds ? [] : anchorIds, paths, storeAdapter, details: true, depth: 2,
+    [viewerInventory]: true, ...(codeIds ? { [viewerCodeFocus]: codeIds } : {}) });
 }
 
 function fallbackProjection(query, reasonCode) {
