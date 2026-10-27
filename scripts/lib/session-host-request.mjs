@@ -1,7 +1,37 @@
 import crypto from "node:crypto";
-import { publicToolName } from "./lode-artifact-composition.mjs";
+import { ARTIFACT_COMPOSITION, publicToolName } from "./lode-artifact-composition.mjs";
+import { resolveOperation } from "./lode-operation-contract.mjs";
+import { sessionCallRequiresBinding } from "./session-routing.mjs";
 
 export const SESSION_HOST_REQUEST_HELPER = publicToolName("head_session_host_request_prepare");
+const namespaces = () => [ARTIFACT_COMPOSITION.serverName, `plugin_${ARTIFACT_COMPOSITION.pluginName}_${ARTIFACT_COMPOSITION.serverName}`];
+const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Build/verification consumes the actual catalog annotations, including finite
+// supported aliases. Do not maintain a second list of protected tool names.
+export function claudeNativeHookMatchers(catalog) {
+  const names = new Set();
+  for (const tool of catalog) {
+    const operation = resolveOperation(tool.name);
+    if (!operation || operation.semanticName === "head_session_host_request_prepare") continue;
+    if (operation.router || sessionCallRequiresBinding(tool.name) || tool.annotations?.readOnlyHint !== true) {
+      names.add(operation.canonicalName); names.add(operation.legacyName);
+    }
+  }
+  const pattern = [...names].sort().map(escapeRegex).join("|");
+  return namespaces().map(server => `^mcp__${escapeRegex(server)}__(${pattern})$`);
+}
+
+export function parseClaudeNativeToolName(outer) {
+  if (typeof outer !== "string") return null;
+  for (const server of namespaces()) {
+    const prefix = `mcp__${server}__`;
+    if (!outer.startsWith(prefix)) continue;
+    const name = outer.slice(prefix.length), operation = resolveOperation(name);
+    if (operation && operation.semanticName !== "head_session_host_request_prepare") return { name, server };
+  }
+  return null;
+}
 const canonical = value => Array.isArray(value) ? `[${value.map(canonical).join(",")}]`
   : value && typeof value === "object" ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}` : JSON.stringify(value);
 export const hostRequestDigest = value => crypto.createHash("sha256").update(canonical(value)).digest("hex");

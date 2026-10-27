@@ -562,8 +562,13 @@ function launcherSource(installRoot) {
     'const pointer = readPointer(root);',
     'const target = releaseRoot(root, pointer.activeReleaseId);',
     'const manifest = verifyRelease(target, pointer.activeReleaseId);',
-    'const cli = path.join(target, ...verifiedCliEntry(manifest).split("/"));',
-    'const child = spawnSync(process.execPath, [cli, ...process.argv.slice(2)], { stdio: "inherit", shell: false, windowsHide: true });',
+    'const args = process.argv.slice(2);',
+    'const mcp = args[0] === "--mcp-stdio";',
+    'if (mcp && (args.length !== 1 || !manifest.files.some(file => file.path === "scripts/mcp-server.mjs"))) throw new Error("Verified release does not support the selected internal MCP entry.");',
+    'const entry = mcp ? "scripts/mcp-server.mjs" : verifiedCliEntry(manifest);',
+    'const executable = path.join(target, ...entry.split("/"));',
+    'if (mcp && fs.realpathSync(executable) !== path.join(fs.realpathSync(target), ...entry.split("/"))) throw new Error("Verified MCP entry must remain inside its selected release.");',
+    'const child = spawnSync(process.execPath, [executable, ...(mcp ? [] : args)], { stdio: "inherit", shell: false, windowsHide: true });',
     'if (child.error) throw child.error;',
     'if (child.signal) process.kill(process.pid, child.signal);',
     'process.exitCode = child.status == null ? 1 : child.status;',
@@ -615,6 +620,51 @@ function writeLaunchers(installRoot, binDirectory) {
   return { commands };
 }
 
+// A selected owned release can name its already installed stable command. This
+// is a local address verifier, not PATH/default-install/latest-release discovery.
+export function verifiedInstalledMcpLaunch({ pluginRoot, projectRoot } = {}) {
+  const selected = fs.realpathSync(pluginRoot), releases = path.dirname(selected);
+  if (path.basename(releases) !== "releases" || !/^release-[a-f0-9]{24}$/.test(path.basename(selected))) return null;
+  const installRoot = path.dirname(releases), markerFile = ownershipFile(installRoot);
+  if (!existingPath(markerFile)) return null;
+  const regular = file => {
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink() || fs.realpathSync(file) !== path.resolve(file)) {
+      fail("HEAD_DISTRIBUTION_COMMAND_OWNERSHIP_INVALID", "Selected MCP launch path must be a canonical owned regular file.");
+    }
+  };
+  regular(markerFile); verifyInstallRootOwnership(installRoot);
+  const marker = readJson(markerFile, "HEAD_DISTRIBUTION_OWNERSHIP_INVALID");
+  // Earlier markers carry no verified command address. Keep their exact
+  // selected-package entry, without writing metadata or guessing another bin.
+  if (marker.binDirectory === undefined) return null;
+  if (typeof marker.binDirectory !== "string" || !path.isAbsolute(marker.binDirectory)) {
+    fail("HEAD_DISTRIBUTION_COMMAND_OWNERSHIP_INVALID", "Selected command address is invalid.");
+  }
+  regular(pointerFile(installRoot));
+  const pointer = readPointer(installRoot);
+  regular(path.join(selected, "distribution-manifest.json"));
+  const selectedManifest = verifyRelease(selected, path.basename(selected));
+  if (selectedManifest.releaseId !== pointer.activeReleaseId && !pointer.history.includes(selectedManifest.releaseId)) {
+    fail("HEAD_DISTRIBUTION_RELEASE_ID_MISMATCH", "Selected release is outside this installation's recorded selection.");
+  }
+  const activeRoot = releaseRoot(installRoot, pointer.activeReleaseId);
+  regular(path.join(activeRoot, "distribution-manifest.json"));
+  verifyRelease(activeRoot, pointer.activeReleaseId);
+  regular(path.join(activeRoot, "scripts", "mcp-server.mjs"));
+  const identity = compositionForMetadata(selectedManifest.name, selectedManifest.packageName).identity;
+  const binDirectory = fs.realpathSync(marker.binDirectory), launch = launcherPaths(binDirectory, identity);
+  regular(launch.markerFile); regular(launch.launcher);
+  const owner = readJson(launch.markerFile, "HEAD_DISTRIBUTION_COMMAND_OWNERSHIP_INVALID");
+  if (!["head-agent-core", "lode-agent-core"].includes(owner.product) || owner.protocolVersion !== DISTRIBUTION_PROTOCOL
+    || typeof owner.installRoot !== "string" || !path.isAbsolute(owner.installRoot) || fs.realpathSync(owner.installRoot) !== installRoot
+    || fs.readFileSync(launch.launcher, "utf8") !== launcherSource(owner.installRoot)) {
+    fail("HEAD_DISTRIBUTION_COMMAND_OWNERSHIP_INVALID", "Selected MCP launcher does not match its owned installation.");
+  }
+  return { command: "node", args: [launch.launcher, "--mcp-stdio"],
+    cwd: typeof projectRoot === "string" && projectRoot ? fs.realpathSync(projectRoot) : selected, env: {}, pathForm: "owned-install-launcher" };
+}
+
 export function installDistribution({ sourceRoot, installRoot, binDirectory, nativeOverlayRoot = null, platform = process.platform, arch = process.arch } = {}) {
   const locations = resolveLocations({ installRoot, binDirectory });
   const source = path.resolve(sourceRoot || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".."));
@@ -654,6 +704,12 @@ export function installDistribution({ sourceRoot, installRoot, binDirectory, nat
   });
   try {
     writeLaunchers(locations.installRoot, locations.binDirectory);
+    // Reuse the existing owned installation marker for the already selected
+    // command location; no global search or new user configuration is needed.
+    atomicWriteJson(ownershipFile(locations.installRoot), {
+      ...readJson(ownershipFile(locations.installRoot), "HEAD_DISTRIBUTION_OWNERSHIP_INVALID"),
+      binDirectory: locations.binDirectory,
+    });
   } catch (error) {
     if (previous) atomicWriteJson(pointerFile(locations.installRoot), previous);
     else fs.rmSync(pointerFile(locations.installRoot), { force: true });

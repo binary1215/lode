@@ -7,15 +7,14 @@ const originalFormat = record => familyFormatForOriginal({ kind: record?.kind },
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { atomicWriteArtifact } from "./artifact-storage.mjs";
-import { resolveRuntimeOperationalStateRoot } from "./runtime-execution-lease.mjs";
-import { safeSessionPath, withSessionRoute } from "./session-routing.mjs";
-import { createSessionHostAdapter } from "./session-host-adapter.mjs";
-import { readSessionWorkContext } from "./session-work-context.mjs";
-import { SESSION_WORK_DEFAULT_CHARACTERS } from "./session-work-evidence-original.mjs";
+import { safeSessionPath } from "./session-paths.mjs";
+const require = createRequire(import.meta.url);
 
-// Optional Host-local P5. Neither events, ancestry nor process presence selects
-// a logical Session, closes work, grants approval or establishes safe replay.
+// Optional Host-local P5. Events/ancestry/process presence alone never select a
+// logical Session, close work, grant approval or establish safe task replay.
+// An exact paired clear may carry an existing verified P5 link, never P2 direction.
 export const NATIVE_OBSERVATION_LIMITS = Object.freeze({ bytes: 128 * 1024, slots: 64, replay: 64,
   lockMs: 200, headerBytes: 64 * 1024, responseBytes: 16 * 1024, displayed: 16 });
 const sha = x => crypto.createHash("sha256").update(x).digest("hex");
@@ -64,6 +63,7 @@ function projectIdentity(root) {
 function location(root, caller, environment, create = false) {
   if (!validCaller(caller)) fail();
   const { base, project, storage } = projectIdentity(root);
+  const { resolveRuntimeOperationalStateRoot } = require("./runtime-execution-lease.mjs");
   const operational = resolveRuntimeOperationalStateRoot({ projectRoot: base, storage, environment, create });
   const owner = { projectId: project.projectId, rootDigest: sha(base), callerDigest: callerDigest(caller) };
   // Never create/read the caller's session-bindings directory here: directory
@@ -122,14 +122,17 @@ function readSnapshot(loc) {
 export function createNativeObservationStore({ environment = process.env } = {}) {
   return Object.freeze({
     read({ root, caller }) { return readSnapshot(location(root, caller, environment)); },
-    async observe({ root, caller, observation, additionalObservations = [], eventId = null }) {
+    async observe({ root, caller, observation, additionalObservations = [], eventId = null, deadlineAt = null }) {
       if (!validObservation(observation) || !nullableId(eventId) || !Array.isArray(additionalObservations)
         || additionalObservations.length > 2 || additionalObservations.some(o => o.kind !== "edge" || !validObservation(o))
-        || eventId && additionalObservations.length) fail();
+        || eventId && additionalObservations.length || deadlineAt !== null && !Number.isSafeInteger(deadlineAt)) fail();
+      const checkDeadline = () => { if (deadlineAt !== null && Date.now() >= deadlineAt) fail(); };
+      checkDeadline();
       const loc = location(root, caller, environment, true), lock = path.join(loc.directory, "writer.lock");
-      const token = crypto.randomUUID(), deadline = Date.now() + NATIVE_OBSERVATION_LIMITS.lockMs;
+      const token = crypto.randomUUID(), deadline = Math.min(Date.now() + NATIVE_OBSERVATION_LIMITS.lockMs, deadlineAt ?? Infinity);
       let fd, owner;
       while (fd === undefined) {
+        checkDeadline();
         try { fd = fs.openSync(lock, "wx"); }
         catch (e) {
           // Windows may report deletion-pending lock contention as EPERM
@@ -169,6 +172,7 @@ export function createNativeObservationStore({ environment = process.env } = {})
           const oldestEvent = payload.rows.findIndex(r => r.observation.kind !== "edge");
           if (oldestEvent < 0) fail(); payload.rows.splice(oldestEvent, 1); payload.omitted++;
         }
+        checkDeadline();
         location(root, caller, environment); // Revalidate the optional path before publication.
         atomicWriteArtifact(loc.file, encode());
         return { retained: true, replay: false };
@@ -232,20 +236,31 @@ function ownCodexEdges(event, caller, root) {
     .filter(([, id]) => nativeId(id) && id !== caller.nativeSessionId)
     .map(([relation, sourceNativeId]) => ({ relation, sourceNativeId, contract: "codex-own-session-meta-v1", headerDigest: sha(bytes), mapping: null }));
 }
-export async function observeNativeHook({ runtime, event, environment = process.env, processObserver = null } = {}) {
+export async function observeNativeHook({ runtime, event, environment = process.env, processObserver = null, deadlineAt = null } = {}) {
   const normalized = normalizeNativeHook({ runtime, event });
   if (!normalized) return { retained: false };
   const { root, caller, observation, membership } = normalized;
+  const clearTransition = runtime === "claude" && (event.hook_event_name === "SessionEnd" && event.reason === "clear"
+    || event.hook_event_name === "SessionStart" && event.source === "clear");
+  if (clearTransition) deadlineAt = Math.min(deadlineAt ?? Infinity, Date.now() + 1000);
+  if (deadlineAt !== null && (!Number.isSafeInteger(deadlineAt) || Date.now() >= deadlineAt)) return { retained: false };
   // Do not initialize an untouched project or inspect user registry/transcripts
   // for a Hook whose Project is absent or invalid.
   const store = createNativeObservationStore({ environment });
   // Validate only shared Project identity here. A corrupt/unsafe child snapshot
   // must not pre-empt the independent reported-root membership publication.
   try { projectIdentity(root); } catch { return { retained: false }; }
-  if (runtime === "claude" && ["SessionStart", "UserPromptSubmit"].includes(event.hook_event_name)) {
+  if (runtime === "claude" && (["SessionStart", "UserPromptSubmit"].includes(event.hook_event_name) || clearTransition)) {
     try {
       const probe = processObserver || (await import("./native-session-process.mjs")).observeClaudeProcess;
-      const instance = await probe({ nativeSessionId: caller.nativeSessionId, environment });
+      // Validate the Project before inspecting the registry. For clear, overlap
+      // the existing recovery reader's load with the exact OS query instead of
+      // charging that unused startup graph before the query can even begin.
+      // Await both paths, including query cleanup, even if optional loading fails.
+      const [instance] = await Promise.all([
+        probe({ nativeSessionId: caller.nativeSessionId, environment, ...(deadlineAt !== null ? { deadlineAt } : {}) }),
+        clearTransition ? import("./session-host-adapter.mjs").catch(() => null) : null,
+      ]);
       if (validInstance(instance)) observation.instance = instance;
     } catch { /* Optional exact process association is unknown. */ }
   }
@@ -254,6 +269,7 @@ export async function observeNativeHook({ runtime, event, environment = process.
     try {
       for (const edge of ownCodexEdges(event, caller, root)) {
         try {
+          const { createSessionHostAdapter } = require("./session-host-adapter.mjs");
           const mapping = createSessionHostAdapter({ runtime, nativeSessionId: edge.sourceNativeId, environment }).read({ root });
           if (["bound", "default"].includes(mapping.status)) edge.mapping = { sessionId: mapping.sessionId, revision: mapping.revision, bindingDigest: mapping.bindingDigest };
         } catch { /* Edge only, never current/default mapping fallback. */ }
@@ -261,32 +277,41 @@ export async function observeNativeHook({ runtime, event, environment = process.
       }
     } catch { /* Unsupported/missing own metadata never blocks startup/work. */ }
   }
-  let retained = false;
+  let retained = false, replay = false;
   // One own-caller publication containing the event and up to two direct edges,
   // plus at most one independent reported-root membership publication.
-  try { retained = (await store.observe({ root, caller, observation, additionalObservations })).retained; } catch { /* Optional only. */ }
+  try { ({ retained, replay } = await store.observe({ root, caller, observation, additionalObservations, deadlineAt })); } catch { /* Optional only. */ }
   if (membership && callerDigest(membership.caller) !== callerDigest(caller)) {
-    try { await store.observe({ root, ...membership }); } catch { /* Independent bounded second publication, not a transaction. */ }
+    try { await store.observe({ root, ...membership, deadlineAt }); } catch { /* Independent bounded second publication, not a transaction. */ }
   }
+  if (clearTransition && retained && !(observation.event === "SessionStart" && replay) && observation.instance && Date.now() < deadlineAt) try {
+    const { reconcileNativeClearHandoff } = await import("./session-clear-handoff.mjs");
+    reconcileNativeClearHandoff({ root, caller, observation, store, environment, deadlineAt });
+  } catch { /* An unavailable carrier link never changes P2 or blocks native work. */ }
   return { retained };
 }
 
 export function readRelatedNativeWorkContext({ root, caller, childSessionId, environment = process.env } = {}) {
+  const { withSessionRoute } = require("./session-routing.mjs");
+  const { workDeliveryCharacters, workOriginalCount } = require("./session-work-excerpts.mjs");
+  const { readSessionWorkContext } = require("./session-work-context.mjs");
+  const { SESSION_WORK_DEFAULT_CHARACTERS } = require("./session-work-evidence-original.mjs");
   const snapshot = createNativeObservationStore({ environment }).read({ root, caller });
   if (!snapshot) return null;
   const seen = new Set([childSessionId]), sources = [];
   let characters = SESSION_WORK_DEFAULT_CHARACTERS;
   for (const { observation, sequence, receivedAt } of snapshot.rows) {
+    if (characters < 2) break;
     const edge = observation.kind === "edge" && observation.edge, mapping = edge?.mapping;
     if (!mapping || seen.has(mapping.sessionId) || sources.length >= 2) continue;
     seen.add(mapping.sessionId);
     try {
       const work = withSessionRoute(root, mapping.sessionId, () => readSessionWorkContext({ root,
         expectedSessionId: mapping.sessionId, maxCharacters: Math.max(2, characters) }));
-      if (!work.records?.length || work.status === "work_context_basis_changed") continue;
+      if (!workOriginalCount(work) || work.status === "work_context_basis_changed") continue;
       // Not parent P2 purpose/checkpoint/direction, not native fork-cutoff history.
       const { sessionPurpose, latestCheckpointId, basis, ...historical } = work;
-      characters -= json(historical.records).length;
+      characters -= workDeliveryCharacters(historical);
       sources.push({ relation: edge.relation, sourceNativeId: edge.sourceNativeId,
         selection: "selected-when-edge-observed-not-fork-cutoff",
         selectionBasis: { ...mapping, receivedSequence: sequence, receivedAt },

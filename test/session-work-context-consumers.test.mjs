@@ -19,9 +19,87 @@ import { fitSelectedBodyGroups } from "../scripts/lib/session-work-body-organiza
 import { createSessionCallContext, withSessionCallContext, withSessionRoute, sessionStatePath, createHeadSession } from "../scripts/lib/session-routing.mjs";
 import { inspectProject } from "../scripts/lib/head-core.mjs";
 import { readSessionWorkList } from "../scripts/lib/session-work-context.mjs";
-import { fixture, exact, link, representative, snapshot, recordFor, accounting, pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
+import { localContinuityCommand } from "./helpers/session-continuity-process.mjs";
+import { fixture, exact, link, representative, snapshot, recordFor, accounting, pluginRoot, sha } from "./helpers/session-work-linkage-fixture.mjs";
 
 const directionView = value => value ? Object.fromEntries(["directionId", "directionHash", "input"].filter(key => value[key] !== undefined).map(key => [key, value[key]])) : null;
+
+test("ABC: partial originals survive entry, real CLI, direct/router MCP and public Codex/Claude startup", async t => {
+  const f = fixture(t, "Finish the bounded local task");
+  f.save({ summary: "S".repeat(14000), observedWork: ["O".repeat(19000)],
+    judgments: [{ assessment: "Keep the recorded condition", reason: "StartupReasonMarker", alternatives: ["Do not infer approval"] }],
+    pending: ["StartupPendingMarker"], unknowns: ["StartupUnknownMarker"], todos: [{ todoId: "todo-abc-waiting", task: "Inspect the blocked dependency",
+      status: "waiting", origin: "user-directed", nextAction: "Check the local original", reason: "Recorded waiting condition" }] });
+  const current = updateProjectDirection({ root: f.root, input: { goal: "Finish only local work", constraints: ["No external effects"],
+    decisions: [], cancelledActions: ["deploy", "publish"] } }).direction;
+  const environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: f.operational };
+  for (const runtime of ["codex", "claude"]) createSessionHostAdapter({ runtime, nativeSessionId: `abc-${runtime}`, environment })
+    .select({ root: f.root, sessionId: f.session.sessionId, expectedRevision: 0 });
+  const before = snapshot(f.base), entry = f.route(() => enterConversationRecovery({ root: f.root }));
+  assert(entry.workContext.recordExcerpts.length); assert.equal(entry.projectStatus.currentProjectDirection.directionId, current.directionId);
+  for (const routed of [false, true]) {
+    const result = await call(f, "head_session_work_read", {}, routed);
+    assert(result.structuredContent.recordExcerpts.length);
+    for (const marker of ["StartupReasonMarker", "StartupPendingMarker", "StartupUnknownMarker", "Partial original excerpts"])
+      assert(result.content[0].text.includes(marker), marker);
+    const expansion = result.structuredContent.recordExcerpts[0].expansion;
+    const expanded = await call(f, expansion.operation, expansion.arguments, routed);
+    assert.equal(expanded.structuredContent.records[0].evidenceDigest, result.structuredContent.recordExcerpts[0].source.evidenceDigest);
+    assert.equal(expanded.structuredContent.recordExcerpts, undefined);
+    t.diagnostic(JSON.stringify({ scope: "ABC actual MCP transport UTF8, not the P3 UTF16 budget", routed,
+      serializedUtf8Bytes: Buffer.byteLength(JSON.stringify(result)), expandedFullOriginal: true }));
+  }
+  const textRun = await localContinuityCommand([path.join(pluginRoot, "scripts/lode.mjs"), "conversation-enter", f.root, "--session", f.session.sessionId], { cwd: pluginRoot });
+  assert.equal(textRun.code, 0, textRun.stderr);
+  for (const marker of ["StartupReasonMarker", "StartupPendingMarker", "deploy", "publish", "Partial original excerpts"]) assert(textRun.stdout.includes(marker), marker);
+  const jsonRun = await localContinuityCommand([path.join(pluginRoot, "scripts/lode.mjs"), "conversation-enter", f.root, "--session", f.session.sessionId, "--json"], { cwd: pluginRoot });
+  assert.equal(jsonRun.code, 0, jsonRun.stderr);
+  const json = JSON.parse(jsonRun.stdout.trim()); assert(json.workContext.recordExcerpts.length);
+  assert.deepEqual(json.projectStatus.currentProjectDirection.input.cancelledActions, ["deploy", "publish"]);
+  for (const runtime of ["codex", "claude"]) {
+    const hook = sessionStartContext({ runtime, event: { hook_event_name: "SessionStart", source: "compact", cwd: f.root, session_id: `abc-${runtime}` }, environment });
+    const serialized = hook.hookSpecificOutput.additionalContext, startup = JSON.parse(serialized);
+    assert(serialized.length <= (runtime === "claude" ? 10000 : 32768));
+    assert(startup.recordExcerpts.length); assert(startup.omittedEvidenceCount > 0);
+    for (const marker of ["StartupReasonMarker", "StartupPendingMarker", "StartupUnknownMarker"]) assert(serialized.includes(marker), runtime + marker);
+    assert.deepEqual(startup.currentProjectDirection.input.cancelledActions, ["deploy", "publish"]);
+    assert.equal(startup.todoContext.items[0].status, "waiting");
+    t.diagnostic(JSON.stringify({ scope: "ABC public synthetic SessionStart, not actual Host/model compact", runtime,
+      emittedUtf16Characters: serialized.length, full: startup.records.length, excerpts: startup.recordExcerpts.length }));
+  }
+  const unknown = structuredClone(entry.workContext);
+  unknown.futureCondition = { falseValue: false, zero: 0, empty: "", absentIsNotNull: null, list: [], object: {} };
+  const unchanged = JSON.stringify(unknown), text = formatMcpToolContent("head_session_work_read", unknown);
+  for (const marker of ['"falseValue": false', '"zero": 0', '"empty": ""', '"absentIsNotNull": null', '"list": []', '"object": {}']) assert(text.includes(marker), marker);
+  assert.equal(JSON.stringify(unknown), unchanged); assert.deepEqual(snapshot(f.base), before);
+});
+
+test("followup: a new consumer process recovers exact decisions, a real code diff and remaining local work", async t => {
+  const f = fixture(t, "Two-step generic formatter; local synthetic execution only");
+  fs.mkdirSync(path.join(f.root, "src"));
+  const source = path.join(f.root, "src/format.mjs");
+  fs.writeFileSync(source, 'export function formatLabel(value) { return String(value); }\nexport function formatList(values) { return values.join(","); }\n');
+  const driver = path.join(pluginRoot, "test/helpers/session-work-reentry-flow.mjs");
+  const firstRun = await localContinuityCommand([driver, "first", f.root, f.session.sessionId], { cwd: pluginRoot });
+  assert.equal(firstRun.code, 0, firstRun.stderr); const first = JSON.parse(firstRun.stdout.trim());
+  assert.equal(first.phase, "first"); assert.notEqual(first.firstDigest, first.partialDigest); assert(first.diff.regions.length > 0);
+  const correction = updateProjectDirection({ root: f.root, expectedDirectionId: first.directionId, input: {
+    goal: "Finish the remaining local formatter only", constraints: ["No external effects"], decisions: [], cancelledActions: ["deploy", "publish"] } }).direction;
+  const secondRun = await localContinuityCommand([driver, "resume", f.root, f.session.sessionId], { cwd: pluginRoot });
+  assert.equal(secondRun.code, 0, secondRun.stderr); const second = JSON.parse(secondRun.stdout.trim());
+  assert.notEqual(first.process.pid, second.process.pid);
+  assert.equal(second.recoveredCheckpointId, first.checkpointId); assert.equal(second.recoveredWorkId, first.workIds[1]);
+  assert.equal(second.recoveredDecisionId, first.directionId); assert.equal(second.currentDirectionId, correction.directionId);
+  assert.equal(second.beforeDigest, first.partialDigest); assert.notEqual(second.afterDigest, second.beforeDigest);
+  assert.equal(second.observedResult, "a,b"); assert.deepEqual(second.currentCancellation, ["deploy", "publish"]);
+  for (const item of first.originals) {
+    const file = path.join(f.root, item.file);
+    assert.equal(sha(fs.readFileSync(file)), item.digest);
+    assert.equal(fs.statSync(file).mode, item.mode); assert.equal(fs.statSync(file).mtimeMs, item.mtimeMs);
+  }
+  assert.equal(first.process.actualProviderInvoked, false); assert.equal(second.process.actualHostRestartProven, false);
+  t.diagnostic(JSON.stringify({ first, second, scope: "Public local writers/readers and fresh Node processes; not a Host/model restart or actual provider compaction" }));
+});
 
 test("A-D: concise Work/Todo text preserves exact branches, old tasks, unknown fields and unchanged CLI/MCP JSON", async t => {
   const f = fixture(t, "PurposeFirstQjvm7812"), task = { todoId: "todo-readable", task: "ReadableTaskMarkerXgvm8821", origin: "user-directed", nextAction: "NextActionMarkerMhvn1422", priority: "Original priority, no score" };
@@ -194,7 +272,7 @@ function assertCommonRecords(text, records) {
   return expected;
 }
 function assertPresentedWork(text, expected) {
-  assert.match(text, /Selected Session work evidence \(P3/u);
+  assert.match(text, /(?:Selected Session work evidence \(P3|Recorded Session work \(historical P3)/u);
   const common = assertCommonRecords(text, expected.records);
   for (const name of ["status", "projectId", "sessionId"]) {
     if (expected[name] !== undefined) assert.ok(text.includes(`${name}: ${JSON.stringify(expected[name])}`), name);
@@ -590,6 +668,22 @@ test("only observed numeric zero originals keeps default no-history entry quiet"
       assertPresentedWork(formatCliResult("session-work-read", scoped), scoped);
       assertPresentedWork(formatMcpToolContent("head_session_work_read", scoped), scoped);
     }
+    for (const extra of [false, 0, "", null, [], {}]) {
+      for (const part of ["top", "coverage", "todo", "todoCoverage"]) {
+        const scoped = structuredClone(empty);
+        const target = part === "top" ? scoped : part === "coverage" ? scoped.coverage
+          : part === "todo" ? scoped.todoContext : scoped.todoContext.coverage;
+        target.futureCondition = extra;
+        const beforeFormat = JSON.stringify(scoped);
+        for (const text of [formatCliResult("session-work-read", scoped),
+          formatConversationRecovery({ ...entry, workContext: scoped })]) {
+          assert(text.includes(`"futureCondition": ${JSON.stringify(extra)}`)
+            || text.includes(`futureCondition: ${JSON.stringify(extra)}`)
+            || text.includes(JSON.stringify({ futureCondition: extra }).slice(1, -1)), part + ": " + JSON.stringify(extra));
+        }
+        assert.equal(JSON.stringify(scoped), beforeFormat);
+      }
+    }
   });
   assert.deepEqual(snapshot(f.base), before);
 });
@@ -806,7 +900,8 @@ test("private Hook execution-detail omission keeps an expansion notice without e
   for (let length = 0; length <= 10000; length += 1) {
     entry.workContext.sessionPurpose = "p".repeat(length);
     const text = formatter(entry, pluginRoot), value = JSON.parse(text);
-    if (value.sessionPurpose === entry.workContext.sessionPurpose && text.length >= 9970) { protectedView = value; break; }
+    if (value.sessionPurpose === entry.workContext.sessionPurpose && text.length >= 9970
+      && !value.coreGuidance && !value.coreGuidanceDelivery) { protectedView = value; break; }
   }
   assert.ok(protectedView, "A near-capacity intact protected context must be available");
   const activeRunId = "run-1767225600000-abcdef";

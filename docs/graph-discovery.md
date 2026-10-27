@@ -42,6 +42,42 @@ Session or evidence neighbors return the same typed work node and its actual
 owner. No new save, native binding, Run, index refresh or user-supplied selector is
 required merely to discover an existing original.
 
+When every supplied `paths` value is a supported canonical Session work-original,
+execution-lineage artifact or historical ProjectDirection revision path,
+the graph reads those exact originals and their required dependencies before
+global inventory or cached membership enumeration. Owner, path, bytes and typed
+record validation still apply. Returned detail selectors retain the exact path.
+`coverage.inventoryScope` identifies this narrower observation: unrelated
+membership and incoming relations are unknown, not absent. Reuse a useful result;
+this partial scope does not itself require another read. Source-code paths and
+mixed path queries keep their existing behavior. Other layers that require
+whole-layer review dependencies do not acquire an isolated-JSON bypass.
+An explicitly requested `world_model_id` also keeps the existing combined query;
+the narrower route does not substitute for a requested historical World.
+All explicit anchors must also identify the requested exact originals. A
+separate plan or work anchor keeps the existing combined anchor-first query;
+the path shortcut never drops an explicitly requested anchor.
+
+Execution-lineage paths reuse the existing exact artifact reader, including its
+selected Session, managed manifest and managed-file digest reads. This is not a
+single-file cost guarantee. A returned `originalExpansion` calls the existing
+lineage reader for that artifact; retained plan/contract/result/review evidence
+does not prove current permission or the existence of declared parents.
+Historical direction paths use the revision reader without scanning for the
+current pointer or whole direction trace. Their currentness remains unknown.
+Exact graph detail keeps the same revision path; a missing public full historical
+direction reader is disclosed, with the named original file for remaining
+partial content. The current direction tool does not select that old revision.
+
+For broader history in a known Session, Lode can start `lode_session_work_read`
+with `scan_evidence: true`, then follow the returned `enumeration.next` arguments.
+The CLI equivalent is `session-work-read --scan-evidence`; a fabricated starting
+ID or user-authored JSON is unnecessary. Each call inspects one lexical page,
+not a global time-order history or an atomic snapshot. This scoped continuation
+is separate from graph `nextAnchorIds`. General Project/layer inventory
+continuation is not yet implemented; other queries retain bounded partial
+results and exact-source fallback.
+
 For a text query without explicit anchors or paths, bounded selection admits a
 matching work original first, then its verified direct declared root and explicit
 work citations before later matches. Shared endpoints cost one node; each unique
@@ -368,6 +404,26 @@ constraints/cancellation prevail. Native ancestry mapping records selection at
 observation; records read later are references, not proven fork-time handoff,
 delivery or model input. Exact prepared managed input alone proves neither use.
 
+Optional `conversation_candidates` on this same list connects actual bounded
+Host candidates to existing stored mappings, including unrelated conversations
+in this Project. Each selector supplies `runtime` (`codex`, `claude`, `opencode`),
+`native_session_id`, optional `agent_id` and explicit `environment_scope: "current"`.
+CLI automation uses `session-list --conversation-candidates <json-file>`.
+Lode composes this only when useful, using an actually available bounded Host
+tool or candidates already in context. No user selector form, automatic message,
+registration, binding or mandatory lookup sequence is added.
+
+`conversationDiscovery` is a non-persisted P4 view over current P5 mappings.
+At most 16 selectors are inspected; its MCP text/structured response increment,
+including JSON escaping, is bounded to 32 KiB with truthful omission counts.
+No-candidate calls retain their original result and routing behavior. Individual
+invalid/pending/lost/corrupt mappings do not discard healthy rows. Mapping changes
+during the read and a changed Project basis are disclosed; this is not an atomic
+snapshot. Absent is never a default selection. Another/unverified Host namespace
+is unsupported without local fallback. A stored Session mapping, revision and
+digest do not prove work-root participation, current ownership, live activity,
+contact readiness or model input. No Host list leaves ordinary work usable.
+
 Recorded Todo task, status, attribution, next action, reason, progress and priority
 also seed graph search. A partial Todo uses `workContentExcerpts` with its original
 index, `todoId`, subfield and character range, alongside recorded status/origin
@@ -447,4 +503,45 @@ document headings. Natural-language questions keep their existing lexical
 ordering, even when a word or backtick matches a function name. Documents remain
 eligible; no code-kind filter or semantic sufficiency judgment is introduced.
 Use exact paths or anchors when the question needs a more precise starting point.
+
+## Continue owned record discovery
+
+When a general inventory bound hides relevant originals, Lode can opt into
+`lode_project_graph` with `inventory_page: true` (CLI: `graph-query --inventory-page`).
+Optional `inventory_paths` (`--inventory-paths <path,...>`) narrow the request to
+verified Project-owned record directories/files, separately from ordinary source
+`paths`. Ordinary graph selection is unchanged. The user describes the question;
+Lode follows useful returned arguments without asking for a cursor or another
+read approval.
+
+This mode returns separate **untyped byte observations**, never nodes or edges.
+A complete raw SHA-256 identifies inspected bytes, including malformed JSON;
+it does not prove kind, review state, authority, typed validity or currentness.
+Canonical Work/lineage/historical-direction paths return callable existing
+`exactRead` arguments whose readers reverify their originals and dependencies.
+Other records disclose unresolved typed-layer dependencies. Lineage still
+inspects the selected Session, managed manifest and managed-file digests.
+Historical direction does not infer currentness or invent a public whole
+historical-original getter. These rows never enter Explorer's typed graph.
+
+Each call bounds directory enumeration, original attempts and the whole MCP
+response (text plus structured UTF-8 JSON, including escaping). It streams at
+most 10,000 metadata entries plus one overflow probe, 10,000 directory open
+attempts, 20,001 name/EOF reads, depth 8, 128 MiB metadata/body-attempt budgets,
+16 MiB per original and 512 rows. The 512 KiB envelope is a metadata-page byte
+bound, unrelated to Context Capsule token tiers. Project/storage ownership
+checks precede these counters; this is not a cap on all inherited owner checks.
+Names may be re-enumerated on later requests, but prior bodies are not reread to
+prove a global snapshot. Failed/oversize attempts appear once; partial hashes
+are never presented as complete digests.
+
+Use returned `next` arguments only when useful. The `inventory_cursor` binds the
+Project/storage root/query/scope but remains an untrusted lexical seek, never
+recovery direction. A changed/deleted frontier returns `changed-scope` and
+actual restart arguments. If bounded enumeration cannot establish the next
+lexical range, `metadata-bound` returns observed narrower scopes, no fabricated
+cursor or exhausted claim. `exhausted-observed-range` covers the inspected scope
+in that request only: earlier insertions and previous-page currentness remain
+unknown, with no invented remaining count. There is no automatic loop, save,
+Run, approval or durable artifact prerequisite; independent work continues.
 

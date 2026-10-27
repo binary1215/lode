@@ -38,7 +38,7 @@ function assertCommonRecords(text,records){
  return expected;
 }
 function assertWorkPresentation(text,value){
- assert.match(text,/Selected Session work evidence \(P3/u);
+ assert.match(text,/Recorded Session work \(historical P3\)/u);
  const common=assertCommonRecords(text,value.records);
  for(const key of ['status','projectId','sessionId'])if(value[key]!==undefined)assert.ok(text.includes(`${key}: ${JSON.stringify(value[key])}`),key);
  for(const key of ['coverage','omissions','nextAfterEvidenceId']){
@@ -136,7 +136,7 @@ test('CLI and direct/router MCP explain supplied Session work without changing o
   'The local pre-write check is implemented.','Cancellation racing with a write still needs investigation.',
   'Actual Host behavior is unverified.','Investigate the local race; this is not deployment permission.'])
   assert.equal(text.split(literal).length-1,1,`Original body retained once: ${literal}`);
- assert.ok(text.indexOf('deployment')<text.indexOf('Selected Session work evidence'));
+ assert.ok(text.indexOf('deployment')<text.indexOf('Recorded Session work (historical P3)'));
  for(const routed of[false,true]){
   const response=await dispatch({jsonrpc:'2.0',id:'session-explanation',method:'tools/call',params:{
    name:routed?'head_tools_call':'head_conversation_enter',arguments:routed?

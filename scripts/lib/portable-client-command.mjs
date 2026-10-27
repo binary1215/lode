@@ -1,5 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
+import { verifiedInstalledMcpLaunch } from "./distribution-lifecycle.mjs";
 
 // Client launch lines that may be committed or copied between machines.
 // Each placeholder is expanded by that client, not by Core. An absolute Node
@@ -42,6 +43,8 @@ export function portableMcpLaunch({ client, pluginRoot, projectRoot, projection 
       throw Object.assign(new Error("An exact absolute selected package root is required."), { code: "INVALID_INSTALLED_MCP_ROOT" });
     }
     const selectedRoot = fs.realpathSync(pluginRoot);
+    const stable = verifiedInstalledMcpLaunch({ pluginRoot: selectedRoot, projectRoot });
+    if (stable) return stable;
     const entry = path.join(selectedRoot, "scripts", "mcp-server.mjs");
     const canonicalEntry = fs.realpathSync(entry);
     if (canonicalEntry !== entry || !fs.statSync(entry).isFile()) {

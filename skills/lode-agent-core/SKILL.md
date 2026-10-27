@@ -70,16 +70,21 @@ or absent; use full status/doctor diagnostics when needed, not as a follow-up
 ritual. No checkpoint means ordinary work continues. Automatically obtain missing
 selected Session direction with current common constraints; never invent it from
 a transcript. Missing direction is not approved emptiness.
-Selection loss pauses only dependent work; use verified explicit/Host selection
-there and continue independent work. Partial entry is not recovery success.
-Do not add a recovery chain, repeated question, Session list or user ID form.
+Selection loss pauses only dependent work; reuse verified same-Project candidates
+already supplied, or follow the returned `sessionDiscovery.call` only when that
+missing context matters. This existing read-only list previews evidence without
+selecting a Session. Do not enumerate Sessions on startup/failure/every turn or
+guess ownership from titles/recency. Continue independent work; partial entry is
+not recovery success. No repeated question, automatic selection or user ID form.
 
-Use the supplied `workContext` to connect earlier reasons and alternatives,
-recent changes/results, and pending work or unknowns to the next authorized
-action under the current request and cancellations. Read the actual body before
-judging what remains. Default order is not semantic importance or authority.
-Expand with `lode_session_work_read` only when useful evidence is missing;
-full body plus a changed source reference does not itself require another read.
+Use supplied `workContext` bodies and `recordExcerpts` to connect recorded reasons,
+alternatives and remaining work to the current request and cancellations. Full
+`records[].content` stays original; an excerpt identifies its exact owner, field,
+index and partial range. Keep a judgment or task's related fields together and
+notice omitted conditions before relying on it. Excerpts alone are neither an
+empty history nor complete recovery. Default order is not semantic importance.
+Use `lode_session_work_read` for missing originals only when the next action needs
+them; reuse sufficient supplied evidence without another read or save ritual.
 Historical suggestions, saved completion and approvals are not current effect
 permission. Do the useful bounded work and verify its actual result.
 

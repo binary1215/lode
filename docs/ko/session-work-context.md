@@ -50,7 +50,7 @@ ID 및 digest별로 묶습니다. 연결 없는 기록은 독립적으로 남고
 있습니다. scope·생략 안내·직렬화 wrapper를 포함한 추가 정보는 record 예산의 남는
 공간만 사용합니다. fitting 본문이 우선이며 group 정보 부재는 작업 부재가 아닙니다.
 `omittedGroups`는 view group의 생략 수이지 원문 생략 수가 아닙니다. `max_characters`는
-여전히 검증 정보가 포함된 record 배열의 상한이지 전체 reader/MCP 전송 상한이 아닙니다.
+record/발췌 전달의 상한이지 전체 reader/MCP 전송 상한이 아닙니다.
 
 startup은 실제로 출력에 담은 record의 index로 group을 만들고 Host별 최종 전체 JSON
 상한을 검사합니다. 현재 지침·목적·checkpoint·fitting 본문이 선택적 정보보다 우선합니다.
@@ -205,7 +205,7 @@ root를 recent → cited → root 순으로 섞습니다. 최소 절반의 슬�
 추가 관련 본문 확대 시도는 실패·oversized를 포함해 `maxRecords` 이하입니다.
 이 상한은 unknown 원본 검사나 필요한 직접 endpoint 검증의 상한이 아닙니다.
 표시 target마다 모든 incoming producer를 다시 읽지는 않습니다.
-중복 읽기 방지용 proof metadata를 유지하고 선택하지 않은 큰 본문은 버립니다.
+중복 읽기 방지용 proof metadata를 유지하며 검증된 큰 후보도 별도의 부분 발췌를 제공할 수 있습니다.
 선택/관련 본문만 제한적으로 유지하며 전체 역사를 상주시키지 않습니다. 관련 확대
 보류 수와 고유 원본 예산 생략 수는 별개라 합산하지 않습니다. 연결 확장이 없어도
 recent/related/fallback 정책은 같으며 무관한 옛 확장이 슬롯 정책을 바꾸지 않습니다.
@@ -222,7 +222,7 @@ root/predecessor/observation endpoint는 계속 fresh 검사합니다. 유효한
 관측한 과거 힌트와 다르면 손상으로 버리지 않고 그 고정 발견 집합에 한 번 canonical
 fallback합니다. 현재 검사들 사이에서 나중에 관측한 실패는 계속 실패입니다.
 후보는 기록 시각 내림차순, 동시각이면 evidence ID 순으로 고려합니다. 기본 출력은
-최대 여덟 기록이며 의미적 관련성·충분성·현재 권한을 판정하지 않습니다. 손상되거나
+전체 기록 또는 발췌로 최대 여덟 고유 원본을 반환하며 의미적 관련성·충분성·현재 권한을 판정하지 않습니다. 손상되거나
 너무 큰 후보 뒤에도 들어가는 정상 작업을 계속 고려합니다. 자동 정리·조용한 삭제·
 필수 전체 이력 감사는 없습니다.
 
@@ -251,6 +251,20 @@ endpoint는 정확한 proof-only 의존성으로 검증할 수 있지만 같은
 결과이지 Session 이력 부재가 아닙니다. text는 관측한 숫자 `coverage.originals`가
 `0`일 때만 조용히 유지하며 inventory 미관측을 빈 이력으로 바꾸지 않습니다.
 제한된 생략 ID 샘플에 모든 누락 ID가 나타나지는 않습니다.
+
+시작 ID를 임의로 만들지 않고 첫 사전순 페이지를 읽으려면 `scanEvidence: true`
+(MCP `scan_evidence: true`, CLI `--scan-evidence`)를 지정합니다. 첫 페이지는 실제
+`nextAfterEvidenceId`와 다음 한 번의 요청에 쓸 `enumeration.next` 인자를 반환합니다.
+실패·크기 초과 원본도 검사 범위에 포함해 cursor가 같은 파일에 멈추지 않으며,
+다음 페이지는 앞 페이지 본문을 다시 읽지 않습니다. 목록은 요청마다 관측하므로
+cursor 앞 삽입은 놓칠 수 있고 마지막 페이지가 전체 이력 완전성이나 방향을 뜻하지
+않습니다. 기본 최근 선택·exact ID 조회·P2를 바꾸지 않는 선택적 읽기입니다.
+명시적 scan은 본문 용량과 기존 생략·실패 selector 32칸이 차면 512개 전에 멈출 수
+있습니다. 검사한 원본은 모두 본문 또는 반환 목록의 정확한 ID로 확인할 수 있고,
+다음 frontier는 ID조차 알리지 않은 원본을 건너뛰지 않습니다. 이 새 scan 모드는
+사전순으로 담으며 scan 없는 기존 `afterEvidenceId` 페이지 규칙은 유지합니다.
+Todo 인자는 별도 투영을 요청하며 scan 플래그만으로 독립 Todo 이력을 추가 검사하지
+않습니다.
 
 과거 힌트는 교체 가능한 P4 metadata이지 현재 archive census가 아닙니다. 미선택
 same-name 외부 복원, 그럴듯하지만 잘못된 순위나 미관측 false-null observation target은
@@ -287,23 +301,38 @@ enrichment가 work-original 경로를 다시 읽을 수도 있습니다. fitting
 있는 순차 관찰이지 반환 순간의 원자적 최신 보장은 아닙니다. 필수 index·잠금·쓰기·
 서비스는 추가하지 않습니다.
 
-`max_characters`는 참조 상태를 추가한 뒤 실제 `JSON.stringify(records).length`를
-계산하며 배열 구분자도 포함합니다. 별도의 제한된 메타데이터 봉투에 coverage·생략·
-원본 ID·확대 안내를 담으며, 이 봉투는 기록 배열 예산에 포함하지 않습니다. 기본값은
-32,768문자입니다. 직렬화 제한이지 토큰 추정이나 의미적 판정이 아닙니다. 큰 기록은
-생략 사실을 공개하고 정확한 원본 조회로 계속 읽을 수 있습니다.
+전체 기록만 있으면 `max_characters`는 참조 상태를 추가한 뒤 실제
+`JSON.stringify(records).length` 계약을 유지합니다. 부분 필드가 전달되면
+`JSON.stringify({records,recordExcerpts}).length`에 발췌의 selector·필드/group coverage와
+확장 metadata까지 포함합니다. 바깥 context 봉투와 독립 Todo 투영은 별도 범위입니다.
+기본값은 UTF-16 code unit 32,768개이며 UTF-8 bytes·토큰·의미적 충분성이 아닙니다.
+최소 예산 2에서도 오류나 숨겨진 초과 없이 본문을 0개 전달하고 제한된 바깥 coverage로
+생략을 알립니다.
+
+`recordExcerpts`는 P4 뷰이며 줄인 `records[].content`가 아닙니다. 각 `source`는 정확한
+Project/Session/evidence ID/digest를 보존합니다. `fields[].path`는 원래 필드와 배열
+인덱스를 유지하며, 부분 문자열의 `range.unit`은 `utf16-code-units`이고 정확한
+start/end/total 및 grapheme 경계를 제공합니다. 판단·task 발췌는 group 필드와 원래
+관계를 보존합니다. `emptyValues`는 실제 존재하는 empty/null을 지우지 않고 묶습니다.
+긴 prefix보다 작은 온전한 구조 단위를 먼저 시도하고 출력 순서는 원문대로 유지합니다.
+이는 모델의 중요도나 승인 판정이 아닙니다. coverage는 빠질 수 있는 필드·항목·조건을
+알리고 기존 정확한 원문 확장은 제한된 인자를 유지합니다. exact-ID와 명시적 페이지
+조회는 전체 원문의 의미와 기존 오류를 그대로 유지합니다.
 
 기본 unavailable 상세는 최대32개 샘플입니다. `coverage.unavailable`은 검사 집합 안의
 불가용 원본 수이며 `omissions.unavailableDetailCount`는 그 수에서 표시한 상세 수를
 뺀 값입니다. `coverage.valid`에는 body admission을 시도하지 않은 정상 inspected 원본,
 관계/qualifier proof-only 원본과 반환 본문도 들어가며 이후 관측한 실패는 제외합니다.
-`omissions.byBudget`은 실제 body admission을 시도했지만 기록 수나
+`omissions.byBudget`은 실제 전체 body admission을 시도했지만 기록 수나
 enriched 문자 예산으로 탈락한 canonical-valid 원본만 셉니다. 모든 미표시 원본이나
 proof-only 원본을 세지 않습니다. 따라서
 `coverage.inspected = coverage.valid + coverage.unavailable`,
 `coverage.included <= coverage.valid`는 유지하지만 기본 조회에서
 `coverage.valid = coverage.included + omissions.byBudget`는 보장하지 않습니다.
-재조회해도 동일 원본의 inspected를 두 번 세지 않습니다. 재조회 중 변경·소실된 원본은 이전 순서와
+재조회해도 동일 원본의 inspected를 두 번 세지 않습니다.
+`coverage.included`는 전체 기록, `coverage.excerpted`는 별도의 부분 원본 수입니다.
+부분 원본은 전체 본문을 전달하지 않아 `omissions.byBudget`에도 포함될 수 있으므로
+서로 다른 원본으로 더하지 않습니다. 재조회 중 변경·소실된 원본은 이전 순서와
 새 본문을 섞지 않고 unavailable로 분리합니다. 명시 페이지·정확 ID는 기존 제한된
 상세 범위를 유지합니다. 본문 생략과 진단 샘플 생략은 별개이며 빈 샘플이 부재 증거는
 아닙니다.
@@ -354,7 +383,7 @@ coverage·생략·확대 안내까지 포함한 최종 JSON에는 공통 7,000�
 기존 약 4,096토큰 설정은 문자 상한 내 다국어 결과도 파일로 넘길 수 있었습니다.
 설치된 Host 지원과 실제 모델 수신은 별도 검증 사항이며 문자·UTF-8 bytes·모델 토큰은
 같지 않습니다. 현재 방향·목적·checkpoint 입력에는 텍스트 길이 상한이 없고, 기존
-32,768자 work-read 예산은 선택된 기록 배열만 제한합니다. 정확한 현재
+32,768자 work-read 예산은 전체/부분 P3 전달만 제한합니다. 정확한 현재
 공통 방향·Session 목적과 최신 선택 checkpoint의 purpose/decisions/position/next-result는
 선택적 장문·상세 coverage·ID 샘플·P3 이력보다 먼저 보존합니다. checkpoint의 기록된
 승인·다음 단계가 현재 효과 권한이 되지는 않습니다. 현재 내용 자체가 최소의 정직한
@@ -388,8 +417,12 @@ Host별 전체 출력 상한 안에서 현재 공통/P2 방향·목적보다 우
 descriptor는 전체를 보존하고 추측하지 않습니다. 해시는 압축 JSON이 아닌 검증된
 원본의 selector입니다. bytes 일치는 의미적 현재성이나 권한을 증명하지 않습니다.
 불가용·basis 변경은 기록이 0개여도 status·reason·확장 경로를 보존합니다.
-원본·선택·binding·필수 도구 체인·사용자 절차는 추가하지 않습니다. 실제 초과한
-원본만 필드 전체를 생략하고 정확한 coverage·관련 작업용 확장을 표시합니다.
+같은 순수 P4 fitter가 발췌 metadata를 포함한 startup 전체 JSON을 기존 Host별
+상한에서 측정합니다. 전체 work content는 바꾸지 않고 startup 공간이 더 작으면
+명확히 구분한 부분 발췌를 전달할 수 있습니다. 전체 기록 0개와 발췌가 함께 있으면
+빈 이력도 완전 복구도 아닙니다. 원본·선택·binding·필수 도구 체인·사용자 절차는
+추가하지 않습니다. 보호된 P2 자체가 들어가지 않을 때만 필드 전체를 생략하고
+관련 작업용 확장을 표시합니다.
 생략된 취소를 취소 없음으로 해석하지 않습니다. 로컬 spill 파일이나 자동 추가 조회는
 생성하지 않으며 실제 Host의 spill/미리보기를 완전 복구라고 부르지 않습니다.
 출력 상한은 이미 유효한 무제한 길이 P2 입력을 읽는 메모리까지 제한하지는 않습니다.
@@ -408,19 +441,32 @@ Codex tool Hook는 child에도 부모 session ID를 제공하므로 그 필드�
 selector를 넣지 않습니다. 선택적 연결 유실 후에도 정확한 명시 요청과 독립 Project
 작업은 가능합니다.
 
-선택적 상태 쓰기 정책은 Hook 거절이 아니라 MCP 서버에서 결정합니다. 프로세스
-환경이 `LODE_SUBAGENT_WRITE_GUARD=enforce`가 아니면 꺼져 있습니다. 꺼진 동안
-서브에이전트는 canon, checkpoint, lineage를 계속 기록할 수 있습니다. 이전
-설계를 유지하지만 부모 검토 관문을 우회할 수 있습니다. 강제하는 동안
-`caller.subagent`가 설정된 caller는 `readOnlyHint`가 true가 아닌 모든 카탈로그
-도구에서 거절됩니다. 오류는 `SUBAGENT_STATE_WRITE_REJECTED`입니다. 읽기 도구는
-계속 사용할 수 있습니다. Claude는 기존 PreToolUse child `agent_id`를 Session
-도구와 일반 라우터 연결로 전달하며, 그 matcher 밖의 직접 도구는 별도 caller가
-아닙니다. Codex는 `_meta.agent_id` 또는 `_meta.subagent`를 전달하고, native id가
-요청의 `params._meta.threadId`와 같은 `SubagentStart` 관측도 해당합니다.
-OpenCode는 플러그인의 짧은 수명 티켓으로 자식 세션 `parentID`를 전달합니다.
-플러그인은 도구를 거절하지 않습니다. 플러그인이 티켓을 게시하고 MCP 서버가
-강제하려면 OpenCode 프로세스에 같은 환경을 설정합니다.
+공유 상태 쓰기 정책은 라우터 내부 도구를 확인한 뒤 종속 Session 안내보다 먼저
+한 번 적용합니다. 기본 보호는 정확한 근거가 있는 지원 Claude·OpenCode 자식 호출만
+대상입니다. Codex는 기본 off를 유지하며, 명시적
+`LODE_SUBAGENT_WRITE_GUARD=enforce`는 기존의 확인된 자식 동작을 유지합니다.
+명시적 off는 이 선택적 Host 보호를 끕니다. 보호할 상태 쓰기는 카탈로그의
+`readOnlyHint` metadata로 판단합니다. 읽기·부모/독립 작업·일반 소스 편집은
+계속 가능합니다. 거절 오류 `SUBAGENT_STATE_WRITE_REJECTED`는 새 사용자 승인
+절차나 부모의 권한을 만들지 않습니다.
+
+Claude의 소유 local/plugin PreToolUse matcher는 실제 카탈로그로 Session/전환·
+라우터·effectful 범위를 만들고, 유한한 지원 별칭을 포함하되 helper/다른 서버는
+제외합니다. 자식 `agent_id`는 정확한 외부 도구명·인자 digest·`tool_use_id`와
+실제 MCP `claudecode/toolUseId`에 결합합니다. Project만 사용하는 보호 쓰기도
+같은 제한된 일시 registry를 사용하며 Session/P2/inventory를 읽거나 저장하지
+않습니다. `caller.subagent` 비트만 있거나 signal-only fallback, 만료·재사용·불일치
+claim, native metadata 부재만으로 기본 보호를 켜지 않습니다. 이 경로는 지원
+미확인이지 보호 성공이나 일괄 거절이 아닙니다.
+
+명시적으로 강제할 때 Codex는 기존 `_meta.agent_id` 또는 `_meta.subagent`, native
+ID가 `params._meta.threadId`와 같은 `SubagentStart` 관측을 계속 사용합니다.
+설정 없음/off는 이 추가 조회 비용을 만들지 않습니다. OpenCode는 실제로 대기하는
+before-hook에서 소유 서버·정확한 call ID·Project/directory·Session `parentID`로
+같은 정책을 적용합니다. 호출 간 자식 티켓을 게시하지 않습니다. 일반 소스 도구와
+읽기는 정책을 위한 Session 조회가 필요 없습니다. call ID 부재·지원하지 않는 범위·
+조회 오류·timeout은 보호 성공을 주장하거나 독립 작업을 막지 않습니다. 두 경로 모두
+악의적인 클라이언트 격리나 실제 설치 Host 전달의 증거는 아닙니다.
 
 ### 어떤 작업이 선택을 유지하나?
 

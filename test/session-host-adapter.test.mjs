@@ -9,7 +9,10 @@ import { createHeadSession, withSessionRoute } from "../scripts/lib/session-rout
 import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
 import { sessionStartContext } from "../scripts/session-host-hook.mjs";
 import { createNativeObservationStore, NATIVE_OBSERVATION_LIMITS } from "../scripts/lib/native-session-observations.mjs";
-import { recordSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
+import { recordSessionWorkEvidence, readSessionWorkList } from "../scripts/lib/session-work-context.mjs";
+import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
+import { runCommand } from "../scripts/head.mjs";
+import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
 import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { localContinuityCommand } from "./helpers/session-continuity-process.mjs";
@@ -36,6 +39,132 @@ function files(root) {
   walk(root);
   return items;
 }
+
+const fileState = root => files(root).map(([file, text]) => [file, text, fs.statSync(file).mode, fs.statSync(file).mtimeMs]);
+const selector = native_session_id => ({ runtime: "codex", native_session_id, environment_scope: "current" });
+
+test("followup: unrelated stored conversations are optional list selectors, not callers or work owners", async t => {
+  const f = fixture(t), a = createHeadSession({ root: f.root, purpose: "Current caller" }), b = createHeadSession({ root: f.root, purpose: "Other recorded work" });
+  f.host("native-current").select({ root: f.root, sessionId: a.sessionId, expectedRevision: 0 });
+  f.host("native-other").select({ root: f.root, sessionId: b.sessionId, expectedRevision: 0 });
+  f.host("native-other", null, "claude").select({ root: f.root, sessionId: a.sessionId, expectedRevision: 0 });
+  f.host("native-other", "other-agent").select({ root: f.root, sessionId: a.sessionId, expectedRevision: 0 });
+  withSessionRoute(f.root, b.sessionId, () => recordSessionWorkEvidence({ root: f.root, input: { summary: "Exact older result; no parent relation exists" } }));
+  const before = fileState(f.root).concat(fileState(f.operational)), plain = readSessionWorkList({ root: f.root, maxSessions: 1 });
+  assert.equal(plain instanceof Promise, false); assert.equal(plain.conversationDiscovery, undefined);
+  const candidates = [selector("native-current"), selector("native-other"),
+    { ...selector("native-other"), runtime: "claude" }, { ...selector("native-other"), agent_id: "other-agent" }, selector("native-absent")];
+  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment: f.environment });
+  const result = await dispatch({ jsonrpc: "2.0", id: "candidate-read", method: "tools/call", params: {
+    name: "head_session_list", _meta: { threadId: "native-current" }, arguments: {
+      project_root: f.root, session_id: b.sessionId, conversation_candidates: candidates } } }, { nativeSessionBridge: bridge });
+  assert.equal(result.error, undefined);
+  const value = result.result.structuredContent, rows = value.conversationDiscovery.rows;
+  assert.equal(value.preview.workContext.sessionId, b.sessionId);
+  assert.equal(value.preview.workContext.records[0].content.summary, "Exact older result; no parent relation exists");
+  assert.deepEqual(rows.map(row => row.status), ["stored-mapping", "stored-mapping", "stored-mapping", "stored-mapping", "absent"]);
+  assert.deepEqual(rows.map(row => row.matchesRequestedSession), [false, true, false, false, null]);
+  assert.equal(rows[4].binding.sessionId, null);
+  for (const row of rows) for (const key of ["activity", "contactReadiness", "workParticipation", "ownerAssignment", "modelUse"]) assert.equal(row[key], "unknown");
+  assert.equal(f.host("native-current").read({ root: f.root }).sessionId, a.sessionId);
+  assert.equal(value.conversationDiscovery.routingAuthority, false);
+  const routed = await dispatch({ jsonrpc: "2.0", id: "candidate-router", method: "tools/call", params: {
+    name: "head_tools_read", _meta: { threadId: "native-current" }, arguments: { name: "lode_session_list", arguments: {
+      project_root: f.root, session_id: b.sessionId, conversation_candidates: candidates } } } }, { nativeSessionBridge: bridge });
+  assert.equal(routed.error, undefined); assert.deepEqual(routed.result.structuredContent.conversationDiscovery.rows, rows);
+  const inputFile = path.join(path.dirname(f.root), "selectors.json"); fs.writeFileSync(inputFile, JSON.stringify(candidates));
+  const old = process.env.HEAD_AGENT_OPERATIONAL_STATE_ROOT; process.env.HEAD_AGENT_OPERATIONAL_STATE_ROOT = f.operational;
+  try {
+    const cli = await runCommand(["session-list", f.root, "--session", b.sessionId, "--conversation-candidates", inputFile]);
+    assert.deepEqual(cli.conversationDiscovery.rows, rows);
+    assert.match(formatCliResult("session-list", cli), /no live activity, contact, work participation or owner assignment/);
+    assert.ok(formatCliResult("session-list", cli).includes("native-other"));
+  } finally { if (old === undefined) delete process.env.HEAD_AGENT_OPERATIONAL_STATE_ROOT; else process.env.HEAD_AGENT_OPERATIONAL_STATE_ROOT = old; }
+  assert.deepEqual(readSessionWorkList({ root: f.root, maxSessions: 1 }), plain);
+  assert.deepEqual(fileState(f.root).concat(fileState(f.operational)), before);
+  t.diagnostic(JSON.stringify({ kind: "SyntheticConversationDiscovery", projectId: value.projectId,
+    callerSession: a.sessionId, previewSession: b.sessionId, readAt: value.conversationDiscovery.readAt,
+    work: value.preview.workContext.records.map(row => ({ evidenceId: row.evidenceId, evidenceDigest: row.evidenceDigest })),
+    rows, cliAndRoutedMcpParity: true, canonicalAndOperationalBytesUnchanged: true,
+    actualHostDiscoveryProven: false, automaticContact: false }));
+});
+
+test("followup: malformed, foreign, lost and unsupported selectors are isolated with bounded read-only coverage", async t => {
+  const f = fixture(t), other = fixture(t), session = createHeadSession({ root: f.root, purpose: "One exact Session" });
+  f.host("pending").prepareSelection({ root: f.root, sessionId: session.sessionId, expectedRevision: 0 });
+  f.host("lost").select({ root: f.root, sessionId: session.sessionId, expectedRevision: 0 });
+  f.host("lost").lose({ root: f.root, expectedRevision: 1 });
+  f.host("corrupt").select({ root: f.root, sessionId: session.sessionId, expectedRevision: 0 });
+  const badDigest = f.host("corrupt").read({ root: f.root }).callerDigest;
+  const badFile = files(f.operational).find(([, text]) => JSON.parse(text).callerDigest === badDigest)[0];
+  fs.writeFileSync(badFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(badFile)), bindingDigest: "0".repeat(64) }));
+  const foreignSession = createHeadSession({ root: other.root, purpose: "One exact Session" });
+  createSessionHostAdapter({ runtime: "codex", nativeSessionId: "foreign-only", environment: f.environment })
+    .select({ root: other.root, sessionId: foreignSession.sessionId, expectedRevision: 0 });
+  const before = fileState(f.root).concat(fileState(other.root), fileState(f.operational));
+  const candidates = [selector("pending"), selector("lost"), selector("corrupt"), selector("foreign-only"),
+    { ...selector("foreign-only"), environment_scope: "unsupported-other" },
+    { ...selector("foreign-only"), host_id: "unverified-other-host" }, null, { ...selector("bad"), runtime: "unknown" },
+    { ...selector("foreign-only"), environment: { HEAD_AGENT_OPERATIONAL_STATE_ROOT: "must-not-be-used" }, project_root: other.root, activity: "running", label: "owner" }];
+  const result = await readSessionWorkList({ root: f.root, conversationCandidates: candidates, conversationEnvironment: f.environment });
+  assert.deepEqual(result.conversationDiscovery.rows.map(row => row.status), ["pending", "lost", "unavailable", "absent", "unsupported-environment", "unsupported-environment", "invalid-selector", "invalid-selector", "absent"]);
+  assert.equal(result.conversationDiscovery.rows[2].reasonCode, "SESSION_HOST_BINDING_INTEGRITY");
+  assert.equal(result.conversationDiscovery.rows[8].ownerAssignment, "unknown");
+  assert.equal(result.conversationDiscovery.rows[4].lookupPerformed, false);
+  const many = await readSessionWorkList({ root: f.root, conversationCandidates: Array.from({ length: 64 }, (_, i) => selector(`absent-${i}`)), conversationEnvironment: f.environment });
+  assert.equal(many.conversationDiscovery.coverage.inspected, 16); assert.equal(many.conversationDiscovery.coverage.notInspectedByCandidateBound, 48);
+  for (const id of ["한".repeat(512), '\\"'.repeat(256)]) {
+    const largeCandidates = Array.from({ length: 16 }, () => ({ ...selector(id), agent_id: id }));
+    const large = await readSessionWorkList({ root: f.root, conversationCandidates: largeCandidates, conversationEnvironment: f.environment });
+    assert(large.conversationDiscovery.coverage.omittedByResponseBudget > 0);
+    const request = conversation_candidates => ({ id: "transport-bound", method: "tools/call", params: { name: "head_session_list",
+      arguments: { project_root: f.root, ...(conversation_candidates ? { conversation_candidates } : {}) } } });
+    const baseResponse = await dispatch(request(), { hostEnvironment: f.environment });
+    const withDiscovery = await dispatch(request(largeCandidates), { hostEnvironment: f.environment });
+    assert.equal(withDiscovery.error, undefined);
+    assert.deepEqual(withDiscovery.result.structuredContent.conversationDiscovery.rows, large.conversationDiscovery.rows);
+    const additionalBytes = Buffer.byteLength(JSON.stringify(withDiscovery)) - Buffer.byteLength(JSON.stringify(baseResponse));
+    assert(additionalBytes <= large.conversationDiscovery.coverage.maxAdditionalBytes);
+    t.diagnostic(JSON.stringify({ kind: "ConversationTransportBound", inputKind: id.startsWith("한") ? "unicode" : "json-escaped",
+      additionalBytes, coverage: large.conversationDiscovery.coverage, returnedRows: large.conversationDiscovery.rows.length }));
+  }
+  assert.deepEqual(fileState(f.root).concat(fileState(other.root), fileState(f.operational)), before);
+});
+
+test("followup: a binding revision change during candidate lookup is not a stable mapping", async t => {
+  const f = fixture(t), a = createHeadSession({ root: f.root, purpose: "Before" }), b = createHeadSession({ root: f.root, purpose: "After" });
+  f.host("changed").select({ root: f.root, sessionId: a.sessionId, expectedRevision: 0 });
+  const record = f.host("changed").read({ root: f.root }), { bindingDigest, ...payload } = record;
+  const file = files(f.operational).find(([, text]) => JSON.parse(text).callerDigest === record.callerDigest)[0];
+  const next = { ...payload, sessionId: b.sessionId, revision: payload.revision + 1, previousDigest: bindingDigest };
+  const changed = { ...next, bindingDigest: crypto.createHash("sha256").update(JSON.stringify(next)).digest("hex") };
+  const read = fs.readFileSync, before = fileState(f.root).concat(fileState(f.operational)); let reads = 0;
+  fs.readFileSync = function (target, ...args) {
+    if (typeof target === "string" && path.resolve(target) === file && ++reads === 2) return JSON.stringify(changed);
+    return read.call(this, target, ...args);
+  };
+  try {
+    const result = await readSessionWorkList({ root: f.root, conversationCandidates: [selector("changed")], conversationEnvironment: f.environment });
+    assert.equal(result.conversationDiscovery.rows[0].status, "changed-during-read");
+    assert.equal(result.conversationDiscovery.rows[0].binding, undefined);
+  } finally { fs.readFileSync = read; }
+  assert.deepEqual(fileState(f.root).concat(fileState(f.operational)), before);
+  const projectFile = path.join(f.root, inspectProject(f.root).storage.directory, "project.json");
+  const changedProject = JSON.stringify({ ...JSON.parse(fs.readFileSync(projectFile)), externalRevision: "changed during lookup" });
+  let bindingRead = false;
+  fs.readFileSync = function (target, ...args) {
+    if (typeof target === "string" && path.resolve(target) === file) bindingRead = true;
+    if (bindingRead && typeof target === "string" && path.resolve(target) === projectFile) return Buffer.from(changedProject);
+    return read.call(this, target, ...args);
+  };
+  try {
+    const result = await readSessionWorkList({ root: f.root, conversationCandidates: [selector("changed")], conversationEnvironment: f.environment });
+    assert.equal(result.conversationDiscovery.status, "project-basis-changed");
+    assert.deepEqual(result.conversationDiscovery.rows, []);
+    assert.equal(result.conversationDiscovery.coverage.discardedByProjectBasisChange, 1);
+  } finally { fs.readFileSync = read; }
+  assert.deepEqual(fileState(f.root).concat(fileState(f.operational)), before);
+});
 
 test("public adapter select/register -> new instance -> per-request resolver -> exact same Session", async (t) => {
   const { root, host, operational, environment } = fixture(t);

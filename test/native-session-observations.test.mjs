@@ -19,6 +19,7 @@ import { dispatch } from "../scripts/mcp-server.mjs";
 import { sessionStartContext, runSessionHostHook } from "../scripts/session-host-hook.mjs";
 import { createNativeObservationStore, normalizeNativeHook, observeNativeHook, projectNativeObservations } from "../scripts/lib/native-session-observations.mjs";
 import { probeClaudeProcesses } from "../scripts/lib/native-session-process.mjs";
+import { localContinuityCommand } from "./helpers/session-continuity-process.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, ".."), caller = { runtime: "codex", nativeSessionId: "native-main", agentId: null };
 function fixture(t) {
@@ -50,6 +51,283 @@ function header(base, id, fields = {}) {
     session_id: id, cwd: path.join(base, "project"), cli_version: "0.0.0", source: "cli", ...fields } }) + "\n");
   return file;
 }
+
+const clearInstance = () => ({ platform: "win32", environment: "a".repeat(64), pid: 12345, ppid: 1, birth: "windows-filetime-123456789" });
+const clearEvent = (f, id, ending = false) => ({ hook_event_name: ending ? "SessionEnd" : "SessionStart", cwd: f.root,
+  session_id: id, ...(ending ? { reason: "clear" } : { source: "clear" }) });
+const clearAdapter = (f, id) => createSessionHostAdapter({ runtime: "claude", nativeSessionId: id, environment: f.environment });
+const hintFile = f => path.join(f.operational, "native-clear-handoffs", fs.readdirSync(path.join(f.operational, "native-clear-handoffs"))[0], "hints.json");
+const clearOptions = (f, id, ending = false) => ({ runtime: "claude", event: clearEvent(f, id, ending), environment: f.environment, processObserver: async () => clearInstance() });
+
+test("host-c: actual Hook writer carries a verified old clear to the same Session and consumes it once", async t => {
+  const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Selected clear task, independent of default" });
+  select(clearAdapter(f, "old-native"), f.root, chosen.sessionId);
+  withSessionRoute(f.root, chosen.sessionId, () => recordSessionWorkEvidence({ root: f.root, input: { summary: "Retained exact reason across clear" } }));
+  updateProjectDirection({ root: f.root, input: { goal: "Continue local investigation", cancelledActions: ["deploy"] } });
+  const before = tree(f.root), observer = async () => clearInstance();
+  assert.deepEqual(await runSessionHostHook({ runtime: "claude", event: clearEvent(f, "old-native", true), environment: f.environment, processObserver: observer }), {});
+  const end = f.store.read({ root: f.root, caller: { runtime: "claude", nativeSessionId: "old-native", agentId: null } });
+  assert(end.rows.some(row => row.observation.event === "SessionEnd" && row.observation.reason === "clear" && row.observation.instance));
+  const hintsBefore = tree(path.join(f.operational, "native-clear-handoffs"));
+  await runSessionHostHook({ runtime: "claude", event: clearEvent(f, "old-native", true), environment: f.environment, processObserver: observer });
+  assert.deepEqual(tree(path.join(f.operational, "native-clear-handoffs")), hintsBefore, "Duplicate end does not extend/reopen a hint");
+  const output = await runSessionHostHook({ runtime: "claude", event: clearEvent(f, "new-native"), environment: f.environment, processObserver: observer });
+  const context = JSON.parse(output.hookSpecificOutput.additionalContext);
+  assert.equal(context.logicalSessionId, chosen.sessionId); assert.equal(context.currentProjectDirection.input.cancelledActions[0], "deploy");
+  assert(context.records.some(row => row.content.summary === "Retained exact reason across clear"));
+  const bound = clearAdapter(f, "new-native").read({ root: f.root }); assert.equal(bound.status, "bound");
+  await runSessionHostHook({ runtime: "claude", event: clearEvent(f, "new-native"), environment: f.environment, processObserver: observer });
+  assert.deepEqual(clearAdapter(f, "new-native").read({ root: f.root }), bound);
+  await runSessionHostHook({ runtime: "claude", event: clearEvent(f, "third-native"), environment: f.environment, processObserver: observer });
+  assert.equal(clearAdapter(f, "third-native").read({ root: f.root }).status, "absent"); assert.deepEqual(tree(f.root), before);
+});
+
+test("host-c: changed instance, missing pair, changed mapping and existing receiver never infer a selection", async t => {
+  for (const variant of ["birth", "environment", "pid", "missing-end", "old-selection", "receiver-bound", "receiver-pending", "receiver-lost"]) {
+    const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Old explicit choice" }), other = createHeadSession({ root: f.root, purpose: "Different explicit choice" });
+    select(clearAdapter(f, "old-native"), f.root, chosen.sessionId);
+    if (variant !== "missing-end") await runSessionHostHook({ runtime: "claude", event: clearEvent(f, "old-native", true), environment: f.environment, processObserver: async () => clearInstance() });
+    if (variant === "old-selection") select(clearAdapter(f, "old-native"), f.root, other.sessionId);
+    const next = clearAdapter(f, "new-native");
+    if (["receiver-bound", "receiver-lost"].includes(variant)) select(next, f.root, other.sessionId);
+    if (variant === "receiver-lost") next.lose({ root: f.root, expectedRevision: next.read({ root: f.root }).revision });
+    if (variant === "receiver-pending") next.prepareSelection({ root: f.root, sessionId: other.sessionId, expectedRevision: 0, expectedBindingDigest: null });
+    const prior = next.read({ root: f.root }), before = tree(f.root), instance = clearInstance();
+    if (variant === "birth") instance.birth = "windows-filetime-999";
+    if (variant === "environment") instance.environment = "b".repeat(64);
+    if (variant === "pid") instance.pid++;
+    await runSessionHostHook({ runtime: "claude", event: clearEvent(f, "new-native"), environment: f.environment, processObserver: async () => instance });
+    assert.deepEqual(next.read({ root: f.root }), prior, variant); assert.deepEqual(tree(f.root), before, variant);
+  }
+});
+
+test("host-c: separate Hook processes use an actual owned process witness and synthetic CLI registry", async t => {
+  const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Exact cross-process clear continuity" });
+  select(clearAdapter(f, "old-process-native"), f.root, chosen.sessionId);
+  const config = path.join(f.base, "synthetic-claude"), sessions = path.join(config, "sessions"); fs.mkdirSync(sessions, { recursive: true });
+  const environment = { ...f.environment, CLAUDE_CONFIG_DIR: config };
+  const registry = path.join(sessions, `${process.pid}.json`), script = path.join(f.base, "hook-driver.mjs");
+  fs.writeFileSync(script, `import fs from "node:fs";\nimport {runSessionHostHook} from ${JSON.stringify(pathToFileURL(path.join(pluginRoot, "scripts/session-host-hook.mjs")).href)};\nimport {observeClaudeProcess} from ${JSON.stringify(pathToFileURL(path.join(pluginRoot, "scripts/lib/native-session-process.mjs")).href)};\nconst input=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));\nconst started=Date.now();const output=await runSessionHostHook({...input,processObserver:options=>observeClaudeProcess({...options,onProcess:event=>process.stderr.write(JSON.stringify({...event,elapsedMs:Date.now()-started})+"\\n")})});\nprocess.stdout.write(JSON.stringify(output));\n`);
+  const before = tree(f.root), outputs = [];
+  for (const ending of [true, false]) {
+    const id = ending ? "old-process-native" : "new-process-native", input = path.join(f.base, ending ? "end.json" : "start.json");
+    fs.writeFileSync(registry, JSON.stringify({ sessionId: id, pid: process.pid }));
+    fs.writeFileSync(input, JSON.stringify({ runtime: "claude", event: clearEvent(f, id, ending), environment }));
+    const output = await localContinuityCommand([script, input], { cwd: pluginRoot }); assert.equal(output.code, 0, output.stderr); t.diagnostic(JSON.stringify({phase:ending?"end":"start",probeEvents:output.stderr.split(/\r?\n/).filter(Boolean).map(line=>{try{const e=JSON.parse(line);return {event:e.event,pid:e.pid,exitCode:e.exitCode,signal:e.signal,elapsedMs:e.elapsedMs,rows:e.rows};}catch{return {unparsed:true};}})})); outputs.push(JSON.parse(output.stdout));
+  }
+  assert.deepEqual(outputs[0], {}); assert.equal(JSON.parse(outputs[1].hookSpecificOutput.additionalContext).logicalSessionId, chosen.sessionId);
+  assert.equal(createSessionHostAdapter({ runtime: "claude", nativeSessionId: "new-process-native", environment }).read({ root: f.root }).sessionId, chosen.sessionId);
+  assert.deepEqual(tree(f.root), before);
+  t.diagnostic("Actual owned Node hosting instance + synthetic CLI registry + two new Hook driver processes. Not actual Claude/Host/model delivery.");
+});
+
+test("host-c: expiry never renews on replay; ambiguous clears and agent/root changes stay unlinked", async t => {
+  for (const variant of ["expired", "ambiguous", "same-caller", "agent", "other-root", "reordered"]) {
+    const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Exact clear source" });
+    select(clearAdapter(f, "old-native"), f.root, chosen.sessionId);
+    if (variant === "reordered") await runSessionHostHook(clearOptions(f, "new-native"));
+    await runSessionHostHook(clearOptions(f, "old-native", true));
+    const original = fs.readFileSync(hintFile(f), "utf8"), options = clearOptions(f, variant === "same-caller" ? "old-native" : "new-native");
+    if (variant === "ambiguous") {
+      select(clearAdapter(f, "competing-native"), f.root, chosen.sessionId);
+      await runSessionHostHook(clearOptions(f, "competing-native", true));
+      assert.equal(JSON.parse(fs.readFileSync(hintFile(f))).rows[0].state, "ambiguous");
+    }
+    if (variant === "agent") options.event.agent_id = "different-agent";
+    if (variant === "other-root") options.event.cwd = fixture(t).root;
+    const before = tree(f.root), now = Date.now;
+    try {
+      if (variant === "expired") {
+        const future = now() + 600_001; Date.now = () => future;
+        await runSessionHostHook(clearOptions(f, "old-native", true));
+        assert.equal(fs.readFileSync(hintFile(f), "utf8"), original, "An expired end replay cannot refresh TTL");
+      }
+      await runSessionHostHook(options);
+    } finally { Date.now = now; }
+    assert.equal(clearAdapter(f, "new-native").read({ root: f.root }).status, "absent", variant);
+    assert.deepEqual(tree(f.root), before, variant);
+  }
+});
+
+test("host-c: tampered/missing sources and oversized hint cache never replace explicit selection", async t => {
+  for (const variant of ["hint-digest", "hint-size", "cache-size", "old-missing", "old-digest", "clear-row", "clear-snapshot"]) {
+    const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Source integrity" });
+    select(clearAdapter(f, "old-native"), f.root, chosen.sessionId);
+    await runSessionHostHook(clearOptions(f, "old-native", true));
+    const file = hintFile(f), cache = JSON.parse(fs.readFileSync(file));
+    const rewriteCache = () => { const { cacheDigest, ...body } = cache; fs.writeFileSync(file, JSON.stringify({ ...body, cacheDigest: crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex") })); };
+    if (variant === "hint-digest") { cache.rows[0].oldNativeId = "invented-native"; rewriteCache(); }
+    if (variant === "hint-size") {
+      const { hintDigest, ...body } = cache.rows[0]; body.oldNativeId = "x".repeat(9000);
+      cache.rows[0] = { ...body, hintDigest: crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex") }; rewriteCache();
+    }
+    if (variant === "cache-size") fs.writeFileSync(file, " ".repeat(128 * 1024 + 1));
+    const bindings = path.join(f.operational, "session-bindings"), binding = fs.readdirSync(bindings, { recursive: true }).find(x => x.endsWith("binding.json"));
+    if (variant === "old-missing") fs.unlinkSync(path.join(bindings, binding));
+    if (variant === "old-digest") { const b = JSON.parse(fs.readFileSync(path.join(bindings, binding))); b.sessionId = "session-00000000-0000-0000-0000-000000000000"; fs.writeFileSync(path.join(bindings, binding), JSON.stringify(b)); }
+    if (variant.startsWith("clear-")) {
+      const snapshots = path.join(f.operational, "native-observations"), snapshotFile = path.join(snapshots, fs.readdirSync(snapshots)[0], "snapshot.json");
+      const snapshot = JSON.parse(fs.readFileSync(snapshotFile)); snapshot.rows[0].observation.reason = "other";
+      if (variant === "clear-row") { const { snapshotDigest, ...body } = snapshot; snapshot.snapshotDigest = crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex"); }
+      fs.writeFileSync(snapshotFile, JSON.stringify(snapshot));
+    }
+    const before = tree(f.root);
+    await runSessionHostHook(clearOptions(f, "new-native"));
+    assert.equal(clearAdapter(f, "new-native").read({ root: f.root }).status, "absent", variant);
+    assert.deepEqual(tree(f.root), before, variant);
+  }
+});
+
+test("host-c: a first missing/failed clear-start witness cannot acquire ordering from a later replay", async t => {
+  const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "First received clear witness" }), before = tree(f.root);
+  const variants = ["ordered-control", "null-before-end", "throw-before-end", "null-after-end", "other-known-instance", "unknown-overwritten", "unknown-evicted"];
+  for (const [index, variant] of variants.entries()) {
+    const oldId = `old-${variant}`, newId = `new-${variant}`, instance = { ...clearInstance(), pid: 12345 + index };
+    select(clearAdapter(f, oldId), f.root, chosen.sessionId);
+    const run = (id, ending = false, processObserver = async () => instance, source = "clear") => runSessionHostHook({
+      runtime: "claude", event: { ...clearEvent(f, id, ending), ...(!ending ? { source } : {}) }, environment: f.environment, processObserver });
+    if (!["ordered-control", "null-after-end"].includes(variant)) {
+      await run(newId, false, async () => {
+        if (variant === "throw-before-end") throw new Error("Synthetic unavailable witness");
+        return variant === "other-known-instance" ? { ...instance, pid: 45678 + index } : null;
+      });
+      assert.equal(clearAdapter(f, newId).read({ root: f.root }).status, "absent");
+      if (variant === "unknown-overwritten") await run(newId, false, async () => null, "resume");
+      if (variant === "unknown-evicted") for (let sequence = 0; sequence < 65; sequence++) await f.store.observe({
+        root: f.root, caller: { runtime: "claude", nativeSessionId: newId, agentId: null }, observation: observed(f.root, `noise-${sequence}`) });
+    }
+    await run(oldId, true);
+    if (variant === "null-after-end") await run(newId, false, async () => null);
+    await new Promise(resolve => setTimeout(resolve, 8));
+    await run(newId);
+    const expected = ["ordered-control", "other-known-instance"].includes(variant) ? "bound" : "absent";
+    const binding = clearAdapter(f, newId).read({ root: f.root });
+    assert.equal(binding.status, expected, variant);
+    if (expected === "bound") assert.equal(binding.sessionId, chosen.sessionId, variant);
+    else assert.equal(select(clearAdapter(f, newId), f.root, chosen.sessionId).retained, true, "Explicit selection remains available");
+    assert.deepEqual(tree(f.root), before, variant);
+  }
+});
+
+test("host-c: bounded hints preserve 64 live instances and refuse overflow without a lookup scan", async t => {
+  const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Bounded instance lookup" });
+  select(clearAdapter(f, "old-native"), f.root, chosen.sessionId);
+  for (let index = 0; index < 65; index++) await runSessionHostHook({ ...clearOptions(f, "old-native", true), processObserver: async () => ({ ...clearInstance(), pid: 12345 + index }) });
+  const cache = JSON.parse(fs.readFileSync(hintFile(f)));
+  assert.equal(cache.rows.length, 64); assert(fs.statSync(hintFile(f)).size <= 128 * 1024);
+  const before = tree(f.root), original = fs.readdirSync;
+  fs.readdirSync = (directory, ...args) => { if (String(directory).includes("session-bindings")) throw new Error("No global binding inventory"); return original(directory, ...args); };
+  try { await runSessionHostHook({ ...clearOptions(f, "new-native"), processObserver: async () => ({ ...clearInstance(), pid: 12346 }) }); }
+  finally { fs.readdirSync = original; }
+  assert.equal(clearAdapter(f, "new-native").read({ root: f.root }).sessionId, chosen.sessionId);
+  assert.deepEqual(tree(f.root), before);
+});
+
+test("host-c: expired deadlines and failed hint/binding publication leave only optional loss, never replay", async t => {
+  for (const variant of ["expired", "probe-late", "hint-write", "binding-partial"]) {
+    const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Optional write failures" });
+    select(clearAdapter(f, "old-native"), f.root, chosen.sessionId);
+    const before = tree(f.root), rename = fs.renameSync;
+    if (variant === "hint-write") fs.renameSync = (source, target) => { if (path.basename(String(target)) === "hints.json") throw Object.assign(new Error("Synthetic hint denial"), { code: "EACCES" }); return rename(source, target); };
+    try {
+      const options = clearOptions(f, "old-native", true);
+      if (variant === "expired") { options.deadlineAt = Date.now() - 1; options.processObserver = async () => { assert.fail("Expired command must not query"); }; }
+      if (variant === "probe-late") { options.deadlineAt = Date.now() + 1; options.processObserver = async () => { await new Promise(resolve => setTimeout(resolve, 15)); return clearInstance(); }; }
+      await runSessionHostHook(options);
+    } finally { fs.renameSync = rename; }
+    if (variant === "binding-partial") fs.renameSync = (source, target) => {
+      if (path.basename(String(target)) === "binding.json" && JSON.parse(fs.readFileSync(source)).status === "bound") throw Object.assign(new Error("Synthetic commit denial"), { code: "EACCES" });
+      return rename(source, target);
+    };
+    try { await runSessionHostHook(clearOptions(f, "new-native")); }
+    finally { fs.renameSync = rename; }
+    const selected = clearAdapter(f, "new-native").read({ root: f.root });
+    assert.equal(selected.status, variant === "binding-partial" ? "pending" : "absent", variant);
+    await runSessionHostHook(clearOptions(f, "new-native"));
+    assert.deepEqual(clearAdapter(f, "new-native").read({ root: f.root }), selected, "No automatic retry of a consumed handoff");
+    assert.deepEqual(tree(f.root), before, variant);
+  }
+});
+
+test("host-c: actual command stdin/stdout preserves clear selection with the existing End/Start deadlines", async t => {
+  const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Actual command clear continuity" });
+  select(clearAdapter(f, "old-command-native"), f.root, chosen.sessionId);
+  const config = path.join(f.base, "synthetic-claude"), sessions = path.join(config, "sessions"); fs.mkdirSync(sessions, { recursive: true });
+  const environment = { ...process.env, ...f.environment, CLAUDE_CONFIG_DIR: config };
+  const registry = path.join(sessions, `${process.pid}.json`), before = tree(f.root), outputs = [];
+  const hook = path.join(pluginRoot, "scripts/session-host-hook.mjs");
+  for (const ending of [true, false]) {
+    const id = ending ? "old-command-native" : "new-command-native";
+    fs.writeFileSync(registry, JSON.stringify({ sessionId: id, pid: process.pid }));
+    const started = Date.now();
+    const output = await localContinuityCommand([hook, "--runtime", "claude", ...(ending ? ["--observe-only"] : [])],
+      { cwd: pluginRoot, environment, input: JSON.stringify(clearEvent(f, id, ending)) });
+    const durationMs = Date.now() - started;
+    t.diagnostic(JSON.stringify({ phase: ending ? "end-command" : "start-command", durationMs, limitMs: ending ? 1000 : 10_000 }));
+    assert.equal(output.code, 0, output.stderr); assert.equal(output.stderr, "");
+    // Includes harness logging, spawn, priority adjustment and close checks.
+    // Keep this comparable diagnostic separate from the product's deadline.
+    outputs.push(JSON.parse(output.stdout));
+  }
+  assert.deepEqual(outputs[0], {});
+  assert.equal(JSON.parse(outputs[1].hookSpecificOutput.additionalContext).logicalSessionId, chosen.sessionId);
+  assert.equal(createSessionHostAdapter({ runtime: "claude", nativeSessionId: "new-command-native", environment }).read({ root: f.root }).sessionId, chosen.sessionId);
+  assert.deepEqual(tree(f.root), before);
+  t.diagnostic("Actual packaged command entry + synthetic registry and owned Node host only; no actual Claude/model reception claim.");
+});
+
+test("host-c: occupied hint or existing Project CAS locks cannot inherit the ordinary ten-second wait", async t => {
+  for (const scope of ["hint", "binding"]) {
+    const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Bounded clear lock contention" });
+    select(clearAdapter(f, "old-native"), f.root, chosen.sessionId);
+    await runSessionHostHook(clearOptions(f, "old-native", true));
+    const before = tree(f.root), lock = scope === "hint" ? path.join(path.dirname(hintFile(f)), "writer.lock")
+      : path.join(f.root, f.layout.directory, ".operations", "host-session-binding.lock");
+    fs.mkdirSync(lock);
+    const owner = path.join(lock, `owner-${"f".repeat(16)}-12345-${"e".repeat(32)}.json`);
+    fs.writeFileSync(owner, "synthetic foreign lock; do not steal");
+    let elapsedMs;
+    try {
+      const started = Date.now();
+      await runSessionHostHook({ ...clearOptions(f, "new-native"), deadlineAt: started + 80 });
+      elapsedMs = Date.now() - started;
+      assert.equal(fs.readFileSync(owner, "utf8"), "synthetic foreign lock; do not steal");
+      assert.equal(clearAdapter(f, "new-native").read({ root: f.root }).status, "absent");
+      assert(elapsedMs < 500, "Optional clear must not use the existing ten-second ordinary CAS wait");
+    } finally { fs.unlinkSync(owner); fs.rmdirSync(lock); }
+    assert.deepEqual(tree(f.root), before);
+    assert.equal(select(clearAdapter(f, "explicit-native"), f.root, chosen.sessionId).retained, true);
+    t.diagnostic(JSON.stringify({ scope, elapsedMs, ordinaryExplicitSelection: "available-after-contention" }));
+  }
+});
+
+test("ABC: excerpt-only related history and Session preview keep source ownership without inheriting parent P2", async t => {
+  const f = fixture(t), native = createNativeSessionHostBridge({ runtime: "codex", environment: f.environment });
+  const parentId = createHeadSession({ root: f.root, purpose: "PARENT P2 MUST STAY IN PARENT" }).sessionId;
+  const childId = createHeadSession({ root: f.root, purpose: "Current child task" }).sessionId;
+  withSessionRoute(f.root, parentId, () => recordSessionWorkEvidence({ root: f.root, input: {
+    summary: "S".repeat(14000), observedWork: ["O".repeat(19000)],
+    judgments: [{ assessment: "Keep the exact parent source", reason: "RelatedPartialReasonMarker", alternatives: ["Do not inherit direction"] }],
+    pending: ["RelatedPartialPendingMarker"], unknowns: ["Later reference read only"] } }));
+  select(createSessionHostAdapter({ ...caller, nativeSessionId: "abc-parent", environment: f.environment }), f.root, parentId);
+  await invoke(native, request(f.root, "head_project_initialize_or_resume", { session_id: childId }, "abc-child"));
+  await observeNativeHook({ runtime: "codex", event: event(f.root, "SessionStart", { session_id: "abc-child", source: "fork",
+    transcript_path: header(f.base, "abc-child", { forked_from_id: "abc-parent" }) }), environment: f.environment });
+  updateProjectDirection({ root: f.root, input: { goal: "Current local work", cancelledActions: ["deploy"] } });
+  const before = tree(f.root).concat(tree(f.operational));
+  const response = await invoke(native, request(f.root, "head_conversation_enter", {}, "abc-child"));
+  const related = response.result.structuredContent.relatedNativeWorkContext.sources[0];
+  assert.equal(related.workContext.sessionId, parentId); assert.deepEqual(related.workContext.records, []);
+  assert(related.workContext.recordExcerpts.length); assert.equal(related.recordRead.scope, "later-reference-read");
+  assert.equal(related.workContext.recordExcerpts[0].source.sessionId, parentId);
+  for (const marker of ["RelatedPartialReasonMarker", "RelatedPartialPendingMarker", "Partial original excerpts"]) assert(response.result.content[0].text.includes(marker), marker);
+  assert.equal(JSON.stringify(related).includes("PARENT P2 MUST STAY IN PARENT"), false);
+  assert.equal(response.result.structuredContent.workContext.sessionId, childId);
+  const preview = await invoke(native, request(f.root, "head_session_list", { session_id: parentId }, "abc-child", "head_tools_read"));
+  assert(preview.result.structuredContent.preview.workContext.recordExcerpts.length);
+  assert.equal(preview.result.structuredContent.preview.workContext.sessionId, parentId);
+  assert.deepEqual(tree(f.root).concat(tree(f.operational)), before);
+});
 
 test("actual Hook identity: exact Codex leaf, shared-root membership, no fake missing Claude prompt key", () => {
   const sub = normalizeNativeHook({ runtime: "codex", event: event("synthetic", "SubagentStart", { agent_id: "child-B", turn_id: "turn-B" }) });

@@ -3,6 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import childProcess from "node:child_process";
+import crypto from "node:crypto";
+import { syncBuiltinESMExports } from "node:module";
 import test from "node:test";
 import { observeClaudeProcess, probeClaudeProcesses, probeNativeProcesses } from "../scripts/lib/native-session-process.mjs";
 
@@ -77,6 +80,17 @@ test("actual local OS probe uses owned synthetic registry only, returns birth; h
   const f = fixture(t), records = [], onProcess = record => { records.push(record); t.diagnostic(JSON.stringify(record)); };
   const cwdNames = fs.readdirSync(process.cwd()).sort();
   fs.writeFileSync(path.join(f.sessions, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: nativeSessionId }));
+  const inputs = [], originalSpawn = childProcess.spawn;
+  childProcess.spawn = (...args) => {
+    const child = originalSpawn(...args), end = child.stdin?.end;
+    if (end) child.stdin.end = function (chunk, ...rest) {
+      if (chunk !== undefined) inputs.push(Buffer.from(chunk));
+      return end.call(this, chunk, ...rest);
+    };
+    return child;
+  };
+  syncBuiltinESMExports();
+  try {
   const start = Date.now(), got = await observeClaudeProcess({ nativeSessionId, environment: f.environment, onProcess });
   t.diagnostic(JSON.stringify({ scope: "synthetic-registry-actual-task-owned-node-not-Claude-Host", durationMs: Date.now() - start }));
   assert.ok(got, "Actual OS probe must provide an exact own birth witness in the claimed local adapter."); assert.equal(got.pid, process.pid);
@@ -88,12 +102,18 @@ test("actual local OS probe uses owned synthetic registry only, returns birth; h
     assert.throws(() => process.kill(started.pid, 0), { code: "ESRCH" });
   }
   if (process.platform === "win32") {
-    for (const planned of records.filter(x => x.event === "planned")) {
-      const script = Buffer.from(planned.arguments.at(-1), "base64").toString("utf16le");
-      assert.doesNotMatch(script, /GetProcessById|GetProcessIds|EnumProcesses|Get-Process\b|Add-Type/iu);
-      assert.match(script, /OpenExact/); assert.match(script, /CloseHandle/);
+    for (const [index, planned] of records.filter(x => x.event === "planned").entries()) {
+      assert.deepEqual(planned.arguments, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "& ([scriptblock]::Create([Console]::In.ReadToEnd()))"]);
+      assert(Number.isSafeInteger(planned.inputBytes) && planned.inputBytes > 0);
+      assert.match(planned.inputDigest, /^[a-f0-9]{64}$/u);
+      const bytes = inputs[index]; assert.equal(bytes.length, planned.inputBytes + 2);
+      const script = bytes.subarray(0, planned.inputBytes);
+      assert.equal(crypto.createHash("sha256").update(script).digest("hex"), planned.inputDigest);
+      assert.doesNotMatch(script.toString("utf8"), /GetProcessById|GetProcessIds|EnumProcesses|Get-Process\b|Add-Type/iu);
+      assert.match(script.toString("utf8"), /OpenExact/); assert.match(script.toString("utf8"), /CloseHandle/);
     }
   }
+  } finally { childProcess.spawn = originalSpawn; syncBuiltinESMExports(); }
 });
 
 test("actual owned child birth then normal exit verifies old-instance disappearance, not work completion", async t => {

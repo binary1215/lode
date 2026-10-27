@@ -104,6 +104,19 @@ async function runtimeResultFromMcp(args) {
     root: args.project_root, authorizationId: args.authorization_id, storage: resolveProjectStorage(args.project_root),
   });
 }
+async function initializeProjectFromMcp(args, { projectSessionRoute, onValidatedSessionSelection, pluginLaunch, servingModuleUrl, installationCaller }) {
+  const onboarding = onboardingInputFromMcp(args);
+  const { createPluginInitializationContext, releasePluginInitializationContext } = await import("./lib/plugin-mcp-composition.mjs");
+  // The shared write guard already ran. Optional installation discovery must
+  // never read Project originals before a proven child write is rejected.
+  const installationContext = createPluginInitializationContext({ launch: pluginLaunch, servingModuleUrl,
+    caller: installationCaller, root: args.project_root });
+  try {
+    return await (await import("./lib/project-bootstrap.mjs")).initializeOrResumeProject({ root: args.project_root, pluginRoot,
+      projectSessionRoute, runtimes: args.runtimes || null, profile: args.profile || "core",
+      instructionIntegration: args.instruction_integration ?? null, onboarding, onValidatedSessionSelection, installationContext });
+  } finally { releasePluginInitializationContext(installationContext); }
+}
 const observationFieldSchema = {
   type: "object",
   properties: {
@@ -674,7 +687,7 @@ const allTools = [
   },
   {
     name: "head_runtime_invocation_authorization",
-    description: "Read and digest-verify one Session- or Run-scoped ExecutionAuthorization without invoking or controlling a provider.",
+    description: "Read and digest-verify one Session- or Run-scoped ExecutionAuthorization. A read-only historical view checks retained original input references and canonical bytes/digest where available; preparation does not prove delivery or model use. No provider invocation or current execution permission.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1044,8 +1057,9 @@ const allTools = [
       project_root: workEvidenceText,
       evidence_ids: { type: "array", maxItems: 512, items: { type: "string", pattern: "^work-evidence-[a-f0-9]{24}$" } },
       after_evidence_id: { type: "string", pattern: "^work-evidence-[a-f0-9]{24}$", description: "Explicit lexical ID-page anchor, not a time-order cursor. Default global selection returns no continuation cursor." },
+      scan_evidence: { type: "boolean", description: "Start the first bounded lexical original page without a seed ID; follow the returned next arguments when useful. Default recent-work selection is unchanged. No write or completeness claim." },
       max_records: { type: "integer", minimum: 1, maximum: 512 }, max_characters: { type: "integer", minimum: 2, maximum: 524288,
-        description: "Actual JSON.stringify(records).length budget after reference enrichment. Separate bounded metadata envelope excluded; omissions/expansion disclosed." },
+        description: "Actual emitted P3 JSON UTF16 budget: records, plus separate recordExcerpts and their coverage/selectors/expansion when present. Separate bounded outer/Todo metadata excluded; omissions/expansion disclosed." },
       todo_id: { type: "string", pattern: "^todo-[a-z0-9][a-z0-9-]{0,79}$", description: "Inspect this recorded task, including terminal or conflicting revisions, independently of recent work." },
       after_todo_id: { type: "string", pattern: "^todo-[a-z0-9][a-z0-9-]{0,79}$", description: "Continue the known unresolved Todo list by stable item ID." },
       scan_todos: { type: "boolean", description: "Read a bounded original ID page when the replaceable Todo index is missing or incomplete. Continue with after_evidence_id; no repair or World refresh." },
@@ -1190,7 +1204,7 @@ const allTools = [
   },
   {
     name: "head_bounded_worker_status",
-    description: "Read and verify one P3 bounded worker dispatch without consuming its authorization.",
+    description: "Read and verify one P3 bounded worker dispatch without consuming its authorization. The optional historical prepared-input view keeps original references, runtime observations and model-use uncertainty separate; it does not change current execution or recovery authority.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1908,6 +1922,9 @@ allTools.push(
       max_nodes: { type: "integer", minimum: 1, maximum: 500 }, max_edges: { type: "integer", minimum: 0, maximum: 1000 },
       details: { type: "boolean", default: false, description: "Default returns short core evidence (8 nodes/12 edges). Request details with fitting source paths or record anchors for original bounded payloads and relations (60/120 defaults), including recorded context and exact source comparisons when available. Recorded reasons, citations, byte changes and current state remain distinct; missing history does not require a Run, commit or new save." },
       world_model_id: { type: "string" }, include_candidates: { type: "boolean", default: true },
+      inventory_page: { type: "boolean", description: "Opt-in read-only owned-record byte discovery. Separate untyped rows, bounded metadata/body traversal, exact read hints and explicit next arguments; never typed approval or currentness. Ordinary graph selection is unchanged when omitted." },
+      inventory_paths: { type: "array", minItems: 1, maxItems: 32, items: { type: "string", minLength: 1, maxLength: 512 }, description: "Optional owned canonical record files/subdirectories, usually copied from returned narrowing arguments. Separate from graph source paths." },
+      inventory_cursor: { type: "string", minLength: 1, maxLength: 4096, description: "Returned request-local lexical seek, bound to Project/storage/query/scope; not a durable snapshot or recovery direction." },
       previous_result: { type: "object", description: "Optional prior verified result for identical-basis reuse, supplied by HEAD." },
     }, required: ["project_root"], additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -1925,7 +1942,8 @@ allTools.push(
   {
     name: "head_session_list", description: "Read a bounded logical Session page; session_id previews one Session's exact work and Todo without changing any selection. Unread/failed entries remain explicit; recent results are not whole-work completion or ownership. Follow nextAfterSessionId when needed.",
     inputSchema: { type: "object", properties: { project_root: { type: "string", minLength: 1 },
-      max_sessions: { type: "integer", minimum: 1, maximum: 64 }, after_session_id: { type: "string", maxLength: 512 } }, required: ["project_root"], additionalProperties: false },
+      max_sessions: { type: "integer", minimum: 1, maximum: 64 }, after_session_id: { type: "string", maxLength: 512 },
+      conversation_candidates: { type: "array", description: "Optional untrusted Host lookup selectors, at most 16 inspected. Each row supplies runtime, native_session_id, optional agent_id, and explicit environment_scope=current or unsupported-other. Invalid rows are reported separately. No caller, route, contact or ownership is inferred.", items: {} } }, required: ["project_root"], additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
@@ -1968,6 +1986,7 @@ allTools.push({
   inputSchema: { type: "object", properties: {
     native_session_id: { type: "string", minLength: 1, maxLength: 512 },
     native_agent_id: { type: ["string", "null"], maxLength: 512 },
+    native_project_root: { type: "string", description: "Optional trusted Hook cwd; model input is not proof of plugin loading or Project scope." },
     tool_use_id: { type: "string", minLength: 1, maxLength: 512 },
     outer_tool_name: { type: "string", minLength: 1, maxLength: 512 },
     original_arguments: { type: "string", minLength: 2 },
@@ -2067,15 +2086,14 @@ function requestedToolName(request) {
 // Host before-hook; MCP uses its own caller and optional Codex observations.
 // Disabled mode does not read observations.
 async function subagentStateWriteRejection(name, args, caller, environment) {
-  if (!subagentWriteGuardEnabled(environment)) return null;
   const selected = allTools.find(tool => semanticToolName(tool.name) === name);
   if (!selected || selected.annotations?.readOnlyHint === true) return null;
+  if (!subagentWriteGuardEnabled(environment, { caller })) return null;
   // A cold catalog or disabled guard must not load optional Codex observations.
-  const { recordedSubagentCaller } = await import("./lib/subagent-caller-signal.mjs");
   let current = caller && typeof caller === "object" ? { ...caller } : null;
-  if (current?.runtime === "codex" && current.subagent !== true && typeof args?.project_root === "string" && typeof current.nativeSessionId === "string"
-    && recordedSubagentCaller({ root: args.project_root, runtime: "codex", nativeSessionId: current.nativeSessionId, environment })) {
-    current = { ...current, subagent: true };
+  if (current?.runtime === "codex" && current.subagent !== true && typeof args?.project_root === "string" && typeof current.nativeSessionId === "string") {
+    const { recordedSubagentCaller } = await import("./lib/subagent-caller-signal.mjs");
+    if (recordedSubagentCaller({ root: args.project_root, runtime: "codex", nativeSessionId: current.nativeSessionId, environment })) current = { ...current, subagent: true };
   }
   const decision = assessSubagentStateWrite({ caller: current, readOnly: false });
   return decision.allowed ? null : decision.message;
@@ -2342,6 +2360,14 @@ async function unresolvedSessionResponse(id, name, root, reasonCode) {
   } catch (error) { return failure(id, error.message); }
 }
 
+async function preparedRuntimeRead(root, value) {
+  // Primary selection/owner/hash errors have already escaped. Optional view
+  // loading or historical-original failures cannot become execution gates.
+  try { return (await import("./lib/runtime-prepared-input-view.mjs")).withPreparedRuntimeInputView({ root, value }); }
+  catch { return { ...value, preparedInput: { kind: "PreparedRuntimeInputProjection", authorityPlane: "P4", status: "unavailable", reasonCode: "PREPARED_INPUT_VIEW_UNAVAILABLE",
+    persisted: false, instructionAuthority: false, recoveryAuthority: false, executionAuthorization: false, modelUse: "unknown" } }; }
+}
+
 export async function dispatch(request, options = {}) {
   if (options.nativeSessionBridge && !options.sessionContext && !options.resolveSessionContext) {
     return options.nativeSessionBridge.dispatch(request, (original, routing) => dispatchSessionRequest(original, { ...options, ...routing }));
@@ -2359,7 +2385,7 @@ async function dispatchSessionRequest(request, options = {}) {
   // its caller has selected a logical Session. Reject it before an unrelated
   // absent-binding diagnostic can hide the existing write-guard explanation.
   // Unknown/parent callers and disabled guards retain their normal routing.
-  if (request.method === "tools/call" && options.caller?.subagent === true) {
+  if (request.method === "tools/call") {
     const rejection = await subagentStateWriteRejection(requestedName, args, options.caller, options.hostEnvironment ?? process.env);
     if (rejection) return failure(request.id ?? null, rejection);
   }
@@ -2445,7 +2471,7 @@ async function dispatchSessionRequest(request, options = {}) {
   return dispatchRouted(request, options);
 }
 
-async function dispatchRouted(request, { surface = "ordinary", graphDbTransport = null, coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, signal, onProcess, onValidatedSessionSelection = null, readRelatedNativeContext = null, projectSessionRoute = null, projectLocationProjection = null, caller = null, hostEnvironment = process.env } = {}) {
+async function dispatchRouted(request, { surface = "ordinary", graphDbTransport = null, coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, signal, onProcess, onValidatedSessionSelection = null, readRelatedNativeContext = null, projectSessionRoute = null, projectLocationProjection = null, caller = null, hostEnvironment = process.env, pluginLaunch = null, servingModuleUrl = null, installationCaller = null } = {}) {
   requireSurface(surface);
   const id = request.id ?? null;
     if (request.method === "initialize") {
@@ -2473,8 +2499,6 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
       args = args.arguments;
     }
     requireOperationSurface(name, surface);
-    const subagentRejection = await subagentStateWriteRejection(name, args, caller, hostEnvironment);
-    if (subagentRejection) return failure(id, subagentRejection);
     const value = await (name === "head_run_start"
       ? (await import("./lib/run-lineage.mjs")).startRun({ root: args.project_root, executionContractId: args.execution_contract_id, startRequestId: args.start_request_id })
       : name === "head_core_contract"
@@ -2497,14 +2521,16 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
       : name === "head_project_graph"
         ? (await import("./lib/project-graph.mjs")).queryProjectGraph({ root: args.project_root, query: args.query ?? "", view: args.view ?? "all",
           anchorIds: args.anchor_ids ?? [], paths: args.paths ?? [], depth: args.depth, details: args.details ?? false, maxNodes: args.max_nodes, maxEdges: args.max_edges,
-          worldModelId: args.world_model_id ?? "", includeCandidates: args.include_candidates ?? true, previousResult: args.previous_result ?? null })
+          worldModelId: args.world_model_id ?? "", includeCandidates: args.include_candidates ?? true, previousResult: args.previous_result ?? null,
+          inventoryPage: args.inventory_page === true, inventoryPaths: args.inventory_paths, inventoryCursor: args.inventory_cursor })
       : name === "head_project_graph_index"
         ? (await import("./lib/project-graph.mjs")).indexProjectGraph({ root: args.project_root })
       : name === "head_session_create"
         ? (await import("./lib/session-routing.mjs")).createHeadSession({ root: args.project_root, sessionId: args.new_session_id, purpose: args.purpose })
       : name === "head_session_list"
-        ? (await import("./lib/session-work-context.mjs")).readSessionWorkList({ root: args.project_root,
-          sessionId: args.session_id ?? null, maxSessions: args.max_sessions ?? 16, afterSessionId: args.after_session_id ?? null })
+        ? await (await import("./lib/session-work-context.mjs")).readSessionWorkList({ root: args.project_root,
+          sessionId: args.session_id ?? null, maxSessions: args.max_sessions ?? 16, afterSessionId: args.after_session_id ?? null,
+          conversationCandidates: args.conversation_candidates, conversationEnvironment: hostEnvironment })
       : name === "head_project_direction_read"
         ? (await import("./lib/session-routing.mjs")).readProjectDirection({ root: args.project_root })
       : name === "head_project_direction_update"
@@ -2512,16 +2538,7 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
       : name === "head_onboarding_guide"
         ? (await import("./lib/onboarding-conversation.mjs")).inspectConversationalOnboarding({ root: args.project_root, candidateLimit: args.candidate_limit ?? 25 })
       : name === "head_project_initialize_or_resume"
-        ? (await import("./lib/project-bootstrap.mjs")).initializeOrResumeProject({
-          root: args.project_root,
-          pluginRoot,
-          projectSessionRoute,
-          runtimes: args.runtimes || null,
-          profile: args.profile || "core",
-          instructionIntegration: args.instruction_integration ?? null,
-          onboarding: onboardingInputFromMcp(args),
-          onValidatedSessionSelection,
-        })
+        ? initializeProjectFromMcp(args, { projectSessionRoute, onValidatedSessionSelection, pluginLaunch, servingModuleUrl, installationCaller })
       : name === "head_onboarding_semantic_refresh"
         ? (await import("./lib/onboarding.mjs")).proposeOnboardingSemanticRefresh({ root: args.project_root, semanticProposal: args.semantic_proposal, recoveryBasis: args.recovery_basis || null })
       : name === "head_onboarding_candidate_restore"
@@ -2639,7 +2656,7 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
       : name === "head_runtime_adapters"
           ? inspectRuntimeAdapters(args.project_root)
         : name === "head_runtime_invocation_authorization"
-          ? (await import("./lib/runtime-invocation-lifecycle.mjs")).readRuntimeInvocationAuthorization({ root: args.project_root, authorizationId: args.authorization_id })
+          ? await preparedRuntimeRead(args.project_root, (await import("./lib/runtime-invocation-lifecycle.mjs")).readRuntimeInvocationAuthorization({ root: args.project_root, authorizationId: args.authorization_id }))
         : name === "head_runtime_invocation_lease_status"
           ? (await import("./lib/runtime-invocation-lifecycle.mjs")).inspectRuntimeInvocationExecutionLease({ root: args.project_root, authorizationId: args.authorization_id })
         : name === "head_runtime_invocation_result"
@@ -2701,7 +2718,7 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
                   ? (await import("./lib/session-work-context.mjs")).recordSessionWorkEvidence({ root: args.project_root, input: args.evidence })
                 : name === "head_session_work_read"
                   ? (await import("./lib/session-work-context.mjs")).readSessionWorkContext({ root: args.project_root,
-                      evidenceIds: args.evidence_ids ?? null, afterEvidenceId: args.after_evidence_id ?? null,
+                      evidenceIds: args.evidence_ids ?? null, afterEvidenceId: args.after_evidence_id ?? null, scanEvidence: args.scan_evidence ?? false,
                       maxRecords: args.max_records ?? 8, maxCharacters: args.max_characters ?? 32768,
                       todoId: args.todo_id ?? null, afterTodoId: args.after_todo_id ?? null, scanTodos: args.scan_todos ?? false })
                 : name === "head_session_restore"
@@ -2729,7 +2746,7 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
                   : name === "head_bounded_worker_dispatch"
                     ? (await import("./lib/bounded-worker-dispatch.mjs")).createBoundedWorkerDispatch({ root: args.project_root, authorizationId: args.authorization_id, role: args.role })
                   : name === "head_bounded_worker_status"
-                    ? (await import("./lib/bounded-worker-dispatch.mjs")).readBoundedWorkerDispatch({ root: args.project_root, authorizationId: args.authorization_id })
+                    ? await preparedRuntimeRead(args.project_root, (await import("./lib/bounded-worker-dispatch.mjs")).readBoundedWorkerDispatch({ root: args.project_root, authorizationId: args.authorization_id }))
                   : name === "head_bounded_worker_wait"
                     ? await (await import("./lib/bounded-worker-dispatch.mjs")).waitForBoundedWorkerDispatch({ root: args.project_root, authorizationId: args.authorization_id, timeoutMs: args.wait_timeout_ms ?? 0 })
                   : name === "head_bounded_worker_apply_result"
@@ -2918,8 +2935,9 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
   }
 }
 
-export function serveMcp({ surface = "ordinary", coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, sessionContext = null, resolveSessionContext = null, nativeSessionBridge = createNativeSessionHostBridge() } = {}) {
+export function serveMcp({ surface = "ordinary", coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, sessionContext = null, resolveSessionContext = null, nativeSessionBridge, pluginLaunch = null } = {}) {
   requireSurface(surface);
+  if (nativeSessionBridge === undefined) nativeSessionBridge = createNativeSessionHostBridge({ pluginLaunch, servingModuleUrl: import.meta.url });
   const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
   const sourceRequests = new Map();
   const abortSources = () => { for (const controller of sourceRequests.values()) controller.abort(); };

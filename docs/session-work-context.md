@@ -109,7 +109,7 @@ indices; actual content remains once in `records`. The optional envelope, includ
 scope/omission notice and serialization overhead, uses only spare record budget.
 Fitting bodies are admitted first. Missing group metadata does not mean missing
 work; `omittedGroups` counts omitted view groups, not omitted source content.
-The existing `max_characters` contract still bounds the enriched record array,
+The existing `max_characters` contract bounds the record/excerpt delivery,
 not the complete reader/MCP transport envelope.
 
 Startup derives groups from its actually admitted output records and checks its
@@ -229,8 +229,8 @@ not a generated summary or a path presented as recovered reasons.
 Extra related body-expansion attempts are bounded by `maxRecords`, including failed
 or oversized attempts. That bound does not cap unknown-original verification or
 necessary direct endpoint checks. Incoming producers are not all reread before
-each displayed target. Proof metadata is retained for deduplication; unselected
-oversized bodies are discarded. Selected/related bodies have bounded retention,
+each displayed target. Proof metadata is retained for deduplication; verified
+oversized candidates can supply separate partial excerpts. Selected/related bodies have bounded retention,
 not full-history retention. Deferred related expansion and unique budget-omitted
 original counts are separate and are not added together. The recent/related/fallback
 policy also applies without linkage extensions: an unrelated old extension cannot
@@ -250,7 +250,7 @@ endpoints still receive fresh checks. A valid original contradicting an observed
 historical hint causes one canonical fallback over that fixed discovered set,
 not rejection as corrupt; later failures between current checks remain failures.
 Candidates are considered newest-recorded first, with
-evidence ID breaking equal-time ties. The default returns at most eight records
+evidence ID breaking equal-time ties. The default returns at most eight unique originals, as full records or excerpts,
 without judging semantic relevance, sufficiency or current authority. Corrupt or
 oversized candidates do not prevent later fitting work from being considered.
 There is no automatic pruning, silent deletion or mandatory whole-history audit.
@@ -285,6 +285,22 @@ not a global time-order cursor or a complete ID-discovery interface. Its numeric
 describes that page, not absence of Session history. Text stays quiet only for
 observed numeric `coverage.originals` equal to `0`, not unknown inventory.
 Bounded omission samples do not expose every omitted ID.
+
+To begin that lexical enumeration without inventing an ID, explicitly request
+`scanEvidence: true` (MCP `scan_evidence: true`, CLI `--scan-evidence`). The first
+page returns its real `nextAfterEvidenceId` and `enumeration.next` arguments for
+one subsequent request. Failed or oversized originals count as examined and do
+not stall the cursor. Advancing does not reread earlier-page bodies. Page
+membership is observed per request; insertion before a cursor can remain unseen,
+and a last page is not a whole-history completeness or direction claim. This
+optional read does not change default recent selection, exact-ID reads or P2.
+The explicit scan can stop before 512 originals when body capacity and the
+existing 32 omission/failure selector slots fill. Every examined original has
+either its full body or an exact ID in the returned lists; the next frontier
+does not skip undisclosed IDs. Admission is lexical in this new scan mode.
+Legacy `afterEvidenceId` without the scan flag retains its existing page rules.
+Todo arguments request their separate projection; the scan flag alone does not
+add an independent Todo-history scan.
 
 Historical hints are replaceable P4 metadata, not a current archive census.
 An unselected same-name external restoration, a plausible incorrect rank or an
@@ -327,12 +343,26 @@ index fallback retains its full-discovered-set defense. This is a sequential vie
 the discovered set, not atomic latest-at-return: records added after enumeration
 may be absent. No mandatory index, lock, write or service is added.
 
-The `max_characters` bound is the actual `JSON.stringify(records).length`
-after reference enrichment, including its array delimiters. A separate bounded
-metadata envelope carries coverage, omissions, original IDs and expansion advice.
-It is not included in that record-array budget. The default is 32,768 characters;
-this is a serialization bound, not a token estimate or semantic verdict.
-Large records are disclosed as omitted and remain available by exact read.
+With full records only, `max_characters` retains the actual
+`JSON.stringify(records).length` contract after reference enrichment. When partial
+fields are delivered, it counts `JSON.stringify({records,recordExcerpts}).length`,
+including the excerpts' selectors, field/group coverage and expansion metadata.
+The separate context envelope and independent Todo projection remain a different
+scope. The default is 32,768 UTF-16 code units, not UTF-8 bytes, tokens or semantic
+sufficiency. Even the minimum budget of two admits zero bodies without an error
+or hidden excess; bounded outer coverage discloses the omission.
+
+`recordExcerpts` are P4 views, never shortened `records[].content`. Each `source`
+retains the exact Project/Session/evidence ID/digest. `fields[].path` preserves the
+original field and array index; a partial string declares `range.unit` as
+`utf16-code-units`, with exact start/end/total and grapheme-safe boundaries.
+Judgment/task fragments retain their group fields and original association.
+`emptyValues` factors explicitly present empty/null values without erasing them.
+Small complete structural units are attempted before long prefixes; output order
+stays original. This packing is not a model importance or approval judgment.
+Coverage states which fields/items/conditions may be missing; the existing exact
+read expansion retains its bounded arguments. Exact-ID and explicit page reads
+keep full-original semantics and their original errors.
 
 Default unavailable details are sampled up to 32 entries. `coverage.unavailable`
 counts unavailable originals within the inspected set, and
@@ -340,12 +370,15 @@ counts unavailable originals within the inspected set, and
 `coverage.valid` includes successfully inspected originals that were never offered
 as bodies, proof-only relation/qualifier originals and returned bodies, less
 observed later failures. `omissions.byBudget` counts only canonical-valid originals
-actually offered body admission and rejected by record or enriched character
+actually offered complete-body admission and rejected by record or enriched character
 budgets; it does not count every undisplayed or proof-only original. Thus
 `coverage.inspected = coverage.valid + coverage.unavailable` and
 `coverage.included <= coverage.valid`, but default
 `coverage.valid = coverage.included + omissions.byBudget` is not guaranteed.
 Unique inspected originals are counted once even if reread.
+`coverage.included` counts complete records; `coverage.excerpted` counts separate
+partial originals. A partial original can still occur in `omissions.byBudget`
+because its full body was not delivered; do not add these as disjoint originals.
 An original changed or lost on reread becomes unavailable, not a mixed old-order/
 new-body result. Explicit page and exact-ID reads retain their bounded detail
 range. Body and diagnostic omissions are separate; no empty sample proves absence.
@@ -405,7 +438,7 @@ The old approximate 4,096-token setting could spill even a character-bounded
 multilingual result. Installed Host support and actual model receipt remain
 separate verification; characters, UTF-8 bytes and model tokens are not equivalent.
 Current direction/purpose/checkpoint inputs themselves have no text-length cap;
-the existing 32,768-character work read covers only its selected record array.
+the existing 32,768-character work read covers its full/partial P3 delivery only.
 Exact current common direction, Session purpose and the
 latest selected checkpoint's purpose/decisions/position/next-result fields take
 priority over optional prose, coverage detail, ID samples and P3 history. The
@@ -446,9 +479,13 @@ diagnostics remain. An unpaired descriptor is retained whole, not guessed.
 These hashes select verified originals, not the compact projected JSON. Reference
 byte matching does not establish semantic freshness or authority. Unavailable or
 changed-basis work retains status/reason and expansion even with zero records.
-No original, selection, binding, tool chain or user step is added. A genuinely
-oversized source is omitted whole with truthful coverage and dependent-only
-expansion; omitted cancellation never means absent cancellation. No local spill
+The same pure P4 fitter measures the complete startup JSON, including excerpt
+metadata, under each existing Host ceiling. Full work content remains unchanged;
+smaller startup capacity can instead carry clearly separate partial excerpts.
+Zero full records with excerpts is neither empty history nor complete recovery.
+No original, selection, binding, tool chain or user step is added. Protected P2
+that cannot fit is omitted whole with dependent-only expansion; omitted
+cancellation never means absent cancellation. No local spill
 file or automatic follow-up read is created. Actual Host spill/preview behavior
 must not be called complete recovery. The guard bounds emitted text, not the
 memory required to read already-valid unbounded P2 inputs.
@@ -468,21 +505,35 @@ denial, deny/retry normal workflow, permission bypass or global MCP selector is
 introduced. Correct explicit requests and independent Project work remain
 available after optional binding loss.
 
-An optional state-write policy is decided in the MCP server, not in a Hook
-denial. It stays off unless the process environment is
-`LODE_SUBAGENT_WRITE_GUARD=enforce`. While off, a subagent may still record
-canon, checkpoints, and lineage; that preserves the previous design and can
-bypass the parent review gate. While enforced, a caller with `caller.subagent`
-is rejected for every catalog tool whose `readOnlyHint` is not true. The error
-is `SUBAGENT_STATE_WRITE_REJECTED`. Read tools stay available. Claude passes the
-existing PreToolUse child `agent_id` through the Session-tool and generic-router
-correlation; direct tools outside that matcher are not a separate caller.
-Codex passes `_meta.agent_id` or `_meta.subagent`, and a `SubagentStart`
-observation counts when its native id is the request `params._meta.threadId`.
-OpenCode passes a child session `parentID` as a short-lived ticket from the
-plugin. The plugin does not reject the tool. Set the same environment on the
-OpenCode process so the plugin can publish the ticket and the MCP server can
-enforce it.
+The shared state-write policy runs once after router unwrap, before dependent
+Session diagnostics. Unset protection applies only to exact-supported Claude
+and OpenCode child calls. Codex remains off by default; explicit
+`LODE_SUBAGENT_WRITE_GUARD=enforce` preserves its existing known-child behavior,
+and explicit off disables this optional Host policy. Catalog `readOnlyHint`
+metadata determines protected state writes. Reads, parent/independent work and
+ordinary source edits stay available; a rejection is
+`SUBAGENT_STATE_WRITE_REJECTED`, never a new user approval ritual or authority
+for the parent.
+
+Claude's own local/plugin PreToolUse matchers derive Session/transition, router
+and effectful coverage from the actual catalog, including finite supported
+aliases and excluding the helper/other servers. Child `agent_id` is combined
+with the exact outer tool name, argument digest, `tool_use_id` and actual MCP
+`claudecode/toolUseId`. Protected Project-only writes use the same bounded
+transient registry without Session/P2/inventory reads or persistence. A
+`caller.subagent` bit alone, signal-only fallback, expired/replayed/mismatched
+claim or missing native metadata cannot enable default protection. Such paths
+are unsupported/unknown, not protection successes or blanket denials.
+
+When explicitly enforced, Codex still recognizes `_meta.agent_id` or
+`_meta.subagent`, and a `SubagentStart` observation whose native ID matches
+`params._meta.threadId`. Unset/off does not add those optional lookup costs.
+OpenCode applies the same policy in the actual awaited before-hook using its
+owned server, exact call ID, Project/directory and Session `parentID`. It does
+not publish a cross-call child ticket. Ordinary source tools and read-only calls
+need no policy Session lookup; missing call ID, unsupported scope, lookup error
+or timeout does not assert protection or block independent work. Neither path
+is malicious-client isolation or proof of actual installed Host delivery.
 
 ### Which operations retain a selection?
 

@@ -303,7 +303,7 @@ claude plugin update head-agent-core@head-agent-plugin
 | 프로젝트 | 초기화, Source Scope, 검토를 거치는 Product Canon | 사용 가능 |
 | 지식 | 원본 fallback을 갖는 제한된 그래프 우선 탐색, World Model, 증분 갱신, 선택적 Context Capsule | 사용 가능 |
 | Session | 독립 논리 Session 라우팅, 공통 현재 방향과 정확한 기준의 갱신 | 사용 가능 |
-| Session | 선택적 서브에이전트 상태 쓰기 가드, `LODE_SUBAGENT_WRITE_GUARD=enforce`가 아니면 꺼짐 | 실험적 |
+| Session | 정확히 확인된 지원 Claude/OpenCode 자식의 상태 쓰기는 기본 보호, Codex 보호는 선택 적용 | 실험적 |
 | 계보 | Run, ResultPacket, Fresh Lode 검토, P2 Session 및 대화 진입 복구 | 사용 가능 |
 | Host lifecycle | 신뢰하는 Host 어댑터가 필요한 공급자 중립 compaction·최대 1회 continuation 계약 | 실험적 |
 | Host context | compact를 포함한 Claude Code·Codex 패키지의 SessionStart 맥락 전달 | 사용 가능 |

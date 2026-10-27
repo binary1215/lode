@@ -122,8 +122,14 @@ for (const [runtime, limit] of [["codex", 32768], ["claude", 10000]]) {
     const f = fixture(t), before = snapshot(f.base);
     const output = sessionStartContext({ runtime, event: { hook_event_name: "SessionStart", source: "compact", cwd: f.root, session_id: "x".repeat(513) } });
     const text = output.hookSpecificOutput.additionalContext;
-    assert.ok(text.length <= limit); assert.match(text, /HEAD optional startup context unavailable/);
-    assert.match(text, /Continue independent work/); assert.deepEqual(snapshot(f.base), before);
+    assert.ok(text.length <= limit);
+    const diagnostic = JSON.parse(text);
+    assert.equal(diagnostic.status, "host_context_unavailable");
+    assert.equal(diagnostic.reasonCode, "INVALID_SESSION_HOST_INPUT");
+    assert.equal(diagnostic.sessionSelection, "not-inferred");
+    assert.equal(diagnostic.ordinaryWorkBlocked, false); assert.equal(diagnostic.persisted, false);
+    assert.equal(typeof diagnostic.coreGuidance, "string");
+    assert(diagnostic.coreGuidance.length > 0); assert.deepEqual(snapshot(f.base), before);
   });
   test(`${runtime}: public writer->entry->Hook retains fitting >7000 reason with no extra reads or writes`, t => {
     const f = fixture(t), root = f.save({ summary: "Initial purpose anchor" });

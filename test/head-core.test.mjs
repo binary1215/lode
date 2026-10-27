@@ -7,7 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { initializeProject, inspectProject, inspectRuntimeAdapters } from "../scripts/lib/head-core.mjs";
+import { initializeProject, convergeProjectInstallation, inspectProject, inspectRuntimeAdapters } from "../scripts/lib/head-core.mjs";
+import { coreEntryGuidance } from "../scripts/lib/lode-entry-guidance.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
 import { createRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
@@ -259,6 +260,84 @@ function hasOwnKeyDeep(value, key) {
   return Object.prototype.hasOwnProperty.call(value, key)
     || Object.values(value).some((item) => hasOwnKeyDeep(item, key));
 }
+
+test("host-a: Claude instruction and MCP ownership are independent in every presence combination", t => {
+  for (const instructionPresent of [false, true]) for (const mcpPresent of [false, true]) {
+    const root = temporaryProject(); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const instruction = "User-owned Korean 지침 😀\r\n", mcp = '{"mcpServers":{"user-owned":{"command":"unused"}}}\n';
+    if (instructionPresent) fs.writeFileSync(path.join(root, "CLAUDE.md"), instruction);
+    if (mcpPresent) fs.writeFileSync(path.join(root, ".mcp.json"), mcp);
+    const result = initializeProject({ root, pluginRoot, runtimes: ["claude"] }), current = inspectProject(root);
+    assert.equal(current.status, "ready"); assert.equal(result.integrations.claude.instruction.status, instructionPresent ? "manual" : "managed");
+    assert.equal(result.integrations.claude.mcp.status, mcpPresent ? "manual" : "managed");
+    assert.equal(fs.existsSync(path.join(root, "AGENTS.md")), false); assert.equal(fs.existsSync(path.join(root, "opencode.json")), false);
+    if (instructionPresent) assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), instruction);
+    else assert(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8").includes(coreEntryGuidance()));
+    if (mcpPresent) assert.equal(fs.readFileSync(path.join(root, ".mcp.json"), "utf8"), mcp);
+    else assert.equal(JSON.parse(fs.readFileSync(path.join(root, ".mcp.json"))).mcpServers.lode.command, "node");
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, current.storage.directory, "generated/manifest.json")));
+    assert.equal(manifest.managed.some(item => item.path === "CLAUDE.md"), !instructionPresent);
+    assert.equal(manifest.managed.some(item => item.path === ".mcp.json"), !mcpPresent);
+  }
+});
+
+test("host-a: explicit resume supplies an absent legacy manual part without adopting existing user files", async t => {
+  const root = temporaryProject(); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "CLAUDE.md"), "User owns this file\n"); fs.writeFileSync(path.join(root, ".mcp.json"), "{}\n");
+  initializeProject({ root, pluginRoot, runtimes: ["claude"] });
+  const initial = inspectProject(root), projectFile = path.join(root, initial.storage.directory, "project.json"), manifestFile = path.join(root, initial.storage.directory, "generated/manifest.json");
+  const project = JSON.parse(fs.readFileSync(projectFile)); project.integrations.claude = { status: "manual", reason: "Legacy combined ownership", instructionProjection: ".lode/generated/lode-instructions.md", mcpProjection: ".lode/generated/claude.mcp.json" };
+  fs.writeFileSync(projectFile, JSON.stringify(project, null, 2) + "\n");
+  const manifest = JSON.parse(fs.readFileSync(manifestFile)); manifest.managed.find(row => row.path === ".lode/project.json").sha256 = crypto.createHash("sha256").update(fs.readFileSync(projectFile)).digest("hex");
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + "\n"); fs.unlinkSync(path.join(root, ".mcp.json"));
+  const sessionFile = path.join(root, initial.storage.directory, "sessions/current.json"), sessionBytes = fs.readFileSync(sessionFile);
+  assert.equal(inspectProject(root).status, "ready");
+  const result = await initializeOrResumeProject({ root, pluginRoot, profile: "core", instructionIntegration: "preserve" });
+  assert.equal(inspectProject(root).status, "ready"); assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), "User owns this file\n");
+  assert.equal(inspectProject(root).project.integrations.claude.instruction.status, "manual"); assert.equal(inspectProject(root).project.integrations.claude.mcp.status, "managed");
+  assert.equal(result.installationAction, "converged"); assert.equal(result.coreGuidance, coreEntryGuidance()); assert.deepEqual(fs.readFileSync(sessionFile), sessionBytes);
+  assert.equal(convergeProjectInstallation({ root, pluginRoot }).status, "current");
+});
+
+test("host-a: explicit standalone MCP entry returns shared guidance with manual instructions preserved", async t => {
+  const root = temporaryProject(); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "CLAUDE.md"), "User-owned standalone context\n");
+  const { dispatch } = await import("../scripts/mcp-server.mjs");
+  const response = await dispatch({ jsonrpc: "2.0", id: "standalone-entry-guidance", method: "tools/call", params: {
+    name: "lode_project_initialize_or_resume", arguments: { project_root: root, profile: "core", runtimes: ["claude"], instruction_integration: "preserve" } } });
+  assert.equal(response.error, undefined, JSON.stringify(response)); assert.equal(response.result?.isError, undefined, JSON.stringify(response));
+  assert.equal(response.result.structuredContent.coreGuidance, coreEntryGuidance());
+  assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), "User-owned standalone context\n"); assert(fs.existsSync(path.join(root, ".mcp.json")));
+  assert.equal(response.result.structuredContent.instructionIntegration.hostConsumption, "not-verified");
+});
+
+test("host-a: missing owned projections stay drift errors and a create race preserves the intervening user file", t => {
+  const root = temporaryProject(); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeProject({ root, pluginRoot, runtimes: ["claude"] }); fs.unlinkSync(path.join(root, ".mcp.json"));
+  assert.throws(() => convergeProjectInstallation({ root, pluginRoot }), /Managed project files must be drift-free/);
+  assert.equal(fs.existsSync(path.join(root, ".mcp.json")), false);
+  const other = temporaryProject(); t.after(() => fs.rmSync(other, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(other, "CLAUDE.md"), "User owns instructions\n"); fs.writeFileSync(path.join(other, ".mcp.json"), "{}\n");
+  initializeProject({ root: other, pluginRoot, runtimes: ["claude"] }); fs.unlinkSync(path.join(other, ".mcp.json"));
+  const before = directoryFileDigests(other), link = fs.linkSync;
+  fs.linkSync = (source, target) => { if (target === path.join(other, ".mcp.json")) fs.writeFileSync(target, "User race winner\n"); return link(source, target); };
+  try { assert.throws(() => convergeProjectInstallation({ root: other, pluginRoot }), error => error.code === "EEXIST"); }
+  finally { fs.linkSync = link; }
+  assert.equal(fs.readFileSync(path.join(other, ".mcp.json"), "utf8"), "User race winner\n");
+  const after = directoryFileDigests(other); delete after[".mcp.json"]; assert.deepEqual(after, before);
+});
+
+test("host-a: failed manifest publication rolls back only owned new projections and prior metadata bytes", t => {
+  const root = temporaryProject(); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "CLAUDE.md"), "User-owned instructions\n"); fs.writeFileSync(path.join(root, ".mcp.json"), "{}\n");
+  initializeProject({ root, pluginRoot, runtimes: ["claude"] }); fs.unlinkSync(path.join(root, ".mcp.json"));
+  const before = directoryFileDigests(root), target = path.join(root, ".lode/generated/manifest.json"), rename = fs.renameSync;
+  let injected = false;
+  fs.renameSync = (source, file) => { if (file === target && !injected) { injected = true; throw Object.assign(new Error("Synthetic publication failure"), { code: "EIO" }); } return rename(source, file); };
+  try { assert.throws(() => convergeProjectInstallation({ root, pluginRoot }), error => error.code === "EIO"); }
+  finally { fs.renameSync = rename; }
+  assert.equal(injected, true); assert.deepEqual(directoryFileDigests(root), before); assert.equal(inspectProject(root).status, "ready");
+});
 
 test("initializes Claude, Codex, and OpenCode projections and verifies managed canon", (t) => {
   const root = temporaryProject();

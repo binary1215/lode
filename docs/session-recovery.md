@@ -80,6 +80,16 @@ reconciliation. Neither restore nor this direction record grants an execution
 authorization. An older valid record remains inspectable history, while a stale
 checkpoint cannot drive current effect execution merely by being readable.
 
+If a verified Project has lost its selected Session, ordinary work and common
+direction remain available. Entry returns `sessionDiscovery.call` for the
+existing read-only `lode_session_list` with that exact Project root. Reuse
+verified candidates already supplied; call discovery only when missing dependent
+context matters. Startup/failure does not enumerate Sessions or select a default.
+The list bounds returned state, but enumerates directory names; do not describe
+it as bounded total scan cost. Titles and recency never prove the same task or
+carry past approval. A damaged or foreign Project owner cannot supply a
+same-Project discovery hint.
+
 ## Artifact-only Session restore
 
 `session-restore` starts from the current canonical checkpoint pointer and:
@@ -386,6 +396,37 @@ initialize/resume remain available. No old-to-new native-ID correlation is guess
 from recency or a different caller. Synthetic routing tests do not prove actual
 Claude `/clear` ID changes or automatic cross-ID restoration.
 
+For Claude's explicit `SessionEnd(reason=clear)` followed by
+`SessionStart(source=clear)`, optional P5 carrier continuity can retain an already
+selected logical Session. Both events must independently verify the same local
+environment, process PID and OS creation identity through an exact CLI registry
+entry. The Project, canonical root and agent must match. The old binding's
+Session, revision and digest are reread under the existing selection CAS lock;
+the new caller must have no binding. PID liveness, recency, or `source=clear`
+alone is never enough. The terminal ancestry row does not query its unused
+parent; its `ppid=0` means not requested, not a verified parent identity.
+
+The local operational hint cache has at most 64 instances, 128 KiB total and
+8 KiB per hint. Its ten-minute lifetime starts at the retained end observation;
+replay cannot refresh it. Ambiguous pairs, expiry, tamper, missing observations,
+changed mappings and failed writes suppress only automatic linkage. The retained
+start must follow the end; a reordered or replayed start cannot acquire a later
+hint. A first start without an exact witness cannot be repaired by a later
+replay; replaced or evicted caller observations leave its order unconfirmed.
+Consumption precedes binding, so a partial write is not automatically retried. There is no
+binding inventory search, new logical Session, P2 direction change or effect
+replay. Existing explicit selection and ordinary work remain available.
+
+The existing command Hook limits remain one second for SessionEnd and ten
+seconds for SessionStart. Optional clear observation/linkage shares an absolute
+deadline of at most one second, capped by the remaining command budget. Project
+validation precedes registry access; the exact OS query can overlap loading of
+the existing readers. Helpers are hidden, awaited and closed on failure as well
+as success. Startup rendering and prompt-reference delivery retain their own
+existing behavior. Synthetic command-entry and process tests establish local
+writer/hint/lookup/CAS/startup consumption only, not installed Claude event
+delivery, an actual `/clear`, model reception or a performance guarantee.
+
 References are prepared without consumption. The entire bounded reference fits
 the actual context string or stays stored; partial inclusion is not implied.
 Command Hooks consume only after the local stdout write callback succeeds;
@@ -409,6 +450,14 @@ Published field contracts: [Codex Stop](https://learn.chatgpt.com/docs/hooks#sto
 and [Claude Stop input](https://code.claude.com/docs/en/hooks#stop-input).
 
 ## Explicit tasks across recovery
+
+Default work context keeps full `records[].content` and separate P4
+`recordExcerpts`. Read the latter using their exact `source`, original field/index
+and declared ranges. Related judgment/task fields retain their association, but
+partial coverage can omit a condition. Zero full bodies with excerpts is partial
+history, not no history or complete recovery. Use the supplied exact-read
+expansion for missing dependent evidence; current P2 direction/cancellation and
+the independent Todo view continue to govern ordinary work.
 
 HEAD can record optional `todos` through the existing `lode_session_work_record`
 or checkpoint's optional work evidence. Users describe work normally. HEAD

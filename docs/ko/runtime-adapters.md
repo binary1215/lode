@@ -63,13 +63,23 @@ bounded status map(O(A))만 사용하며 새 SDK·인증을 만들지 않습니�
 마켓플레이스 실행 줄은 이식성을 유지합니다. 로드된 Claude 플러그인 안의
 `${CLAUDE_PLUGIN_ROOT}`는 Host가 제공하는 정상적인 플러그인 경로입니다.
 반면 명시적인 CLI 초기화가 만드는 Claude 프로젝트 설정은 `node`와 선택한
-패키지에서 검증한 절대 MCP 경로·작업 디렉터리를 사용하며, 플러그인 전용 변수가
-있다고 가정하지 않습니다. 사용자 소유 설정은 보존합니다. 설치 선택 변경은
-명시적인 resume/설치 정합화 때 반영되며 자동 Host reload는 아닙니다. 이 로컬
+로컬 실행 경로를 검증하며, 플러그인 전용 변수가 있다고 가정하지 않습니다.
+소유권이 확인된 standalone 설치에 선택된 command 주소가 기록되어 있으면, 기존
+launcher의 내부 MCP 모드를 사용합니다. launcher는 소유권·`current.json`·선택된
+release·파일 hash를 확인한 뒤 일반 MCP server를 실행합니다. 기존 설치 marker에
+명시적으로 선택한 bin 디렉터리를 기록하며 PATH·기본 설치·최신 cache 검색으로 다른
+설치를 고르지 않습니다. 같은 설치 root의 upgrade/rollback 이후 새 실행도 같은 주소를
+사용합니다.
+
+command 주소가 없는 구 marker나 marketplace cache처럼 검증된 stable launcher가 없으면
+선택된 패키지의 절대 MCP 경로와 작업 디렉터리를 유지합니다. 설치 root가 이동·삭제되어도
+자동으로 다른 위치를 찾지 않습니다. 살아 있는 설치를 명시적으로 선택하고 resume/설치
+정합화하면 관리 중인 투영을 다시 연결할 수 있습니다. 사용자 소유 설정은 보존하며,
+pointer 변경이나 설정 정합화로 이미 실행 중인 MCP를 reload하지 않습니다. 이 로컬
 Claude 설정을 다른 기계로 복사할 수 있는 이식형 파일로 간주하면 안 됩니다.
 
 Codex 프로젝트 초기화는 MCP 경로를 쓰지 않습니다. 플러그인 `.mcp.json`은
-`node`, `scripts/mcp-server.mjs`, `cwd` `.`를 유지하고 hook은 `${PLUGIN_ROOT}`를
+`node`, `scripts/mcp-plugin-server.mjs`, `cwd` `.`를 유지하고 hook은 `${PLUGIN_ROOT}`를
 확장합니다. OpenCode `opencode.json`도 `node`와
 `{env:LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs`를 유지합니다. config hook은 이를
 메모리 안에서 해석하며 공유 파일에 절대 설치 경로나 Node 경로를 쓰지 않습니다.
@@ -77,15 +87,57 @@ Codex 프로젝트 초기화는 MCP 경로를 쓰지 않습니다. 플러그인 
 기본 graph-explorer HTML은 로컬 `project.root`와 `regenerate.argv`를 유지하며
 `--share`는 이 재생성 경로를 제외합니다.
 
-선택 사항인 `LODE_SUBAGENT_WRITE_GUARD`는 기본 off입니다. 정확한 `enforce`만
-켜지며, 비어 있지 않은 잘못된 값은 값을 노출하지 않고 stderr에 경고합니다.
-일반 작업을 막거나 다른 보호 정책을 몰래 활성화하지 않습니다. 확인된 하위
-에이전트의 쓰기는 선택적 Session 연결 안내보다 먼저 차단하지만, 부모 호출에
-새 권한을 부여하거나 Session을 자동 연결하지는 않습니다.
+패키지의 plugin 진입점은 `scripts/mcp-server.mjs`와 같은 Core를 제공합니다.
+검증된 Claude plugin payload·정확한 private Hook tool-use 연결·plugin namespace와
+native caller·현재 요청의 정규화한 Project root와 같은 trusted Hook cwd가 모두 있어야
+새 프로젝트 `.mcp.json` 생성을 생략합니다. 기존 자식 쓰기 보호가 이 선택적 Project 조회보다
+먼저 실행됩니다. 기존 사용자·관리 파일은 보존하며 server를 삭제하지 않습니다. source·
+standalone·다른 carrier·근거 부재·잘못된 provenance는 일반 제공 경로를 유지합니다.
+ENV·모델 인수·서버명·launch 객체만으로는 증명할 수 없습니다. 나중의 standalone resume은
+사용자에게 JSON 작성을 요구하지 않고 부재 파일을 제공할 수 있습니다.
+
+이 설치 context는 요청 종료와 함께 폐기됩니다. 파일 소유권 metadata는 다음 Host에서의
+접근 영수증·Session 선택·P2 복구 방향·권한이 아닙니다. package-local 검사에도 원본 hash·
+정확한 MCP 투영·entry/module 선언·정확한 파일 tree 검증을 유지합니다. 전체 marketplace의
+repository·commit 검사는 별개이며, 로컬 합성 stdio 검사는 실제 설치 Host의 로딩·Hook 변수
+해석·모델 수신을 증명하지 않습니다.
+
+`LODE_SUBAGENT_WRITE_GUARD`가 없으면 정확한 호출 연결이 검증된 지원
+Claude/OpenCode 자식의 상태 쓰기만 기본 보호합니다. Codex와 근거가 없는 caller는
+기본으로 켜지지 않습니다. 명시적 `enforce`는 기존의 더 넓은 확인된 자식 정책을
+유지하고, `off`는 이 선택적 Host 보호와 추가 조회·상관 비용을 끕니다. 잘못된 값은
+변경된 값마다 한 번만 값을 노출하지 않고 경고하며, 일반 작업을 막는 대신 보호를
+끕니다. 카탈로그의 effect metadata로 라우터 내부 도구를 확인한 뒤 MCP 호출마다 한 번,
+선택적 Session 연결 안내보다 먼저 판단합니다. 읽기·부모/독립 작업·일반 소스 편집은
+계속 가능합니다. 지원되지 않거나 실패한 native 근거는 미확인이며, 보호 성공·권한·
+Session 연결로 간주하지 않습니다.
 
 로컬 소스형·소유 OS helper 검증은 실제 설치 Host의 event 전달·모델 도구 선택·긴
 compaction UX·전체 활동 파악의 증거가 아닙니다. Codex 현재 대화/turn 상태는 필요할
 때 이미 노출된 Host 도구로 확인합니다. [runtime composition](../../skills/lode-agent-core/references/runtime-composition.md#native-observations-and-current-host-activity)을 참조하세요.
+
+## 과거에 준비된 입력
+
+기존 `lode_runtime_invocation_authorization`, `lode_bounded_worker_status`와
+CLI `runtime-invocation-read --authorization <id>`의 명시적 read/status 경계에서
+선택적 `preparedInput`을 제공합니다. 공유 정본 authorization/dispatch reader와
+prepare/execute/apply 검사는 바뀌지 않습니다. 선택적 뷰를 불러오지 못해도 원래
+결과는 유지하며, 선택한 authorization 자체의 소유자·digest 오류는 기존대로 실패합니다.
+
+비영속 P4 뷰가 당시의 정확한 authorization·plan·contract·Capsule 및 캡처한
+`ProjectDirection` 리비전을 읽습니다. 기존 정본 serializer로 재구성한 입력의 바이트
+수와 digest가 `executionInput`에 일치할 때만 `verified-prepared-input`으로 표시합니다.
+plan/contract의 기존 Project 범위를 유지하고 Session 소유자를 만들어 내지 않습니다.
+현재 소스나 방향으로 과거 원본을 대체하지 않습니다. 원문 부재·무결성 실패·원문
+한도와 전체 입력이 보존되지 않은 과거 요청을 구분합니다. 정확한 경로·digest와
+최대 2048바이트의 UTF-8 발췌 및 생략량을 제공합니다.
+
+준비, 런타임 receipt 관측, 모델 사용은 별개입니다. 합성 receipt는 합성으로 표시하며,
+digest가 일치하는 런타임 관측도 모델 전달·주의·사용을 증명하지 않습니다. Core의
+정본 입력이지 전체 Host/모델 프롬프트가 아닙니다. provider·프로세스 실행, 새 snapshot,
+native와 authorization의 추정 연결이나 P2 쓰기는 없습니다. 이후 취소와 현재 실행·
+복구 검사는 계속 효과를 통제합니다. 일반 native 계보는 나중에 읽은 참고 기록이며
+분기 시점의 입력을 재구성한 것으로 취급하지 않습니다.
 
 ## 보존된 일회성 worker 계약
 
@@ -589,3 +641,27 @@ turn 완료와 프로세스 종료 확인은 별개 관측입니다. 선택적 c
 공개 플러그인 정책이나 durable worker-job 통합 workflow의 대체물이 아닙니다.
 actual factory가 있다는 사실은 live provider 적합성 증거가 아닙니다. 로컬 검증은
 기본적으로 actual provider를 시작할 수 없어야 합니다.
+
+## 시작 안내와 Claude 파일 소유권
+
+생성된 Core 지침, 지원되는 시작 투영, 명시적 bootstrap 응답은 같은 최소 작업 지속
+안내를 공유합니다. 기존 전체 JSON 예산(Claude 10,000, Codex/OpenCode 32,768 UTF-16
+문자)에서는 현재 목표·취소·선택된 Session 복구 내용·Todo·들어갈 수 있는 원래 이유가
+우선입니다. 시작 출력의 `coreGuidance`는 선택적 필드이며, 공간이 있으면
+`coreGuidanceDelivery`에 안내 생략을 표시합니다. 필드가 없다고 전달을 입증하는 것은
+아닙니다. 출력 객체 생성이나 로컬 Hook stdout은 Host/모델 수신·준수를 증명하지
+않습니다. 복구나 선택이 불확실해도 종속 작업만 영향을 받으며, inventory 전수 조회나
+새 checkpoint를 선행 조건으로 만들지 않습니다.
+
+Claude의 `CLAUDE.md`와 `.mcp.json` 소유권은 독립입니다. 기존 사용자 파일은
+보존하고, 선택한 Claude runtime의 다른 파일이 없으면 관리 파일을 제공할 수 있습니다.
+기존의 통합 소유권 metadata도 계속 읽습니다. 명시적 resume는 이전에 관리하지 않던
+부재 파일만 원자적으로 덮어쓰기 없이 만들고 기존 관리 manifest를 갱신할 수 있습니다.
+중간에 사용자 파일이 생성되면 그 파일을 보존합니다. 이미 관리하던 원문이 없어진 것은
+드리프트이며 재생성 권한이 아닙니다. 다른 runtime이나 기존 사용자 MCP 설정을
+자동으로 소유하거나 병합하지 않습니다.
+
+플러그인 Hook이 없는 경우에도 명시적 초기화/resume의 구조화 응답에 `coreGuidance`가
+있고, 생성된 지침 투영을 보존합니다. 사용자 지침 파일을 보존했다는 사실로 Host가
+생성 지침을 읽었다고 주장하지 않습니다. 기존 preserve/link 선택을 유지하며 자동
+수신·영속 전달 상태·실제 native 로딩을 추정하지 않습니다.

@@ -254,7 +254,6 @@ function formatReturnedRecoveryContext(views, checkpoint, workContext) {
     for (const decision of checkpoint.approvedDecisions || []) lines.push(`Previously approved decision: ${decision}`);
     if (checkpoint.currentPosition != null) lines.push(`Historical position: ${checkpoint.currentPosition}`);
     if (checkpoint.nextExpectedResult != null) lines.push(`Historical next expected result: ${checkpoint.nextExpectedResult}`);
-    lines.push("Historical approval and next plans grant no current effect or replay permission; current common constraints, cancellations and newer real user requests take precedence.");
   }
   return { commonUnavailable,
     onlyUnrecordedDirection: direction === null && !directionView?.currentProjectDirectionAvailability && lines.length === 1,
@@ -326,8 +325,8 @@ export function formatConversationRecovery(value) {
     const suffix = value.presentation.mode === "notice" ? `; ${value.attention?.items?.length || 0} optional item(s) remain available when relevant` : "";
     const work = entry.workContext;
     const emptyQuiet = value.presentation.mode === "quiet" && value.status === "conversation_ready" && context.onlyUnrecordedDirection
-      && work?.status === "work_context_not_recorded" && work.coverage?.originals === 0 && work.records?.length === 0 && !executionText;
-    return `${value.status === "conversation_direction_restored" ? "Lode restored the verified Session checkpoint — continue the task" : "Lode is ready — continue the task"}${suffix}.\n${emptyQuiet ? "" : context.text}${executionText}${formatSessionWorkContext(entry.workContext)}${formatRelatedNativeWork(entry.relatedNativeWorkContext)}`;
+      && quietEmptyWork(work) && !executionText;
+    return `${value.status === "conversation_direction_restored" ? "Lode restored the verified Session checkpoint — continue the task" : "Lode is ready — continue the task"}${suffix}.\n${emptyQuiet ? "" : context.text}${executionText}${formatSessionWorkContext(entry.workContext, { boundaryShown: Boolean(context.text) })}${formatRelatedNativeWork(entry.relatedNativeWorkContext)}`;
   }
   for (const attention of entry?.attention?.items || []) {
     if (attention.actionability === "immediate") lines.push(`${attention.ownerLabel ?? (attention.owner === "HEAD" ? "Lode" : attention.owner)} follow-up: ${compactText(attention.summary, 300)}`);
@@ -349,8 +348,8 @@ export function formatConversationRecovery(value) {
   } else if (["head_direction_required", "lode_direction_required"].includes(value?.status)) {
     lines.push("Provider Lode must author the current bounded recovery direction internally; the user is not asked to fill a schema.");
   }
-  lines.push("", "No provider summary, provider session identity, review result, or Product Canon was promoted by this projection.", "Technical details: use the structured result or --json");
-  return `${lines.join("\n")}\n${context.text}${executionText}${formatSessionWorkContext(entry.workContext)}${formatRelatedNativeWork(entry.relatedNativeWorkContext)}`;
+  lines.push("", "Technical details: use the structured result or --json");
+  return `${lines.join("\n")}\n${context.text}${executionText}${formatSessionWorkContext(entry.workContext, { boundaryShown: Boolean(context.text) })}${formatRelatedNativeWork(entry.relatedNativeWorkContext)}`;
 }
 
 function formatRelatedNativeWork(value) {
@@ -358,7 +357,7 @@ function formatRelatedNativeWork(value) {
   return "\nRelated historical P3 from observed native ancestry — not this child's direction, approval or copied fork-cutoff history:\n"
     + value.sources.map(source => `Related source ${JSON.stringify(source.workContext.sessionId)} (${source.relation}; selected when observed; reference records read later):\n`
       + (source.recordRead ? `Input provenance: ${JSON.stringify(source.recordRead)}. Later records are not proven fork-time input.\n` : "Historical input, delivery and model use are unknown.\n")
-      + formatSessionWorkContext(source.workContext)).join("\n");
+      + formatSessionWorkContext(source.workContext, { boundaryShown: true })).join("\n");
 }
 
 const originalObject = value => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -415,7 +414,7 @@ function originalTodo(value, location, sources = []) {
   return text + originalRemainder(value, handled, location);
 }
 
-function formatRecordedTasks(value, work) {
+function formatRecordedTasks(value, work, boundaryShown = false) {
   if (!originalObject(value) || !Array.isArray(value.items)) return originalField("workContext.todoContext", value);
   const handled = new Set(["items"]), sources = [];
   for (const [index, record] of work.records.entries()) if (record.kind === "Evidence" && record.subtype === "SessionWorkEvidence"
@@ -425,7 +424,8 @@ function formatRecordedTasks(value, work) {
         location: `workContext.records[${index}].content.todos[${todoIndex}]` });
     }
   }
-  let text = `Recorded tasks: ${value.status}; known unresolved: ${value.knownOpenCount ?? "unknown"}. Current P2 direction/cancellations apply; coverage is not whole-work completion.\n`;
+  let text = `Recorded tasks: ${value.status}; known unresolved: ${value.knownOpenCount ?? "unknown"}.`
+    + (boundaryShown ? "\n" : " Current P2 direction/cancellations apply; coverage is not whole-work completion.\n");
   for (const [index, item] of value.items.entries()) text += originalTodo(item, `workContext.todoContext.items[${index}]`, sources);
   text += originalFacts(value, ["status", "knownOpenCount", "knownItemCount", "currentness", "coverage", "nextAfterTodoId", "nextScanAfterEvidenceId", "expansion"], "workContext.todoContext", handled);
   markKnownNeutralFields(value, handled, { persisted: false, recoveryAuthority: false, instructionAuthority: false, executionReplayAllowed: false, ordinaryWorkBlocked: false });
@@ -535,12 +535,13 @@ function originalWorkRecord(value, location, bodyKey, commonKeys = [], compact =
     markKnownNeutralFields(value, handled, { instructionAuthority: false, promotionAuthority: false,
       recoveryAuthority: false, executionAuthority: false, ordinaryWorkBlocked: false });
   }
-  let text = originalFacts(value, ["evidenceId", "nodeId", "projectId", "sessionId", "ownerSessionId", "owner", "kind", "subtype",
-    "selectionRole", "reviewState", "freshness", "contentScope", "contentPartial"], "", handled);
+  let text = originalFacts(value, ["projectId", "sessionId", "ownerSessionId", "owner",
+    "reviewState", "freshness", "contentScope", "contentPartial"], "", handled);
   const activity = value.savedActivity, coverage = value.workContentCoverage;
   if (originalObject(activity)) text += originalFacts(activity, ["states"], "savedActivity", new Set());
   if (originalObject(coverage)) text += originalFacts(coverage, ["partial"], "workContentCoverage", new Set());
   if (Object.hasOwn(value, bodyKey)) { text += originalWorkBody(value[bodyKey], bodyKey, explainFields); handled.add(bodyKey); }
+  text += originalFacts(value, ["evidenceId", "nodeId", "kind", "subtype", "selectionRole"], "", handled);
   if (Array.isArray(value.workContentExcerpts)) {
     if (!value.workContentExcerpts.length) text += originalField("workContentExcerpts", []);
     for (const [index, excerpt] of value.workContentExcerpts.entries()) {
@@ -581,14 +582,75 @@ function groupedWorkBodies(entries, bodyKey, owner, commonKeys, compact = false,
   return text;
 }
 
-export function formatSessionWorkContext(value) {
-  if (value == null || value.status === "work_context_not_recorded" && value.coverage?.originals === 0) return "";
-  const heading = "Selected Session work evidence (P3, not current direction or permission):\n";
+function formatWorkExcerpts(excerpts) {
+  let text = "Partial original excerpts: fields may omit conditions; this is neither complete recovery nor approval. Expand the exact original only when needed.\n";
+  for (const [index, excerpt] of excerpts.entries()) {
+    const at = `workContext.recordExcerpts[${index}]`, handled = new Set(["fields"]);
+    if (!originalObject(excerpt)) { text += originalField(at, excerpt); continue; }
+    text += originalFacts(excerpt, ["source", "partial", "selectionRole"], at, handled);
+    for (const [fieldIndex, field] of (excerpt.fields || []).entries()) {
+      const location = `${at}.fields[${fieldIndex}]`, keys = new Set();
+      if (!originalObject(field)) { text += originalField(location, field); continue; }
+      text += originalFacts(field, ["path", "complete", "range", "group"], location, keys);
+      if (Object.hasOwn(field, "value")) { text += originalField(location + ".value", field.value); keys.add("value"); }
+      text += originalRemainder(field, keys, location);
+    }
+    text += originalFacts(excerpt, ["emptyValues", "coverage", "referenceChecks", "expansion"], at, handled);
+    text += originalRemainder(excerpt, handled, at);
+  }
+  return text;
+}
+
+function quietEmptyTodo(value, work) {
+  if (value === undefined) return true;
+  // Factor only the exact known empty producer shape. Unexpected conditions,
+  // including false/zero/null/empty unknown fields, must remain visible.
+  return isDeepStrictEqual(value, {
+    kind: "SessionTodoProjection", authorityPlane: "P4", projectId: work.projectId, sessionId: work.sessionId,
+    persisted: false, recoveryAuthority: false, instructionAuthority: false, executionReplayAllowed: false, ordinaryWorkBlocked: false,
+    status: "inspected-page", items: [],
+    knownOpenCount: 0, knownItemCount: 0, currentness: "within-inspected-originals-only",
+    coverage: { status: "all-current-originals-inspected", originalCount: 0,
+      indexedTaskRevisionRecords: 0, observedTaskMetadataRecords: 0, indexCoverage: "unknown",
+      indexHintMismatchCount: 0, indexHintMismatches: [], inspectedOriginals: 0, verifiedOriginals: 0,
+      uninspectedOriginals: 0, unindexedOriginals: 0, indexIsAuthority: false, recentWorkLimitApplied: false,
+      unavailable: [], unavailableOmitted: 0, omittedItems: 0, omittedItemIds: [], uninspectedCandidateRevisions: 0 },
+    nextAfterTodoId: null, nextScanAfterEvidenceId: null,
+    expansion: "Use session-work-read todo_id for an exact item, after_todo_id for more open items, or scan_todos with after_evidence_id for bounded original pages when index coverage is unknown. Pages do not establish unseen successors are absent.",
+    scope: "Explicit HEAD-recorded P3 task revisions, not live activity, user approval or P2 direction. Current constraints/cancellations take precedence. Indexed absence is not completeness.",
+  });
+}
+
+function quietEmptyWork(value) {
+  if (value?.kind !== "SessionWorkContextProjection" || value.authorityPlane !== "P4"
+    || value.status !== "work_context_not_recorded" || value.coverage?.originals !== 0
+    || value.records?.length !== 0 || value.recordExcerpts !== undefined || !quietEmptyTodo(value.todoContext, value)) return false;
+  const interpretations = ["Lode", "HEAD"].map(name => `P3 ${name}-authored historical evidence, not current direction, approval, or proof of an external effect. Current Project constraints and selected Session P2 take precedence.`);
+  if (!interpretations.includes(value.interpretation) || value.nextAfterEvidenceId !== null
+    || value.coverage.usedCharacters !== 2 || !Number.isSafeInteger(value.coverage.maxRecords) || value.coverage.maxRecords < 1
+    || !Number.isSafeInteger(value.coverage.maxCharacters) || value.coverage.maxCharacters < 2) return false;
+  const keys = new Set(["kind", "authorityPlane", "projectId", "sessionId", "sessionPurpose", "basis", "latestCheckpointId",
+    "persisted", "recoveryAuthority", "instructionAuthority", "promotionAuthority", "executionReplayAllowed", "ordinaryWorkBlocked",
+    "interpretation", "status", "records", "recordExcerpts", "todoContext", "unavailable", "coverage", "omissions", "nextAfterEvidenceId", "expansion"]);
+  if (Object.keys(value).some(key => !keys.has(key))) return false;
+  const coverageKeys = new Set(["originals", "inspected", "valid", "unavailable", "included", "maxRecords", "maxCharacters", "usedCharacters", "characterBudgetScope", "selection"]);
+  const omissionKeys = new Set(["uninspected", "byBudget", "evidenceIds", "omittedIdCount", "unavailableDetailCount"]);
+  if (Object.keys(value.coverage || {}).some(key => !coverageKeys.has(key)) || Object.keys(value.omissions || {}).some(key => !omissionKeys.has(key))) return false;
+  if (["persisted", "recoveryAuthority", "instructionAuthority", "promotionAuthority", "executionReplayAllowed", "ordinaryWorkBlocked"].some(key => Object.hasOwn(value, key) && value[key] !== false)) return false;
+  return ["inspected", "valid", "unavailable", "included"].every(key => value.coverage[key] === 0)
+    && ["uninspected", "byBudget", "omittedIdCount", "unavailableDetailCount"].every(key => value.omissions?.[key] === 0)
+    && Array.isArray(value.unavailable) && value.unavailable.length === 0
+    && Array.isArray(value.omissions?.evidenceIds) && value.omissions.evidenceIds.length === 0;
+}
+
+export function formatSessionWorkContext(value, { boundaryShown = false } = {}) {
+  if (value == null || quietEmptyWork(value)) return "";
+  const heading = boundaryShown ? "Recorded Session work (historical P3):\n" : "Selected Session work evidence (P3, not current direction or permission):\n";
   if (!originalObject(value) || !Array.isArray(value.records)) return heading + originalField("workContext", value);
   const handled = new Set(["records"]);
   let text = heading + originalFacts(value, ["sessionPurpose", "status", "projectId", "sessionId"], "workContext", handled);
   if (value.kind === "SessionWorkContextProjection") {
-    text += "Read-only historical display; current Project constraints and selected Session P2 take precedence."
+    if (!boundaryShown) text += "Read-only historical display; current Project constraints and selected Session P2 take precedence."
       + (value.ordinaryWorkBlocked === false ? " Ordinary work remains available.\n" : "\n");
     markKnownNeutralFields(value, handled, { persisted: false, recoveryAuthority: false, instructionAuthority: false,
       promotionAuthority: false, executionReplayAllowed: false, ordinaryWorkBlocked: false,
@@ -599,7 +661,8 @@ export function formatSessionWorkContext(value) {
   const common = commonStoredWorkFields(value.records.map((record, index) => ({ index, value: record })), "Record", "content");
   text += common.text;
   text += groupedWorkBodies(value.records.map((record, index) => ({ index, value: record })), "content", value, common.keys, false, true);
-  if (value.todoContext) { handled.add("todoContext"); text += formatRecordedTasks(value.todoContext, value); }
+  if (Array.isArray(value.recordExcerpts)) { handled.add("recordExcerpts"); text += formatWorkExcerpts(value.recordExcerpts); }
+  if (value.todoContext) { handled.add("todoContext"); text += formatRecordedTasks(value.todoContext, value, true); }
   return text + originalRemainder(value, handled, "workContext");
 }
 
@@ -977,13 +1040,64 @@ function formatSessionList(value) {
     text += formatSessionWorkContext(preview.workContext);
     text += originalRemainder(preview, fields, "preview");
   }
+  if (originalObject(value.conversationDiscovery)) {
+    handled.add("conversationDiscovery");
+    const discovery = value.conversationDiscovery, fields = new Set(["rows"]);
+    text += "Stored conversation lookup: mappings in the current operational store; no live activity, contact, work participation or owner assignment is established.\n";
+    text += originalFacts(discovery, ["status", "readAt", "coverage", "interpretation"], "conversationDiscovery", fields);
+    for (const row of discovery.rows || []) {
+      const rowFields = new Set();
+      text += originalFacts(row, ["index", "selector", "status", "binding", "matchesRequestedSession", "reasonCode"], "conversationCandidate", rowFields);
+      for (const key of ["activity", "contactReadiness", "workParticipation", "ownerAssignment", "modelUse"])
+        if (row[key] === "unknown") rowFields.add(key);
+      text += originalRemainder(row, rowFields, "conversationCandidate");
+    }
+    text += originalRemainder(discovery, fields, "conversationDiscovery");
+  }
   return text + originalRemainder(value, handled, "sessions");
+}
+
+function formatPreparedRuntimeRead(value) {
+  if (!originalObject(value?.preparedInput)) return `${JSON.stringify(value, null, 2)}\n`;
+  let text = "Historical prepared input: preparation, runtime observation and model use are separate. Current cancellation and execution guards still apply.\n";
+  const handled = new Set(["authorization", "preparedInput"]), authorization = value.authorization;
+  text += originalFacts(value, ["status", "file"], "runtimeRead", handled);
+  if (originalObject(authorization)) {
+    text += originalFacts(authorization, ["authorizationId", "authorizationHash", "projectId", "headSessionId", "lodeSessionId", "runtime", "scope"], "authorization", new Set());
+    if (authorization.workerInput) text += originalFacts(authorization.workerInput, ["taskKey", "role", "outcome"], "preparedWorker", new Set());
+  }
+  const viewFields = new Set(["excerpt"]), view = value.preparedInput;
+  text += originalFacts(view, ["status", "reasonCode", "expectedInput", "inputProof", "originals", "delivery", "modelUse", "interpretation"], "preparedInput", viewFields);
+  if (originalObject(view.excerpt)) {
+    const excerptFields = new Set(["text"]);
+    text += originalFacts(view.excerpt, ["startByte", "endByte", "totalBytes", "omittedBytes"], "preparedInput.excerpt", excerptFields);
+    text += terminalBlock("Verified canonical input excerpt", view.excerpt.text);
+    text += originalRemainder(view.excerpt, excerptFields, "preparedInput.excerpt");
+  }
+  text += originalRemainder(view, viewFields, "preparedInput");
+  text += originalRemainder(value, handled, "runtimeRead");
+  return text + "Full original authorization remains in the structured result / --json; prepared input grants no new permission.\n";
+}
+
+function formatGraphInventory(value) {
+  if (value?.inventoryPage?.kind !== "untyped-owned-byte-observations") return null;
+  const page = value.inventoryPage, lines = [`Owned record discovery: ${page.coverage.status} (${page.rows.length} byte observations).`,
+    "Bytes are untyped evidence; kind, review state, currentness and authority were not verified."];
+  const json = entry => inertTerminalText(JSON.stringify(entry));
+  for (const row of page.rows) lines.push(`${inertTerminalText(row.path)} — ${row.byteObservation}${row.reasonCode ? ` (${inertTerminalText(row.reasonCode)})` : ""}${row.digest ? ` sha256:${row.digest}` : ""}`,
+    row.exactRead.supported ? `Read: ${json(row.exactRead)}` : `Typed read unavailable: ${inertTerminalText(row.exactRead.scope)}`);
+  for (const warning of page.warnings) lines.push(`Uninspected: ${inertTerminalText(warning.path)} (${inertTerminalText(warning.reasonCode)})`);
+  if (page.next) lines.push(`Next: ${json(page.next)}`);
+  if (page.narrowing.length) lines.push(`Narrow scope: ${json(page.narrowing)}`);
+  lines.push("No automatic retries. Earlier insertions and previous page currentness remain unknown; ordinary work continues.");
+  return lines.join("\n") + "\n";
 }
 
 export function formatMcpToolContent(name, value) {
   name = resolveOperation(name)?.semanticName ?? name;
   if (name === "head_session_list") return formatSessionList(value);
-  if (name === "head_project_graph") return formatTerminalGraph(value) ?? JSON.stringify(value);
+  if (["head_runtime_invocation_authorization", "head_bounded_worker_status"].includes(name)) return formatPreparedRuntimeRead(value);
+  if (name === "head_project_graph") return formatGraphInventory(value) ?? formatTerminalGraph(value) ?? JSON.stringify(value);
   if (name === "head_bounded_worker_prepare") return formatWorkerPreparation(value);
   if (["head_worker_integration_status", "head_worker_integration"].includes(name)) return formatWorkerGuidance(value);
   if (["head_bounded_worker_wave_status", "head_bounded_worker_wave_wait"].includes(name)) return formatWorkerGuidance(value);
@@ -1019,11 +1133,12 @@ export function formatCliError(error) {
 
 export function formatCliResult(command, value, presentation = {}) {
   if (command === "session-list") return formatSessionList(value);
+  if (command === "runtime-invocation-read") return formatPreparedRuntimeRead(value);
   if (value?.status === "session_selection_unresolved") return formatUnavailableSession(value, { doctor: command === "doctor" });
   if (command === "worker-prepare") return formatWorkerPreparation(value);
   if (["worker-integration-status", "worker-integrate", "worker-wave-status", "worker-wave-wait"].includes(command)) return formatWorkerGuidance(value);
   if (command === "source-context") return formatSourceContext(value);
-  if (command === "graph-query") return formatTerminalGraph(value, presentation) ?? terminalBlock("Unrecognized graph result", JSON.stringify(value, null, 2));
+  if (command === "graph-query") return formatGraphInventory(value) ?? formatTerminalGraph(value, presentation) ?? terminalBlock("Unrecognized graph result", JSON.stringify(value, null, 2));
   if (["help", "--help", "-h", "help-all"].includes(command)) return formatHelp(value);
   if (command === "status" || command === "doctor") return formatProjectStatus(value, { doctor: command === "doctor" });
   if (command === "init" || command === "resume") return formatProjectBootstrap(value);

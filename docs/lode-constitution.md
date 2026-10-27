@@ -74,9 +74,13 @@ host effect.
 
 ## Compaction continuity
 
-Compaction is a four-step protocol: prepare an immutable checkpoint, compact in
-the provider, verify the resulting context against trusted real-user-turn
-evidence, and consume one continuation token. The fixed recovery anchors remain
+When the managed compaction lifecycle is chosen, use its four-step protocol:
+prepare an immutable checkpoint, compact in the provider, verify the resulting
+context against trusted real-user-turn evidence, and consume one continuation
+token. Ordinary native compaction and startup instead reuse sufficient supplied
+context or read-only conversation entry. Without a checkpoint, ordinary direct
+work and Host delegation continue; edits, worker count and ordinary failures do
+not require the managed lifecycle. The fixed recovery anchors remain
 `.lode/project.json`, the selected logical Session record, and its exact
 checkpoint. `.lode/sessions/current.json` remains the default Session record;
 other Sessions use `.lode/sessions/by-id/<session-id>/current.json` without

@@ -67,14 +67,25 @@ Experimental code-mode and OpenCode ancestry/P3 entry remain outside this path.
 Marketplace client launch lines remain portable. Inside a loaded Claude plugin,
 `${CLAUDE_PLUGIN_ROOT}` is the Host-supplied plugin root. In contrast, explicit
 CLI initialization generates a machine-local Claude project configuration using
-`node` and the selected package's verified absolute MCP entry and working
-directory; it does not assume that plugin-only variable exists. User-owned
-configuration stays untouched. A changed selected installation is reflected by
-normal explicit resume/convergence, not an automatic Host reload. This local
+`node` and a verified local entry; it does not assume that plugin-only variable
+exists. For an owned standalone installation with a recorded command address,
+the project configuration names its existing launcher with the internal MCP
+mode. The launcher verifies ownership, `current.json`, the selected release and
+its hashes before executing the ordinary MCP server. The existing installation
+marker records the explicitly selected bin directory; no PATH/default-install or
+latest-cache search chooses another installation. The address follows future
+launches after upgrade or rollback in the same installation root.
+
+Packages without a verified stable launcher, including older markers without a
+command address and marketplace caches, keep the selected absolute package MCP
+entry and working directory. A moved/deleted installation root does not repair
+itself: explicit installation selection and resume/convergence reconnect managed
+projections. User-owned configuration stays untouched. Neither pointer changes
+nor configuration convergence reload an already running MCP server. This local
 Claude projection is not a portable file to copy between machines.
 
 Codex project init writes no MCP path; its plugin `.mcp.json` stays `node` plus
-`scripts/mcp-server.mjs` with `cwd` `.`, and hooks expand `${PLUGIN_ROOT}`.
+`scripts/mcp-plugin-server.mjs` with `cwd` `.`, and hooks expand `${PLUGIN_ROOT}`.
 OpenCode `opencode.json` stays `node` and
 `{env:LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs`; its config hook resolves the
 placeholder in memory without writing an absolute install or Node path into
@@ -82,16 +93,65 @@ that shared file. `.lode/generated/manifest.json` records `pluginRoot` as local
 installation identity. Default graph-explorer HTML retains local `project.root`
 and `regenerate.argv`; `--share` omits those generated regeneration paths.
 
-The optional `LODE_SUBAGENT_WRITE_GUARD` remains off by default. Only exact
-`enforce` enables it; an invalid nonempty value warns on stderr without echoing
-the value, blocking ordinary work, or silently enabling a different policy.
-Known child writes are rejected before optional Session-binding diagnostics;
-this does not grant authority to parent calls or create a Session binding.
+The packaged plugin entry serves the same Core as `scripts/mcp-server.mjs`.
+Only a verified Claude plugin payload, exact private Hook tool-use correlation,
+matching plugin namespace/native caller and trusted Hook cwd matching this
+request's canonical Project root can omit creating a new project `.mcp.json`.
+The shared child-write guard runs before this optional Project lookup. Existing
+manual or managed files are preserved; no server is removed. Source, standalone,
+other carriers, missing evidence and invalid provenance retain ordinary
+provisioning. ENV values, model arguments, server names or a launch object alone
+cannot establish this proof. A later standalone resume can provide an absent
+file without asking the user to compose JSON.
+
+This installation context expires with the request. File-ownership metadata is
+not a receipt for future Host access, a Session selector, P2 recovery direction
+or permission. Package-local checks retain source hashes, exact projected MCP,
+entry/module declarations and exact file tree; outer marketplace repository and
+commit checks remain separate. Local synthetic stdio tests do not establish
+installed Host loading, Hook interpolation or model reception.
+
+With `LODE_SUBAGENT_WRITE_GUARD` unset, only supported exact-correlated
+Claude/OpenCode child state writes are protected by default. Codex and unproven
+callers stay off by default. Explicit `enforce` preserves the existing broader
+known-child policy; `off` disables this optional Host policy and its additional
+lookup/correlation cost. An invalid value warns once per changed value without
+echoing it, and disables protection rather than blocking ordinary work.
+The catalog's effect metadata determines coverage after router unwrap, once per
+MCP call, before optional Session-binding diagnostics. Reads, parent/independent
+work and ordinary source edits remain available. Unsupported or failed native
+evidence is unknown, never a protection success, permission or Session binding.
 
 Local source-shaped tests and owned OS helper tests do not establish installed
 Host event delivery, model tool choice, native long-compaction behavior or full
 activity coverage. Codex live conversation/turn state uses already exposed Host
 tools only when useful; see [runtime composition](../skills/lode-agent-core/references/runtime-composition.md#native-observations-and-current-host-activity).
+
+## Historical prepared input
+
+Existing `lode_runtime_invocation_authorization`, `lode_bounded_worker_status`
+and CLI `runtime-invocation-read --authorization <id>` add an optional
+`preparedInput` view at their explicit read/status boundary. The shared canonical
+authorization/dispatch readers and prepare/execute/apply checks are unchanged.
+Failure to load this optional view leaves the primary result usable; selecting
+an authorization with an invalid owner or digest still fails as before.
+
+The non-persisted P4 view reads exact retained authorization, plan, contract,
+Capsule and captured `ProjectDirection` revision references. It reuses the
+canonical serializer and verifies byte count and digest against `executionInput`
+before reporting `verified-prepared-input`. Plans/contracts retain their existing
+Project scope; no Session owner is invented. Current source or direction is not
+substituted for historical originals. Missing/integrity failures, bounded
+originals and legacy requests without retained full input remain distinct.
+Exact paths/digests and a UTF-8 excerpt of at most 2048 bytes disclose omissions.
+
+Preparation is separate from runtime receipt observations and model use.
+Synthetic receipts are labelled as such; even a matching runtime observation
+does not prove delivery to a model, attention or use. This is the Core canonical
+input, not a complete Host/model prompt. No provider, process, new snapshot,
+native-to-authorization inference or P2 write is involved. Later cancellation and
+current execution/recovery checks continue to govern effects. Ordinary native
+ancestry remains a later-reference read, not reconstructed fork-time input.
 
 ## Retained one-shot worker contracts
 
@@ -661,3 +721,29 @@ own, but those limits and its test-only Lode consumer are not public plugin
 policy or a substitute for the durable worker-job integration workflow. Actual
 factory availability is not live-provider conformance; local verification must
 remain unable to start an actual provider by default.
+
+## Startup guidance and Claude file ownership
+
+Generated Core instructions, supported startup projections and explicit bootstrap
+responses share the same minimal task-continuation guidance. Current goals,
+cancellations, selected Session recovery, Todo and fitting original reasons take
+priority in the existing complete-JSON budget (Claude 10,000; Codex/OpenCode
+32,768 UTF-16 characters). The startup `coreGuidance` field is optional; a
+`coreGuidanceDelivery` omission marker is included when it fits. An absent field
+is no delivery proof. Neither constructed output nor local Hook stdout proves
+Host/model reception or compliance. Missing recovery/selection limits dependent
+work only; it does not create an inventory scan or a new checkpoint requirement.
+
+Claude `CLAUDE.md` and `.mcp.json` ownership are independent. An existing user
+file is preserved, while an absent other file may be managed for the selected
+Claude runtime. Legacy combined metadata is still read. Explicit resume may
+provide a missing, previously unmanaged part through atomic no-clobber creation
+and update the existing managed manifest. An intervening user file wins; a
+missing already-managed original remains drift, not permission to regenerate.
+Other runtimes and existing user MCP configuration are not adopted or merged.
+
+Without a plugin Hook, explicit initialization/resume still returns `coreGuidance`
+in its structured response and preserves the generated instruction projection.
+Preserving a user instruction file does not mean the Host imported that generated
+projection. Existing explicit preserve/link choices remain; automatic instruction
+receipt, persistent delivery state and actual native loading are not inferred.

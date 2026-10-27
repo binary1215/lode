@@ -261,6 +261,7 @@ test("private formatter: varying root/purpose/checkpoint lengths preserves every
 
 test("private formatter: even optional compact coverage/prose yield to all protected originals at the exact boundary", (t) => {
   const raw = serializerEntry(0, 280), witness = JSON.parse(privateFormatter(raw, pluginRoot));
+  delete witness.coreGuidance; delete witness.coreGuidanceDelivery;
   witness.workCoverage = { omitted: true, sourceOriginals: raw.workContext.coverage.originals, sourceInspected: raw.workContext.coverage.inspected, sourceIncluded: raw.workContext.coverage.included };
   witness.scope = "Read-only, non-atomic. Current common/selected P2 apply; history/P3 grant no effects. IDs/digests select originals; reference freshness not inferred. Check current authority for effects.";
   witness.hostCapability = "Verified route only; never guess. No extra bind/save/repeated Session ID.";

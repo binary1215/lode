@@ -13,6 +13,7 @@ import { actionability, withExperienceProjections } from "./experience-projectio
 import { linkProjectInstructions, validateInstructionIntegration } from "./project-instruction-link.mjs";
 import { resumeProjectLocation } from "./project-relocation.mjs";
 import { withSessionCallContext, validateRelocationSessionSelection, sessionSelectionUnresolved } from "./session-routing.mjs";
+import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
 
 export const PROJECT_BOOTSTRAP_PROTOCOL_VERSION = "0.6.0";
 
@@ -541,6 +542,7 @@ function bootstrapResponse({ root, profile, before, installation, onboardingActi
   return {
     ...experience,
     profile,
+    coreGuidance: coreEntryGuidance(),
     profileSemantics: "operation-choice-not-persisted-project-mode",
     projectAction: before.status === "not_initialized" ? "initialized" : "resumed",
     installationAction: installation.status,
@@ -588,12 +590,12 @@ export async function initializeOrResumeProject(options = {}) {
 }
 
 async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = null, profile, onboardingInput,
-  instructionIntegration = null, onValidatedSessionSelection = null, location = null }) {
+  instructionIntegration = null, onValidatedSessionSelection = null, location = null, installationContext = null }) {
   const before = inspectProject(root);
   let initialization;
   let installation;
   if (before.status === "not_initialized") {
-    initialization = initializeProject({ root, pluginRoot, runtimes: runtimes || undefined });
+    initialization = initializeProject({ root, pluginRoot, runtimes: runtimes || undefined, installationContext });
     installation = {
       status: "initialized-current",
       projectId: initialization.project.projectId,
@@ -607,7 +609,7 @@ async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = n
       project: before.project,
       integrations: before.project.integrations,
     };
-    installation = convergeProjectInstallation({ root, pluginRoot, runtimes, onValidatedSessionSelection });
+    installation = convergeProjectInstallation({ root, pluginRoot, runtimes, onValidatedSessionSelection, installationContext });
   }
   if (location) installation.location = location;
 

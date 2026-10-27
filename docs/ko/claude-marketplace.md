@@ -42,7 +42,7 @@ Claude Code는 설치된 플러그인을 버전이 지정된 캐시에 복사하
   "mcpServers": {
     "lode": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp-server.mjs"],
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp-plugin-server.mjs"],
       "cwd": "${CLAUDE_PLUGIN_ROOT}"
     }
   }
