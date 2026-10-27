@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { buildCodexMarketplaceSnapshot } from "../scripts/lib/codex-marketplace.mjs";
+import { buildClaudeMarketplaceSnapshot } from "../scripts/lib/claude-marketplace.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const skillRoot = path.join(pluginRoot, "skills", "lode-agent-core");
@@ -77,6 +79,29 @@ test("Lode Skills and all Core references route to existing files and anchors", 
   for (const name of ["lode-agent-core", "lode-agent-onboarding", "lode-conversation"]) {
     const source = fs.readFileSync(path.join(pluginRoot, "skills", name, "SKILL.md"), "utf8");
     assert.match(source, new RegExp(`^---\\r?\\nname: ${name}\\r?\\n`));
+  }
+});
+
+test("S1-S6: packaged Codex/Claude guidance retains direct work, uninstalled entry and conditional discovery/recovery/handoff routes", t => {
+  const { root } = fixture(t);
+  for (const [client, build] of [["codex", buildCodexMarketplaceSnapshot], ["claude", buildClaudeMarketplaceSnapshot]]) {
+    const outputRoot = path.join(root, client), built = build({ sourceRoot: pluginRoot, outputRoot, name: "lode-agent-plugin" });
+    const packaged = path.join(outputRoot, "plugins", built.pluginName), skill = path.join(packaged, "skills/lode-agent-core");
+    for (const file of files) verifyLinks(path.join(skill, file), packaged);
+    const main = fs.readFileSync(path.join(skill, "SKILL.md"), "utf8");
+    for (const target of ["../../README.md#install", "references/project-discovery.md#installation-and-adoption",
+      "references/project-discovery.md#existing-work-and-recorded-conclusions", "references/recovery-workflow.md#retained-project-storage",
+      "references/runtime-composition.md#continuing-in-an-existing-conversation"]) assert(main.includes(target), `${client}: ${target}`);
+    assert.match(main, /Work directly for small tasks/u);
+    assert.match(main, /installed-Skill prerequisite/u);
+    assert.match(main, /Current user direction\/cancellations and P2 take precedence/u);
+    const handoff = fs.readFileSync(path.join(skill, "references/runtime-composition.md"), "utf8");
+    assert.match(handoff, /messaging another chat needs direct human/u);
+    assert.match(handoff, /preparation does not prove delivery or model use/u);
+    assert.match(handoff, /No new acknowledgement, save format or automatic assignment/u);
+    const discovery = fs.readFileSync(path.join(skill, "references/project-discovery.md"), "utf8");
+    assert.match(discovery, /declined installation leaves ordinary work available/u);
+    assert.match(discovery, /No mandatory recap save/u);
   }
 });
 

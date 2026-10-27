@@ -305,6 +305,40 @@ CLI `--session`은 요청 대상만 선택하고 기본 Session을 바꾸거나 
 `new_session_id`와 `purpose`를 받습니다. 기존 ID를 다른 목적으로 다시 결속하지
 않습니다. 공급자 session ID와는 별개입니다.
 
+`lode_session_list`는 메타데이터를 페이지로 반환합니다. 기본 16개, 최대 64개이며
+`max_sessions` / CLI `--max-sessions`로 조절합니다. 필요한 다음 페이지는 반환된
+`nextAfterSessionId`를 `after_session_id` / CLI `--after-session`으로 전달합니다.
+이 탐색 키는 `default`, Session ID 또는 비정상 디렉터리의 `entry:<name>`이며
+Session 라우트가 아닙니다. `default`라는 디렉터리에는 별도 키 `entry:default`를
+사용합니다. 오류 항목도 페이지 슬롯에 포함하므로 손상된 기본 Session이나 마지막
+비정상 항목에서 반복되지 않습니다. 페이지는 원자적 스냅샷이 아니며 커서가
+삭제되면 첫 페이지부터 다시 읽습니다. 남은 항목·개별 실패·공유 디렉터리 오류는
+빈 목록과 구별하고, 공통 Project 신원 오류는 그대로 실패시킵니다.
+`returnedEntries`는 반환한 슬롯, `inspectedEntries`는 검사한 슬롯입니다.
+`readButNotReturnedEntries`는 검사했지만 출력 한도 때문에 보류한 슬롯 수입니다.
+기본 신원 확인은 별도로 공개합니다. 보류한 슬롯도 다음 페이지에 포함하므로
+이미 읽었다는 이유로 조용히 건너뛰지 않습니다.
+
+이 목록에서만 기존 `session_id` / `--session`은 정확한 작업 미리보기 대상입니다.
+native 영속 연결, 공유 호출자 선택과 바깥 요청 라우트를 바꾸지 않으며 선택 없음·
+유실 상태도 유지합니다. 미지정 목록은 작업 본문을 읽지 않습니다. 미리보기는 한
+Session의 기존 bounded Work/Todo reader를 사용해 오래된 미해결·충돌·부분 범위를
+보존합니다. 필요한 누락 근거만 정확한 원문으로 펼치며 bind/save 절차는 없습니다.
+최근 기록의 결론에는 원래 사유·남은 작업·미확인이 따릅니다. 최신 요약, ended,
+빈 pending, PASS만으로 전체 대표 결과·완료·현재 담당 대화·권한을 만들지 않습니다.
+현재 제약·취소가 우선합니다. native 계보 매핑은 관측 당시 선택이며, 나중에 읽은
+기록은 참고 자료입니다. 분기 당시 인계·전달·모델 입력으로 확인된 것이 아닙니다.
+정확한 managed 입력이 준비됐다는 사실만으로 전달이나 실제 사용을 증명하지 않습니다.
+
+기록된 Todo의 task·상태·귀속·다음 행동·사유·진행·우선순위도 그래프 검색 근거가 됩니다.
+부분 Todo는 `workContentExcerpts`에 원래 인덱스, `todoId`, 하위 필드와 문자 구간,
+기록된 상태·귀속 및 선언된 revision 참조를 함께 담습니다. 축약 배열로 다시 번호를
+매기지 않습니다. `workContentCoverage.fieldItems.todos`는 전체·부분·누락 항목을
+공개합니다. 과거 revision은 별개로 남으며 그래프가 현재 task 상태·충돌·완료나
+prior/참조의 현재성을 별도로 추론하지 않습니다. 필요하면 기존의 정확한 원문 확장을
+사용합니다. 일반 Work 텍스트는 같은 원문 ID/digest의 동일 task 필드가 이미 나오면
+그 위치를 가리킬 수 있으며, 구조화 결과와 알 수 없는 필드는 보존합니다.
+
 각 Session은 로컬 목적, 진행, 활성·불명 작업, 승인과 checkpoint를 유지합니다.
 한 Session의 조사 범위 변경이 다른 task를 자동 변경하지 않습니다. 기존 기록을
 제자리에 보존하므로 routing을 위해 다시 온보딩하지 않습니다.

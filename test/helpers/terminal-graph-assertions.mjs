@@ -32,9 +32,17 @@ export function assertTerminalGraphPresentation(text, value) {
       for (const judgment of content.judgments || []) {
         block(section, "Recorded judgment", judgment.assessment); block(section, "Recorded reason (not proven cause)", judgment.reason); list(section, "Alternative", judgment.alternatives);
       }
+      for (const [index, todo] of (content.todos || []).entries()) {
+        block(section, `Recorded Todo ${index}`, `${todo.todoId} [${todo.status}; ${todo.origin}] — historical declaration`);
+        block(section, "Task", todo.task);
+        for (const key of ["nextAction", "reason", "progress", "priority", "prior", "resolves", "relatedEvidence"]) if (Object.hasOwn(todo, key)) {
+          block(section, key, typeof todo[key] === "string" ? todo[key] : JSON.stringify(todo[key]));
+        }
+      }
     }
     for (const excerpt of node.workContentExcerpts || []) {
-      const location = `${excerpt.field}${excerpt.index == null ? "" : `[${excerpt.index}]`}${excerpt.subfield ? `.${excerpt.subfield}` : ""}${excerpt.alternativeIndex == null ? "" : `[${excerpt.alternativeIndex}]`}`;
+      const location = `${excerpt.field}${excerpt.index == null ? "" : `[${excerpt.index}]`}${excerpt.subfield ? `.${excerpt.subfield}` : ""}${excerpt.alternativeIndex == null ? "" : `[${excerpt.alternativeIndex}]`}`
+        + (excerpt.field === "todos" ? ` · ${excerpt.todoId} [${excerpt.status}; ${excerpt.origin}]` : "");
       block(section, `Partial original ${location}: characters ${excerpt.start}-${excerpt.end} of ${excerpt.totalCharacters}`, excerpt.text);
     }
     for (const reference of node.referenceEvidence || []) {

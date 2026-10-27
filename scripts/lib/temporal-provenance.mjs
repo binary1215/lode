@@ -13,6 +13,59 @@ import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary } from "./au
 
 export const TEMPORAL_PROVENANCE_VERSION = "0.15.0";
 export const TEMPORAL_TRAVERSAL_VERSION = "0.3.0";
+
+// Internal request ownership, not a caller-supplied verification verdict. Only
+// a deeply immutable copy made here can reuse its first successful validation.
+// External objects (including frozen lookalikes) always take the full verifier.
+const temporalVerificationScopes = new WeakMap();
+const ownedTemporalGraphs = new WeakMap();
+function freezeOwnedJsonGraph(graph) {
+  const objects = new Set(), pending = [graph];
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== "object" || objects.has(value)) continue;
+    // Object.freeze does not make Map/Date/typed-array internal slots immutable.
+    // Such adapter values retain normal full validation, without a new gate.
+    if (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return false;
+    objects.add(value);
+    for (const nested of Object.values(value)) pending.push(nested);
+  }
+  for (const value of objects) Object.freeze(value);
+  return true;
+}
+export function createTemporalVerificationScope() {
+  const state = { active: true, graphs: new Set() };
+  const scope = Object.freeze({ close() {
+    if (!state.active) return;
+    state.active = false;
+    for (const graph of state.graphs) ownedTemporalGraphs.delete(graph);
+    state.graphs.clear();
+  } });
+  temporalVerificationScopes.set(scope, state);
+  return scope;
+}
+export function ownWorldSnapshotForTemporalScope(scope, snapshot) {
+  const state = temporalVerificationScopes.get(scope);
+  if (!state) fail("Temporal verification scope is not owned by this reader.", "INVALID_TEMPORAL_VERIFICATION_SCOPE");
+  if (!state.active) fail("Temporal verification scope is closed.", "TEMPORAL_VERIFICATION_SCOPE_CLOSED");
+  // Detach all retained-store aliases before validation or an await. Never
+  // freeze the adapter's original, nor its public ordinary-read results.
+  let owned;
+  try { owned = structuredClone(snapshot); }
+  catch (error) {
+    // Some accepted custom stores carry unused function-valued extensions.
+    // Do not turn a copying optimization into a stricter input contract: keep
+    // the original object and every full validation, without freezing/memoing.
+    if (error?.name === "DataCloneError") return snapshot;
+    throw error;
+  }
+  const graph = owned?.temporalProvenanceGraph;
+  if (graph && typeof graph === "object" && freezeOwnedJsonGraph(graph)) {
+    ownedTemporalGraphs.set(graph, { state, verified: false });
+    state.graphs.add(graph);
+  }
+  return owned;
+}
 const TEMPORAL_RELATION_TYPES_V02 = Object.freeze([
   "CONTAINS",
   "REALIZES",
@@ -2985,6 +3038,8 @@ function validEndpointKinds(type, fromKind, toKind) {
 }
 
 export function verifyTemporalProvenanceGraph(graph) {
+  const owned = ownedTemporalGraphs.get(graph);
+  if (owned?.state.active && owned.verified) return graph;
   const format = familyFormatForOriginal("head-agent-core-temporal-provenance", graph);
   const graphVersion = graph?.protocol?.version;
   const legacyV02 = graphVersion === "0.2.0";
@@ -4070,6 +4125,7 @@ export function verifyTemporalProvenanceGraph(graph) {
   if (canonicalJson(summary) !== canonicalJson(graph.summary)) {
     fail(`Temporal graph summary does not match its contents: expected ${canonicalJson(summary)}, received ${canonicalJson(graph.summary)}.`, "TEMPORAL_SUMMARY_MISMATCH");
   }
+  if (owned?.state.active) owned.verified = true;
   return graph;
 }
 
@@ -4288,5 +4344,7 @@ export function queryTemporalProvenanceGraph(graph, {
     promotionAuthority: false,
   };
   const resultHash = digest(canonicalJson(resultPayload));
-  return { ...resultPayload, resultId: `traversal-result-${resultHash.slice(0, 24)}`, resultHash };
+  const result = { ...resultPayload, resultId: `traversal-result-${resultHash.slice(0, 24)}`, resultHash };
+  // A request-owned input must not make ordinary returned projections frozen.
+  return ownedTemporalGraphs.has(graph) ? structuredClone(result) : result;
 }

@@ -334,7 +334,7 @@ resume은 필요하지 않습니다.
 ## 제한된 발화 참조와 native 연결 부재
 
 선택적인 로컬 발화 참조는 비밀값을 가린 평문 P5 힌트입니다. 암호화·전체 대화·
-지시문·P2 복구 정본이 아닙니다. 발화 전용 저장 경로는 POSIX에서 디렉터리 0700,
+지시문·P2 복구 정본이 아닙니다. 참조 전용 저장 경로는 POSIX에서 디렉터리 0700,
 임시 파일 0600으로 생성하고 소유한 일반 파일인지 검사하며 안전하지 않은 링크는
 거부합니다. 기존 참조도 제한된 크기로 읽어 재가림한 뒤 사용합니다. 가림은 알려진
 자격 증명 패턴에 대한 최선의 처리이며 모든 비밀값을 탐지한다는 보장은 아닙니다.
@@ -356,3 +356,47 @@ Session을 조용히 고르지 않습니다. 정확한 논리 Session을 명시�
 initialize/resume은 계속 사용할 수 있습니다. 최근 시각이나 다른 호출자로부터
 old→new native ID 연속성을 추정하지 않습니다. 합성 라우팅 검사는 실제 Claude
 `/clear`의 ID 변경이나 ID 간 자동 복원 성공을 의미하지 않습니다.
+
+참조 준비만으로 저장본을 소비하지 않습니다. 실제 context 문자열 한도에 전체 참조가
+들어가야 추가하며, 들어가지 않으면 보존합니다. 부분 포함을 지원한다고 주장하지 않습니다.
+명령 Hook은 로컬 stdout 쓰기 callback이 성공한 뒤, OpenCode는 여전히 유효한 출력 slot에
+실제로 반영한 뒤 소비합니다. `write(false)`는 실패가 아닌 backpressure입니다. 같은 출력
+객체를 재구성할 때는 이미 넣은 참조도 유지합니다. private P5 nonce 소유 잠금으로 쓰기를
+직렬화하며, 준비 이후 저장 세대가 바뀌었으면 이전 준비본의 소비가 새 내용을 지우지 않습니다.
+정리 실패나 출력 직후 중단에서는 힌트가 중복될 수 있습니다. 이는 Host 수신·모델 활용·
+정확히 한 번 전달의 증명이 아닙니다.
+
+Claude/Codex가 직접 전달하는 `Stop.last_assistant_message`에서 크기를 제한하고 비밀값을
+가린 최종 표시 본문을 보존합니다. transcript·도구 본문은 읽지 않습니다. Codex의 `turn_id`는
+캡처한 prompt 자신의 turn과 일치해야 합니다. 공개 Hook 계약에는 다음 prompt가 이전 Stop의
+응답이라는 명시 predecessor가 없으므로 인접성은 `unverified`, 승인은 `not-inferred`입니다.
+Host prompt는 자동 continuation·예약 작업·메시지일 수도 있어 인간 출처도 `unverified`로
+표시합니다. 누락/null은 제안을 만들지 않고 StopFailure의 오류 본문은 제외합니다.
+OpenCode assistant 인접성은 미지원입니다. 최근 맥락과 불확실성을 보존하는 기능이며
+제안·응답 쌍 전체가 복원됐다는 뜻은 아닙니다.
+공개 필드 계약: [Codex Stop](https://learn.chatgpt.com/docs/hooks#stop),
+[Claude Stop input](https://code.claude.com/docs/en/hooks#stop-input).
+
+## 복구 이후에도 남는 명시적 작업
+
+HEAD는 기존 `lode_session_work_record` 또는 checkpoint의 선택 work evidence에 `todos`를
+기록할 수 있습니다. 사용자는 평소처럼 작업을 말하며 HEAD가 stable `todoId`, task,
+기록된 출처, 명시 status와 미해결 작업의 next action을 작성합니다. `partial`, `waiting`,
+`completed`, `cancelled`를 구분하고 대기·취소 사유를 남깁니다. 실제 진행과 관련 정확한
+evidence는 P3 기록이며 프로세스 상태로 추정하지 않습니다. 갱신은 같은 Session의 정확한
+`prior`를 인용합니다. 갈라진 갱신은 conflict로 보이고, 다른 분기를 명시한 `resolves`로
+조정할 수 있습니다. 시각으로 승자를 고르지 않으며 이전 입력 재시도가 작업을 다시 열지 않습니다.
+
+`workContext.todoContext`는 최근 work 기본 8개와 별개로 알려진 미해결 작업을 선택합니다.
+entry/resume과 제한된 Host startup에서도 현재 P2 방향·취소 아래 읽습니다. 기존 재생성 가능한
+graph index는 탐색 힌트만 제공하고 선택된 Todo 원본은 다시 검증합니다. 미검사 원본이나
+색인 유실·손상은 coverage unknown이며 빈 목록·완료의 증명이 아닙니다. 읽기 때문에 색인을
+수리하거나 World를 갱신하거나 독립 작업을 막지 않습니다. `lode_session_work_read`의
+`todo_id`, `after_todo_id`, 또는 `scan_todos`·`after_evidence_id` 원본 페이지로 확장합니다.
+CLI `session-work-read --input`은 이에 대응하는 camelCase Core 필드를 받습니다.
+누락 ID·개수·이어읽기를 공개하며 P4 투영이 실행 권한이나 P2를 만들지 않습니다.
+`todos`가 없는 기존 기록의 bytes/ID는 유지됩니다.
+
+같은 요청에서 이미 검증한 원본의 작업 메타데이터도 재사용합니다. 색인 발행이 늦은 새
+기록도 추가 스캔·색인 수리 없이 즉시 함께 읽으며, 모순된 힌트는 공개하고 유효한 원본을
+막는 게이트로 쓰지 않습니다.

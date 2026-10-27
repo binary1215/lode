@@ -356,7 +356,8 @@ export function formatConversationRecovery(value) {
 function formatRelatedNativeWork(value) {
   if (!value?.sources?.length) return "";
   return "\nRelated historical P3 from observed native ancestry — not this child's direction, approval or copied fork-cutoff history:\n"
-    + value.sources.map(source => `Related source ${JSON.stringify(source.workContext.sessionId)} (${source.relation}; selected when observed):\n`
+    + value.sources.map(source => `Related source ${JSON.stringify(source.workContext.sessionId)} (${source.relation}; selected when observed; reference records read later):\n`
+      + (source.recordRead ? `Input provenance: ${JSON.stringify(source.recordRead)}. Later records are not proven fork-time input.\n` : "Historical input, delivery and model use are unknown.\n")
       + formatSessionWorkContext(source.workContext)).join("\n");
 }
 
@@ -385,6 +386,51 @@ function originalRemainder(value, handled, location) {
 
 function originalList(value, location) {
   return value.length ? value.map((item, index) => originalField(`${location}[${index}]`, item)).join("") : originalField(location, value);
+}
+
+const todoOriginalFields = ["todoId", "task", "status", "origin", "nextAction", "reason", "progress", "priority", "prior", "resolves", "relatedEvidence"];
+function originalTodo(value, location, sources = []) {
+  if (!originalObject(value)) return originalField(location, value);
+  const handled = new Set();
+  let text = originalFacts(value, ["todoId", "status"], location, handled);
+  const source = sources.find(source => source.evidenceId === value.revision?.evidenceId && source.evidenceDigest === value.revision?.evidenceDigest
+    && source.todo.todoId === value.todoId && todoOriginalFields.every(key => isDeepStrictEqual(value[key], source.todo[key])));
+  if (source) {
+    text += `Exact task fields already displayed at ${source.location}; same original ID/digest, not a new status judgment.\n`;
+    for (const key of todoOriginalFields) if (Object.hasOwn(value, key)) handled.add(key);
+  } else {
+    text += originalFacts(value, ["origin"], location, handled);
+    for (const key of ["task", "nextAction", "reason", "progress", "priority"]) if (Object.hasOwn(value, key)) {
+      text += originalField(`${location}.${key}`, value[key]); handled.add(key);
+    }
+    text += originalFacts(value, ["prior", "resolves", "relatedEvidence"], location, handled);
+  }
+  if (value.status === "conflict" && Array.isArray(value.revisions)) {
+    handled.add("revisions");
+    text += "Recorded conflicting branches; no time-based winner:\n";
+    for (const [index, revision] of value.revisions.entries()) text += originalTodo(revision, `${location}.revisions[${index}]`, sources);
+  }
+  text += originalFacts(value, ["revision", "resolution", "missingPriors", "references", "referenceFreshness"], location, handled);
+  markKnownNeutralFields(value, handled, { authorityChanged: false, historicalObservationIsCompletion: false });
+  return text + originalRemainder(value, handled, location);
+}
+
+function formatRecordedTasks(value, work) {
+  if (!originalObject(value) || !Array.isArray(value.items)) return originalField("workContext.todoContext", value);
+  const handled = new Set(["items"]), sources = [];
+  for (const [index, record] of work.records.entries()) if (record.kind === "Evidence" && record.subtype === "SessionWorkEvidence"
+    && record.projectId === work.projectId && record.sessionId === work.sessionId && record.evidenceId && record.evidenceDigest) {
+    for (const [todoIndex, todo] of (Array.isArray(record.content?.todos) ? record.content.todos : []).entries()) if (originalObject(todo)) {
+      sources.push({ todo, evidenceId: record.evidenceId, evidenceDigest: record.evidenceDigest,
+        location: `workContext.records[${index}].content.todos[${todoIndex}]` });
+    }
+  }
+  let text = `Recorded tasks: ${value.status}; known unresolved: ${value.knownOpenCount ?? "unknown"}. Current P2 direction/cancellations apply; coverage is not whole-work completion.\n`;
+  for (const [index, item] of value.items.entries()) text += originalTodo(item, `workContext.todoContext.items[${index}]`, sources);
+  text += originalFacts(value, ["status", "knownOpenCount", "knownItemCount", "currentness", "coverage", "nextAfterTodoId", "nextScanAfterEvidenceId", "expansion"], "workContext.todoContext", handled);
+  markKnownNeutralFields(value, handled, { persisted: false, recoveryAuthority: false, instructionAuthority: false, executionReplayAllowed: false, ordinaryWorkBlocked: false });
+  for (const key of ["projectId", "sessionId"]) if (typeof value[key] === "string" && value[key] === work[key]) handled.add(key);
+  return text + originalRemainder(value, handled, "workContext.todoContext");
 }
 
 function originalWorkBody(value, location, explainFields = false) {
@@ -423,6 +469,12 @@ function originalWorkBody(value, location, explainFields = false) {
       unknowns: "Recorded uncertainty:\n", suggestedFollowUp: "Historical suggestions; not execution permission:\n",
     })[key];
     text += originalList(value[key], `${location}.${key}`); handled.add(key);
+  }
+  if (Array.isArray(value.todos)) {
+    handled.add("todos");
+    text += "Recorded Todo revisions (historical; not current authority):\n";
+    for (const [index, todo] of value.todos.entries()) text += originalTodo(todo, `${location}.todos[${index}]`);
+    if (!value.todos.length) text += originalField(`${location}.todos`, value.todos);
   }
   return text + originalRemainder(value, handled, location);
 }
@@ -534,7 +586,7 @@ export function formatSessionWorkContext(value) {
   const heading = "Selected Session work evidence (P3, not current direction or permission):\n";
   if (!originalObject(value) || !Array.isArray(value.records)) return heading + originalField("workContext", value);
   const handled = new Set(["records"]);
-  let text = heading + originalFacts(value, ["status", "projectId", "sessionId"], "workContext", handled);
+  let text = heading + originalFacts(value, ["sessionPurpose", "status", "projectId", "sessionId"], "workContext", handled);
   if (value.kind === "SessionWorkContextProjection") {
     text += "Read-only historical display; current Project constraints and selected Session P2 take precedence."
       + (value.ordinaryWorkBlocked === false ? " Ordinary work remains available.\n" : "\n");
@@ -547,6 +599,7 @@ export function formatSessionWorkContext(value) {
   const common = commonStoredWorkFields(value.records.map((record, index) => ({ index, value: record })), "Record", "content");
   text += common.text;
   text += groupedWorkBodies(value.records.map((record, index) => ({ index, value: record })), "content", value, common.keys, false, true);
+  if (value.todoContext) { handled.add("todoContext"); text += formatRecordedTasks(value.todoContext, value); }
   return text + originalRemainder(value, handled, "workContext");
 }
 
@@ -901,18 +954,29 @@ function formatSessionList(value) {
     const fields = new Set();
     text += originalFacts(session, ["purpose", "sessionId", "default"], `sessions[${index}]`, fields);
     if (originalObject(session.state)) {
-      const state = session.state, pointers = [];
-      if (state.activeRunId) pointers.push("Run pointer");
-      if (state.pendingReview) pointers.push("pending review pointer");
-      if (state.requiredPlanAction) pointers.push("plan-action pointer");
-      text += `Stored work hints: ${pointers.length ? pointers.join(", ") : "no pending/work pointer recorded; not a completion claim"}.\n`;
-      text += state.updatedAt
-        ? `Last recorded state update (not live activity): ${JSON.stringify(state.updatedAt)}\n`
-        : "Last recorded state update: unavailable; activity is unknown.\n";
+      const state = session.state, stateFields = new Set(); fields.add("state");
+      for (const [key, shown] of [["purpose", session.purpose], ["sessionId", session.sessionId], ["projectId", value.projectId]]) {
+        if (Object.hasOwn(state, key) && isDeepStrictEqual(state[key], shown)) stateFields.add(key);
+      }
+      text += value.preview?.sessionId === session.sessionId
+        ? "Stored pointers only; the requested exact work preview follows with its own coverage/errors.\n"
+        : "Stored pointers only; recent work and remaining tasks are uninspected until an exact preview.\n";
+      text += originalFacts(state, ["updatedAt", "activeRunId", "pendingReview", "requiredPlanAction", "latestCheckpoint"], `sessions[${index}].state`, stateFields);
+      text += originalRemainder(state, stateFields, `sessions[${index}].state`);
     }
+    if (value.preview?.sessionId !== session.sessionId) text += `Preview this Session with the existing list session_id / --session ${JSON.stringify(session.sessionId)}; no selection change.\n`;
     text += originalRemainder(session, fields, `sessions[${index}]`);
   }
   if (!value.sessions.length) text += originalField("sessions", value.sessions);
+  if (originalObject(value.preview)) {
+    handled.add("preview");
+    const preview = value.preview;
+    text += `Read-only Session preview ${JSON.stringify(preview.sessionId)}: ${preview.status}. Current selection is unchanged.\n`;
+    const fields = new Set(["workContext"]);
+    text += originalFacts(preview, ["currentProjectDirection", "currentProjectDirectionAvailability", "conclusion", "inputProvenance"], "preview", fields);
+    text += formatSessionWorkContext(preview.workContext);
+    text += originalRemainder(preview, fields, "preview");
+  }
   return text + originalRemainder(value, handled, "sessions");
 }
 

@@ -11,6 +11,24 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.62 — publication tracked separately
+
+- Restore selected Session work and Todo context with exact original references.
+  Preserve historical branches, conflicting observations, uncertainty and current
+  cancellation without requiring a Run or promoting work evidence to direction.
+- Reuse original-file bytes within a read request and use bounded recent-work
+  navigation. Keep reference digests, Project ownership and freshness checks;
+  missing or changed originals remain visible.
+- Present work and Todo fields concisely in CLI, MCP and Graph Explorer, with
+  exact source expansion and explicit partial coverage rather than repeated bodies.
+- Make new onboarding and policy Product revisions directly citable from
+  SessionWork. Verify each revision family and keep identical model contents in
+  different Projects separate. Preserve ownerless historical bytes and retries;
+  do not infer ownership for direct citation.
+- Independent source and focused synthetic consumer checks cover these changes.
+  Actual Host/model/GUI behavior, marketplace publication and local installation
+  remain separate verification scopes. No release tag is implied.
+
 ## 0.3.0-beta.61 — publication tracked separately
 
 - Protect optional prompt-reference storage with Windows owner/SYSTEM-only

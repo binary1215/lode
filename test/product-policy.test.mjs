@@ -15,6 +15,9 @@ import { buildWorldModel, inspectWorldModel, queryWorldTemporalGraph } from "../
 import { traceGraphLineage } from "../scripts/lib/graph-lineage.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch, catalogTools as tools } from "../scripts/mcp-server.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
+import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
+import { snapshot } from "./helpers/session-work-linkage-fixture.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -37,8 +40,99 @@ async function fixture(t) {
     requirements: [{ key: "review-evidence", statement: "Material policy changes require an explicit evidence-linked review." }],
   } });
   await reviewOnboarding({ root, candidateSetId: started.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Approve the exact generic product concepts." });
-  return { root, storage, layout };
+  return { root, storage, layout, started };
 }
+
+test("final gap: public onboarding and policy Product revisions support exact SessionWork citation and graph expansion", async t => {
+  const { root, storage, layout } = await fixture(t), owner = inspectProject(root);
+  const first = readProductModelCanon({ projectRoot: root, storage }).model;
+  const proposed = await proposeProductPolicy({ root, operation: "create", key: "citation-policy", name: "Citation policy",
+    statement: "Use exact evidence", appliesTo: [{ kind: "Feature", key: "request" }], governedBy: [], evidenceAnchors: [], explanation: "Synthetic policy citation" });
+  await reviewProductPolicy({ root, candidateId: proposed.candidate.candidateId, disposition: "accept", rationale: "Synthetic exact acceptance" });
+  const second = readProductModelCanon({ projectRoot: root, storage }).model;
+  const files = [first, second].map(model => path.join(root, layout.directory, "onboarding/product-model-revisions", `${model.productModelId}.json`));
+  const before = files.map(file => ({ bytes: fs.readFileSync(file), mode: fs.statSync(file).mode, mtime: fs.statSync(file).mtimeMs }));
+  const outcomes = [], saved = [];
+  for (const [index, file] of files.entries()) {
+    const ref = { path: path.relative(root, file).replaceAll("\\", "/"), digest: sha(before[index].bytes), kind: "artifact" };
+    try { saved.push(recordSessionWorkEvidence({ root, input: { summary: `Exact Product citation ${index}`, references: [ref] } })); outcomes.push("ok"); }
+    catch (error) { outcomes.push(error.code); }
+  }
+  t.diagnostic(JSON.stringify({ producers: ["onboarding", "product-policy"], citationOutcomes: outcomes,
+    projectIds: before.map(item => JSON.parse(item.bytes).projectId ?? null) }));
+  for (const [index, file] of files.entries()) {
+    assert.deepEqual(fs.readFileSync(file), before[index].bytes); assert.equal(fs.statSync(file).mode, before[index].mode); assert.equal(fs.statSync(file).mtimeMs, before[index].mtime);
+  }
+  assert.deepEqual(outcomes, ["ok", "ok"]);
+  const graph = await queryProjectGraph({ root, anchorIds: saved.map(item => item.evidence.evidenceId), depth: 1, maxNodes: 40, maxEdges: 80 });
+  for (const [index, item] of saved.entries()) {
+    const model = [first, second][index], edge = graph.edges.find(edge => edge.type === "CITES_ARTIFACT" && edge.from === item.evidence.evidenceId && edge.to === model.productModelId);
+    assert.ok(edge, "Citation must resolve through the existing exact typed container");
+    const node = graph.nodes.find(node => node.nodeId === item.evidence.evidenceId);
+    const expanded = await dispatch({ id: 1, method: "tools/call", params: { name: node.originalExpansion.tool, arguments: node.originalExpansion.arguments } });
+    assert.equal(expanded.result?.isError, undefined);
+    const work = expanded.result.structuredContent;
+    assert.deepEqual(work.records[0].content, item.evidence.content);
+    assert.equal(work.records[0].references[0].status, "intact-retained-original");
+    assert.equal(work.records[0].references[0].originalOwner.projectId, owner.project.projectId);
+    assert.equal(work.records[0].references[0].recoveryAuthority, false);
+  }
+});
+
+test("final gap: identical Product content keeps Project ownership separate and rejects forged or changed citations", async t => {
+  const a = await fixture(t), b = await fixture(t), modelA = readProductModelCanon({ projectRoot: a.root, storage: a.storage }).model;
+  const modelB = readProductModelCanon({ projectRoot: b.root, storage: b.storage }).model;
+  assert.equal(modelA.productModelId, modelB.productModelId); assert.equal(modelA.productModelHash, modelB.productModelHash);
+  const ownFile = path.join(a.root, a.layout.directory, "onboarding/product-model-revisions", `${modelA.productModelId}.json`);
+  const otherFile = path.join(b.root, b.layout.directory, "onboarding/product-model-revisions", `${modelB.productModelId}.json`);
+  const ownBytes = fs.readFileSync(ownFile), otherBytes = fs.readFileSync(otherFile), owned = JSON.parse(ownBytes);
+  assert.notEqual(owned.projectId, JSON.parse(otherBytes).projectId); assert.notEqual(sha(ownBytes), sha(otherBytes));
+  const legacy = { ...owned }; delete legacy.projectId;
+  const corrupt = structuredClone(owned); corrupt.document.capabilities[0].name = "Tampered model, old identity";
+  const variants = [
+    ["foreign", otherBytes, "SESSION_WORK_REFERENCE_PROJECT_MISMATCH"],
+    ["ownerless", Buffer.from(JSON.stringify(legacy)), "SESSION_WORK_REFERENCE_PROJECT_MISMATCH"],
+    ["tampered", Buffer.from(JSON.stringify(corrupt)), "ONBOARDING_PRODUCT_REVISION_DIGEST_MISMATCH"],
+    ["unsupported", Buffer.from(JSON.stringify({ ...owned, authority: "unrecognized-family" })), "SESSION_WORK_REFERENCE_UNSUPPORTED_PRODUCT_REVISION"],
+    ["arbitrary", Buffer.from(JSON.stringify({ kind: "ProductModelRevision", projectId: owned.projectId, authority: "user-owned-project-canon-revision", document: {} })), null],
+    ["extra-authority", Buffer.from(JSON.stringify({ ...owned, instructionAuthority: true })), "SESSION_WORK_REFERENCE_UNSUPPORTED_PRODUCT_REVISION"],
+  ];
+  for (const [name, bytes] of variants) fs.writeFileSync(path.join(a.root, `${name}.json`), bytes);
+  const before = snapshot(a.root);
+  for (const [name, bytes, code] of variants) {
+    assert.throws(() => recordSessionWorkEvidence({ root: a.root, input: { references: [{ path: `${name}.json`, digest: sha(bytes), kind: "artifact" }] } }), code ? { code } : undefined);
+  }
+  assert.throws(() => recordSessionWorkEvidence({ root: a.root, input: { references: [{ path: path.relative(a.root, ownFile).replaceAll("\\", "/"), digest: "0".repeat(64), kind: "artifact" }] } }), { code: "SESSION_WORK_REFERENCE_CHANGED" });
+  assert.deepEqual(snapshot(a.root), before);
+  // A previously valid quote becomes unavailable on a typed-content change,
+  // even when the caller supplies the changed byte digest for a new save.
+  fs.writeFileSync(path.join(a.root, "tampered.json"), ownBytes);
+  const saved = recordSessionWorkEvidence({ root: a.root, input: { references: [{ path: "tampered.json", digest: sha(ownBytes), kind: "artifact" }] } });
+  fs.writeFileSync(path.join(a.root, "tampered.json"), JSON.stringify(corrupt));
+  const read = readSessionWorkContext({ root: a.root, evidenceIds: [saved.evidence.evidenceId], maxRecords: 1 });
+  assert.equal(read.records[0].references[0].status, "unavailable");
+  assert.equal(read.records[0].references[0].reasonCode, "SESSION_WORK_REFERENCE_CHANGED");
+});
+
+test("final gap: ownerless historical bytes survive public retries and policy transition without becoming owned", async t => {
+  const f = await fixture(t), model = readProductModelCanon({ projectRoot: f.root, storage: f.storage }).model;
+  const file = path.join(f.root, f.layout.directory, "onboarding/product-model-revisions", `${model.productModelId}.json`);
+  const historical = JSON.parse(fs.readFileSync(file)); delete historical.projectId;
+  fs.writeFileSync(file, JSON.stringify(historical, null, 2) + "\n"); // Historical-shape fixture setup only.
+  const bytes = fs.readFileSync(file), stat = fs.statSync(file);
+  await reviewOnboarding({ root: f.root, candidateSetId: f.started.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Approve the exact generic product concepts." });
+  const proposed = await proposeProductPolicy({ root: f.root, operation: "create", key: "historical-base", name: "Historical base",
+    statement: "Preserve immutable originals", appliesTo: [{ kind: "Feature", key: "request" }], governedBy: [], evidenceAnchors: [], explanation: "Synthetic historical replay" });
+  const request = { root: f.root, candidateId: proposed.candidate.candidateId, disposition: "accept", rationale: "Approve new content without relabeling old bytes" };
+  await reviewProductPolicy(request); await reviewProductPolicy(request);
+  assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(fs.statSync(file).mode, stat.mode); assert.equal(fs.statSync(file).mtimeMs, stat.mtimeMs);
+  assert.equal(historical.productModelId, model.productModelId); assert.equal(historical.productModelHash, model.productModelHash);
+  assert.throws(() => recordSessionWorkEvidence({ root: f.root, input: { references: [{ path: path.relative(f.root, file).replaceAll("\\", "/"), digest: sha(bytes), kind: "artifact" }] } }), { code: "SESSION_WORK_REFERENCE_PROJECT_MISMATCH" });
+  const next = readProductModelCanon({ projectRoot: f.root, storage: f.storage }).model;
+  const nextFile = path.join(f.root, f.layout.directory, "onboarding/product-model-revisions", `${next.productModelId}.json`);
+  assert.equal(JSON.parse(fs.readFileSync(nextFile)).projectId, inspectProject(f.root).project.projectId);
+  assert.doesNotThrow(() => recordSessionWorkEvidence({ root: f.root, input: { references: [{ path: path.relative(f.root, nextFile).replaceAll("\\", "/"), digest: sha(fs.readFileSync(nextFile)), kind: "artifact" }] } }));
+});
 
 test("schema 1 Product Model bytes and identity remain exact", () => {
   const document = { schemaVersion: 1, featureGroups: [], capabilities: [], features: [], requirements: [], constraints: [], decisions: [] };

@@ -6,12 +6,14 @@ import { spawn } from "node:child_process";
 import vm from "node:vm";
 import { compareExactSourceVersions } from "../scripts/lib/context-source-delta.mjs";
 import { createContextSourceReader } from "../scripts/lib/context-source-reader.mjs";
+import { readContextDocumentLinks } from "../scripts/lib/context-document-links.mjs";
+import { createSourceObservation, retainSourceObservation, sourceBundleKey } from "../scripts/lib/source-observation.mjs";
 import { explainContextLineage } from "../scripts/lib/context-lineage.mjs";
 import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
 import { buildGraphExplorerSnapshot, exportGraphExplorer } from "../scripts/lib/graph-explorer.mjs";
 import { formatCliResult, formatMcpToolContent } from "../scripts/lib/cli-presentation.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { fixture, sha, snapshot, pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
+import { fixture, sha, snapshot, pluginRoot, exact, link, citation } from "./helpers/session-work-linkage-fixture.mjs";
 import { buildWorldModel } from "../scripts/lib/world-model.mjs";
 import { compileContext } from "../scripts/lib/context-compiler.mjs";
 import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/execution-lineage.mjs";
@@ -22,12 +24,310 @@ import { createHeadSession, withSessionRoute } from "../scripts/lib/session-rout
 import { recordSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
 import { normalizeProductModelDocument } from "../scripts/lib/product-model.mjs";
 import { explorerDom } from "./helpers/graph-explorer-dom-fixture.mjs";
+import { runCommand } from "../scripts/lode.mjs";
+import { startOnboarding } from "../scripts/lib/onboarding.mjs";
+import { explorerCodec } from "../scripts/graph-explorer/codec.js";
 
 const oldSource = "export function f() { return 'allow'; }\nexport function g() { return 2; }\n";
 const newSource = oldSource.replace("'allow'", "'block'");
 const version = (text, file = "src/action.mjs", projectId = "synthetic-project") => ({ text, digest: sha(text), path: file, projectId, basis: { kind: "synthetic-exact-version" } });
 const compare = (a, b, file) => compareExactSourceVersions(version(a, file), version(b, file), "synthetic-project");
 const symbol = (result, name) => result.symbols.find(item => (item.after || item.before).qualifiedName === name);
+
+test("exact cited Markdown navigates explicit local links with current-target labels, bounds and retained reading state", async t => {
+  const f = fixture(t);
+  for (const directory of ["docs", "src", "test"]) fs.mkdirSync(path.join(f.root, directory));
+  const document = "docs/design.md", body = [
+    "[Implementation](../src/action.mjs)", "[More](./follow.md)", "[Duplicate](../src/action.mjs)",
+    "[Escape](../../outside.mjs)", "[External](https://example.invalid/source)", "[Stream](../src/action.mjs:ads)",
+    "[Link escape](./linked/secret.md)", "```md", "[Code is not navigation](../src/hidden.mjs)", "```",
+  ].join("\n");
+  fs.writeFileSync(path.join(f.root, document), body);
+  fs.writeFileSync(path.join(f.root, "docs/follow.md"), "\uFEFF```md\n[Ignored](../src/hidden.mjs)\n```not-a-close\n[Still example](../src/hidden.mjs)\n```\n[Tests](../test/action.test.mjs)\n[Cycle](./follow.md)\n");
+  fs.writeFileSync(path.join(f.root, "src/action.mjs"), oldSource);
+  fs.writeFileSync(path.join(f.root, "test/action.test.mjs"), "export const localTestEvidence = true;\n");
+  const outside = path.join(f.base, "outside"); fs.mkdirSync(outside); fs.writeFileSync(path.join(outside, "secret.md"), "Outside source must not be read");
+  const bundle = createSourceObservation({ version: 1, projectId: f.owner.project.projectId, kind: "source",
+    query: [{ path: document, symbol: "" }], sources: [{ path: document, digest: sha(body), base64: Buffer.from(body).toString("base64") }],
+    profile: {}, observedAt: "2026-01-01T00:00:00Z", response: null, envelopeHash: null }, f.storage);
+  retainSourceObservation(f.root, bundle, f.storage);
+  const work = f.save({ summary: "Inspect exact design and implementation", references: [{ kind: "source", path: document, digest: sha(body) }] });
+  fs.writeFileSync(path.join(f.root, document), "[A different current document](../src/unrelated.mjs)\n");
+  const before = snapshot(f.root);
+  fs.symlinkSync(outside, path.join(f.root, "docs/linked"), process.platform === "win32" ? "junction" : "dir");
+  let report;
+  try { report = await buildGraphExplorerSnapshot({ root: f.root, anchorIds: [work.evidence.evidenceId] }); }
+  finally { fs.unlinkSync(path.join(f.root, "docs/linked")); }
+  const nav = report.graph.contextLineage.documentNavigation, exactDocument = nav.documents.find(item => item.path === document);
+  assert.equal(exactDocument.digest, sha(body));
+  assert(!exactDocument.links.some(item => item.path === "src/unrelated.mjs" || item.path === "src/hidden.mjs"));
+  const implementation = exactDocument.links.find(item => item.label === "Implementation");
+  assert.equal(implementation.path, "src/action.mjs"); assert.equal(implementation.status, "available");
+  assert.equal(implementation.source.digest, sha(body)); assert.equal(implementation.source.line, 1);
+  assert.match(implementation.versionScope, /current-file.*not-historical/);
+  assert(exactDocument.links.filter(item => ["Escape", "External", "Stream", "Link escape"].includes(item.label)).every(item => item.status === "rejected"));
+  assert.equal(exactDocument.links.find(item => item.label === "Duplicate").navigation, "already-inspected-exact-version");
+  const follow = nav.documents.find(item => item.path === "docs/follow.md");
+  assert(!follow.links.some(item => ["Ignored", "Still example"].includes(item.label)), "BOM and fence-like code lines cannot turn examples into navigation");
+  assert.equal(follow.links.find(item => item.label === "Cycle").navigation, "already-inspected-exact-version");
+  assert.equal(follow.links.find(item => item.label === "Tests").path, "test/action.test.mjs");
+  assert(nav.coverage.inspectedBytes <= nav.coverage.limits.maxBytes);
+  const unavailable = await readContextDocumentLinks({ root: f.root, projectId: f.owner.project.projectId,
+    sources: createContextSourceReader(f.root, f.owner.project.projectId, { storage: f.storage }), documents: [{ path: document, digest: "0".repeat(64) }] });
+  assert.equal(unavailable.documents[0].status, "unavailable"); assert.equal(unavailable.documents[0].links, undefined);
+  const bounded = await readContextDocumentLinks({ root: f.root, projectId: f.owner.project.projectId,
+    sources: createContextSourceReader(f.root, f.owner.project.projectId, { storage: f.storage }), documents: [{ path: document, digest: sha(body) }], maxBytes: 16 });
+  assert.equal(bounded.documents[0].status, "unavailable"); assert.equal(bounded.documents[0].reasonCode, "SOURCE_BYTE_BOUND");
+  const ui = explorerDom(report, { resetDetachedScroll: true }); await ui.settle();
+  ui.event(ui.ids.get("records").querySelectorAll("[data-record-entry]").find(button => button.getAttribute("data-record-entry") === work.evidence.evidenceId));
+  const view = ui.ids.get("context-lineage-body"), panels = view.querySelectorAll("[data-document-id]");
+  const panel = panels.find(element => element.getAttribute("data-document-id") === exactDocument.documentId);
+  assert(panel); panel.open = true;
+  const camera = ui.ids.get("graph").getAttribute("viewBox");
+  const childLink = panel.querySelectorAll("[data-document-open]").find(button => button.getAttribute("data-document-open") === follow.documentId);
+  assert(childLink); ui.event(childLink);
+  assert(view.querySelectorAll("[data-document-id]").find(element => element.getAttribute("data-document-id") === follow.documentId).open);
+  const reader = panel.children.flatMap(element => element.children || []).find(element => element.tagName === "pre");
+  assert(reader); reader.scrollTop = 47;
+  const another = ui.ids.get("records").querySelectorAll("[data-record-entry]").find(button => button.getAttribute("data-record-entry") !== work.evidence.evidenceId);
+  assert(another); ui.event(another);
+  ui.event(ui.ids.get("records").querySelectorAll("[data-record-entry]").find(button => button.getAttribute("data-record-entry") === work.evidence.evidenceId));
+  assert(panel.open); assert.equal(reader.scrollTop, 47);
+  assert.equal(ui.ids.get("graph").getAttribute("viewBox"), camera);
+  assert.deepEqual(snapshot(f.root), before);
+
+  // Shared roots must not inherit the first reader's scope or exceed each
+  // root's depth. B->C is read before A->B in the independent review repro.
+  const sharedBodies = {
+    "docs/02-root.md": "[B](./01-middle.md)\n",
+    "docs/01-middle.md": "[C](./03-leaf.md)\n",
+    "docs/03-leaf.md": "[Cycle](./01-middle.md)\n[D](./04-last.md)\n",
+    "docs/04-last.md": "# D contents\n",
+  };
+  for (const [relative, body] of Object.entries(sharedBodies)) fs.writeFileSync(path.join(f.root, relative), body);
+  const sharedA = f.save({ summary: "Shared A root", references: [{ kind: "source", path: "docs/02-root.md", digest: sha(sharedBodies["docs/02-root.md"]) }] });
+  const sharedB = f.save({ summary: "Shared B root", references: [{ kind: "source", path: "docs/01-middle.md", digest: sha(sharedBodies["docs/01-middle.md"]) }] });
+  const sharedBefore = snapshot(f.root);
+  for (const order of [["docs/01-middle.md", "docs/02-root.md"], ["docs/02-root.md", "docs/01-middle.md"]]) {
+    const shared = await buildGraphExplorerSnapshot({ root: f.root, anchorIds: [sharedA.evidence.evidenceId, sharedB.evidence.evidenceId], paths: order });
+    const nav = shared.graph.contextLineage.documentNavigation;
+    const keyA = nav.roots.find(root => root.path === "docs/02-root.md").key;
+    const keyB = nav.roots.find(root => root.path === "docs/01-middle.md").key;
+    const leaf = nav.documents.find(document => document.path === "docs/03-leaf.md"), last = nav.documents.find(document => document.path === "docs/04-last.md");
+    assert(leaf.rootKeys.includes(keyA)); assert(leaf.rootKeys.includes(keyB));
+    assert(!last.rootKeys.includes(keyA), "A->B->C->D is beyond A's depth 2"); assert(last.rootKeys.includes(keyB));
+    assert(nav.coverage.depthLimited); assert.equal(nav.coverage.pendingFileCount, 0);
+    const sharedUi = explorerDom(shared, { resetDetachedScroll: true }); await sharedUi.settle();
+    const select = id => {
+      // Ordinary clicks preserve multiple selections. Explicitly isolate one
+      // cited root to test its own depth, then switch through the actual UI.
+      sharedUi.event(sharedUi.ids.get("clear-selection"));
+      sharedUi.event(sharedUi.ids.get("records").querySelectorAll("[data-record-entry]").find(button => button.getAttribute("data-record-entry") === id));
+    };
+    select(sharedA.evidence.evidenceId);
+    const view = sharedUi.ids.get("context-lineage-body");
+    const openC = view.querySelectorAll("[data-document-open]").find(button => button.getAttribute("data-document-open") === leaf.documentId);
+    assert(openC && !openC.disabled); sharedUi.event(openC);
+    assert(view.querySelectorAll("[data-document-id]").some(panel => panel.getAttribute("data-document-id") === leaf.documentId && panel.open));
+    const openD = view.querySelectorAll("[data-document-open]").find(button => button.getAttribute("data-document-open") === last.documentId);
+    assert(openD?.disabled); assert.match(view.textContent, /outside this selection's bounded view/);
+    select(sharedB.evidence.evidenceId);
+    const availableD = view.querySelectorAll("[data-document-open]").find(button => button.getAttribute("data-document-open") === last.documentId);
+    assert(availableD && !availableD.disabled, "Cached shared panel updates its available targets for the new selection");
+    sharedUi.event(availableD);
+    assert(view.querySelectorAll("[data-document-id]").some(panel => panel.getAttribute("data-document-id") === last.documentId && panel.open));
+  }
+  assert.deepEqual(snapshot(f.root), sharedBefore);
+});
+
+test("decision flow connects exact multi-work export selection, reverse citations and verified containers without a Run", async t => {
+  const f = fixture(t), changed = "src/action.mjs", unchanged = "src/stable.mjs", missing = "src/unknown.mjs";
+  fs.mkdirSync(path.join(f.root, "src"));
+  for (const relative of [changed, unchanged, missing]) fs.writeFileSync(path.join(f.root, relative), oldSource);
+  for (const relative of [changed, unchanged, missing]) {
+    const bundle = createSourceObservation({ version: 1, projectId: f.owner.project.projectId, kind: "source",
+      query: [{ path: relative, symbol: "" }], sources: [{ path: relative, digest: sha(oldSource), base64: Buffer.from(oldSource).toString("base64") }],
+      profile: {}, observedAt: "2026-01-01T00:00:00Z", response: null, envelopeHash: null }, f.storage);
+    retainSourceObservation(f.root, bundle, f.storage);
+  }
+  const root = f.save({ summary: "Inspect generic source", judgments: [{ assessment: "Compare variants", reason: "Keep exact provenance", alternatives: ["Rebuild was not chosen"] }],
+    references: [changed, unchanged, missing].map(relative => ({ kind: "source", path: relative, digest: sha(oldSource) })) });
+  fs.writeFileSync(path.join(f.root, changed), newSource); fs.unlinkSync(path.join(f.root, missing));
+  const second = f.save({ summary: "Observed changed bytes; causal ownership unknown", workLink: link(root), references: [{ kind: "source", path: changed, digest: sha(newSource) }] });
+  const thirdSource = "export const unrelated = 3;\n";
+  fs.writeFileSync(path.join(f.root, changed), thirdSource);
+  const otherVersion = f.save({ summary: "Different exact digest is not the before/after pair", references: [{ kind: "source", path: changed, digest: sha(thirdSource) }] });
+  fs.writeFileSync(path.join(f.root, changed), newSource);
+  // A generic candidate container and its embedded entities share path+digest.
+  // The existing writer produces typed synthetic evidence, not Product approval.
+  const proposed = await startOnboarding({ root: f.root, mode: "new", brief: { schemaVersion: 1, name: "Generic service", summary: "Read local evidence.",
+    capabilities: [{ key: "local", name: "Local", description: "Read local evidence." }] } });
+  const containerId = proposed.candidateSet.candidateSetId;
+  const canonFile = path.join(f.root, f.storage.directory, "onboarding/candidate-sets", containerId + ".json");
+  const canonRef = { kind: "artifact", path: path.relative(f.root, canonFile).replaceAll("\\", "/"), digest: sha(fs.readFileSync(canonFile)) };
+  const citing = f.save({ summary: "Cite whole Canon document, not its individual entities", workLink: link(root, second), references: [canonRef, citation(f, root)] });
+  const before = snapshot(f.root), ids = [root, second, citing].map(item => item.evidence.evidenceId);
+  const report = await buildGraphExplorerSnapshot({ root: f.root, anchorIds: ids, paths: [changed, unchanged, missing] });
+  assert.deepEqual(report.graph.query.anchorIds, [...ids].sort()); assert.equal(report.graph.initialNodeId, [...ids].sort()[0]);
+  assert(report.graph.contextLineage.events.some(item => item.nodeId === ids[0]));
+  const files = new Map(report.graph.contextLineage.files.map(file => [file.path, file]));
+  assert(files.get(changed).comparisons.some(pair => pair.fileBytes === "changed"));
+  assert(files.get(unchanged).comparisons.some(pair => pair.fileBytes === "unchanged"));
+  assert.equal(files.get(missing).currentObservation.deletionEstablished, false);
+  assert(report.graph.edges.some(edge => edge.type === "FOLLOWS_WORK_EVIDENCE" && edge.from === ids[2] && edge.to === ids[1]));
+  const artifactEdges = report.graph.edges.filter(edge => edge.type === "CITES_ARTIFACT" && edge.from === ids[2]);
+  assert.deepEqual(artifactEdges.map(edge => edge.to), [containerId]);
+  assert(report.graph.nodes.filter(node => node.sourceReference?.path === canonRef.path).length > 1);
+  assert(!artifactEdges.some(edge => report.graph.nodes.find(node => node.nodeId === edge.to)?.kind === "Feature"));
+  const workOnly = await buildGraphExplorerSnapshot({ root: f.root, query: "unmatched-text", anchorIds: [ids[0]] });
+  assert(workOnly.graph.contextLineage.files.some(file => file.path === changed), "Exact work anchor recovers its citations despite unrelated query words");
+  const metadata = await buildGraphExplorerSnapshot({ root: f.root, query: "nothing-matches-this-query" });
+  assert.equal(metadata.graph.nodes.find(node => node.nodeId === ids[0]).detailCoverage, "metadata-only");
+  const output = await runCommand(["graph-explorer", f.root, "--anchors", ids[0], "--paths", changed, "--output", path.join(f.base, "decision-flow.html")]);
+  assert.equal(output.status, "created");
+  const codeNode = report.codeGraph.nodes.find(node => node.kind === "File" && node.path === changed); assert(codeNode);
+  const codeOutput = await runCommand(["graph-explorer", f.root, "--layer", "code", "--anchors", codeNode.nodeId, "--paths", changed, "--output", path.join(f.base, "code-flow.html")]);
+  const codeHtml = fs.readFileSync(codeOutput.file, "utf8"), tag = 'id="snapshot" type="application/json">', at = codeHtml.indexOf(tag) + tag.length;
+  const codeReport = explorerCodec.decode(JSON.parse(codeHtml.slice(at, codeHtml.indexOf("</script>", at))));
+  assert.equal(codeReport.initialLayer, "code"); assert.equal(codeReport.codeGraph.initialNodeId, codeNode.nodeId);
+  assert.deepEqual(codeReport.codeGraph.focusSelection.unmatchedIds, []);
+  assert(!codeReport.graph.query.anchorIds.includes(codeNode.nodeId));
+  assert(!codeReport.graph.nodes.some(node => node.nodeId === codeNode.nodeId), "Structural IDs do not become Project nodes");
+  assert(codeReport.graph.contextLineage.files.some(file => file.path === changed));
+  const codeUi = explorerDom(codeReport);
+  assert.equal(codeUi.ids.get("layer").value, "code"); assert(codeUi.ids.get("evidence").textContent.includes(codeNode.nodeId));
+  assert(codeUi.ids.get("detail-scope").textContent.includes("'--layer' 'code'"));
+  const absentCode = await buildGraphExplorerSnapshot({ root: f.root, layer: "code", anchorIds: ["semantic-node-" + "0".repeat(24)] });
+  const absentUi = explorerDom(absentCode);
+  assert.match(absentUi.ids.get("operation-status").textContent, /No different record was selected/);
+  assert.equal(absentUi.ids.get("selected-title").textContent, "Where do you want to start?");
+  const ui = explorerDom(report); await ui.settle();
+  ui.event(ui.ids.get("records").querySelectorAll("[data-record-entry]").find(button => button.getAttribute("data-record-entry") === ids[0]));
+  const comparison = ui.ids.get("context-lineage-body");
+  const reverse = comparison.querySelectorAll("[data-citing-work]");
+  assert(reverse.some(button => button.getAttribute("data-citing-work") === ids[1]), "Unselected exact after-citing work is navigable");
+  const fileSection = comparison.children.find(section => section.dataset.sourcePath === changed);
+  assert(fileSection);
+  const exactPair = fileSection.querySelectorAll("[data-comparison-before]").find(section => section.getAttribute("data-comparison-before") === sha(oldSource)
+    && section.getAttribute("data-comparison-after") === sha(newSource));
+  assert(exactPair); assert(!exactPair.querySelectorAll("[data-citing-work]").some(button => button.getAttribute("data-citing-work") === otherVersion.evidence.evidenceId),
+    "Another comparison in this file can cite the third version; it must not leak into this exact before/after pair");
+  const camera = ui.ids.get("graph").getAttribute("viewBox");
+  ui.event(reverse.find(button => button.getAttribute("data-citing-work") === ids[1]));
+  assert.match(ui.ids.get("selected-title").textContent, /Observed changed bytes/); assert.equal(ui.ids.get("graph").getAttribute("viewBox"), camera);
+  assert.deepEqual(snapshot(f.root), before);
+  // Missing/excluded/tampered or cross-Project artifacts never become typed
+  // decisions. Each mutation restores the shared original before its next case.
+  const originalContainer = fs.readFileSync(canonFile);
+  for (const [name, mutate] of [["changed-digest", bytes => Buffer.from(bytes.toString().replace("Local", "Other"))],
+    ["invalid-json", () => Buffer.from("{broken")]]) {
+    fs.writeFileSync(canonFile, mutate(originalContainer));
+    const result = await queryProjectGraph({ root: f.root, anchorIds: [ids[2]], details: true, depth: 1 });
+    assert(!result.edges.some(edge => edge.type === "CITES_ARTIFACT"), name);
+    assert(result.nodes.find(node => node.nodeId === ids[2]).relationCoverage.some(item => item.type === "CITES_ARTIFACT" && item.status === "unavailable"));
+    fs.writeFileSync(canonFile, originalContainer);
+  }
+  const invalidTyped = JSON.parse(originalContainer); invalidTyped.candidateSetHash = "0".repeat(64);
+  fs.writeFileSync(canonFile, JSON.stringify(invalidTyped));
+  const invalidCitation = f.save({ summary: "Exact bytes are not typed validity", references: [{ ...canonRef, digest: sha(fs.readFileSync(canonFile)) }] });
+  const excluded = await queryProjectGraph({ root: f.root, anchorIds: [invalidCitation.evidence.evidenceId], details: true, depth: 1 });
+  assert(!excluded.edges.some(edge => edge.type === "CITES_ARTIFACT"));
+  assert(excluded.nodes.find(node => node.nodeId === invalidCitation.evidence.evidenceId).relationCoverage.some(item => item.reasonCode === "TYPED_ARTIFACT_NOT_AVAILABLE"));
+  fs.writeFileSync(canonFile, JSON.stringify({ ...invalidTyped, projectId: "another-project" }));
+  assert.throws(() => f.save({ summary: "Cross Project must not be cited as ours", references: [{ ...canonRef, digest: sha(fs.readFileSync(canonFile)) }] }), { code: "SESSION_WORK_REFERENCE_PROJECT_MISMATCH" });
+  fs.writeFileSync(canonFile, originalContainer);
+  t.diagnostic("Run-free synthetic records and DOM double only; exact citations/precedence are not decision causality or installed Host/GUI evidence.");
+});
+
+test("retained source bundles supply exact non-Git lineage bytes before Git and preserve missing-current uncertainty", async t => {
+  const f = fixture(t), relative = "src/action.mjs";
+  fs.mkdirSync(path.join(f.root, "src")); fs.writeFileSync(path.join(f.root, relative), oldSource);
+  const bundle = createSourceObservation({ version: 1, projectId: f.owner.project.projectId, kind: "source",
+    query: [{ path: relative, symbol: "" }], sources: [{ path: relative, digest: sha(oldSource), base64: Buffer.from(oldSource).toString("base64") }],
+    profile: {}, observedAt: "2026-01-01T00:00:00Z", response: null, envelopeHash: null }, f.storage);
+  const key = retainSourceObservation(f.root, bundle, f.storage);
+  f.save({ summary: "Inspect exact retained source; outcome unknown", references: [{ kind: "source", path: relative, digest: sha(oldSource) }] });
+  fs.writeFileSync(path.join(f.root, relative), newSource);
+  const before = snapshot(f.base), reader = createContextSourceReader(f.root, f.owner.project.projectId, { storage: f.storage });
+  const historical = await reader.read(relative, sha(oldSource));
+  assert.equal(historical.text, oldSource); assert.equal(historical.digest, sha(oldSource));
+  assert.equal(historical.basis.kind, "retained-source-observation"); assert.equal(historical.basis.bundleKey, key);
+  assert.equal(reader.diagnostics().localGitCommands, 0);
+  assert.equal((await reader.read(relative)).digest, sha(newSource));
+  const found = await queryProjectGraph({ root: f.root, paths: [relative], details: true, depth: 3 });
+  const pair = found.contextLineage.files.find(file => file.path === relative).comparisons.find(item => item.before?.digest === sha(oldSource));
+  assert(pair); assert.equal(pair.status, "observed"); assert.equal(pair.after.digest, sha(newSource));
+  assert.equal(pair.before.basis.kind, "retained-source-observation"); assert(pair.diff.changed);
+  assert.deepEqual(snapshot(f.base), before);
+  fs.unlinkSync(path.join(f.root, relative));
+  const missingBefore = snapshot(f.base), missing = await queryProjectGraph({ root: f.root, paths: [relative], details: true, depth: 3 });
+  const file = missing.contextLineage.files.find(item => item.path === relative), retained = file.comparisons.find(item => item.retainedOriginal);
+  assert.equal(retained.retainedOriginal.text, oldSource); assert.equal(retained.after, null); assert.equal(retained.status, "unknown");
+  assert.equal(file.currentObservation.deletionEstablished, false); assert.equal(file.currentObservation.renameEstablished, false);
+  assert.deepEqual(snapshot(f.base), missingBefore);
+});
+
+test("retained source lookup rejects tamper, cross-Project, other paths and invalid UTF8 while preserving Git fallback diagnostics", async t => {
+  for (const variant of ["source-tamper", "observation-tamper", "cross-project", "other-path", "invalid-utf8"]) {
+    const f = fixture(t), relative = "action.mjs", evidence = { version: 1, projectId: f.owner.project.projectId, kind: "source",
+      query: [{ path: relative, symbol: "" }], sources: [{ path: relative, digest: sha(oldSource), base64: Buffer.from(oldSource).toString("base64") }],
+      profile: {}, observedAt: "2026-01-01T00:00:00Z", response: null, envelopeHash: null };
+    fs.writeFileSync(path.join(f.root, relative), newSource);
+    if (variant === "cross-project") evidence.projectId = "head-" + "f".repeat(20);
+    if (variant === "other-path") evidence.sources[0].path = evidence.query[0].path = "other.mjs";
+    const bundle = createSourceObservation(evidence, f.storage);
+    if (variant === "source-tamper") bundle.evidence.sources[0].base64 = Buffer.from("tampered").toString("base64");
+    if (variant === "observation-tamper") bundle.observation.payload.details += "tampered";
+    if (variant === "invalid-utf8") Object.assign(bundle.evidence.sources[0], { base64: "/w==", digest: sha(Buffer.from([255])) });
+    const directory = path.join(f.root, ".lode/observations/source-bundles"); fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, `${sourceBundleKey(bundle.evidence)}.json`), JSON.stringify(bundle));
+    const before = snapshot(f.base), reader = createContextSourceReader(f.root, f.owner.project.projectId, { storage: f.storage });
+    const result = await reader.read(relative, sha(oldSource));
+    assert.equal(result.status, "unavailable", variant); assert.equal(result.reasonCode, "LOCAL_GIT_NOT_A_REPOSITORY", variant);
+    assert.equal(result.retainedSourceLookup.absenceEstablished, false);
+    assert.equal(result.retainedSourceLookup.reasonCode, variant === "other-path" ? "EXACT_RETAINED_SOURCE_BUNDLE_NOT_FOUND" : "RETAINED_SOURCE_BUNDLE_LOOKUP_INCOMPLETE", variant);
+    if (variant !== "other-path") assert(result.retainedSourceLookup.errors.length, variant);
+    assert.deepEqual(snapshot(f.base), before);
+  }
+});
+
+test("retained source lookup reports bounded inventory and bytes while exact hints preserve BOM bytes", async t => {
+  const f = fixture(t), relative = "action.mjs", original = "\ufeff" + oldSource;
+  fs.writeFileSync(path.join(f.root, relative), original);
+  const bundle = createSourceObservation({ version: 1, projectId: f.owner.project.projectId, kind: "source",
+    query: [{ path: relative, symbol: "" }], sources: [{ path: relative, digest: sha(original), base64: Buffer.from(original).toString("base64") }],
+    profile: {}, observedAt: "2026-01-01T00:00:00Z", response: null, envelopeHash: null }, f.storage);
+  const key = retainSourceObservation(f.root, bundle, f.storage); fs.writeFileSync(path.join(f.root, relative), newSource);
+  const open = fs.opendirSync;
+  const mocked = t.mock.method(fs, "opendirSync", function(directory, ...args) {
+    if (directory !== path.join(f.root, ".lode/observations/source-bundles")) return open.call(this, directory, ...args);
+    let at = 0;
+    return { readSync() { return at++ < 512 ? { name: `unrelated-${at}` } : at === 513 ? { name: `${key}.json` } : null; }, closeSync() {} };
+  });
+  const bounded = await createContextSourceReader(f.root, f.owner.project.projectId, { storage: f.storage }).read(relative, sha(original));
+  assert.equal(bounded.reasonCode, "LOCAL_GIT_NOT_A_REPOSITORY");
+  assert.equal(bounded.retainedSourceLookup.reasonCode, "RETAINED_SOURCE_BUNDLE_LOOKUP_BUDGET_REACHED");
+  assert.equal(bounded.retainedSourceLookup.inspectedDirectoryEntries, 512); assert.equal(bounded.retainedSourceLookup.absenceEstablished, false);
+  const common = await explainContextLineage({ root: f.root, project: f.owner.project, storage: f.storage, selection: {
+    query: { details: true, paths: [relative], maxNodes: 1 }, basis: { projectId: f.owner.project.projectId }, edges: [],
+    nodes: [{ nodeId: "exact-synthetic-citation", kind: "FileRevisionReference", path: relative, digest: sha(original) }],
+  } });
+  const commonPair = common.files[0].comparisons[0];
+  assert.equal(commonPair.reasonCode, "EXACT_SOURCE_PAIR_UNAVAILABLE");
+  assert.equal(commonPair.gap.reasonCode, "LOCAL_GIT_NOT_A_REPOSITORY");
+  assert.equal(commonPair.gap.retainedSourceLookup.reasonCode, "RETAINED_SOURCE_BUNDLE_LOOKUP_BUDGET_REACHED");
+  assert.equal(commonPair.gap.retainedSourceLookup.inspectedDirectoryEntries, 512);
+  assert.deepEqual(commonPair.gaps[0].retainedSourceLookup, commonPair.gap.retainedSourceLookup);
+  assert.equal(commonPair.gap.retainedSourceLookup.absenceEstablished, false);
+  const hinted = createContextSourceReader(f.root, f.owner.project.projectId, { storage: f.storage, bundleHints: [key] });
+  const exact = await hinted.read(relative, sha(original)); assert.equal(exact.text, original); assert.equal(sha(exact.text), exact.digest);
+  assert.equal(hinted.diagnostics().localGitCommands, 0); mocked.mock.restore();
+  const oversized = path.join(f.root, ".lode/observations/source-bundles", `${key}.json`);
+  fs.writeFileSync(oversized, Buffer.alloc(16 * 1024 * 1024 + 1));
+  const limited = await createContextSourceReader(f.root, f.owner.project.projectId, { storage: f.storage }).read(relative, sha(original));
+  assert.equal(limited.retainedSourceLookup.reasonCode, "RETAINED_SOURCE_BUNDLE_BYTE_BUDGET_REACHED");
+  assert.equal(limited.reasonCode, "LOCAL_GIT_NOT_A_REPOSITORY");
+});
 
 test("separated late changes share exact excerpt budgets without inventing contiguous source lines", () => {
   const lines = Array.from({ length: 1200 }, (_, i) => `line ${i + 1}`), next = [...lines];

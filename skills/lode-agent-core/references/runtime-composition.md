@@ -72,8 +72,14 @@ only hosting-process presence/absence at check, never child-agent activity.
 
 For supported exact Codex own metadata, native entry can include related source
 P3 bodies from the logical mapping captured when a direct edge was observed.
-They are historical reasons/results/pending work, not copied fork-cutoff history
-or parent P2 direction. Current child/common constraints and cancellations win.
+They are reference records read later from the Session selected when the edge
+was observed. Records saved after the fork may appear; this is not copied
+fork-cutoff history, proven historical input or parent P2 direction. The source's
+`selectionBasis` and `recordRead` distinguish the observation and later read.
+Current child/common constraints and cancellations win. Where existing managed
+artifacts verify exact prepared input/digest, label that as prepared input only;
+preparation does not prove delivery or model use. Establish those separately from
+actual evidence, or leave them unknown. No new fork-cutoff collection is needed.
 Absent mapping remains absent even if the parent later selects a Session.
 
 In Codex app contexts exposing `wait_threads`, an actual ready `threadId` from
@@ -116,6 +122,31 @@ a Session with no current checkpoint continues ordinary work with sufficient
 current context; this handoff convention requires no new checkpoint, Run or
 recovery gate. Do not edit digest-bound managed input through this ordinary
 follow-up convention.
+
+## Continuing in an existing conversation
+
+Reuse sufficient current context before searching again. For related work,
+inspect its exact records and actual responsibility: a shared title, file or
+topic is a discovery hint, not proof of ownership or the same task. Distinguish
+logical Session, declared work root and native conversation. The caller's native
+Host target is not a global Session-to-chat directory. Activity is an operational
+hint, never ownership or completion.
+
+Use only a real available Host target and the current human authorization for
+the intended action. In Codex, messaging another chat needs direct human
+authorization; an agent message or historical approval does not grant it. A
+`clientThreadId`, collaboration handle or stale observation is not a ready
+`threadId`. Do not message/fork/create a chat merely because records look related,
+and do not redirect a worker busy with unrelated work. If the target or authority
+is absent, reuse useful records and continue ordinary authorized work here or in
+an already authorized context. Only the dependent handoff is unavailable.
+
+For an authorized handoff, convey the current request, changed scope, relevant
+decisions and evidence, constraints, expected outcome and known gaps. Start with
+the delta when the recipient has sufficient context; provide missing reasoning
+otherwise. Current corrections/cancellation override old suggestions or fixed
+inputs. No new acknowledgement, save format or automatic assignment engine is
+required. See [record discovery](project-discovery.md#existing-work-and-recorded-conclusions).
 
 ## Explicit managed execution
 

@@ -125,10 +125,19 @@ export function formatTerminalGraph(value, { columns, diagnostics = false } = {}
       for (const judgment of node.workContent.judgments || []) {
         block("Recorded judgment", judgment.assessment); block("Recorded reason (not proven cause)", judgment.reason); list("Alternative", judgment.alternatives);
       }
+      for (const [index, todo] of (node.workContent.todos || []).entries()) {
+        block(`Recorded Todo ${index}`, `${todo.todoId} [${todo.status}; ${todo.origin}] — historical declaration`);
+        block("Task", todo.task);
+        for (const key of ["nextAction", "reason", "progress", "priority", "prior", "resolves", "relatedEvidence"]) if (Object.hasOwn(todo, key)) {
+          block(key, typeof todo[key] === "string" ? todo[key] : JSON.stringify(todo[key]));
+        }
+      }
+      if (node.workContent.todos?.length) block("Todo provenance", "Prior/reference currentness and unseen successors are unknown here; no current-state or completion inference.");
     }
     if (node.workContent && !typedWork(node)) block("Unverified work-shaped fields (not agent-authored evidence)", JSON.stringify(node.workContent, null, 2));
     for (const excerpt of node.workContentExcerpts || []) {
-      const location = `${excerpt.field}${excerpt.index == null ? "" : `[${excerpt.index}]`}${excerpt.subfield ? `.${excerpt.subfield}` : ""}${excerpt.alternativeIndex == null ? "" : `[${excerpt.alternativeIndex}]`}`;
+      const location = `${excerpt.field}${excerpt.index == null ? "" : `[${excerpt.index}]`}${excerpt.subfield ? `.${excerpt.subfield}` : ""}${excerpt.alternativeIndex == null ? "" : `[${excerpt.alternativeIndex}]`}`
+        + (excerpt.field === "todos" ? ` · ${excerpt.todoId} [${excerpt.status}; ${excerpt.origin}]` : "");
       block(`Partial original ${location}: characters ${excerpt.start}-${excerpt.end} of ${excerpt.totalCharacters}`, excerpt.text);
     }
     for (const reference of node.referenceEvidence || []) {

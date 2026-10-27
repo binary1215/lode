@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 import { commandEntry, isManagedMutation, requireOperationSurface, requireSurface } from "./lib/managed-maintenance-surface.mjs";
 import { inspectProject, inspectRuntimeAdapters } from "./lib/lode-core.mjs";
-import { withSessionRoute, withSessionCallContext, sessionCallRequiresBinding, sessionSelectionUnresolved, createLodeSession, listLodeSessions, readProjectDirection, updateProjectDirection, validateRelocationSessionSelection } from "./lib/session-routing.mjs";
+import { withSessionRoute, withSessionCallContext, sessionCallRequiresBinding, sessionSelectionUnresolved, createLodeSession, readProjectDirection, updateProjectDirection, validateRelocationSessionSelection } from "./lib/session-routing.mjs";
 import { resumeProjectLocation } from "./lib/project-relocation.mjs";
 import { startBoundedWorkerJob, readBoundedWorkerJob, cancelBoundedWorkerJob, reconcileBoundedWorkerJob, readBoundedWorkerPatch } from "./lib/bounded-worker-job.mjs";
 import { operateWorkerIntegration, inspectWorkerIntegration, validateWorkerIntegrationRequest, validateWorkerIntegrationStatusRequest } from "./lib/worker-integration-workflow.mjs";
@@ -53,7 +53,7 @@ import { inspectConformanceQueue, prepareConformanceAssessment, proposeConforman
 import { formatCliError, formatCliResult } from "./lib/cli-presentation.mjs";
 import { abortCompaction, continueCompaction, createRecoveryCheckpoint, inspectCompaction, inspectRecoveryCheckpointBasis, prepareCompaction, syncRecoveryCheckpoint, verifyCompaction } from "./lib/compaction-recovery.mjs";
 import { enterConversationRecovery, processCompactionLifecycle } from "./lib/compaction-lifecycle.mjs";
-import { recordSessionWorkEvidence, readSessionWorkContext } from "./lib/session-work-context.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext, readSessionWorkList } from "./lib/session-work-context.mjs";
 import { integrateReviewedRunCheckpoint, readRunResultIntegration, restoreSessionFromArtifacts } from "./lib/session-recovery.mjs";
 import { inspectRecoveryCheckpointDiagnosis } from "./lib/recovery-checkpoint-diagnosis.mjs";
 import { continueSessionFromArtifacts } from "./lib/runtime-session-continuation.mjs";
@@ -114,9 +114,9 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
       `${cliDisplay} doctor <project>`,
       `${cliDisplay} graph-query <project> --query <text> [--view all|work|product] [--paths <path,...>] [--anchors <id,...>] [--depth <n>] [--max-nodes <n>] [--max-edges <n>] [--world-model <id>] [--details]`,
       `${cliDisplay} graph-index <project>`,
-      `${cliDisplay} graph-explorer <project> [--query <text-or-source>] [--history] [--share] [--output <new-file.html>]`,
+      `${cliDisplay} graph-explorer <project> [--layer project|code] [--query <text-or-source>] [--anchors <id,...>] [--paths <path,...>] [--history] [--share] [--output <new-file.html>]`,
       `${cliDisplay} session-create <project> [--purpose <text>] [--new-session <session-id>]`,
-      `${cliDisplay} session-list <project>`,
+      `${cliDisplay} session-list <project> [--session <id>] [--max-sessions <1..64>] [--after-session <cursor>]  # read-only preview; preserves selection`,
       `${cliDisplay} project-direction-read <project>`,
       `${cliDisplay} project-direction-update <project> --input <current-user-direction.json> [--expected-direction <id>]`,
       `${cliDisplay} runtime-adapters <project>`,
@@ -343,6 +343,13 @@ export function runCommand(argv = process.argv.slice(2), { observationRegistry =
   const entry = commandEntry(argv);
   const parsed = parse(entry.argv);
   const index = argv.indexOf("--session");
+  if (parsed.command === "session-list") {
+    requireOperationSurface(parsed.command, entry.surface);
+    if (argv.lastIndexOf("--session") !== index) throw new Error("Only one logical Session preview may be requested.");
+    return readSessionWorkList({ root: parsed.root, sessionId: index >= 0 ? parsed.options.session : null,
+      maxSessions: parsed.options["max-sessions"] === undefined ? 16 : Number(parsed.options["max-sessions"]),
+      afterSessionId: parsed.options["after-session"] ?? null });
+  }
   if (["status", "doctor"].includes(parsed.command)) {
     if (argv.lastIndexOf("--session") !== index) throw new Error("Only one logical Session route may be selected.");
     requireOperationSurface(parsed.command, entry.surface);
@@ -393,9 +400,10 @@ function runRoutedCommand(argv, { observationRegistry = null, compactionLifecycl
     details: options.details === true || options.details === "true", maxNodes: options["max-nodes"] == null ? undefined : Number(options["max-nodes"]), maxEdges: options["max-edges"] == null ? undefined : Number(options["max-edges"]), worldModelId: options["world-model"] || "" }));
   if (command === "graph-index") return import("./lib/project-graph.mjs").then(({ indexProjectGraph }) => indexProjectGraph({ root }));
   if (command === "graph-explorer") return import("./lib/graph-explorer.mjs").then(({ exportGraphExplorer }) => exportGraphExplorer({ root,
-    query: options.query || "", history: options.history === true, share: options.share === true, output: options.output || null }));
+    query: options.query || "", anchorIds: options.anchors?.split(",") || [], paths: options.paths?.split(",") || [], layer: options.layer || "project",
+    history: options.history === true, share: options.share === true, output: options.output || null }));
   if (command === "session-create") return createLodeSession({ root, sessionId: options["new-session"], purpose: options.purpose });
-  if (command === "session-list") return listLodeSessions({ root });
+  if (command === "session-list") return readSessionWorkList({ root });
   if (command === "project-direction-read") return readProjectDirection({ root });
   if (command === "project-direction-update") return updateProjectDirection({ root, expectedDirectionId: options["expected-direction"] || null, input: inputJson(options, "Current user Project direction") });
   if (command === "runtime-adapters") return inspectRuntimeAdapters(root);

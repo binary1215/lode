@@ -891,7 +891,8 @@ test("conversation labels keep current cancellation ahead of reasons, pending an
   assert.ok(text.indexOf("Saved judgments and reasons:\n") < text.indexOf(entry.workContext.records[0].content.pending[0]));
   const related = text.indexOf("Related historical P3 from observed native ancestry — not this child's direction, approval or copied fork-cutoff history:");
   assert.ok(related > text.indexOf(entry.workContext.records[0].content.pending[0]));
-  assert.ok(text.indexOf('Related source "parent-session" (parent; selected when observed):', related) > related);
+  assert.ok(text.indexOf('Related source "parent-session" (parent; selected when observed; reference records read later):', related) > related);
+  assert.ok(text.indexOf("Historical input, delivery and model use are unknown.", related) > related);
   assert.ok(text.indexOf("Earlier reason 9:", related) > related);
   assert.ok(text.indexOf("Historical suggestions; not execution permission:\n", related) > related);
   assert.match(text, /Cancellation\/write race 9 remains unverified/u);

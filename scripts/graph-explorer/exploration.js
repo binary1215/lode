@@ -220,6 +220,22 @@ const explorerModel = (() => {
       if (yieldBeforeCommit) { await yieldWork(); if (cancelled() || basis !== geometryVersion) return false; }
       const applied = !cancelled() && commit(space, basis); if (applied) onCommit(); return applied;
     }
+    async function expandDirect(id, { allowed = () => true, edgeAllowed = () => true, cancelled = () => false, yieldWork = async () => {}, progress = () => {}, placementLimit = Infinity } = {}) {
+      if (!nodes.has(id) || !allowed(nodes.get(id))) return { status: "outside-scope", added: 0, edges: 0, examinedEdges: 0 };
+      const contributed = new Set([id]), edges = new Set(); let reads = 0;
+      // Only adjacency of this exact record, never a frontier walk to the next
+      // unseen boundary. Yield even when every edge is filtered out.
+      for (const edge of links(id)) {
+        if (++reads % 512 === 0) { progress({ examinedEdges: reads }); await yieldWork(); if (cancelled()) return { status: "cancelled" }; }
+        const other = edge.from === id ? edge.to : edge.from;
+        if (edgeAllowed(edge) && nodes.has(other) && allowed(nodes.get(other))) { contributed.add(other); edges.add(edge); }
+      }
+      const added = [...contributed].filter(id => !visible.has(id)).length;
+      if (!await placeBatch([...contributed].filter(id => !positions.has(id)).slice(0, placementLimit), { cancelled, yieldWork, yieldBeforeCommit: true })) return { status: "cancelled" };
+      if (cancelled()) return { status: "cancelled" };
+      steps.push({ kind: "direct", nodes: contributed, edges, added, before: { frontier: [...frontier], processed: [...processed], expansionKey } }); rebuildVisible();
+      return { status: "direct-connections", added, nodes: contributed.size, edges: edges.size, examinedEdges: reads };
+    }
     async function expandWave({ key = "", allowed = () => true, edgeAllowed = () => true, cancelled = () => false, yieldWork = async () => {}, progress = () => {}, placementLimit = Infinity } = {}) {
       const scope = JSON.stringify([[...chosen], key]);
       const before = { frontier: [...frontier], processed: [...processed], expansionKey };
@@ -295,7 +311,7 @@ const explorerModel = (() => {
         return searchText.get(node.nodeId).includes(folded);
       });
     }
-    return { nodes, positions, visible, pinned, history, neighbors, links, expand, visit, travel, move, reset, search,
+    return { nodes, positions, visible, pinned, history, neighbors, links, expand, expandDirect, visit, travel, move, reset, search,
       chosen, choose, chooseBatch, clearSelection, reveal, place, placeBatch, remeasure, extent, capture, restore, collapse, expandWave, connectSelection, showConnections,
       get selectionVersion() { return selectionVersion; },
       get steps() { return steps; }, get focus() { return focusId; },

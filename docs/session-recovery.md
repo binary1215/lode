@@ -360,7 +360,7 @@ session resume.
 ## Bounded prompt references and absent native correlation
 
 Optional local prompt references are redacted plaintext P5 hints, not encryption,
-a transcript, an instruction or a P2 recovery source. The prompt-only store uses
+a transcript, an instruction or a P2 recovery source. The reference-only store uses
 0700 directories and 0600 staging files on POSIX, checks owned regular entries
 and rejects unsafe links. Existing references are bounded and re-masked before
 reuse. These are best-effort credential patterns, not a universal secret detector.
@@ -385,3 +385,52 @@ Session through the Project default. Exact explicit logical routes and explicit
 initialize/resume remain available. No old-to-new native-ID correlation is guessed
 from recency or a different caller. Synthetic routing tests do not prove actual
 Claude `/clear` ID changes or automatic cross-ID restoration.
+
+References are prepared without consumption. The entire bounded reference fits
+the actual context string or stays stored; partial inclusion is not implied.
+Command Hooks consume only after the local stdout write callback succeeds;
+`write(false)` is backpressure, not failure. OpenCode consumes only after its
+still-current output slot accepts the text, and retains that text when rebuilding
+the same output object. Private P5 nonce-owned serialization protects writes;
+acknowledgement of an older generation preserves a changed store in full.
+Failed cleanup or a crash after output can repeat a hint. None of these local
+boundaries proves Host reception, model use or exactly-once delivery.
+
+Direct Claude/Codex `Stop.last_assistant_message` can preserve bounded, redacted
+visible final text without reading transcripts or tools. Codex `turn_id` must
+match the captured prompt's own turn. Neither published Hook contract supplies
+an explicit predecessor connecting Stop to the next prompt: adjacency is shown
+as `unverified`, and approval is `not-inferred`. Host-delivered prompts may be
+automatic continuations, scheduled work or messages; human origin is also
+`unverified`. Missing/null fields supply no proposal, StopFailure error text is
+excluded, and OpenCode assistant adjacency remains unsupported. This is recent
+context with explicit uncertainty, not complete proposal/reply recovery.
+Published field contracts: [Codex Stop](https://learn.chatgpt.com/docs/hooks#stop)
+and [Claude Stop input](https://code.claude.com/docs/en/hooks#stop-input).
+
+## Explicit tasks across recovery
+
+HEAD can record optional `todos` through the existing `lode_session_work_record`
+or checkpoint's optional work evidence. Users describe work normally. HEAD
+supplies stable `todoId`, task, recorded attribution, explicit status and a next
+action for unresolved work. `partial`, `waiting`, `completed` and `cancelled`
+are distinct; waiting/cancellation retain a reason. Progress and related exact
+evidence belong to the P3 record, not inferred process activity. Updates cite an
+exact same-Session `prior`; divergent branches stay conflicts. Explicit
+`resolves` selectors can reconcile other branches without choosing by timestamp.
+Retry reuses its original and never reopens a newer revision.
+
+`workContext.todoContext` selects known unresolved tasks independently of recent
+work's eight-record default. Entry/resume and bounded Host startup include it
+under current P2 direction/cancellations. The existing replaceable graph index
+contains task navigation hints; selected task originals are verified again.
+Already verified originals from this request also supply task metadata, so an
+unindexed publication can join immediately without a second scan or index repair.
+Contradictory hints are disclosed and do not defeat a valid original.
+Uninspected originals and missing/damaged indexes leave coverage unknown, never
+proof of an empty list or completion. No read repairs the index, refreshes World
+or blocks independent work. Expand with `lode_session_work_read` using `todo_id`,
+`after_todo_id`, or bounded `scan_todos` original pages and `after_evidence_id`.
+CLI `session-work-read --input` accepts their camelCase Core equivalents.
+Omitted IDs, counts and continuation remain visible. These P4 views do not grant
+effects or author P2, and records without `todos` keep their existing bytes/IDs.

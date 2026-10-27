@@ -3,11 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import childProcess from "node:child_process";
+import { EventEmitter } from "node:events";
 import test from "node:test";
 import { initializeProject } from "../scripts/lib/lode-core.mjs";
 import { createNativeObservationStore } from "../scripts/lib/native-session-observations.mjs";
-import { appendUserPromptReference, captureUserPrompt, freezeUserPromptReference, takeUserPromptReference, USER_PROMPT_REFERENCE_LIMITS } from "../scripts/lib/user-prompt-reference.mjs";
-import { runSessionHostHook } from "../scripts/session-host-hook.mjs";
+import { appendUserPromptReference, captureUserPrompt, freezeUserPromptReference, takeUserPromptReference, prepareUserPromptReference, acknowledgeUserPromptReference, USER_PROMPT_REFERENCE_LIMITS } from "../scripts/lib/user-prompt-reference.mjs";
+import { runSessionHostHook, writeSessionHostOutput } from "../scripts/session-host-hook.mjs";
 import plugin from "../scripts/opencode-plugin.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
@@ -68,7 +69,7 @@ test("Claude and Codex restore the frozen prompt after compact or clear and not 
     }), {});
     assert.deepEqual(await runSessionHostHook({
       runtime, environment, observeOnly: true,
-      event: { hook_event_name: "Stop", cwd: root, session_id: sessionId, prompt_id: "p1", turn_id: "p1", last_assistant_message: "SECRET" },
+      event: { hook_event_name: "Stop", cwd: root, session_id: sessionId, prompt_id: "p1", turn_id: "p1", last_assistant_message: "A visible bounded proposal" },
     }), {});
     const snapshot = createNativeObservationStore({ environment }).read({
       root, caller: { runtime, nativeSessionId: sessionId, agentId: null },
@@ -92,7 +93,9 @@ test("Claude and Codex restore the frozen prompt after compact or clear and not 
     assert.equal(text.includes("sk-abcdefghijklmnopqrstuvwxyz"), false);
     assert.equal(text.includes("[redacted-token]"), true);
     assert.equal(text.includes("replacement after freeze"), false);
-    assert.equal(text.includes("SECRET"), false);
+    assert.equal(text.includes("A visible bounded proposal"), true);
+    assert.match(text, /unverified/);
+    assert.match(text, /not-inferred/);
     assert.ok(text.length <= (runtime === "claude" ? 10000 : 32768));
     const again = await runSessionHostHook({ runtime, environment, event: start(root, runtime, "compact", sessionId) });
     assert.equal(again.hookSpecificOutput.additionalContext.includes("restore " + runtime), false);
@@ -163,6 +166,8 @@ test("OpenCode reinjects once after compaction or clear and ignores synthetic pa
   assert.equal(combined.includes("synthetic secret"), false);
   assert.equal(combined.includes("assistant secret"), false);
   assert.equal(combined.includes("replacement after freeze"), false);
+  await hooks["experimental.chat.system.transform"]({ sessionID }, restored);
+  assert.match(restored.system.join("\n"), /keep the opencode prompt/, "Rebuilding the same output object retains its already included local reference");
   const repeated = { system: [] };
   await hooks["experimental.chat.system.transform"]({ sessionID }, repeated);
   assert.equal(repeated.system.some(text => text.includes("keep the opencode prompt")), false);
@@ -175,6 +180,90 @@ test("OpenCode reinjects once after compaction or clear and ignores synthetic pa
   await hooks["experimental.chat.system.transform"]({ sessionID }, cleared);
   assert.equal(cleared.system.join("\n").includes("after opencode clear"), true);
   assert.deepEqual(tree(path.join(root, ".lode")), canon);
+});
+
+test("an OpenCode output rejected after preparation keeps the frozen reference for retry", async t => {
+  const { root, environment } = fixture(t), sessionID = "ses_rejected_output";
+  const caller = { root, runtime: "opencode", nativeSessionId: sessionID, environment };
+  captureUserPrompt({ ...caller, text: "keep this undelivered reference" });
+  freezeUserPromptReference(caller);
+  const hooks = await plugin.server({ directory: root, project: { id: "host-project" }, client: { session: {
+    async get() { return { data: { id: sessionID, projectID: "host-project", directory: root } }; },
+  } } }, { environment });
+  t.after(() => hooks.dispose());
+  const rejected = new Proxy([], { set() { throw new Error("Synthetic output append failure"); } });
+  await hooks["experimental.chat.system.transform"]({ sessionID }, { system: rejected });
+  const retry = { system: [] };
+  await hooks["experimental.chat.system.transform"]({ sessionID }, retry);
+  assert.match(retry.system.join("\n"), /keep this undelivered reference/);
+});
+
+test("reference preparation respects exact output bounds and cannot consume a changed caller generation", t => {
+  const { root, environment } = fixture(t), caller = { root, runtime: "codex", nativeSessionId: "prepared", environment };
+  captureUserPrompt({ ...caller, text: "문맥 A", messageId: "a" });
+  const prepared = prepareUserPromptReference({ ...caller, force: true });
+  assert(prepared);
+  for (const extra of [-1, 0, 1]) {
+    const next = prepareUserPromptReference({ ...caller, force: true, additionalContext: "base", limit: 6 + prepared.text.length + extra });
+    assert.equal(Boolean(next), extra >= 0);
+  }
+  assert.equal(captureUserPrompt({ ...caller, text: "문맥 A", messageId: "new-message-same-text" }).captured, true);
+  assert.equal(acknowledgeUserPromptReference(prepared), false, "A stale preparation cannot erase a newer generation");
+  const next = prepareUserPromptReference({ ...caller, force: true });
+  assert.equal(next.text.split("문맥 A").length - 1, 2);
+  assert.equal(acknowledgeUserPromptReference({ text: next.text }), false, "Only local preparations can be consumed");
+  assert.equal(acknowledgeUserPromptReference(next), true);
+  assert.equal(acknowledgeUserPromptReference(next), false);
+  assert.equal(prepareUserPromptReference({ ...caller, force: true }), null);
+});
+
+test("command Hook delivery consumes only after a successful local stream callback, including backpressure", async t => {
+  const { root, environment } = fixture(t), sessionId = "stream-caller";
+  const caller = { root, runtime: "codex", nativeSessionId: sessionId, environment };
+  captureUserPrompt({ ...caller, text: "retry this stream reference" });
+  freezeUserPromptReference(caller);
+  for (const outcome of ["throw", "callback-error", "error-event", "backpressure"]) {
+    const sink = new EventEmitter(); let text = "";
+    sink.write = (value, callback) => {
+      text = value;
+      if (outcome === "throw") throw new Error("Synthetic write failure");
+      setImmediate(() => {
+        assert(prepareUserPromptReference(caller), "Preparation must survive until local delivery completes");
+        if (outcome === "callback-error") callback(new Error("Synthetic callback failure"));
+        else if (outcome === "error-event") sink.emit("error", new Error("Synthetic EPIPE"));
+        else callback();
+      });
+      return false;
+    };
+    const operation = runSessionHostHook({ runtime: "codex", environment, event: start(root, "codex", "compact", sessionId),
+      deliver: output => writeSessionHostOutput(output, sink) });
+    if (outcome === "backpressure") await operation;
+    else { await assert.rejects(operation, /Synthetic/); assert(prepareUserPromptReference(caller)); }
+    assert.match(text, /retry this stream reference/);
+  }
+  assert.equal(prepareUserPromptReference(caller), null);
+});
+
+test("visible Stop context is bounded Host input with unverified adjacency and human origin, never approval", async t => {
+  const { root, environment } = fixture(t);
+  for (const runtime of ["codex", "claude"]) {
+    const sessionId = runtime + "-visible";
+    const observe = (hook_event_name, fields) => runSessionHostHook({ runtime, environment, observeOnly: true,
+      event: { hook_event_name, cwd: root, session_id: sessionId, ...fields } });
+    await observe("UserPromptSubmit", { turn_id: "proposal-turn", prompt: "Investigate the local implementation" });
+    await observe("Stop", { turn_id: "proposal-turn", last_assistant_message: "Propose local patch; password=synthetic-private-value", reasoning: "hidden reasoning must stay absent" });
+    await observe("UserPromptSubmit", { turn_id: "reply-turn", prompt: "취소. 설명만 해줘" });
+    if (runtime === "codex") await observe("Stop", { turn_id: "proposal-turn", last_assistant_message: "late stale final must not replace the current turn" });
+    await observe("StopFailure", { last_assistant_message: "API error must not become a proposal" });
+    const output = await runSessionHostHook({ runtime, environment, event: start(root, runtime, "compact", sessionId) });
+    const text = output.hookSpecificOutput.additionalContext;
+    for (const expected of ["Propose local patch", "취소. 설명만 해줘", "unverified", "not-inferred", "humanOrigin"]) assert(text.includes(expected), runtime + ": " + expected);
+    for (const hidden of ["synthetic-private-value", "hidden reasoning", "API error must", "late stale final"]) assert(!text.includes(hidden), runtime + ": " + hidden);
+    await observe("UserPromptSubmit", { turn_id: "null-turn", prompt: "A separate prompt" });
+    await observe("Stop", { turn_id: "null-turn", last_assistant_message: null });
+    const empty = await runSessionHostHook({ runtime, environment, event: start(root, runtime, "compact", sessionId) });
+    assert(!empty.hookSpecificOutput.additionalContext.includes("Propose local patch"));
+  }
 });
 
 

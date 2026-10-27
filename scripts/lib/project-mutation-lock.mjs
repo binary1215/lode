@@ -160,15 +160,14 @@ function nestedOwner(directory) {
   return null;
 }
 
-export function withProjectMutation({ root = ".", scope, storage }, operation) {
-  if (!/^[a-z][a-z0-9-]{0,63}$/.test(scope)) fail("Invalid mutation scope.", "INVALID_PROJECT_MUTATION_SCOPE");
-  storage ??= resolveProjectStorage(root);
-  const recheck = () => { if (storage?.projectFile) assertProjectStorageUnchanged(storage); };
-  recheck();
-  const directory = lockFor(root, scope, storage);
+// Private Host state can reuse the same nonce-owned serialization without
+// creating a Project operation or making optional delivery a recovery gate.
+export function withLocalMutation({ directory, timeoutMs = WAIT_MS }, operation) {
+  if (typeof directory !== "string" || !path.isAbsolute(directory)
+    || !Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > WAIT_MS) fail("Invalid local mutation lock.", "INVALID_PROJECT_MUTATION_SCOPE");
   if (nestedOwner(directory)) return operation();
   cleanInterruptedStaging(directory);
-  const deadline = Date.now() + WAIT_MS;
+  const deadline = Date.now() + timeoutMs;
   let owner;
   while (!(owner = attempt(directory))) {
     // A synchronous caller cannot wait for an unrelated async owner in this
@@ -178,20 +177,27 @@ export function withProjectMutation({ root = ".", scope, storage }, operation) {
         const match = OWNER.exec(name);
         return match?.[1] === HOST && match[2] === String(process.pid);
       })) {
-        fail(`The ${scope} operation is active in this process; retry shortly.`);
+        fail(`The ${path.basename(directory, ".lock")} operation is active in this process; retry shortly.`);
       }
     } catch (error) { if (error.code !== "ENOENT") throw error; }
-    if (Date.now() >= deadline) fail(`The ${scope} operation is busy; retry this operation shortly.`);
+    if (Date.now() >= deadline) fail(`The ${path.basename(directory, ".lock")} operation is busy; retry this operation shortly.`);
     Atomics.wait(pause, 0, 0, 10);
   }
   try {
-    recheck();
     const active = new Map(context.getStore() || []);
     active.set(directory, owner);
     const result = context.run(active, operation);
     if (result && typeof result.then === "function") fail("Use the asynchronous mutation coordinator for asynchronous operations.", "INVALID_PROJECT_MUTATION_OPERATION");
     return result;
   } finally { release(owner); }
+}
+
+export function withProjectMutation({ root = ".", scope, storage }, operation) {
+  if (!/^[a-z][a-z0-9-]{0,63}$/.test(scope)) fail("Invalid mutation scope.", "INVALID_PROJECT_MUTATION_SCOPE");
+  storage ??= resolveProjectStorage(root);
+  const recheck = () => { if (storage?.projectFile) assertProjectStorageUnchanged(storage); };
+  recheck();
+  return withLocalMutation({ directory: lockFor(root, scope, storage) }, () => { recheck(); return operation(); });
 }
 
 export async function withProjectMutationAsync({ root = ".", scope, storage }, operation) {

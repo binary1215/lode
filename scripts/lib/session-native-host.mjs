@@ -114,6 +114,7 @@ export function createNativeSessionHostBridge({ environment = process.env, runti
       const route = extra => ({ caller: visibleCaller(caller), hostEnvironment: environment, ...extra });
       if (helperName(name)) return reply(request, Object.assign(new Error(), { code: "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED" }));
       if (typeof args?.project_root !== "string" || !args.project_root) return handler(request, route());
+      if (name === "head_session_list") return handler(request, route());
       if (caller.status === "legacy") return handler(request, route());
       if (!sessionCallRequiresBinding(name) && !Object.hasOwn(args, "session_id")) return handler(request, route());
       if (caller.status !== "known") {

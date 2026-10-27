@@ -44,6 +44,15 @@ const sessionWorkEvidenceSchema = {
     judgments: { type: "array", items: { type: "object", properties: { assessment: workEvidenceText, reason: workEvidenceText, alternatives: workEvidenceList }, required: ["assessment", "reason"], additionalProperties: false } },
     observedWork: workEvidenceList, pending: workEvidenceList, unknowns: workEvidenceList, suggestedFollowUp: workEvidenceList,
     workTopics: { ...workEvidenceList, description: "Optional HEAD-authored navigation labels from actual work, not Product Features, completion, approval or P2 direction. No taxonomy or user form required." },
+    todos: { type: "array", minItems: 1, description: "Optional explicit P3 task revisions. HEAD supplies stable IDs, exact prior and actual progress at meaningful changes; no user JSON/save ritual. Status is not execution authority or inferred from activity.",
+      items: { type: "object", properties: {
+        todoId: { type: "string", pattern: "^todo-[a-z0-9][a-z0-9-]{0,79}$" }, task: workEvidenceText,
+        status: { type: "string", enum: ["pending", "partial", "waiting", "completed", "cancelled"] },
+        origin: { type: "string", enum: ["user-directed", "head-proposed"], description: "Recorded attribution only; not proof of user approval." },
+        nextAction: workEvidenceText, reason: workEvidenceText, progress: workEvidenceText, priority: workEvidenceText,
+        prior: exactWorkEvidenceSchema, resolves: { type: "array", items: exactWorkEvidenceSchema, description: "Explicitly reconcile these other exact branches of the same task; no time-based winner." },
+        relatedEvidence: { type: "array", items: exactWorkEvidenceSchema },
+      }, required: ["todoId", "task", "status", "origin"], additionalProperties: false } },
     occurrenceKey: { ...workEvidenceText, description: "Optional HEAD-owned distinction for a genuinely separate occurrence; identical input retry reuses its original." },
     workLink: { type: "object", description: "Optional exact same-Session saved context anchor and predecessor; not execution identity or authority.",
       properties: { root: exactWorkEvidenceSchema, predecessor: exactWorkEvidenceSchema }, required: ["root", "predecessor"], additionalProperties: false },
@@ -1037,6 +1046,9 @@ const allTools = [
       after_evidence_id: { type: "string", pattern: "^work-evidence-[a-f0-9]{24}$", description: "Explicit lexical ID-page anchor, not a time-order cursor. Default global selection returns no continuation cursor." },
       max_records: { type: "integer", minimum: 1, maximum: 512 }, max_characters: { type: "integer", minimum: 2, maximum: 524288,
         description: "Actual JSON.stringify(records).length budget after reference enrichment. Separate bounded metadata envelope excluded; omissions/expansion disclosed." },
+      todo_id: { type: "string", pattern: "^todo-[a-z0-9][a-z0-9-]{0,79}$", description: "Inspect this recorded task, including terminal or conflicting revisions, independently of recent work." },
+      after_todo_id: { type: "string", pattern: "^todo-[a-z0-9][a-z0-9-]{0,79}$", description: "Continue the known unresolved Todo list by stable item ID." },
+      scan_todos: { type: "boolean", description: "Read a bounded original ID page when the replaceable Todo index is missing or incomplete. Continue with after_evidence_id; no repair or World refresh." },
     }, required: ["project_root"], additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -1911,8 +1923,9 @@ allTools.push(
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
-    name: "head_session_list", description: "Read logical HEAD Sessions and their independent progress without switching the default or granting effect authority.",
-    inputSchema: { type: "object", properties: { project_root: { type: "string", minLength: 1 } }, required: ["project_root"], additionalProperties: false },
+    name: "head_session_list", description: "Read a bounded logical Session page; session_id previews one Session's exact work and Todo without changing any selection. Unread/failed entries remain explicit; recent results are not whole-work completion or ownership. Follow nextAfterSessionId when needed.",
+    inputSchema: { type: "object", properties: { project_root: { type: "string", minLength: 1 },
+      max_sessions: { type: "integer", minimum: 1, maximum: 64 }, after_session_id: { type: "string", maxLength: 512 } }, required: ["project_root"], additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
@@ -2393,6 +2406,9 @@ async function dispatchSessionRequest(request, options = {}) {
       return response;
     } catch (error) { return failure(request.id ?? null, error.message); }
   }
+  // Discovery's existing session_id is an exact preview target, never a request
+  // to update native persistence, a shared caller context, or the outer route.
+  if (request.method === "tools/call" && requestedName === "head_session_list") return dispatchRouted(request, options);
   if (args?.project_root && (hasSelection || dependent) && !sessionContext && options.resolveSessionContext) {
     try { sessionContext = await options.resolveSessionContext(request); }
     catch (error) {
@@ -2487,7 +2503,8 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
       : name === "head_session_create"
         ? (await import("./lib/session-routing.mjs")).createHeadSession({ root: args.project_root, sessionId: args.new_session_id, purpose: args.purpose })
       : name === "head_session_list"
-        ? (await import("./lib/session-routing.mjs")).listHeadSessions({ root: args.project_root })
+        ? (await import("./lib/session-work-context.mjs")).readSessionWorkList({ root: args.project_root,
+          sessionId: args.session_id ?? null, maxSessions: args.max_sessions ?? 16, afterSessionId: args.after_session_id ?? null })
       : name === "head_project_direction_read"
         ? (await import("./lib/session-routing.mjs")).readProjectDirection({ root: args.project_root })
       : name === "head_project_direction_update"
@@ -2685,7 +2702,8 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
                 : name === "head_session_work_read"
                   ? (await import("./lib/session-work-context.mjs")).readSessionWorkContext({ root: args.project_root,
                       evidenceIds: args.evidence_ids ?? null, afterEvidenceId: args.after_evidence_id ?? null,
-                      maxRecords: args.max_records ?? 8, maxCharacters: args.max_characters ?? 32768 })
+                      maxRecords: args.max_records ?? 8, maxCharacters: args.max_characters ?? 32768,
+                      todoId: args.todo_id ?? null, afterTodoId: args.after_todo_id ?? null, scanTodos: args.scan_todos ?? false })
                 : name === "head_session_restore"
                   ? (await import("./lib/session-recovery.mjs")).restoreSessionFromArtifacts({ root: args.project_root, checkpointId: args.checkpoint_id || null })
                   : name === "head_session_continue"

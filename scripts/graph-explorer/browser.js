@@ -9,8 +9,10 @@
   catch { document.getElementById("status").textContent = "Snapshot data could not be decoded. Original records were not changed; regenerate this optional report."; return; }
   const $ = id => document.getElementById(id), ns = "http://www.w3.org/2000/svg";
   const hide = (element, value) => { element.hidden = value; if (value) element.setAttribute("hidden", ""); else element.removeAttribute("hidden"); };
-  let activeGraph = data.graph, selected = null;
+  let activeGraph = data.initialLayer === "code" ? data.codeGraph : data.graph, selected = null;
+  $("layer").value = activeGraph === data.graph ? "project" : "code";
   let box = [0, 0, 1000, 700], drag = null, suppressClick = false;
+  let cameraIntent = 0;
   const layerStates = new Map();
   let contextSelection = null;
   let mapMode = "focus", listPage = 0, relationPage = 0, relationSelection = null, foundIds = new Set(), visibleMatches = [], cameraFrame = null;
@@ -21,6 +23,7 @@
   let jobSerial = 0, busy = false, jobKind = null, drawnNodeIds = new Set(), comparisonFiles = [], changeHunks = [], fileCursor = 0, changeCursor = -1, rootPage = 0;
   const historyCounts = new WeakMap(), edgeKeys = new WeakMap();
   const comparisonStates = new WeakMap();
+  const documentPanels = new WeakMap();
   const comparisonFileNavigation = new WeakMap();
   let comparisonGraph = null, comparisonNavigationSerial = 0;
   const filterIds = ["search", "hide-nonmatches", "axis", "view", "include-history", "relation-filter", "kind-filter"];
@@ -31,7 +34,7 @@
   const isCode = node => $("layer").value === "code" || /^(File|Symbol|Source|Directory|Dependency|ExternalDependency)/.test(node.kind || "");
   const relation = edge => {
     const code = edge.type || edge.relation;
-    return displayText(({ CITES_EXACT_REVISION: "Mentioned source version", CITES_WORK_EVIDENCE: "Cited work record", DECLARES_WORK_ROOT: "Declared work starting point",
+    return displayText(({ CITES_EXACT_REVISION: "Mentioned source version", CITES_WORK_EVIDENCE: "Cited work record", CITES_ARTIFACT: "Cited original document (not every contained decision)", DECLARES_WORK_ROOT: "Declared work starting point",
       FOLLOWS_WORK_EVIDENCE: "Previous work record", RECORDED_RESULT: "Recorded result", RECORDED_REVIEW: "Recorded review",
       OBSERVES_BEFORE_REVISION: "Recorded before revision", OBSERVES_AFTER_REVISION: "Recorded after revision",
       REFERS_TO_PREVIOUS_CANON: "Previous recorded Canon", REFERS_TO_BASE_CANON: "Base recorded Canon", REFERS_TO_RESULT_CANON: "Resulting recorded Canon",
@@ -374,6 +377,7 @@
     if (jobKind === "fit") cancelWork();
     const [x, y, width, height] = box, next = width * factor, scale = next / width;
     if (!Number.isFinite(next) || next <= 0 || !Number.isFinite(height * scale)) return;
+    cameraIntent++;
     box = [x + (width - next) / 2, y + (height - height * scale) / 2, next, height * scale]; setBox(); redrawCamera();
   }
   function selectNode(node, keyboard = false, event = {}) {
@@ -383,9 +387,82 @@
     if (event.only) { chosenEdges.clear(); edgeVersion++; }
     if (before !== model.selectionVersion) cancelWork();
     selected = model.focus ? { kind: "node", value: model.nodes.get(model.focus) } : chosenEdges.size ? { kind: "edge", value: [...chosenEdges][0] } : null;
-    if (before !== model.selectionVersion || previous !== selected?.value) remember(`Read ${shorten(label(node), 32)}`);
+    if (event.mapNavigation) {
+      // Explicit endpoint navigation is one history step, not the ordinary
+      // read/selection path. Center one card; never fit or reposition its peers.
+      cancelWork(false);
+      if (inDisplayScope(node)) { model.place(node.nodeId); mapMode = "focus"; focusCamera(); }
+      else $("operation-status").textContent = "Selected connection is outside current filters. Selection and camera retained; use Show selected scope, then Focus selection to see it.";
+    }
+    if (event.mapNavigation || before !== model.selectionVersion || previous !== selected?.value)
+      remember(`${event.mapNavigation ? "Show on map" : "Read"} ${shorten(label(node), 32)}`);
     render();
-    if (keyboard) { const target = [...$("graph").children].find(el => el.getAttribute("data-node") === node.nodeId); target?.focus(); }
+    if (keyboard || event.mapNavigation) {
+      const target = [...$("graph").children].find(el => el.getAttribute("data-node") === node.nodeId);
+      if (event.mapNavigation && target) target.scrollIntoView({ block: "center", inline: "nearest" });
+      target?.focus({ preventScroll: Boolean(event.mapNavigation) });
+    }
+  }
+  function mapNeighborButton(node) {
+    const graph = activeGraph, control = button(`Show on map: ${label(node)}`, () => {
+      if (activeGraph === graph && model.nodes.get(node.nodeId) === node) selectNode(node, true, { mapNavigation: true });
+    });
+    control.setAttribute("data-map-neighbor", node.nodeId); return control;
+  }
+  // This immutable report contains all navigation metadata, not every exact
+  // original. Index declared source citations once; never join by path alone.
+  let sourceCitations = null;
+  function citingWork(relative, digest) {
+    if (!sourceCitations) {
+      sourceCitations = new Map();
+      for (const node of data.graph.nodes) if (node.subtype === "SessionWorkEvidence" && node.origin?.layer === "sessionWork") {
+        const seen = new Set();
+        for (const ref of node.referenceEvidence || []) if (ref.kind === "source") {
+          const identity = key(ref); if (seen.has(identity)) continue; seen.add(identity);
+          if (!sourceCitations.has(identity)) sourceCitations.set(identity, []);
+          sourceCitations.get(identity).push(node);
+        }
+      }
+    }
+    return sourceCitations.get(key({ path: relative, digest })) || [];
+  }
+  function readCitingWork(nodeId) {
+    if (activeGraph !== data.graph) { $("layer").value = "project"; changeLayer(); }
+    const node = model.nodes.get(nodeId); if (!node) return;
+    const selectedIndex = [...model.chosen].indexOf(nodeId);
+    cardPage = Math.floor((selectedIndex < 0 ? model.chosen.size : selectedIndex) / PAGE_SIZE);
+    selectNode(node);
+    const card = cardsCache?.entries.get(recordKey(node))?.card;
+    if (card) { card.open = true; card.scrollIntoView({ block: "nearest" }); card.children[0].focus(); }
+  }
+  function appendCitingWork(body, file, pair) {
+    const rows = new Map();
+    for (const [side, digest] of [[pair.before?.digest ? "Recorded / cited before" : "Cited reference (historical bytes unavailable)", pair.before?.digest || pair.citedReference?.digest],
+      [pair.scope === "recorded-changeset-snapshot-pair" ? "Recorded after (not necessarily current)" : pair.scope === "explicit-work-chain-citation-pair-not-request-boundary" ? "Cited version B" : "Export-observed current", pair.after?.digest]]) {
+      if (!digest) continue;
+      for (const node of citingWork(file.path, digest)) {
+        if (!rows.has(node.nodeId)) rows.set(node.nodeId, { node, sides: [] });
+        rows.get(node.nodeId).sides.push(`${side} · ${digest}`);
+      }
+    }
+    if (!rows.size) return;
+    const section = text("section", "", "exact-citations"), list = text("ul", ""), controls = text("nav", "", "list-pages"), count = text("span", "");
+    section.append(text("h4", "Exact citing work — not proven change causes"), list, controls); body.append(section);
+    const values = [...rows.values()]; let page = 0;
+    const update = () => {
+      list.replaceChildren();
+      for (const { node, sides } of values.slice(page * 20, (page + 1) * 20)) {
+        const row = text("li", sides.join(" · ")), control = button(`Read citing work: ${label(node)}`, () => readCitingWork(node.nodeId));
+        control.setAttribute("data-citing-work", node.nodeId); row.append(control);
+        row.append(text("p", node.detailCoverage === "metadata-only"
+          ? "Original / comparison detail was not included for this work. Read its available recorded judgments, or request a separate exact-detail report."
+          : "A recorded citation is not proof that this work caused the byte change.", "hint")); list.append(row);
+      }
+      count.textContent = `${page * 20 + 1}–${Math.min(values.length, (page + 1) * 20)} / ${values.length} exact citing records`;
+      previous.disabled = page === 0; next.disabled = (page + 1) * 20 >= values.length;
+    };
+    const previous = button("Previous citing records", () => { page--; update(); }), next = button("Next citing records", () => { page++; update(); });
+    controls.append(count, previous, next); update();
   }
   function selectEdge(edge, keyboard = false, event = {}) {
     const toggle = event.ctrlKey || event.metaKey || event.key === " ";
@@ -398,6 +475,7 @@
     el.addEventListener("click", event => { if (!suppressClick) action(event.detail === 0, event); });
     el.addEventListener("keydown", event => {
       if (event.target !== el && (event.target.closest?.("[data-card-control]") || event.target.closest?.("[data-card-body]"))) return;
+      if (event.key === "Enter" && event.shiftKey && el.getAttribute("data-node")) return;
       if (["Enter", " "].includes(event.key)) { event.preventDefault(); action(true, event); }
     });
   }
@@ -514,7 +592,13 @@
         body.children[1].addEventListener("scroll", () => { if (openedMap(graph).has(node.nodeId)) mapScroll(graph).set(node.nodeId, { top: body.children[1].scrollTop || 0, left: body.children[1].scrollLeft || 0 }); });
         title.textContent = label(node); content.append(body); group.append(rectangle, content, title);
         accessibleActivate(group, (keyboard, event) => { if (!event.target.closest?.("[data-card-body]") && !event.target.closest?.("[data-card-control]")) selectNode(node, keyboard, event); });
+        const direct = event => {
+          if (event.target.closest?.("[data-card-body]") || event.target.closest?.("[data-card-control]")) return;
+          event.preventDefault(); event.stopPropagation(); runDirect(node).catch(calculationFailed);
+        };
+        group.addEventListener("dblclick", direct);
         group.addEventListener("keydown", event => {
+          if (event.shiftKey && event.key === "Enter") { direct(event); return; }
           const delta = { ArrowLeft: [-20, 0], ArrowRight: [20, 0], ArrowUp: [0, -20], ArrowDown: [0, 20] }[event.key];
           if (!event.shiftKey || !delta || event.target.closest?.("[data-card-control]")) return; event.preventDefault(); if (jobKind === "geometry" || jobKind === "disclosure") cancelWork(); const at = model.positions.get(node.nodeId); model.move(node.nodeId, at.x + delta[0], at.y + delta[1]); renderGraph(visibleMatches); group.focus();
         }); cache.nodes.set(node.nodeId, group);
@@ -579,14 +663,21 @@
         for (const [heading, facts] of descriptor.facts) {
           card.append(text("strong", heading)); const list = text("ul", "", "record-facts");
           for (const fact of facts) {
+            if (heading === "Recorded Todo revisions (historical)" && fact && typeof fact.todoId === "string") {
+              const row = text("li", `${fact.todoId} [${fact.status}; ${fact.origin}]: ${fact.task}`);
+              for (const key of ["nextAction", "reason", "progress", "priority", "prior", "resolves", "relatedEvidence"]) if (Object.hasOwn(fact, key)) {
+                row.append(text("p", `${key}: ${typeof fact[key] === "string" ? fact[key] : JSON.stringify(fact[key])}`));
+              }
+              list.append(row); continue;
+            }
             const row = text("li", typeof fact === "string" ? fact : fact.assessment || "Recorded judgment");
             if (fact && typeof fact === "object") { row.append(text("p", fact.reason || "No recorded reason included.")); for (const alternative of fact.alternatives || []) row.append(text("p", alternative, "hint")); }
             list.append(row);
           } card.append(list);
         }
         for (const excerpt of descriptor.excerpts) card.append(text("strong", excerpt.heading), text("pre", excerpt.text, "record-excerpt"));
-        if (!value.rationale && !value.workContent?.judgments?.length
-          && !(value.workContentExcerpts || []).some(entry => entry.field === "judgments" && entry.subfield === "reason" && entry.text))
+        if (!value.rationale && !value.workContent?.judgments?.length && !value.workContent?.todos?.some(todo => todo.reason)
+          && !(value.workContentExcerpts || []).some(entry => ["judgments", "todos"].includes(entry.field) && entry.subfield === "reason" && entry.text))
           card.append(text("p", "No recorded reason included for this record.", "hint"));
         const actions = text("div", "", "reading-actions");
         actions.append(button("Read focus", () => node ? selectNode(value) : selectEdge(value)),
@@ -600,6 +691,16 @@
           if (at >= 0) { fileCursor = at; comparisonFiles[at].scrollIntoView({ block: "nearest" }); comparisonFiles[at].focus(); comparisonPosition("file"); }
           else $("context-lineage").scrollIntoView({ block: "nearest" });
         }));
+        if (node && value.detailCoverage === "metadata-only") {
+          card.append(text("p", "Exact original / comparison detail is not included for this record. Available metadata and explicit connections remain readable.", "hint"));
+          const options = button("Exact detail options", () => {
+            selectNode(value); $("focus-inspector").open = true; $("detail-scope").setAttribute("tabindex", "-1");
+            $("detail-scope").scrollIntoView({ block: "nearest" }); $("detail-scope").focus();
+          }); options.setAttribute("data-detail-options", value.nodeId); actions.append(options);
+        }
+        for (const item of (value.relationCoverage || []).filter(item => item.type === "CITES_ARTIFACT" && item.status === "unavailable")) {
+          card.append(text("p", `Exact document link unavailable: ${item.reference?.path || "reference not included"} · ${item.reasonCode}. Citation bytes are not typed approval or cause.`, "hint"));
+        }
         card.append(actions);
         const links = node ? model.links(value.nodeId) : [value];
         const connections = text("details", ""); connections.append(text("summary", `${links.length} actual relationships (direction and type)`));
@@ -611,7 +712,10 @@
           for (const edge of links.slice(page * 20, (page + 1) * 20)) {
             const from = entryModel.nodes.get(edge.from), to = entryModel.nodes.get(edge.to), row = text("li", "");
             row.append(text("p", `${from ? label(from) : "Endpoint not exported"} → ${to ? label(to) : "Endpoint not exported"} · ${relation(edge)}${edgeInScope(edge) ? "" : " · outside current relationship scope"}`));
-            row.append(button("Read relationship", () => selectEdge(edge))); children.push(row);
+            row.append(button("Read relationship", () => selectEdge(edge)));
+            const endpoints = node ? [edge.from === value.nodeId ? edge.to : edge.from] : [...new Set([edge.from, edge.to])];
+            for (const id of endpoints) { const endpoint = entryModel.nodes.get(id); if (endpoint) row.append(mapNeighborButton(endpoint)); }
+            children.push(row);
           }
           reconcile(rows, children, connections.children[0]);
           range.textContent = `${page * 20 + (links.length ? 1 : 0)}–${Math.min(links.length, (page + 1) * 20)} / ${links.length}`;
@@ -686,6 +790,26 @@
     $("operation-status").textContent = `${result.status}: ${result.added || 0} newly exposed records · ${result.edges || 0} actual relationships · ${result.frontier || 0} next-boundary records. Camera, mode, prior positions and selection retained. First-screen positions prepared; remaining records stay searchable/readable and can be positioned with selection or Explored map.`;
     remember(`Expand ${result.added || 0}`); render();
   }
+  async function runDirect(node = selected?.kind === "node" ? selected.value : null) {
+    if (!node || model.nodes.get(node.nodeId) !== node) return;
+    if (!model.chosen.has(node.nodeId) || selected?.value !== node) selectNode(node);
+    cancelWork(false); const target = model, serial = ++jobSerial, basis = metrics().key, initialCameraIntent = cameraIntent;
+    busy = true; jobKind = "direct"; $("cancel-work").disabled = false;
+    $("operation-status").textContent = `Opening exact direct connections of ${label(node)}…`; renderSelectionCards();
+    await yieldWork(); if (serial !== jobSerial || target !== model) return;
+    const result = await target.expandDirect(node.nodeId, { allowed: operationNode, edgeAllowed: edgeInScope, placementLimit: screenCapacity(), yieldWork,
+      cancelled: () => serial !== jobSerial || target !== model || metrics().key !== basis,
+      progress: value => { $("operation-status").textContent = `${value.examinedEdges} direct relationships examined; not yet committed.`; } });
+    if (serial !== jobSerial || target !== model) return;
+    if (result.status === "cancelled") { supersededCalculation(serial); return; }
+    busy = false; jobKind = null; $("cancel-work").disabled = true;
+    // An explicit expansion may center initially, but never overwrite newer pan
+    // or zoom input made while its cooperative calculation was awaiting input.
+    if (result.status !== "outside-scope" && cameraIntent === initialCameraIntent) { mapMode = "focus"; focusCamera(); }
+    $("operation-status").textContent = result.status === "outside-scope" ? "Selected record is outside current filters; selection and camera retained. Show selected scope to open its connections."
+      : `${result.edges} exact direct relationships · ${result.nodes - 1} neighboring records. Only this one hop; pins, selection and prior positions retained. Off-screen records remain in the searchable list and paged relationship reader; no evidence removed.`;
+    remember(`Direct connections ${shorten(label(node), 24)}`); render();
+  }
   async function runConnections() {
     cancelWork(false); const serial = ++jobSerial, basis = operationKey(), geometryBasis = metrics().key; busy = true; jobKind = "connections"; $("cancel-work").disabled = false;
     $("operation-status").textContent = "Computing selected connection branches within this export and filters…"; renderSelectionCards();
@@ -728,6 +852,7 @@
     renderContextLineage();
     let relations = $("relations"); if (!relations) { relations = text("ul", ""); relations.id = "relations"; relations.setAttribute("aria-label", "Follow included connections"); $("expansion").after(relations); } relations.replaceChildren();
     $("expand").disabled = model.chosen.size === 0 || busy;
+    $("expand-direct").disabled = selected?.kind !== "node" || busy;
     if ($("relation-pages")) $("relation-pages").hidden = !selected;
     if (!selected) {
       $("selected-title").textContent = "Where do you want to start?"; $("selected-caption").textContent = "Choose a record to unfold its connected evidence.";
@@ -737,18 +862,27 @@
     const value = selected.value, node = selected.kind === "node", reference = value.sourceReference || value.provenance;
     const selectionId = value.nodeId || value.edgeId;
     if (relationSelection !== selectionId) { relationPage = 0; relationSelection = selectionId; }
-    $("detail-scope").textContent = value.detailCoverage === "metadata-only"
-      ? "Metadata only for this record. Missing original/comparison does not mean no change. Regenerate the snapshot with this source as --query for bounded exact detail."
-      : "Detail is bounded to the export query, not complete file history. A missing comparison does not mean unchanged.";
-    const detailQuery = value.path || value.sourceReference?.path;
-    if (detailQuery && data.regenerate?.argv) {
+    $("detail-scope").textContent = (value.detailCoverage === "metadata-only"
+      ? "Metadata only for this record. Missing original/comparison does not mean no change. Request a separate report with this exact anchor and its cited sources."
+      : "Detail is bounded to the export selection, not complete file history. A missing comparison does not mean unchanged.")
+      + ` Snapshot: ${data.generatedAt || "time not included"}. Regeneration re-reads evidence at a new basis; it is not executed by this file.`;
+    const detailPaths = [...new Set([value.path, ...(value.referenceEvidence || []).filter(ref => ref.kind === "source").map(ref => ref.path)].filter(Boolean))];
+    if (node && data.regenerate?.argv) {
       const powershell = data.regenerate.shell === "powershell", quote = arg => powershell ? `'${String(arg).replaceAll("'", "''")}'` : `'${String(arg).replaceAll("'", `'"'"'`)}'`;
-      $("detail-scope").append(text("pre", `${powershell ? "& " : ""}${[...data.regenerate.argv, "--query", detailQuery].map(quote).join(" ")}`));
+      // Exact anchors identify records; paths alone are never a decision join.
+      // The existing CLI CSV path option cannot express a comma in a filename.
+      // In that case the exact work anchor still brings its citations through
+      // the common lineage reader, rather than producing a misleading command.
+      const safePaths = detailPaths.filter(path => !path.includes(",")).slice(0, 32);
+      $("detail-scope").append(text("pre", `${powershell ? "& " : ""}${[...data.regenerate.argv, "--layer", activeGraph === data.graph ? "project" : "code", "--anchors", value.nodeId,
+        ...(safePaths.length ? ["--paths", safePaths.join(",")] : [])].map(quote).join(" ")}`));
+      if (safePaths.length !== detailPaths.length) $("detail-scope").append(text("p", "Some paths cannot be listed in this CLI option; the exact work anchor retains its citations. Use the typed graph query for explicit path arrays.", "hint"));
     }
     $("selected-title").textContent = displayText(node ? label(value) : relation(value));
     $("selected-caption").textContent = displayText(node ? [value.kind, value.freshness || "freshness unknown", value.reviewState || "review unknown", value.status, value.state, value.historical ? "historical" : null].filter(item => typeof item === "string").join(" · ") : `Existing relationship · ${value.viewerCurrentness || value.freshness || "currentness unknown"} · not an execution permission`);
     const summary = $("selected-summary"); summary.replaceChildren();
     summary.append(text("p", String(value.description || value.workContent?.summary || value.summary || value.proposedPolicy?.statement || value.statement || value.purpose || value.objective || value.directionEvidence?.goal || value.rationale || value.planDelta || value.outcome || value.assessment || (node ? "Follow a connection below, or open its exact original." : `${label(model.nodes.get(value.from))} → ${label(model.nodes.get(value.to))}`))));
+    if (value.contentPartial) summary.append(text("p", `Partial navigation excerpt; exact originals remain separate. ${JSON.stringify(value.contentCoverage || {})}`, "hint"));
     for (const [heading, items] of [["Constraints", value.directionEvidence?.constraints], ["Cancelled actions", value.directionEvidence?.cancelledActions], ["Unknowns", value.workContent?.unknowns || value.unknowns], ["Pending", value.workContent?.pending], ["Recorded judgments", value.workContent?.judgments]]) {
       if (!Array.isArray(items) || !items.length) continue;
       summary.append(text("strong", heading)); const list = text("ul", ""); list.className = "record-facts";
@@ -790,7 +924,8 @@
           if (historical(edge) || target && historical(target)) $("include-history").checked = true;
           selectNode(target);
         }); entry.disabled = !target;
-        row.append(entry); if (node) row.append(button("ⓘ", () => selectEdge(edge))); relations.append(row);
+        row.append(entry); if (node) row.append(button("ⓘ", () => selectEdge(edge)));
+        if (target) row.append(mapNeighborButton(target)); relations.append(row);
       }
     }
   }
@@ -803,8 +938,12 @@
     const canon = node?.kind === "ProductModelRevision" || node?.origin?.layer === "product";
     if (record.kind !== node?.kind && !canon) return null;
     const lines = [], put = (title, value) => {
-      if (typeof value === "string") lines.push(`${title}: ${value}`);
-      else if (Array.isArray(value)) for (const item of value) if (typeof item === "string") lines.push(`${title}: ${item}`);
+      const values = Array.isArray(value) ? value : value == null ? [] : [value];
+      for (const item of values.slice(0, 32)) {
+        const full = typeof item === "string" ? item : JSON.stringify(item);
+        lines.push(`${title}: ${full.slice(0, 4096)}${full.length > 4096 ? ` [${full.length - 4096} characters omitted; exact raw original below]` : ""}`);
+      }
+      if (values.length > 32) lines.push(`${title}: ${values.length - 32} further entries not displayed; exact raw original below.`);
     };
     if (record.kind === "Evidence" && record.subtype === "SessionWorkEvidence" && node.subtype === "SessionWorkEvidence" && node.origin.layer === "sessionWork" && record.content) {
       lines.push("Agent-authored recorded work evidence; not a captured user transcript.");
@@ -815,9 +954,10 @@
       lines.push("Caller-conveyed user direction — not transcript capture."); put("Goal", record.input.goal); put("Constraint", record.input.constraints); put("Decision", record.input.decisions); put("Cancelled action", record.input.cancelledActions);
     } else if (record.kind === "ReviewDecision") {
       lines.push("Historical recorded review — not current effect permission."); put("Disposition", record.disposition); put("Recorded reason", record.rationale);
+      put("Recorded next action (not execution permission)", record.nextActions);
     } else if (record.kind === "ResultPacket") {
       lines.push("Recorded execution result — not independently re-run by this view."); put("Outcome", record.outcome); put("Plan delta", record.planDelta);
-      for (const item of record.verification || []) { put("Recorded check", item.check); put("Recorded status", item.status); }
+      put("Recorded check / verification", record.verification); put("Recorded evidence (not independent verification)", record.evidence); put("Recorded impact radius", record.impactRadius);
       put("Unknown", record.unknowns);
     } else if (record.kind === "ProductPolicyCandidate") {
       lines.push("Proposed policy — not an approval or automatic Canon promotion."); put("Name", record.proposedPolicy?.name); put("Proposed statement", record.proposedPolicy?.statement); put("Description", record.proposedPolicy?.description);
@@ -838,6 +978,7 @@
     const digests = new Set([pair.before?.digest, pair.after?.digest, pair.citedReference?.digest, pair.gap?.expectedDigest,
       ...(pair.gaps || []).map(gap => gap.expectedDigest)].filter(Boolean));
     if ((value.path === file.path || value.sourceReference?.path === file.path) && digests.has(value.digest || value.fileDigest || value.sourceReference?.digest)) return true;
+    if (activeGraph === data.graph && (value.referenceEvidence || []).some(ref => ref.kind === "source" && ref.path === file.path && digests.has(ref.digest))) return true;
     return activeGraph === data.graph && (file.associations || []).some(item => item.nodeId === value.nodeId && digests.has(item.source?.digest));
   }
   function fileMatches(value, file) {
@@ -882,6 +1023,10 @@
       if (!body.contains(entry.body)) continue;
       entry.scroll = []; const walk = element => { if (element.scrollTop || element.scrollLeft) entry.scroll.push([element, element.scrollTop, element.scrollLeft]); for (const child of element.children) walk(child); }; walk(entry.body);
     }
+    for (const entry of documentPanels.get(previousGraph)?.values() || []) {
+      if (!body.contains(entry.panel)) continue;
+      entry.scroll = entry.readers.map(element => [element, element.scrollTop, element.scrollLeft]);
+    }
     comparisonsCache = { model, version: model.selectionVersion, edgeVersion }; body.replaceChildren();
     comparisonFiles = []; changeHunks = []; fileCursor = 0; changeCursor = -1; $("comparison-files").replaceChildren(); comparisonPosition();
     $("show-code-diff").hidden = true; $("jump-diff").disabled = true;
@@ -899,6 +1044,63 @@
         const entry = button(`${relation({ type: connection.relation })} · ${target ? label(target) : "Not included in this layer"}`, () => selectNode(target)); entry.disabled = !target; body.append(entry);
       }
       if (event.missingLink) body.append(text("p", event.missingLink, "hint"));
+    }
+    const navigation = context.documentNavigation;
+    if (navigation) {
+      if (!documentPanels.has(activeGraph)) documentPanels.set(activeGraph, new Map());
+      const panels = documentPanels.get(activeGraph);
+      const roots = new Set((navigation.roots || []).filter(root => (root.citedBy || []).some(citation => selectedIds.has(citation.nodeId))
+        || values.some(value => (value.path || value.sourceReference?.path) === root.path
+          && (value.digest || value.fileDigest || value.sourceReference?.digest) === root.digest)).map(root => root.key));
+      const documents = (navigation.documents || []).filter(document => document.rootKeys.some(key => roots.has(key)));
+      const includedDocuments = new Set(documents.map(document => document.documentId).filter(Boolean));
+      for (const document of documents) {
+        const identity = document.documentId || JSON.stringify([document.path, document.expectedDigest]);
+        let cached = panels.get(identity);
+        if (!cached) {
+          const panel = text("details", "", "file-comparison"), readers = [], openTargets = [];
+          panel.setAttribute("data-document-id", identity);
+          panel.append(text("summary", `Document links · ${document.path} · ${(document.digest || document.expectedDigest || "unknown").slice(0, 12)}`));
+          panel.append(text("p", "Exact document bytes; linked targets are current files unless their version is separately proven. Links do not prove implementation or approval.", "hint"));
+          if (document.status !== "available") panel.append(text("p", `Exact document unavailable: ${document.reasonCode}. Today's document was not substituted.`, "hint"));
+          for (const link of document.links || []) {
+            const section = text("details", "");
+            section.setAttribute("data-document-link", `${document.path}:${link.line}:${link.column}`);
+            section.append(text("summary", `${link.label} → ${link.path || link.href} · ${link.status}`));
+            section.append(text("p", `${document.path}@${document.digest} · line ${link.line}, column ${link.column}${link.reasonCode ? " · " + link.reasonCode : ""}`, "hint"));
+            if (link.versionScope) section.append(text("p", link.versionScope, "hint"));
+            if (link.excerpt !== undefined) {
+              const excerpt = text("pre", link.excerpt, "record-excerpt"); readers.push(excerpt); section.append(excerpt);
+              if (link.omittedCharacters) section.append(text("p", `${link.omittedCharacters} characters omitted from this excerpt; exact path and digest remain above.`, "hint"));
+            }
+            const target = [...model.nodes.values()].find(node => (node.path || node.sourceReference?.path) === link.path
+              && (node.digest || node.fileDigest || node.sourceReference?.digest) === link.digest);
+            if (target) section.append(mapNeighborButton(target));
+            if (link.documentId) {
+              const open = button("Read linked document references", () => {
+              const next = panels.get(link.documentId)?.panel;
+              if (next && body.contains(next)) { next.open = true; next.tabIndex = -1; next.scrollIntoView({ block: "nearest" }); next.focus(); }
+              }); open.setAttribute("data-document-open", link.documentId);
+              const notice = text("p", "", "hint"); section.append(open, notice);
+              openTargets.push({ element: open, notice, targetId: link.documentId });
+            }
+            panel.append(section);
+          }
+          if (document.omittedLinks) panel.append(text("p", `${document.omittedLinks} additional links omitted by the navigation bound.`, "hint"));
+          cached = { panel, readers, openTargets, scroll: [] }; panels.set(identity, cached);
+        }
+        for (const target of cached.openTargets) {
+          const included = includedDocuments.has(target.targetId);
+          target.element.disabled = !included;
+          target.notice.textContent = included ? "" : "Target document is outside this selection's bounded view. Its source path and read limits remain visible; select its cited root or request exact detail to expand.";
+          hide(target.notice, included);
+        }
+        body.append(cached.panel);
+        for (const [element, top, left] of cached.scroll) { element.scrollTop = top; element.scrollLeft = left; }
+      }
+      if (documents.length && (navigation.coverage.omittedLinks || navigation.coverage.pendingFileCount || navigation.coverage.depthLimited)) {
+        body.append(text("p", `Document navigation is bounded: ${navigation.coverage.omittedLinks} links omitted, ${navigation.coverage.pendingFileCount} files deferred; depth-limited: ${navigation.coverage.depthLimited}. Missing results do not establish absence.`, "hint"));
+      }
     }
     const candidates = (context.files || []).filter(file => values.some(value => fileMatches(value, file))), relatedIds = new Set(selectedIds);
     for (const value of values) if (!candidates.some(file => fileMatches(value, file))) body.append(text("p", `${value.nodeId ? label(value) : relation(value)}: No exact code comparison included. This does not mean unchanged.`, "hint"));
@@ -951,6 +1153,8 @@
         const parent = body;
         {
         const body = text("section", "", "comparison-pair"); parent.append(body);
+        body.setAttribute("data-comparison-before", pair.before?.digest || ""); body.setAttribute("data-comparison-after", pair.after?.digest || "");
+        appendCitingWork(body, file, pair);
         const firstHunk = changeHunks.length;
         if (pair.retainedOriginal) {
           const original = pair.retainedOriginal;
@@ -1007,6 +1211,7 @@
     for (const reason of context.recordedReasons || []) if (relatedIds.has(reason.nodeId)) {
       body.append(text("h3", "Recorded reason (not proven cause)"));
       body.append(text("p", reason.reason || reason.rationale || reason.assessment));
+      if (reason.contentPartial) body.append(text("p", `Partial recorded reason; see the exact original. ${JSON.stringify(reason.contentCoverage || {})}`, "hint"));
       body.append(text("p", `${reason.reviewState} · ${reason.reference?.path || reason.nodeId}`, "hint"));
     }
     for (const delta of context.canonChanges || []) if ([delta.review.nodeId, delta.before.nodeId, delta.after.nodeId].some(id => selectedIds.has(id))) {
@@ -1051,10 +1256,15 @@
     renderList(found); renderTrail(); if (canvasMode()) renderOverview(scopeCache.shown); else renderGraph(found); renderSelectionCards(); renderDetail();
     document.documentElement.dataset.explorerLastRenderMs = String(performance.now() - started);
   }
-  $("project").textContent = data.project ? `${data.project.projectId} · Project view` : "No initialized Project. Ordinary work can continue.";
+  $("project").textContent = data.project ? `${data.project.projectId} · ${data.initialLayer === "code" ? "Source" : "Project"} view` : "No initialized Project. Ordinary work can continue.";
   $("generated").textContent = `Generated ${data.generatedAt}`;
-  $("coverage").textContent = `${data.graph.coverage?.state || data.graph.status || "unavailable"} · snapshot, not live`;
-  $("layer-info").textContent = "Project purpose, work and retained lineage. No Session is selected by this map.";
+  $("coverage").textContent = `${activeGraph.coverage?.state || activeGraph.status || "unavailable"} · snapshot, not live`;
+  $("layer-info").textContent = activeGraph === data.graph ? "Project purpose, work and retained lineage. No Session is selected by this map."
+    : "Complete verified structural metadata; no synthetic Project joins. Non-current evidence is labelled separately.";
+  if (activeGraph !== data.graph) {
+    $("view").disabled = $("axis").disabled = true;
+    $("legend-left").textContent = "Structural evidence"; $("legend-right").textContent = "Existing imports & calls";
+  }
   $("basis").textContent = JSON.stringify({ project: data.project, basis: data.graph.basis, coverage: data.graph.coverage, boundary: data.graph.boundary, sourceFallback: data.graph.sourceFallback,
     codeBasis: { worldModelId: data.codeGraph.worldModelId, semanticGraphId: data.codeGraph.semanticGraphId, sourceAnchor: data.codeGraph.sourceAnchor, status: data.codeGraph.status, omittedEdgeCount: data.codeGraph.omittedEdgeCount },
     unavailable: data.unavailable, bounds: data.bounds, metrics: data.metrics, interpretation: data.interpretation }, null, 2);
@@ -1073,7 +1283,7 @@
   });
   $("records-prev").addEventListener("click", () => { listPage--; renderList(visibleMatches); });
   $("records-next").addEventListener("click", () => { listPage++; renderList(visibleMatches); });
-  $("layer").addEventListener("change", () => {
+  function changeLayer() {
     const previousSelection = selected?.kind === "node" ? selected.value : null;
     if (cardsCache?.graph) {
       if (!readingStates.has(cardsCache.graph)) readingStates.set(cardsCache.graph, new Map());
@@ -1109,9 +1319,11 @@
     else if (!retained) $("layer-info").append(text("p", "No unique exact source identity matches the previous selection in this layer. Choose a record below; names, paths alone and coincident IDs are not an automatic link.", "hint"));
     render();
     if (!retained && first) prepareNeighborhood().catch(calculationFailed); geometryChanged();
-  });
+  }
+  $("layer").addEventListener("change", changeLayer);
   const calculationFailed = error => { cancelWork(false); $("operation-status").textContent = `Calculation failed (${error?.name || "unknown"}); no partial result is presented as complete.`; render(); };
   $("expand").addEventListener("click", () => { runExpansion().catch(calculationFailed); });
+  $("expand-direct").addEventListener("click", () => { runDirect().catch(calculationFailed); });
   $("connect-selection").addEventListener("click", () => { runConnections().catch(calculationFailed); });
   $("collapse").addEventListener("click", () => { cancelWork(false); const step = model.collapse(); $("operation-status").textContent = step ? "Folded the last addition only. Shared, selected, pinned and pre-existing records remain." : "No addition to fold."; remember("Fold last addition"); render(); });
   $("cancel-work").addEventListener("click", () => { cancelWork(); render(); });
@@ -1180,7 +1392,7 @@
     }
     if (drag.id && drag.original) { const x = drag.original.x + at.x - drag.at.x, y = drag.original.y + at.y - drag.at.y;
       if (overview) { overviewModel().move(drag.id, x, y); model.pinned.add(drag.id); } else model.move(drag.id, x, y);
-    } else { box = [drag.box[0] - (at.x - drag.at.x), drag.box[1] - (at.y - drag.at.y), ...drag.box.slice(2)]; setBox(); }
+    } else { cameraIntent++; box = [drag.box[0] - (at.x - drag.at.x), drag.box[1] - (at.y - drag.at.y), ...drag.box.slice(2)]; setBox(); }
     redrawCamera();
   });
   canvas.addEventListener("pointerup", event => {
@@ -1208,7 +1420,7 @@
     if (state?.moved) setTimeout(() => { suppressClick = false; }, 0);
   });
   canvas.addEventListener("pointercancel", cancelGesture);
-  canvas.addEventListener("keydown", event => { if (event.target !== canvas) return; const delta = { ArrowLeft: [-50, 0], ArrowRight: [50, 0], ArrowUp: [0, -50], ArrowDown: [0, 50] }[event.key]; if (delta) { event.preventDefault(); box[0] += delta[0]; box[1] += delta[1]; setBox(); redrawCamera(); remember("Pan camera with keyboard"); } });
+   canvas.addEventListener("keydown", event => { if (event.target !== canvas) return; const delta = { ArrowLeft: [-50, 0], ArrowRight: [50, 0], ArrowUp: [0, -50], ArrowDown: [0, 50] }[event.key]; if (delta) { event.preventDefault(); cameraIntent++; box[0] += delta[0]; box[1] += delta[1]; setBox(); redrawCamera(); remember("Pan camera with keyboard"); } });
   canvas.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); cancelGesture(); cancelWork(); render(); } });
   }
   bindMap($("graph"), false); bindMap($("overview"), true);
@@ -1227,8 +1439,11 @@
     if (narrow) $("display-options").open = false;
   }
   populateRelationships();
-  const first = matches().find(node => node.nodeId === activeGraph.initialNodeId) || matches()[0];
-  if (first) { startNeighborhood(first); model.choose(first.nodeId); selected = { kind: "node", value: first }; focusCamera(true); remember(`Start ${shorten(label(first), 24)}`); } render();
+  const initialMatches = matches(), explicitFocus = (activeGraph === data.graph ? data.graph.detailSelection?.anchorIds : activeGraph.focusSelection?.requestedIds)?.length > 0;
+  const first = explicitFocus ? model.nodes.get(activeGraph.initialNodeId) : initialMatches.find(node => node.nodeId === activeGraph.initialNodeId) || initialMatches[0];
+  if (first) { startNeighborhood(first); model.choose(first.nodeId); selected = { kind: "node", value: first }; if (inDisplayScope(first)) focusCamera(true); remember(`Start ${shorten(label(first), 24)}`); }
+  else if (explicitFocus) $("operation-status").textContent = "The exact requested record was not retained in this layer. No different record was selected; choose available evidence or regenerate at a new basis.";
+  render();
   if (first) prepareNeighborhood().catch(calculationFailed);
   document.documentElement.dataset.explorerReady = "true"; document.documentElement.dataset.explorerInitialRenderMs = String(performance.now() - initialTime);
 })();

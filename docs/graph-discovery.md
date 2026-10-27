@@ -340,6 +340,45 @@ default. `lode_session_list` lists logical Sessions; `lode_session_create`
 accepts optional `new_session_id` and `purpose`. An existing ID is not rebound
 to another purpose. These identities are independent of provider sessions.
 
+`lode_session_list` returns a bounded metadata page (default 16, maximum 64 via
+`max_sessions` / CLI `--max-sessions`). Pass its `nextAfterSessionId` as
+`after_session_id` / CLI `--after-session` for another useful page. This traversal
+key can be `default`, a Session ID, or `entry:<name>` for an invalid directory
+name; it is not a logical Session route. A directory named `default` has the
+distinct key `entry:default`.
+Errors count as page slots, so a corrupt default or invalid last entry cannot
+trap traversal. Pages are non-atomic and a removed cursor requires a fresh page.
+Coverage distinguishes remaining/unavailable entries and shared-directory failure
+from an empty inventory. Common Project identity failure remains an error.
+`returnedEntries` distinguishes displayed slots from `inspectedEntries`;
+`readButNotReturnedEntries` counts an inspected slot deferred by the output bound.
+The default identity check is disclosed separately. Continuation includes any
+deferred slot, so reading it does not silently skip it on the next page.
+
+On this list only, existing `session_id` / `--session` requests an exact read-only
+work preview. It preserves native persistent binding, shared caller selection and
+the outer request route, including lost/unselected state. Without it the list
+reads no work bodies. Preview composes the existing bounded Work/Todo reader for
+one Session, preserving old unresolved tasks, conflicts and incomplete coverage.
+Use exact work/source expansion for missing evidence; no binding/save is required.
+Recent recorded conclusions include original reasons, remaining work and unknowns.
+Latest summary, ended activity, empty pending or PASS never designates a whole-work
+representative result, current responsible conversation or permission. Current
+constraints/cancellation prevail. Native ancestry mapping records selection at
+observation; records read later are references, not proven fork-time handoff,
+delivery or model input. Exact prepared managed input alone proves neither use.
+
+Recorded Todo task, status, attribution, next action, reason, progress and priority
+also seed graph search. A partial Todo uses `workContentExcerpts` with its original
+index, `todoId`, subfield and character range, alongside recorded status/origin
+and declared revision selectors. It is never renumbered into a compact task array.
+`workContentCoverage.fieldItems.todos` discloses whole/partial/omitted items.
+Historical revisions remain separate; graph display does not independently infer
+current task state, conflicts, completion or prior/reference freshness. Expand the
+existing exact original when needed. Default Work text can refer to identical
+task fields already shown for the same original ID/digest; structured results and
+unknown fields remain intact.
+
 Each Session retains local purpose, progress, active/unknown work, approvals and
 checkpoints. One Session's investigation scope does not redirect another's task.
 Existing records remain in place; routing does not require re-onboarding.

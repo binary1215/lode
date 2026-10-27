@@ -11,7 +11,7 @@ const explorerCards = (() => {
       FeatureGroup: "Product feature group", Feature: "Product feature", Requirement: "Product requirement", Constraint: "Product constraint",
       ProductModelRevision: "Recorded Product Model revision" })[value?.kind] || value?.kind || "Recorded relationship";
   const title = value => first(value?.name, value?.title, value?.qualifiedName, value?.objective, value?.purpose,
-    value?.directionEvidence?.goal, value?.workContent?.summary, value?.summary, value?.proposedPolicy?.name,
+    value?.directionEvidence?.goal, value?.workContent?.summary, value?.workContent?.todos?.[0]?.task, value?.summary, value?.proposedPolicy?.name,
     value?.planDelta, value?.outcome, value?.path, value?.statement, value?.assessment, value?.rationale)
     || (value?.kind === "ChangeSet" ? "Recorded source revision changes" : `${kindName(value)} · ${string(value?.nodeId).slice(-12) || "unnamed"}`);
   function create(snapshot, graph, layer) {
@@ -61,14 +61,15 @@ const explorerCards = (() => {
     }
     function describe(value) {
       if (descriptions.has(value)) return descriptions.get(value);
-      const body = first(value.workContent?.summary, value.directionEvidence?.goal, value.description, value.summary,
+      const work = value.workContent;
+      const body = first(work?.summary, value.directionEvidence?.goal, value.description, value.summary,
         value.objective, value.purpose, value.outcome, value.assessment, value.rationale, value.statement, value.explanation,
         value.semantic?.description, value.semantic?.statement, value.proposedPolicy?.statement, value.path, value.qualifiedName);
-      const facts = [["Recorded judgments", value.workContent?.judgments], ["Observed work", value.workContent?.observedWork], ["Pending", value.workContent?.pending],
-        ["Unknown", value.workContent?.unknowns || value.unknowns], ["Constraints", value.directionEvidence?.constraints],
+      const facts = [["Recorded judgments", work?.judgments], ["Observed work", work?.observedWork], ["Pending", work?.pending],
+        ["Unknown", work?.unknowns || value.unknowns], ["Constraints", value.directionEvidence?.constraints],
         ["Cancelled actions", value.directionEvidence?.cancelledActions], ["Recorded decisions", value.directionEvidence?.decisions],
-        ["Suggested follow-up (historical; not permission)", value.workContent?.suggestedFollowUp],
-        ["Authored topics (navigation only)", value.workContent?.workTopics]]
+        ["Suggested follow-up (historical; not permission)", work?.suggestedFollowUp],
+        ["Authored topics (navigation only)", work?.workTopics], ["Recorded Todo revisions (historical)", work?.todos]]
         .filter(([, items]) => Array.isArray(items) && items.length);
       // Preserve the reader's exact selectors/ranges; never reconstruct omitted
       // wording or reinterpret agent-authored text as a captured user request.
@@ -76,11 +77,13 @@ const explorerCards = (() => {
         .filter(entry => entry && typeof entry.text === "string").map(entry => {
           const location = `workContent.${entry.field}${entry.index == null ? "" : `[${entry.index}]`}`
             + (entry.subfield ? `.${entry.subfield}` : "") + (entry.alternativeIndex == null ? "" : `[${entry.alternativeIndex}]`);
-          return { text: entry.text, heading: `Exact recorded excerpt · ${location} · [${entry.start}, ${entry.end}) / ${entry.totalCharacters}` };
+          const todo = entry.field === "todos" ? ` · ${entry.todoId} [${entry.status}; ${entry.origin}]`
+            + ["prior", "resolves", "relatedEvidence"].filter(key => Object.hasOwn(entry, key)).map(key => ` · recorded ${key}: ${JSON.stringify(entry[key])}`).join("") : "";
+          return { text: entry.text, heading: `Exact recorded excerpt · ${location}${todo} · [${entry.start}, ${entry.end}) / ${entry.totalCharacters}` };
         });
       const hasDisplayText = Boolean(body || facts.length || excerpts.length);
       const firstFact = facts[0]?.[1]?.[0];
-      const factPreview = firstFact && (typeof firstFact === "string" ? firstFact : first(firstFact.assessment, firstFact.reason));
+      const factPreview = firstFact && (typeof firstFact === "string" ? firstFact : first(firstFact.task, firstFact.assessment, firstFact.reason));
       const preview = body || (factPreview ? `${facts[0][0]}: ${factPreview}` : "")
         || (excerpts[0] ? `${excerpts[0].heading}: ${excerpts[0].text}` : "");
       const emptyNotice = value.kind === "ProductPolicyEvidence" && value.evidenceKind === "user-request" && value.reference
@@ -105,8 +108,16 @@ const explorerCards = (() => {
       if (value.currentTraversalEligible === false) conditions.push("Not eligible for current traversal in this snapshot");
       if (historical(value) || value.origin?.layer === "sessionWork") conditions.push("Historical evidence — not live state or current permission");
       if (value.contentPartial || value.workContentCoverage?.partial || value.directionContentCoverage?.partial) conditions.push("Partial exported content");
+      const todos = work?.todos || [], todoExcerpts = (value.workContentExcerpts || []).filter(entry => entry.field === "todos");
+      if (todos.length || todoExcerpts.length || value.workContentCoverage?.fieldItems?.todos?.originalItems) {
+        const states = [...new Set([...todos, ...todoExcerpts].map(todo => todo.status).filter(Boolean))];
+        conditions.push(`Recorded Todo states: ${states.join(", ") || "not included"}; no current-state or completion inference`);
+        const omitted = value.workContentCoverage?.fieldItems?.todos;
+        if (omitted) conditions.push(`Todo coverage: ${omitted.completeItems} whole, ${omitted.partialItems} partial, ${omitted.omittedItems} omitted`);
+      }
       const notes = value.origin?.layer === "sessionWork" ? ["Agent-authored work; not a captured user utterance."]
         : value.kind === "ProjectDirection" ? ["Recorded caller-conveyed direction; not automatic transcript capture or new authority."] : [];
+      if (todos.length || todoExcerpts.length) notes.push("Todo revisions remain separate historical declarations. Prior/reference currentness and unseen successors are unknown here; expand the exact original when needed.");
       const result = { title: title(value), kind: kindName(value), body, facts, excerpts, preview, hasDisplayText, emptyNotice, conditions, notes,
         source: first(value.sourceReference?.path, value.path, value.provenance?.path, value.origin?.path),
         groups: [...(memberships.get(value.nodeId) || [])].map(key => groups.get(key)),

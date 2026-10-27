@@ -36,7 +36,8 @@ import {
   verifyArtifactAuthorityBoundary,
 } from "./authority-plane-contract.mjs";
 
-export const DOCUMENT_CHANGE_REVIEW_VERSION = "0.1.0";
+import { DOCUMENT_CHANGE_REVIEW_VERSION, documentChangeReviewCanonicalJson, verifyDocumentChangeProductModelRevision } from "./product-model-revision-verification.mjs";
+export { DOCUMENT_CHANGE_REVIEW_VERSION, documentChangeReviewCanonicalJson, verifyDocumentChangeProductModelRevision };
 export const DOCUMENT_CHANGE_REVIEW_DIRECTORY = ".head/document-changes/review-decisions";
 export const DOCUMENT_CHANGE_PRODUCT_REVISION_DIRECTORY = ".head/document-changes/product-model-revisions";
 export const DOCUMENT_CHANGE_APPLICATION_DIRECTORY = ".head/document-changes/applications";
@@ -54,17 +55,6 @@ const fail = (message, code = "DOCUMENT_CHANGE_REVIEW_ERROR") => {
   throw error;
 };
 
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
-  }
-  return value;
-}
-
-export function documentChangeReviewCanonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
 
 function digest(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -176,30 +166,6 @@ function buildProductModelRevision({ projectId, model }, storage) {
   return { ...payload, revisionHash: digest(documentChangeReviewCanonicalJson(payload)) };
 }
 
-export function verifyDocumentChangeProductModelRevision(document, projectId = "", storage = undefined) {
-  if (!document || document.schemaVersion !== 1 || document.kind !== "ProductModelRevision"
-    || !familyFormatForOriginal("head-agent-core-document-change-product-revision", document, storage)
-    || document.protocol?.version !== DOCUMENT_CHANGE_REVIEW_VERSION
-    || (projectId && document.projectId !== projectId)
-    || !PRODUCT_MODEL_ID_PATTERN.test(document.productModelId || "")
-    || !HASH_PATTERN.test(document.productModelHash || "")
-    || !HASH_PATTERN.test(document.revisionHash || "")
-    || document.authority !== "explicit-user-reviewed-product-canon-revision"
-    || document.instructionAuthority !== true || document.promotionAuthority !== true) {
-    fail("Document-change ProductModelRevision is invalid.", "INVALID_DOCUMENT_CHANGE_PRODUCT_REVISION");
-  }
-  if (document.authorityBoundary) verifyArtifactAuthorityBoundary("ProductModelRevision", document.authorityBoundary);
-  const normalized = normalizeProductModelDocument(document.document, familyFormatForOriginal("head-agent-core-document-change-product-revision", document, storage));
-  if (normalized.productModelId !== document.productModelId || normalized.productModelHash !== document.productModelHash) {
-    fail("Document-change ProductModelRevision does not match its Product Model.", "DOCUMENT_CHANGE_PRODUCT_REVISION_MISMATCH");
-  }
-  const payload = { ...document };
-  delete payload.revisionHash;
-  if (document.revisionHash !== digest(documentChangeReviewCanonicalJson(payload))) {
-    fail("Document-change ProductModelRevision digest verification failed.", "DOCUMENT_CHANGE_PRODUCT_REVISION_DIGEST_MISMATCH");
-  }
-  return document;
-}
 
 function buildReviewDecision({ candidateSet, disposition, acceptedCandidateIds, rejectedCandidateIds, rationale, candidateProductModel, reviewedProductModel, resultingProductModel }, storage) {
   const payload = {

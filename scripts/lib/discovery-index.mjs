@@ -6,7 +6,7 @@ import { atomicWriteArtifact } from "./artifact-storage.mjs";
 import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import { sessionWorkPath, createSessionWorkReadContext, normalizeSessionWorkEvidence,
   verifySessionWorkEvidenceOwner, verifySessionWorkEvidenceOriginal,
-  MAX_RECORD_BYTES, MAX_REFERENCE_BYTES } from "./session-work-evidence-original.mjs";
+  MAX_RECORD_BYTES, MAX_REFERENCE_BYTES, sessionTodoDeclarations } from "./session-work-evidence-original.mjs";
 
 // A replaceable inventory of original records, not a second record store. No
 // bodies, decisions, credentials or provider handles are copied into the index.
@@ -103,7 +103,7 @@ function navigationRows(index) {
 }
 
 function buildSessionWorkNavigation(root, entries, context, bytesByPath = new Map(), storage = null) {
-  const owners = new Map(), rows = [];
+  const owners = new Map(), rows = [], todoRows = [];
   for (const entry of entries) {
     const selector = sessionWorkPath(entry.path);
     if (!selector) continue;
@@ -120,14 +120,34 @@ function buildSessionWorkNavigation(root, entries, context, bytesByPath = new Ma
       const original = verifySessionWorkEvidenceOriginal({ owner, evidenceId: selector.evidenceId, bytes });
       rows.push({ path: entry.path, rawDigest: entry.sha256, ownerSessionId: owner.sessionId, recordedAt: original.recordedAt,
         observationTargetId: original.content.executionObservation?.target?.evidenceId || null });
+      if (original.content.todos?.length) todoRows.push({ path: entry.path, rawDigest: entry.sha256, ownerSessionId: owner.sessionId, evidenceDigest: original.evidenceDigest,
+        todoRevisions: sessionTodoDeclarations(original.content) });
     } catch { /* A missing header is not a stored negative verdict. */ }
   }
-  return { version: 1, rows };
+  return { version: 1, rows, todoRows };
+}
+
+function todoNavigationRows(index) {
+  const navigation = index.sessionTodoNavigation;
+  if (navigation?.version !== 1 || !Array.isArray(navigation.rows) || navigation.rows.length > MAX_RECORDS) return new Map();
+  const entries = new Map(index.entries.map(entry => [entry.path, entry])), rows = new Map();
+  const exact = value => /^work-evidence-[a-f0-9]{24}$/.test(value?.evidenceId || "") && /^[a-f0-9]{64}$/.test(value?.evidenceDigest || "");
+  for (const row of navigation.rows) {
+    const selector = sessionWorkPath(row?.path);
+    if (!selector || rows.has(row.path) || Object.keys(row).length !== 5
+      || !/^session-[a-fA-F0-9-]{36}$/.test(row.ownerSessionId || "") || selector.sessionId && selector.sessionId !== row.ownerSessionId
+      || !/^[a-f0-9]{64}$/.test(row.evidenceDigest || "") || entries.get(row.path)?.sha256 !== row.rawDigest
+      || !Array.isArray(row.todoRevisions) || !row.todoRevisions.length || row.todoRevisions.some(todo =>
+        !/^todo-[a-z0-9][a-z0-9-]{0,79}$/.test(todo?.todoId || "") || !["pending", "partial", "waiting", "completed", "cancelled"].includes(todo.status)
+        || todo.prior !== undefined && !exact(todo.prior) || todo.resolves !== undefined && (!Array.isArray(todo.resolves) || todo.resolves.some(value => !exact(value))))) continue;
+    rows.set(row.path, row);
+  }
+  return rows;
 }
 
 // Internal cross-module optimization only. Validates stored metadata, not the
 // current originals. No inventory refresh, other Session reads or write/repair.
-export function readSessionWorkNavigationHints(owner, regularFileIds) {
+export function readSessionWorkNavigationHints(owner, regularFileIds, context = null) {
   try {
     const index = readGraphRecord(owner.root, projectGraphIndexPath(owner.storage)).document;
     if (index.kind !== "ProjectGraphRecordIndex" || index.version !== 1 || index.projectId !== owner.projectId
@@ -144,10 +164,12 @@ export function readSessionWorkNavigationHints(owner, regularFileIds) {
     }
     if (index.recordsDigest !== projectGraphDigest({ projectId: owner.projectId, projectRoot: owner.root,
       entries: index.entries, unavailable: index.unavailable, complete: index.complete, readerDependencies: index.readerDependencies })) return new Map();
-    return new Map([...navigationRows(index).values()].filter(row => {
+    const selectedRows = rows => new Map([...rows.values()].filter(row => {
       const selector = sessionWorkPath(row.path);
       return selector.directory === owner.workDirectory && row.ownerSessionId === owner.sessionId && regularFileIds.has(selector.evidenceId);
     }).map(row => [sessionWorkPath(row.path).evidenceId, row]));
+    if (context) context.todoHints = selectedRows(todoNavigationRows(index));
+    return selectedRows(navigationRows(index));
   } catch { return new Map(); }
 }
 
@@ -177,7 +199,8 @@ function sessionWorkDependencies(root, entries, context, storage, recordLimit = 
     try {
       const content = JSON.parse(context.read(entry.path, MAX_RECORD_BYTES)).content;
       const normalized = normalizeSessionWorkEvidence(Object.fromEntries(Object.entries(content || {}).filter(([, v]) => v !== null)));
-      for (const exact of [normalized.workLink?.root, normalized.workLink?.predecessor, normalized.executionObservation?.target].filter(Boolean)) {
+      for (const exact of [normalized.workLink?.root, normalized.workLink?.predecessor, normalized.executionObservation?.target,
+        ...(normalized.todos || []).flatMap(todo => [todo.prior, ...(todo.resolves || []), ...(todo.relatedEvidence || [])])].filter(Boolean)) {
         add(`${selector.directory}/${exact.evidenceId}.json`, MAX_RECORD_BYTES);
       }
       for (const ref of normalized.references) {
@@ -285,11 +308,12 @@ export function collectProjectGraphInventory(root, { recordLimit = MAX_RECORDS }
 export function refreshProjectGraphIndex({ root = "." } = {}) {
   const inventory = collectProjectGraphInventory(root);
   if (!inventory.project) return { status: "not-initialized", ordinaryWorkBlocked: false };
+  const { todoRows, ...sessionWorkNavigation } = buildSessionWorkNavigation(inventory.projectRoot, inventory.entries, inventory.workContext, new Map(), inventory.storage);
   const payload = { kind: "ProjectGraphRecordIndex", version: 1, projectId: inventory.project.projectId,
     rootDigest: hash(inventory.projectRoot), recordsDigest: inventory.recordsDigest,
     entries: inventory.entries, unavailable: inventory.unavailable, complete: inventory.complete,
     readerDependencies: inventory.readerDependencies,
-    sessionWorkNavigation: buildSessionWorkNavigation(inventory.projectRoot, inventory.entries, inventory.workContext, new Map(), inventory.storage),
+    sessionWorkNavigation, sessionTodoNavigation: { version: 1, rows: todoRows },
     authorityBoundary: artifactAuthorityBoundary("ProjectGraphRecordIndex"),
     authority: "P4-replaceable-record-inventory", instructionAuthority: false, promotionAuthority: false, recoveryAuthority: false };
   return publishInventory(inventory.projectRoot, payload, inventory.storage);
@@ -347,10 +371,13 @@ function updateProjectGraphIndex(root, changedPaths) {
   const recordsDigest = projectGraphDigest({ projectId: project.projectId, projectRoot, entries: boundedEntries, unavailable, complete,
     readerDependencies });
   const retainedRows = navigationRows({ ...previous, entries: boundedEntries }).values();
+  const addedNavigation = buildSessionWorkNavigation(projectRoot, changedWork, workContext, changedBytes, storage);
   const sessionWorkNavigation = { version: 1, rows: [...retainedRows].filter(row => !changedPaths.includes(row.path))
-    .concat(buildSessionWorkNavigation(projectRoot, changedWork, workContext, changedBytes, storage).rows).sort((a, b) => a.path.localeCompare(b.path)) };
+    .concat(addedNavigation.rows).sort((a, b) => a.path.localeCompare(b.path)) };
+  const sessionTodoNavigation = { version: 1, rows: [...todoNavigationRows({ ...previous, entries: boundedEntries }).values()]
+    .filter(row => !changedPaths.includes(row.path)).concat(addedNavigation.todoRows).sort((a, b) => a.path.localeCompare(b.path)) };
   return publishInventory(projectRoot, { ...previous, authorityBoundary: artifactAuthorityBoundary("ProjectGraphRecordIndex"),
-    entries: boundedEntries, unavailable, complete, recordsDigest, readerDependencies, sessionWorkNavigation }, storage);
+    entries: boundedEntries, unavailable, complete, recordsDigest, readerDependencies, sessionWorkNavigation, sessionTodoNavigation }, storage);
 }
 
 // Writers already verified/persisted their evidence. Index failure is a loss

@@ -19,6 +19,8 @@ import { startFeatureMapping, reviewFeatureMapping } from "../scripts/lib/featur
 import { sha, snapshot } from "./helpers/session-work-linkage-fixture.mjs";
 import { publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
 import { assertTerminalGraphPresentation } from "./helpers/terminal-graph-assertions.mjs";
+import { buildGraphExplorerSnapshot, exportGraphExplorer } from "../scripts/lib/graph-explorer.mjs";
+import { explorerDom } from "./helpers/graph-explorer-dom-fixture.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const isWork = node => node.kind === "Evidence" && node.subtype === "SessionWorkEvidence";
@@ -209,7 +211,8 @@ function exactResult(value, saved, args) {
 }
 function semanticCharacters(content) {
   const fields = [content.summary, ...(content.judgments || []).flatMap(item => [item.assessment, item.reason, ...item.alternatives]),
-    ...["observedWork", "pending", "unknowns", "suggestedFollowUp", "workTopics"].flatMap(field => content[field] || [])];
+    ...["observedWork", "pending", "unknowns", "suggestedFollowUp", "workTopics"].flatMap(field => content[field] || []),
+    ...(content.todos || []).flatMap(todo => ["task", "status", "origin", "nextAction", "reason", "progress", "priority"].map(key => todo[key]))];
   return fields.reduce((total, value) => total + (typeof value === "string" ? value.length : 0), 0);
 }
 function originalExcerpts(node, original) {
@@ -234,6 +237,11 @@ function originalExcerpts(node, original) {
         assert.ok(Number.isSafeInteger(excerpt.alternativeIndex) && excerpt.alternativeIndex >= 0 && excerpt.alternativeIndex < judgment.alternatives.length);
         source = judgment.alternatives[excerpt.alternativeIndex];
       } else source = judgment[excerpt.subfield];
+    } else if (excerpt.field === "todos") {
+      const todo = content.todos[excerpt.index];
+      assert.equal(excerpt.todoId, todo.todoId); assert.equal(excerpt.status, todo.status); assert.equal(excerpt.origin, todo.origin);
+      for (const key of ["prior", "resolves", "relatedEvidence"]) assert.deepEqual(excerpt[key], todo[key]);
+      source = todo[excerpt.subfield];
     } else {
       assert.equal(excerpt.subfield, null);
       if (Array.isArray(content[excerpt.field])) {
@@ -250,7 +258,7 @@ function originalExcerpts(node, original) {
 
 function fieldCoverage(node, original) {
   assert.equal(node.workContentCoverage.rangeSource, "workContentExcerpts");
-  for (const field of ["summary", "judgments", "observedWork", "pending", "unknowns", "suggestedFollowUp", ...(Object.hasOwn(original, "workTopics") ? ["workTopics"] : [])]) {
+  for (const field of ["summary", "judgments", "observedWork", "pending", "unknowns", "suggestedFollowUp", ...(Object.hasOwn(original, "workTopics") ? ["workTopics"] : []), ...(original.todos ? ["todos"] : [])]) {
     const originalItems = field === "summary" ? Number(typeof original.summary === "string") : original[field].length;
     const completeItems = field === "summary" ? Number(typeof node.workContent.summary === "string") : (node.workContent[field] || []).length;
     const partialItems = new Set((node.workContentExcerpts || []).filter(e => e.field === field).map(e => e.index)).size;
@@ -260,6 +268,108 @@ function fieldCoverage(node, original) {
     if (!node.contentPartial) assert.equal(counts.completeItems, originalItems);
   }
 }
+
+test("A-D: Todo-only semantic terms reach actual graph, CLI/MCP and exact owner expansion without writes", async t => {
+  const f = fixture(t), todo = { todoId: "todo-discovery", task: "OnlyTodoTaskXvqn3821", status: "partial", origin: "head-proposed",
+    nextAction: "OnlyTodoNextZvjk9482", reason: "OnlyTodoReasonQcma1772", progress: "One bounded part", priority: "Recorded priority unchanged" };
+  const saved = f.save({ todos: [todo] }), sibling = createHeadSession({ root: f.root, purpose: "Other owner" });
+  const other = f.save({ todos: [todo] }, sibling.sessionId), foreign = fixture(t), foreignSaved = foreign.save({ todos: [todo] });
+  const before = snapshot(f.base), foreignBefore = snapshot(foreign.base);
+  await withoutGraphWrites(async () => {
+    for (const query of [todo.task, todo.nextAction, todo.reason]) {
+      const graph = await queryProjectGraph({ root: f.root, query, depth: 0 });
+      for (const item of [saved, other]) completeNode(graph, item);
+      assert.equal(workNodes(graph).some(node => node.nodeId === foreignSaved.evidence.evidenceId), false);
+    }
+    const foreignGraph = await queryProjectGraph({ root: foreign.root, query: todo.task, depth: 0 });
+    completeNode(foreignGraph, foreignSaved); assert.equal(workNodes(foreignGraph).length, 1);
+    const cli = await runCommand(["graph-query", f.root, "--query", todo.task, "--depth", "0"]);
+    assertGraphPresentation(formatCliResult("graph-query", cli), cli);
+    for (const routed of [false, true]) {
+      const result = await call("head_project_graph", { project_root: f.root, query: todo.nextAction, depth: 0 }, routed);
+      assertGraphPresentation(result.content[0].text, result.structuredContent);
+      for (const item of [saved, other]) {
+        const node = completeNode(result.structuredContent, item), args = expansion(node, f, item);
+        exactResult((await call("head_session_work_read", args, routed)).structuredContent, item, args);
+      }
+      const wrongOwner = await call("head_session_work_read", { project_root: f.root, session_id: sibling.sessionId,
+        evidence_ids: [saved.evidence.evidenceId], max_records: 1 }, routed);
+      assert.deepEqual(wrongOwner.structuredContent.records, []); assert.equal(wrongOwner.structuredContent.ordinaryWorkBlocked, false);
+    }
+  });
+  assert.deepEqual(snapshot(f.base), before);
+  assert.deepEqual(snapshot(foreign.base), foreignBefore);
+});
+
+test("A-D: two long Todo revisions retain sparse source indices, status, provenance, ranges and omission coverage", async t => {
+  const f = fixture(t), seed = "SparseTodoOnlyMvnq6721", base = f.save({ todos: [{ todoId: "todo-sparse", task: "Earlier work", status: "pending", origin: "user-directed", nextAction: "Inspect" }] });
+  const prior = { evidenceId: base.evidence.evidenceId, evidenceDigest: base.evidence.evidenceDigest }, saved = [];
+  for (const status of ["partial", "cancelled"]) saved.push(f.save({ todos: [
+    { todoId: "todo-large", task: "a".repeat(14000), reason: "b".repeat(14000), status: "pending", origin: "head-proposed", nextAction: "Inspect first" },
+    { todoId: "todo-small-one", task: "Separate first", status: "completed", origin: "user-directed" },
+    { todoId: "todo-small-two", task: "Separate second", status: "pending", origin: "head-proposed", nextAction: "Continue independently" },
+    { todoId: "todo-sparse", task: "t".repeat(8000), status, origin: "user-directed", nextAction: "n".repeat(3000), reason: seed + " " + "r".repeat(8000),
+      progress: "Recorded partial outcome", priority: "No inferred score", prior },
+  ] }));
+  const before = snapshot(f.base);
+  await withoutGraphWrites(async () => {
+    const graph = await queryProjectGraph({ root: f.root, query: seed, depth: 0, maxEdges: 0 });
+    assert.equal(workNodes(graph).length, 2);
+    assert.ok(workNodes(graph).reduce((n, node) => n + JSON.stringify({ workContent: node.workContent, workContentExcerpts: node.workContentExcerpts }).length, 0) <= 32768);
+    for (const node of workNodes(graph)) {
+      const item = saved.find(item => item.evidence.evidenceId === node.nodeId);
+      originalExcerpts(node, item); assert.equal(node.contentPartial, true);
+      assert.deepEqual(node.workContent.todos, [], "Partial Todos stay exact indexed excerpts, never a compacted alias");
+      const sparse = node.workContentExcerpts.filter(entry => entry.field === "todos" && entry.index === 3);
+      assert.ok(sparse.some(entry => entry.subfield === "reason" && entry.text.includes(seed)));
+      assert.ok(sparse.every(entry => entry.todoId === "todo-sparse" && entry.origin === "user-directed"));
+      assert.equal(node.workContentCoverage.fieldItems.todos.originalItems, 4);
+      assert.ok(node.workContentCoverage.fieldItems.todos.omittedItems > 0);
+      const args = expansion(node, f, item);
+      exactResult((await call("head_session_work_read", args)).structuredContent, item, args);
+    }
+    assertGraphPresentation(formatCliResult("graph-query", graph), graph);
+    const cli = await runCommand(["graph-query", f.root, "--query", seed, "--depth", "0", "--max-edges", "0"]);
+    assertGraphPresentation(formatCliResult("graph-query", cli), cli);
+    for (const routed of [false, true]) {
+      const result = await call("head_project_graph", { project_root: f.root, query: seed, depth: 0, max_edges: 0 }, routed);
+      assertGraphPresentation(result.content[0].text, result.structuredContent);
+      for (const node of workNodes(result.structuredContent)) originalExcerpts(node, saved.find(item => item.evidence.evidenceId === node.nodeId));
+    }
+    // A bounded real query projection enters the shipped DOM component here.
+    // This is a component-input check, not an export or actual-browser proof.
+    const snapshot = await buildGraphExplorerSnapshot({ root: f.root, query: seed });
+    const bounded = new Map(workNodes(graph).map(node => [node.nodeId, node]));
+    const ui = explorerDom({ ...snapshot, graph: { ...snapshot.graph,
+      nodes: snapshot.graph.nodes.map(node => bounded.has(node.nodeId) ? { ...node, ...bounded.get(node.nodeId) } : node) } }); await ui.settle();
+    for (const node of workNodes(graph)) {
+      const read = ui.ids.get("records").children.flatMap(row => row.children).find(element => element.getAttribute("data-record-entry") === node.nodeId);
+      assert.ok(read); ui.event(read); await ui.settle();
+      const card = ui.ids.get("selection-cards").children.find(card => card.getAttribute("data-record")?.includes(node.nodeId));
+      assert.ok(card);
+      for (const value of ["workContent.todos[3].reason", "todo-sparse", "user-directed", "Partial exported content", "unknown"]) assert.ok(card.textContent.includes(value));
+    }
+  });
+  assert.deepEqual(snapshot(f.base), before);
+});
+
+test("A-D: actual snapshot and HTML export render Todo-only task, cancellation and reason in synthetic DOM cards", async t => {
+  const f = fixture(t), saved = f.save({ todos: [{ todoId: "todo-display", task: "ReadableTodoOnlyGvhx7712", status: "cancelled", origin: "head-proposed",
+    reason: "Cancelled because current scope changed", progress: "A partial attempt", priority: "Preserve original priority" }] });
+  const before = snapshot(f.root), data = await withoutGraphWrites(() => buildGraphExplorerSnapshot({ root: f.root, anchorIds: [saved.evidence.evidenceId] }));
+  const ui = explorerDom(data); await ui.settle();
+  const rows = ui.ids.get("records").children, row = rows.find(row => row.textContent.includes("ReadableTodoOnlyGvhx7712"));
+  assert.ok(row); ui.event(row.children[0]); await ui.settle();
+  const card = ui.ids.get("selection-cards").children.find(card => card.textContent.includes("todo-display"));
+  assert.ok(card, "Actual snapshot must expose Todo text through shipped card scripts");
+  for (const value of ["ReadableTodoOnlyGvhx7712", "cancelled", "head-proposed", "Cancelled because current scope changed", "Preserve original priority"]) assert.ok(card.textContent.includes(value));
+  assert.ok(card.textContent.includes("unknown"));
+  const output = path.join(f.base, "todo-view.html"), exported = await exportGraphExplorer({ root: f.root, anchorIds: [saved.evidence.evidenceId], output });
+  assert.equal(exported.file, output);
+  for (const value of ["ReadableTodoOnlyGvhx7712", saved.evidence.evidenceId, "Recorded Todo revisions"]) assert.ok(fs.readFileSync(output, "utf8").includes(value));
+  assert.deepEqual(snapshot(f.root), before);
+  t.diagnostic("Real local graph/snapshot/export and shipped scripts in synthetic DOM; not actual GUI or model proof.");
+});
 
 test("public saved semantic fields are discoverable in fitting short, detail, path, anchor and owner-neighbor results", async t => {
   const f = fixture(t), saved = f.save({ summary: "A plain progress note", judgments: [{

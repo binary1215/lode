@@ -49,7 +49,11 @@ test("all 60000 metadata IDs stay searchable while layout measures only explored
   const cards = vm.runInNewContext(fs.readFileSync(new URL("../scripts/graph-explorer/cards.js", import.meta.url), "utf8") + "\nexplorerCards");
   let bodyReads = 0; for (const node of nodes) Object.defineProperty(node, "workContent", { get() { bodyReads++; return { summary: "Recorded only" }; } });
   const index = cards.create({ project: { projectId: "scale-fixture" } }, graph, "code"); assert.equal(bodyReads, 0, "Group/index construction must not read every body");
-  index.describe(nodes[0]); assert(bodyReads > 0 && bodyReads < 10);
+  const description = index.describe(nodes[0]); assert(bodyReads > 0 && bodyReads < 10);
+  assert.equal(description.body, "Recorded only");
+  const reads = bodyReads;
+  assert.equal(index.describe(nodes[0]), description);
+  assert.equal(bodyReads, reads, "Reading the same card reuses its exact description");
   for (const id of ["generic-64", "generic-500", "generic-59999"]) {
     assert(model.search(`"${id}"`).some(node => node.nodeId === id)); assert(model.visit(id));
   }

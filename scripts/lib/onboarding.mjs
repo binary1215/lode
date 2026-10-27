@@ -21,6 +21,7 @@ import {
   verifyOnboardingCandidateSetForProjection,
   verifyOnboardingReviewDecisionForProjection,
   verifyProductModelRevisionForProjection,
+  productModelRevisionForImmutableRetry,
 } from "./onboarding-projection.mjs";
 import {
   emptyProductModelDocument,
@@ -1134,9 +1135,11 @@ export function readOnboardingReviewDecision({ root = ".", reviewDecisionId } = 
 }
 
 function productModelRevisionDocument(model, storageOwner) {
+  if (!storageOwner?.projectId) fail("Product revision requires a verified Project owner.", "PROJECT_IDENTITY_MISMATCH");
   return {
     schemaVersion: 1,
     kind: "ProductModelRevision",
+    projectId: storageOwner.projectId,
     productModelId: model.productModelId,
     productModelHash: model.productModelHash,
     document: productModelDocument(model, storageOwner),
@@ -1146,9 +1149,11 @@ function productModelRevisionDocument(model, storageOwner) {
 
 function persistProductRevision(projectRoot, model, storageOwner) {
   const revision = productModelRevisionDocument(model, storageOwner);
+  const file = relativeFile(projectRoot, `${relativeProjectArtifact(storageOwner, "onboarding", "product-model-revisions")}/${model.productModelId}.json`);
+  const intended = fs.existsSync(file) ? productModelRevisionForImmutableRetry(readJson(file, "Product Model revision"), revision, storageOwner) : revision;
   return persistImmutable(
-    relativeFile(projectRoot, `${relativeProjectArtifact(storageOwner, "onboarding", "product-model-revisions")}/${model.productModelId}.json`),
-    revision,
+    file,
+    intended,
     "Product Model revision",
   );
 }

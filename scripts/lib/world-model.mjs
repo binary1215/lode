@@ -50,6 +50,7 @@ import {
   filterLogicalLineageStateForCurrentTemporalEntities,
   filterRevisionParentsForCurrentTemporalEntities,
   TEMPORAL_PROVENANCE_VERSION,
+  ownWorldSnapshotForTemporalScope,
   verifyTemporalProvenanceGraph,
 } from "./temporal-provenance.mjs";
 import {
@@ -689,11 +690,11 @@ function domainBasesFor(snapshot, domains = WORLD_DOMAINS) {
 // domains. Unrelated invalid Product/runtime records are not a code gate.
 // These are P4 observations, never a refreshed snapshot or P2 recovery source.
 export function inspectWorldDomainFreshness({ root = ".", domains = WORLD_DOMAINS,
-  worldModelId = "", storeAdapter = null, runtimeStateAdapter = null } = {}) {
+  worldModelId = "", storeAdapter = null, runtimeStateAdapter = null, temporalVerificationScope = null } = {}) {
   if (!Array.isArray(domains) || !domains.length || domains.some(domain => !WORLD_DOMAINS.includes(domain))) {
     fail("World freshness domains are invalid.", "INVALID_WORLD_FRESHNESS_DOMAINS");
   }
-  const stored = readWorldModelForDiscovery({ root, worldModelId, storeAdapter });
+  const stored = readWorldModelForDiscovery({ root, worldModelId, storeAdapter, temporalVerificationScope });
   const snapshot = stored.snapshot, projectRoot = stored.storage.projectRoot;
   const { project, storage } = readGraphProject(projectRoot);
   const result = {};
@@ -858,7 +859,7 @@ export function readWorldModelSnapshot({ root = ".", worldModelId, storeAdapter 
 // Ordinary discovery verifies the retained bytes without making generated
 // installation drift or whole-repository freshness a prerequisite. Current
 // mutations and reproducible Capsule consumers keep their existing checks.
-export function readWorldModelForDiscovery({ root = ".", worldModelId = "", storeAdapter = null } = {}) {
+export function readWorldModelForDiscovery({ root = ".", worldModelId = "", storeAdapter = null, temporalVerificationScope = null } = {}) {
   const { projectRoot, project, storage } = readGraphProject(root);
   if (!project) fail("Lode Agent Core is not initialized.", "NOT_INITIALIZED");
   if (worldModelId && !/^world-model-[a-f0-9]{24}$/.test(worldModelId)) fail("World Model snapshot id is invalid.", "INVALID_WORLD_MODEL_ID");
@@ -877,7 +878,8 @@ export function readWorldModelForDiscovery({ root = ".", worldModelId = "", stor
   if (!storeAdapter) safeGraphFile(projectRoot, relativeProjectArtifact(storage, "world-model", "snapshots", `${selectedId}.json`));
   const entry = adapter.readSnapshot(selectedId);
   if (!entry) fail("World Model snapshot is missing.", "WORLD_MODEL_SNAPSHOT_MISSING");
-  const snapshot = verifiedSnapshot(entry.document, selectedId, storage);
+  const document = temporalVerificationScope === null ? entry.document : ownWorldSnapshotForTemporalScope(temporalVerificationScope, entry.document);
+  const snapshot = verifiedSnapshot(document, selectedId, storage);
   if (snapshot.projectId !== project.projectId || !projectOwnsRecordedRoot(storage, snapshot.projectRoot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   if (!worldModelId && pointer.worldModelHash !== snapshot.worldModelHash) fail("World pointer hash differs from retained bytes.", "WORLD_MODEL_POINTER_MISMATCH");
   return { snapshot, pointer, storage, file: entry.location, historical: !pointer || selectedId !== pointer.worldModelId };

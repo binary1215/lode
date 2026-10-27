@@ -276,7 +276,7 @@ export function readRelatedNativeWorkContext({ root, caller, childSessionId, env
   if (!snapshot) return null;
   const seen = new Set([childSessionId]), sources = [];
   let characters = SESSION_WORK_DEFAULT_CHARACTERS;
-  for (const { observation } of snapshot.rows) {
+  for (const { observation, sequence, receivedAt } of snapshot.rows) {
     const edge = observation.kind === "edge" && observation.edge, mapping = edge?.mapping;
     if (!mapping || seen.has(mapping.sessionId) || sources.length >= 2) continue;
     seen.add(mapping.sessionId);
@@ -288,7 +288,11 @@ export function readRelatedNativeWorkContext({ root, caller, childSessionId, env
       const { sessionPurpose, latestCheckpointId, basis, ...historical } = work;
       characters -= json(historical.records).length;
       sources.push({ relation: edge.relation, sourceNativeId: edge.sourceNativeId,
-        selection: "selected-when-edge-observed-not-fork-cutoff", workContext: historical });
+        selection: "selected-when-edge-observed-not-fork-cutoff",
+        selectionBasis: { ...mapping, receivedSequence: sequence, receivedAt },
+        recordRead: { at: new Date().toISOString(), scope: "later-reference-read",
+          historicalInput: "unknown", preparedInput: "not-established", delivery: "not-established", modelUse: "not-established" },
+        workContext: historical });
     } catch { /* One unavailable source does not erase a valid child/source. */ }
   }
   return sources.length ? { kind: "RelatedNativeWorkContext", persisted: false, recoveryAuthority: false,

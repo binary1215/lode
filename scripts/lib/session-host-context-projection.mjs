@@ -51,7 +51,8 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
   const serialize = () => {
     const rootSource = context.projectRootOmitted ? (runtime === "opencode" ? "the verified OpenCode plugin directory" : "the original SessionStart.cwd") : "projectRoot";
     const omittedWork = context.omittedEvidenceCount || work?.omissions?.byBudget || work?.omissions?.uninspected || work?.unavailable?.length
-      || work && !["work_context_available", "work_context_not_recorded"].includes(work.status);
+      || work && !["work_context_available", "work_context_not_recorded"].includes(work.status)
+      || work?.todoContext?.items?.length && (!context.todoContext || context.todoContext.omittedFromStartup);
     if (compactExpansion) {
       const route = "(project_root:" + rootSource + ", ...route)";
       context.expansion = (context.requiredSourceExpansion ? "When needed: " + publicToolName("head_conversation_enter") + route : "")
@@ -110,6 +111,21 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
       executionDetailsOmitted = true;
       context.scope = "Execution details omitted; expand entry. " + compactScope;
     }
+  }
+  // Open tasks have an independent indexed selection: an older unresolved
+  // item must not disappear merely because eight newer notes were selected.
+  // They remain P3 observations under current P2, never recovery instructions.
+  if (work?.todoContext) {
+    const todo = work.todoContext;
+    context.todoContext = { status: todo.status, knownOpenCount: todo.knownOpenCount, currentness: todo.currentness,
+      coverage: todo.coverage, items: [], omittedFromStartup: todo.items.length, expansion: todo.expansion };
+    if (exceedsBound()) context.todoContext = { status: "unknown-or-omitted", contentIncluded: false,
+      source: "workContext.todoContext", expansion: "Read selected Session work context; omitted tasks are not completed." };
+    else for (const item of todo.items) {
+      context.todoContext.items.push(item); context.todoContext.omittedFromStartup--;
+      if (exceedsBound()) { context.todoContext.items.pop(); context.todoContext.omittedFromStartup++; }
+    }
+    if (exceedsBound()) delete context.todoContext;
   }
   for (const record of work?.records || []) {
     const hadNotice = Object.hasOwn(context, "savedObservationScope");
