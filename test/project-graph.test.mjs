@@ -81,7 +81,9 @@ test("compact Run and Session state preserves active/unknown status and ownershi
     assert.equal(compact.nodes[0].runId, runId);
     assert.equal(compact.nodes[0].revisionId, detail.nodes[0].revisionId);
     assert.deepEqual(compact.nodes[0].sourceReference, detail.nodes[0].sourceReference);
-    assert.equal(compact.nodes[0].contentPartial, status === "unknown");
+    // Active status does not make the compact navigation a full Run original.
+    assert.equal(compact.nodes[0].contentPartial, true);
+    assert(compact.sourceFallback.reasonCodes.includes("PROJECT_GRAPH_COMPACT_CONTENT_PARTIAL"));
     if (status === "unknown") {
       assert(compact.nodes[0].excerpt.includes(run.unknowns[0]));
       assert.deepEqual(detail.nodes[0].unknowns, run.unknowns);

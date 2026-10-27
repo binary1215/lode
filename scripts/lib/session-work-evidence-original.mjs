@@ -4,8 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import { safeSessionPath } from "./session-paths.mjs";
-import { verifyProductModelRevisionForProjection } from "./onboarding-projection.mjs";
-import { verifyDocumentChangeProductModelRevision } from "./document-change-review.mjs";
+import { verifyProductModelRevisionForProjection, verifyDocumentChangeProductModelRevision } from "./product-model-revision-verification.mjs";
 
 // Shared exact original verifier. No Session selection, scan, index or writes.
 export const SESSION_WORK_CONTEXT_VERSION = "0.1.0";

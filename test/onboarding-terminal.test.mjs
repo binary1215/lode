@@ -182,7 +182,7 @@ test("four actual marketplace packages load the terminal module and ship agent-l
     const root = path.join(outputRoot, "plugins", built.pluginName), installed = await import(pathToFileURL(path.join(root, "scripts/lib/cli-presentation.mjs")));
     assert(installed.formatCliResult("graph-query", value).includes("Selected connections"));
     const skill = fs.readFileSync(path.join(root, "skills", built.pluginName, "SKILL.md"), "utf8");
-    assert(skill.includes("perform the available procedure")); assert(skill.includes("not merely hand back commands") || skill.includes("do not merely hand back commands"));
+    assert.match(skill, /For an authorized installation\/update request, perform the selected client's\s+available official procedure and verify its result/);
     assert(skill.includes("../../README.md#install")); assert(fs.existsSync(path.join(root, "README.md")));
     assert(skill.includes("Host loading"));
   }

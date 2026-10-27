@@ -61,14 +61,15 @@ const explorerCards = (() => {
     }
     function describe(value) {
       if (descriptions.has(value)) return descriptions.get(value);
-      const body = first(value.workContent?.summary, value.directionEvidence?.goal, value.description, value.summary,
+      const work = value.workContent;
+      const body = first(work?.summary, value.directionEvidence?.goal, value.description, value.summary,
         value.objective, value.purpose, value.outcome, value.assessment, value.rationale, value.statement, value.explanation,
         value.semantic?.description, value.semantic?.statement, value.proposedPolicy?.statement, value.path, value.qualifiedName);
-      const facts = [["Recorded judgments", value.workContent?.judgments], ["Observed work", value.workContent?.observedWork], ["Pending", value.workContent?.pending],
-        ["Unknown", value.workContent?.unknowns || value.unknowns], ["Constraints", value.directionEvidence?.constraints],
+      const facts = [["Recorded judgments", work?.judgments], ["Observed work", work?.observedWork], ["Pending", work?.pending],
+        ["Unknown", work?.unknowns || value.unknowns], ["Constraints", value.directionEvidence?.constraints],
         ["Cancelled actions", value.directionEvidence?.cancelledActions], ["Recorded decisions", value.directionEvidence?.decisions],
-        ["Suggested follow-up (historical; not permission)", value.workContent?.suggestedFollowUp],
-        ["Authored topics (navigation only)", value.workContent?.workTopics], ["Recorded Todo revisions (historical)", value.workContent?.todos]]
+        ["Suggested follow-up (historical; not permission)", work?.suggestedFollowUp],
+        ["Authored topics (navigation only)", work?.workTopics], ["Recorded Todo revisions (historical)", work?.todos]]
         .filter(([, items]) => Array.isArray(items) && items.length);
       // Preserve the reader's exact selectors/ranges; never reconstruct omitted
       // wording or reinterpret agent-authored text as a captured user request.
@@ -107,7 +108,7 @@ const explorerCards = (() => {
       if (value.currentTraversalEligible === false) conditions.push("Not eligible for current traversal in this snapshot");
       if (historical(value) || value.origin?.layer === "sessionWork") conditions.push("Historical evidence — not live state or current permission");
       if (value.contentPartial || value.workContentCoverage?.partial || value.directionContentCoverage?.partial) conditions.push("Partial exported content");
-      const todos = value.workContent?.todos || [], todoExcerpts = (value.workContentExcerpts || []).filter(entry => entry.field === "todos");
+      const todos = work?.todos || [], todoExcerpts = (value.workContentExcerpts || []).filter(entry => entry.field === "todos");
       if (todos.length || todoExcerpts.length || value.workContentCoverage?.fieldItems?.todos?.originalItems) {
         const states = [...new Set([...todos, ...todoExcerpts].map(todo => todo.status).filter(Boolean))];
         conditions.push(`Recorded Todo states: ${states.join(", ") || "not included"}; no current-state or completion inference`);

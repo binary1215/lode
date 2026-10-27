@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { verifyProductModelRevisionForProjection } from "./product-model-revision-verification.mjs";
+export { verifyProductModelRevisionForProjection };
 import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
@@ -280,20 +282,6 @@ export function verifyOnboardingReviewDecisionForProjection(document, candidateS
   return document;
 }
 
-export function verifyProductModelRevisionForProjection(document, storage = null) {
-  if (!document || document.schemaVersion !== 1 || document.kind !== "ProductModelRevision" || document.authority !== "user-owned-project-canon-revision") {
-    fail("Product Model revision is invalid.", "INVALID_ONBOARDING_PRODUCT_REVISION");
-  }
-  const model = normalizeProductModelDocument(document.document, storage);
-  if (document.productModelId !== model.productModelId || document.productModelHash !== model.productModelHash) {
-    fail("Product Model revision digest verification failed.", "ONBOARDING_PRODUCT_REVISION_DIGEST_MISMATCH");
-  }
-  if (document.projectId !== undefined && (typeof document.projectId !== "string" || !document.projectId
-    || storage?.projectId && document.projectId !== storage.projectId)) {
-    fail("Product Model revision Project identity differs.", "ONBOARDING_PRODUCT_REVISION_PROJECT_MISMATCH");
-  }
-  return document;
-}
 
 // Add owner metadata only to new originals. An identical historical ownerless
 // revision can be reused by its writer, but is never rewritten or made citable.

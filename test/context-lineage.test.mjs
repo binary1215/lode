@@ -118,7 +118,12 @@ test("exact cited Markdown navigates explicit local links with current-target la
     assert(!last.rootKeys.includes(keyA), "A->B->C->D is beyond A's depth 2"); assert(last.rootKeys.includes(keyB));
     assert(nav.coverage.depthLimited); assert.equal(nav.coverage.pendingFileCount, 0);
     const sharedUi = explorerDom(shared, { resetDetachedScroll: true }); await sharedUi.settle();
-    const select = id => sharedUi.event(sharedUi.ids.get("records").querySelectorAll("[data-record-entry]").find(button => button.getAttribute("data-record-entry") === id));
+    const select = id => {
+      // Ordinary clicks preserve multiple selections. Explicitly isolate one
+      // cited root to test its own depth, then switch through the actual UI.
+      sharedUi.event(sharedUi.ids.get("clear-selection"));
+      sharedUi.event(sharedUi.ids.get("records").querySelectorAll("[data-record-entry]").find(button => button.getAttribute("data-record-entry") === id));
+    };
     select(sharedA.evidence.evidenceId);
     const view = sharedUi.ids.get("context-lineage-body");
     const openC = view.querySelectorAll("[data-document-open]").find(button => button.getAttribute("data-document-open") === leaf.documentId);

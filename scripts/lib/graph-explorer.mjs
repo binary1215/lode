@@ -66,7 +66,7 @@ export async function buildGraphExplorerSnapshot({ root = ".", query = "", ancho
   const worldAdapter = readOnlyLocalAdapter(LocalJsonWorldModelStoreAdapter, adapterOwner, "world-model");
   const queryStarted = performance.now();
   const inventory = await collectGraphExplorerInventory({ root: projectRoot, query, anchorIds, paths, layer, storeAdapter: worldAdapter });
-  const { structural, detailSelection, codeSelection, ...navigation } = inventory;
+  const { structural, detailSelection = inventory, codeSelection, ...navigation } = inventory;
   const selected = new Map((detailSelection?.nodes || []).map(node => [node.nodeId, node]));
   const graph = { ...navigation, query: detailSelection.query,
     nodes: inventory.nodes.map(node => {

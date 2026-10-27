@@ -250,7 +250,10 @@ test("typed MCP and CLI preserve -> entry -> expand agree, including text-only c
   assert.equal(entry.result.structuredContent.workContext.records[0].evidenceId, retained.result.structuredContent.evidence.evidenceId);
   assert.match(entry.result.content[0].text, /Derived caches can disappear/);
   assert.match(entry.result.content[0].text, /not current direction or permission/);
-  assert.match(entry.result.content[0].text, /todo-retained-task \[pending\]/);
+  assert.match(entry.result.content[0].text, /content\.todos\[0\]\.todoId: "todo-retained-task"/);
+  assert.match(entry.result.content[0].text, /content\.todos\[0\]\.status: "pending"/);
+  for (const text of ["Verify original provenance", "Inspect exact evidence", "user-directed"])
+    assert.ok(entry.result.content[0].text.includes(text), text);
   assert.equal(entry.result.structuredContent.workContext.todoContext.items[0].todoId, "todo-retained-task");
   const cliEntry = runCommand(["conversation-enter", root, "--session", a.sessionId]);
   assert.deepEqual(cliEntry.workContext, entry.result.structuredContent.workContext);
