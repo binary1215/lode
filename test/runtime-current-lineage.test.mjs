@@ -12,7 +12,16 @@ import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib
 import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
 import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
 import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization, prepareRuntimeInvocationExecution, verifyRuntimeInvocationCurrentLineage } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
+import { buildRuntimeInvocationAuthorization, prepareRuntimeInvocationExecution, verifyRuntimeInvocationCurrentLineage, readRuntimeInvocationAuthorization } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
+import { readProjectDirection, updateProjectDirection } from "../scripts/lib/project-direction.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
+import { createBoundedWorkerDispatch, readBoundedWorkerDispatch } from "../scripts/lib/bounded-worker-dispatch.mjs";
+import { withPreparedRuntimeInputView } from "../scripts/lib/runtime-prepared-input-view.mjs";
+import { workerIntegrationFixture } from "./helpers/worker-integration-fixture.mjs";
+import { runCommand } from "../scripts/head.mjs";
+import { dispatch } from "../scripts/mcp-server.mjs";
+import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
+import { localContinuityCommand } from "./helpers/session-continuity-process.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object"
@@ -102,6 +111,115 @@ function snapshot(root) {
   walk(root);
   return files;
 }
+
+test("followup: exact historical prepared bytes survive later direction, source and Session changes without granting execution", async t => {
+  const f = await fixture(t, { worker: true });
+  const first = updateProjectDirection({ root: f.root, input: { goal: "Capture this direction", constraints: [], decisions: ["Keep exact selected input"], cancelledActions: [] } }).direction;
+  const authorization = buildRuntimeInvocationAuthorization({ ...f.options, worker: { ...f.options.worker,
+    taskKey: "historical-direction", selectedContext: "한글".repeat(2000) } }).authorization;
+  const prepared = prepareRuntimeInvocationExecution({ root: f.root, authorization }).input;
+  createBoundedWorkerDispatch({ root: f.root, authorizationId: authorization.authorizationId, role: "coder" });
+  const latest = updateProjectDirection({ root: f.root, expectedDirectionId: first.directionId, input: {
+    goal: "Later correction", constraints: [], decisions: [], cancelledActions: ["project.read"] } }).direction;
+  fs.writeFileSync(path.join(f.root, "selected.txt"), "Source changed after preparation\n");
+  const before = snapshot(f.root), primary = readRuntimeInvocationAuthorization({ root: f.root, authorizationId: authorization.authorizationId });
+  assert.equal(primary.preparedInput, undefined);
+  assert.equal(readBoundedWorkerDispatch({ root: f.root, authorizationId: authorization.authorizationId }).preparedInput, undefined);
+  const cli = await runCommand(["runtime-invocation-read", f.root, "--authorization", authorization.authorizationId]);
+  assert.equal(cli.preparedInput.status, "verified-prepared-input");
+  assert.equal(cli.preparedInput.inputProof.digest, crypto.createHash("sha256").update(prepared).digest("hex"));
+  assert.equal(cli.preparedInput.inputProof.bytes, prepared.length);
+  assert.equal(Buffer.byteLength(cli.preparedInput.excerpt.text), cli.preparedInput.excerpt.endByte);
+  assert.equal(cli.preparedInput.excerpt.text, prepared.subarray(0, cli.preparedInput.excerpt.endByte).toString("utf8"));
+  assert(cli.preparedInput.excerpt.omittedBytes > 0);
+  assert.equal(cli.preparedInput.originals.find(row => row.kind === "ProjectDirection").id, first.directionId);
+  assert.equal(cli.preparedInput.modelUse, "unknown"); assert.equal(cli.preparedInput.delivery.status, "not-recorded");
+  for (const name of ["head_runtime_invocation_authorization", "head_bounded_worker_status"]) {
+    const result = await dispatch({ id: name, method: "tools/call", params: { name, arguments: { project_root: f.root, authorization_id: authorization.authorizationId } } });
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.structuredContent.preparedInput.status, "verified-prepared-input");
+    assert.equal(result.result.structuredContent.authorization.authorizationId, authorization.authorizationId);
+    assert.match(result.result.content[0].text, /Current cancellation and execution guards still apply/);
+  }
+  assert.match(formatCliResult("runtime-invocation-read", cli), /model use are separate/);
+  assert.throws(() => prepareRuntimeInvocationExecution({ root: f.root, authorization }), { code: "RUNTIME_PROJECT_DIRECTION_DRIFT" });
+  assert.equal(readProjectDirection({ root: f.root }).directionId, latest.directionId);
+  assert.deepEqual(snapshot(f.root), before);
+  const sibling = createHeadSession({ root: f.root, purpose: "Independent current Session" });
+  const siblingBefore = snapshot(f.root);
+  const historical = withSessionRoute(f.root, sibling.sessionId, () => withPreparedRuntimeInputView({ root: f.root,
+    value: readRuntimeInvocationAuthorization({ root: f.root, authorizationId: authorization.authorizationId }) }));
+  assert.equal(historical.preparedInput.status, "verified-prepared-input");
+  assert.equal(historical.authorization.authorizationId, authorization.authorizationId);
+  assert.deepEqual(snapshot(f.root), siblingBefore);
+  t.diagnostic(JSON.stringify({ kind: "SyntheticHistoricalPreparedInput", authorizationId: authorization.authorizationId,
+    scope: authorization.scope, proof: cli.preparedInput.inputProof, originals: cli.preparedInput.originals,
+    capturedDirectionId: first.directionId, currentDirectionId: latest.directionId,
+    currentExecutionRejection: "RUNTIME_PROJECT_DIRECTION_DRIFT", delivery: cli.preparedInput.delivery,
+    modelUse: cli.preparedInput.modelUse, canonicalBytesUnchanged: true, actualProviderInvoked: false }));
+});
+
+test("followup: historical originals distinguish missing, integrity and unretained input without softening primary errors", async t => {
+  const f = await fixture(t, { worker: true });
+  const file = path.join(f.root, f.storage.directory, "context/capsules", `${f.capsule.capsuleId}.json`), bytes = fs.readFileSync(file);
+  const read = () => withPreparedRuntimeInputView({ root: f.root, value: readRuntimeInvocationAuthorization({ root: f.root, authorizationId: f.authorization.authorizationId }) });
+  fs.unlinkSync(file);
+  let before = snapshot(f.root), value = read();
+  assert.equal(value.preparedInput.status, "missing-original");
+  assert.equal(value.preparedInput.originals.find(row => row.kind === "ContextCapsule").reasonCode, "ENOENT");
+  assert.deepEqual(snapshot(f.root), before);
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(bytes), task: "Tampered fixture" }));
+  before = snapshot(f.root); value = read();
+  assert.equal(value.preparedInput.status, "integrity-unavailable");
+  assert.equal(value.preparedInput.originals.find(row => row.kind === "ContextCapsule").reasonCode, "CAPSULE_DIGEST_MISMATCH");
+  assert.deepEqual(snapshot(f.root), before);
+  fs.writeFileSync(file, bytes);
+  before = snapshot(f.root);
+  const optionalFailure = await localContinuityCommand([path.join(pluginRoot, "test/helpers/mcp-loading-probe.mjs"), "prepared-view", f.root, f.authorization.authorizationId], { cwd: pluginRoot });
+  assert.equal(optionalFailure.code, 0, optionalFailure.stderr);
+  assert.equal(JSON.parse(optionalFailure.stdout.trim()).optionalViewFailureScoped, true);
+  assert.deepEqual(snapshot(f.root), before);
+  t.diagnostic(optionalFailure.stdout.trim());
+  const foreign = await fixture(t, { worker: true });
+  const selectedAuthorization = readRuntimeInvocationAuthorization({ root: f.root, authorizationId: f.authorization.authorizationId });
+  const transplanted = path.join(foreign.root, foreign.storage.directory, "runtime/execution-authorizations", `${f.authorization.authorizationId}.json`);
+  fs.copyFileSync(selectedAuthorization.file, transplanted);
+  const foreignBefore = snapshot(foreign.root);
+  assert.throws(() => runCommand(["runtime-invocation-read", foreign.root, "--authorization", f.authorization.authorizationId]),
+    { code: "RUNTIME_INVOCATION_PROJECT_MISMATCH" });
+  const foreignRead = await dispatch({ id: "foreign-owner", method: "tools/call", params: {
+    name: "head_runtime_invocation_authorization", arguments: { project_root: foreign.root, authorization_id: f.authorization.authorizationId } } });
+  assert.match(foreignRead.error.message, /another project/);
+  assert.equal(foreignRead.result, undefined); assert.deepEqual(snapshot(foreign.root), foreignBefore);
+  const idle = await fixture(t, { scopeKind: "session" }), idleBefore = snapshot(idle.root);
+  const old = await runCommand(["runtime-invocation-read", idle.root, "--authorization", idle.authorization.authorizationId]);
+  assert.equal(old.preparedInput.status, "selected-refs-only");
+  assert.equal(old.preparedInput.reasonCode, "PREPARED_INPUT_REQUEST_NOT_RETAINED"); assert.equal(old.preparedInput.excerpt, undefined);
+  assert.deepEqual(snapshot(idle.root), idleBefore);
+  const authFile = readRuntimeInvocationAuthorization({ root: f.root, authorizationId: f.authorization.authorizationId }).file;
+  fs.writeFileSync(authFile, JSON.stringify({ ...f.authorization, authorizationHash: "0".repeat(64) }));
+  before = snapshot(f.root);
+  assert.throws(() => runCommand(["runtime-invocation-read", f.root, "--authorization", f.authorization.authorizationId]), { code: "RUNTIME_INVOCATION_AUTHORIZATION_DIGEST_MISMATCH" });
+  assert.deepEqual(snapshot(f.root), before);
+});
+
+test("followup: runtime receipt observations stay separate from prepared input and never prove model use", async t => {
+  const f = await workerIntegrationFixture(t, { workers: [{ path: "one.txt", after: null }] }), record = f.records[0];
+  const read = () => withPreparedRuntimeInputView({ root: f.root, value: readRuntimeInvocationAuthorization({ root: f.root, authorizationId: record.authorizationId }) });
+  let before = snapshot(f.container), value = read();
+  assert.equal(value.preparedInput.status, "verified-prepared-input");
+  assert.equal(value.preparedInput.delivery.status, "synthetic-runtime-observation");
+  assert.equal(value.preparedInput.delivery.receiptId, record.receipt.receiptId);
+  assert.equal(value.preparedInput.delivery.matchesAuthorizedDigest, true);
+  assert.equal(value.preparedInput.modelUse, "unknown"); assert.equal(value.preparedInput.delivery.modelUse, "unknown");
+  assert.deepEqual(snapshot(f.container), before);
+  const receiptFile = path.join(record.directory, "receipt.json");
+  fs.writeFileSync(receiptFile, JSON.stringify({ ...record.receipt, inputDigestObserved: "0".repeat(64) }));
+  before = snapshot(f.container); value = read();
+  assert.equal(value.preparedInput.status, "verified-prepared-input");
+  assert.equal(value.preparedInput.delivery.status, "unavailable");
+  assert.deepEqual(snapshot(f.container), before);
+});
 
 function assertRejectedUnchanged(f, code, input = f.input) {
   const before = snapshot(f.root);

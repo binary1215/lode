@@ -15,6 +15,75 @@ const ids = value => value.records.map(record => record.evidenceId);
 const found = (value, saved) => value.records.find(record => record.evidenceId === saved.evidence.evidenceId);
 const sameFile = (a, b) => typeof a === "string" && path.resolve(a) === path.resolve(b);
 const indexFile = f => path.join(f.root, relativeProjectArtifact(f.storage, "graph-discovery", "index.json"));
+
+test("ABC: oversized originals retain exact short reasons and pending fields without replacing canonical content", t => {
+  const f = fixture(t, "Recover exact saved reasoning under current direction");
+  const earlier = saveAt(f, { summary: "Earlier explicitly linked decision", judgments: [
+    { assessment: "Reuse the formatter", reason: "Keep one normalization rule", alternatives: ["Duplicate it"] }] }, 0);
+  const large = saveAt(f, { summary: "S".repeat(12000), observedWork: ["O".repeat(14000)],
+    judgments: [{ assessment: "A".repeat(14000) + " TailConditionMarker: do not deploy", reason: "ShortReasonMarker", alternatives: ["RecordedAlternative"] }],
+    pending: ["ShortPendingMarker"], unknowns: ["ShortUnknownMarker"], suggestedFollowUp: ["SuggestionIsNotPermission"],
+    workLink: { root: exact(earlier), predecessor: exact(earlier) } }, 1);
+  const before = snapshot(f.base), value = f.read();
+  account(value);
+  assert.equal(value.status, "work_context_partial");
+  const excerpt = value.recordExcerpts.find(row => row.source.evidenceId === large.evidence.evidenceId);
+  assert(excerpt); assert.equal(excerpt.partial, true); assert.equal(excerpt.content, undefined);
+  assert.equal(excerpt.source.evidenceDigest, large.evidence.evidenceDigest);
+  const returned = JSON.stringify(excerpt.fields);
+  for (const marker of ["ShortReasonMarker", "RecordedAlternative", "ShortPendingMarker", "ShortUnknownMarker", "SuggestionIsNotPermission"]) assert(returned.includes(marker), marker);
+  assert(excerpt.fields.some(field => field.group?.path[1] === "judgments"));
+  assert.equal(returned.includes("TailConditionMarker"), false); assert.equal(excerpt.coverage.conditionsMayBeOmitted, true);
+  assert(excerpt.coverage.fields.some(field => field.partialItems || field.omittedItems));
+  for (const field of excerpt.fields) {
+    const original = field.path.reduce((item, key) => item[key], large.evidence);
+    assert.deepEqual(field.value, field.range ? original.slice(field.range.start, field.range.end) : original);
+    if (field.range) assert.equal(field.range.unit, "utf16-code-units");
+  }
+  assert(value.records.some(record => record.evidenceId === earlier.evidence.evidenceId));
+  const exactRead = f.read({ evidenceIds: [large.evidence.evidenceId], maxRecords: 1, maxCharacters: 512 * 1024 });
+  assert.deepEqual(exactRead.records[0].content, large.evidence.content); assert.equal(exactRead.recordExcerpts, undefined);
+  const tiny = f.read({ maxCharacters: 2 });
+  assert.deepEqual(tiny.records, []); assert.equal(tiny.recordExcerpts?.length || 0, 0);
+  assert.equal(tiny.coverage.usedCharacters, 2); assert.equal(tiny.status, "work_context_partial");
+  assert.equal(tiny.ordinaryWorkBlocked, false); assert.deepEqual(snapshot(f.base), before);
+  t.diagnostic(JSON.stringify({ scope: "ABC public default and exact reader", fullIds: ids(value), source: excerpt.source,
+    usedCharacters: value.coverage.usedCharacters, maxCharacters: value.coverage.maxCharacters, coverage: excerpt.coverage,
+    exactOriginalPreserved: true, minimumBudgetZeroAdmission: true }));
+});
+
+test("ABC: Unicode excerpts count emitted JSON and keep exact grapheme-safe UTF16 ranges", t => {
+  const f = fixture(t), text = '한😀e\u0301\\"\u0001'.repeat(2200);
+  const saved = f.save({ summary: text, observedWork: ["😀e\u0301".repeat(1000)],
+    judgments: [{ assessment: "Actual recorded assessment", reason: "UnicodeReasonMarker", alternatives: ["Alternative"] }],
+    pending: ["UnicodePendingMarker"], unknowns: ["A condition may remain outside the excerpt"] });
+  const before = snapshot(f.base);
+  for (const maxCharacters of [2, 1500, 4999, 5000, 5001, 32768]) {
+    const value = f.read({ maxCharacters }); account(value);
+    for (const excerpt of value.recordExcerpts || []) {
+      assert.equal(excerpt.source.evidenceId, saved.evidence.evidenceId);
+      assert.equal(excerpt.source.evidenceDigest, saved.evidence.evidenceDigest);
+      assert.equal(excerpt.coverage.conditionsMayBeOmitted, true);
+      for (const field of excerpt.fields) {
+        const original = field.path.reduce((item, key) => item[key], saved.evidence);
+        if (!field.range) { assert.deepEqual(field.value, original); continue; }
+        assert.equal(field.range.unit, "utf16-code-units"); assert.equal(field.range.total, original.length);
+        assert.equal(field.value, original.slice(field.range.start, field.range.end));
+        assert(field.value.isWellFormed());
+        const ends = new Set([...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(original)].map(part => part.index + part.segment.length));
+        assert(ends.has(field.range.end));
+      }
+    }
+    if (maxCharacters >= 4999) {
+      assert(JSON.stringify(value.recordExcerpts).includes("UnicodeReasonMarker"));
+      assert(JSON.stringify(value.recordExcerpts).includes("UnicodePendingMarker"));
+      assert(Buffer.byteLength(JSON.stringify(value.recordExcerpts)) > JSON.stringify(value.recordExcerpts).length);
+    }
+    t.diagnostic(JSON.stringify({ scope: "ABC UTF16 collection JSON, not UTF8 or tokens", maxCharacters,
+      usedCharacters: value.coverage.usedCharacters, full: value.records.length, excerpts: value.recordExcerpts?.length || 0 }));
+  }
+  assert.deepEqual(snapshot(f.base), before);
+});
 function navigation(f) {
   const index = JSON.parse(fs.readFileSync(indexFile(f)));
   assert.equal(index.sessionWorkNavigation?.version, 1);
@@ -35,9 +104,11 @@ function account(value, { exactRequest = false, page = false, fullScan = false }
   assert.ok(value.coverage.included <= value.coverage.valid);
   assert.equal(value.coverage.included, value.records.length);
   assert.equal(new Set(ids(value)).size, value.records.length);
-  assert.equal(value.coverage.usedCharacters, JSON.stringify(value.records).length);
+  const delivered = value.recordExcerpts?.length ? JSON.stringify({ records: value.records, recordExcerpts: value.recordExcerpts }) : JSON.stringify(value.records);
+  assert.equal(value.coverage.usedCharacters, delivered.length);
   assert.ok(value.records.length <= value.coverage.maxRecords);
-  assert.ok(JSON.stringify(value.records).length <= value.coverage.maxCharacters);
+  assert.ok(delivered.length <= value.coverage.maxCharacters);
+  assert.ok(value.records.length + (value.recordExcerpts?.length || 0) <= value.coverage.maxRecords);
   assert.equal(value.omissions.omittedIdCount + value.omissions.evidenceIds.length, value.omissions.byBudget);
   assert.equal(value.omissions.unavailableDetailCount + value.unavailable.length, value.coverage.unavailable);
   if (exactRequest) {

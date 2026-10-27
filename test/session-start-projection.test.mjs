@@ -14,6 +14,8 @@ import { publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
 import { inspectRecoveryCheckpointBasis, syncRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
 import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
 import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
+import { startupProjection as projectStartup } from "../scripts/lib/session-host-context-projection.mjs";
+import { coreEntryGuidance } from "../scripts/lib/lode-entry-guidance.mjs";
 
 const directionView = value => value ? Object.fromEntries(["directionId", "directionHash", "input"].filter(key => value[key] !== undefined).map(key => [key, value[key]])) : null;
 
@@ -274,11 +276,35 @@ for (const runtime of ["codex", "claude"]) {
   });
 }
 
-// Private formatter coverage only: no adapter, filesystem path or actual Host
-// capability is claimed by these extracted-function cases. No production export.
-const hookSource = fs.readFileSync(path.join(pluginRoot, "scripts", "session-host-hook.mjs"), "utf8");
-const formatterSource = hookSource.slice(hookSource.indexOf("const MAX_CONTEXT_CHARACTERS"), hookSource.indexOf("// A read-only command Hook"));
-const projectStartup = new Function("path", "fitSelectedBodyGroups", "workBodyTuples", "publicToolName", formatterSource + "\nreturn startupProjection;")(path, fitSelectedBodyGroups, workBodyTuples, publicToolName);
+test("host-a: supported SessionStart sources receive shared guidance once without changing originals", t => {
+  for (const runtime of ["codex", "claude"]) {
+    const f = fixture(t, runtime);
+    updateProjectDirection({ root: f.root, input: { goal: "Current 실제 목적 😀", cancelledActions: ["Never deploy"] } });
+    evidence(f, "Short retained reason: investigate locally; false, 0 and null are not permission.");
+    const before = snapshot(f.base);
+    for (const source of ["startup", "resume", "clear", "compact"]) {
+      const text = sessionStartContext({ runtime, event: { ...f.event, source }, environment: f.environment }).hookSpecificOutput.additionalContext;
+      const value = JSON.parse(text); assert.equal(value.coreGuidance, coreEntryGuidance());
+      assert.equal(text.split(coreEntryGuidance()).length, 2); assert.equal(value.currentProjectDirection.input.cancelledActions[0], "Never deploy");
+      assert(value.records.some(row => row.content.summary.includes("Short retained reason"))); assert.equal(value.sessionRecovery, null);
+      assert(text.length <= (runtime === "claude" ? 10000 : 32768));
+    }
+    assert.deepEqual(snapshot(f.base), before);
+  }
+});
+
+test("host-a: failed owner recovery still supplies generic guidance without inventing Session or candidates", t => {
+  const f = fixture(t, "claude"), project = path.join(f.root, f.storage.directory, "project.json");
+  fs.writeFileSync(project, "{"); const before = snapshot(f.base);
+  const text = sessionStartContext({ runtime: "claude", event: f.event, environment: f.environment }).hookSpecificOutput.additionalContext;
+  const value = JSON.parse(text); assert.equal(value.coreGuidance, coreEntryGuidance()); assert.equal(value.status, "host_context_unavailable");
+  assert.equal(value.logicalSessionId, undefined); assert.equal(value.conversationCandidates, undefined); assert.equal(value.sessionSelection, "not-inferred");
+  assert.equal(value.ordinaryWorkBlocked, false); assert.deepEqual(snapshot(f.base), before);
+});
+
+// Pure production serializer coverage only: no adapter, valid filesystem path,
+// installed Host or model receipt is claimed. Use the actual module, not an
+// extraction from the old pre-refactor Hook body.
 const sessionId = "session-AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
 const entry = () => ({ status: "synthetic-formatter-only", workContext: { sessionId, sessionPurpose: "Exact selected purpose", records: [] } });
 
@@ -311,12 +337,16 @@ test("private formatter: optional omission IDs cannot evict fitting current cont
   raw.workContext.coverage = { originals: 2, inspected: 2, included: 2, maxRecords: 8, maxCharacters: 32768, usedCharacters: 2,
     characterBudgetScope: "JSON.stringify(records).length; separate bounded metadata envelope excluded" };
   raw.workContext.omissions = { uninspected: 0, byBudget: 0, evidenceIds: [], omittedIdCount: 0 };
-  const baseline = projectStartup(raw, pluginRoot).length;
+  const withoutOptionalGuidance = value => { const result = JSON.parse(projectStartup(value, pluginRoot)); delete result.coreGuidance; delete result.coreGuidanceDelivery; return JSON.stringify(result).length; };
+  const baseline = withoutOptionalGuidance(raw);
   const id = (n) => "work-evidence-" + String(n).padStart(24, "0");
   raw.workContext.records = [{ evidenceId: id(1), content: { summary: "" }, references: [] }];
-  const overhead = projectStartup(raw, pluginRoot).length - baseline;
+  const overhead = withoutOptionalGuidance(raw) - baseline;
   raw.workContext.records[0].content.summary = "x".repeat(10000 - baseline - overhead);
-  assert.equal(projectStartup(raw, pluginRoot).length, 10000);
+  const fittedText = projectStartup(raw, pluginRoot), fittedValue = JSON.parse(fittedText);
+  assert(fittedText.length <= 10000);
+  assert.deepEqual(fittedValue.records[0].content, raw.workContext.records[0].content,
+    "Optional guidance/omission metadata cannot displace an original that fits");
   raw.workContext.records.push({ evidenceId: id(2), content: { summary: "Omitted record" }, references: [] });
   const text = projectStartup(raw, pluginRoot), value = JSON.parse(text);
   assert.ok(text.length <= 10000);
@@ -347,4 +377,38 @@ test("private formatter: oversized metadata/root explicitly omit content and ret
   assert.deepEqual(value.currentProjectDirectionAvailability, unavailable);
   assert.match(value.expansion, /project_root:the original SessionStart.cwd and the exact route/);
   t.diagnostic(JSON.stringify({ evidenceScope: "private-serializer-only; unsupported-filesystem-path-not-executed", length: text.length, branch: "coverage-and-last-resort-root-omission" }));
+});
+
+
+test("P3 optional discovery never evicts fitting current direction; overflow expands common P2 rather than Session inventory", () => {
+  const root = path.resolve(os.tmpdir(), "synthetic-project-p3");
+  const discovery = { status: "not_queried", call: { name: publicToolName("head_session_list"),
+    arguments: { project_root: root } }, automatic: false, selectsSession: false };
+  const entry = count => ({ status: "session_selection_unresolved", currentProjectDirection: {
+    directionId: "direction-current-exact", directionHash: "current-direction-digest",
+    input: { goal: "Independent authorized work", constraints: ["Current local scope only"], decisions: [],
+      cancelledActions: ["User cancelled deployment. " + "x".repeat(count)] } },
+    currentProjectDirectionAvailability: { status: "available" } });
+  for (const [runtime, limit] of [["claude", 10000], ["codex", 32768], ["opencode", 32768]]) {
+    const render = (count, hint) => JSON.parse(projectStartup({ ...entry(count), ...(hint ? { sessionDiscovery: discovery } : {}) }, root, runtime));
+    let low = 0, high = limit * 2;
+    while (low + 1 < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (render(mid, false).currentProjectDirection?.contentIncluded === false) high = mid;
+      else low = mid;
+    }
+    for (const count of [0, low, high, limit * 2]) {
+      const without = render(count, false), withHint = render(count, true);
+      assert.deepEqual(withHint.currentProjectDirection, without.currentProjectDirection,
+        runtime + ": optional lookup must not displace a fitting current cancellation");
+      assert(JSON.stringify(withHint).length <= limit);
+      assert.equal(withHint.route, null); assert.equal(withHint.logicalSessionId, null);
+      if (withHint.currentProjectDirection?.contentIncluded === false) {
+        assert.match(withHint.requiredSourceExpansion, /no constraint or cancellation is assumed absent/u);
+        assert.match(withHint.expansion, new RegExp(publicToolName("head_project_direction_read"), "u"));
+        assert.doesNotMatch(withHint.expansion, /session_list/u);
+      } else assert.deepEqual(withHint.currentProjectDirection.input, entry(count).currentProjectDirection.input);
+      if (withHint.sessionDiscovery) assert.deepEqual(withHint.sessionDiscovery, discovery);
+    }
+  }
 });

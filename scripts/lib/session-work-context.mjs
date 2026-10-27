@@ -1,4 +1,5 @@
 import { formatForVerifiedOwner, resolveProjectStorage } from "./project-storage-format.mjs";
+import { publicToolName } from "./lode-artifact-composition.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
@@ -17,6 +18,7 @@ import { SESSION_WORK_CONTEXT_VERSION, PROTOCOL, DEFAULT_SCAN, sha, encoded, fai
 import { noteProjectGraphChange, readSessionWorkNavigationHints } from "./discovery-index.mjs";
 import { fitSelectedBodyGroups, workBodyTuples } from "./session-work-body-organization.mjs";
 import { readSessionWorkTodos } from "./session-work-todo.mjs";
+import { fitSessionWorkDelivery, workDeliveryCharacters } from "./session-work-excerpts.mjs";
 export { SESSION_WORK_CONTEXT_VERSION, normalizeSessionWorkEvidence };
 function identity(root, storage) {
   const base = fs.realpathSync(path.resolve(root));
@@ -51,7 +53,23 @@ export function readSessionWorkEvidenceOwner({ root, sessionId, storage }) {
 
 // Existing list consumer composition. A preview never selects a Host binding,
 // falls back to default, or reads the bodies of every listed Session.
-export function readSessionWorkList({ root = ".", sessionId = null, maxSessions = 16, afterSessionId = null } = {}) {
+export function readSessionWorkList({ conversationCandidates, conversationEnvironment = process.env, ...options } = {}) {
+  const list = readSessionWorkListBase(options);
+  if (conversationCandidates === undefined) return list;
+  return import("./session-conversation-discovery.mjs").then(({ readSessionConversationCandidates }) => {
+    const root = options.root || ".", conversationDiscovery = readSessionConversationCandidates({ root, projectId: list.projectId,
+      sessionId: options.sessionId ?? null, candidates: conversationCandidates, environment: conversationEnvironment });
+    if (sha(fs.readFileSync(safeSessionPath(root, list.projectSource.path))) !== list.projectSource.sha256) {
+      return { ...list, conversationDiscovery: { ...conversationDiscovery, status: "project-basis-changed",
+        reasonCode: "PROJECT_IDENTITY_MISMATCH", rows: [], coverage: { ...conversationDiscovery.coverage,
+          discardedByProjectBasisChange: conversationDiscovery.rows.length } } };
+    }
+    return { ...list, conversationDiscovery };
+  }).catch(() => ({ ...list,
+    conversationDiscovery: { kind: "SessionConversationDiscoveryProjection", authorityPlane: "P4", status: "unavailable", reasonCode: "CONVERSATION_DISCOVERY_UNAVAILABLE", persisted: false,
+      instructionAuthority: false, recoveryAuthority: false, routingAuthority: false } }));
+}
+function readSessionWorkListBase({ root = ".", sessionId = null, maxSessions = 16, afterSessionId = null } = {}) {
   const list = listLodeSessions({ root, maxSessions, afterSessionId });
   if (sessionId === null) return list;
   let preview;
@@ -418,7 +436,7 @@ function readDefaultWorkContext(owner, maxRecords, maxCharacters, context) {
       // Do not rehash every generic ref whenever another body is considered.
       // A later typed proof (including failure) always overrides that output.
       // There is no shared descriptor/path verdict cache for other references.
-      references: record.content.references.map((ref, i) => {
+      references: JSON.stringify([{ ...original, references: [] }]).length > maxCharacters ? [] : record.content.references.map((ref, i) => {
         const proof = fresh.get(citedId(ref));
         return proof ? reference(owner, ref, { context, proof }) : retained?.[i] || reference(owner, ref, { context });
       }) };
@@ -428,13 +446,16 @@ function readDefaultWorkContext(owner, maxRecords, maxCharacters, context) {
     for (let i = selected.length - 1; i >= 0; i--) {
       if (fresh.get(selected[i].evidenceId)?.error) { roles.delete(selected[i].evidenceId); selected.splice(i, 1); }
     }
-    let records = render(selected);
-    while (records.length && JSON.stringify(records).length > maxCharacters) {
-      const removed = selected.pop(); budget.add(removed.evidenceId); roles.delete(removed.evidenceId);
-      delete fresh.get(removed.evidenceId).record;
-      records = render(selected);
+    const fitted = fitSessionWorkDelivery({ projectId: owner.projectId, sessionId: owner.sessionId, records: render(selected) }, { maxCharacters });
+    const complete = new Set(fitted.payload.records.map(record => record.evidenceId));
+    for (let i = selected.length - 1; i >= 0; i--) {
+      const id = selected[i].evidenceId;
+      if (complete.has(id)) budget.delete(id); else budget.add(id);
+      if (!fitted.includedIds.has(id)) {
+        roles.delete(id); selected.splice(i, 1); delete fresh.get(id).record;
+      }
     }
-    return records;
+    return fitted.payload;
   };
   const offer = (id, role) => {
     if (attempted.has(id) || roles.has(id)) return false;
@@ -442,18 +463,18 @@ function readDefaultWorkContext(owner, maxRecords, maxCharacters, context) {
     if (!proof?.record) return false;
     attempted.add(id);
     const record = proof.record;
-    if (JSON.stringify([{ ...record, references: [] }]).length > maxCharacters) {
-      budget.add(id); delete proof.record; return false;
-    }
     checkEndpoints(record);
     ensureKnownIncoming(id);
     reconcile();
     roles.set(id, role);
     const records = render([...selected, record]);
-    if (selected.length >= maxRecords || JSON.stringify(records).length > maxCharacters) {
+    const fitted = fitSessionWorkDelivery({ projectId: owner.projectId, sessionId: owner.sessionId, records }, { maxCharacters });
+    if (selected.length >= maxRecords || !fitted.includedIds.has(id)) {
       roles.delete(id); budget.add(id); delete proof.record; return false;
     }
-    selected.push(records.at(-1)); budget.delete(id); return true;
+    selected.push(records.at(-1));
+    if (fitted.payload.records.some(record => record.evidenceId === id)) budget.delete(id); else budget.add(id);
+    return true;
   };
   let seeds = 0, relatedSlots = 0;
   for (const candidate of metadata) {
@@ -462,8 +483,12 @@ function readDefaultWorkContext(owner, maxRecords, maxCharacters, context) {
     const seed = load(candidate.evidenceId, true);
     if (!seed?.record) continue;
     const original = seed.record;
-    if (JSON.stringify([{ ...original, references: [] }]).length > maxCharacters) {
-      offer(candidate.evidenceId, "recent"); continue;
+    // An excerpt must fit before its optional body/reference preparation is
+    // useful. This is serialized admission, never a semantic relevance gate.
+    const bare = fitSessionWorkDelivery({ projectId: owner.projectId, sessionId: owner.sessionId,
+      records: [{ ...original, references: [] }] }, { maxCharacters });
+    if (!bare.includedIds.has(candidate.evidenceId)) {
+      attempted.add(candidate.evidenceId); budget.add(candidate.evidenceId); delete seed.record; continue;
     }
     const citations = original.content.references.map((ref) => ({ id: citedId(ref), ref })).filter((item) => item.id);
     const root = original.content.workLink?.root;
@@ -499,19 +524,23 @@ function readDefaultWorkContext(owner, maxRecords, maxCharacters, context) {
     if (selected.length >= maxRecords) break;
     offer(candidate.evidenceId, "recent");
   }
-  const records = reconcile();
-  const summary = showOrganization(records) ? organization.summary(new Set(records.map((record) => record.evidenceId))) : null;
+  const delivered = reconcile(), records = delivered.records;
+  const excerptIds = (delivered.recordExcerpts || []).map(excerpt => excerpt.source.evidenceId);
+  const summary = showOrganization(selected) ? organization.summary(new Set([...records.map(record => record.evidenceId), ...excerptIds])) : null;
   const failed = [...discovered].filter((id) => unavailableIds.has(id));
   const valid = inspected.size - failed.length;
   const uninspected = discovered.size - inspected.size;
   const included = new Set(records.map((record) => record.evidenceId));
   const omitted = [...budget].filter((id) => discovered.has(id) && !fresh.get(id)?.error && !included.has(id));
   return { status: uninspected || failed.length || omitted.length || valid > records.length || summary?.unavailableRelations || summary?.uninspectedRelations ? "work_context_partial"
-      : records.length ? "work_context_available" : "work_context_not_recorded", records,
+      : records.length ? "work_context_available" : "work_context_not_recorded", ...delivered,
     unavailable: failed.slice(0, 32).map((id) => ({ evidenceId: id, reasonCode: fresh.get(id).error.code || "INVALID_SESSION_WORK_EVIDENCE" })),
     ...(summary ? { organization: { ...summary, relatedReadAttempts: relatedReads, relatedExpansionDeferred: deferred.size } } : {}),
     coverage: { originals: discovered.size, inspected: inspected.size, valid, unavailable: failed.length, included: records.length, maxRecords, maxCharacters,
-      usedCharacters: JSON.stringify(records).length, characterBudgetScope: "JSON.stringify(records).length; separate bounded metadata envelope excluded",
+      ...(excerptIds.length ? { excerpted: excerptIds.length } : {}),
+      usedCharacters: workDeliveryCharacters(delivered), characterBudgetScope: excerptIds.length
+        ? "JSON.stringify({records,recordExcerpts}).length, including excerpt coverage/selectors/expansion; separate context/Todo metadata envelope excluded"
+        : "JSON.stringify(records).length; separate bounded metadata envelope excluded",
       selection: (hinted ? "historical navigation hints order candidates; only inspected originals have current canonical proof" : "all discovered originals canonically inspected once")
         + "; recent-results-with-bounded-explicit-citations-and-declared-roots; fresh body/declared-endpoint rereads; partial body delivery and sequential observations, not live state or semantic sufficiency" },
     omissions: { uninspected, byBudget: omitted.length, evidenceIds: omitted.slice(0, 32), omittedIdCount: Math.max(0, omitted.length - 32), unavailableDetailCount: Math.max(0, failed.length - 32) },
@@ -527,15 +556,63 @@ function readDefaultWorkContext(owner, maxRecords, maxCharacters, context) {
   }
 }
 
+function readLexicalWorkPage(owner, names, afterEvidenceId, maxRecords, maxCharacters, context) {
+  const remaining = names.filter(name => afterEvidenceId === null || name > afterEvidenceId + ".json");
+  const records = [], unavailable = [], omitted = [];
+  let inspected = 0, valid = 0, used = 2, last = null;
+  for (const name of remaining.slice(0, DEFAULT_SCAN)) {
+    // Every examined original must have a complete body or an exact selector.
+    // Stop before reading the next body when the existing detail slots fill.
+    if (unavailable.length + omitted.length >= 32) break;
+    const evidenceId = name.slice(0, -5); inspected++; last = evidenceId;
+    let original;
+    try { original = readOriginal(owner, evidenceId); }
+    catch (error) {
+      unavailable.push({ evidenceId, reasonCode: error.code || "INVALID_SESSION_WORK_EVIDENCE" });
+      continue;
+    }
+    valid++;
+    const bare = projectExactSessionWorkRecord(original, []);
+    if (records.length >= maxRecords || JSON.stringify([...records, bare]).length > maxCharacters) {
+      omitted.push(evidenceId); continue;
+    }
+    const selected = projectExactSessionWorkRecord(original, original.content.references.map(ref => reference(owner, ref, { context })));
+    const nextSize = JSON.stringify([...records, selected]).length;
+    if (nextSize > maxCharacters) { omitted.push(evidenceId); continue; }
+    records.push(selected); used = nextSize;
+  }
+  const nextAfterEvidenceId = remaining.length > inspected ? last : null;
+  return { status: unavailable.length || omitted.length || nextAfterEvidenceId ? "work_context_partial"
+      : records.length ? "work_context_available" : "work_context_not_recorded",
+    records, unavailable,
+    ...fitSelectedBodyGroups(workBodyTuples(records, owner), maxCharacters - used),
+    coverage: { originals: names.length, inspected, valid, unavailable: unavailable.length, included: records.length,
+      maxRecords, maxCharacters, usedCharacters: used,
+      characterBudgetScope: "JSON.stringify(records).length; separate bounded metadata envelope excluded",
+      selection: "lexical-original-page; every inspected original has a full body or bounded exact selector; no semantic sufficiency claim" },
+    omissions: { uninspected: remaining.length - inspected, byBudget: omitted.length, evidenceIds: omitted,
+      omittedIdCount: 0, unavailableDetailCount: 0 },
+    nextAfterEvidenceId,
+    enumeration: { scope: "selected-session-lexical-original-page", basis: owner.basis,
+      afterEvidenceId, examinedThroughEvidenceId: last,
+      membership: "observed-this-request-not-atomic; unseen insertions before the cursor remain unknown",
+      wholeHistoryComplete: false,
+      next: nextAfterEvidenceId ? { tool: publicToolName("head_session_work_read"), arguments: {
+        project_root: owner.root, session_id: owner.sessionId, scan_evidence: true,
+        after_evidence_id: nextAfterEvidenceId, max_records: maxRecords, max_characters: maxCharacters } } : null },
+    expansion: "Reuse delivered bodies. Read a listed exact evidence ID only when useful, or follow enumeration.next for remaining originals. End of the observed range is not a completeness or permission claim." };
+}
+
 export function readSessionWorkContext({ root = ".", evidenceIds = null, maxRecords = 8, maxCharacters = SESSION_WORK_DEFAULT_CHARACTERS,
   afterEvidenceId = null, expectedSessionId = null, expectedCheckpointId = undefined, storage,
-  todoId = null, afterTodoId = null, scanTodos = false } = {}) {
+  todoId = null, afterTodoId = null, scanTodos = false, scanEvidence = false } = {}) {
   if (!Number.isSafeInteger(maxRecords) || maxRecords < 1 || maxRecords > DEFAULT_SCAN
     || !Number.isSafeInteger(maxCharacters) || maxCharacters < 2 || maxCharacters > SESSION_WORK_MAX_CHARACTERS
     || evidenceIds !== null && (!Array.isArray(evidenceIds) || evidenceIds.length > DEFAULT_SCAN)
     || afterEvidenceId !== null && (!/^work-evidence-[a-f0-9]{24}$/.test(afterEvidenceId) || evidenceIds !== null)
     || [todoId, afterTodoId].some(value => value !== null && !/^todo-[a-z0-9][a-z0-9-]{0,79}$/.test(value))
-    || typeof scanTodos !== "boolean") fail("Invalid work context read bounds.");
+    || typeof scanTodos !== "boolean" || typeof scanEvidence !== "boolean"
+    || scanEvidence && evidenceIds !== null) fail("Invalid work context read bounds.");
   const owner = identity(root, storage);
   const shell = { kind: "SessionWorkContextProjection", authorityPlane: "P4", projectId: owner.projectId, sessionId: owner.sessionId,
     sessionPurpose: owner.state.purpose || null, basis: owner.basis, latestCheckpointId: owner.state.latestCheckpoint || null,
@@ -549,16 +626,24 @@ export function readSessionWorkContext({ root = ".", evidenceIds = null, maxReco
   const context = createSessionWorkReadContext(owner.root, owner.storage);
   // Sparse originals or indexed hints, not every-turn full history/body reads.
   // Explicit exact-evidence reads keep their existing no-inventory guarantee.
-  if (evidenceIds === null && afterEvidenceId === null) {
+  if (evidenceIds === null && afterEvidenceId === null && !scanEvidence) {
     const result = readDefaultWorkContext(owner, maxRecords, maxCharacters, context);
     const todoContext = readSessionWorkTodos(owner, { maxRecords, maxCharacters, todoId, afterTodoId, scanTodos, afterEvidenceId,
       context, inventory: context.todoInventory, hints: context.todoHints || new Map() });
     if (identity(owner.root, owner.storage).basis !== owner.basis) return { ...shell, status: "work_context_basis_changed", records: [], omissions: { basisChanged: true } };
     return { ...shell, ...result, ...(todoContext ? { todoContext } : {}), ...fitSelectedBodyGroups(workBodyTuples(result.records, owner),
-      maxCharacters - JSON.stringify(result.records).length) };
+      Math.max(0, maxCharacters - workDeliveryCharacters(result))) };
   }
   const directoryPath = directory(owner.root, owner.storage);
   const names = evidenceIds !== null ? null : fs.existsSync(directoryPath) ? fs.readdirSync(directoryPath).filter((name) => /^work-evidence-[a-f0-9]{24}\.json$/.test(name)).sort() : [];
+  if (scanEvidence) {
+    const page = readLexicalWorkPage(owner, names, afterEvidenceId, maxRecords, maxCharacters, context);
+    const todoContext = todoId !== null || afterTodoId !== null || scanTodos
+      ? readSessionWorkTodos(owner, { maxRecords, maxCharacters, todoId, afterTodoId, scanTodos, afterEvidenceId,
+        context, inventory: names.map(name => name.slice(0, -5)) }) : undefined;
+    if (identity(owner.root, owner.storage).basis !== owner.basis) return { ...shell, status: "work_context_basis_changed", records: [], omissions: { basisChanged: true } };
+    return { ...shell, ...page, ...(todoContext ? { todoContext } : {}) };
+  }
   const remainingNames = names === null ? [] : afterEvidenceId === null ? names : names.filter((name) => name > afterEvidenceId + ".json");
   const ids = evidenceIds === null ? remainingNames.slice(0, DEFAULT_SCAN).map((name) => name.slice(0, -5)) : [...new Set(evidenceIds)];
   const originals = [], unavailable = [], unavailableIds = new Set();

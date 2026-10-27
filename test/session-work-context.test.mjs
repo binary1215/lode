@@ -249,7 +249,9 @@ test("typed MCP and CLI preserve -> entry -> expand agree, including text-only c
   const entry = await call("head_conversation_enter");
   assert.equal(entry.result.structuredContent.workContext.records[0].evidenceId, retained.result.structuredContent.evidence.evidenceId);
   assert.match(entry.result.content[0].text, /Derived caches can disappear/);
-  assert.match(entry.result.content[0].text, /not current direction or permission/);
+  assert.match(entry.result.content[0].text, /historical P3/);
+  assert.match(entry.result.content[0].text, /navigation, not task identity, current activity or authority/);
+  assert.equal(entry.result.structuredContent.workContext.recoveryAuthority, false);
   assert.match(entry.result.content[0].text, /content\.todos\[0\]\.todoId: "todo-retained-task"/);
   assert.match(entry.result.content[0].text, /content\.todos\[0\]\.status: "pending"/);
   for (const text of ["Verify original provenance", "Inspect exact evidence", "user-directed"])
@@ -378,7 +380,12 @@ test("output budget accounts for enriched references; omissions retain exact exp
   const saved = recordSessionWorkEvidence({ root, input: { summary: "Bounded reference evidence", references } });
   const small = readSessionWorkContext({ root, maxCharacters: 4460 });
   assert.ok(JSON.stringify(small.records).length <= 4460);
-  assert.equal(small.coverage.usedCharacters, JSON.stringify(small.records).length);
+  const delivered = small.recordExcerpts?.length
+    ? JSON.stringify({ records: small.records, recordExcerpts: small.recordExcerpts }) : JSON.stringify(small.records);
+  assert.equal(small.coverage.usedCharacters, delivered.length);
+  assert.ok(delivered.length <= 4460);
+  assert.equal(small.recordExcerpts[0].source.evidenceId, saved.evidence.evidenceId);
+  assert.equal(small.recordExcerpts[0].partial, true);
   assert.deepEqual(small.omissions.evidenceIds, [saved.evidence.evidenceId]);
   const expanded = readSessionWorkContext({ root, evidenceIds: small.omissions.evidenceIds, maxCharacters: 32768 });
   assert.equal(expanded.records.length, 1);

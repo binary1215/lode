@@ -43,7 +43,7 @@ product 프로필은 선택적 거버넌스 기능이지 Lode 자체의 정의�
 
 ## 컴팩션 연속성
 
-컴팩션은 불변 체크포인트 준비, 공급자 압축, 신뢰된 실제 사용자 턴 검증, 일회성 연속 토큰 소비로 진행합니다. 복구 앵커는 `.lode/project.json`, 선택한 논리 Session 기록과 정확한 체크포인트입니다. `.lode/sessions/current.json`은 기본 Session으로 유지되고 다른 Session은 `.lode/sessions/by-id/<session-id>/current.json`을 사용합니다. 복구와 함께 현재 공통 ProjectDirection을 읽습니다. 과거 체크포인트 필드는 그대로 보존하되 더 최신인 공통 제약이나 취소된 작업을 되돌리지 않습니다. 공급자 요약은 앵커로 승격되지 않고 새로운 사용자 턴이 준비된 연속 작업보다 우선합니다.
+관리형 컴팩션 lifecycle을 선택한 경우에만 불변 체크포인트 준비, 공급자 압축, 신뢰된 실제 사용자 턴 검증, 일회성 연속 토큰 소비의 네 단계를 적용합니다. 일반 native 컴팩션과 startup은 충분한 기존 맥락을 재사용하거나 읽기 전용 conversation entry로 복구합니다. 체크포인트가 없어도 일반 직접 작업과 Host 위임은 계속하며, 파일 수정·worker 수·일반 실패만으로 관리형 lifecycle을 요구하지 않습니다. 복구 앵커는 `.lode/project.json`, 선택한 논리 Session 기록과 정확한 체크포인트입니다. `.lode/sessions/current.json`은 기본 Session으로 유지되고 다른 Session은 `.lode/sessions/by-id/<session-id>/current.json`을 사용합니다. 복구와 함께 현재 공통 ProjectDirection을 읽습니다. 과거 체크포인트 필드는 그대로 보존하되 더 최신인 공통 제약이나 취소된 작업을 되돌리지 않습니다. 공급자 요약은 앵커로 승격되지 않고 새로운 사용자 턴이 준비된 연속 작업보다 우선합니다.
 
 ## 그래프 우선 탐색과 실행 선택
 

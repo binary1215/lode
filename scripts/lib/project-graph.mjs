@@ -5,6 +5,7 @@ import { artifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import {
   canonicalGraphJson, collectProjectGraphInventory, projectGraphDigest,
   readGraphRecord, readGraphProject, refreshProjectGraphIndex, safeGraphFile,
+  projectGraphExactSelector,
 } from "./discovery-index.mjs";
 import { beginScopedDiscovery, rememberScopedDiscovery, reuseScopedDiscovery } from "./project-graph-scoped-reuse.mjs";
 import { sessionWorkPath } from "./session-work-evidence-original.mjs";
@@ -122,7 +123,7 @@ async function verifiedLayer(inventory, layer, entries, model) {
   // optional layer remains local to that layer, not an ordinary-work gate.
   if (layer !== "sessionWork" && dependencies && (!dependencies.complete || dependencies.unavailable.length)) fail("PROJECT_GRAPH_DEPENDENCY_UNAVAILABLE");
   if (layer === "sessionWork") return projectSessionWorkLayer(inventory, { nodeFromRecord, relation, authority, id });
-  if (layerCache.has(key)) return { ...clone(layerCache.get(key)), reused: true };
+  if (!inventory.scope && layerCache.has(key)) return { ...clone(layerCache.get(key)), reused: true };
   const nodes = [], edges = [], skipped = [], sources = [];
   const projectId = inventory.project.projectId, root = inventory.projectRoot, storage = inventory.storage;
   const entriesByPath = firstBy(entries, item => item.path);
@@ -191,7 +192,9 @@ async function verifiedLayer(inventory, layer, entries, model) {
       const artifact = readLineageArtifact({ root, artifactId }).artifact;
       if (projectGraphDigest(artifact) !== projectGraphDigest(record.document)) fail("PROJECT_GRAPH_READ_DRIFT");
       const node = add(artifact, record.path, ["work", "product"], { revisionId: artifactId,
-        reviewState: artifact.kind === "ReviewDecision" ? `historical-${artifact.disposition}` : "not-applicable" });
+        reviewState: artifact.kind === "ReviewDecision" ? `historical-${artifact.disposition}` : "not-applicable",
+        originalExpansion: { tool: publicToolName("head_lineage_artifact"), arguments: { project_root: root, artifact_id: artifactId },
+          scope: "retained-artifact-only; not current approval, parent existence or permission" } });
       for (const link of artifact.lineage || []) edges.push(relation(link.relation, node.nodeId, link.targetId, node.origin));
     }
   } else if (layer === "onboarding") {
@@ -296,14 +299,17 @@ async function verifiedLayer(inventory, layer, entries, model) {
   } else if (layer === "direction") {
     const { readProjectDirection, readProjectDirectionRevision } = await import("./project-direction.mjs");
     let current = null;
-    try { current = readProjectDirection({ root }); }
+    try { if (!inventory.scope) current = readProjectDirection({ root }); }
     catch (error) { skipped.push({ path: relativeProjectArtifact(storage, "project-direction/current.json"), reasonCode: reason(error) }); }
     for (const record of records.filter((entry) => entry.path.includes("/revisions/"))) {
       const document = readProjectDirectionRevision({ root, directionId: record.document.directionId });
       if (projectGraphDigest(document) !== projectGraphDigest(record.document)) fail("PROJECT_GRAPH_READ_DRIFT");
       const node = add({ ...document, objective: document.input.goal }, record.path, ["work", "product"], {
-        revisionId: document.directionId, freshness: document.directionId === current?.directionId ? "current-direction-reference" : "historical-direction-reference",
-        reviewState: "user-direction-reference" });
+        revisionId: document.directionId, freshness: inventory.scope ? "retained-direction-reference-currentness-unknown"
+          : document.directionId === current?.directionId ? "current-direction-reference" : "historical-direction-reference",
+        reviewState: "user-direction-reference", ...(inventory.scope ? { originalExpansion: {
+          supported: false, reasonCode: "NO_PUBLIC_HISTORICAL_DIRECTION_ORIGINAL_READER", path: record.path, digest: record.digest,
+          explanation: "Exact graph detail selects this verified bounded reference. Read its named original file when more content is useful; the current direction reader does not select this revision." } } : {}) });
       if (document.previousDirectionId) edges.push(relation("FOLLOWS_DIRECTION", node.nodeId, document.previousDirectionId, node.origin));
     }
   } else if (layer === "sessions") {
@@ -351,7 +357,7 @@ async function verifiedLayer(inventory, layer, entries, model) {
     for (const record of records) skipped.push({ path: record.path, reasonCode: "PROJECT_GRAPH_UNSUPPORTED_RECORD" });
   }
   const result = { nodes, edges, sources, skipped, reused: false };
-  boundedCache(layerCache, key, clone(result), 32);
+  if (!inventory.scope) boundedCache(layerCache, key, clone(result), 32);
   return result;
 }
 
@@ -546,9 +552,9 @@ function navigationState(node) {
 
 function compactNode(node) {
   if (isWorkNode(node)) return { ...node, contentScope: "verified-work-original-display", contentPartial: Boolean(node.workContentCoverage?.partial),
-    detail: { anchorIds: [node.nodeId], details: true, depth: 0 }, ...authority };
+    detail: { anchorIds: [node.nodeId], ...(sessionWorkPath(node.sourceReference?.path) ? { paths: [node.sourceReference.path] } : {}), details: true, depth: 0 }, ...authority };
   const fields = ["nodeId", "kind", "name", "key", "path", "digest", "revisionId", "views", "reviewState", "freshness", "integrity", "sourceAuthority", "sourceReference", "sourceCurrentness", "snapshotState", "policyKey", "baseProductModelId", "resultingProductModelId",
-    "status", "disposition", "applicationStatus", "mode", "activeRunId", "sessionId", "runId", "latestCheckpoint"];
+    "status", "disposition", "applicationStatus", "mode", "activeRunId", "sessionId", "runId", "latestCheckpoint", "originalExpansion"];
   const compact = Object.fromEntries(fields.filter(key => node[key] !== undefined).map(key => [key, node[key]]));
   const text = searchText(node);
   const excerpt = text.slice(0, 360);
@@ -565,7 +571,7 @@ function compactNode(node) {
   return { ...compact, excerpt, contentScope: "bounded-navigation-excerpt", contentPartial: excerpt.length < text.length || Boolean(directionPartial) || omittedContent,
     ...(direction ? { directionEvidence, directionContentCoverage: { partial: Boolean(directionPartial),
       originalExcerptCoverage: node.directionContentCoverage, detailRequiredForCompleteDirection: Boolean(directionPartial) } } : {}),
-    detail: { anchorIds: [node.nodeId], details: true, depth: 0 }, ...authority };
+    detail: { anchorIds: [node.nodeId], ...(projectGraphExactSelector(node.sourceReference?.path) ? { paths: [node.sourceReference.path] } : {}), details: true, depth: 0 }, ...authority };
 }
 
 function compactTraversal(traversed) {
@@ -582,7 +588,14 @@ function compactTraversal(traversed) {
 export async function queryProjectGraph(options = {}) {
   const normalized = limits(options);
   const collecting = options[viewerInventory] === true;
-  const scoped = collecting ? null : reuseScopedDiscovery(options, normalized);
+  if (!collecting && (options.inventoryPage === true || options.inventoryCursor != null || options.inventoryPaths != null)) {
+    const { readProjectGraphInventoryPage } = await import("./project-graph-inventory-page.mjs");
+    return readProjectGraphInventoryPage(options, normalized);
+  }
+  const exactWork = !collecting && !options.worldModelId && normalized.paths.length > 0
+    && normalized.paths.every(relative => projectGraphExactSelector(relative))
+    && normalized.anchorIds.every(anchor => normalized.paths.some(relative => projectGraphExactSelector(relative).recordId === anchor));
+  const scoped = collecting || exactWork ? null : reuseScopedDiscovery(options, normalized);
   if (scoped && !scoped.contextLineage) return scoped;
   if (scoped) {
     // Reuse the verified selected graph, not its old source-byte explanation.
@@ -596,9 +609,10 @@ export async function queryProjectGraph(options = {}) {
     const resultHash = projectGraphDigest(payload);
     return { ...payload, resultId: `project-graph-result-${resultHash.slice(0, 24)}`, resultHash };
   }
-  const initialMembership = collecting ? null : beginScopedDiscovery(options, normalized);
+  const initialMembership = collecting || exactWork ? null : beginScopedDiscovery(options, normalized);
   let inventory;
-  try { inventory = collectProjectGraphInventory(options.root || ".", collecting ? { recordLimit: Infinity } : undefined); }
+  try { inventory = collectProjectGraphInventory(options.root || ".", collecting ? { recordLimit: Infinity }
+    : exactWork ? { exactPaths: normalized.paths } : undefined); }
   catch (error) { return fallbackProjection(normalized, reason(error)); }
   if (!inventory.project) return fallbackProjection(normalized, "PROJECT_GRAPH_NOT_INITIALIZED");
   const root = inventory.projectRoot, projectId = inventory.project.projectId, storage = inventory.storage;
@@ -609,7 +623,7 @@ export async function queryProjectGraph(options = {}) {
     const layer = layerFor(entry.path, storage); if (!grouped.has(layer)) grouped.set(layer, []); grouped.get(layer).push(entry);
   }
   let model = null;
-  try { const { readProductModelCanon } = await import("./product-model.mjs"); model = readProductModelCanon({ projectRoot: root, storage }).model; }
+  if (!exactWork) try { const { readProductModelCanon } = await import("./product-model.mjs"); model = readProductModelCanon({ projectRoot: root, storage }).model; }
   catch (error) { unavailable.push({ layer: "product", reasonCode: reason(error) }); }
   for (const [layer, entries] of grouped) {
     try {
@@ -619,7 +633,7 @@ export async function queryProjectGraph(options = {}) {
     } catch (error) { unavailable.push({ layer, reasonCode: reason(error) }); layers.push({ layer, status: "excluded", reasonCode: reason(error) }); }
   }
   let world = null, adapter = { status: "not-used", fallbackUsed: false }, queryAdapter = null;
-  try {
+  if (!exactWork) try {
     const { inspectWorldDomainFreshness, buildWorldTraversalEligibility } = await import("./world-model.mjs");
     const { createTemporalVerificationScope } = await import("./temporal-provenance.mjs");
     temporalVerificationScope = createTemporalVerificationScope();
@@ -789,6 +803,7 @@ export async function queryProjectGraph(options = {}) {
   traversed.edges = traversed.edges.map(edge => ({ ...edge, endpointStates: [edge.from, edge.to]
     .map(nodeId => ({ nodeId, ...navigationState(unique.get(nodeId)) })) }));
   const basis = { projectId, rootDigest: projectGraphDigest(root), recordsDigest: inventory.recordsDigest,
+    ...(inventory.scope ? { recordsDigestScope: inventory.scope.kind } : {}),
     worldModelId: world?.snapshot.worldModelId || null, graphSnapshotId: world?.snapshot.temporalProvenanceGraph?.graphSnapshotId || null,
     sourceCurrentnessDigest: projectGraphDigest(sourceCurrentness), sourceCurrentnessScope: collecting ? "whole-returned-inventory" : "selected-nodes-and-edge-endpoints",
     layerDigest: projectGraphDigest(layers.map(({ reused, ...layer }) => layer)), readConsistency: "observed-sequence-not-atomic-filesystem-snapshot" };
@@ -832,7 +847,8 @@ export async function queryProjectGraph(options = {}) {
     authorityBoundary: artifactAuthorityBoundary("ProjectGraphDiscoveryProjection"),
     status: traversed.nodes.length ? "available" : "source-fallback", basis, query: normalized, ...presentation,
     ...(contextLineage ? { contextLineage } : {}),
-    detailExpansion: { supported: true, tool: publicToolName("head_project_graph"), arguments: { details: true },
+    detailExpansion: { supported: true, tool: publicToolName("head_project_graph"), arguments: { details: true,
+      ...(exactWork ? { paths: normalized.paths } : {}) },
       instruction: "Use selected node IDs as anchor_ids; increase depth for relationships. Full records remain at sourceReference.path." },
     summary: { nodeCount: traversed.nodes.length, edgeCount: traversed.edges.length, reviewStates: count("reviewState"), freshnessStates: count("freshness"),
       policyReferences: traversed.nodes.filter((node) => node.policyKey).map((node) => { const { proposedPolicy, ...state } = navigationState(node); return { nodeId: node.nodeId, ...state, ...(normalized.details ? { proposedPolicy } : {}) }; }),
@@ -842,14 +858,16 @@ export async function queryProjectGraph(options = {}) {
     integrity: { verifiedLayers: layers.filter((layer) => layer.status === "verified").map((layer) => layer.layer), excluded: unavailable },
     freshness: { scope: "selected-node-and-edge-endpoint-source-bytes-and-retained-revisions", wholeWorldCurrentRequired: false, historicalEvidenceReadable: true,
       ...(world ? { domains: world.freshness.domains } : {}) },
-    coverage: { state: "partial", inventoryBoundReached: !inventory.complete, layers: layers.map(({ reused, ...layer }) => layer), verifiedNodeCount: allNodes.length, matchedNodeCount: traversed.nodes.length,
+    coverage: { state: "partial", inventoryBoundReached: inventory.scope ? inventory.scope.inventoryBoundReached : !inventory.complete,
+      ...(inventory.scope ? { inventoryScope: inventory.scope } : {}), layers: layers.map(({ reused, ...layer }) => layer), verifiedNodeCount: allNodes.length, matchedNodeCount: traversed.nodes.length,
       emptyResultProvesAbsence: false, semanticSufficiency: "HEAD-owned" },
-    sourceFallback: { available: true, needed: !traversed.nodes.length || traversed.truncated || unavailable.length > 0 || !inventory.complete || partialDirection || partialContent,
-      action: "Read current original files or the referenced records; expand anchors when useful.", reasonCodes: [...unavailable.map((entry) => entry.reasonCode), ...(partialDirection ? ["PROJECT_DIRECTION_EXCERPT_PARTIAL"] : []), ...(partialContent ? ["PROJECT_GRAPH_COMPACT_CONTENT_PARTIAL"] : [])],
+    sourceFallback: { available: true, needed: !traversed.nodes.length || traversed.truncated || unavailable.length > 0 || !inventory.complete && !inventory.scope || partialDirection || partialContent,
+      action: exactWork ? "Reuse delivered originals. Follow the selected node's originalExpansion or exact detail path only when useful; read its named original file for remaining partial content. Uninspected incoming relations do not require a wider query."
+        : "Read current original files or the referenced records; expand anchors when useful.", reasonCodes: [...unavailable.map((entry) => entry.reasonCode), ...(partialDirection ? ["PROJECT_DIRECTION_EXCERPT_PARTIAL"] : []), ...(partialContent ? ["PROJECT_GRAPH_COMPACT_CONTENT_PARTIAL"] : [])],
       excludedInputs: unavailable }, adapter, reuse: { status: "fresh-read", semanticSufficiency: "HEAD-owned" }, authority };
   const resultHash = projectGraphDigest(payload), result = { ...payload, resultId: `project-graph-result-${resultHash.slice(0, 24)}`, resultHash };
   boundedCache(resultCache, queryKey, clone(result));
-  rememberScopedDiscovery({ options, normalized, inventory, result, nodes: allNodes, edges: graphEdges, world, sourceCurrentness, initialMembership });
+  if (!exactWork) rememberScopedDiscovery({ options, normalized, inventory, result, nodes: allNodes, edges: graphEdges, world, sourceCurrentness, initialMembership });
   return result;
   } finally { temporalVerificationScope?.close(); }
 }

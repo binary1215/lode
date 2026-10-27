@@ -82,6 +82,24 @@ preparation does not prove delivery or model use. Establish those separately fro
 actual evidence, or leave them unknown. No new fork-cutoff collection is needed.
 Absent mapping remains absent even if the parent later selects a Session.
 
+For an exact managed authorization, existing
+`lode_runtime_invocation_authorization` / `lode_bounded_worker_status`, or CLI
+`runtime-invocation-read --authorization <id>`, can add a historical
+`preparedInput` view. Reuse it when it answers the question. It verifies retained
+authorization, plan/contract, Capsule and captured common-direction originals,
+then compares the canonical serialized input's byte count and digest. Expand
+useful exact references; the excerpt is bounded and discloses omitted bytes.
+Missing originals, integrity failures and older unretained requests remain
+distinct from a verified prepared input. Runtime receipt observations are
+separate and do not establish model delivery, attention or use.
+
+This view is read-only P4, not current permission or P2 recovery direction.
+Later common/child cancellation remains in force, and execution still validates
+current lineage. Optional view failure preserves the primary authorization read;
+its own owner/hash errors remain errors. Ordinary native ancestry remains a later
+reference read. Do not infer a native-to-authorization join, collect a new fork
+snapshot, rerun a provider or require this inspection for ordinary work.
+
 In Codex app contexts exposing `wait_threads`, an actual ready `threadId` from
 an existing authorized launch/fork/known target, or the trusted caller
 `nativeContext.hostTarget.threadId`, can answer a material current-state question.

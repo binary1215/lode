@@ -77,6 +77,15 @@ constraints, decisions, cancelledActions는 과거 checkpoint 필드와 구분�
 authorization을 만들지 않습니다. 온전한 과거 자료는 탐색할 수 있지만 읽을 수
 있다는 이유만으로 현재 효과를 실행하지는 않습니다.
 
+검증된 Project에서 선택 Session을 잃어도 일반 작업과 공통 방향은 계속 사용할 수
+있습니다. Entry는 정확한 Project root를 넣은 기존 읽기 전용 `lode_session_list`의
+`sessionDiscovery.call`을 반환합니다. 이미 제공된 검증 후보는 재사용하고, 누락된
+종속 맥락이 필요할 때만 조회합니다. Startup이나 실패 시 Session을 열거하거나
+기본값을 선택하지 않습니다. 목록은 반환 상태의 크기를 제한하지만 디렉터리 이름은
+열거하므로 전체 스캔 비용이 제한된다고 주장하지 않습니다. 제목·최근성은 같은
+작업이나 과거 승인 재사용의 근거가 아닙니다. 손상되거나 다른 Project owner에는
+같은 Project 탐색 힌트를 제시하지 않습니다.
+
 ## 아티팩트 전용 Session 복원
 
 `session-restore`는 현재 canonical checkpoint pointer에서 시작하여 다음을 수행합니다.
@@ -357,6 +366,33 @@ initialize/resume은 계속 사용할 수 있습니다. 최근 시각이나 다�
 old→new native ID 연속성을 추정하지 않습니다. 합성 라우팅 검사는 실제 Claude
 `/clear`의 ID 변경이나 ID 간 자동 복원 성공을 의미하지 않습니다.
 
+Claude가 명시적으로 `SessionEnd(reason=clear)` 이후 `SessionStart(source=clear)`를
+전달하면, 선택적인 P5 연결로 이미 선택된 논리 Session을 유지할 수 있습니다. 양쪽 이벤트에서
+정확한 CLI registry 항목으로 동일 로컬 환경·PID·OS 생성 식별자를 각각 확인해야 하며,
+Project·정규화한 root·agent도 같아야 합니다. 기존 선택 CAS 잠금 안에서 이전 binding의
+Session·revision·digest를 다시 읽고 새 호출자에 binding이 없는지도 확인합니다.
+PID 생존·최근성·`source=clear`만으로 연결하지 않습니다. 마지막 조상 행에서는 사용하지
+않는 다음 부모를 조회하지 않으며, 이때 `ppid=0`은 조회하지 않았다는 뜻이지 부모가 0이라는
+검증된 사실이 아닙니다.
+
+로컬 operational 힌트 캐시는 최대 64개 instance, 전체 128 KiB, 힌트당 8 KiB입니다.
+10분 수명은 저장된 종료 관측 시점부터 계산하며 재전달로 갱신하지 않습니다. 모호한 쌍·
+만료·변조·관측 부재·선택 변경·쓰기 실패에서는 자동 연결만 생략합니다. 저장된 시작 관측은
+종료 관측 뒤에 있어야 하며, 순서가 뒤바뀌거나 재전달된 시작이 나중에 만들어진 힌트를 사용하지
+못합니다. 첫 시작에서 정확한 witness가 없었거나 호출자 관측이 대체·제외되어 최초 순서를
+확인할 수 없으면, 나중 재전달로 그 증거를 보충하지 않습니다. binding 전에 힌트를 소비하므로
+부분 쓰기를 자동 재시도하지 않습니다.
+전체 binding 검색·새 논리 Session·P2 방향
+변경·효과 재실행은 없습니다. 기존 명시적 선택과 일반 작업은 계속 가능합니다.
+
+기존 명령 Hook 제한인 SessionEnd 1초, SessionStart 10초는 유지합니다. 선택적인 clear
+관측·연결은 최대 1초의 절대 deadline을 공유하며 남은 명령 예산으로 더 제한됩니다.
+registry 접근 전에 Project를 검증하고, 정확한 OS 조회와 기존 reader 로딩을 겹칠 수 있습니다.
+helper는 숨김으로 실행하고 성공·실패 모두 종료까지 기다립니다. 시작 투영과 발화 참조 전달의
+기존 동작은 유지합니다. 합성 명령 진입점·프로세스 검증은 로컬 writer→힌트→조회→CAS→
+시작 출력의 연결만 증명합니다. 설치된 Claude 이벤트 전달·실제 `/clear`·모델 수신이나
+성능 보장을 의미하지 않습니다.
+
 참조 준비만으로 저장본을 소비하지 않습니다. 실제 context 문자열 한도에 전체 참조가
 들어가야 추가하며, 들어가지 않으면 보존합니다. 부분 포함을 지원한다고 주장하지 않습니다.
 명령 Hook은 로컬 stdout 쓰기 callback이 성공한 뒤, OpenCode는 여전히 유효한 출력 slot에
@@ -378,6 +414,13 @@ OpenCode assistant 인접성은 미지원입니다. 최근 맥락과 불확실�
 [Claude Stop input](https://code.claude.com/docs/en/hooks#stop-input).
 
 ## 복구 이후에도 남는 명시적 작업
+
+기본 work context는 전체 `records[].content`와 별도 P4 `recordExcerpts`를 유지합니다.
+발췌는 정확한 `source`, 원래 필드·인덱스와 명시한 구간으로 읽습니다. 판단·task의
+관련 필드는 원래 관계를 유지하지만 부분 범위에는 빠진 조건이 있을 수 있습니다.
+전체 본문 0개와 발췌가 함께 있으면 부분 이력이지 빈 이력이나 완전 복구가 아닙니다.
+누락된 의존 근거가 필요할 때 제공된 정확한 원문 확장을 사용하고, 현재 P2 방향·취소와
+독립 Todo 뷰를 계속 일반 작업에 적용합니다.
 
 HEAD는 기존 `lode_session_work_record` 또는 checkpoint의 선택 work evidence에 `todos`를
 기록할 수 있습니다. 사용자는 평소처럼 작업을 말하며 HEAD가 stable `todoId`, task,

@@ -771,6 +771,19 @@ export function verifyRuntimeInvocationAuthorization(document) {
   return document;
 }
 
+// Internal pure composition for historical read projections. No current-state,
+// source-freshness, lease or execution operation is invoked here. Callers must
+// verify the exact selected originals and compare the final bytes and digest.
+export function runtimeInvocationInputFromOriginals({ authorization, plan, contract, capsule = null, direction = null } = {}) {
+  const verified = verifyRuntimeInvocationAuthorization(authorization);
+  if (verified.scope.kind === "session" && !verified.workerInput) return null;
+  let input = verified.scope.kind === "run" ? runInvocationInput({ plan, contract, capsule })
+    : sessionInvocationInput({ request: verified.workerInput.sessionRequest, capsule, requiredActions: verified.requiredAllowedActions });
+  input = attachWorkerInput(input, verified.workerInput);
+  if (direction) input = { ...input, currentProjectDirection: direction };
+  return Buffer.from(canonicalJson(input), "utf8");
+}
+
 export function readRuntimeInvocationAuthorization({ root = ".", authorizationId } = {}) {
   if (!/^execution-authorization-[a-f0-9]{24}$/.test(authorizationId || "")) {
     fail("Runtime invocation authorization id is invalid.", "INVALID_RUNTIME_INVOCATION_AUTHORIZATION_ID");

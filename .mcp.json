@@ -3,7 +3,7 @@
     "lode": {
       "command": "node",
       "args": [
-        "scripts/mcp-server.mjs"
+        "scripts/mcp-plugin-server.mjs"
       ],
       "cwd": ".",
       "required": false

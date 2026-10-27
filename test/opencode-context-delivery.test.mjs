@@ -27,6 +27,24 @@ async function setup(t, { selected = true, native = "ses_request", projectID = "
 }
 const context = output => JSON.parse(output.system.at(-1));
 
+test("ABC: actual OpenCode adapter retains partial reasons and tasks within its complete context bound", async t => {
+  const f = await setup(t);
+  f.save({ summary: "S".repeat(14000), observedWork: ["O".repeat(19000)],
+    judgments: [{ assessment: "Keep the saved distinction", reason: "OpenCodePartialReasonMarker", alternatives: ["Do not infer completion"] }],
+    pending: ["OpenCodePartialPendingMarker"], unknowns: ["Unreturned conditions may remain"] });
+  updateProjectDirection({ root: f.root, input: { goal: "Inspect locally", cancelledActions: ["deploy"] } });
+  const before = snapshot(f.base), output = await f.transform(), text = output.system.at(-1), value = context(output);
+  assert(text.length <= MAX_CONTEXT_CHARACTERS.opencode);
+  assert(value.recordExcerpts.length); assert.equal(value.workCoverage.sourceIncluded, 0);
+  assert.equal(value.workCoverage.sourceExcerpted, 1);
+  assert(text.includes("OpenCodePartialReasonMarker")); assert(text.includes("OpenCodePartialPendingMarker"));
+  assert.deepEqual(value.currentProjectDirection.input.cancelledActions, ["deploy"]);
+  assert.equal(value.logicalSessionId, f.session.sessionId); assert.equal(value.ordinaryWorkBlocked, false);
+  assert.equal(output.system[0], "Original system"); assert.deepEqual(snapshot(f.base), before);
+  t.diagnostic(JSON.stringify({ scope: "ABC public OpenCode adapter with local synthetic SDK, not a real Host/model",
+    emittedUtf16Characters: text.length, full: value.records.length, excerpts: value.recordExcerpts.length }));
+});
+
 test("exact native request receives current recorded direction and work bodies without any file write", async t => {
   const f = await setup(t);
   f.save({ summary: "Recorded exact work body", pending: ["Check the remaining local issue"] });

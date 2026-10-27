@@ -6,14 +6,15 @@ const helperName = name => semanticToolName(name) === "head_session_host_request
 const routerName = name => ["head_tools_read", "head_tools_call"].includes(semanticToolName(name));
 const hasProjectMarker = root => [".head", ".lode"].some(directory => fs.existsSync(path.join(root, directory, "project.json")));
 import { sessionCallRequiresBinding } from "./session-routing.mjs";
-import { createSessionHostRequestRegistry } from "./session-host-request.mjs";
+import { createSessionHostRequestRegistry, parseClaudeNativeToolName } from "./session-host-request.mjs";
+import { subagentWriteGuardEnabled } from "./subagent-write-guard.mjs";
 
 const validCaller = (id) => typeof id === "string" && id.length > 0 && id.length <= 512 && !/[\u0000-\u001f]/u.test(id);
 const missingCaller = () => { throw Object.assign(new Error("Native caller metadata is unavailable; never substitute another caller."), { code: "NATIVE_SESSION_CALLER_UNAVAILABLE" }); };
 
 // Thin Host transport composition. Nothing in tool arguments can supply a native
 // caller, and this module authors neither P2 direction nor effect authorization.
-export function createNativeSessionHostBridge({ environment = process.env, runtime = null, requestRegistry = createSessionHostRequestRegistry() } = {}) {
+export function createNativeSessionHostBridge({ environment = process.env, runtime = null, requestRegistry = createSessionHostRequestRegistry(), pluginLaunch = null, servingModuleUrl = null } = {}) {
   let transportRuntime = runtime, observedNativeMetadata = false, observedClaudeHook = false;
   const adapters = new Map();
   // Caller bit for a router call whose inner tool does not use the Session
@@ -34,7 +35,8 @@ export function createNativeSessionHostBridge({ environment = process.env, runti
     if (!caller) return null;
     if (caller.status === "signal-only") return { runtime: "claude", nativeSessionId: null, agentId: null, subagent: true };
     if (caller.status !== "known") return null;
-    return { runtime: caller.runtime, nativeSessionId: caller.nativeSessionId, agentId: caller.agentId ?? null, subagent: caller.subagent === true };
+    return { runtime: caller.runtime, nativeSessionId: caller.nativeSessionId, agentId: caller.agentId ?? null, subagent: caller.subagent === true,
+      ...(caller.correlation ? { correlation: caller.correlation, outerToolName: caller.outerToolName } : {}) };
   }
   function callerFor(request) {
     if (transportRuntime === "claude") {
@@ -46,7 +48,8 @@ export function createNativeSessionHostBridge({ environment = process.env, runti
       try {
         const claim = requestRegistry.claim({ key: meta["claudecode/toolUseId"], name: request.params.name, arguments: request.params.arguments });
         // agentId stays inside the stored registry caller. subagent is derived.
-        return { status: "known", ...claim.caller, subagent: Boolean(claim.caller.agentId), release: claim.release };
+        return { status: "known", ...claim.caller, subagent: Boolean(claim.caller.agentId),
+          correlation: "exact-native-tool-use", release: claim.release };
       } catch {
         if (takeSubagentToolUse(meta["claudecode/toolUseId"])) return { status: "signal-only", runtime: "claude", subagent: true };
         return { status: "unavailable" };
@@ -75,34 +78,47 @@ export function createNativeSessionHostBridge({ environment = process.env, runti
     content: [{ type: "text", text: error ? "Native Host request correlation unavailable (" + (error.code || "INVALID_HOST_REQUEST") + ")." : "{}" }],
     ...(error ? { isError: true } : {}),
   } });
-  function prepareHookRequest(request) {
+  async function prepareHookRequest(request) {
     try {
       // Verified stock CLI provenance seam, not arbitrary-client authentication.
       // Ordinary model calls have this outer meta even when args contain a fake.
       if (transportRuntime !== "claude" || request.params?._meta && Object.hasOwn(request.params._meta, "claudecode/toolUseId")) throw Object.assign(new Error(), { code: "NATIVE_HOOK_INGRESS_REQUIRED" });
       observedClaudeHook = true;
       const value = request.params.arguments;
-      const fields = ["native_session_id", "native_agent_id", "tool_use_id", "outer_tool_name", "original_arguments"];
+      const fields = ["native_session_id", "native_agent_id", "tool_use_id", "outer_tool_name", "original_arguments", "native_project_root"];
       if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(key => !fields.includes(key))
         || ![value.native_session_id, value.tool_use_id, value.outer_tool_name].every(id => validCaller(id) && !id.includes("${"))
         || value.native_agent_id != null && value.native_agent_id !== "" && (!validCaller(value.native_agent_id) || value.native_agent_id.includes("${"))
         || typeof value.original_arguments !== "string") throw Object.assign(new Error(), { code: "INVALID_NATIVE_HOOK_INPUT" });
-      const match = /^mcp__.+__([a-z][a-z0-9_]+)$/u.exec(value.outer_tool_name);
-      if (!match || !resolveOperation(match[1]) || helperName(match[1])) throw Object.assign(new Error(), { code: "INVALID_NATIVE_HOOK_TARGET" });
+      const match = parseClaudeNativeToolName(value.outer_tool_name);
+      if (!match) throw Object.assign(new Error(), { code: "INVALID_NATIVE_HOOK_TARGET" });
       const original = JSON.parse(value.original_arguments);
       if (!original || typeof original !== "object" || Array.isArray(original)) throw Object.assign(new Error(), { code: "INVALID_NATIVE_HOOK_ARGUMENTS" });
-      const routed = routerName(match[1]);
-      const name = semanticToolName(routed ? original.name : match[1]);
+      const routed = routerName(match.name);
+      const name = semanticToolName(routed ? original.name : match.name);
       if (helperName(name)) throw Object.assign(new Error(), { code: "NATIVE_HOOK_RECURSION" });
-      // Router Project-only no-op: no registry, Session/P5 read or graph work.
-      if (!sessionCallRequiresBinding(name)) {
+      const dependent = sessionCallRequiresBinding(name);
+      let guardOnlyCorrelation = false;
+      if (!dependent && value.native_agent_id && subagentWriteGuardEnabled(environment,
+        { caller: { runtime: "claude", subagent: true, correlation: "exact-native-tool-use" } })) {
+        // Catalog metadata only. A Project-only guarded write gets transient
+        // exact correlation without Session/P2/inventory lookup or persistence.
+        const { catalogTools } = await import("../mcp-server.mjs");
+        const selected = catalogTools.find(tool => semanticToolName(tool.name) === name);
+        guardOnlyCorrelation = Boolean(selected && selected.annotations?.readOnlyHint !== true);
+      }
+      // Independent reads/off-mode preserve the existing no-binding path.
+      if (!dependent && !guardOnlyCorrelation) {
         // Remember only that this tool use came from a child. No registry,
         // Session, or P5 read, matching the independent-router no-op.
         if (value.native_agent_id) noteSubagentToolUse(value.tool_use_id);
         return reply(request);
       }
-      requestRegistry.prepare({ key: value.tool_use_id, name: match[1], arguments: original,
-        caller: { runtime: "claude", nativeSessionId: value.native_session_id, agentId: value.native_agent_id || null } });
+      requestRegistry.prepare({ key: value.tool_use_id, name: match.name, arguments: original,
+        caller: { runtime: "claude", nativeSessionId: value.native_session_id, agentId: value.native_agent_id || null,
+          outerToolName: value.outer_tool_name,
+          nativeProjectRoot: typeof value.native_project_root === "string" && path.isAbsolute(value.native_project_root)
+            && !value.native_project_root.includes("${") ? value.native_project_root : null } });
       return reply(request);
     } catch (error) { return reply(request, error); }
   }
@@ -111,7 +127,8 @@ export function createNativeSessionHostBridge({ environment = process.env, runti
       const routed = routerName(request.params?.name);
       const args = routed ? outer?.arguments : outer;
       const name = semanticToolName(routed ? outer?.name : request.params?.name);
-      const route = extra => ({ caller: visibleCaller(caller), hostEnvironment: environment, ...extra });
+      const route = extra => ({ caller: visibleCaller(caller), hostEnvironment: environment,
+        pluginLaunch, servingModuleUrl, installationCaller: caller, ...extra });
       if (helperName(name)) return reply(request, Object.assign(new Error(), { code: "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED" }));
       if (typeof args?.project_root !== "string" || !args.project_root) return handler(request, route());
       if (name === "head_session_list") return handler(request, route());

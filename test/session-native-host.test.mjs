@@ -6,10 +6,12 @@ import test from "node:test";
 import { syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { createHeadSession, createSessionCallContext } from "../scripts/lib/session-routing.mjs";
+import { createHeadSession, createSessionCallContext, sessionSelectionUnresolved } from "../scripts/lib/session-routing.mjs";
+import { startupProjection, MAX_CONTEXT_CHARACTERS } from "../scripts/lib/session-host-context-projection.mjs";
 import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
 import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
-import { createSessionHostRequestRegistry, SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session-host-request.mjs";
+import { createSessionHostRequestRegistry, SESSION_HOST_REQUEST_HELPER, claudeNativeHookMatchers } from "../scripts/lib/session-host-request.mjs";
+import { resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
 import { sessionCallRequiresBinding } from "../scripts/lib/session-routing.mjs";
 import { dispatch, catalogTools } from "../scripts/mcp-server.mjs";
 import { sessionStartContext } from "../scripts/session-host-hook.mjs";
@@ -29,7 +31,9 @@ function fixture(t, initialize = true) {
     assert.equal(fs.existsSync(path.resolve(root, ".head/project.json")), false);
   }
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: operational };
+  // These cases isolate routing/selection. Default child policy is covered by
+  // subagent-write-guard tests; explicit off preserves the routing scenario.
+  const environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: operational, LODE_SUBAGENT_WRITE_GUARD: "off" };
   const bridge = () => createNativeSessionHostBridge({ runtime: "codex", environment });
   const host = (nativeSessionId) => createSessionHostAdapter({ runtime: "codex", nativeSessionId, environment });
   return { root, storage, operational, environment, bridge, host };
@@ -53,7 +57,7 @@ const claudeRequest = (root,name,args={},id="tool-local",routed=false) => {
 const hookRequest = (wire,nativeSessionId="native-claude-root",agentId="") => ({
   id:"native-hook",method:"tools/call",params:{name:SESSION_HOST_REQUEST_HELPER,arguments:{
     native_session_id:nativeSessionId,native_agent_id:agentId,tool_use_id:wire.params._meta["claudecode/toolUseId"],
-    outer_tool_name:"mcp__lode_core__"+wire.params.name,original_arguments:JSON.stringify(wire.params.arguments),
+    outer_tool_name:"mcp__lode__"+wire.params.name,original_arguments:JSON.stringify(wire.params.arguments),
   }},
 });
 async function claudeCall(bridge,wire,nativeSessionId="native-claude-root",agentId="") {
@@ -496,12 +500,15 @@ test("registry exact/active/divergent/expiry/capacity/dispose is bounded P5, nev
   assert.throws(()=>registry.prepare(input),{code:"HOST_REQUEST_REGISTRY_DISPOSED"});
 });
 
-test("Claude matcher uses the same Session contract, matches own local/plugin servers, excludes helper and others", () => {
+test("Claude matcher derives Session and effectful coverage from the catalog, excluding helper and other servers", () => {
   const hooks=JSON.parse(fs.readFileSync(path.join(pluginRoot,"hooks/claude.json"),"utf8"));
+  assert.deepEqual(hooks.hooks.PreToolUse.map(group=>group.matcher),claudeNativeHookMatchers(catalogTools));
   for(const tool of catalogTools){
-    const expected=sessionCallRequiresBinding(tool.name)||["lode_tools_call","lode_tools_read"].includes(tool.name);
-    assert.equal(new RegExp(hooks.hooks.PreToolUse[0].matcher).test("mcp__lode__"+tool.name),expected,tool.name);
-    assert.equal(new RegExp(hooks.hooks.PreToolUse[1].matcher).test("mcp__plugin_lode-agent-core_lode__"+tool.name),expected,tool.name);
+    const expected=sessionCallRequiresBinding(tool.name)||["lode_tools_call","lode_tools_read"].includes(tool.name)||tool.annotations?.readOnlyHint!==true;
+    for(const spelling of [tool.name,resolveOperation(tool.name).legacyName]){
+      assert.equal(new RegExp(hooks.hooks.PreToolUse[0].matcher).test("mcp__lode__"+spelling),expected,spelling);
+      assert.equal(new RegExp(hooks.hooks.PreToolUse[1].matcher).test("mcp__plugin_lode-agent-core_lode__"+spelling),expected,spelling);
+    }
     for(const prefix of ["mcp__head_core__","mcp__lode_core__","mcp__plugin_lode-agent-core_lode_core__","mcp__plugin_head-agent-core_head_core__"]){
       assert.equal(hooks.hooks.PreToolUse.some(h=>new RegExp(h.matcher).test(prefix+tool.name)),false);
     }
@@ -580,7 +587,7 @@ test("canonical routers deny both private-helper aliases before native correlati
         const wire = { jsonrpc: "2.0", id: `${router}--${helper}`, method: "tools/call", params: {
           name: router, arguments: { name: helper, arguments: {
             native_session_id: "synthetic-native-private-router", native_agent_id: "", tool_use_id: "synthetic-private-router-tool",
-            outer_tool_name: "mcp__lode_core__lode_conversation_enter", original_arguments: JSON.stringify({ project_root: root }),
+            outer_tool_name: "mcp__lode__lode_conversation_enter", original_arguments: JSON.stringify({ project_root: root }),
           } },
         } };
         Object.defineProperty(wire.params, "_meta", { enumerable: true, get() {
@@ -603,4 +610,73 @@ test("canonical routers deny both private-helper aliases before native correlati
   }
   assert.deepEqual(fsAttempts, []); assert.deepEqual(rawSnapshot(), before);
   assert.equal(fs.existsSync(operational), false);
+});
+
+// P3 supplies an executable existing read, never an eager list or a new selector.
+test("P3 unresolved entry has owner-verified lazy discovery; startup enumerates no Sessions even with a large inventory", async t => {
+  const { root, operational, environment } = fixture(t);
+  const a = createHeadSession({ root, purpose: "Related title does not prove the same task" }).sessionId;
+  const b = createHeadSession({ root, purpose: "Related title does not prove the same task" }).sessionId;
+  const directory = path.join(root, ".lode/sessions/by-id");
+  for (let i = 0; i < 1024; i++) fs.mkdirSync(path.join(directory, "uninspected-" + i));
+  const before = snapshot(root).concat(snapshot(operational));
+  const native = createNativeSessionHostBridge({ runtime: "claude", environment });
+  t.after(() => native.dispose());
+  const original = fs.readdirSync; let enumeration = 0;
+  fs.readdirSync = (directory, ...args) => {
+    const rel = path.relative(root, String(directory)).replaceAll("\\", "/");
+    if (rel === ".lode/sessions" || rel.startsWith(".lode/sessions/")) enumeration++;
+    return original(directory, ...args);
+  };
+  let value;
+  try {
+    value = (await claudeCall(native, claudeRequest(root, "head_conversation_enter", {}, "p3-unselected"), "new-unbound-chat")).result.structuredContent;
+    assert.equal(value.status, "session_selection_unresolved");
+    assert.equal(value.sessionId, null); assert.equal(value.ordinaryWorkBlocked, false);
+    assert.equal(value.sessionDiscovery.status, "not_queried");
+    assert.deepEqual(value.sessionDiscovery.call, { name: "lode_session_list", arguments: { project_root: root } });
+    assert.equal(value.sessionDiscovery.automatic, false); assert.equal(value.sessionDiscovery.selectsSession, false);
+    assert.equal(value.candidates, undefined, "No unseen candidates or reasons are invented.");
+    for (const runtime of ["claude", "codex", "opencode"]) {
+      const text = startupProjection(value, root, runtime), view = JSON.parse(text);
+      assert(text.length <= MAX_CONTEXT_CHARACTERS[runtime]);
+      assert.deepEqual(view.sessionDiscovery, value.sessionDiscovery);
+      assert.equal(view.logicalSessionId, null); assert.equal(view.route, null);
+      assert.match(view.coreGuidance, /Continue the current user task/u);
+      assert.equal(view.expansion, "", "No duplicate discovery prose in the protected envelope.");
+    }
+    const hook = sessionStartContext({ runtime: "claude", environment,
+      event: { hook_event_name: "SessionStart", source: "clear", cwd: root, session_id: "new-no-clear-witness" } });
+    assert.equal(JSON.parse(hook.hookSpecificOutput.additionalContext).sessionDiscovery.status, "not_queried");
+    assert.equal(enumeration, 0, "Returning a 16-row list would still enumerate all names; do not call it here.");
+  } finally { fs.readdirSync = original; }
+  assert.deepEqual(snapshot(root).concat(snapshot(operational)), before);
+  // Follow only on demand, through the exact returned public call. It remains
+  // a read-only preview and does not resolve, select or persist a binding.
+  const call = value.sessionDiscovery.call;
+  const listed = await claudeCall(native, claudeRequest(root, call.name, { ...call.arguments, max_sessions: 3 }, "p3-demand-list"), "new-unbound-chat");
+  assert.equal(listed.error, undefined); assert.equal(listed.result.isError, undefined);
+  assert.equal(listed.result.structuredContent.projectId, value.projectId);
+  const again = await claudeCall(native, claudeRequest(root, "head_conversation_enter", {}, "p3-still-unselected"), "new-unbound-chat");
+  assert.equal(again.result.structuredContent.sessionId, null);
+  assert.deepEqual(snapshot(root).concat(snapshot(operational)), before);
+  const explicit = await claudeCall(native, claudeRequest(root, "head_conversation_enter", { session_id: a }, "p3-explicit-read"), "new-unbound-chat");
+  assert.equal(explicit.result.structuredContent.workContext.sessionId, a);
+  assert.notEqual(a, b);
+});
+
+test("P3 no named candidates is not approved emptiness; damaged/foreign Project owner supplies no same-Project hint", t => {
+  const { root } = fixture(t);
+  const value = sessionSelectionUnresolved(root, { includeProjectFacts: true });
+  assert.equal(value.sessionDiscovery.status, "not_queried");
+  assert.equal(value.sessionId, null); assert.equal(value.candidates, undefined);
+  assert.equal(value.recoveryAuthority, false); assert.equal(value.executionReplayAllowed, false);
+  const ownerFile = path.join(root, ".lode/project.json"), bytes = fs.readFileSync(ownerFile), owner = JSON.parse(bytes);
+  try {
+    for (const invalid of ["{bad owner", JSON.stringify({ ...owner, projectRoot: path.dirname(root) })]) {
+      fs.writeFileSync(ownerFile, invalid);
+      assert.throws(() => sessionSelectionUnresolved(root), error =>
+        ["NOT_INITIALIZED", "INVALID_SESSION_CANON", "PROJECT_IDENTITY_MISMATCH"].includes(error.code));
+    }
+  } finally { fs.writeFileSync(ownerFile, bytes); }
 });

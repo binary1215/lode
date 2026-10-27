@@ -227,13 +227,16 @@ export default {
         try {
           // Apply the shared policy to this actual Host call. No argument-keyed
           // ticket can leak a child's identity into a parent or sibling call.
-          if (disposed || !subagentWriteGuardEnabled(environment)) return;
+          const prospectiveCaller = { runtime: "opencode", subagent: true, correlation: "awaited-native-before-hook" };
+          if (disposed || !subagentWriteGuardEnabled(environment, { caller: prospectiveCaller })) return;
           const aliased = aliases.get(input?.tool);
           const prefixed = serverPrefixes.find(prefix => typeof input?.tool === "string" && input.tool.startsWith(prefix));
           const tool = aliased || (prefixed ? input.tool.slice(prefixed.length) : null);
           if (!tool || !nativeId(input?.sessionID)) return;
-          const session = await exactSession(input.sessionID);
-          if (typeof session?.parentID !== "string" || !session.parentID) return;
+          // Unset default requires this actual awaited call ID. Explicit
+          // enforce keeps its prior supported before-hook behavior.
+          const explicitEnforce = environment?.LODE_SUBAGENT_WRITE_GUARD === "enforce";
+          if (!explicitEnforce && !nativeId(input?.callID)) return;
           const raw = object(output?.args) ? output.args : null;
           if (!raw) return;
           const resolved = resolveOperation(tool);
@@ -244,8 +247,10 @@ export default {
           if (!semantic || !object(args)) return;
           const { catalogTools } = await import("./mcp-server.mjs");
           const selected = catalogTools.find(item => resolveOperation(item.name)?.semanticName === semantic);
-          if (!selected) return;
-          decision = assessSubagentStateWrite({ caller: { subagent: true }, readOnly: selected.annotations?.readOnlyHint === true });
+          if (!selected || selected.annotations?.readOnlyHint === true) return;
+          const session = await exactSession(input.sessionID);
+          if (typeof session?.parentID !== "string" || !session.parentID || !explicitEnforce && !nativeId(session.parentID)) return;
+          decision = assessSubagentStateWrite({ caller: prospectiveCaller, readOnly: selected.annotations?.readOnlyHint === true });
         } catch { /* Unavailable optional Host evidence does not gate independent work. */ }
         // The real Host awaits this hook before execute. Never swallow the
         // intentional policy rejection together with optional lookup failures.

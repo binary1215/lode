@@ -32,8 +32,17 @@ function project(root) {
 // The embedding Host must obtain the actual per-request caller. Stock Codex
 // Pre/PostToolUse parent session_id alone cannot do that for child agents.
 export function createSessionHostAdapter({ runtime, nativeSessionId, agentId = null, environment = process.env,
-  platform = process.platform, homeDirectory } = {}) {
+  platform = process.platform, homeDirectory, deadlineAt = null } = {}) {
   if (!["codex", "claude", "opencode"].includes(runtime) || !required(nativeSessionId) || agentId !== null && !required(agentId)) fail("A verified runtime/caller identity is required.");
+  if (deadlineAt !== null && !Number.isSafeInteger(deadlineAt)) fail("Invalid optional Host deadline.");
+  const checkDeadline = () => { if (deadlineAt !== null && Date.now() >= deadlineAt) fail("Optional Host linkage deadline elapsed.", "HOST_BINDING_DEADLINE"); };
+  const bindingMutation = (owner, operation) => {
+    checkDeadline();
+    return withProjectMutation({ root: owner.root, scope: "host-session-binding",
+      ...(deadlineAt !== null ? { timeoutMs: Math.max(0, deadlineAt - Date.now()) } : {}) }, () => {
+      checkDeadline(); return operation();
+    });
+  };
   const callerDigest = sha(encode([runtime, nativeSessionId, agentId]));
   const locallyUnconfirmed = new Set();
   const selectionTickets = new WeakMap();
@@ -80,9 +89,11 @@ export function createSessionHostAdapter({ runtime, nativeSessionId, agentId = n
     return record;
   }
   const write = (owner, payload) => {
+    checkDeadline();
     const record = { ...payload, bindingDigest: sha(encode(payload)) };
     const file = location(owner, true);
     location(owner); // recheck newly created namespace before atomic publication
+    checkDeadline();
     atomicWriteArtifact(file, encode(record) + "\n");
     return record;
   };
@@ -103,7 +114,7 @@ export function createSessionHostAdapter({ runtime, nativeSessionId, agentId = n
     const state = { owner, selected, context, before: null, pending: null, previousTicket: null, outcome: null, preparationError: null };
     const ticket = Object.freeze({}); selectionTickets.set(ticket, state);
     try {
-      withProjectMutation({ root: owner.root, scope: "host-session-binding" }, () => {
+      bindingMutation(owner, () => {
         if (project(owner.root).projectId !== owner.projectId) fail("Project changed before Host selection.", "PROJECT_IDENTITY_MISMATCH");
         const before = readOwner(owner); state.before = before;
         if (before.status === "absent") {
@@ -139,7 +150,7 @@ export function createSessionHostAdapter({ runtime, nativeSessionId, agentId = n
     state.outcome = outcome;
     const { owner, selected } = state;
     try {
-      state.result = withProjectMutation({ root: owner.root, scope: "host-session-binding" }, () => {
+      state.result = bindingMutation(owner, () => {
         if (project(owner.root).projectId !== owner.projectId) fail("Project changed before Host settlement.", "PROJECT_IDENTITY_MISMATCH");
         const current = readOwner(owner);
         if (state.preparationError) {
@@ -219,7 +230,7 @@ export function createSessionHostAdapter({ runtime, nativeSessionId, agentId = n
     // handles, names and timestamps never select a logical Session.
     const selected = lost ? null : createSessionCallContext().select(owner.root, sessionId);
     try {
-      const binding = withProjectMutation({ root: owner.root, scope: "host-session-binding" }, () => {
+      const binding = bindingMutation(owner, () => {
         if (project(owner.root).projectId !== owner.projectId) fail("Project changed before Host selection.", "PROJECT_IDENTITY_MISMATCH");
         const before = readOwner(owner);
         const targetStatus = lost ? "lost" : selected.status;
@@ -266,7 +277,7 @@ export function createSessionHostAdapter({ runtime, nativeSessionId, agentId = n
     describe: () => ({ adapterKey: "head.session-host", version: SESSION_HOST_ADAPTER_VERSION, authorityPlane: "P5",
       nativeIdentitySource: "trusted-embedding-host-per-request-caller", providerIdentityInCanon: false,
       recoveryAuthority: false, instructionAuthority: false, stockMcpNativeIdentityAssumed: false }),
-    read({ root = "." } = {}) { return readOwner(project(root)); },
+    read({ root = "." } = {}) { checkDeadline(); return readOwner(project(root)); },
     prepareSelection,
     settleSelection,
     select: (options) => selection(options),

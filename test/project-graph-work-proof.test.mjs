@@ -5,16 +5,474 @@ import path from "node:path";
 import { syncBuiltinESMExports } from "node:module";
 import test from "node:test";
 import { createHeadSession, withSessionRoute, sessionStatePath } from "../scripts/lib/session-routing.mjs";
-import { recordSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext, normalizeSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
+import { dispatch } from "../scripts/mcp-server.mjs";
+import { localContinuityCommand } from "./helpers/session-continuity-process.mjs";
 import { queryProjectGraph, indexProjectGraph } from "../scripts/lib/project-graph.mjs";
 import { collectProjectGraphInventory } from "../scripts/lib/discovery-index.mjs";
-import { createSessionWorkReadContext } from "../scripts/lib/session-work-evidence-original.mjs";
+import { createSessionWorkReadContext, MAX_RECORD_BYTES } from "../scripts/lib/session-work-evidence-original.mjs";
 import { createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
+import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
 import { fixture, exact, link, citation, snapshot, sha, encoded } from "./helpers/session-work-linkage-fixture.mjs";
+import { formatMcpToolContent } from "../scripts/lib/cli-presentation.mjs";
 
 // Public local writers/readers and synthetic faults only. No subprocess,
 // installed Host, provider, model or actual execution evidence.
 const relative = (f, file) => path.relative(f.root, file).replaceAll("\\", "/");
+
+const inventoryArgs = args => ({ root: args.project_root, query: args.query, view: args.view,
+  anchorIds: args.anchor_ids, paths: args.paths, depth: args.depth, maxNodes: args.max_nodes, maxEdges: args.max_edges,
+  details: args.details, includeCandidates: args.include_candidates, worldModelId: args.world_model_id,
+  inventoryPage: args.inventory_page, inventoryPaths: args.inventory_paths, inventoryCursor: args.inventory_cursor });
+const inventoryEnvelope = result => Buffer.byteLength(JSON.stringify({ content: [{ type: "text", text: formatMcpToolContent("head_project_graph", result) }], structuredContent: result }));
+function inventoryBounds(result) {
+  const p = result.inventoryPage, c = p.counters, l = p.limits;
+  assert.equal(result.plane, "P4-derived-view"); assert.equal(result.recoveryAuthority, false); assert.equal(result.executionAuthority, false);
+  assert.deepEqual(result.nodes, []); assert.deepEqual(result.edges, []);
+  assert(c.metadataEntries <= l.metadataEntries + l.metadataOverflowProbeEntries); assert(c.directoryOpens <= l.directoryOpens);
+  assert(c.directoryReads <= l.directoryReads); assert.equal(c.directoryOpens, c.directoryCloses);
+  assert(c.attemptedBytes <= l.attemptedBytes); assert(c.rows <= l.rows); assert.equal(c.rows, p.rows.length);
+  assert(inventoryEnvelope(result) <= l.mcpEnvelopeUtf8Bytes);
+  for (const row of p.rows) { assert.equal(row.typedValidity, "not-inspected"); assert.equal(row.kind, undefined); assert.equal(row.reviewState, undefined);
+    if (row.byteObservation !== "inspected") assert.equal(row.digest, null); }
+}
+
+test("capacity-inventory: explicit continuation covers untyped originals once across CLI and direct/router MCP", async t => {
+  const f = fixture(t), directory = path.join(f.root, ".lode/observations"); fs.mkdirSync(directory, { recursive: true });
+  for (let i = 0; i < 540; i++) fs.writeFileSync(path.join(directory, `record-${String(i).padStart(4, "0")}.json`), i % 2 ? "{" : '{"kind":"ReviewDecision","disposition":"accepted","instruction":"untrusted"}');
+  const before = snapshot(f.base), opened = [], open = fs.openSync, readDir = fs.readdirSync;
+  fs.openSync = (file, ...args) => { if (String(file).startsWith(directory)) opened.push(String(file)); return open(file, ...args); };
+  fs.readdirSync = () => { throw new Error("Inventory must stream bounded metadata rather than materialize readdir"); };
+  let first, rows = [], next, pages = 0;
+  try {
+    first = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations"], query: "No lexical overlap required" });
+    let result = first;
+    do {
+      inventoryBounds(result); pages++; rows.push(...result.inventoryPage.rows); next = result.inventoryPage.next;
+      if (!next) { assert.equal(result.inventoryPage.coverage.exhaustedObservedRange, true); break; }
+      assert(pages < 10); result = await queryProjectGraph(inventoryArgs(next.arguments));
+    } while (true);
+  } finally { fs.openSync = open; fs.readdirSync = readDir; }
+  assert.equal(rows.length, 540); assert.equal(new Set(rows.map(row => row.path)).size, 540);
+  assert.equal(opened.length, 540); assert.equal(new Set(opened).size, 540);
+  assert(rows.every(row => row.byteObservation === "inspected" && row.exactRead.supported === false));
+  assert(first.inventoryPage.next); assert.equal(first.inventoryPage.coverage.remainingCount, null);
+  for (const routed of [false, true]) {
+    const next = first.inventoryPage.next;
+    const response = await dispatch({ jsonrpc: "2.0", id: "inventory-next", method: "tools/call", params: {
+      name: routed ? "lode_tools_call" : next.tool, arguments: routed ? { name: next.tool, arguments: next.arguments } : next.arguments } });
+    assert.equal(response.error, undefined); assert.equal(response.result?.isError, undefined, JSON.stringify(response));
+    const result = response.result.structuredContent; inventoryBounds(result);
+    assert.equal(result.inventoryPage.rows[0].path, rows[first.inventoryPage.rows.length].path);
+    assert(Buffer.byteLength(JSON.stringify(response.result)) <= first.inventoryPage.limits.mcpEnvelopeUtf8Bytes);
+  }
+  const nextArgs = first.inventoryPage.next.arguments;
+  const cli = await localContinuityCommand([path.join(path.resolve(import.meta.dirname, ".."), "scripts/lode.mjs"), "graph-query", f.root,
+    "--inventory-page", "--inventory-paths", nextArgs.inventory_paths.join(","), "--inventory-cursor", nextArgs.inventory_cursor,
+    "--query", nextArgs.query, "--json"], { cwd: path.resolve(import.meta.dirname, "..") });
+  assert.equal(cli.code, 0, cli.stderr); const cliResult = JSON.parse(cli.stdout); inventoryBounds(cliResult);
+  assert.equal(cliResult.inventoryPage.rows[0].path, rows[first.inventoryPage.rows.length].path);
+  assert.deepEqual(snapshot(f.base), before);
+  t.diagnostic(JSON.stringify({ pages, originals: rows.length, uniqueBodyOpens: new Set(opened).size, firstEnvelopeBytes: inventoryEnvelope(first), actualHost: false }));
+});
+
+test("capacity-inventory: actual 10001-entry flat directory stops metadata and offers observed exact scopes", async t => {
+  const f = fixture(t), directory = path.join(f.root, ".lode/observations"); fs.mkdirSync(directory, { recursive: true });
+  for (let i = 0; i < 10001; i++) fs.writeFileSync(path.join(directory, `${String(i).padStart(5, "0")}.json`), "{}");
+  const result = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations"] });
+  inventoryBounds(result); const p = result.inventoryPage;
+  assert.equal(p.coverage.status, "metadata-bound"); assert.equal(p.counters.metadataEntries, 10001); assert.equal(p.counters.attemptedBodies, 0);
+  assert.equal(p.next, null); assert.equal(p.coverage.exhaustedObservedRange, false); assert.equal(p.coverage.remainingCount, null);
+  assert(p.narrowing.length > 0);
+  const narrowed = await queryProjectGraph(inventoryArgs(p.narrowing[0].arguments)); inventoryBounds(narrowed);
+  assert.equal(narrowed.inventoryPage.rows.length, 1); assert.equal(narrowed.inventoryPage.rows[0].byteObservation, "inspected");
+});
+
+test("capacity-inventory: byte frontier, oversize and short-read failures advance without partial digests", async t => {
+  const f = fixture(t), directory = path.join(f.root, ".lode/observations"); fs.mkdirSync(directory, { recursive: true });
+  const full = Buffer.alloc(16 * 1024 * 1024, 32);
+  for (let i = 0; i < 9; i++) fs.writeFileSync(path.join(directory, `large-${i}.json`), full);
+  const first = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations"] }); inventoryBounds(first);
+  assert.equal(first.inventoryPage.counters.attemptedBytes, 128 * 1024 * 1024); assert.equal(first.inventoryPage.rows.length, 8); assert(first.inventoryPage.next);
+  const second = await queryProjectGraph(inventoryArgs(first.inventoryPage.next.arguments)); inventoryBounds(second);
+  assert.equal(second.inventoryPage.rows.length, 1); assert.equal(second.inventoryPage.rows[0].path.endsWith("large-8.json"), true);
+  const tooLarge = path.join(directory, "oversize.json"); fs.writeFileSync(tooLarge, Buffer.alloc(16 * 1024 * 1024 + 1));
+  const oversize = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [relative(f, tooLarge)] }); inventoryBounds(oversize);
+  assert.equal(oversize.inventoryPage.rows[0].reasonCode, "PROJECT_GRAPH_INVENTORY_FILE_BOUND"); assert.equal(oversize.inventoryPage.counters.attemptedBodies, 0);
+  const read = fs.readSync, open = fs.openSync, close = fs.closeSync, faultFds = new Set(); let reads = 0;
+  fs.openSync = (file, ...args) => { const fd = open(file, ...args); if (String(file).startsWith(directory)) faultFds.add(fd); return fd; };
+  fs.closeSync = fd => { faultFds.delete(fd); return close(fd); };
+  fs.readSync = (fd, buffer, offset, length, position) => { if (!faultFds.has(fd)) return read(fd, buffer, offset, length, position);
+    if (reads++ === 0) return read(fd, buffer, offset, Math.min(length, 12), position); throw Object.assign(new Error("synthetic read failure"), { code: "EIO" }); };
+  let partial;
+  try { partial = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations/large-0.json"] }); }
+  finally { fs.readSync = read; fs.openSync = open; fs.closeSync = close; }
+  inventoryBounds(partial); assert.equal(partial.inventoryPage.rows[0].digest, null); assert.equal(partial.inventoryPage.rows[0].inspectedBytes, 12);
+  assert.equal(partial.inventoryPage.coverage.exhaustedObservedRange, true);
+});
+
+test("capacity-inventory: cursor owner/query/scope/path validation and changed frontier remain local", async t => {
+  const f = fixture(t), g = fixture(t), directory = path.join(f.root, ".lode/observations"); fs.mkdirSync(directory, { recursive: true });
+  for (let i = 0; i < 520; i++) fs.writeFileSync(path.join(directory, `${String(i).padStart(4, "0")}.json`), "{}");
+  const first = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations"] }); const args = inventoryArgs(first.inventoryPage.next.arguments);
+  for (const change of [{ root: g.root }, { query: "different" }, { inventoryPaths: [".lode/lineage"] }, { worldModelId: "different" }, { inventoryCursor: "x".repeat(4097) }])
+    await assert.rejects(queryProjectGraph({ ...args, ...change }), /INVALID_PROJECT_GRAPH_INVENTORY_CURSOR/);
+  const bad = JSON.parse(Buffer.from(args.inventoryCursor, "base64url")); bad.frontier.path = ".lode/observations/../../project.json";
+  await assert.rejects(queryProjectGraph({ ...args, inventoryCursor: Buffer.from(JSON.stringify(bad)).toString("base64url") }), /INVALID_PROJECT_GRAPH_INVENTORY_CURSOR/);
+  for (const invalid of ["../escape", ".head/observations", ".lode/host-private", ".lode/observations/../project.json", ".lode/observations:C"]) {
+    await assert.rejects(queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [invalid] }), /INVALID_PROJECT_GRAPH_INVENTORY_SCOPE/);
+  }
+  const removed = path.join(f.root, ...first.inventoryPage.coverage.examinedThrough.path.split("/")); fs.unlinkSync(removed);
+  const before = snapshot(f.base), changed = await queryProjectGraph(args); inventoryBounds(changed);
+  assert.equal(changed.inventoryPage.coverage.status, "changed-scope"); assert.equal(changed.inventoryPage.next, null);
+  assert.equal(changed.inventoryPage.counters.attemptedBodies, 0); assert.deepEqual(snapshot(f.base), before);
+});
+
+test("capacity-inventory: nested ordering, empty/non-JSON metadata and unsupported entries never become nodes", async t => {
+  const f = fixture(t), directory = path.join(f.root, ".lode/observations"); fs.mkdirSync(path.join(directory, "a"), { recursive: true });
+  fs.writeFileSync(path.join(directory, "a.json"), "{"); fs.writeFileSync(path.join(directory, "a", "a.json"), "{}");
+  fs.writeFileSync(path.join(directory, "b.json"), "{}");
+  for (let i = 0; i < 40; i++) { fs.mkdirSync(path.join(directory, `empty-${i}`)); fs.writeFileSync(path.join(directory, `note-${i}.txt`), "not a record"); }
+  let result = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations/a/a.json", ".lode/observations"] });
+  const rows = [];
+  for (let i = 0; i < 10; i++) {
+    inventoryBounds(result); rows.push(...result.inventoryPage.rows);
+    if (!result.inventoryPage.next) { assert.equal(result.inventoryPage.coverage.exhaustedObservedRange, true); break; }
+    result = await queryProjectGraph(inventoryArgs(result.inventoryPage.next.arguments));
+  }
+  assert.deepEqual(rows.map(row => row.path).sort(), [".lode/observations/a.json", ".lode/observations/a/a.json", ".lode/observations/b.json"].sort());
+  const empty = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations/empty-0"] }); inventoryBounds(empty);
+  assert.equal(empty.inventoryPage.counters.directoryReads, 1); assert.equal(empty.inventoryPage.rows.length, 0);
+  const saved = f.save({ summary: "Synthetic exact read" });
+  const typedPage = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [relative(f, saved.file)] });
+  const nextRead = typedPage.inventoryPage.rows[0].exactRead; assert.equal(nextRead.supported, true);
+  const actual = await dispatch({ jsonrpc: "2.0", id: "inventory-exact", method: "tools/call", params: { name: nextRead.tool, arguments: nextRead.arguments } });
+  assert.equal(actual.result?.isError, undefined, JSON.stringify(actual)); assert(actual.result.structuredContent.nodes.some(row => row.nodeId === saved.evidence.evidenceId));
+});
+
+test("capacity-inventory: all failed bodies still terminate with bounded full-envelope diagnostics", async t => {
+  const f = fixture(t), directory = path.join(f.root, ".lode/observations"); fs.mkdirSync(directory, { recursive: true });
+  for (let i = 0; i < 530; i++) fs.writeFileSync(path.join(directory, `한글-😀-${String(i).padStart(4, "0")}.json`), "{}");
+  const read = fs.readSync, open = fs.openSync, close = fs.closeSync, faultFds = new Set();
+  fs.openSync = (file, ...args) => { const fd = open(file, ...args); if (String(file).startsWith(directory)) faultFds.add(fd); return fd; };
+  fs.closeSync = fd => { faultFds.delete(fd); return close(fd); };
+  fs.readSync = (fd, ...args) => { if (!faultFds.has(fd)) return read(fd, ...args); throw Object.assign(new Error("synthetic error must not escape"), { code: "EIO" }); };
+  const paths = []; let result;
+  try {
+    result = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations"] });
+    for (let i = 0; i < 10; i++) {
+      inventoryBounds(result); assert.equal(result.inventoryPage.counters.failures, result.inventoryPage.rows.length);
+      paths.push(...result.inventoryPage.rows.map(row => row.path));
+      if (!result.inventoryPage.next) { assert.equal(result.inventoryPage.coverage.exhaustedObservedRange, true); break; }
+      result = await queryProjectGraph(inventoryArgs(result.inventoryPage.next.arguments));
+    }
+  } finally { fs.readSync = read; fs.openSync = open; fs.closeSync = close; }
+  assert.equal(paths.length, 530); assert.equal(new Set(paths).size, 530);
+});
+
+test("capacity-inventory: streamed metadata failures, depth and junctions are local without leaking foreign bytes", async t => {
+  const f = fixture(t), directory = path.join(f.root, ".lode/observations"); fs.mkdirSync(directory, { recursive: true });
+  const foreign = path.join(f.base, "foreign"); fs.mkdirSync(foreign); fs.writeFileSync(path.join(foreign, "secret.json"), "foreign bytes never read");
+  fs.symlinkSync(foreign, path.join(directory, "junction"), process.platform === "win32" ? "junction" : "dir");
+  const open = fs.openSync; let foreignReads = 0;
+  fs.openSync = (file, ...args) => { if (String(file).includes("secret.json")) foreignReads++; return open(file, ...args); };
+  let result;
+  try { result = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations"] }); }
+  finally { fs.openSync = open; }
+  inventoryBounds(result); assert.equal(foreignReads, 0); assert.equal(result.inventoryPage.rows[0].reasonCode, "PROJECT_GRAPH_SYMLINK_PATH");
+  const denied = fs.opendirSync;
+  fs.opendirSync = (...args) => { if (String(args[0]) === directory) throw Object.assign(new Error("private path must not become error text"), { code: "EACCES" }); return denied(...args); };
+  let failure;
+  try { failure = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations"] }); }
+  finally { fs.opendirSync = denied; }
+  inventoryBounds(failure); assert.equal(failure.inventoryPage.rows[0].reasonCode, "EACCES"); assert.equal(failure.inventoryPage.counters.directoryOpenAttempts, 1);
+  assert.equal(failure.inventoryPage.coverage.uninspectedSubtreeCount, 1); assert.equal(failure.inventoryPage.rows[0].subtreeMembership, "not-inspected");
+  assert(!JSON.stringify(failure).includes("private path must not"));
+  if (process.platform === "win32") fs.rmdirSync(path.join(directory, "junction")); else fs.unlinkSync(path.join(directory, "junction"));
+  const unwitnessed = path.join(directory, "unwitnessed.json"); fs.writeFileSync(unwitnessed, "{}");
+  const lstat = fs.lstatSync;
+  fs.lstatSync = (file, ...args) => { if (String(file) === unwitnessed) throw Object.assign(new Error("synthetic metadata denied"), { code: "EACCES" }); return lstat(file, ...args); };
+  let unknown;
+  try { unknown = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations"] }); }
+  finally { fs.lstatSync = lstat; }
+  inventoryBounds(unknown); assert.equal(unknown.inventoryPage.coverage.status, "changed-scope"); assert.equal(unknown.inventoryPage.next, null);
+  assert.equal(unknown.inventoryPage.rows[0].reasonCode, "EACCES"); fs.unlinkSync(unwitnessed);
+  const deep = Array.from({ length: 11 }, (_, i) => `nested-${i}`).join("/"); fs.mkdirSync(path.join(directory, deep), { recursive: true });
+  fs.writeFileSync(path.join(directory, deep, "end.json"), "{}");
+  const depth = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations"] }); inventoryBounds(depth);
+  assert.equal(depth.inventoryPage.coverage.status, "metadata-bound"); assert.equal(depth.inventoryPage.next, null); assert(depth.inventoryPage.narrowing[0]);
+  const narrower = await queryProjectGraph(inventoryArgs(depth.inventoryPage.narrowing[0].arguments)); inventoryBounds(narrower);
+  assert.equal(narrower.inventoryPage.rows.length, 1); assert.equal(narrower.inventoryPage.rows[0].byteObservation, "inspected");
+});
+
+test("capacity-inventory: canonical lineage and retained direction return callable existing typed readers", async t => {
+  const f = fixture(t), plan = f.route(() => createWholePlanSnapshot({ root: f.root, objective: "Synthetic page expansion", plan: "Read only" }));
+  const direction = updateProjectDirection({ root: f.root, input: { goal: "Synthetic historical direction" } }).direction;
+  const scopes = [relative(f, plan.file), `.lode/project-direction/revisions/${direction.directionId}.json`];
+  const before = snapshot(f.base), result = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: scopes }); inventoryBounds(result);
+  assert.equal(result.inventoryPage.rows.length, 2);
+  for (const row of result.inventoryPage.rows) for (const routed of [false, true]) {
+    const hint = row.exactRead;
+    const response = await dispatch({ jsonrpc: "2.0", id: "inventory-typed", method: "tools/call", params: {
+      name: routed ? "lode_tools_call" : hint.tool, arguments: routed ? { name: hint.tool, arguments: hint.arguments } : hint.arguments } });
+    assert.equal(response.error, undefined, JSON.stringify(response)); assert.equal(response.result?.isError, undefined, JSON.stringify(response));
+    if (row.path.includes("lineage")) assert.equal(response.result.structuredContent.artifact.wholePlanId, plan.artifact.wholePlanId);
+    else assert.equal(response.result.structuredContent.nodes[0].nodeId, direction.directionId);
+  }
+  assert.deepEqual(snapshot(f.base), before);
+});
+
+test("capacity-inventory: human CLI and direct/router MCP escape controls while original next arguments roundtrip", async t => {
+  const f = fixture(t), directory = path.join(f.root, ".lode/observations"); fs.mkdirSync(path.join(directory, "z"), { recursive: true });
+  fs.writeFileSync(path.join(directory, "a.json"), "{}"); fs.writeFileSync(path.join(directory, "z", "x.json"), "{}");
+  const query = "Before \u009b\u009d\u009c\u2028\u202e after", args = { project_root: f.root, inventory_page: true, inventory_paths: [".lode/observations"], query };
+  const result = await queryProjectGraph(inventoryArgs(args)); inventoryBounds(result); assert(result.inventoryPage.next);
+  assert.equal(result.inventoryPage.next.arguments.query, query);
+  const unsafe = /[\u0080-\u009f\u2028-\u202e]/u;
+  const text = formatMcpToolContent("lode_project_graph", result); assert.equal(unsafe.test(text), false);
+  assert.deepEqual(JSON.parse(text.split("\n").find(line => line.startsWith("Next: ")).slice(6)), result.inventoryPage.next);
+  // Presentation-only counterexamples for all JSON/detail/diagnostic positions;
+  // these injected display fragments are not verified originals or tool calls.
+  const display = structuredClone(result), p = display.inventoryPage;
+  p.rows[0].path += "\u009b"; p.rows[0].reasonCode = "\u009d";
+  p.rows[0].exactRead = { supported: true, tool: "lode_project_graph", arguments: { query } };
+  p.narrowing = [p.next]; p.warnings = [{ path: query, reasonCode: query }];
+  const rendered = formatMcpToolContent("lode_project_graph", display); assert.equal(unsafe.test(rendered), false);
+  assert.deepEqual(JSON.parse(rendered.split("\n").find(line => line.startsWith("Read: ")).slice(6)), p.rows[0].exactRead);
+  assert.deepEqual(JSON.parse(rendered.split("\n").find(line => line.startsWith("Narrow scope: ")).slice(14)), p.narrowing);
+  for (const routed of [false, true]) {
+    const response = await dispatch({ jsonrpc: "2.0", id: "inventory-control", method: "tools/call", params: {
+      name: routed ? "lode_tools_call" : "lode_project_graph", arguments: routed ? { name: "lode_project_graph", arguments: args } : args } });
+    assert.equal(response.error, undefined); assert.equal(unsafe.test(response.result.content[0].text), false);
+    assert.equal(response.result.structuredContent.inventoryPage.next.arguments.query, query);
+    inventoryBounds(response.result.structuredContent);
+  }
+  const cli = await localContinuityCommand([path.join(path.resolve(import.meta.dirname, ".."), "scripts/lode.mjs"), "graph-query", f.root,
+    "--inventory-page", "--inventory-paths", ".lode/observations", "--query", query], { cwd: path.resolve(import.meta.dirname, "..") });
+  assert.equal(cli.code, 0, cli.stderr); assert.equal(unsafe.test(cli.stdout), false);
+  const next = JSON.parse(cli.stdout.split(/\r?\n/).find(line => line.startsWith("Next: ")).slice(6)); assert.equal(next.arguments.query, query);
+  const continued = await queryProjectGraph(inventoryArgs(next.arguments)); assert.equal(continued.inventoryPage.rows[0].path, ".lode/observations/z/x.json");
+});
+
+test("capacity-stage2: exact lineage retains managed reader dependencies and callable original expansion", async t => {
+  const f = fixture(t), work = f.save({ summary: "Independent intact work" });
+  const plan = f.route(() => createWholePlanSnapshot({ root: f.root, objective: "Retained narrow plan", plan: "No current authorization" }));
+  const manifestPath = path.join(f.root, ".lode/generated/manifest.json"), manifest = JSON.parse(fs.readFileSync(manifestPath));
+  const selectedState = f.route(() => sessionStatePath(f.root, f.layout)), reads = new Map();
+  const read = fs.readFileSync, readdir = fs.readdirSync;
+  const key = file => path.resolve(String(file)).replaceAll("\\", "/").toLowerCase();
+  fs.readFileSync = (file, ...args) => { const value = read(file, ...args); if (typeof file !== "number") {
+    const name = key(file), previous = reads.get(name) || { count: 0, bytes: 0 };
+    reads.set(name, { count: previous.count + 1, bytes: previous.bytes + (typeof value === "string" ? Buffer.byteLength(value) : value.byteLength) });
+  } return value; };
+  fs.readdirSync = file => { throw new Error("Exact lineage must not enumerate unrelated inventory: " + file); };
+  let result;
+  try { result = await f.route(() => queryProjectGraph({ root: f.root, paths: [relative(f, plan.file)], details: false })); }
+  finally { fs.readFileSync = read; fs.readdirSync = readdir; }
+  const node = result.nodes.find(row => row.nodeId === plan.artifact.wholePlanId); assert(node); noAuthority(result);
+  assert(reads.has(key(manifestPath))); assert(reads.has(key(selectedState)));
+  for (const managed of manifest.managed) assert(reads.has(key(path.join(f.root, managed.path))));
+  assert.match(result.coverage.inventoryScope.lineageReadDependencies, /not a single-file cost bound/);
+  assert.deepEqual(node.detail.paths, [relative(f, plan.file)]);
+  const response = await dispatch({ jsonrpc: "2.0", id: "stage2-exact-lineage", method: "tools/call", params: {
+    name: node.originalExpansion.tool, arguments: { ...node.originalExpansion.arguments, session_id: f.session.sessionId } } });
+  assert.equal(response.error, undefined); assert.equal(response.result?.isError, undefined);
+  assert.equal(response.result.structuredContent.artifact.wholePlanId, plan.artifact.wholePlanId);
+  fs.writeFileSync(manifestPath, "{"); const before = snapshot(f.base);
+  const unavailable = await f.route(() => queryProjectGraph({ root: f.root, paths: [relative(f, plan.file)] }));
+  assert.equal(unavailable.nodes.some(row => row.nodeId === plan.artifact.wholePlanId), false);
+  assert(unavailable.integrity.excluded.some(row => row.layer === "lineage"));
+  assertWork(await queryProjectGraph({ ...q(f, work), paths: [relative(f, work.file)] }), work);
+  assert.deepEqual(snapshot(f.base), before);
+  t.diagnostic(JSON.stringify({ scope: "Existing lineage exact reader dependency observations, not one-file or current-authorization proof",
+    sessionReads: reads.get(key(selectedState)), manifestReads: reads.get(key(manifestPath)), managedFileCount: manifest.managed.length }));
+});
+
+test("capacity-stage2: historical direction detail does not inspect a missing current pointer's whole trace", async t => {
+  const f = fixture(t), old = updateProjectDirection({ root: f.root, input: { goal: "Earlier retained goal", cancelledActions: ["deploy"] } }).direction;
+  updateProjectDirection({ root: f.root, expectedDirectionId: old.directionId, input: { goal: "Later goal", cancelledActions: ["deploy", "publish"] } });
+  fs.unlinkSync(path.join(f.root, ".lode/project-direction/current.json"));
+  const relativePath = `.lode/project-direction/revisions/${old.directionId}.json`, before = snapshot(f.base);
+  const readdir = fs.readdirSync; let enumerations = 0;
+  fs.readdirSync = file => { enumerations++; throw new Error("Historical revision must not enumerate currentness traces: " + file); };
+  let result, expanded;
+  try {
+    result = await queryProjectGraph({ root: f.root, paths: [relativePath], anchorIds: [old.directionId], details: false });
+    expanded = await queryProjectGraph({ root: f.root, ...result.nodes[0].detail });
+  } finally { fs.readdirSync = readdir; }
+  assert.equal(enumerations, 0); assert.equal(result.nodes[0].nodeId, old.directionId); noAuthority(result); noAuthority(expanded);
+  assert.equal(result.nodes[0].freshness, "retained-direction-reference-currentness-unknown");
+  assert.equal(result.coverage.inventoryScope.directionCurrentness, "not-inspected");
+  assert.deepEqual(result.nodes[0].detail.paths, [relativePath]);
+  assert.equal(expanded.nodes[0].directionEvidence.goal, old.input.goal);
+  assert.equal(result.nodes[0].originalExpansion.supported, false);
+  assert(!JSON.stringify(result.nodes[0].originalExpansion).includes("lode_project_direction_read"));
+  assert.deepEqual(snapshot(f.base), before);
+});
+
+test("capacity: cold exact work paths precede the actual 10000-record inventory and work in CLI and routed MCP", async t => {
+  const f = fixture(t), root = f.save({ summary: "Exact root retained" });
+  const saved = f.save({ summary: "한글 exact reason 😀", workLink: link(root), pending: ["Inspect only"] });
+  const padding = path.join(f.root, ".lode/observations"); fs.mkdirSync(padding, { recursive: true });
+  // Deliberate untyped inventory noise: not claimed to be valid observations.
+  for (let i = 0; i < 10000; i++) fs.writeFileSync(path.join(padding, `inventory-${String(i).padStart(5, "0")}.json`), "{}");
+  const bounded = collectProjectGraphInventory(f.root);
+  assert.equal(bounded.entries.length, 10000); assert.equal(bounded.complete, false);
+  assert.equal(bounded.entries.some(entry => entry.path === relative(f, saved.file)), false);
+  const before = snapshot(f.base), readdir = fs.readdirSync; let inventoryReads = 0;
+  fs.readdirSync = (file, ...args) => { inventoryReads++; throw new Error("Exact work must not enumerate global membership: " + file); };
+  let exactResult, compact;
+  try {
+    exactResult = await queryProjectGraph({ ...q(f, saved), paths: [relative(f, saved.file)], depth: 1, maxNodes: 5, maxEdges: 5 });
+    assertWork(exactResult, saved); assertWork(exactResult, root);
+    compact = await queryProjectGraph({ ...q(f, saved), paths: [relative(f, saved.file)], details: false });
+    const expanded = await queryProjectGraph({ root: f.root, ...nodeFor(compact, saved).detail });
+    assertWork(expanded, saved);
+  } finally { fs.readdirSync = readdir; }
+  assert.equal(inventoryReads, 0);
+  assert.equal(exactResult.coverage.inventoryScope.unrelatedMembership, "not-inspected");
+  assert.equal(exactResult.coverage.inventoryScope.incomingRelationsOutsideScope, "unknown");
+  assert.equal(exactResult.coverage.inventoryBoundReached, false);
+  assert.equal(exactResult.coverage.emptyResultProvesAbsence, false);
+  assert.equal(exactResult.sourceFallback.needed, false, "Uninspected unrelated Product/World is not an obligation to read again");
+  const cli = await localContinuityCommand([path.join(path.resolve(import.meta.dirname, ".."), "scripts/lode.mjs"), "graph-query", f.root,
+    "--paths", relative(f, saved.file), "--details", "--json"], { cwd: path.resolve(import.meta.dirname, "..") });
+  assert.equal(cli.code, 0, cli.stderr); assertWork(JSON.parse(cli.stdout), saved);
+  for (const routed of [false, true]) {
+    const args = { project_root: f.root, paths: [relative(f, saved.file)], details: true };
+    const response = await dispatch({ jsonrpc: "2.0", id: "capacity-exact", method: "tools/call", params: {
+      name: routed ? "head_tools_call" : "head_project_graph", arguments: routed ? { name: "head_project_graph", arguments: args } : args } });
+    assert.equal(response.error, undefined); assert.equal(response.result?.isError, undefined);
+    assertWork(response.result.structuredContent, saved); assert(response.result.content[0].text.includes("한글 exact reason"));
+  }
+  assert.deepEqual(snapshot(f.base), before);
+  t.diagnostic("Actual default collector boundary and public CLI/MCP; synthetic files, no real large repository or Host/model proof");
+});
+
+test("capacity: exact work paths reverify owner and tampered bytes without disabling valid exact reads", async t => {
+  const f = fixture(t), saved = f.save({ summary: "Retained exact text" });
+  assertWork(await queryProjectGraph({ ...q(f, saved), paths: [relative(f, saved.file)] }), saved);
+  const original = fs.readFileSync(saved.file); replaceSameMetadata(saved.file, "Retained", "Changed ");
+  const before = snapshot(f.base), bad = await queryProjectGraph({ ...q(f, saved), paths: [relative(f, saved.file)] });
+  assert.equal(nodeFor(bad, saved), undefined); assert(bad.integrity.excluded.length); assert.deepEqual(snapshot(f.base), before);
+  fs.writeFileSync(saved.file, original);
+  const other = createHeadSession({ root: f.root, purpose: "Different owner" });
+  const wrong = path.join(path.dirname(withSessionRoute(f.root, other.sessionId, () => sessionStatePath(f.root, f.layout))), "work-evidence", path.basename(saved.file));
+  fs.mkdirSync(path.dirname(wrong), { recursive: true }); fs.writeFileSync(wrong, original);
+  const foreign = await queryProjectGraph({ ...q(f, saved), paths: [relative(f, wrong)] });
+  assert.equal(nodeFor(foreign, saved), undefined); assert(foreign.integrity.excluded.length);
+  assertWork(await queryProjectGraph({ ...q(f, saved), paths: [relative(f, saved.file)] }), saved);
+  assert.equal(f.route(() => readSessionWorkContext({ root: f.root, evidenceIds: [saved.evidence.evidenceId] })).records[0].evidenceId, saved.evidence.evidenceId);
+});
+
+test("capacity: first lexical page returns actual continuation without a fabricated ID or repeated prefix bodies", async t => {
+  const f = fixture(t), seed = f.save({ summary: "Synthetic page seed" }), directory = path.dirname(seed.file);
+  // Build inert canonical fixture originals from one public writer template;
+  // this tests readers, not 513 independent writer/index publication operations.
+  for (let i = 0; i < 512; i++) {
+    const content = normalizeSessionWorkEvidence({ summary: `페이지 😀 ${i}`, occurrenceKey: `capacity-${i}` });
+    const evidenceId = "work-evidence-" + sha(encoded({ projectId: seed.evidence.projectId, sessionId: seed.evidence.sessionId, content })).slice(0, 24);
+    const { evidenceDigest, ...base } = seed.evidence;
+    const payload = { ...base, evidenceId, content }, record = { ...payload, evidenceDigest: sha(encoded(payload)) };
+    fs.writeFileSync(path.join(directory, evidenceId + ".json"), JSON.stringify(record));
+  }
+  const names = fs.readdirSync(directory).sort(); fs.writeFileSync(path.join(directory, names[0]), "{");
+  fs.truncateSync(path.join(directory, names[1]), MAX_RECORD_BYTES + 1);
+  const before = snapshot(f.base), first = f.route(() => readSessionWorkContext({ root: f.root, scanEvidence: true }));
+  assert(first.coverage.inspected > 0 && first.coverage.inspected <= 512); assert.equal(first.coverage.unavailable, 2);
+  assert.equal(first.nextAfterEvidenceId + ".json", names[first.coverage.inspected - 1]);
+  assert.equal(first.enumeration.next.arguments.after_evidence_id, first.nextAfterEvidenceId);
+  assert.equal(first.enumeration.wholeHistoryComplete, false);
+  const read = fs.readFileSync; let prefixBodyReads = 0;
+  const prefix = new Set(names.slice(0, first.coverage.inspected).map(name => path.join(directory, name)));
+  fs.readFileSync = (file, ...args) => { if (prefix.has(String(file))) prefixBodyReads++; return read(file, ...args); };
+  let next; try { next = f.route(() => readSessionWorkContext({ root: f.root, scanEvidence: true, afterEvidenceId: first.nextAfterEvidenceId })); }
+  finally { fs.readFileSync = read; }
+  assert(next.coverage.inspected > 0); assert.equal(prefixBodyReads, 0);
+  const reached = new Set([...first.records.map(row => row.evidenceId), ...first.omissions.evidenceIds, ...first.unavailable.map(row => row.evidenceId)]);
+  let page = next, pageCount = 1;
+  while (page) {
+    for (const id of [...page.records.map(row => row.evidenceId), ...page.omissions.evidenceIds, ...page.unavailable.map(row => row.evidenceId)]) {
+      assert(!reached.has(id)); reached.add(id);
+    }
+    const selector = page.enumeration.next;
+    if (!selector) break;
+    const currentRead = fs.readFileSync; let repeated = 0;
+    fs.readFileSync = (file, ...args) => {
+      if (String(file).startsWith(directory) && reached.has(path.basename(String(file)).slice(0, -5))) repeated++;
+      return currentRead(file, ...args);
+    };
+    try { page = f.route(() => readSessionWorkContext({ root: f.root, scanEvidence: true, afterEvidenceId: selector.arguments.after_evidence_id })); }
+    finally { fs.readFileSync = currentRead; }
+    assert.equal(repeated, 0); assert(++pageCount <= names.length);
+  }
+  assert.equal(reached.size, names.length, "All 513 originals remain reachable through actual next arguments");
+  const cli = await localContinuityCommand([path.join(path.resolve(import.meta.dirname, ".."), "scripts/lode.mjs"), "session-work-read", f.root,
+    "--session", f.session.sessionId, "--scan-evidence", "--json"], { cwd: path.resolve(import.meta.dirname, "..") });
+  assert.equal(cli.code, 0, cli.stderr || cli.stdout); assert.equal(JSON.parse(cli.stdout).nextAfterEvidenceId, first.nextAfterEvidenceId);
+  for (const routed of [false, true]) {
+    for (const args of [{ project_root: f.root, session_id: f.session.sessionId, scan_evidence: true }, first.enumeration.next.arguments]) {
+      const response = await dispatch({ jsonrpc: "2.0", id: "capacity-page", method: "tools/call", params: {
+        name: routed ? "head_tools_call" : "head_session_work_read", arguments: routed ? { name: "head_session_work_read", arguments: args } : args } });
+      assert.equal(response.error, undefined); assert.equal(response.result?.isError, undefined);
+      assert(response.result.content[0].text.includes("enumeration"));
+      assert.equal(response.result.structuredContent.coverage.inspected, args.after_evidence_id ? next.coverage.inspected : first.coverage.inspected);
+    }
+  }
+  assert.deepEqual(snapshot(f.base), before);
+});
+
+test("capacity: exact path optimization preserves separate plan and work anchor priority", async t => {
+  const f = fixture(t), work = f.save({ summary: "Path-selected original" }), other = f.save({ summary: "Explicit other original" });
+  const plan = f.route(() => createWholePlanSnapshot({ root: f.root, objective: "Explicit plan anchor", plan: "Retained evidence only" })).artifact;
+  const before = snapshot(f.base);
+  for (const anchorId of [plan.wholePlanId, other.evidence.evidenceId]) {
+    const result = await queryProjectGraph({ root: f.root, paths: [relative(f, work.file)], anchorIds: [anchorId], details: true, depth: 0 });
+    assert.deepEqual(result.nodes.map(node => node.nodeId), [anchorId]);
+    assert.equal(result.coverage.inventoryScope, undefined);
+  }
+  assert.deepEqual(snapshot(f.base), before);
+});
+
+test("capacity: tiny default and maximum delivery budgets leave no stranded original or prefix reread", t => {
+  const f = fixture(t), seed = f.save({ summary: "Seed " + "x".repeat(50000) }), directory = path.dirname(seed.file);
+  for (let i = 0; i < 60; i++) {
+    const content = normalizeSessionWorkEvidence({ summary: `Large record ${i} ` + "x".repeat(50000), occurrenceKey: `capacity-large-${i}` });
+    const evidenceId = "work-evidence-" + sha(encoded({ projectId: seed.evidence.projectId, sessionId: seed.evidence.sessionId, content })).slice(0, 24);
+    const { evidenceDigest, ...base } = seed.evidence, payload = { ...base, evidenceId, content };
+    fs.writeFileSync(path.join(directory, evidenceId + ".json"), JSON.stringify({ ...payload, evidenceDigest: sha(encoded(payload)) }));
+  }
+  const all = fs.readdirSync(directory).sort().map(name => name.slice(0, -5)), before = snapshot(f.base);
+  for (const [maxRecords, maxCharacters] of [[8, 2], [8, 32768], [512, 524288]]) {
+    const reached = new Set(); let afterEvidenceId = null, pages = 0;
+    do {
+      const read = fs.readFileSync; let repeated = 0;
+      fs.readFileSync = (file, ...args) => {
+        const name = path.basename(String(file));
+        if (String(file).startsWith(directory) && reached.has(name.slice(0, -5))) repeated++;
+        return read(file, ...args);
+      };
+      let page;
+      try { page = f.route(() => readSessionWorkContext({ root: f.root, scanEvidence: true, afterEvidenceId, maxRecords, maxCharacters })); }
+      finally { fs.readFileSync = read; }
+      const disclosed = [...page.records.map(record => record.evidenceId), ...page.omissions.evidenceIds, ...page.unavailable.map(row => row.evidenceId)];
+      assert.equal(new Set(disclosed).size, page.coverage.inspected, "Every examined original has a body or exact selector");
+      assert.equal(page.omissions.omittedIdCount, 0); assert.equal(repeated, 0);
+      assert(page.omissions.evidenceIds.length + page.unavailable.length <= 32);
+      assert(page.coverage.usedCharacters <= maxCharacters);
+      for (const id of disclosed) { assert(!reached.has(id)); reached.add(id); }
+      const next = page.enumeration.next;
+      if (next) {
+        assert(next.arguments.after_evidence_id > (afterEvidenceId || ""));
+        afterEvidenceId = next.arguments.after_evidence_id;
+      } else afterEvidenceId = null;
+      assert(++pages <= all.length, "No non-progressing cursor loop");
+    } while (afterEvidenceId !== null);
+    assert.deepEqual([...reached].sort(), all);
+    t.diagnostic(JSON.stringify({ maxRecords, maxCharacters, reached: reached.size, pages }));
+  }
+  assert.deepEqual(snapshot(f.base), before);
+});
 
 test("work read cache saturation does not reject an otherwise valid reference", t => {
   const f = fixture(t), originalRead = fs.readFileSync, shared = Buffer.alloc(16 * 1024 * 1024);

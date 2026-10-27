@@ -91,7 +91,8 @@ async function verifySurfaces(root, { headActionRequired, recoveryBlocked = fals
     for (const literal of [checkpoint.purpose, ...checkpoint.approvedDecisions, checkpoint.currentPosition, checkpoint.nextExpectedResult]) {
       assert(text.includes(literal), literal);
     }
-    assert.match(text, /Historical approval and next plans grant no current effect or replay permission/u);
+    assert.match(text, /Latest retained Session checkpoint \(historical context, not current execution or permission\)/u);
+    assert.equal(entry.restore.projection.consumerInstruction.historicalApprovalGrantsCurrentEffect, false);
   }
   if (["work_context_available", "work_context_partial", "work_context_not_recorded"].includes(entry.workContext?.status)
     && entry.workContext.sessionPurpose) assert(text.includes(entry.workContext.sessionPurpose));

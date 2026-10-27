@@ -5,10 +5,11 @@ import path from "node:path";
 import test from "node:test";
 import { initializeProject } from "../scripts/lib/lode-core.mjs";
 import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
-import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session-host-request.mjs";
+import { SESSION_HOST_REQUEST_HELPER, createSessionHostRequestRegistry } from "../scripts/lib/session-host-request.mjs";
 import { observeNativeHook } from "../scripts/lib/native-session-observations.mjs";
 import { SUBAGENT_STATE_WRITE_REJECTED, SUBAGENT_WRITE_GUARD_INVALID, diagnoseSubagentWriteGuard, subagentWriteGuardEnabled } from "../scripts/lib/subagent-write-guard.mjs";
 import { dispatch, catalogTools } from "../scripts/mcp-server.mjs";
+import { resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
 import plugin from "../scripts/opencode-plugin.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
@@ -22,7 +23,7 @@ function project(t) {
   const operational = path.join(base, "operational");
   const environment = enforced => ({
     HEAD_AGENT_OPERATIONAL_STATE_ROOT: operational,
-    ...(enforced ? { LODE_SUBAGENT_WRITE_GUARD: "enforce" } : {}),
+    LODE_SUBAGENT_WRITE_GUARD: enforced ? "enforce" : "off",
   });
   const canon = () => fs.readdirSync(path.join(root, ".lode"), { recursive: true }).sort();
   return { base, root, operational, environment, canon };
@@ -30,7 +31,117 @@ function project(t) {
 
 const rejected = response => response?.error?.message?.includes(SUBAGENT_STATE_WRITE_REJECTED) === true;
 
-test("guard configuration typos warn without changing default-off or blocking ordinary work", () => {
+test("supported-default: only exact Claude/OpenCode child provenance enables unset policy", () => {
+  for (const value of [undefined, null, ""]) for (const runtime of ["claude", "opencode", "codex", "unknown"]) {
+    for (const correlation of [undefined, "signal-only", "exact-native-tool-use", "awaited-native-before-hook"]) for (const subagent of [false, true]) {
+      const caller = { runtime, correlation, subagent }, environment = { LODE_SUBAGENT_WRITE_GUARD: value };
+      const expected = subagent && (runtime === "claude" && correlation === "exact-native-tool-use" || runtime === "opencode" && correlation === "awaited-native-before-hook");
+      assert.equal(subagentWriteGuardEnabled(environment, { caller }), expected);
+      assert.equal(subagentWriteGuardEnabled({ LODE_SUBAGENT_WRITE_GUARD: "off" }, { caller }), false);
+      assert.equal(subagentWriteGuardEnabled({ LODE_SUBAGENT_WRITE_GUARD: "enforce" }, { caller }), true);
+    }
+  }
+});
+
+test("supported-default: actual Claude exact hooks protect every catalog write without Session or inventory reads", async t => {
+  const { root, operational, canon } = project(t), before = canon();
+  const environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: operational };
+  const native = createNativeSessionHostBridge({ runtime: "claude", environment }); t.after(() => native.dispose());
+  let sequence = 0, forbidden = 0;
+  const read = fs.readFileSync;
+  fs.readFileSync = (file, ...args) => { const name = String(file).replaceAll("\\", "/");
+    if (name.includes("/.lode/sessions/") || name.includes("/.lode/graph-discovery/") || name.startsWith(operational.replaceAll("\\", "/"))) {
+      forbidden++; throw new Error("Guard-only correlation must not read Session/P2/inventory/P5 files");
+    } return read(file, ...args); };
+  try {
+    for (const tool of catalogTools.filter(tool => tool.annotations?.readOnlyHint !== true)) for (const name of [tool.name, resolveOperation(tool.name).legacyName]) for (const routed of [false, true]) {
+      const wire = claudeWire(root, name, {}, `default-child-${sequence++}`, routed);
+      assert.equal(rejected(await claudeCall(native, wire, "verified-child")), true, tool.name + "/" + routed);
+      assert.equal(native.requestStatus().pending, 0); assert.equal(native.requestStatus().active, 0);
+    }
+  } finally { fs.readFileSync = read; }
+  assert.equal(forbidden, 0); assert.deepEqual(canon(), before); assert.equal(fs.existsSync(operational), false);
+});
+
+test("supported-default: Claude off avoids new Project-only correlation and exact siblings stay distinct", async t => {
+  const { root, operational } = project(t), environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: operational };
+  const off = createNativeSessionHostBridge({ runtime: "claude", environment: { ...environment, LODE_SUBAGENT_WRITE_GUARD: "off" } }); t.after(() => off.dispose());
+  const offWire = claudeWire(root, "lode_session_create", { purpose: "explicit off" }, "off-project");
+  await dispatch(claudeHook(offWire, "native", "child"), { nativeSessionBridge: off }); assert.equal(off.requestStatus().pending, 0);
+  const offResult = await dispatch(offWire, { nativeSessionBridge: off }); assert.equal(rejected(offResult), false); assert(offResult.result.structuredContent.sessionId);
+  assert.equal(off.requestStatus().spent, 0);
+  const native = createNativeSessionHostBridge({ runtime: "claude", environment }); t.after(() => native.dispose());
+  const shared = { purpose: "same arguments" }, wires = ["first-child", "parent", "second-child"].map(id => claudeWire(root, "lode_session_create", shared, id));
+  for (const [index, wire] of wires.entries()) await dispatch(claudeHook(wire, "native", index === 1 ? "" : "child-" + index), { nativeSessionBridge: native });
+  const results = await Promise.all(wires.map(wire => dispatch(wire, { nativeSessionBridge: native })));
+  assert.equal(rejected(results[0]), true); assert.equal(rejected(results[2]), true); assert.equal(rejected(results[1]), false); assert(results[1].result.structuredContent.sessionId);
+  assert.equal(native.requestStatus().pending, 0);
+  const bad = claudeHook(claudeWire(root, "lode_session_create", shared, "foreign-server"), "native", "child");
+  bad.params.arguments.outer_tool_name = "mcp__other__lode_session_create";
+  assert.equal((await dispatch(bad, { nativeSessionBridge: native })).result.isError, true);
+});
+
+test("supported-default: actual OpenCode before-hook requires exact call scope and never looks up reads or source tools", async t => {
+  const { root, operational } = project(t), environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: operational }; let lookups = 0;
+  const client = { session: { async get({ path: { id } }) { lookups++; return { data: { id, projectID: "host-project", directory: root,
+    ...(id === "ses_parent" ? {} : { parentID: "ses_parent" }) } }; } } };
+  const hooks = await plugin.server({ client, project: { id: "host-project" }, directory: root }, { environment }); t.after(() => hooks.dispose());
+  await hooks.config({ mcp: { lode: { type: "local", command: ["node", path.join(pluginRoot, "scripts/mcp-server.mjs")] } } });
+  for (const tool of ["Edit", "Write", "Bash", "other_lode_session_create", "lode_lode_project_status"]) await hooks["tool.execute.before"]({ tool, sessionID: "ses_child", callID: "read-or-source" }, { args: { project_root: root } });
+  await hooks["tool.execute.before"]({ tool: "lode_lode_session_create", sessionID: "ses_child" }, { args: { project_root: root } });
+  assert.equal(lookups, 0);
+  await assert.rejects(hooks["tool.execute.before"]({ tool: "lode_lode_session_create", sessionID: "ses_child", callID: "exact-child" }, { args: { project_root: root } }), { code: SUBAGENT_STATE_WRITE_REJECTED });
+  await hooks["tool.execute.before"]({ tool: "lode_lode_session_create", sessionID: "ses_parent", callID: "exact-parent" }, { args: { project_root: root } });
+  assert.equal(lookups, 2);
+  const off = await plugin.server({ client, project: { id: "host-project" }, directory: root }, { environment: { ...environment, LODE_SUBAGENT_WRITE_GUARD: "off" } }); t.after(() => off.dispose());
+  await off.config({ mcp: { lode: { type: "local", command: ["node", path.join(pluginRoot, "scripts/mcp-server.mjs")] } } });
+  await off["tool.execute.before"]({ tool: "lode_lode_session_create", sessionID: "ses_child", callID: "off-child" }, { args: { project_root: root } });
+  assert.equal(lookups, 2); assert.equal(fs.existsSync(operational), false);
+});
+
+test("supported-default: signal-only, spent, divergent and expired claims never become exact provenance", async t => {
+  const { root, operational } = project(t), environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: operational }; let time = 0;
+  const registry = createSessionHostRequestRegistry({ now: () => time, ttlMs: 10 });
+  const native = createNativeSessionHostBridge({ runtime: "claude", environment, requestRegistry: registry }); t.after(() => native.dispose());
+  const capture = wire => native.dispatch(wire, async (_request, options) => options.caller);
+  const wire = claudeWire(root, "lode_session_create", { purpose: "capture only; never execute" }, "exact-once");
+  await dispatch(claudeHook(wire, "native", "child"), { nativeSessionBridge: native });
+  const exact = await capture(wire); assert.equal(exact.correlation, "exact-native-tool-use"); assert.equal(subagentWriteGuardEnabled(environment, { caller: exact }), true);
+  assert.equal(await capture(wire), null); assert.equal(registry.describe().spent, 1);
+  const divergent = claudeWire(root, "lode_session_create", { purpose: "unchanged" }, "divergent");
+  await dispatch(claudeHook(divergent, "native", "child"), { nativeSessionBridge: native }); divergent.params.arguments.purpose = "different";
+  assert.equal(await capture(divergent), null);
+  const expired = claudeWire(root, "lode_session_create", { purpose: "expires" }, "expired");
+  await dispatch(claudeHook(expired, "native", "child"), { nativeSessionBridge: native }); time = 11;
+  assert.equal(await capture(expired), null);
+  const read = claudeWire(root, "lode_project_graph", {}, "signal-only");
+  await dispatch(claudeHook(read, "native", "child"), { nativeSessionBridge: native });
+  const signal = await capture(read); assert.equal(signal.subagent, true); assert.equal(signal.correlation, undefined);
+  assert.equal(subagentWriteGuardEnabled(environment, { caller: signal }), false);
+  assert.equal(fs.existsSync(operational), false);
+});
+
+test("supported-default: Codex unset and unsupported OpenCode scope remain ordinary work, not protection success", async t => {
+  const { root, operational } = project(t), environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: operational };
+  const codex = createNativeSessionHostBridge({ runtime: "codex", environment }); t.after(() => codex.dispose());
+  const result = await dispatch({ jsonrpc: "2.0", id: "codex-unset", method: "tools/call", params: {
+    _meta: { threadId: "codex-parent", subagent: true }, name: "lode_session_create", arguments: { project_root: root, purpose: "Codex default remains off" } } }, { nativeSessionBridge: codex });
+  assert.equal(rejected(result), false); assert(result.result.structuredContent.sessionId);
+  for (const variant of ["project", "directory", "error", "timeout"]) {
+    const hooks = await plugin.server({ client: { session: { get() {
+      if (variant === "timeout") return new Promise(() => {});
+      if (variant === "error") throw new Error("Synthetic lookup failure");
+      return Promise.resolve({ data: { id: "ses_child", projectID: variant === "project" ? "other" : "host-project",
+        directory: variant === "directory" ? path.dirname(root) : root, parentID: "ses_parent" } });
+    } } }, project: { id: "host-project" }, directory: root }, { environment });
+    try {
+      await hooks.config({ mcp: { lode: { type: "local", command: ["node", path.join(pluginRoot, "scripts/mcp-server.mjs")] } } });
+      await hooks["tool.execute.before"]({ tool: "lode_lode_session_create", sessionID: "ses_child", callID: "unknown-" + variant }, { args: { project_root: root } });
+    } finally { hooks.dispose(); }
+  }
+});
+
+test("guard configuration typos warn without enabling unproven callers or blocking ordinary work", () => {
   const messages = [], warn = message => messages.push(message);
   for (const value of [undefined, null, "", "off", "enforce"]) {
     const environment = { LODE_SUBAGENT_WRITE_GUARD: value };
@@ -87,7 +198,7 @@ function claudeHook(wire, nativeSessionId, agentId) {
         native_session_id: nativeSessionId,
         native_agent_id: agentId,
         tool_use_id: wire.params._meta["claudecode/toolUseId"],
-        outer_tool_name: "mcp__lode_core__" + wire.params.name,
+        outer_tool_name: "mcp__lode__" + wire.params.name,
         original_arguments: JSON.stringify(wire.params.arguments),
       },
     },
@@ -100,7 +211,7 @@ async function claudeCall(bridge, wire, agentId) {
   return dispatch(wire, { nativeSessionBridge: bridge });
 }
 
-test("Claude subagent writes are rejected only while the guard is enforced", async t => {
+test("Claude explicit enforce/off separate child writes from parent and read access", async t => {
   const { root, environment, canon } = project(t);
   const enforced = createNativeSessionHostBridge({ runtime: "claude", environment: environment(true) });
   const child = claudeWire(root, "head_session_create", { purpose: "child canon" }, "claude-child", true);

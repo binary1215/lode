@@ -43,6 +43,38 @@ anchor, Session 또는 근거의 이웃 조회도 같은 typed 작업 노드와 
 반환합니다. 기존 원본을 찾기 위해 새 저장, native 연결, Run, 색인 갱신이나
 사용자 작성 selector를 요구하지 않습니다.
 
+지정한 `paths`가 모두 지원되는 정식 Session 작업 원문·실행 계보 아티팩트·과거
+ProjectDirection 리비전 경로이면 전역 inventory나 캐시의 membership 열거보다 먼저
+해당 원본과 필요한 의존성을 읽습니다. 소유자·경로·
+bytes와 typed 원본 검증은 유지하고 상세 확장에도 정확한 경로를 보존합니다.
+`coverage.inventoryScope`가 이 좁은 관측 범위를 나타냅니다. 무관한 원본 목록과
+범위 밖 incoming 관계는 부재가 아니라 unknown입니다. 유용한 결과는 재사용하며,
+이 부분 범위 자체가 추가 조회를 요구하지 않습니다. 소스 코드 경로나 혼합 경로
+질의의 기존 의미는 유지합니다. 전체 층의 검토 의존성이 필요한 다른 유형은
+개별 JSON만으로 검증을 우회하지 않습니다.
+`world_model_id`를 명시한 경우도 기존 통합 질의를 유지하며, 좁은 원문 조회가
+요청한 과거 World를 대신하지 않습니다.
+명시한 anchor도 모두 요청한 정확 원본의 ID여야 좁은 경로를 사용합니다. 별도 plan이나
+작업 anchor가 있으면 기존 anchor 우선 통합 조회를 유지하며, 경로 최적화 때문에
+명시한 anchor를 누락하지 않습니다.
+
+실행 계보 경로는 기존 exact 아티팩트 reader를 재사용하며, 선택 Session·관리 manifest·
+관리 파일 digest 검사도 유지합니다. 디스크 파일 하나만 읽는 비용 보장은 아닙니다.
+반환한 `originalExpansion`은 해당 아티팩트의 기존 lineage reader를 호출합니다.
+보존된 plan·contract·result·review는 현재 실행 허가나 선언한 부모의 존재 증명이
+아닙니다. 과거 direction 경로는 현재 포인터나 전체 방향 trace를 훑지 않고 리비전
+reader를 사용하며 현재성은 unknown입니다. 정확한 graph detail은 같은 리비전 경로를
+유지합니다. 공개된 과거 direction 전체 원문 reader가 없다는 한계와 부분 내용 보완용
+원본 파일을 표시하며, 현재 direction 도구가 과거 리비전을 선택한다고 안내하지 않습니다.
+
+알려진 Session의 더 넓은 기록이 필요하면 `lode_session_work_read`에
+`scan_evidence: true`를 주어 첫 페이지를 받고 `enumeration.next`의 인자를 따릅니다.
+CLI에서는 `session-work-read --scan-evidence`를 사용합니다. 가짜 시작 ID나 사용자가
+작성한 JSON은 필요하지 않습니다. 한 호출은 사전순 원본 페이지 하나를 검사하며,
+전체 시간순 이력이나 원자적 스냅샷을 뜻하지 않습니다. 그래프의 `nextAnchorIds`와도
+별개입니다. 일반 Project·layer inventory 이어 읽기는 아직 미구현이며, 다른 질의는
+기존의 한정된 부분 결과와 정확한 원문 보완 경로를 유지합니다.
+
 명시적 anchor나 paths가 없는 text 질의에서는 matching 작업 원본을 먼저 담고,
 검증된 직접 declared root와 명시적 작업 인용을 다음 matching 기록보다 먼저
 담습니다. 공유 endpoint는 node 한 개지만 고유 연결 edge는 각각 한도를 사용합니다.
@@ -330,6 +362,24 @@ Session의 기존 bounded Work/Todo reader를 사용해 오래된 미해결·충
 기록은 참고 자료입니다. 분기 당시 인계·전달·모델 입력으로 확인된 것이 아닙니다.
 정확한 managed 입력이 준비됐다는 사실만으로 전달이나 실제 사용을 증명하지 않습니다.
 
+같은 목록의 선택적 `conversation_candidates`는 실제 bounded Host 후보를 기존 저장
+매핑과 연결하며, 직계 부모·자식이 아닌 같은 Project의 대화도 조회합니다. 각 selector는
+`runtime` (`codex`, `claude`, `opencode`), `native_session_id`, 선택적 `agent_id`,
+명시적 `environment_scope: "current"`를 제공합니다. CLI 자동화는
+`session-list --conversation-candidates <json-file>`을 사용합니다. Lode가 실제 노출된
+bounded Host 도구나 이미 확보한 후보를 필요한 경우에만 조합합니다. 사용자 입력 양식,
+자동 메시지·등록·바인딩이나 필수 조회 순서는 추가하지 않습니다.
+
+`conversationDiscovery`는 현재 P5 매핑을 읽는 비영속 P4 뷰입니다. 최대 16개 후보를
+검사하며 MCP 텍스트·구조화 결과 중복과 JSON escaping을 포함한 응답 추가분은
+32 KiB 안에서 생략 수를 표시합니다. 후보를 주지 않으면 기존 반환값과 라우팅을
+유지합니다. 개별 비정상·pending·lost·손상 매핑은 정상 항목을 버리지 않습니다.
+읽는 동안 매핑이나 Project 기준이 바뀌면 그대로 공개하며 원자적 스냅샷을 주장하지
+않습니다. 매핑 부재가 기본 선택으로 바뀌지 않고, 다른 Host나 신원을 확인할 수 없는
+namespace는 로컬 fallback 없이 미지원으로 표시합니다. 저장된 Session 연결·리비전·
+digest는 특정 작업 참여, 현재 담당자·활동·연락 가능성이나 모델 입력을 증명하지
+않습니다. Host 목록이 없어도 기존 기록으로 일반 작업을 계속합니다.
+
 기록된 Todo의 task·상태·귀속·다음 행동·사유·진행·우선순위도 그래프 검색 근거가 됩니다.
 부분 Todo는 `workContentExcerpts`에 원래 인덱스, `todoId`, 하위 필드와 문자 구간,
 기록된 상태·귀속 및 선언된 revision 참조를 함께 담습니다. 축약 배열로 다시 번호를
@@ -402,4 +452,43 @@ Markdown의 `relativePath`는 게시 root 기준이고, href는 해당 문서 �
 같아도 기존 어휘 기반 순서를 유지합니다. 문서는 계속 후보로 남으며, 코드 종류로
 제외하거나 의미적 충분성을 판단하지 않습니다. 더 정확한 시작점이 필요하면 정확한
 경로나 앵커를 사용합니다.
+
+## 소유 원문 탐색 이어가기
+
+일반 inventory 제한 때문에 관련 원문을 찾지 못했으면 Lode가 기존
+`lode_project_graph`에 `inventory_page: true`를 선택할 수 있습니다.
+CLI는 `graph-query --inventory-page`입니다. 선택적인 `inventory_paths`
+(`--inventory-paths <path,...>`)는 검증된 Project 소유 기록 디렉터리나 파일을
+고릅니다. 일반 소스 `paths`와 구분되며 기존 그래프 선택은 바뀌지 않습니다.
+사용자는 질문만 말하고, Lode가 유용한 반환 인자를 따라갑니다. 사용자에게 커서를
+작성하게 하거나 읽기를 다시 승인하게 하지 않습니다.
+
+이 모드는 노드·간선과 분리된 **타입 미검증 바이트 관측**을 반환합니다.
+완전한 raw SHA-256은 손상된 JSON을 포함하여 읽은 바이트를 식별할 뿐,
+종류·검토 상태·권위·타입 유효성·현재성을 증명하지 않습니다. 정식 Work·계보·과거
+방향 경로에는 기존 `exactRead` 호출 인자가 있고, 해당 reader가 원문과 종속 근거를
+다시 검증합니다. 다른 기록은 아직 검사하지 않은 타입 계층의 종속 근거를 밝힙니다.
+계보 reader는 선택된 Session·관리 manifest·관리 파일 digest도 계속 검사합니다.
+과거 방향의 현재성을 추정하거나 전체 과거 원문 getter를 만들어 안내하지 않습니다.
+이 관측 행은 Explorer의 검증된 그래프로 들어가지 않습니다.
+
+각 호출은 디렉터리 열거, 원문 읽기 시도, MCP 전체 응답(이스케이프를 포함한 text와
+structured UTF-8 JSON)을 제한합니다. metadata 항목 10,000개와 초과 확인 1개,
+디렉터리 열기 시도 10,000회, 이름/EOF 읽기 20,001회, 깊이 8, metadata와 원문 읽기
+시도 각각 128 MiB, 원문 하나 16 MiB, 행 512개까지입니다. 응답 512 KiB는 metadata
+페이지의 바이트 제한이며 Context Capsule 토큰 계층과 무관합니다. Project/storage
+소유권 검사는 이 계수보다 먼저 수행하므로 모든 기존 소유권 검사 비용을 제한한다고
+주장하지 않습니다. 다음 요청에서 이름을 다시 열거할 수 있으나, 전역 snapshot을
+증명하기 위해 이전 본문을 다시 읽지는 않습니다. 실패·초과 원문도 한 번씩 표시하고
+일부만 읽은 해시를 완전한 digest로 제시하지 않습니다.
+
+반환된 `next` 인자는 유용할 때만 사용합니다. `inventory_cursor`는
+Project/storage root/query/scope에 묶인 신뢰하지 않는 사전식 탐색 위치이며 복구
+방향이 아닙니다. 경계 원문이 바뀌거나 사라지면 `changed-scope`와 실제 재시작 인자를
+반환합니다. 제한 안에서 다음 사전식 범위를 확정할 수 없으면 `metadata-bound`와
+실제로 발견한 좁은 범위를 반환하고 가짜 커서나 완료를 주장하지 않습니다.
+`exhausted-observed-range`는 그 요청에서 관측한 범위만 뜻합니다. 이전 위치에 새로
+삽입된 항목과 이전 페이지의 현재성은 미확인이고, 남은 개수를 꾸며내지 않습니다.
+자동 반복·저장·Run·승인·영속 아티팩트를 선행 조건으로 요구하지 않으며 독립 작업은
+계속할 수 있습니다.
 

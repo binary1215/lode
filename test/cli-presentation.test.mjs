@@ -548,10 +548,13 @@ function assertConversationLiterals(text, entry) {
       assert(text.includes(literal), literal);
     }
     assert.match(text, /historical context, not current execution or permission/u);
-    assert.match(text, /Historical approval and next plans grant no current effect or replay permission/u);
+    assert.equal(text.split("historical context, not current execution or permission").length - 1, 1,
+      "The historical non-authorization boundary remains adjacent to the checkpoint, once");
   }
-  assert(text.endsWith(formatSessionWorkContext(entry.workContext)), "Existing full P3 body/coverage/diagnosis remains unchanged");
-  assert(text.indexOf(input.cancelledActions[0]) < text.indexOf("Selected Session work evidence"));
+  assert(text.endsWith(formatSessionWorkContext(entry.workContext, { boundaryShown: true })),
+    "All full P3 bodies, coverage and diagnoses survive the factored contextual heading");
+  assert(text.indexOf(input.cancelledActions[0]) < text.indexOf("Recorded Session work (historical P3)"));
+  assert.equal(text.split("Current common direction (").length - 1, 1, "Current direction is presented once");
 }
 
 test("conversation context keeps current meaning and full fitting historical bodies in quiet, notice and normal text", () => {
@@ -598,7 +601,7 @@ test("conversation context distinguishes unavailable, never recorded, explicit e
   assert.match(unavailableText, /only direction-dependent effects/u);
   assert(!unavailableText.includes(unavailable.restore.projection.currentProjectDirection.input.goal), "Diagnosed null must not fall back to another view's stale content");
   assert(unavailableText.includes(unavailable.restore.checkpoint.currentPosition), "Valid selected checkpoint is independent of unavailable common direction");
-  assert(unavailableText.endsWith(formatSessionWorkContext(unavailable.workContext)));
+  assert(unavailableText.endsWith(formatSessionWorkContext(unavailable.workContext, { boundaryShown: true })));
 
   const base = { status: "conversation_ready", presentation: { mode: "quiet" } };
   assert.match(formatConversationRecovery({ ...base, projectStatus: { currentProjectDirection: null } }), /not recorded \(not an approved empty direction\)/u);
@@ -647,9 +650,12 @@ test("conversation context keeps actual explicit-null empty Core quiet to one li
   // is null, unlike the separate uninspected/missing-property fixture above.
   const entry = { status: "conversation_ready", recoveryState: "no-current-checkpoint",
     presentation: { mode: "quiet" }, projectStatus: { currentProjectDirection: null },
-    workContext: { status: "work_context_not_recorded", sessionId: "default-session", sessionPurpose: null,
-      records: [], coverage: { originals: 0, inspected: 0, valid: 0, unavailable: 0, included: 0 },
-      omissions: { byBudget: 0, uninspected: 0 } } };
+    workContext: { kind: "SessionWorkContextProjection", authorityPlane: "P4",
+      status: "work_context_not_recorded", sessionId: "default-session", sessionPurpose: null,
+      interpretation: "P3 Lode-authored historical evidence, not current direction, approval, or proof of an external effect. Current Project constraints and selected Session P2 take precedence.",
+      nextAfterEvidenceId: null, records: [], unavailable: [],
+      coverage: { originals: 0, inspected: 0, valid: 0, unavailable: 0, included: 0, maxRecords: 8, maxCharacters: 32768, usedCharacters: 2 },
+      omissions: { byBudget: 0, uninspected: 0, omittedIdCount: 0, unavailableDetailCount: 0, evidenceIds: [] } } };
   const before = JSON.stringify(entry);
   assert.equal(formatConversationRecovery(entry), "Lode is ready — continue the task.\n");
   assert.equal(formatCliResult("conversation-enter", entry), formatMcpToolContent("head_conversation_enter", entry));
@@ -706,7 +712,8 @@ test("conversation context direct restore shares full meaning without exposing p
   const checkpoint = entry.restore.checkpoint;
   for (const field of [checkpoint.purpose, ...checkpoint.approvedDecisions, checkpoint.currentPosition, checkpoint.nextExpectedResult]) assert(text.includes(field));
   assert(text.includes(entry.restore.projection.currentProjectDirection.input.cancelledActions[0]));
-  assert.match(text, /Historical approval and next plans grant no current effect/u);
+  assert.match(text, /Latest retained Session checkpoint \(historical context, not current execution or permission\)/u);
+  assert.equal(text.split("historical context, not current execution or permission").length - 1, 1);
   assert.doesNotMatch(text, /checkpoint-private-id|review-private-id/u);
   assert.equal(JSON.stringify(entry.restore), before);
 

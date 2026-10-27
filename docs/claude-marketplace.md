@@ -41,7 +41,7 @@ generated Claude snapshot, `.mcp.json` is projected to:
   "mcpServers": {
     "lode": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp-server.mjs"],
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp-plugin-server.mjs"],
       "cwd": "${CLAUDE_PLUGIN_ROOT}"
     }
   }

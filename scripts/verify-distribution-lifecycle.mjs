@@ -139,7 +139,10 @@ function verifyHistoricalEntrypointRollback() {
   const upgraded = installDistribution({ sourceRoot, installRoot: root, binDirectory: directory });
   assert.equal(upgraded.status, "upgraded");
   assert.equal(upgraded.previousReleaseId, releaseId);
-  assert.equal(fs.readFileSync(path.join(root, "installation.json"), "utf8"), oldOwnership);
+  // Upgrade retains the historical owner and records the explicitly selected
+  // launcher directory; immutable release bytes remain unchanged below.
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, "installation.json"), "utf8")),
+    { ...JSON.parse(oldOwnership), binDirectory: path.resolve(directory) });
   for (const name of ["head", "lode"]) assert.equal(runGlobal(["--version"], name, directory).version, sourceVersion);
   rollbackDistribution({ installRoot: root, binDirectory: directory });
   for (const name of ["head", "lode"]) assert.equal(runGlobal(["--version"], name, directory).version, "old-fixture");

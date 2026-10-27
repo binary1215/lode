@@ -221,9 +221,11 @@ for (const kind of ["bytes", "inode", "named-path"]) {
 
 test("a newly created document also detects external bytes before append", t => {
   const root = project(t), target = path.join(root, "CLAUDE.md");
-  fs.unlinkSync(target);
   fs.writeFileSync(path.join(root, ".mcp.json"), "{}");
+  // Initialize while the user-owned document exists, then remove that unowned
+  // file. Missing initial files are now intentionally created by Core setup.
   initializeProject({ root, pluginRoot, runtimes: ["claude"] });
+  fs.unlinkSync(target);
   assert.equal(fs.existsSync(target), false);
   const replacement = Buffer.from("# External text after exclusive creation\n");
   const exercised = interceptAppendOpen(t, target, () => fs.appendFileSync(target, replacement), true);

@@ -10,6 +10,7 @@ import { noteProjectGraphChange } from "./discovery-index.mjs";
 import { safeSessionPath, defaultSessionStatePath } from "./session-paths.mjs";
 export { safeSessionPath, defaultSessionStatePath } from "./session-paths.mjs";
 import { readProjectDirectionView } from "./project-direction-view.mjs";
+import { publicToolName } from "./lode-artifact-composition.mjs";
 export { readProjectDirection, updateProjectDirection } from "./project-direction.mjs";
 
 // Routing is request-local Host selection, never a persisted global selector.
@@ -119,7 +120,9 @@ export function sessionSelectionUnresolved(root, { includeProjectFacts = false, 
     headActionRequired: true, userDecisionRequired: false,
     headActionScope: "selected-session-dependent-work-only",
     affectedOperations: ["selected-session-read", "selected-session-mutation"],
-    nextHeadAction: "Continue independent Project/source work. Only for dependent work, use an already verified explicit logical Session or Host binding; ask only if a material selection remains ambiguous.",
+    nextHeadAction: "Continue independent Project/source work. For missing dependent context, reuse verified same-Project candidates already supplied or use sessionDiscovery.call when needed; discovery never selects a Session. Ask only if a material selection remains ambiguous.",
+    sessionDiscovery: { status: "not_queried", call: { name: publicToolName("head_session_list"),
+      arguments: { project_root: project.projectRoot } }, automatic: false, selectsSession: false },
     ...directionView, executionReplayAllowed: false,
     persisted: false, recoveryAuthority: false };
   if (!includeProjectFacts) return unresolved;

@@ -92,6 +92,7 @@ test/*
 !test/helpers/
 test/helpers/*
 !test/helpers/session-work-linkage-fixture.mjs
+!test/helpers/session-work-reentry-flow.mjs
 !test/helpers/worker-integration-fixture.mjs
 !test/helpers/invocation-publication-diagnostics.mjs
 !test/helpers/mcp-loading-probe.mjs

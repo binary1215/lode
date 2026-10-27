@@ -31,20 +31,21 @@ function linuxRow(pid) {
     return { pid, ppid: Number(fields[1]), birth: fields[19], state: ["Z", "X"].includes(fields[0]) ? "gone" : "present" };
   } catch (e) { return { pid, state: e.code === "ENOENT" || e.code === "ESRCH" ? "gone" : "unknown" }; }
 }
-function linuxProbe({ startPid, stopPid, pids }) {
+function linuxProbe({ startPid, stopPid, pids, deadlineAt = null }) {
   const environment = hash(JSON.stringify(["linux", os.hostname(), fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim(), fs.readlinkSync("/proc/self/ns/pid")]));
   const rows = [];
   if (startPid) {
     let id = startPid;
     for (let depth = 0; depth <= NATIVE_PROCESS_LIMITS.depth && pidValue(id); depth++) {
+      if (deadlineAt !== null && Date.now() >= deadlineAt) return null;
       const row = linuxRow(id); rows.push(row);
       if (row.state !== "present" || row.ppid === id || id === stopPid) break;
       id = row.ppid;
     }
-  } else for (const id of pids) rows.push(linuxRow(id));
+  } else for (const id of pids) { if (deadlineAt !== null && Date.now() >= deadlineAt) return null; rows.push(linuxRow(id)); }
   return { environment, rows };
 }
-function windowsProbe({ startPid, stopPid, pids, onProcess = () => {} }) {
+function windowsProbe({ startPid, stopPid, pids, onProcess = () => {}, timeoutMs = NATIVE_PROCESS_LIMITS.timeoutMs, deadlineAt = null }) {
   const ids = (pids || []).filter(pidValue), start = pidValue(startPid) ? startPid : 0;
   // Reflection.Emit avoids compiler children and framework GetProcessById's
   // hidden EnumProcesses fallback. This is the same query-only Win32 primitive
@@ -110,20 +111,27 @@ $taskRows=@();$taskIds=@(${ids.join(",")});$taskNext=${start}
 for($taskIndex=0;$taskIndex -lt ${start ? NATIVE_PROCESS_LIMITS.depth + 1 : ids.length};$taskIndex++){
   $taskId=if(${start} -gt 0){$taskNext}else{$taskIds[$taskIndex]}
   if($taskId -le 0){break}
-  $taskRow=Read-TaskExactProcess $taskId $${start ? "true" : "false"} $(${start === process.pid ? "$taskIndex -eq 0" : "$false"})
+  # A terminal registry row needs identity/liveness, not its unused parent.
+  # ppid=0 retains the existing unknown/not-requested meaning.
+  $taskNeedParent=(${start} -gt 0 -and $taskId -ne ${pidValue(stopPid) ? stopPid : 0})
+  $taskRow=Read-TaskExactProcess $taskId $taskNeedParent $(${start === process.pid ? "$taskIndex -eq 0" : "$false"})
   $taskRows+=@($taskRow)
   if(${start} -gt 0){if($taskRow.state -ne 'present' -or $taskId -eq ${pidValue(stopPid) ? stopPid : 0}){break};$taskNext=$taskRow.ppid}
 }
 @{machine=$taskMachine;hostName=[Environment]::MachineName;rows=@($taskRows)} | ConvertTo-Json -Compress -Depth 4`;
   const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-  const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")];
+  // Same exact query, delivered on stdin rather than a large encoded command
+  // line. No script file, policy change, daemon or additional runtime is needed.
+  const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "& ([scriptblock]::Create([Console]::In.ReadToEnd()))"];
   const report = (record) => { try { onProcess(record); } catch { /* Logging is not control authority. */ } };
-  report({ event: "planned", command: executable, arguments: args, cwd: process.cwd(), parent: process.pid, ports: [], windowsHide: true });
+  report({ event: "planned", command: executable, arguments: args, inputBytes: Buffer.byteLength(script), inputDigest: hash(script),
+    cwd: process.cwd(), parent: process.pid, ports: [], windowsHide: true });
   return new Promise(resolve => {
     let child, timer, bytes = 0, failed = false; const chunks = [];
+    if (deadlineAt !== null && Date.now() >= deadlineAt) { resolve(null); return; }
     try {
       child = spawn(executable, args, { windowsHide: true, shell: false, cwd: process.cwd(),
-        env: { SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, TEMP: process.env.TEMP, TMP: process.env.TMP }, stdio: ["ignore", "pipe", "pipe"] });
+        env: { SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, TEMP: process.env.TEMP, TMP: process.env.TMP }, stdio: ["pipe", "pipe", "pipe"] });
     } catch { resolve(null); return; }
     report({ event: "started", pid: child.pid, parent: process.pid, command: executable, arguments: args, cwd: process.cwd(), ports: [] });
     const stop = () => {
@@ -132,7 +140,12 @@ for($taskIndex=0;$taskIndex -lt ${start ? NATIVE_PROCESS_LIMITS.depth + 1 : ids.
       // signal a witnessed Claude engine or an unknown/reused PID.
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
     };
-    timer = setTimeout(stop, NATIVE_PROCESS_LIMITS.timeoutMs);
+    // spawn can itself be slow on Windows. Never grant that elapsed time again.
+    const remaining = deadlineAt === null ? timeoutMs : Math.max(0, deadlineAt - Date.now());
+    timer = setTimeout(stop, remaining);
+    if (remaining === 0) stop();
+    child.stdin.on("error", stop);
+    try { child.stdin.end(script + "\n\n"); } catch { stop(); }
     for (const stream of [child.stdout, child.stderr]) stream.on("data", b => {
       bytes += b.length; if (bytes > NATIVE_PROCESS_LIMITS.outputBytes) stop();
       else if (stream === child.stdout) chunks.push(b);
@@ -140,6 +153,7 @@ for($taskIndex=0;$taskIndex -lt ${start ? NATIVE_PROCESS_LIMITS.depth + 1 : ids.
     child.once("error", () => { failed = true; });
     child.once("close", (code, signal) => {
       clearTimeout(timer);
+      child.stdin.destroy();
       report({ event: "closed", pid: child.pid, parent: process.pid, exitCode: code, signal, ports: [] });
       if (failed || code !== 0) { resolve(null); return; }
       try {
@@ -151,11 +165,14 @@ for($taskIndex=0;$taskIndex -lt ${start ? NATIVE_PROCESS_LIMITS.depth + 1 : ids.
     });
   });
 }
-export async function probeNativeProcesses({ startPid = null, stopPid = null, pids = [], platform = process.platform, onProcess } = {}) {
+export async function probeNativeProcesses({ startPid = null, stopPid = null, pids = [], platform = process.platform, onProcess, deadlineAt = null } = {}) {
   if (startPid !== null && !pidValue(startPid) || !Array.isArray(pids) || pids.length > NATIVE_PROCESS_LIMITS.known || pids.some(p => !pidValue(p))) return null;
+  if (deadlineAt !== null && (!Number.isSafeInteger(deadlineAt) || Date.now() >= deadlineAt)) return null;
   try {
-    const result = platform === "linux" ? linuxProbe({ startPid, stopPid, pids })
-      : platform === "win32" ? await windowsProbe({ startPid, stopPid, pids, onProcess }) : null;
+    const timeoutMs = deadlineAt === null ? NATIVE_PROCESS_LIMITS.timeoutMs : Math.min(NATIVE_PROCESS_LIMITS.timeoutMs, Math.max(1, deadlineAt - Date.now()));
+    const result = platform === "linux" ? linuxProbe({ startPid, stopPid, pids, deadlineAt })
+      : platform === "win32" ? await windowsProbe({ startPid, stopPid, pids, onProcess, timeoutMs, deadlineAt }) : null;
+    if (deadlineAt !== null && Date.now() >= deadlineAt) return null;
     if (!result || !/^[a-f0-9]{64}$/u.test(result.environment) || !Array.isArray(result.rows)
       || result.rows.length > (startPid ? NATIVE_PROCESS_LIMITS.depth + 1 : NATIVE_PROCESS_LIMITS.known)
       || result.rows.some(r => !pidValue(r.pid) || !["present", "gone", "unknown"].includes(r.state)
@@ -173,10 +190,12 @@ function notAfter(parent, child, platform) {
   return a !== null && b !== null && a <= b;
 }
 export async function observeClaudeProcess({ nativeSessionId, environment = process.env, platform = process.platform,
-  probe = probeNativeProcesses, onProcess } = {}) {
+  probe = probeNativeProcesses, onProcess, deadlineAt = null } = {}) {
+  if (deadlineAt !== null && (!Number.isSafeInteger(deadlineAt) || Date.now() >= deadlineAt)) return null;
   const stopPid = registry(process.pid, nativeSessionId, environment) ? process.pid
     : registry(process.ppid, nativeSessionId, environment) ? process.ppid : null;
-  const result = await probe({ startPid: process.pid, stopPid, platform, onProcess });
+  const result = await probe({ startPid: process.pid, stopPid, platform, onProcess, deadlineAt });
+  if (deadlineAt !== null && Date.now() >= deadlineAt) return null;
   if (!result || result.rows[0]?.pid !== process.pid) return null;
   let previous = null;
   for (const row of result.rows) {

@@ -5,7 +5,9 @@ import { resolveProjectStorage, assertProjectStorageUnchanged, formatForVerified
 import { ARTIFACT_COMPOSITION } from "./lode-artifact-composition.mjs";
 import { portableMcpDocument } from "./portable-client-command.mjs";
 import { sessionStatePath, defaultSessionStatePath } from "./session-routing.mjs";
-import { atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicWriteArtifact, atomicCreateArtifact } from "./artifact-storage.mjs";
+import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
+import { pluginMcpServesProject } from "./plugin-mcp-composition.mjs";
 import { noteProjectGraphChange } from "./discovery-index.mjs";
 import { emptyProductModelDocument, normalizeProductModelDocument } from "./product-model.mjs";
 import {
@@ -90,6 +92,7 @@ function lodeInstructions() {
   return `# Lode Agent Core project instructions
 
 Use Lode Agent Core to understand the user's work, carry useful current context, and finish the whole outcome.
+${coreEntryGuidance()}
 Lead with the useful result, keep its evidence and uncertainty connected, and distinguish mechanical coverage from semantic sufficiency.
 
 - Keep the user's original task as the active objective. Setup and recovery support that task; continue in the same turn when no user decision is needed. Do not initialize an unrelated repository: use Lode only when requested or already present.
@@ -142,19 +145,27 @@ function claudeMcpProjection(pluginRoot, projectRoot) {
   };
 }
 
-function integrationPlan(root, runtimes, storage) {
+function integrationPlan(root, runtimes, storage, installationContext = null) {
   const integrations = {};
+  let pluginMcpProvided = false;
   if (runtimes.includes("claude")) {
     const instructionFile = path.join(root, "CLAUDE.md");
     const mcpFile = path.join(root, ".mcp.json");
-    integrations.claude = fs.existsSync(instructionFile) || fs.existsSync(mcpFile)
-      ? {
-        status: "manual",
-        reason: "Existing project-owned CLAUDE.md or .mcp.json was preserved.",
+    const exists = file => { try { fs.lstatSync(file); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } };
+    const instruction = exists(instructionFile) ? "manual" : "managed";
+    pluginMcpProvided = !exists(mcpFile) && pluginMcpServesProject(installationContext, root, storage.projectId);
+    const mcp = exists(mcpFile) || pluginMcpProvided ? "manual" : "managed";
+    integrations.claude = {
+      status: instruction === "managed" && mcp === "managed" ? "managed" : "manual",
+      instruction: { status: instruction, path: "CLAUDE.md" }, mcp: { status: mcp, path: ".mcp.json",
+        ...(pluginMcpProvided ? { reason: "No project MCP file was created for this invocation; its verified plugin server handled the request. A later standalone resume can provide the absent file." } : {}) },
+      paths: [instruction === "managed" && "CLAUDE.md", mcp === "managed" && ".mcp.json"].filter(Boolean),
+      ...(instruction === "manual" || mcp === "manual" ? {
+        reason: pluginMcpProvided ? "Claude file ownership is independent of this request's verified plugin MCP access. No future Host access is assumed." : "Existing project-owned Claude files were preserved independently.",
         instructionProjection: relativeProjectArtifact(storage, "generated/lode-instructions.md"),
         mcpProjection: relativeProjectArtifact(storage, "generated/claude.mcp.json"),
-      }
-      : { status: "managed", paths: ["CLAUDE.md", ".mcp.json"] };
+      } : {}),
+    };
   }
   if (runtimes.includes("codex")) {
     const file = path.join(root, "AGENTS.md");
@@ -168,7 +179,14 @@ function integrationPlan(root, runtimes, storage) {
       ? { status: "manual", reason: "Existing project-owned opencode.json was preserved.", projection: relativeProjectArtifact(storage, "generated/opencode.json") }
       : { status: "managed", path: "opencode.json" };
   }
-  return integrations;
+  return { integrations, pluginMcpProvided };
+}
+
+// Legacy metadata owned both Claude files together. New metadata records each
+// independently; a manual existing file is never adopted by the other part.
+function claudePartManaged(integration, part) {
+  return integration && Object.hasOwn(integration, part)
+    ? integration[part]?.status === "managed" : integration?.status === "managed";
 }
 
 function projectFiles(root, pluginRoot, runtimes, integrations, storage) {
@@ -240,10 +258,8 @@ function projectFiles(root, pluginRoot, runtimes, integrations, storage) {
     [relativeProjectArtifact(storage, "onboarding", "storage-selections", `${onboarding.storageSelection.storageSelectionId}.json`), json(onboarding.storageSelection)],
     [relativeProjectArtifact(storage, "onboarding", "current.json"), json(onboarding.state)],
   ]);
-  if (integrations.claude?.status === "managed") {
-    files.set("CLAUDE.md", lodeInstructions());
-    files.set(".mcp.json", json(claudeMcpProjection(pluginRoot, root)));
-  }
+  if (claudePartManaged(integrations.claude, "instruction")) files.set("CLAUDE.md", lodeInstructions());
+  if (claudePartManaged(integrations.claude, "mcp")) files.set(".mcp.json", json(claudeMcpProjection(pluginRoot, root)));
   if (integrations.codex?.status === "managed") files.set("AGENTS.md", lodeInstructions());
   if (integrations.opencode?.status === "managed") files.set("opencode.json", json(opencodeProjection(pluginRoot, storage, root)));
   return { files, project };
@@ -256,7 +272,7 @@ function pruneEmptyDirectories(root, directories) {
   }
 }
 
-export function initializeProject({ root = ".", pluginRoot, runtimes } = {}) {
+export function initializeProject({ root = ".", pluginRoot, runtimes, installationContext = null } = {}) {
   const canonicalRoot = canonicalDirectory(root);
   const canonicalPluginRoot = fs.realpathSync(path.resolve(pluginRoot));
   const selectedRuntimes = normalizeRuntimes(runtimes);
@@ -267,7 +283,7 @@ export function initializeProject({ root = ".", pluginRoot, runtimes } = {}) {
   const target = path.join(canonicalRoot, storage.directory);
   if (fs.existsSync(target) && (!fs.statSync(target).isDirectory() || fs.readdirSync(target).length)) fail("Fresh Project storage target is occupied.", "MANAGED_COLLISION");
 
-  const integrations = integrationPlan(canonicalRoot, selectedRuntimes, storage);
+  const { integrations, pluginMcpProvided } = integrationPlan(canonicalRoot, selectedRuntimes, storage, installationContext);
   const { files, project } = projectFiles(canonicalRoot, canonicalPluginRoot, selectedRuntimes, integrations, storage);
   const createdFiles = [];
   const createdDirectories = new Set();
@@ -300,7 +316,9 @@ export function initializeProject({ root = ".", pluginRoot, runtimes } = {}) {
     createdFiles.push(manifestFile);
     noteProjectGraphChange(canonicalRoot);
     return {
-      status: Object.values(integrations).some((item) => item.status === "manual") ? "ready_with_manual_integration" : "ready",
+      status: Object.entries(integrations).some(([runtime, item]) => item.status === "manual"
+        && !(runtime === "claude" && item.instruction.status === "managed" && pluginMcpProvided
+          && pluginMcpServesProject(installationContext, canonicalRoot, storage.projectId))) ? "ready_with_manual_integration" : "ready",
       project,
       storage: resolveProjectStorage(canonicalRoot),
       integrations,
@@ -315,7 +333,7 @@ export function initializeProject({ root = ".", pluginRoot, runtimes } = {}) {
   }
 }
 
-export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes = null, onValidatedSessionSelection = null } = {}) {
+export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes = null, onValidatedSessionSelection = null, installationContext = null } = {}) {
   const canonicalPluginRoot = fs.realpathSync(path.resolve(pluginRoot));
   const packageVersion = packageVersionAt(canonicalPluginRoot);
   const inspected = inspectProject(root);
@@ -334,11 +352,23 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
   const format = formatForVerifiedOwner(storage);
   const manifestFile = path.join(projectRoot, storage.directory, "generated", "manifest.json");
   const manifest = readJson(manifestFile, "Managed manifest");
+  const additions = new Map();
+  if (inspected.project.runtimes.includes("claude")) {
+    for (const [relative, content] of [["CLAUDE.md", lodeInstructions()], [".mcp.json", json(claudeMcpProjection(canonicalPluginRoot, projectRoot))]]) {
+      const file = path.join(projectRoot, relative);
+      try { fs.lstatSync(file); continue; } catch (error) { if (error.code !== "ENOENT") throw error; }
+      // A missing managed original is drift, never permission to regenerate it.
+      if (manifest.managed.some(item => item.path === relative)) fail(`Managed installation projection is missing: ${relative}`, "MANAGED_INSTALLATION_PROJECTION_MISSING");
+      if (relative === ".mcp.json" && pluginMcpServesProject(installationContext, projectRoot, inspected.project.projectId)) continue;
+      assertNoSymlinkAncestors(projectRoot, file);
+      additions.set(relative, content);
+    }
+  }
   // Synchronous optional Host observation AFTER readiness/runtime/identity/input
   // preflight. No existing pure refusal can leave a P5 pending selection.
   if (onValidatedSessionSelection) onValidatedSessionSelection({ root: projectRoot,
     projectId: inspected.project.projectId, sessionId: inspected.state.sessionId });
-  if (manifest.pluginRoot === canonicalPluginRoot && manifest.packageVersion === packageVersion) {
+  if (manifest.pluginRoot === canonicalPluginRoot && manifest.packageVersion === packageVersion && !additions.size) {
     return {
       status: "current",
       projectId: inspected.project.projectId,
@@ -350,6 +380,7 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
 
   const replacements = new Map();
   const addReplacement = (relative, content) => {
+    if (additions.has(relative)) return;
     const file = path.join(projectRoot, relative);
     if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== content) replacements.set(relative, content);
   };
@@ -359,22 +390,41 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
     for (const role of [format.roleField, "developer", "coder", "reviewer"]) {
       addReplacement(relativeProjectArtifact(storage, "roles", `${role}.md`), roleInstruction(role));
     }
-    if (inspected.project.integrations.claude?.status === "managed") addReplacement("CLAUDE.md", lodeInstructions());
+    if (claudePartManaged(inspected.project.integrations.claude, "instruction")) addReplacement("CLAUDE.md", lodeInstructions());
     if (inspected.project.integrations.codex?.status === "managed") addReplacement("AGENTS.md", lodeInstructions());
   }
   if (inspected.project.runtimes.includes("claude")) {
     const projection = json(claudeMcpProjection(canonicalPluginRoot, projectRoot));
     addReplacement(relativeProjectArtifact(storage, "generated", "claude.mcp.json"), projection);
-    if (inspected.project.integrations.claude?.status === "managed") addReplacement(".mcp.json", projection);
+    if (claudePartManaged(inspected.project.integrations.claude, "mcp")) addReplacement(".mcp.json", projection);
   }
   if (inspected.project.runtimes.includes("opencode")) {
     const projection = json(opencodeProjection(canonicalPluginRoot, storage, projectRoot));
     addReplacement(relativeProjectArtifact(storage, "generated", "opencode.json"), projection);
     if (inspected.project.integrations.opencode?.status === "managed") addReplacement("opencode.json", projection);
   }
+  if (additions.size) {
+    const project = structuredClone(inspected.project), integration = project.integrations.claude;
+    for (const [part, relative] of [["instruction", "CLAUDE.md"], ["mcp", ".mcp.json"]]) {
+      integration[part] = { status: additions.has(relative) || claudePartManaged(integration, part) ? "managed" : "manual", path: relative };
+    }
+    integration.paths = [integration.instruction.status === "managed" && "CLAUDE.md", integration.mcp.status === "managed" && ".mcp.json"].filter(Boolean);
+    integration.status = integration.paths.length === 2 ? "managed" : "manual";
+    addReplacement(relativeProjectArtifact(storage, "project.json"), json(project));
+  }
   assertProjectStorageUnchanged(storage);
   const originals = new Map([[manifestFile, fs.readFileSync(manifestFile)]]);
+  const created = new Map();
   try {
+    for (const [relative, content] of additions) {
+      const file = path.join(projectRoot, relative);
+      assertNoSymlinkAncestors(projectRoot, file);
+      // Atomic no-clobber creation: an intervening user file always wins.
+      atomicCreateArtifact(file, content);
+      created.set(file, { dev: null, ino: null, sha256: sha256(content) });
+      const stat = fs.lstatSync(file);
+      created.set(file, { dev: stat.dev, ino: stat.ino, sha256: sha256(content) });
+    }
     for (const [relative, content] of replacements) {
       const file = path.join(projectRoot, relative);
       assertNoSymlinkAncestors(projectRoot, file);
@@ -385,6 +435,7 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
     const managed = (manifest.managed || []).map((item) => replacements.has(item.path)
       ? { ...item, sha256: sha256(fs.readFileSync(path.join(projectRoot, item.path))) }
       : item);
+    for (const [relative, content] of additions) managed.push({ path: relative, sha256: sha256(content) });
     for (const relative of replacements.keys()) {
       if (!managed.some((item) => item.path === relative)) {
         fail(`Managed manifest does not own installation projection: ${relative}`, "MANAGED_INSTALLATION_PROJECTION_UNOWNED");
@@ -395,6 +446,14 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
     for (const [file, content] of [...originals.entries()].reverse()) {
       try { atomicWrite(file, content); } catch {}
     }
+    for (const [file, owned] of [...created].reverse()) try {
+      const stat = fs.lstatSync(file);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.dev !== owned.dev || stat.ino !== owned.ino
+        || sha256(fs.readFileSync(file)) !== owned.sha256) {
+        error.projectionCleanup = { code: "CREATED_PROJECTION_CHANGED", preservedPath: file }; continue;
+      }
+      fs.unlinkSync(file);
+    } catch (cleanup) { error.projectionCleanup = { code: cleanup.code, preservedPath: file }; }
     throw error;
   }
   const converged = inspectProject(projectRoot);
@@ -405,7 +464,7 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
     sessionId: converged.state.sessionId,
     pluginRootChanged: manifest.pluginRoot !== canonicalPluginRoot,
     packageVersionChanged,
-    updatedManagedFiles: [...replacements.keys()].sort(),
+    updatedManagedFiles: [...new Set([...replacements.keys(), ...additions.keys()])].sort(),
   };
 }
 

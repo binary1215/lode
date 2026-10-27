@@ -7,6 +7,14 @@ possession evidence is absent. Factoring identical fields within one emitted
 view does not authorize skipping recovery, current constraints/cancellation or
 Todo context. No additional receipt, handshake or save is required.
 
+Read supplied full work bodies and separate `recordExcerpts` under current P2.
+An excerpt's source owner/digest, original field/index, range unit and coverage
+describe exactly what was delivered. Related judgment/task fields and omitted
+conditions remain material. Zero full records with excerpts is partial history,
+not no history or full recovery. Follow its existing exact-read expansion only
+for a missing dependency; it neither requires a routine read chain nor supplies
+current approval. Independent Todo and current cancellation remain in view.
+
 Read historical meaning from the exact content-addressed checkpoint alongside
 current selected Session/Run facts and `.lode/project.json`. Do not require past
 execution pointers to equal current ones or replay the historical next action.
@@ -63,8 +71,10 @@ accepted-result integration operation owns that binding.
 reports that publication is mechanically possible, read a new exact basis before
 deriving direction and calling sync.
 
-Compaction is an intentional lossy provider operation. When the Host exposes a
-trusted lifecycle event, call `lode_compaction_lifecycle_step`: provider Lode
+Compaction is an intentional lossy provider operation. Ordinary native compaction
+uses the entry recovery above, including normal no-checkpoint work. Only when
+the managed lifecycle is chosen and the Host exposes a trusted lifecycle event,
+call `lode_compaction_lifecycle_step`: provider Lode
 authors current bounded direction only when an exact current checkpoint cannot
 be reused. It may restate only current user direction, existing approved
 decisions, and verified P2 lineage; it must not invent an approval. The Host

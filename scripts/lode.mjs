@@ -85,7 +85,7 @@ export function parse(argv) {
     if (!item.startsWith("--")) throw new Error(`Unexpected argument: ${item}`);
     const key = item.slice(2);
     if (command === "graph-explorer" && ["history", "share"].includes(key)) { options[key] = true; continue; }
-    if (key === "details") {
+    if (key === "details" || command === "session-work-read" && key === "scan-evidence" || command === "graph-query" && key === "inventory-page") {
       const value = rest[index + 1];
       options[key] = value === "false" ? false : true;
       if (value === "true" || value === "false") index += 1;
@@ -112,11 +112,11 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
       `${cliDisplay} --version`,
       `${cliDisplay} status <project>`,
       `${cliDisplay} doctor <project>`,
-      `${cliDisplay} graph-query <project> --query <text> [--view all|work|product] [--paths <path,...>] [--anchors <id,...>] [--depth <n>] [--max-nodes <n>] [--max-edges <n>] [--world-model <id>] [--details]`,
+      `${cliDisplay} graph-query <project> --query <text> [--view all|work|product] [--paths <path,...>] [--anchors <id,...>] [--depth <n>] [--max-nodes <n>] [--max-edges <n>] [--world-model <id>] [--details] [--inventory-page --inventory-paths <owned-path,...> --inventory-cursor <returned-cursor>]`,
       `${cliDisplay} graph-index <project>`,
       `${cliDisplay} graph-explorer <project> [--layer project|code] [--query <text-or-source>] [--anchors <id,...>] [--paths <path,...>] [--history] [--share] [--output <new-file.html>]`,
       `${cliDisplay} session-create <project> [--purpose <text>] [--new-session <session-id>]`,
-      `${cliDisplay} session-list <project> [--session <id>] [--max-sessions <1..64>] [--after-session <cursor>]  # read-only preview; preserves selection`,
+      `${cliDisplay} session-list <project> [--session <id>] [--max-sessions <1..64>] [--after-session <cursor>] [--conversation-candidates <json-file>]  # read-only preview and optional stored mappings; preserves selection`,
       `${cliDisplay} project-direction-read <project>`,
       `${cliDisplay} project-direction-update <project> --input <current-user-direction.json> [--expected-direction <id>]`,
       `${cliDisplay} runtime-adapters <project>`,
@@ -241,7 +241,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
       `${cliDisplay} checkpoint-diagnose <project>`,
       `${cliDisplay} checkpoint-sync <project> --input <head-direction.json>`,
       `${cliDisplay} session-work-record <project> --input <selected-work-evidence.json>`,
-      `${cliDisplay} session-work-read <project> [--input <read-bounds.json>]`,
+      `${cliDisplay} session-work-read <project> [--scan-evidence] [--after-evidence-id <returned-id>] [--input <read-bounds.json>]`,
       `${cliDisplay} session-restore <project> [--checkpoint <session-run-checkpoint-id>]`,
       `${cliDisplay} session-continue <project> --runtime <claude|codex|opencode> [--checkpoint <session-run-checkpoint-id>] [--binding-env <environment-name>]`,
       `${cliDisplay} compact-prepare <project> --input <recovery.json>`,
@@ -339,6 +339,12 @@ function requireRuntimeSurface(command, surface, root, authorization) {
   requireOperationSurface(command, surface, { workerBound });
 }
 
+async function preparedRuntimeRead(root, value) {
+  try { return (await import("./lib/runtime-prepared-input-view.mjs")).withPreparedRuntimeInputView({ root, value }); }
+  catch { return { ...value, preparedInput: { kind: "PreparedRuntimeInputProjection", authorityPlane: "P4", status: "unavailable", reasonCode: "PREPARED_INPUT_VIEW_UNAVAILABLE",
+    persisted: false, instructionAuthority: false, recoveryAuthority: false, executionAuthorization: false, modelUse: "unknown" } }; }
+}
+
 export function runCommand(argv = process.argv.slice(2), { observationRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, sessionContext = null, signal, onProcess } = {}) {
   const entry = commandEntry(argv);
   const parsed = parse(entry.argv);
@@ -348,7 +354,9 @@ export function runCommand(argv = process.argv.slice(2), { observationRegistry =
     if (argv.lastIndexOf("--session") !== index) throw new Error("Only one logical Session preview may be requested.");
     return readSessionWorkList({ root: parsed.root, sessionId: index >= 0 ? parsed.options.session : null,
       maxSessions: parsed.options["max-sessions"] === undefined ? 16 : Number(parsed.options["max-sessions"]),
-      afterSessionId: parsed.options["after-session"] ?? null });
+      afterSessionId: parsed.options["after-session"] ?? null,
+      conversationCandidates: parsed.options["conversation-candidates"] === undefined ? undefined
+        : inputJson({ input: parsed.options["conversation-candidates"] }, "Conversation lookup selectors") });
   }
   if (["status", "doctor"].includes(parsed.command)) {
     if (argv.lastIndexOf("--session") !== index) throw new Error("Only one logical Session route may be selected.");
@@ -397,7 +405,8 @@ function runRoutedCommand(argv, { observationRegistry = null, compactionLifecycl
   if (command === "status" || command === "doctor") return inspectProjectExperience({ root });
   if (command === "graph-query") return import("./lib/project-graph.mjs").then(({ queryProjectGraph }) => queryProjectGraph({ root, query: options.query || "", view: options.view || "all",
     paths: options.paths?.split(",") || [], anchorIds: options.anchors?.split(",") || [], depth: options.depth == null ? 1 : Number(options.depth),
-    details: options.details === true || options.details === "true", maxNodes: options["max-nodes"] == null ? undefined : Number(options["max-nodes"]), maxEdges: options["max-edges"] == null ? undefined : Number(options["max-edges"]), worldModelId: options["world-model"] || "" }));
+    details: options.details === true || options.details === "true", maxNodes: options["max-nodes"] == null ? undefined : Number(options["max-nodes"]), maxEdges: options["max-edges"] == null ? undefined : Number(options["max-edges"]), worldModelId: options["world-model"] || "",
+    inventoryPage: options["inventory-page"] === true || options["inventory-page"] === "true", inventoryPaths: options["inventory-paths"]?.split(","), inventoryCursor: options["inventory-cursor"] }));
   if (command === "graph-index") return import("./lib/project-graph.mjs").then(({ indexProjectGraph }) => indexProjectGraph({ root }));
   if (command === "graph-explorer") return import("./lib/graph-explorer.mjs").then(({ exportGraphExplorer }) => exportGraphExplorer({ root,
     query: options.query || "", anchorIds: options.anchors?.split(",") || [], paths: options.paths?.split(",") || [], layer: options.layer || "project",
@@ -421,7 +430,7 @@ function runRoutedCommand(argv, { observationRegistry = null, compactionLifecycl
       persist: true,
     }));
   }
-  if (command === "runtime-invocation-read") return readRuntimeInvocationAuthorization({ root, authorizationId: options.authorization });
+  if (command === "runtime-invocation-read") return preparedRuntimeRead(root, readRuntimeInvocationAuthorization({ root, authorizationId: options.authorization }));
   if (command === "worker-reconcile") return reconcileWorkerMember({ root, taskKey: options["task-key"] });
   if (command === "worker-prepare") {
     const allowed = new Set(["input", "task", "task-key", "role", "outcome", "context", "source", "propose", "model", "runtime", "timeout-ms", "instruction-scope", "context-mode"]);
@@ -774,7 +783,9 @@ function runRoutedCommand(argv, { observationRegistry = null, compactionLifecycl
   if (command === "checkpoint-diagnose") return inspectRecoveryCheckpointDiagnosis({ root });
   if (command === "checkpoint-sync") return syncRecoveryCheckpoint({ ...inputJson(options, "Recovery checkpoint sync"), root });
   if (command === "session-work-record") return recordSessionWorkEvidence({ root, input: inputJson(options, "Selected Session work evidence") });
-  if (command === "session-work-read") return readSessionWorkContext({ ...(options.input ? inputJson(options, "Session work read") : {}), root });
+  if (command === "session-work-read") return readSessionWorkContext({ ...(options.input ? inputJson(options, "Session work read") : {}),
+    ...(options["scan-evidence"] !== undefined ? { scanEvidence: options["scan-evidence"] === true || options["scan-evidence"] === "true" } : {}),
+    ...(options["after-evidence-id"] !== undefined ? { afterEvidenceId: options["after-evidence-id"] } : {}), root });
   if (command === "session-restore") return restoreSessionFromArtifacts({ root, checkpointId: options.checkpoint || null });
   if (command === "session-continue") {
     return continueSessionFromArtifacts({

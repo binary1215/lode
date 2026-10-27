@@ -22,6 +22,7 @@ const singletonPaths = [".head/context/product-model.json", ".head/world-model/c
   ".head/sessions/current.json", ".head/project-direction/current.json"];
 export const projectGraphIndexPath = owner => relativeProjectArtifact(owner, "graph-discovery", "index.json");
 export const projectGraphRecordDirectories = owner => PROJECT_GRAPH_RECORD_DIRECTORIES.map(relative => relativeProjectArtifact(owner, relative.slice(6)));
+export const projectGraphSingletonPaths = owner => ownedPaths(singletonPaths, owner);
 const ownedPaths = (paths, owner) => paths.map(relative => relativeProjectArtifact(owner, relative.slice(6)));
 const MAX_RECORDS = 10000;
 const MAX_BYTES = 16 * 1024 * 1024;
@@ -77,6 +78,18 @@ export function readGraphRecord(root, relative, maximum = MAX_BYTES) {
   const bytes = fs.readFileSync(file);
   if (bytes.length > maximum) fail("PROJECT_GRAPH_RECORD_LIMIT");
   return { document: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)), bytes, digest: hash(bytes) };
+}
+
+// Syntactic selectors only. The original typed reader still proves each record.
+export function projectGraphExactSelector(relative) {
+  const work = typeof relative === "string" && sessionWorkPath(relative);
+  if (work) return { layer: "sessionWork", recordId: work.evidenceId };
+  const lineage = typeof relative === "string" && relative.match(/^\.(?:head|lode)\/lineage\/([^/]+)\/([a-z-]+-[a-f0-9]{24})\.json$/);
+  const prefixes = { "whole-plans": "whole-plan", "execution-contracts": "execution-contract", "result-packets": "result-packet", "review-decisions": "review-decision" };
+  if (lineage && prefixes[lineage[1]] && lineage[2].startsWith(prefixes[lineage[1]] + "-")
+    && lineage[2].length === prefixes[lineage[1]].length + 25) return { layer: "lineage", recordId: lineage[2] };
+  const direction = typeof relative === "string" && relative.match(/^\.(?:head|lode)\/project-direction\/revisions\/(direction-[a-f0-9]{24})\.json$/);
+  return direction ? { layer: "direction", recordId: direction[1] } : null;
 }
 
 // Optional historical headers, never current validity, direction or bodies.
@@ -214,7 +227,7 @@ function sessionWorkDependencies(root, entries, context, storage, recordLimit = 
   return dependencies;
 }
 
-export function collectProjectGraphInventory(root, { recordLimit = MAX_RECORDS } = {}) {
+export function collectProjectGraphInventory(root, { recordLimit = MAX_RECORDS, exactPaths = null } = {}) {
   const { projectRoot, project, storage } = readGraphProject(root);
   if (!project) return { projectRoot, project, entries: [], unavailable: [], complete: false, recordsDigest: null };
   const entries = [], unavailable = [], workContext = createSessionWorkReadContext(projectRoot, storage);
@@ -236,6 +249,33 @@ export function collectProjectGraphInventory(root, { recordLimit = MAX_RECORDS }
       entries.push({ path: relative, sha256: hash(bytes), bytes: bytes.length });
     } catch (error) { unavailable.push({ path: relative, reasonCode: error.code || "PROJECT_GRAPH_RECORD_UNAVAILABLE" }); }
   };
+  if (exactPaths !== null) {
+    if (!Array.isArray(exactPaths) || !exactPaths.length || exactPaths.length > 32
+      || exactPaths.some(relative => !projectGraphExactSelector(relative)
+        || !relative.startsWith(formatForVerifiedOwner(storage).directory + "/"))) fail("PROJECT_GRAPH_EXACT_PATH_INVALID");
+    for (const relative of [...new Set(exactPaths)].sort()) add(relative);
+    // Exact paths select bytes to verify, never prove ownership or validity.
+    // Reuse the typed work verifier and its bounded declared dependencies;
+    // unrelated inventory membership is deliberately not enumerated here.
+    const firstDependencies = sessionWorkDependencies(projectRoot, entries, workContext, storage, recordLimit);
+    const selected = new Set(entries.map(entry => entry.path));
+    for (const dependency of firstDependencies.entries) {
+      if (sessionWorkPath(dependency.path) && !selected.has(dependency.path)) {
+        selected.add(dependency.path); add(dependency.path);
+      }
+    }
+    entries.sort((a, b) => a.path.localeCompare(b.path));
+    unavailable.sort((a, b) => a.path.localeCompare(b.path));
+    const readerDependencies = { sessionWork: sessionWorkDependencies(projectRoot, entries, workContext, storage, recordLimit) };
+    const scope = { kind: "exact-canonical-paths-and-declared-dependencies", requestedPaths: [...new Set(exactPaths)].sort(),
+      inventoryBoundReached: !complete || !readerDependencies.sessionWork.complete,
+      unrelatedMembership: "not-inspected", incomingRelationsOutsideScope: "unknown", emptyResultProvesAbsence: false,
+      ...(exactPaths.some(relative => projectGraphExactSelector(relative).layer === "lineage") ? {
+        lineageReadDependencies: "Existing exact lineage reader also inspects selected Session, managed manifest and managed-file digests; not a single-file cost bound." } : {}),
+      ...(exactPaths.some(relative => projectGraphExactSelector(relative).layer === "direction") ? { directionCurrentness: "not-inspected" } : {}) };
+    const recordsDigest = projectGraphDigest({ projectId: project.projectId, projectRoot, entries, unavailable, readerDependencies, scope });
+    return { projectRoot, project, storage, entries, unavailable, complete: false, readerDependencies, recordsDigest, workContext, scope };
+  }
   const visit = (relative, depth = 0) => {
     if (entries.length >= recordLimit || depth > 8) { complete = false; return; }
     try {

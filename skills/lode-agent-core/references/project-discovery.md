@@ -39,6 +39,19 @@ Concurrent discovery is non-atomic: a missing cursor requires a fresh page.
 The list reads metadata only; a preview reads at most eight recent bodies plus
 the existing independently selected Todo projection. Honor its partial/conflict/
 unknown coverage, and expand needed originals using `lode_session_work_read`.
+Known canonical Session work, execution-lineage and historical direction paths
+can use the existing graph `paths` argument before global inventory; retain
+returned exact paths for detail. Existing lineage reads still inspect selected
+Session/managed dependencies; retained artifacts are not current permission.
+Historical direction currentness stays unknown, and the current direction tool
+does not select an old revision. This narrower
+scope leaves unrelated membership/incoming relations unknown. If broader known
+Session history is useful, `scan_evidence: true` starts its first lexical page
+without a seed ID; follow only the returned `enumeration.next` arguments for a
+useful next page. Neither an exhausted page nor unseen insertions prove complete
+history. General Project/layer inventory continuation is still unavailable.
+Each inspected scan original has a complete body or an exact bounded selector;
+the returned next frontier preserves access to the remaining undisclosed IDs.
 No body or failed metadata outside the page is assumed absent or complete.
 Per-Session errors preserve healthy rows. An unreadable shared directory is
 unavailable, not an empty complete inventory; an invalid common Project identity
@@ -53,6 +66,25 @@ exact linked ResultPackets/ReviewDecisions only for their verified scope. Label
 model synthesis as derived and cite its originals. No mandatory recap save is
 needed. For actual conversations see
 [continuing work](runtime-composition.md#continuing-in-an-existing-conversation).
+
+When finding a conversation matters, reuse actual bounded Host candidates already
+available, or use a relevant bounded listing only if that Host exposes one.
+Pass useful candidates to the existing `lode_session_list` as optional
+`conversation_candidates`, alongside `session_id` when previewing exact work.
+Lode supplies each actual `runtime`, `native_session_id`, optional `agent_id` and
+explicit `environment_scope: "current"`; users do not fill out selectors.
+CLI automation can supply the same array with `--conversation-candidates <file>`.
+No Host list means ordinary work continues from useful existing records.
+
+The result checks at most 16 selectors in the current operational namespace.
+Preserve mapping revision/digest, read time, per-row failures and omitted counts.
+An absent mapping never selects the default. Other or unverified Host namespaces
+are unsupported, with no local fallback. Stored Session connection is distinct
+from participation in a particular work root, current ownership, live activity
+and contact readiness; those remain unknown without separate actual evidence.
+Candidates never replace the caller, route, environment or selection and cannot
+authorize a message or assignment. This is an optional lookup, not a required
+list/status/read pipeline or a global conversation directory.
 
 Search matches bounded display/domain values and ranks lexical evidence; it
 does not infer semantic relevance or sufficient context. Lode can use exact
@@ -83,6 +115,17 @@ index, Session and common-direction APIs and counterexamples. Use request-local
 `session_id`/`--session` without replacing the default Session. Restore exact
 checkpoint fields with current common constraints/cancellations applied separately.
 Do not create new user forms, per-read artifacts or background collectors.
+
+If a general inventory bound hides relevant originals, use the existing
+`lode_project_graph` with `inventory_page: true`, optionally narrowing with
+`inventory_paths` to returned owned files/directories (CLI `graph-query
+--inventory-page --inventory-paths <path,...>`). These are untyped byte rows,
+not graph nodes or review/currentness proof. Follow useful returned `exactRead`
+or `next` arguments yourself; do not ask the user to write IDs/cursors. Check
+`coverage`, failures and unresolved typed dependencies. `metadata-bound` offers
+observed narrowing, `changed-scope` offers restart, and exhausted applies only
+to that observed range. Do not retry unchanged bounds, loop automatically,
+invent missing IDs/counts or make discovery completion a work prerequisite.
 
 ## After integrated changes
 

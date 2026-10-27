@@ -1,6 +1,8 @@
 import path from "node:path";
 import { publicToolName } from "./lode-artifact-composition.mjs";
 import { fitSelectedBodyGroups, workBodyTuples } from "./session-work-body-organization.mjs";
+import { fitSessionWorkDelivery, workOriginalCount } from "./session-work-excerpts.mjs";
+import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
 
 // Complete emitted JSON, not just P3 bodies. The Codex resource guard reuses
 // the default work-reader size; it is not a token/window or sufficiency claim.
@@ -36,9 +38,10 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
       openReviewIds: checkpoint.openReviewIds, purpose: checkpoint.purpose,
       approvedDecisions: checkpoint.approvedDecisions, historicalPosition: checkpoint.currentPosition,
       historicalNextExpectedResult: checkpoint.nextExpectedResult, historicalApprovalGrantsCurrentEffect: false } : null,
-    records: [], omittedEvidenceIds: [], omittedEvidenceCount: work?.records?.length || 0,
+    records: [], omittedEvidenceIds: [], omittedEvidenceCount: workOriginalCount(work),
     workCoverage: work ? { status: work.status, reasonCode: work.reasonCode, omitted: true,
-      sourceOriginals: work.coverage?.originals, sourceInspected: work.coverage?.inspected, sourceIncluded: work.coverage?.included } : null,
+      sourceOriginals: work.coverage?.originals, sourceInspected: work.coverage?.inspected, sourceIncluded: work.coverage?.included,
+      ...(work.recordExcerpts?.length ? { sourceExcerpted: work.recordExcerpts.length } : {}) } : null,
     route: logicalSessionId ? { session_id: logicalSessionId } : null,
     scope: work?.omissions?.uninspected > 0 ? compactScope : "Read-only, non-atomic orientation. Current common and selected Session P2 apply; history/P3 grant no effects. Original IDs/digests select verified sources, not this projection. Reference freshness is not inferred. Recheck current authority before an effect.",
     hostCapability: "Verified Host/explicit route only; never guess. No extra bind/save/repeated Session ID.",
@@ -53,7 +56,12 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
     const omittedWork = context.omittedEvidenceCount || work?.omissions?.byBudget || work?.omissions?.uninspected || work?.unavailable?.length
       || work && !["work_context_available", "work_context_not_recorded"].includes(work.status)
       || work?.todoContext?.items?.length && (!context.todoContext || context.todoContext.omittedFromStartup);
-    if (compactExpansion) {
+    if (entry.status === "session_selection_unresolved") {
+      // Common P2 expansion stays prior to optional Session discovery. Missing
+      // selection cannot turn a common-direction read into a Session list.
+      context.expansion = context.requiredSourceExpansion
+        ? publicToolName("head_project_direction_read") + "(project_root:" + rootSource + ")" : "";
+    } else if (compactExpansion) {
       const route = "(project_root:" + rootSource + ", ...route)";
       context.expansion = (context.requiredSourceExpansion ? "When needed: " + publicToolName("head_conversation_enter") + route : "")
         + (omittedWork ? (context.requiredSourceExpansion ? "; " : "") + "Omitted work: " + publicToolName("head_session_work_read") + route : "");
@@ -127,9 +135,7 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
     }
     if (exceedsBound()) delete context.todoContext;
   }
-  for (const record of work?.records || []) {
-    const hadNotice = Object.hasOwn(context, "savedObservationScope");
-    if (record.selectionRole && !hadNotice) context.savedObservationScope = "Saved historical observations coexist; no current live state, success or authority is inferred.";
+  const presentRecord = record => {
     // The original content (including reference descriptors) stays intact. Pair
     // byte/owner verification by index instead of repeating the same descriptor
     // and authority prose. Unmatched descriptors stay explicit, never guessed.
@@ -143,15 +149,23 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
       for (const key of ["instructionAuthority", "recoveryAuthority"]) if (check[key] === false) delete check[key];
       return { referenceIndex: index, ...check };
     });
-    context.records.push({ evidenceId: record.evidenceId, evidenceDigest: record.evidenceDigest, content: record.content,
+    return { evidenceId: record.evidenceId, evidenceDigest: record.evidenceDigest, content: record.content,
       ...(referenceChecks.length ? { referenceChecks } : {}),
       ...(record.selectionRole ? { selectionRole: record.selectionRole,
-        ...(record.savedActivity ? { savedActivity: record.savedActivity } : {}) } : {}) });
-    context.omittedEvidenceCount -= 1;
-    if (exceedsBound()) {
-      context.records.pop(); context.omittedEvidenceCount += 1;
-      if (!hadNotice) delete context.savedObservationScope;
-    }
+        ...(record.savedActivity ? { savedActivity: record.savedActivity } : {}) } : {}) };
+  };
+  const applyDelivery = payload => {
+    context.records = payload.records;
+    if (payload.recordExcerpts?.length) context.recordExcerpts = payload.recordExcerpts;
+    else delete context.recordExcerpts;
+    context.omittedEvidenceCount = workOriginalCount(work) - context.records.length;
+    if (context.records.some(record => record.selectionRole) || context.recordExcerpts?.some(excerpt => excerpt.selectionRole)) {
+      context.savedObservationScope = "Saved historical observations coexist; no current live state, success or authority is inferred.";
+    } else delete context.savedObservationScope;
+  };
+  if (work) {
+    const fitted = fitSessionWorkDelivery(work, { presentRecord, fits(payload) { applyDelivery(payload); return !exceedsBound(); } });
+    applyDelivery(fitted.payload);
   }
   if (context.savedObservationScope && work?.organization) {
     context.workOrganization = { scope: work.organization.scope, roots: work.organization.roots, branchingPredecessors: work.organization.branchingPredecessors,
@@ -166,6 +180,7 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
     if (exceedsBound()) {
       context.workCoverage = { status: work.status, reasonCode: work.reasonCode, omitted: true, reason: "startup-output-bound",
         sourceOriginals: work.coverage?.originals, sourceInspected: work.coverage?.inspected, sourceIncluded: work.coverage?.included,
+        ...(work.recordExcerpts?.length ? { sourceExcerpted: work.recordExcerpts.length } : {}),
         nextAfterEvidenceId: work.nextAfterEvidenceId };
       if (exceedsBound()) context.workCoverage = minimumCoverage;
     }
@@ -179,10 +194,25 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
     if (exceedsBound()) compactExpansion = true;
   }
   const includedIds = new Set(context.records.map((record) => record.evidenceId));
-  for (const record of work?.records || []) {
+  for (const record of [...(work?.records || []), ...(work?.recordExcerpts || []).map(excerpt => excerpt.source)]) {
     if (includedIds.has(record.evidenceId) || context.omittedEvidenceIds.length >= 16) continue;
     context.omittedEvidenceIds.push(record.evidenceId);
     if (exceedsBound()) context.omittedEvidenceIds.pop();
+  }
+  // The owner-verified next call is optional guidance, not an eager inventory or
+  // a route. Never displace current direction or originals to repeat its root.
+  if (entry.status === "session_selection_unresolved" && entry.sessionDiscovery) {
+    context.sessionDiscovery = entry.sessionDiscovery;
+    if (exceedsBound()) delete context.sessionDiscovery;
+  }
+  // Guidance follows fitting originals/Todo/reasons; it never evicts them.
+  // Missing fields do not prove delivery, just as local output is no Host/model
+  // receipt. Add an explicit omission marker only when that marker also fits.
+  context.coreGuidance = coreEntryGuidance();
+  if (exceedsBound()) {
+    delete context.coreGuidance;
+    context.coreGuidanceDelivery = "omitted-output-bound";
+    if (exceedsBound()) delete context.coreGuidanceDelivery;
   }
   // Use indices of the actually admitted output, not the upstream selection.
   // Optional grouping never displaces current direction or a fitting body.

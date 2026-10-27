@@ -355,11 +355,11 @@ test("C1 actual returned detail anchors retain currentness through warm reads, r
   indexProjectGraph({ root: f.root });
   const options = { root: f.root, ...detail, previousResult: { resultId: "not-a-retained-detail-prime" } };
   const cold = await readOnly(f, options), warm = await readOnly(f, { ...options, previousResult: cold });
-  assert.equal(warm.reuse.status, "scoped-originals-reused");
+  assert.equal(warm.reuse.status, "same-basis-result-reused");
   referenceFact(original(warm, f, saved), source.reference, { currentness: "current" });
   fs.writeFileSync(source.file, "version 22");
   const changed = await readOnly(f, { ...options, previousResult: warm });
-  assert.notEqual(changed.reuse.status, "scoped-originals-reused");
+  assert.notEqual(changed.reuse.status, warm.reuse.status);
   referenceFact(original(changed, f, saved), source.reference, { currentness: "changed", reasonCode: "SESSION_WORK_REFERENCE_CHANGED" });
   fs.writeFileSync(source.file, "version 11");
   referenceFact(original(await readOnly(f, request(f)), f, saved), source.reference, { currentness: "current" });

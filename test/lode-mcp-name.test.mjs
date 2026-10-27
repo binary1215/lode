@@ -133,6 +133,7 @@ for (const identity of ["lode", "head"]) {
     assert(launcher.includes(historicalArtifactServerName.toString()), "Generated launcher must embed the same trusted historical verifier");
     assert.deepEqual(fs.readFileSync(path.join(releaseRoot, "distribution-manifest.json")), oldManifestBytes);
     assert.deepEqual(fs.readFileSync(path.join(releaseRoot, ".mcp.json")), oldMcpBytes);
-    assert.equal(fs.readFileSync(path.join(installRoot, "installation.json"), "utf8"), ownership);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(installRoot, "installation.json"), "utf8")),
+      { ...JSON.parse(ownership), binDirectory: path.resolve(binDirectory) });
   });
 }
