@@ -27,24 +27,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - "native/**"
-      - "scripts/**"
-      - "compat/**"
-      - "test/**"
-      - "benchmarks/**"
-      - "skills/**"
-      - "docs/**"
-      - "assets/**"
-      - "README*.md"
-      - "CHANGELOG*.md"
-      - "package*.json"
-      - ".codex-plugin/**"
-      - ".mcp.json"
-      - "LICENSE"
-      - ".gitattributes"
-      - ".gitignore"
-      - ".github/workflows/**"
   workflow_dispatch:
     inputs:
       release_tag:
