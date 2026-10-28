@@ -231,3 +231,11 @@ test("conversation onboarding discovers advanced schemas and exercises the adver
     assert(result.advancedToolsRouted.includes(name), name);
   }
 });
+
+test("static Core capability data keeps the same public contract without eager runtime/installation ownership", async () => {
+  const standalone = await import("../scripts/lib/core-contract.mjs"), core = await import("../scripts/lib/lode-core.mjs");
+  assert.strictEqual(core.coreContract, standalone.coreContract); assert.deepEqual(core.coreContract(), standalone.coreContract());
+  const original = standalone.coreContract(); original.activeCapabilities.push("caller-local-only"); assert(!standalone.coreContract().activeCapabilities.includes("caller-local-only"));
+  const direct = await call("lode_core_contract"); assert.equal(direct.error, undefined);
+  const routed = await call("lode_tools_read", { name: "lode_core_contract", arguments: {} }); assert.deepEqual(routed, direct);
+});

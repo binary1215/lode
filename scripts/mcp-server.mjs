@@ -17,7 +17,7 @@ const presentedTool = tool => {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isManagedMutation, requireOperationSurface, requireSurface } from "./lib/managed-maintenance-surface.mjs";
-import { coreContract, inspectRuntimeAdapters } from "./lib/lode-core.mjs";
+import { coreContract } from "./lib/core-contract.mjs";
 import { DEFAULT_CONTEXT_BUDGET } from "./lib/context-budget.mjs";
 import { formatMcpToolContent } from "./lib/cli-presentation.mjs";
 import { sessionCallRequiresBinding } from "./lib/session-routing.mjs";
@@ -2654,7 +2654,7 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
       : name === "head_markdown_projection_build"
         ? compactMarkdownBuild((await import("./lib/world-model.mjs")).materializeWorldMarkdownProjection({ root: args.project_root }))
       : name === "head_runtime_adapters"
-          ? inspectRuntimeAdapters(args.project_root)
+          ? (await import("./lib/lode-core.mjs")).inspectRuntimeAdapters(args.project_root)
         : name === "head_runtime_invocation_authorization"
           ? await preparedRuntimeRead(args.project_root, (await import("./lib/runtime-invocation-lifecycle.mjs")).readRuntimeInvocationAuthorization({ root: args.project_root, authorizationId: args.authorization_id }))
         : name === "head_runtime_invocation_lease_status"

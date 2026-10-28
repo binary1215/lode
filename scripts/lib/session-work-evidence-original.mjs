@@ -109,9 +109,10 @@ export function normalizeSessionWorkEvidence(input) {
 }
 export const SESSION_WORK_DEFAULT_CHARACTERS = 32768;
 export const SESSION_WORK_MAX_CHARACTERS = 512 * 1024;
+const observedReadContexts = new WeakMap();
 export function createSessionWorkReadContext(root, storage = undefined) {
   const files = new Map(); let retainedBytes = 0;
-  return { storage, read(relative, maximum) {
+  const observe = (relative, maximum) => {
     if (!files.has(relative)) {
       try {
         const file = safeSessionPath(root, relative), stat = fs.lstatSync(file);
@@ -126,16 +127,40 @@ export function createSessionWorkReadContext(root, storage = undefined) {
           throw Object.assign(new Error("Work input exceeds its existing read bounds."), { code: "SESSION_WORK_REFERENCE_UNAVAILABLE", requestBoundOnly: true });
         }
         // Retention is an optimization, never an additional evidence/read gate.
-        if (retainedBytes + bytes.length > 128 * 1024 * 1024) return bytes;
+        if (retainedBytes + bytes.length > 128 * 1024 * 1024) return { bytes };
         retainedBytes += bytes.length; files.set(relative, { bytes });
       } catch (error) { if (error.requestBoundOnly) throw error; files.set(relative, { error }); }
     }
     const result = files.get(relative);
     if (result.error) throw result.error;
     if (result.bytes.length > maximum) fail("Work input exceeds its existing read bounds.", "SESSION_WORK_REFERENCE_UNAVAILABLE");
-    return result.bytes;
-  } };
+    return result;
+  };
+  // Keep retained observations private. A caller may alter its returned Buffer
+  // without changing another consumer's source or a memoized byte digest.
+  const read = (relative, maximum) => Buffer.from(observe(relative, maximum).bytes);
+  const context = { storage, read };
+  observedReadContexts.set(context, { root, read, observe });
+  return context;
 }
+
+// Internal byte observation, not a typed verdict or a currentness receipt.
+// Only the unchanged owned context can reuse this pure digest. The original
+// retention fallback still observes and hashes new bytes on each read.
+export function readSessionWorkFileObservation(root, relative, maximum, context = null, { preflight = true, includeBytes = true } = {}) {
+  // Match the caller's existing observation boundary: reference inspection did
+  // preflight paths, while graph currentness used context.read directly.
+  if (preflight && context) safeSessionPath(root, relative);
+  const owned = context && observedReadContexts.get(context);
+  if (owned && owned.root === root && context.read === owned.read) {
+    const observed = owned.observe(relative, maximum);
+    observed.digest ??= sha(observed.bytes);
+    return { ...(includeBytes ? { bytes: Buffer.from(observed.bytes) } : {}), digest: observed.digest };
+  }
+  const bytes = context ? context.read(relative, maximum) : readSessionWorkFileBytes(root, relative, maximum);
+  return { ...(includeBytes ? { bytes } : {}), digest: sha(bytes) };
+}
+
 export function sessionWorkPath(relative) {
   const match = /^(\.(?:head|lode)\/sessions(?:\/by-id\/(session-[a-fA-F0-9-]{36}))?)\/work-evidence\/(work-evidence-[a-f0-9]{24})\.json$/.exec(relative);
   return match ? { sessionId: match[2] || null, evidenceId: match[3], statePath: match[1] + "/current.json", directory: match[1] + "/work-evidence" } : null;
@@ -189,8 +214,8 @@ export function inspectSessionWorkReference(owner, ref, { saving = false, excerp
       return { ...ref, status: "intact-retained-original", originalOwner: { projectId: owner.projectId, sessionId: owner.sessionId },
         semanticFreshness: "not-inferred", instructionAuthority: false, recoveryAuthority: false };
     }
-    const bytes = readSessionWorkFileBytes(owner.root, ref.path, MAX_REFERENCE_BYTES, context);
-    if (sha(bytes) !== ref.digest) fail("Reference bytes changed.", "SESSION_WORK_REFERENCE_CHANGED");
+    const { bytes, digest } = readSessionWorkFileObservation(owner.root, ref.path, MAX_REFERENCE_BYTES, context, { includeBytes: ref.kind === "artifact" || excerptCharacters > 0 });
+    if (digest !== ref.digest) fail("Reference bytes changed.", "SESSION_WORK_REFERENCE_CHANGED");
     let originalOwner = null;
     if (ref.kind === "artifact") {
       const artifact = JSON.parse(bytes.toString("utf8"));

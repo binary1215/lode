@@ -7,6 +7,8 @@ import vm from "node:vm";
 import { pathToFileURL } from "node:url";
 import { buildGraphExplorerSnapshot, exportGraphExplorer } from "../scripts/lib/graph-explorer.mjs";
 import { renderGraphExplorer } from "../scripts/lib/graph-explorer-html.mjs";
+import { inspectWorldModel } from "../scripts/lib/world-model.mjs";
+import { startFeatureMapping, reviewFeatureMapping } from "../scripts/lib/feature-mapping.mjs";
 import { buildWorldModel } from "../scripts/lib/world-model.mjs";
 import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
 import { LocalJsonGraphProjectionAdapter, createGraphProjectionAdapter } from "../scripts/lib/graph-projection-adapter.mjs";
@@ -226,4 +228,27 @@ test("canonical and legacy Codex/Claude packages include assets and execute the 
     assert.equal(report.projectId, f.projectId); assert(fs.readFileSync(report.file, "utf8").includes("Source imports &amp; calls"));
   }
   assert.deepEqual(snapshot(f.root), before);
+});
+
+test("actual Product Canon, reviewed mapping and Work writers reach same-Feature source perspectives without graph or authority writes", async t => {
+  const f = await explorerFixture(t), productFile = path.join(f.root, f.storage.directory, "context/product-model.json");
+  fs.writeFileSync(productFile, JSON.stringify({ schemaVersion: 1, featureGroups: [{ key: "reports", name: "Reports", description: "Portable views" }], capabilities: [],
+    features: [{ key: "portable", name: "Portable report", description: "Read exact evidence in a portable view", featureGroupKeys: ["reports"], capabilityKeys: [], governedBy: [] }], requirements: [], constraints: [], decisions: [] }));
+  await buildWorldModel({ root: f.root });
+  const world = inspectWorldModel({ root: f.root }).snapshot, graph = world.temporalProvenanceGraph;
+  const feature = graph.nodes.find(node => node.kind === "Feature" && node.key === "portable"), source = graph.nodes.find(node => node.kind === "Symbol" && node.path === "src/relay.mjs" && node.name === "relay"); assert(feature && source);
+  const proposed = await startFeatureMapping({ root: f.root, semanticProposal: { schemaVersion: 1, sourceSnapshotId: graph.sourceSnapshotId, productModelId: world.productModel.productModelId,
+    candidates: [{ relationshipType: "IMPLEMENTS", sourceNodeId: source.nodeId, productNodeId: feature.nodeId, explanation: "Synthetic explicit semantic proposal; not lexical inference", confidence: .9 }] } });
+  await reviewFeatureMapping({ root: f.root, candidateSetId: proposed.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Synthetic fixture review of the exact mapping only" });
+  const bytes = fs.readFileSync(path.join(f.root, "src/relay.mjs")), digest = (await import("node:crypto")).default.createHash("sha256").update(bytes).digest("hex");
+  f.save({ summary: "Related exact relay citation; no implementation cause", references: [{ kind: "source", path: "src/relay.mjs", digest }] });
+  const before = snapshot(f.base), result = await buildGraphExplorerSnapshot({ root: f.root, anchorIds: [feature.nodeId], paths: ["src/relay.mjs"] });
+  const index = vm.runInNewContext(fs.readFileSync(path.join(pluginRoot, "scripts/graph-explorer/product-perspectives.js"), "utf8") + "\nexplorerProduct").create(result, result.graph);
+  const direct = result.graph.nodes.find(node => node.kind === "Feature" && node.origin.layer === "product" && node.key === "portable"); assert(direct);
+  const view = index.forFeature(direct); assert(view.structure.some(row => row.node.nodeId === source.nodeId));
+  assert(view.sourceBindings.some(ref => ref.path === "src/relay.mjs" && ref.digest === digest));
+  assert(view.work.some(row => row.node.workContent?.summary === "Related exact relay citation; no implementation cause"));
+  const ui = explorerDom({ ...result, graph: { ...result.graph, initialNodeId: direct.nodeId } });
+  assert.equal(ui.ids.get("feature-perspectives").hidden, false); ui.event("feature-work"); await ui.settle(); assert.match(ui.ids.get("feature-body").textContent, /Related exact relay citation/);
+  assert.deepEqual(snapshot(f.base), before); t.diagnostic(JSON.stringify({ projectId: f.projectId, model: view.entity.model, featureId: direct.nodeId, worldFeatureId: feature.nodeId, mappedSourceId: source.nodeId, digest, runtimeAuthority: result.runtimeAuthority }));
 });

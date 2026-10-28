@@ -7,6 +7,7 @@ import { explorerDom, visibleText } from "./helpers/graph-explorer-dom-fixture.m
 import { fixture as workFixture, snapshot as inputSnapshot } from "./helpers/session-work-linkage-fixture.mjs";
 import { buildGraphExplorerSnapshot } from "../scripts/lib/graph-explorer.mjs";
 import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
+import { productPerspectiveFixture } from "./helpers/product-perspective-fixture.mjs";
 import { normalizeEvidenceAnchors } from "../scripts/lib/product-policy-records.mjs";
 
 const source = fs.readFileSync(new URL("../scripts/graph-explorer/exploration.js", import.meta.url), "utf8");
@@ -59,7 +60,7 @@ test("supported summary-free work writer content reaches expanded map and readin
     const node = data.graph.nodes.find(node => node.evidenceDigest === saved[i].evidence.evidenceDigest);
     assert(node); assert.equal(node.workContent.summary, null);
     const ui = explorerDom({ ...data, graph: { ...data.graph, initialNodeId: node.nodeId } });
-    assert(!visibleText(nodeElement(ui, node.nodeId)).includes(value), "Default map remains title-only");
+    assert(visibleText(nodeElement(ui, node.nodeId)).includes(value), "Focused map exposes the short recorded excerpt without opening the full body");
     ui.event(nodeElement(ui, node.nodeId).querySelectorAll("[data-card-control]")[0]); await ui.settle();
     const map = visibleText(nodeElement(ui, node.nodeId));
     assert(map.includes(heading) && map.includes(value), `Expanded map must read ${heading} already exported by the supported writer`);
@@ -443,7 +444,7 @@ test("expanded cards use actual recorded text and known conditions, with full qu
   assert.match(index.describe(direction).conditions.join(" "), /Cancelled actions: 1.*Constraints: 1/);
   assert.equal(index.describe(graph.nodes[2]).body, "Investigate failure");
   assert.equal(index.describe({ kind: "Unknown", nodeId: "empty" }).body, "");
-  const ui = explorerDom(snapshot); assert(!visibleText(nodeElement(ui, "A")).includes("Pending"));
+  const ui = explorerDom(snapshot); assert(visibleText(nodeElement(ui, "A")).includes("Pending"));
   ui.event(nodeElement(ui, "A").querySelectorAll("[data-card-control]")[0]); await ui.settle(); const map = visibleText(nodeElement(ui, "A"));
   assert.match(map, /Excerpt, not a complete summary/); assert(!map.includes("This is NOT approval"));
   assert.match(map, /e\u0301…/); readingCard(ui, "A").open = true; assert(visibleText(readingCard(ui, "A")).includes(summary));
@@ -613,7 +614,7 @@ test("header drag and corner rectangle selection do not swallow body text select
   }
 });
 
-test("title-only map and reading disclosures are independent, measured, cancellable and preserve other nodes, pins and keyboard defaults", async () => {
+test("compact evidence summaries and independent map/reading disclosures are independent, measured, cancellable and preserve other nodes, pins and keyboard defaults", async () => {
   const graph = { nodes: nodes("A", "B", "C").map(node => ({ ...node, revisionId: `r-${node.nodeId}`, summary: `RECORDED BODY ${node.nodeId}`,
     reviewState: "unreviewed", freshness: "unavailable", sourceReference: { path: `src/${node.nodeId}.mjs`, digest: "a".repeat(64) } })), edges: [edge("A", "B")] };
   for (const node of graph.nodes) node.freshness = "snapshot-evidence"; graph.edges.push(edge("A", "C"));
@@ -622,7 +623,7 @@ test("title-only map and reading disclosures are independent, measured, cancella
   snapshot.originals[JSON.stringify(["src/A.mjs", digest])] = { status: "verified-exact-bytes", digest, text: original };
   const before = JSON.stringify(snapshot), ui = explorerDom(snapshot, { cardMeasure: (element, size) => (element.children[1].hidden ? 56 : 250) * size / 14 });
   await ui.settle(); const nodeA = () => nodeElement(ui, "A"), nodeB = () => nodeElement(ui, "B"), control = id => nodeElement(ui, id).querySelectorAll("[data-card-control]")[0];
-  assert.equal(visibleText(nodeA()), "A+"); assert(!visibleText(nodeA()).includes("unreviewed")); assert.equal(visibleText(readingCard(ui, "A")), "A"); assert.equal(readingCard(ui, "A").open, false);
+  assert(visibleText(nodeA()).includes("RECORDED BODY A")); assert(visibleText(nodeA()).includes("unreviewed")); assert(visibleText(readingCard(ui, "A")).includes("RECORDED BODY A")); assert.equal(readingCard(ui, "A").open, false);
   const cameraBefore = camera(ui), closedHeight = Number(nodeA().children[0].getAttribute("height")), untouchedC = nodeElement(ui, "C").getAttribute("transform");
   ui.event(nodeB(), "keydown", { shiftKey: true, key: "ArrowRight" }); const pinnedB = nodeB().getAttribute("transform");
   const aControl = control("A"); aControl.focus(); ui.pointerClick(aControl); await ui.settle();
@@ -650,4 +651,154 @@ test("title-only map and reading disclosures are independent, measured, cancella
   assert.equal(nodeB().getAttribute("transform"), pinnedB); assert.equal(nodeElement(ui, "C").getAttribute("transform"), untouchedC); assert.equal(camera(ui), cameraBefore); assert(readingCard(ui, "A").open);
   ui.ids.get("search").value = "not-a-match"; ui.event("search", "input"); ui.event("back"); ui.event("forward");
   assert.equal(control("B").getAttribute("aria-expanded"), "true"); assert(readingCard(ui, "A").open); assert.equal(JSON.stringify(snapshot), before);
+});
+
+const productProjection = vm.runInNewContext(fs.readFileSync(new URL("../scripts/graph-explorer/product-perspectives.js", import.meta.url), "utf8") + "\nexplorerProduct");
+test("Product perspectives use exact model identity, retain directed work branches and distinguish citation from cause", () => {
+  const snapshot = productPerspectiveFixture(), before = JSON.stringify(snapshot), index = productProjection.create(snapshot, snapshot.graph), feature = snapshot.graph.nodes[0], view = index.forFeature(feature);
+  assert.deepEqual(Array.from(view.sourceBindings, ref => [ref.path, ref.digest]), [["src/report.mjs", "b".repeat(64)]]);
+  assert(view.structure.some(row => row.node.nodeId === "group")); assert(view.structure.some(row => row.node.nodeId === "constraint")); assert(view.structure.some(row => row.node.nodeId === "file"));
+  assert(view.work.some(row => row.node.nodeId === "work-cited" && /not implementation cause/.test(row.classification)));
+  assert(!view.work.some(row => ["work-wrong", "work-container"].includes(row.node.nodeId)));
+  assert.deepEqual(Array.from(new Set(view.work.filter(row => row.edge).map(row => row.edge.edgeId))).sort(), ["cycle", "prior", "root", "self"]);
+  assert.equal(view.structure.filter(row => row.edge?.edgeId === "current").length, 1, "One recorded edge must not be listed once from each endpoint");
+  assert.equal(view.work.filter(row => row.edge).length, 4, "Parallel/reverse/self edges retain exact identities without endpoint duplicates");
+  assert.equal(view.canonPairs.length, 2); assert(view.canonPairs.every(entry => entry.changes.length === 1 && entry.changes[0].key === "export"));
+  assert.equal(index.forFeature(snapshot.graph.nodes.find(node => node.nodeId === "feature-other-project")), null);
+  assert.equal(index.forFeature(snapshot.graph.nodes.find(node => node.nodeId === "feature-other-model")).work.length, 0);
+  assert.equal(index.fileMatches(feature, { path: "src/report.mjs", current: { digest: "c".repeat(64) }, comparisons: [] }), false);
+  for (const tamper of [copy => copy.graph.nodes.find(node => node.kind === "SourceSnapshot").productModelId = "other-model",
+    copy => copy.graph.nodes.find(node => node.nodeId === "feature-world").origin = { layer: "world", worldModelId: "other-world", graphSnapshotId: "other-graph" },
+    copy => copy.graph.edges.find(edge => edge.type === "IMPLEMENTS").provenance.graphSnapshotId = "other-graph"]) {
+    const copy = structuredClone(snapshot); tamper(copy); const bounded = productProjection.create(copy, copy.graph).forFeature(copy.graph.nodes[0]);
+    assert.equal(bounded.sourceBindings.length, 0); assert.equal(bounded.work.length, 0, "No model/World/edge-provenance widening through an exact-title or path coincidence");
+  }
+  assert.equal(JSON.stringify(snapshot), before);
+});
+test("same Feature perspective switches keep multi-selection, independent readers, pinned coordinates, camera and exact diff navigation", async () => {
+  const snapshot = productPerspectiveFixture(), original = JSON.stringify(snapshot), ui = explorerDom(snapshot, { resetDetachedScroll: true }); await ui.settle();
+  assert.equal(ui.ids.get("feature-perspectives").hidden, false); assert.match(visibleText(readingCard(ui, "feature-current")), /portable report/);
+  const node = nodeElement(ui, "feature-current"); assert.match(visibleText(node), /portable report/);
+  ui.event(node, "keydown", { shiftKey: true, key: "ArrowRight" }); const pinned = nodeElement(ui, "feature-current").getAttribute("transform");
+  const read = readingCard(ui, "feature-current"); read.open = true;
+  ui.event("change-next"); const cursor = ui.ids.get("comparison-position").textContent, position = camera(ui), selected = selectionCount(ui), exact = ui.ids.get("context-lineage-body").textContent;
+  assert.match(exact, /Old format/); assert.match(exact, /Next retained format/); assert(!exact.includes("UNRELATED ENTITY DELTA")); assert(!exact.includes("WRONG MODEL PAIR"));
+  const inner = descendants(ui.ids.get("context-lineage-body")).find(el => el.tagName === "pre"); assert(inner); inner.scrollTop = 43;
+  for (const id of ["feature-work", "feature-changes", "feature-structure", "feature-changes"]) ui.event(id);
+  assert.equal(readingCard(ui, "feature-current"), read); assert(read.open); assert.equal(inner.scrollTop, 43);
+  assert.equal(ui.ids.get("comparison-position").textContent, cursor); assert.equal(camera(ui), position); assert.equal(selectionCount(ui), selected);
+  assert.equal(nodeElement(ui, "feature-current").getAttribute("transform"), pinned); assert.equal(nodeElement(ui, "feature-current").dataset.pinned, "true");
+  const pairSelect = ui.ids.get("feature-body").querySelectorAll("[data-feature-pair]")[0]; assert.equal(pairSelect.children.length, 2);
+  pairSelect.value = "1"; ui.event(pairSelect, "change"); assert.match(ui.ids.get("feature-body").textContent, /Next retained format/); assert(!ui.ids.get("feature-body").textContent.includes("UNRELATED ENTITY DELTA"));
+  ui.event("feature-work"); await ui.settle(); assert.match(ui.ids.get("feature-body").textContent, /historical evidence, not current Todo/);
+  ui.ids.get("feature-body").scrollTop = 67; ui.event("feature-changes"); ui.event("feature-work"); assert.equal(ui.ids.get("feature-body").scrollTop, 67);
+  const workButton = descendants(ui.ids.get("feature-body")).find(el => el.tagName === "button" && el.textContent === "Keep exact source identity"); assert(workButton); ui.event(workButton);
+  assert.equal(selectionCount(ui), 2); assert.equal(ui.ids.get("feature-perspectives").hidden, false, "Reading a related work record keeps the same Feature anchor");
+  ui.event("feature-changes"); assert.equal(ui.ids.get("feature-body").querySelectorAll("[data-feature-pair]")[0].value, "1");
+  assert.equal(JSON.stringify(snapshot), original);
+});
+test("high-degree Product work is paged to the last exact citation without all-inventory DOM or hidden deletion", async t => {
+  const snapshot = productPerspectiveFixture(105), before = JSON.stringify(snapshot), ui = explorerDom(snapshot); await ui.settle(); ui.event("feature-work"); await ui.settle();
+  const evidenceList = () => ui.ids.get("feature-body").children.find(el => el.tagName === "ul");
+  assert.equal(evidenceList().children.length, 20); assert.match(ui.ids.get("feature-range").textContent, /1–20/);
+  let pages = 1; while (!ui.ids.get("feature-next").disabled) { ui.event("feature-next"); pages++; assert(evidenceList().children.length <= 20); assert(pages < 20); }
+  assert(ui.ids.get("feature-body").textContent.includes("Recorded investigation 104"));
+  ui.event("feature-first"); assert.match(ui.ids.get("feature-range").textContent, /1–20/); ui.event("feature-last"); assert(ui.ids.get("feature-body").textContent.includes("Recorded investigation 104")); assert.equal(snapshot.graph.nodes.filter(node => node.nodeId.startsWith("extra-")).length, 105);
+  ui.event("feature-structure"); ui.event("feature-work"); assert.match(ui.ids.get("feature-range").textContent, /101–/);
+  assert.equal(JSON.stringify(snapshot), before); t.diagnostic(JSON.stringify({ scope: "DOM double; not actual browser", exportedNodes: snapshot.graph.nodes.length, renderedRowsPerPage: 20, pages, createdElements: ui.stats.created }));
+});
+
+test("large Feature work calculation yields and cancels without partial success or changing selection/camera", async () => {
+  const snapshot = productPerspectiveFixture(2500), original = JSON.stringify(snapshot), index = productProjection.create(snapshot, snapshot.graph), feature = snapshot.graph.nodes[0]; let yields = 0;
+  assert.equal(index.forFeature(feature, { includeWork: false }).workReady, false);
+  assert.equal(await index.prepareWork(feature, { yieldWork: async () => { yields++; }, cancelled: () => yields >= 2 }), null);
+  assert.equal(index.forFeature(feature, { includeWork: false }).workReady, false); assert.equal(index.forFeature(feature, { includeWork: false }).work.length, 0);
+  yields = 0; const full = await index.prepareWork(feature, { yieldWork: async () => { yields++; } }); assert(full.workReady); assert(yields >= 5); assert(full.work.some(row => row.node.nodeId === "extra-2499"));
+  const ui = explorerDom(snapshot); await ui.settle(); const position = camera(ui), selected = selectionCount(ui);
+  ui.event("feature-work"); assert.equal(ui.ids.get("cancel-work").disabled, false); ui.event("cancel-work"); await ui.settle();
+  assert.match(ui.ids.get("feature-body").textContent, /calculation is not complete/); assert.equal(camera(ui), position); assert.equal(selectionCount(ui), selected);
+  const retry = descendants(ui.ids.get("feature-body")).find(el => el.tagName === "button" && el.textContent === "Read recorded work"); assert(retry); ui.event(retry); await ui.settle();
+  assert.equal(ui.ids.get("feature-body").children.find(el => el.tagName === "ul").children.length, 20); assert.equal(JSON.stringify(snapshot), original);
+});
+
+test("both reviewed mapping kinds keep exact edge provenance and never promote unreviewed evidence by display wording", () => {
+  for (const relation of ["IMPLEMENTS", "VERIFIED_BY"]) for (const fault of [null, "snapshot", "provenance", "unreviewed"]) {
+    const snapshot = productPerspectiveFixture(), feature = snapshot.graph.nodes.find(node => node.nodeId === "feature-world");
+    const target = relation === "IMPLEMENTS" ? snapshot.graph.nodes.find(node => node.nodeId === "file") : { ...feature, nodeId: "test", kind: "Test", key: undefined };
+    if (relation === "VERIFIED_BY") snapshot.graph.nodes.push(target);
+    snapshot.graph.edges = snapshot.graph.edges.filter(edge => edge.type !== "IMPLEMENTS");
+    const edge = { edgeId: "reviewed-mapping", type: relation, from: relation === "IMPLEMENTS" ? target.nodeId : feature.nodeId, to: relation === "IMPLEMENTS" ? feature.nodeId : target.nodeId,
+      sourceSnapshotId: feature.sourceSnapshotId, authorityClass: "reviewed", provenance: { worldModelId: feature.origin.worldModelId, graphSnapshotId: feature.origin.graphSnapshotId } };
+    if (fault === "snapshot") edge.sourceSnapshotId = "other"; if (fault === "provenance") edge.provenance.graphSnapshotId = "other"; if (fault === "unreviewed") edge.authorityClass = "heuristic";
+    snapshot.graph.edges.push(edge); const view = productProjection.create(snapshot, snapshot.graph).forFeature(snapshot.graph.nodes[0]);
+    assert.equal(view.structure.some(row => row.edge?.edgeId === edge.edgeId), fault === null, relation + " / " + fault);
+  }
+});
+
+test("symbol-only reviewed mappings follow exact declaring-file revision without claiming the entire file implements the Feature", () => {
+  const snapshot = productPerspectiveFixture(), source = snapshot.graph.nodes.find(node => node.nodeId === "file"), revision = snapshot.graph.nodes.find(node => node.nodeId === "file-revision");
+  source.kind = "Symbol"; source.name = "buildReport"; revision.kind = "SymbolRevision"; delete revision.digest; revision.fileRevisionId = "declaring-file";
+  snapshot.graph.nodes.push({ ...revision, nodeId: "declaring-file", kind: "FileRevision", digest: "b".repeat(64), fileRevisionId: undefined });
+  const index = productProjection.create(snapshot, snapshot.graph), view = index.forFeature(snapshot.graph.nodes[0]);
+  assert(view.sourceBindings.some(ref => ref.path === "src/report.mjs" && ref.digest === "b".repeat(64))); assert(view.work.some(row => row.node.nodeId === "work-cited"));
+  assert(view.structure.some(row => row.node.nodeId === "declaring-file" && /not a whole-file implementation claim/.test(row.classification)));
+  const copy = structuredClone(snapshot); copy.graph.nodes.find(node => node.nodeId === "declaring-file").sourceSnapshotId = "other-source";
+  assert.equal(productProjection.create(copy, copy.graph).forFeature(copy.graph.nodes[0]).sourceBindings.length, 0);
+});
+
+test("collapsed map exposes compact historical/cancelled/unreviewed/partial/unknown badges while detail state remains independent", async () => {
+  const data = productPerspectiveFixture(), work = data.graph.nodes.find(node => node.nodeId === "work-cited");
+  work.reviewState = "unreviewed"; work.contentPartial = true; work.directionEvidence = { goal: "Recorded investigation", cancelledActions: ["No publication"], constraints: ["Keep local"] };
+  data.graph.initialNodeId = work.nodeId; const before = JSON.stringify(data), ui = explorerDom(data); await ui.settle();
+  const map = nodeElement(ui, work.nodeId), badges = descendants(map).filter(el => el.className === "map-card-status-badge");
+  for (const label of ["Historical record", "Not live / no permission", "Cancelled: 1", "Unknown: 1", "Review: unreviewed", "Partial content"]) assert(badges.some(badge => visibleText(badge) === label), label);
+  assert.equal(map.dataset.expanded, "false"); assert.equal(readingCard(ui, work.nodeId).open, false);
+  const position = map.getAttribute("transform"), cameraBefore = camera(ui); ui.event(recordButton(ui, "Reports")); await ui.settle();
+  assert.equal(nodeElement(ui, work.nodeId).getAttribute("transform"), position); assert.equal(camera(ui), cameraBefore); assert.equal(JSON.stringify(data), before);
+});
+
+test("supported Todo writer and reader keep exact historical states and coverage in collapsed full and excerpt-only cards", async t => {
+  const f = workFixture(t), saved = f.save({ summary: "TodoNeedle export follow-up", todos: [
+    { todoId: "todo-export", task: "Prepare optional export", status: "cancelled", origin: "user-directed", reason: "Recorded choice withdrawn" }
+  ] });
+  const check = async node => {
+    const data = input({ nodes: [node], edges: [] }); data.project.projectId = node.projectId; data.graph.initialNodeId = node.nodeId;
+    const original = JSON.stringify(node), ui = explorerDom(data); await ui.settle(); const map = nodeElement(ui, node.nodeId);
+    const labels = descendants(map).filter(el => el.className === "map-card-status-badge").map(visibleText);
+    const states = [...new Set([...(node.workContent.todos || []), ...(node.workContentExcerpts || []).filter(x => x.field === "todos")].map(x => x.status).filter(Boolean))];
+    assert(labels.includes("Historical Todo states: " + (states.join(", ") || "not included")));
+    const coverage = node.workContentCoverage.fieldItems.todos;
+    assert(labels.includes(`Todo coverage: ${coverage.completeItems} whole, ${coverage.partialItems} partial, ${coverage.omittedItems} omitted`));
+    assert(labels.includes("Historical record")); assert(labels.includes("Not live / no permission"));
+    assert.equal(map.dataset.expanded, "false"); assert.equal(JSON.stringify(node), original);
+    return labels;
+  };
+  let before = inputSnapshot(f.base); const full = await buildGraphExplorerSnapshot({ root: f.root });
+  const fullNode = full.graph.nodes.find(n => n.evidenceDigest === saved.evidence.evidenceDigest);
+  assert((await check(fullNode)).includes("Historical Todo states: cancelled")); assert.deepEqual(inputSnapshot(f.base), before);
+  for (const suffix of ["A", "B"]) f.save({ summary: "TodoNeedle " + suffix, todos: [
+    { todoId: "todo-large-" + suffix.toLowerCase(), task: "TodoNeedle cancelled task", status: "cancelled", origin: "user-directed", reason: "Retained historical reason. ".repeat(1500) },
+    { todoId: "todo-other-" + suffix.toLowerCase(), task: "Separate declaration", status: "pending", origin: "head-proposed", nextAction: "Read the original" }
+  ] });
+  before = inputSnapshot(f.base); const partial = await queryProjectGraph({ root: f.root, query: "TodoNeedle", view: "work", details: false });
+  const excerpts = partial.nodes.filter(n => n.workContentExcerpts?.some(e => e.field === "todos")); assert(excerpts.length > 0);
+  for (const node of excerpts) { assert.equal(node.workContent.todos.length, 0); const labels = await check(node); assert(labels.includes("Partial content")); }
+  assert.deepEqual(inputSnapshot(f.base), before);
+});
+
+test("compact display preserves unfamiliar currentness and absent or unknown Todo coverage without inventing state", async () => {
+  for (const state of ["constructor", "toString", "__proto__", "future-state"]) {
+    const node = { nodeId: "synthetic", kind: "Evidence", freshness: state }, graph = { nodes: [node], edges: [] };
+    const description = cards.create({ project: { projectId: "synthetic" } }, graph, "project").describe(node);
+    assert(description.summaryConditions.every(v => typeof v === "string")); assert(description.summaryConditions.includes("Currentness: " + state));
+  }
+  for (const fieldItems of [{ originalItems: 2, completeItems: 0, partialItems: 0, omittedItems: 2 }, { originalItems: 2 }]) {
+    const node = { nodeId: "omitted", kind: "Evidence", origin: { layer: "sessionWork" }, workContent: { todos: [] },
+      workContentCoverage: { partial: true, fieldItems: { todos: fieldItems } } };
+    const data = input({ nodes: [node], edges: [] }); data.graph.initialNodeId = node.nodeId; const original = JSON.stringify(data), ui = explorerDom(data); await ui.settle();
+    const labels = descendants(nodeElement(ui, node.nodeId)).filter(el => el.className === "map-card-status-badge").map(visibleText);
+    assert(labels.includes("Historical Todo states: not included")); assert(labels.includes("Partial content"));
+    assert(labels.includes(fieldItems.omittedItems === 2 ? "Todo coverage: 0 whole, 0 partial, 2 omitted" : "Todo coverage: unknown whole, unknown partial, unknown omitted"));
+    assert(!labels.some(label => /cancelled|completed/.test(label))); assert.equal(JSON.stringify(data), original);
+  }
 });

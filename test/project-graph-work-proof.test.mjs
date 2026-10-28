@@ -478,16 +478,29 @@ test("work read cache saturation does not reject an otherwise valid reference", 
   const f = fixture(t), originalRead = fs.readFileSync, shared = Buffer.alloc(16 * 1024 * 1024);
   const names = Array.from({ length: 9 }, (_, i) => `cache-reference-${i}.txt`);
   const targets = new Set(names.map(name => path.join(f.root, name)));
+  const reads = new Map();
   for (const name of names) fs.writeFileSync(path.join(f.root, name), "stub");
   // Mock logical cache occupancy without writing/allocating nine large files.
   fs.readFileSync = function (file, ...args) {
-    return targets.has(String(file)) ? shared : originalRead.call(this, file, ...args);
+    if (!targets.has(String(file))) return originalRead.call(this, file, ...args);
+    const name = path.basename(String(file)); reads.set(name, (reads.get(name) || 0) + 1);
+    return shared;
   };
   try {
     const context = createSessionWorkReadContext(f.root);
-    for (const name of names) assert.equal(context.read(name, shared.length), shared);
-    assert.equal(context.read(names.at(-1), shared.length), shared);
+    for (const name of names) {
+      const bytes = context.read(name, shared.length);
+      assert(Buffer.isBuffer(bytes)); assert.equal(bytes.length, shared.length); assert(bytes.equals(shared));
+      assert.notEqual(bytes, shared, "A public read must not expose retained source bytes");
+      bytes[0] = 1; assert.equal(shared[0], 0, "Caller mutation must not change the observed source");
+    }
+    assert(context.read(names[0], shared.length).equals(shared), "Cached content survives caller mutation");
+    assert(context.read(names.at(-1), shared.length).equals(shared), "A saturated cache still reads the valid reference");
+    for (const name of names.slice(0, -1)) assert.equal(reads.get(name), 1, "Retained inputs reuse their observation");
+    assert.equal(reads.get(names.at(-1)), 2, "An unretained input is read again, not rejected by cache capacity");
     assert.throws(() => context.read(names.at(-1), 65536), { code: "SESSION_WORK_REFERENCE_UNAVAILABLE" });
+    assert(context.read(names.at(-1), shared.length).equals(shared), "A tighter read bound must not poison a later valid read");
+    assert.equal(reads.get(names.at(-1)), 4);
   } finally { fs.readFileSync = originalRead; }
 });
 const indexFile = f => path.join(f.root, f.layout.directory, "graph-discovery/index.json");

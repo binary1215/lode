@@ -11,6 +11,24 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.65 — publication tracked separately
+
+- Explore one exact Feature through structure, recorded work, and changes/related
+  impact views. Preserve selection, pinned positions, camera, independent readers
+  and exact source comparisons while paging large evidence inventories.
+- Keep historical state, cancellation, uncertainty and partial/omitted Todo
+  coverage visible on collapsed cards. Unfamiliar currentness stays readable;
+  display grouping cannot create causality, approval or current permission.
+- Join Product, World, reviewed code mappings and work citations by exact source
+  identity. Symbol-only mappings follow their declaring file revision without
+  claiming that the entire file implements a Feature.
+- Reuse request-owned verified original bytes and digests across read consumers,
+  retaining ownership, freshness and integrity checks. Separate static MCP
+  contract metadata from effect orchestration without changing public behavior.
+- Focused synthetic tests and independent actual-browser review cover this local
+  implementation. Whole-project speed, live Host/model behavior, installation
+  and publication remain separate claims. No intermediate release tag is implied.
+
 ## 0.3.0-beta.64 — publication tracked separately
 
 - Restore useful work reasons, results and remaining tasks with exact original

@@ -65,6 +65,7 @@ export function explorerDom(snapshot, { devicePixelRatio = 1, narrow = false, ca
   const source = fs.readFileSync(new URL("../../scripts/graph-explorer/codec.js", import.meta.url), "utf8").replace(/^export const explorerCodec =/m, "const explorerCodec =") + "\n"
     + fs.readFileSync(new URL("../../scripts/graph-explorer/cards.js", import.meta.url), "utf8") + "\n"
     + fs.readFileSync(new URL("../../scripts/graph-explorer/exploration.js", import.meta.url), "utf8") + "\n"
+    + fs.readFileSync(new URL("../../scripts/graph-explorer/product-perspectives.js", import.meta.url), "utf8") + "\n"
     + fs.readFileSync(new URL("../../scripts/graph-explorer/browser.js", import.meta.url), "utf8");
   const start = performance.now(); new vm.Script(source).runInContext(runtime, { timeout: 10000 });
   return { ids, stats, document, initialMs: performance.now() - start, html,
