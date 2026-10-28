@@ -154,11 +154,48 @@ the expanded content, not discarded when its card is folded. Selecting a histori
 Session changes this picture only; the exporter does not infer a native Host
 selection or change the Session used for work.
 
+## Follow one Feature across perspectives
+
+Select a verified Feature, FeatureGroup or Capability. The same-Feature panel
+switches between **Structure**, **Recorded work**, and **Changes & related impact**
+without changing the selection set, focused record, camera, pin coordinates,
+independent body disclosures, or file/changed-region navigation. Reading related
+work keeps the Feature anchor. These are display perspectives over the same
+exported evidence, not new graph edges or another Product model.
+
+Structure uses exact Project/model/kind/key identities, declared memberships,
+policies, reviewed IMPLEMENTS mappings and VERIFIED_BY mappings. A test mapping
+is not a passing test. A symbol mapping follows its exact declaring-file revision
+for related source context; it does not claim the whole file implements the Feature. World projections join a Feature only through their
+verified SourceSnapshot's exact Product Model identity; titles and paths do not
+join models. Work follows exact mapped-source path+digest citations and declared
+work-root/predecessor relationships, retaining branches, parallel edges and
+cycles. Shared source citation is related evidence, not implementation cause.
+A citation of an entire model does not assert fulfillment of every contained Feature.
+Historical pending/unknowns stay distinct from current direction and current Todo.
+
+Changes lists the recorded review's exact before/after model pairs separately.
+Choose a pair to read only this entity's changed fields and recorded review reason.
+The compared after endpoint is not necessarily today's Canon. The existing code
+comparison panel also accepts the Feature's exact mapped-source bindings; a path
+without the right digest cannot supply a before/after pair. Pair selection and
+reading a perspective do not approve, write or execute anything.
+
+Recorded-work traversal yields between batches and uses the existing Cancel calculation control. Cancelled work is not shown as complete; Read recorded work retries the same evidence without setup or approval.
+Relationship lists render 20 rows per page and reach every included relationship; First evidence / Last evidence avoid repeated next-page clicks.
+The complete metadata inventory remains searchable. Missing pair/original detail
+means the export lacks that detail; it does not prove that the original or change
+is absent. Use the existing exact reader/detail options or explicitly regenerate
+a focused report. The offline HTML never fetches extra data automatically.
+
 ## Content cards and recorded groups
 
-The focus/explored map starts with recorded titles and a small + disclosure
-only. Open a card for its type, recorded excerpt, conditions, source and known
-memberships; − folds it again. Map and reading-card disclosure are independent
+The focus/explored map starts with recorded titles, types, short source excerpts
+and compact, wrapping status badges. Historical/no-live-permission, cancellation,
+unreviewed, partial and unknown conditions are never hidden by the title/excerpt
+line limits; the measured card footprint includes every badge. Selected reading cards show the same compact
+evidence before opening their longer bodies. + opens source details and known
+memberships; − folds that body without hiding the compact evidence. Map and reading-card disclosure are independent
 display preferences, not evidence or authority changes. Read full record opens
 that independent reading card. This is existing text, not a generated summary.
 Expanded work is labelled as

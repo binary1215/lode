@@ -24,8 +24,8 @@ import {
   buildRuntimeProtocolEvidence,
 } from "./runtime-protocol-evidence.mjs";
 
-export const SCHEMA_VERSION = 1;
-export const SUPPORTED_RUNTIMES = Object.freeze(["claude", "codex", "opencode"]);
+import { SCHEMA_VERSION, SUPPORTED_RUNTIMES } from "./core-contract.mjs";
+export { SCHEMA_VERSION, SUPPORTED_RUNTIMES, coreContract } from "./core-contract.mjs";
 
 const fail = (message, code = "HEAD_CORE_ERROR") => {
   const error = new Error(message);
@@ -468,13 +468,12 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
   };
 }
 
-export function inspectProject(root = ".", { sessionScope = "selected" } = {}) {
+function inspectProjectOwner(root, sessionScope) {
   const canonicalRoot = canonicalDirectory(root);
   const storage = resolveProjectStorage(canonicalRoot);
   if (!storage) return { status: "not_initialized", projectRoot: canonicalRoot };
   const projectFile = storage.projectFile;
   const stateFile = sessionScope === "default" ? defaultSessionStatePath(canonicalRoot, storage) : sessionStatePath(canonicalRoot, storage);
-  const manifestFile = path.join(canonicalRoot, storage.directory, "generated", "manifest.json");
   const project = readJson(projectFile, "Project canon");
   if (project.schemaVersion !== SCHEMA_VERSION || project.projectRoot !== canonicalRoot) {
     fail("Project canon does not match this canonical root.", "PROJECT_IDENTITY_MISMATCH");
@@ -493,6 +492,11 @@ export function inspectProject(root = ".", { sessionScope = "selected" } = {}) {
     error.headSessionRecordPath = stateFile;
     throw error;
   }
+  return { canonicalRoot, storage, project, state };
+}
+
+function inspectManagedProjectFiles({ canonicalRoot, storage }) {
+  const manifestFile = path.join(canonicalRoot, storage.directory, "generated", "manifest.json");
   const manifest = readJson(manifestFile, "Managed manifest");
   const drift = [];
   for (const item of manifest.managed || []) {
@@ -500,6 +504,10 @@ export function inspectProject(root = ".", { sessionScope = "selected" } = {}) {
     if (!fs.existsSync(file)) drift.push({ path: item.path, reason: "missing" });
     else if (sha256(fs.readFileSync(file)) !== item.sha256) drift.push({ path: item.path, reason: "modified" });
   }
+  return { manifest, drift };
+}
+
+function projectInspectionResult({ storage, project, state }, { manifest, drift }) {
   return {
     status: drift.length ? "drifted" : "ready",
     storage,
@@ -511,6 +519,12 @@ export function inspectProject(root = ".", { sessionScope = "selected" } = {}) {
       packageVersion: manifest.packageVersion || null,
     },
   };
+}
+
+export function inspectProject(root = ".", { sessionScope = "selected" } = {}) {
+  const owner = inspectProjectOwner(root, sessionScope);
+  if (owner.status === "not_initialized") return owner;
+  return projectInspectionResult(owner, inspectManagedProjectFiles(owner));
 }
 
 // The managed manifest also binds immutable originals. Only these known
@@ -577,107 +591,3 @@ export function createCheckpoint({ root = ".", summary, next = "" } = {}) {
   );
 }
 
-export function coreContract() {
-  const contract = {
-    schemaVersion: SCHEMA_VERSION,
-    roles: ["head", "developer", "coder", "reviewer"],
-    runtimes: SUPPORTED_RUNTIMES,
-    activeCapabilities: ["project-init", "projection", "session-canon", "project-scoped-session-record", "onboarding-state-machine", "privacy-safe-storage-selection", "evidence-linked-onboarding-candidates", "onboarding-batch-review", "review-gated-product-canon-bootstrap", "post-promotion-graph-verification", "feature-code-mapping-candidates", "explicit-feature-mapping-review", "reviewed-implements-and-verified-by-promotion", "provider-neutral-changeset", "multiple-parent-changeset-dag", "change-impact-candidates", "explicit-change-impact-review", "reviewed-impacts-promotion", "optional-vcs-evidence-attachment", "vcs-evidence-temporal-projection", "provider-head-conformance-candidates", "nonblocking-conformance-queue", "exact-finding-dispositions", "optional-host-conformance-trigger-registry", "contract-bound-run", "result-packet", "fresh-head-review-projection", "review-gate", "review-linked-plan-generation", "knowledge-promotion-proposals", "product-model-canon-contract", "repository-world-model-alpha", "incremental-observed-state-refresh-contract", "changed-file-analysis-reuse", "immutable-refresh-request-and-receipt", "active-run-refresh-drift-disclosure", "debounced-refresh-trigger-contract", "filesystem-refresh-watcher", "structured-ci-refresh-ingestion", "single-writer-refresh-lease", "immutable-trigger-batch-and-delivery-receipt", "replaceable-world-model-store-contract", "local-json-world-model-store", "graph-projection-adapter-contract", "local-json-graph-projection", "in-memory-graph-projection-conformance", "arcadedb-database-compatibility-audit", "arcadedb-exact-target-database-initialization", "arcadedb-conformance-gated-graph-projection", "arcadedb-snapshot-scoped-vertex-edge-topology", "arcadedb-server-side-bounded-traversal", "provider-neutral-prepared-traversal-verification", "arcadedb-manifest-bounded-query", "prepared-traversal-cost-evidence", "read-only-arcadedb-prepared-traversal-benchmark", "adapter-neutral-temporal-traversal", "document-projection-adapter-contract", "deterministic-markdown-projection", "in-memory-document-projection-conformance", "document-change-candidate-capture", "explicit-document-change-review", "review-gated-document-to-canon-application", "immutable-document-change-application-receipt", "post-refresh-markdown-policy", "opt-in-automatic-markdown-refresh", "immutable-post-refresh-projection-receipt", "heuristic-semantic-call-graph", "bounded-semantic-graph-query", "product-canon-graph-projection", "temporal-product-revisions", "product-context-compilation", "provider-neutral-observation-contract", "structured-host-observation-ingest", "exact-observation-context-evidence", "compute-adapter-contract", "worker-protocol-contract", "javascript-reference-compute-adapter", "go-worker-stdio-transport", "go-worker-distribution-manifest", "native-worker-integrity-verification", "native-worker-bounded-process-lifecycle", "native-worker-javascript-fallback", "compute-backend-conformance", "repository-scan-compute-operation", "go-repository-scan-conformance-candidate", "repository-scan-conformance-corpus", "repository-scan-benchmark", "git-history-adapter-contract", "all-reachable-git-decision-evidence", "runtime-state-adapter-contract", "host-exported-runtime-state-evidence", "runtime-adapter-contracts", "claude-codex-opencode-projection-only-runtime-adapters", "platform-contract-matrix", "workspace-host-adapter-contract", "read-only-runtime-machine-discovery", "privacy-preserving-runtime-executable-observation", "bounded-non-session-runtime-version-evidence", "bounded-provider-protocol-capability-evidence", "head-project-session-runtime-capability-binding", "session-run-execution-authorization", "durable-at-most-once-runtime-execution-lease", "bounded-runtime-event-envelope", "runtime-result-packet-draft", "provider-neutral-runtime-invocation-record", "provider-neutral-runtime-run-result-application", "exact-child-runtime-lifecycle-conformance", "history-and-runtime-aware-context-compilation", "freshness-gated-repository-context", "checkpoint", "context-compiler", "execution-lineage-contracts", "typed-mcp-core-operations"],
-    deferredCapabilities: ["arcadedb-live-prepared-query-performance-evidence", "arcadedb-compare-and-swap-publication", "non-arcadedb-graph-projection-transport", "obsidian-vault-projection-adapter", "notion-projection-adapter", "imported-backlog-adapter", "automatic-changeset-ancestry-inference", "general-authorized-relationship-promotion", "compute-backed-graph-and-context-operations", "go-repository-scan-production-selection", "native-worker-descendant-tree-supervision", "ast-accurate-semantic-call-graph", "live-runtime-state-probe", "provider-session-runtime-control", "actual-provider-session-project-binding", "runtime-start-resume-stream", "workspace-host-process-control", "actual-provider-runtime-event-normalization", "structured-git-decision-inference", "provider-runtime-fresh-head-hydration", "authorized-knowledge-promotion", "service-host", "host-specific-workspace-adapter"],
-  };
-  contract.activeCapabilities = [
-    ...contract.activeCapabilities,
-    "user-selected-repository-source-scope",
-    "head-semantic-product-proposal-verification",
-    "bounded-large-project-context-retrieval",
-    "runtime-structured-result-contract",
-    "claude-print-one-shot-composition",
-    "claude-print-protocol-fixture",
-    "codex-exec-one-shot-composition",
-    "codex-exec-protocol-fixture",
-    "opencode-run-one-shot-composition",
-    "opencode-run-protocol-fixture",
-    "durable-runtime-invocation-record",
-    "native-runtime-process-supervisor",
-    "runtime-descendant-tree-supervision",
-    "windows-job-object-tree-ownership",
-    "posix-process-group-tree-ownership",
-    "public-initialize-resume-composition",
-    "constitutional-core-default-profile",
-    "explicit-product-governance-profile",
-    "managed-installation-projection-convergence",
-    "read-only-core-product-readiness-projection",
-    "read-only-world-context-workflow-guidance",
-    "conversation-guided-onboarding-projection",
-    "mcp-project-initialize-resume",
-    "mcp-explicit-onboarding-review",
-    "mcp-markdown-projection-build",
-    "actual-provider-session-project-binding",
-    "product-operating-loop",
-    "write-invalidated-verified-snapshot-read-cache",
-    "inline-initiative-reasoning-with-review-time-feature-resolution",
-    "epistemically-typed-product-signals-and-hypotheses",
-    "human-reviewed-product-initiatives",
-    "product-feature-candidates-without-canon-promotion",
-    "execution-bound-outcome-observations",
-    "host-observation-adapter-registry",
-    "json-event-file-observation-adapter",
-    "host-injected-observation-source-collection",
-    "paginated-observation-source-discovery",
-    "reuse-first-observation-preparation",
-    "derived-product-operating-graph",
-    "non-persisted-head-continuity-snapshot",
-    "canonical-session-run-compaction-checkpoint",
-    "provider-neutral-compaction-epoch",
-    "at-most-once-compaction-continuation",
-    "newer-user-turn-compaction-supersession",
-    "automatic-conversation-entry-recovery",
-    "single-conversation-entry-status-composition",
-    "non-persisted-unified-attention-projection",
-    "quiet-success-actionable-exception-presentation",
-    "loaded-configured-package-version-visibility",
-    "context-explanation-card",
-    "provider-neutral-compaction-lifecycle-host-contract",
-    "p2-first-automatic-compaction-continuation",
-    "uncertain-compaction-outcome-no-replay",
-    "artifact-only-session-restore",
-    "provider-session-independent-recovery-projection",
-    "p2-first-runtime-session-continuation",
-    "optional-live-head-attachment",
-    "disclosed-fresh-logical-head-fallback",
-    "accepted-run-result-integration-checkpoint",
-    "checkpoint-owned-reviewed-result-integration",
-    "ordinary-host-delegation-without-role-protocol",
-    "compact-graph-evidence-with-explicit-details",
-    "head-owned-context-selection-without-inclusion-gate",
-    "bounded-worker-dispatch-ownership",
-    "bounded-worker-at-most-once-execution",
-    "bounded-worker-operational-wait",
-    "bounded-worker-result-fresh-head-review",
-    "provider-neutral-bounded-worker-launch-wave",
-    "create-only-verified-worker-wave-seal",
-    "non-persisted-worker-wave-status-and-results",
-    "bounded-worker-wave-wait-and-abandonment",
-    "verified-workspace-host-adapter",
-    "fresh-snapshot-exact-endpoint-attachment",
-    "host-export-filesystem-workspace-driver",
-    "host-bound-workspace-process-proof",
-    "bounded-runtime-one-shot-interrupt",
-    "bounded-runtime-one-shot-close",
-    "portable-client-mcp-launch",
-    "optional-subagent-state-write-guard",
-    "bounded-user-prompt-reference-after-compact-clear",
-  ];
-  contract.deferredCapabilities = [
-    ...contract.deferredCapabilities,
-    "runtime-descendant-tree-supervision",
-  ].filter((capability) => !new Set([
-    "runtime-descendant-tree-supervision",
-    "native-worker-descendant-tree-supervision",
-    "actual-provider-runtime-event-normalization",
-    "actual-provider-session-project-binding",
-    "arcadedb-live-prepared-query-performance-evidence",
-    "agent-comm",
-  ]).has(capability));
-  return contract;
-}

@@ -11,7 +11,7 @@ const explorerCards = (() => {
       FeatureGroup: "Product feature group", Feature: "Product feature", Requirement: "Product requirement", Constraint: "Product constraint",
       ProductModelRevision: "Recorded Product Model revision" })[value?.kind] || value?.kind || "Recorded relationship";
   const title = value => first(value?.name, value?.title, value?.qualifiedName, value?.objective, value?.purpose,
-    value?.directionEvidence?.goal, value?.workContent?.summary, value?.workContent?.todos?.[0]?.task, value?.summary, value?.proposedPolicy?.name,
+    value?.semantic?.name, value?.semantic?.statement, value?.directionEvidence?.goal, value?.workContent?.summary, value?.workContent?.todos?.[0]?.task, value?.summary, value?.proposedPolicy?.name,
     value?.planDelta, value?.outcome, value?.path, value?.statement, value?.assessment, value?.rationale)
     || (value?.kind === "ChangeSet" ? "Recorded source revision changes" : `${kindName(value)} · ${string(value?.nodeId).slice(-12) || "unnamed"}`);
   function create(snapshot, graph, layer) {
@@ -33,6 +33,15 @@ const explorerCards = (() => {
       if (!groups.has(key)) groups.set(key, { key, type, rootId: root.nodeId, title: title(root), members: new Set([root.nodeId]), basis, order: groups.size });
       const group = groups.get(key); group.members.add(member.nodeId);
       for (const id of [root.nodeId, member.nodeId]) { if (!memberships.has(id)) memberships.set(id, new Set()); memberships.get(id).add(key); }
+    }
+    const revisionSemantics = new Map();
+    for (const edge of graph.edges) if ((edge.type || edge.relation) === "CURRENT_REVISION") {
+      const node = nodes.get(edge.from), revision = nodes.get(edge.to);
+      if (owned(node) && owned(revision) && revision.logicalEntityId === node.nodeId && revision.semantic
+        && node.origin?.layer === "world" && revision.origin?.layer === "world"
+        && node.origin.worldModelId && node.origin.graphSnapshotId && node.sourceSnapshotId
+        && node.origin.worldModelId === revision.origin.worldModelId && node.origin.graphSnapshotId === revision.origin.graphSnapshotId
+        && node.sourceSnapshotId === revision.sourceSnapshotId && !revisionSemantics.has(node)) revisionSemantics.set(node, revision.semantic);
     }
     const featureGroups = new Map();
     for (const node of graph.nodes) if (node.kind === "FeatureGroup" && frame(node) && node.key) featureGroups.set(JSON.stringify([frame(node), node.key]), node);
@@ -61,10 +70,10 @@ const explorerCards = (() => {
     }
     function describe(value) {
       if (descriptions.has(value)) return descriptions.get(value);
-      const work = value.workContent;
+      const work = value.workContent, semantic = value.semantic || revisionSemantics.get(value);
       const body = first(work?.summary, value.directionEvidence?.goal, value.description, value.summary,
         value.objective, value.purpose, value.outcome, value.assessment, value.rationale, value.statement, value.explanation,
-        value.semantic?.description, value.semantic?.statement, value.proposedPolicy?.statement, value.path, value.qualifiedName);
+        semantic?.description, semantic?.statement, value.proposedPolicy?.statement, value.path, value.qualifiedName);
       const facts = [["Recorded judgments", work?.judgments], ["Observed work", work?.observedWork], ["Pending", work?.pending],
         ["Unknown", work?.unknowns || value.unknowns], ["Constraints", value.directionEvidence?.constraints],
         ["Cancelled actions", value.directionEvidence?.cancelledActions], ["Recorded decisions", value.directionEvidence?.decisions],
@@ -109,16 +118,37 @@ const explorerCards = (() => {
       if (historical(value) || value.origin?.layer === "sessionWork") conditions.push("Historical evidence — not live state or current permission");
       if (value.contentPartial || value.workContentCoverage?.partial || value.directionContentCoverage?.partial) conditions.push("Partial exported content");
       const todos = work?.todos || [], todoExcerpts = (value.workContentExcerpts || []).filter(entry => entry.field === "todos");
+      const todoStates = [...new Set([...todos, ...todoExcerpts].map(todo => todo.status).filter(Boolean))];
+      const todoCoverage = value.workContentCoverage?.fieldItems?.todos;
+      const todoCoverageText = todoCoverage ? ["completeItems", "partialItems", "omittedItems"].map((key, index) =>
+        `${Number.isSafeInteger(todoCoverage[key]) && todoCoverage[key] >= 0 ? todoCoverage[key] : "unknown"} ${["whole", "partial", "omitted"][index]}`).join(", ") : null;
       if (todos.length || todoExcerpts.length || value.workContentCoverage?.fieldItems?.todos?.originalItems) {
-        const states = [...new Set([...todos, ...todoExcerpts].map(todo => todo.status).filter(Boolean))];
-        conditions.push(`Recorded Todo states: ${states.join(", ") || "not included"}; no current-state or completion inference`);
-        const omitted = value.workContentCoverage?.fieldItems?.todos;
-        if (omitted) conditions.push(`Todo coverage: ${omitted.completeItems} whole, ${omitted.partialItems} partial, ${omitted.omittedItems} omitted`);
+        conditions.push(`Recorded Todo states: ${todoStates.join(", ") || "not included"}; no current-state or completion inference`);
+        if (todoCoverageText) conditions.push(`Todo coverage: ${todoCoverageText}`);
       }
       const notes = value.origin?.layer === "sessionWork" ? ["Agent-authored work; not a captured user utterance."]
         : value.kind === "ProjectDirection" ? ["Recorded caller-conveyed direction; not automatic transcript capture or new authority."] : [];
       if (todos.length || todoExcerpts.length) notes.push("Todo revisions remain separate historical declarations. Prior/reference currentness and unseen successors are unknown here; expand the exact original when needed.");
-      const result = { title: title(value), kind: kindName(value), body, facts, excerpts, preview, hasDisplayText, emptyNotice, conditions, notes,
+      // Compact typed conditions, not a semantic summary. Long originals remain
+      // in the independent reader; these material qualifiers never line-clamp.
+      const summaryConditions = [];
+      for (const [heading, label] of [["Cancelled actions", "Cancelled"], ["Pending", "Pending"], ["Unknown", "Unknown"], ["Constraints", "Constraints"]]) {
+        const items = facts.find(([name]) => name === heading)?.[1]; if (items) summaryConditions.push(label + ": " + items.length);
+      }
+      for (const [label, field] of [["Status", "status"], ["State", "state"], ["Review", "reviewState"]])
+        if (typeof value[field] === "string" && value[field] && value[field] !== "not-applicable") summaryConditions.push(label + ": " + value[field]);
+      const compactFreshness = state => {
+        const labels = { "snapshot-evidence": "Snapshot", "current-canon-bytes": "Canon at export", "current-source-bytes": "Bytes match at export",
+          "historical-source-bytes": "Historical source bytes", unavailable: "Source unavailable", "domain-not-current": "Non-current domain", historical: "Historical", "intact-historical-work-evidence": "Retained work" };
+        return Object.hasOwn(labels, state) ? labels[state] : "Currentness: " + state;
+      };
+      for (const state of new Set([value.freshness, value.sourceCurrentness?.freshness, value.viewerCurrentness, value.snapshotState].filter(state => typeof state === "string" && state))) summaryConditions.push(compactFreshness(state));
+      if (value.currentTraversalEligible === false) summaryConditions.push("Not current traversal");
+      if (historical(value) || value.origin?.layer === "sessionWork") summaryConditions.push("Historical record", "Not live / no permission");
+      if (value.contentPartial || value.workContentCoverage?.partial || value.directionContentCoverage?.partial) summaryConditions.push("Partial content");
+      if (todos.length || todoExcerpts.length || value.workContentCoverage?.fieldItems?.todos?.originalItems) summaryConditions.push("Historical Todo states: " + (todoStates.join(", ") || "not included"));
+      if (todoCoverageText) summaryConditions.push("Todo coverage: " + todoCoverageText);
+      const result = { title: first(value.name, value.title, value.qualifiedName, semantic?.name, semantic?.statement) || title(value), kind: kindName(value), body, facts, excerpts, preview, hasDisplayText, emptyNotice, conditions, summaryConditions: [...new Set(summaryConditions)], notes,
         source: first(value.sourceReference?.path, value.path, value.provenance?.path, value.origin?.path),
         groups: [...(memberships.get(value.nodeId) || [])].map(key => groups.get(key)),
         excerptNotice: hasDisplayText ? "Excerpt, not a complete summary. Read the record for all wording and conditions." : "" };

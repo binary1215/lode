@@ -1,11 +1,12 @@
 import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { recordSessionWorkEvidence, readSessionWorkContext, readSessionWorkEvidenceOwner, normalizeSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
-import { createSessionWorkReadContext, inspectSessionWorkReference } from "../scripts/lib/session-work-evidence-original.mjs";
+import { createSessionWorkReadContext, inspectSessionWorkReference, readSessionWorkFileObservation } from "../scripts/lib/session-work-evidence-original.mjs";
 import { refreshProjectGraphIndex } from "../scripts/lib/discovery-index.mjs";
 import { fixture, exact, link, citation, snapshot, sha, encoded } from "./helpers/session-work-linkage-fixture.mjs";
 
@@ -232,7 +233,10 @@ test("R1 unit: a request-only small bound cannot poison a larger read or bypass 
     const large = context.read(relative, bytes.length);
     assert.deepEqual(large, bytes);
     assert.throws(() => context.read(relative, 16), { code: "SESSION_WORK_REFERENCE_UNAVAILABLE" });
-    assert.strictEqual(context.read(relative, bytes.length), large);
+    const again = context.read(relative, bytes.length);
+    assert.deepEqual(again, large); assert.notStrictEqual(again, large);
+    large.fill(0);
+    assert.deepEqual(context.read(relative, bytes.length), bytes, "Caller mutation cannot poison a retained observation or its byte digest");
     const ref = { path: relative, digest: sha(bytes), kind: "source" };
     const rejected = inspectSessionWorkReference(owner, { ...ref, digest: "0".repeat(64) }, { context });
     const accepted = inspectSessionWorkReference(owner, ref, { context });
@@ -882,4 +886,65 @@ for (const ownObservation of [true, false]) test(`B observed producer failure st
   assert.equal(value.unavailable.filter(item => item.evidenceId === producer.evidence.evidenceId).length, 1);
   assert.equal(value.unavailable.length, 1); assert.equal(value.omissions.uninspected, 0); assert.equal(value.omissions.byBudget, 0);
   account(value, { fullScan: true });
+});
+
+
+test("F1 same owned byte observation hashes once; caller buffers, smaller bounds and new requests remain independent", t => {
+  const f = fixture(t), relative = "f1-observed-source.txt", file = path.join(f.root, relative);
+  const bytes = Buffer.from("F1 exact observed source ".repeat(256)); fs.writeFileSync(file, bytes);
+  const owner = readSessionWorkEvidenceOwner({ root: f.root, sessionId: f.session.sessionId });
+  const ref = { path: relative, kind: "source", digest: sha(bytes) }, context = createSessionWorkReadContext(f.root);
+  const createHash = crypto.createHash; let matchingHashes = 0;
+  crypto.createHash = function(...args) {
+    const hash = createHash.apply(this, args), update = hash.update;
+    hash.update = function(value, ...options) { if (Buffer.isBuffer(value) && value.equals(bytes)) matchingHashes++;
+      return update.call(this, value, ...options); }; return hash;
+  };
+  try {
+    assert.equal(inspectSessionWorkReference(owner, ref, { context }).status, "matching-current-bytes");
+    const observed = readSessionWorkFileObservation(f.root, relative, bytes.length, context, { preflight: false });
+    assert.equal(observed.digest, ref.digest); assert.deepEqual(observed.bytes, bytes);
+    assert.equal(matchingHashes, 1, "Pure SHA calculation reuses exactly the retained observation, not a typed verdict");
+    observed.bytes.fill(0); const caller = context.read(relative, bytes.length); caller.fill(1);
+    assert.deepEqual(readSessionWorkFileObservation(f.root, relative, bytes.length, context).bytes, bytes);
+    assert.equal(matchingHashes, 1);
+    assert.throws(() => readSessionWorkFileObservation(f.root, relative, 8, context), { code: "SESSION_WORK_REFERENCE_UNAVAILABLE" });
+    const changed = Buffer.alloc(bytes.length, 99); fs.writeFileSync(file, changed);
+    assert.equal(readSessionWorkFileObservation(f.root, relative, bytes.length, context).digest, ref.digest,
+      "Existing request observation remains sequential, not a fresh filesystem snapshot");
+    const next = inspectSessionWorkReference(owner, ref, { context: createSessionWorkReadContext(f.root) });
+    assert.equal(next.reasonCode, "SESSION_WORK_REFERENCE_CHANGED");
+  } finally { crypto.createHash = createHash; }
+});
+
+test("F1 unknown or overridden contexts never supply a trusted digest memo", t => {
+  const f = fixture(t), relative = "f1-custom-source.txt", bytes = Buffer.from("Original custom observation");
+  fs.writeFileSync(path.join(f.root, relative), bytes);
+  const owner = readSessionWorkEvidenceOwner({ root: f.root, sessionId: f.session.sessionId });
+  const ref = { path: relative, kind: "source", digest: sha(bytes) };
+  const context = createSessionWorkReadContext(f.root); context.read = () => Buffer.alloc(bytes.length, 0);
+  assert.equal(inspectSessionWorkReference(owner, ref, { context }).reasonCode, "SESSION_WORK_REFERENCE_CHANGED");
+  const custom = { read: () => Buffer.alloc(bytes.length, 1), digest: ref.digest };
+  assert.notEqual(readSessionWorkFileObservation(f.root, relative, bytes.length, custom).digest, ref.digest);
+});
+
+test("F1 retention overflow still performs and hashes each fresh fallback observation", t => {
+  const f = fixture(t), large = Buffer.alloc(16 * 1024 * 1024, 114), largeFile = path.join(f.root, "retained-0.bin");
+  fs.writeFileSync(largeFile, large);
+  const context = createSessionWorkReadContext(f.root);
+  for (let i = 0; i < 8; i++) {
+    const relative = "retained-" + i + ".bin";
+    if (i) fs.linkSync(largeFile, path.join(f.root, relative));
+    assert.equal(context.read(relative, large.length).length, large.length);
+  }
+  const relative = "overflow-reference.txt", file = path.join(f.root, relative), first = Buffer.from("fallback-before");
+  fs.writeFileSync(file, first);
+  const measured = rawReads(file, () => {
+    const old = readSessionWorkFileObservation(f.root, relative, 1024, context);
+    fs.writeFileSync(file, "fallback--after");
+    const current = readSessionWorkFileObservation(f.root, relative, 1024, context, { preflight: false });
+    assert.equal(old.digest, sha(first)); assert.notEqual(current.digest, old.digest);
+    assert.equal(current.bytes.toString(), "fallback--after");
+  });
+  assert.equal(measured.reads, 2, "128MiB retention is not a new read gate or a cache-based currentness shortcut");
 });

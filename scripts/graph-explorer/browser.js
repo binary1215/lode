@@ -23,6 +23,9 @@
   let jobSerial = 0, busy = false, jobKind = null, drawnNodeIds = new Set(), comparisonFiles = [], changeHunks = [], fileCursor = 0, changeCursor = -1, rootPage = 0;
   const historyCounts = new WeakMap(), edgeKeys = new WeakMap();
   const comparisonStates = new WeakMap();
+  const productIndexes = new WeakMap(), featureViews = new WeakMap(), featureReadingStates = new WeakMap();
+  let featureRenderKey = null, renderedFeatureState = null, featureJob = null;
+  function productIndex() { if (!productIndexes.has(activeGraph)) productIndexes.set(activeGraph, explorerProduct.create(data, activeGraph)); return productIndexes.get(activeGraph); }
   const documentPanels = new WeakMap();
   const comparisonFileNavigation = new WeakMap();
   let comparisonGraph = null, comparisonNavigationSerial = 0;
@@ -30,7 +33,7 @@
   // Yield to input without paying a whole display frame for every 512 edges.
   // The first paint/disclosure still uses requestAnimationFrame separately.
   const yieldWork = () => typeof globalThis.scheduler?.yield === "function" ? globalThis.scheduler.yield() : new Promise(resolve => requestAnimationFrame(resolve));
-  const label = node => displayText(explorerCards.title(node));
+  const label = node => displayText(node ? cardIndex().describe(node).title : "Endpoint not exported");
   const isCode = node => $("layer").value === "code" || /^(File|Symbol|Source|Directory|Dependency|ExternalDependency)/.test(node.kind || "");
   const relation = edge => {
     const code = edge.type || edge.relation;
@@ -79,10 +82,18 @@
     const control = button(expanded ? "−" : "+", event => { event.stopPropagation(); toggle(); });
     control.setAttribute("data-card-control", ""); control.setAttribute("aria-expanded", String(expanded));
     control.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} details: ${descriptor.title}`);
-    header.append(text("h3", descriptor.title, "map-card-title"), control);
+    const heading = text("div", "", "map-card-heading");
+    heading.append(text("h3", descriptor.title, "map-card-title"), text("p", descriptor.kind, "map-card-kind"),
+      text("p", shorten(descriptor.preview || descriptor.emptyNotice, 180), "map-card-preview"));
+    if (descriptor.summaryConditions.length) {
+      const badges = text("div", "", "map-card-summary-status");
+      for (const condition of descriptor.summaryConditions) badges.append(text("span", condition, "map-card-status-badge"));
+      heading.append(badges);
+    }
+    header.append(heading, control);
     const content = text("div", "", "map-card-body"); content.setAttribute("data-card-body", "");
     content.append(text("p", descriptor.kind, "map-card-kind"));
-    content.append(text("p", descriptor.preview ? shorten(descriptor.preview, 420) : descriptor.emptyNotice, "map-card-excerpt"));
+    if (descriptor.preview) content.append(text("p", shorten(descriptor.preview, 420), "map-card-excerpt"));
     if (descriptor.conditions.length) content.append(text("p", descriptor.conditions.join(" · "), "map-card-conditions"));
     if (descriptor.groups.length) content.append(text("p", descriptor.groups.slice(0, 2).map(group => `${group.type}: ${group.title}`).join(" · ")
       + (descriptor.groups.length > 2 ? ` · +${descriptor.groups.length - 2} memberships in the reading card` : ""), "map-card-memberships"));
@@ -104,8 +115,10 @@
     const lines = (value, size) => Math.max(1, Math.ceil(textWidth(value, size) / Math.max(1, basis.width - 28)));
     // The fallback is only an estimate when DOM layout is unavailable. Real
     // browsers measure the same HTML/CSS used by visible foreignObject cards.
-    let collapsedHeight = 24 + basis.size * Math.min(2, lines(descriptor.title, basis.size)) * 1.4;
-    let height = expanded ? 30 + basis.size * (1.4 + Math.min(2, lines(descriptor.title, basis.size)) * 1.4
+    let collapsedHeight = 36 + basis.size * (Math.min(2, lines(descriptor.title, basis.size)) * 1.4 + 1.35
+      + Math.min(3, lines(shorten(descriptor.preview || descriptor.emptyNotice, 180), basis.size * .85)) * 1.35
+      + lines(descriptor.summaryConditions.join(" · "), basis.size * .75) * 1.8);
+    let height = expanded ? collapsedHeight + 30 + basis.size * (1.4 + Math.min(2, lines(descriptor.title, basis.size)) * 1.4
       + Math.min(3, lines(shorten(descriptor.preview, 420), basis.size)) * 1.45
       + lines(descriptor.conditions.join(" · "), basis.size * .86) * 1.3
       + (descriptor.groups.length ? lines(descriptor.groups.slice(0, 2).map(group => group.title).join(" · "), basis.size * .86) * 1.3 : 0) + 2.7) : collapsedHeight;
@@ -238,6 +251,7 @@
   }
   function cancelWork(announce = true, keepDisclosures = false) {
     if (!keepDisclosures) mapDisclosures.get(activeGraph)?.clear();
+    if (featureJob) { featureJob.state.loading = false; featureJob.state.cancelled = true; featureJob = null; featureRenderKey = null; }
     if (jobKind === "geometry" && announce) suppressedMetrics.set(model, metrics().key);
     jobSerial++; if (announce && (busy || jobKind)) $("operation-status").textContent = jobKind === "initial"
       ? "Cancelled neighbor preparation; previous committed positions retained. Unplaced neighbors remain searchable/readable, not a completed layout."
@@ -652,14 +666,18 @@
         const identity = recordKey(value), scopeIdentity = index.identity(value), retained = previous?.model === model && previous.entries.get(identity);
         if (retained && retained.value === value && retained.scopeIdentity === scopeIdentity) { entries.set(identity, retained); children.push(retained.card); continue; }
         const descriptor = index.describe(value), node = Boolean(value.nodeId), entryModel = model, card = text("details", "", "selection-card");
-        card.setAttribute("data-record", identity); card.append(text("summary", node ? label(value) : relation(value)));
+        card.setAttribute("data-record", identity);
+        const summary = text("summary", node ? label(value) : relation(value));
+        summary.append(text("span", descriptor.kind, "record-kind"), text("span", shorten(descriptor.preview || descriptor.emptyNotice, 220), "selection-preview"));
+        if (descriptor.conditions.length) summary.append(text("span", descriptor.conditions.join(" · "), "selection-status"));
+        card.append(summary);
         card.append(text("p", `${descriptor.kind} · ${value.kind || value.type || "relationship"}`, "record-kind"));
         const conditions = [...descriptor.conditions,
           node && !inDisplayScope(value) || !node && !edgeInScope(value) ? "outside evidence scope — selection retained" : null].filter(item => typeof item === "string" && item);
         const conditionsElement = text("p", conditions.join(" · "), "card-conditions"); card.append(conditionsElement);
         for (const note of descriptor.notes) card.append(text("p", note, "hint"));
         if (descriptor.body) card.append(text("p", descriptor.body));
-        else if (!descriptor.hasDisplayText) card.append(text("p", node ? descriptor.emptyNotice : `${label(model.nodes.get(value.from))} → ${label(model.nodes.get(value.to))}`));
+        else if (!descriptor.hasDisplayText && !node) card.append(text("p", `${label(model.nodes.get(value.from))} → ${label(model.nodes.get(value.to))}`));
         for (const [heading, facts] of descriptor.facts) {
           card.append(text("strong", heading)); const list = text("ul", "", "record-facts");
           for (const fact of facts) {
@@ -975,6 +993,7 @@
   }
   function pairMatches(value, file, pair) {
     if (activeGraph === data.graph && [pair.changeSet?.nodeId, pair.recordedReviewDecisionId, pair.recordedResultPacketId, pair.leftRecord?.nodeId, pair.rightRecord?.nodeId].some(id => id && id === value.nodeId)) return true;
+    if (activeGraph === data.graph && productIndex().fileMatches(value, file, pair)) return true;
     const digests = new Set([pair.before?.digest, pair.after?.digest, pair.citedReference?.digest, pair.gap?.expectedDigest,
       ...(pair.gaps || []).map(gap => gap.expectedDigest)].filter(Boolean));
     if ((value.path === file.path || value.sourceReference?.path === file.path) && digests.has(value.digest || value.fileDigest || value.sourceReference?.digest)) return true;
@@ -982,6 +1001,7 @@
     return activeGraph === data.graph && (file.associations || []).some(item => item.nodeId === value.nodeId && digests.has(item.source?.digest));
   }
   function fileMatches(value, file) {
+    if (activeGraph === data.graph && productIndex().fileMatches(value, file)) return true;
     if (activeGraph !== data.graph) {
       const digest = value.digest || value.fileDigest || value.sourceReference?.digest;
       return Boolean(digest && (value.path === file.path || value.sourceReference?.path === file.path) && file.current?.digest === digest)
@@ -1214,10 +1234,14 @@
       if (reason.contentPartial) body.append(text("p", `Partial recorded reason; see the exact original. ${JSON.stringify(reason.contentCoverage || {})}`, "hint"));
       body.append(text("p", `${reason.reviewState} · ${reason.reference?.path || reason.nodeId}`, "hint"));
     }
-    for (const delta of context.canonChanges || []) if ([delta.review.nodeId, delta.before.nodeId, delta.after.nodeId].some(id => selectedIds.has(id))) {
+    for (const delta of context.canonChanges || []) if ([delta.review.nodeId, delta.before.nodeId, delta.after.nodeId].some(id => selectedIds.has(id))
+      || values.some(value => productIndex().canonPairs(value).some(entry => entry.pair === delta))) {
       body.append(text("h3", "Recorded Canon comparison")); body.append(text("p", delta.status));
       if (delta.rationale) body.append(text("p", delta.rationale));
-      for (const change of delta.changes) {
+      const wholeModelSelected = [delta.review.nodeId, delta.before.nodeId, delta.after.nodeId].some(id => selectedIds.has(id));
+      const exactChanges = wholeModelSelected ? delta.changes : delta.changes.filter(change => values.some(value => productIndex().canonPairs(value).some(entry => entry.pair === delta && entry.changes.includes(change))));
+      body.append(text("p", `${delta.before.nodeId || delta.before.productModelId} → ${delta.after.nodeId || delta.after.productModelId} · compared after is not necessarily current`, "comparison-basis"));
+      for (const change of exactChanges) {
         body.append(text("h3", `${change.field} · ${change.key}`));
         const describe = value => value === undefined || value === null ? "Not present" : Array.isArray(value)
           ? value.map(item => typeof item === "string" ? item : `${item.kind}: ${item.key}`).join("; ") || "(none)" : value === "" ? "(empty)" : String(value);
@@ -1249,11 +1273,97 @@
     }
     comparisonPosition();
   }
+  function renderFeaturePerspective() {
+    const index = productIndex(), candidate = selected?.kind === "node" && index.forFeature(selected.value, { includeWork: false });
+    let state = featureViews.get(activeGraph);
+    if (candidate && state?.entity !== candidate.entity.token) {
+      if (!featureReadingStates.has(activeGraph)) featureReadingStates.set(activeGraph, new Map());
+      const states = featureReadingStates.get(activeGraph);
+      state = states.get(candidate.entity.token) || { entity: candidate.entity.token, anchor: selected.value, mode: "structure", pages: { structure: 0, work: 0, changes: 0 }, pair: 0, scrolls: new Map() };
+      states.set(candidate.entity.token, state); featureViews.set(activeGraph, state);
+    }
+    const view = state && index.forFeature(state.anchor, { includeWork: false }), panel = $("feature-perspectives"); hide(panel, !view);
+    if (!view) { if (renderedFeatureState && featureRenderKey) renderedFeatureState.scrolls.set(featureRenderKey, $("feature-body").scrollTop || 0); featureRenderKey = null; renderedFeatureState = null; return; }
+    for (const mode of ["structure", "work", "changes"]) $("feature-" + mode).setAttribute("aria-pressed", String(state.mode === mode));
+    const renderKey = JSON.stringify([state.entity, state.mode, state.pages[state.mode], state.pair, view.workReady, Boolean(state.loading), Boolean(state.cancelled)]);
+    if (featureRenderKey === renderKey && panel.dataset.graph === String(activeGraph === data.graph)) return;
+    if (renderedFeatureState && featureRenderKey) renderedFeatureState.scrolls.set(featureRenderKey, $("feature-body").scrollTop || 0);
+    featureRenderKey = renderKey; renderedFeatureState = state; panel.dataset.graph = String(activeGraph === data.graph);
+    $("feature-title").textContent = label(state.anchor);
+    $("feature-identity").textContent = view.entity.kind + " · " + view.entity.key + " · exact model " + view.entity.model + ". Same Feature; perspective changes keep selection, map and independent readers.";
+    const body = $("feature-body"); body.replaceChildren();
+    const rows = state.mode === "structure" ? view.structure : state.mode === "work" ? view.work : view.impact;
+    const pageSize = 20, page = Math.min(state.pages[state.mode], Math.max(0, Math.ceil(rows.length / pageSize) - 1)); state.pages[state.mode] = page;
+    $("feature-range").textContent = (rows.length ? page * pageSize + 1 : 0) + "–" + Math.min(rows.length, (page + 1) * pageSize) + " / " + rows.length + " recorded relationships. All exported records remain searchable; this is a rendered page, not an export cutoff.";
+    $("feature-first").disabled = $("feature-prev").disabled = page === 0; $("feature-last").disabled = $("feature-next").disabled = (page + 1) * pageSize >= rows.length;
+    if (state.mode === "work") {
+      body.append(text("p", "Recorded judgments, pending and unknowns are historical evidence, not current Todo or permission. Shared exact source citations establish related evidence only.", "hint"));
+      if (!view.workReady) {
+        body.append(text("p", state.loading ? "Reading exact work connections; other navigation remains available. Cancel stops calculation without presenting partial results as complete." : "Work connection calculation is not complete; no absence or completion is inferred.", "hint"));
+        if (!state.loading) body.append(button("Read recorded work", () => prepareFeatureWork(state).catch(calculationFailed)));
+      }
+    }
+    const list = text("ul", "", "feature-evidence"); body.append(list);
+    for (const row of rows.slice(page * pageSize, (page + 1) * pageSize)) {
+      const entry = text("li", ""), descriptor = cardIndex().describe(row.node);
+      entry.append(button(descriptor.title, () => selectNode(row.node)), text("p", descriptor.kind + " · " + row.classification, "record-kind"),
+        text("p", shorten(descriptor.preview || descriptor.emptyNotice, 280), "selection-preview"));
+      if (descriptor.conditions.length) entry.append(text("p", descriptor.conditions.join(" · "), "card-conditions"));
+      if (row.edge) entry.append(text("p", row.edge.from + " → " + row.edge.to + " · " + relation(row.edge), "comparison-basis"));
+      if (row.via.length) entry.append(text("p", "Via exact evidence: " + row.via.map(node => node.nodeId).join(" → "), "comparison-basis"));
+      if (row.sourceReference) entry.append(text("p", row.sourceReference.path + " @ " + row.sourceReference.digest + " · " + (row.sourceReference.status || "recorded citation; byte availability separate"), "comparison-basis"));
+      list.append(entry);
+    }
+    if (state.mode === "changes") {
+      const pairs = view.canonPairs, chooser = document.createElement("select"); chooser.setAttribute("aria-label", "Exact recorded Canon comparison"); chooser.setAttribute("data-feature-pair", "");
+      pairs.forEach((entry, i) => { const option = text("option", (entry.pair.before.nodeId || entry.pair.before.productModelId) + " → " + (entry.pair.after.nodeId || entry.pair.after.productModelId) + " · " + entry.pair.review.nodeId); option.value = String(i); chooser.append(option); });
+      chooser.value = String(Math.min(state.pair, Math.max(0, pairs.length - 1))); chooser.disabled = !pairs.length;
+      chooser.addEventListener("change", () => { state.pair = Number(chooser.value); renderFeaturePerspective(); }); body.append(chooser);
+      const entry = pairs[Number(chooser.value)];
+      if (entry) {
+        body.append(text("h4", "Exact recorded Canon comparison"), text("p", entry.pair.status, "hint"));
+        if (entry.pair.rationale) body.append(text("p", entry.pair.rationale));
+        body.append(text("p", "Compared after is the recorded pair endpoint, not necessarily current Canon. Review rationale is historical evidence, not current approval.", "hint"));
+        for (const change of entry.changes) { body.append(text("h4", change.field + " · " + change.key));
+          for (const field of new Set([...Object.keys(change.before || {}), ...Object.keys(change.after || {})])) if (JSON.stringify(change.before?.[field]) !== JSON.stringify(change.after?.[field]))
+            body.append(text("strong", field), text("pre", "Before: " + JSON.stringify(change.before?.[field] ?? null) + "\nAfter: " + JSON.stringify(change.after?.[field] ?? null)));
+        }
+        if (!entry.changes.length) body.append(text("p", "No matching entity field delta is included in this pair; omitted coverage remains unknown.", "hint"));
+        if (entry.pair.omittedChangeCount) body.append(text("p", entry.pair.omittedChangeCount + " additional field deltas omitted from the exported bundle.", "hint"));
+      } else body.append(text("p", "No exact Canon pair is included for this model identity. Choose its recorded review / Exact detail options or regenerate a focused report; no before/after is inferred.", "hint"));
+      body.append(button("Read exact code comparisons", () => { selectNode(state.anchor); $("context-lineage").open = true; $("context-lineage").scrollIntoView({ block: "nearest" }); }));
+    }
+    if (!rows.length && state.mode !== "changes" && (state.mode !== "work" || view.workReady)) body.append(text("p", "No matching relationship is included for this exact Feature in the export. This does not establish absence; use exact details or regenerate a focused report.", "hint"));
+    body.append(text("p", view.coverage, "hint"));
+    body.scrollTop = state.scrolls.get(renderKey) || 0;
+  }
+  async function prepareFeatureWork(state) {
+    const targetGraph = activeGraph, index = productIndex();
+    if (index.forFeature(state.anchor, { includeWork: false })?.workReady || state.loading) return;
+    cancelWork(false); const serial = ++jobSerial; state.loading = true; state.cancelled = false; featureJob = { state, serial }; jobKind = "feature";
+    $("cancel-work").disabled = false; renderFeaturePerspective();
+    const view = await index.prepareWork(state.anchor, { yieldWork, cancelled: () => serial !== jobSerial || targetGraph !== activeGraph || featureViews.get(activeGraph) !== state || state.mode !== "work" });
+    if (serial !== jobSerial || targetGraph !== activeGraph) return;
+    state.loading = false; state.cancelled = !view; featureJob = null; jobKind = null; $("cancel-work").disabled = true;
+    featureRenderKey = null; renderFeaturePerspective();
+  }
+  for (const mode of ["structure", "work", "changes"]) $("feature-" + mode).addEventListener("click", () => {
+    const state = featureViews.get(activeGraph); if (!state) return;
+    if (featureJob && (featureJob.state !== state || mode !== "work")) cancelWork(false);
+    state.mode = mode; renderFeaturePerspective();
+    if (mode === "work") prepareFeatureWork(state).catch(calculationFailed);
+  });
+  for (const [id, delta] of [["feature-prev", -1], ["feature-next", 1]]) $(id).addEventListener("click", () => { const state = featureViews.get(activeGraph); if (!state) return; state.pages[state.mode] += delta; renderFeaturePerspective(); });
+  for (const [id, last] of [["feature-first", false], ["feature-last", true]]) $(id).addEventListener("click", () => {
+    const state = featureViews.get(activeGraph); if (!state) return; const view = productIndex().forFeature(state.anchor, { includeWork: false });
+    const rows = state.mode === "structure" ? view.structure : state.mode === "work" ? view.work : view.impact;
+    state.pages[state.mode] = last ? Math.max(0, Math.ceil(rows.length / 20) - 1) : 0; renderFeaturePerspective();
+  });
   function render() {
     setBox();
     const started = performance.now(), found = matches(); visibleMatches = found; foundIds = scopeCache.foundIds;
     hide($("graph"), canvasMode()); hide($("overview"), !canvasMode()); hide($("overview-note"), !canvasMode());
-    renderList(found); renderTrail(); if (canvasMode()) renderOverview(scopeCache.shown); else renderGraph(found); renderSelectionCards(); renderDetail();
+    renderList(found); renderTrail(); if (canvasMode()) renderOverview(scopeCache.shown); else renderGraph(found); renderSelectionCards(); renderDetail(); renderFeaturePerspective();
     document.documentElement.dataset.explorerLastRenderMs = String(performance.now() - started);
   }
   $("project").textContent = data.project ? `${data.project.projectId} · ${data.initialLayer === "code" ? "Source" : "Project"} view` : "No initialized Project. Ordinary work can continue.";

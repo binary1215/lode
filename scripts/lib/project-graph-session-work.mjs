@@ -1,4 +1,4 @@
-import { sessionWorkPath, readSessionWorkEvidenceOriginalFile, inspectSessionWorkReference,
+import { sessionWorkPath, readSessionWorkEvidenceOriginalFile, inspectSessionWorkReference, readSessionWorkFileObservation,
   MAX_RECORD_BYTES, MAX_REFERENCE_BYTES, SESSION_WORK_MAX_CHARACTERS, sha, encoded, sameEvidence } from "./session-work-evidence-original.mjs";
 import { readSessionWorkEvidenceOwner, projectExactSessionWorkRecord } from "./session-work-context.mjs";
 import { relativeProjectArtifact, formatForVerifiedOwner } from "./project-storage-format.mjs";
@@ -67,7 +67,7 @@ export function projectSessionWorkLayer(inventory, { nodeFromRecord, relation, a
     for (let index = 0; index < record.content.references.length; index++) {
       const ref = record.content.references[index], view = referenceViews[index];
       let currentDigest = null, currentness = "unavailable";
-      try { currentDigest = sha(context.read(ref.path, MAX_REFERENCE_BYTES)); currentness = currentDigest === ref.digest ? "current" : "changed"; }
+      try { currentDigest = readSessionWorkFileObservation(root, ref.path, MAX_REFERENCE_BYTES, context, { preflight: false, includeBytes: false }).digest; currentness = currentDigest === ref.digest ? "current" : "changed"; }
       catch (error) { currentness = error.code === "ENOENT" ? "missing" : "unavailable"; }
       const fact = { ...ref, status: view.status, currentness, currentDigest,
         historicalContentAvailable: currentDigest === ref.digest && view.status !== "unavailable", contentReconstructed: false,

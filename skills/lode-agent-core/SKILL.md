@@ -172,7 +172,12 @@ The graph describes that Project, not Lode itself. Missing Project/World/source
 evidence stays unavailable; never substitute the plugin repository or a demo.
 Return the new offline HTML path. No new MCP tool, database setup or Session
 binding is needed. For sharing use `--share` only as generated-metadata omission,
-not anonymization of originals. See [Graph Explorer](../../docs/graph-explorer.md).
+not anonymization of originals. To follow one Feature, select its exact model-bound
+record and use Structure / Recorded work / Changes & related impact. Keep source
+citation, implementation mapping, historical rationale and exact before/after
+comparison distinct; shared files and whole-model citations do not prove cause
+or fulfillment. Missing detail uses existing exact reader / focused regeneration,
+never an inferred pair or a new setup gate. See [Graph Explorer](../../docs/graph-explorer.md).
 
 ## Agree the work, not the paperwork
 
