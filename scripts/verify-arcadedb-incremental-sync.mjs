@@ -238,9 +238,9 @@ class HttpCommandContractTransport extends ArcadeDbHttpTransport {
 const httpContract = new HttpCommandContractTransport();
 const firstPointerJson = JSON.stringify(buildGraphProjectionPointer(baseGraph));
 const secondPointerJson = JSON.stringify(buildGraphProjectionPointer(targetGraph));
-assert.equal(httpContract.writePointerCompareAndSwap(projectId, null, firstPointerJson), true);
-assert.equal(httpContract.writePointerCompareAndSwap(projectId, firstPointerJson, secondPointerJson), true);
-assert.equal(httpContract.writePointerCompareAndSwap(projectId, firstPointerJson, firstPointerJson), false);
+assert.equal(await httpContract.writePointerCompareAndSwap(projectId, null, firstPointerJson), true);
+assert.equal(await httpContract.writePointerCompareAndSwap(projectId, firstPointerJson, secondPointerJson), true);
+assert.equal(await httpContract.writePointerCompareAndSwap(projectId, firstPointerJson, firstPointerJson), false);
 const pointerMutationCommands = httpContract.commands.filter((call) => call.operation === "command");
 assert.match(pointerMutationCommands[0].command, /^INSERT INTO HeadAgentGraphPointer/);
 assert.match(pointerMutationCommands[1].command, /^UPDATE HeadAgentGraphPointer/);
