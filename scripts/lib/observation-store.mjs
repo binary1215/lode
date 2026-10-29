@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact } from "./project-storage-format.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -278,7 +279,7 @@ export function recordCollectedObservation({ root = ".", descriptor, input, adap
   return recordCollectedObservationInternal({ root, descriptor: descriptor?.kind === "ObservationTypeDescriptor" ? verifiedDescriptor : descriptor, input, adapterDescriptor, sourceScopeDigest });
 }
 
-export async function recordDeliveryCollectedObservation({ root = ".", descriptor, input, adapterDescriptor, sourceScopeDigest } = {}) {
+async function recordDeliveryCollectedObservationUncoordinated({ root = ".", descriptor, input, adapterDescriptor, sourceScopeDigest } = {}) {
   const inspected = assertObservationProjectReady(root);
   const verifiedDescriptor = descriptor?.kind === "ObservationTypeDescriptor"
     ? verifyObservationTypeDescriptor(descriptor)
@@ -362,4 +363,8 @@ export function readObservation({ root = ".", observationId } = {}) {
       ? { kind: "collected", receiptId: receipt.receiptId, descriptorId: descriptor.descriptorId }
       : { kind: "derived", descriptorId: descriptor.descriptorId, inputObservationIds: selected.inputObservations.map((item) => item.observationId) },
   };
+}
+
+export async function recordDeliveryCollectedObservation(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => recordDeliveryCollectedObservationUncoordinated(options, ...rest));
 }

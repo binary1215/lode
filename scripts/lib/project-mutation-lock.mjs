@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -192,7 +193,7 @@ export function withLocalMutation({ directory, timeoutMs = WAIT_MS }, operation)
   } finally { release(owner); }
 }
 
-export function withProjectMutation({ root = ".", scope, storage, timeoutMs }, operation) {
+function withProjectMutationUncoordinated({ root = ".", scope, storage, timeoutMs }, operation) {
   if (!/^[a-z][a-z0-9-]{0,63}$/.test(scope)) fail("Invalid mutation scope.", "INVALID_PROJECT_MUTATION_SCOPE");
   storage ??= resolveProjectStorage(root);
   const recheck = () => { if (storage?.projectFile) assertProjectStorageUnchanged(storage); };
@@ -200,7 +201,7 @@ export function withProjectMutation({ root = ".", scope, storage, timeoutMs }, o
   return withLocalMutation({ directory: lockFor(root, scope, storage), timeoutMs }, () => { recheck(); return operation(); });
 }
 
-export async function withProjectMutationAsync({ root = ".", scope, storage }, operation) {
+async function withProjectMutationAsyncUncoordinated({ root = ".", scope, storage }, operation) {
   if (!/^[a-z][a-z0-9-]{0,63}$/.test(scope)) fail("Invalid mutation scope.", "INVALID_PROJECT_MUTATION_SCOPE");
   storage ??= resolveProjectStorage(root);
   const recheck = () => { if (storage?.projectFile) assertProjectStorageUnchanged(storage); };
@@ -220,4 +221,28 @@ export async function withProjectMutationAsync({ root = ".", scope, storage }, o
     active.set(directory, owner);
     return await context.run(active, operation);
   } finally { release(owner); }
+}
+
+function prepareProjectMutation(options) {
+  const { root = ".", scope } = options;
+  if (!/^[a-z][a-z0-9-]{0,63}$/.test(scope)) fail("Invalid mutation scope.", "INVALID_PROJECT_MUTATION_SCOPE");
+  const storage = options.storage ?? resolveProjectStorage(root);
+  const directory = lockFor(root, scope, storage);
+  // Preserve the existing pure namespace/input errors before registering the
+  // additional snapshot lifetime. A damaged lock path is never contention.
+  for (const file of [path.dirname(directory), directory]) retryLockRead(() => {
+    const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (stat && (!stat.isDirectory() || stat.isSymbolicLink())) fail("Unsafe mutation lock path.", "INVALID_PROJECT_MUTATION_LOCK");
+  });
+  return { ...options, root, storage };
+}
+
+export function withProjectMutation(options = {}, ...rest) {
+  const prepared = prepareProjectMutation(options);
+  return withSnapshotReferences({ root: prepared.root, storage: prepared.storage }, () => withProjectMutationUncoordinated(prepared, ...rest));
+}
+
+export async function withProjectMutationAsync(options = {}, ...rest) {
+  const prepared = prepareProjectMutation(options);
+  return withSnapshotReferencesAsync({ root: prepared.root, storage: prepared.storage }, () => withProjectMutationAsyncUncoordinated(prepared, ...rest));
 }

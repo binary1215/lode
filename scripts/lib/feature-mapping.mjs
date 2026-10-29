@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -400,7 +401,7 @@ async function rebuildWithProjection({ projectRoot, projectId, currentProductMod
   }));
 }
 
-export async function startFeatureMapping(options = {}) {
+async function startFeatureMappingUncoordinated(options = {}) {
   return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, async () => (await startFeatureMappingLocked(options))));
 }
 
@@ -595,7 +596,7 @@ function exactRequestCanRepairOrphanProjection({ projectRoot, projectId, candida
     || (Array.isArray(value) ? value.length === 0 : value !== true));
 }
 
-export async function reviewFeatureMapping(options = {}) {
+async function reviewFeatureMappingUncoordinated(options = {}) {
   return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, async () => (await reviewFeatureMappingLocked(options))));
 }
 
@@ -883,4 +884,12 @@ export async function inspectFeatureMapping({ root = "." } = {}) {
       graph: "rebuildable-derived-projection",
     },
   };
+}
+
+export async function startFeatureMapping(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => startFeatureMappingUncoordinated(options, ...rest));
+}
+
+export async function reviewFeatureMapping(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => reviewFeatureMappingUncoordinated(options, ...rest));
 }

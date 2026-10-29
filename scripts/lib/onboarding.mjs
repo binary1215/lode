@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -634,11 +635,11 @@ async function rebuildWithOnboardingProjection({
   }));
 }
 
-export async function startOnboarding(options = {}) {
+async function startOnboardingUncoordinated(options = {}) {
   return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, async () => (await startOnboardingLocked(options))));
 }
 
-export async function proposeOnboardingSemanticRefresh(options = {}) {
+async function proposeOnboardingSemanticRefreshUncoordinated(options = {}) {
   return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, async () => (await proposeOnboardingSemanticRefreshLocked(options))));
 }
 
@@ -801,7 +802,7 @@ async function startOnboardingLocked({ root = ".", mode = "existing", storage = 
   };
 }
 
-export async function refreshOnboardingCandidates(options = {}) {
+async function refreshOnboardingCandidatesUncoordinated(options = {}) {
   return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, async () => (await recoverableCandidateRefresh(options))));
 }
 
@@ -1538,11 +1539,11 @@ async function recoverOnboardingPromotionLocked({ root = "." } = {}) {
   return (await applyApprovedPromotion({ projectRoot, state, review }, storageOwner));
 }
 
-export async function recoverOnboardingPromotion(options = {}) {
+async function recoverOnboardingPromotionUncoordinated(options = {}) {
   return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, async () => (await recoverOnboardingPromotionLocked(options))));
 }
 
-export async function reviewOnboarding(options = {}) {
+async function reviewOnboardingUncoordinated(options = {}) {
   return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, async () => (await reviewOnboardingLocked(options))));
 }
 
@@ -2004,4 +2005,24 @@ async function inspectOnboardingRecords(root, inspectWorld) {
       graph: "rebuildable-derived-evidence",
     },
   };
+}
+
+export async function startOnboarding(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => startOnboardingUncoordinated(options, ...rest));
+}
+
+export async function proposeOnboardingSemanticRefresh(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => proposeOnboardingSemanticRefreshUncoordinated(options, ...rest));
+}
+
+export async function refreshOnboardingCandidates(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => refreshOnboardingCandidatesUncoordinated(options, ...rest));
+}
+
+export async function recoverOnboardingPromotion(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => recoverOnboardingPromotionUncoordinated(options, ...rest));
+}
+
+export async function reviewOnboarding(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => reviewOnboardingUncoordinated(options, ...rest));
 }

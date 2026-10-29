@@ -809,18 +809,10 @@ export async function readWorldModel({ root = ".", storeAdapter = null } = {}) {
   const pointerEntry = adapter.readPointer();
   if (!pointerEntry) fail("Repository World Model has not been built.", "WORLD_MODEL_NOT_BUILT");
   const pointer = pointerEntry.document;
-  if (pointer.schemaVersion !== SCHEMA_VERSION || pointer.kind !== "WorldModelPointer"
-    || pointer.projectId !== inspected.project.projectId || !/^world-model-[a-f0-9]{24}$/.test(pointer.worldModelId || "")
-    || (pointer.previousWorldModelId != null && !/^world-model-[a-f0-9]{24}$/.test(pointer.previousWorldModelId || ""))
-    || (pointer.previousWorldModelId && pointer.previousWorldModelId === pointer.worldModelId)) {
-    fail("World Model pointer does not match this project.", "WORLD_MODEL_IDENTITY_MISMATCH");
-  }
-  if (!/^[a-f0-9]{64}$/.test(pointer.worldModelHash || "") || pointer.worldModelId !== `world-model-${pointer.worldModelHash.slice(0, 24)}`) {
-    fail("World Model pointer hash does not match its identity.", "WORLD_MODEL_POINTER_MISMATCH");
-  }
+  verifyWorldModelPointerOriginal(pointer, inspected.project.projectId);
   const snapshotEntry = (await adapter.readSnapshot(pointer.worldModelId));
   if (!snapshotEntry) fail("World Model snapshot is missing.", "WORLD_MODEL_SNAPSHOT_MISSING");
-  const snapshot = verifiedSnapshot(snapshotEntry.document, pointer.worldModelId, storage);
+  const snapshot = verifyWorldModelSnapshotOriginal({ document: snapshotEntry.document, worldModelId: pointer.worldModelId, storage });
   if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedRoot(storage, snapshot.projectRoot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   if (snapshot.worldModelHash !== pointer.worldModelHash) fail("World Model pointer hash does not match its snapshot.", "WORLD_MODEL_POINTER_MISMATCH");
   return {
@@ -842,7 +834,7 @@ export async function readWorldModelSnapshot({ root = ".", worldModelId, storeAd
   const adapter = createWorldModelStoreAdapter({ storage, projectRoot: inspected.project.projectRoot, adapter: storeAdapter });
   const snapshotEntry = (await adapter.readSnapshot(worldModelId));
   if (!snapshotEntry) fail(`World Model snapshot is missing: ${worldModelId}`, "WORLD_MODEL_SNAPSHOT_MISSING");
-  const snapshot = verifiedSnapshot(snapshotEntry.document, worldModelId, storage);
+  const snapshot = verifyWorldModelSnapshotOriginal({ document: snapshotEntry.document, worldModelId, storage });
   if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedRoot(storage, snapshot.projectRoot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   return {
     status: "verified",
@@ -1964,4 +1956,23 @@ export async function queryWorldRuntimeState({ root = ".", query = "", runtime =
     worldModelId: inspected.snapshot.worldModelId,
     ...queryExternalRuntimeState(inspected.snapshot.externalRuntimeState, { query, runtime, state, kind, limit }),
   };
+}
+
+// Shared pure original verification for bounded maintenance readers.
+export function verifyWorldModelPointerOriginal(pointer, projectId) {
+  if (pointer.schemaVersion !== SCHEMA_VERSION || pointer.kind !== "WorldModelPointer"
+    || pointer.projectId !== projectId || !/^world-model-[a-f0-9]{24}$/.test(pointer.worldModelId || "")
+    || (pointer.previousWorldModelId != null && !/^world-model-[a-f0-9]{24}$/.test(pointer.previousWorldModelId || ""))
+    || (pointer.previousWorldModelId && pointer.previousWorldModelId === pointer.worldModelId)) {
+    fail("World Model pointer does not match this project.", "WORLD_MODEL_IDENTITY_MISMATCH");
+  }
+  if (!/^[a-f0-9]{64}$/.test(pointer.worldModelHash || "") || pointer.worldModelId !== `world-model-${pointer.worldModelHash.slice(0, 24)}`) {
+    fail("World Model pointer hash does not match its identity.", "WORLD_MODEL_POINTER_MISMATCH");
+  }
+  return pointer;
+}
+export function verifyWorldModelSnapshotOriginal({ document, worldModelId, storage }) {
+  const snapshot = verifiedSnapshot(document, worldModelId, storage);
+  if (snapshot.projectId !== storage.projectId || !projectOwnsRecordedRoot(storage, snapshot.projectRoot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
+  return snapshot;
 }

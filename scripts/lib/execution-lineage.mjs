@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -274,7 +275,7 @@ export function buildFreshLodeReview({ root = ".", wholePlanId, resultPacketId, 
   return { status: "ready_for_fresh_head_review", review };
 }
 
-export function createWholePlanSnapshot({ root = ".", objective, plan, invariants = [], sources = [], persist = true } = {}) {
+function createWholePlanSnapshotUncoordinated({ root = ".", objective, plan, invariants = [], sources = [], persist = true } = {}) {
   const project = projectForWrite(root);
   const normalizedObjective = requiredText(objective, "Whole-plan objective");
   if (plan == null || (typeof plan === "string" && !plan.trim())) fail("Whole plan is required.", "INVALID_LINEAGE_INPUT");
@@ -293,7 +294,7 @@ export function createWholePlanSnapshot({ root = ".", objective, plan, invariant
   return persistArtifact(project.projectRoot, artifact, persist, projectStorage.get(project));
 }
 
-export function createNextWholePlanSnapshot({ root = ".", reviewDecisionId, plan, invariants, sources, persist = true } = {}) {
+function createNextWholePlanSnapshotUncoordinated({ root = ".", reviewDecisionId, plan, invariants, sources, persist = true } = {}) {
   const project = projectForWrite(root);
   const reviewId = requiredText(reviewDecisionId, "ReviewDecision id");
   if (plan == null || (typeof plan === "string" && !plan.trim())) fail("Next whole plan is required.", "INVALID_LINEAGE_INPUT");
@@ -328,7 +329,7 @@ export function createNextWholePlanSnapshot({ root = ".", reviewDecisionId, plan
   return persistArtifact(project.projectRoot, artifact, persist, projectStorage.get(project));
 }
 
-export function createExecutionContract({ root = ".", wholePlanId, capsuleId, scope, acceptanceCriteria, constraints = [], allowedActions = [], forbiddenActions = [], persist = true } = {}) {
+function createExecutionContractUncoordinated({ root = ".", wholePlanId, capsuleId, scope, acceptanceCriteria, constraints = [], allowedActions = [], forbiddenActions = [], persist = true } = {}) {
   const project = projectForWrite(root);
   const planId = requiredText(wholePlanId, "Whole-plan id");
   const contextId = requiredText(capsuleId, "Context Capsule id");
@@ -359,7 +360,7 @@ export function createExecutionContract({ root = ".", wholePlanId, capsuleId, sc
   return persistArtifact(project.projectRoot, artifact, persist, projectStorage.get(project));
 }
 
-export function createResultPacket({ root = ".", executionContractId, outcome, evidence, planDelta = "", impactRadius = [], verification, unknowns = [], knowledgeProposals = [], persist = true } = {}) {
+function createResultPacketUncoordinated({ root = ".", executionContractId, outcome, evidence, planDelta = "", impactRadius = [], verification, unknowns = [], knowledgeProposals = [], persist = true } = {}) {
   const project = projectForWrite(root);
   const contractId = requiredText(executionContractId, "Execution Contract id");
   const contract = requireArtifact(project.projectRoot, contractId, "ExecutionContract");
@@ -390,7 +391,7 @@ export function createResultPacket({ root = ".", executionContractId, outcome, e
   return persistArtifact(project.projectRoot, artifact, persist, projectStorage.get(project));
 }
 
-export function createReviewDecision({ root = ".", wholePlanId, resultPacketId, reviewContext, disposition, rationale, nextActions = [], knowledgeProposalRecommendations = [], persist = true } = {}) {
+function createReviewDecisionUncoordinated({ root = ".", wholePlanId, resultPacketId, reviewContext, disposition, rationale, nextActions = [], knowledgeProposalRecommendations = [], persist = true } = {}) {
   const project = projectForWrite(root);
   const planId = requiredText(wholePlanId, "Whole-plan id");
   const resultId = requiredText(resultPacketId, "Result Packet id");
@@ -433,3 +434,23 @@ export function createReviewDecision({ root = ".", wholePlanId, resultPacketId, 
 
 // Preserve the exact historical public export; one implementation owns both names.
 export { buildFreshLodeReview as buildFreshHeadReview };
+
+export function createWholePlanSnapshot(options = {}, ...rest) {
+  return options.persist === false ? createWholePlanSnapshotUncoordinated(options, ...rest) : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createWholePlanSnapshotUncoordinated(options, ...rest));
+}
+
+export function createNextWholePlanSnapshot(options = {}, ...rest) {
+  return options.persist === false ? createNextWholePlanSnapshotUncoordinated(options, ...rest) : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createNextWholePlanSnapshotUncoordinated(options, ...rest));
+}
+
+export function createExecutionContract(options = {}, ...rest) {
+  return options.persist === false ? createExecutionContractUncoordinated(options, ...rest) : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createExecutionContractUncoordinated(options, ...rest));
+}
+
+export function createResultPacket(options = {}, ...rest) {
+  return options.persist === false ? createResultPacketUncoordinated(options, ...rest) : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createResultPacketUncoordinated(options, ...rest));
+}
+
+export function createReviewDecision(options = {}, ...rest) {
+  return options.persist === false ? createReviewDecisionUncoordinated(options, ...rest) : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createReviewDecisionUncoordinated(options, ...rest));
+}

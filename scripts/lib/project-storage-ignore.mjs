@@ -10,6 +10,7 @@ import { withProjectMutation } from "./project-mutation-lock.mjs";
 export const GENERATED_STORAGE_IGNORE_RULES = Object.freeze([
   Object.freeze({ pattern: "/graph-discovery/index.json", reason: "Rebuilt from current verified original records." }),
   Object.freeze({ pattern: "/.operations/", reason: "Transient scoped process locks, not portable Project state." }),
+  Object.freeze({ pattern: "/.snapshot-gc/", reason: "Transient local snapshot participants and collector attempts, not recovery direction." }),
   Object.freeze({ pattern: "/refresh/writer.lock/", reason: "Active host-local refresh lease, not a retained snapshot." }),
   Object.freeze({ pattern: "/refresh/writer.lock.*.staging/", reason: "Unpublished nonce-owned refresh lease staging." }),
 ]);

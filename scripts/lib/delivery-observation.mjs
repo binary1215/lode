@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
 import {
   createObservationTypeDescriptor,
@@ -119,7 +120,7 @@ function existingReplay(artifacts, adapterKey, adapterVersion, sourceScopeDigest
     && record.source.sourceEventKeyDigest === sourceEventKeyDigest) || null;
 }
 
-export async function recordDeliveryObservation({ root = ".", ...input } = {}) {
+async function recordDeliveryObservationUncoordinated({ root = ".", ...input } = {}) {
   exactInput(input);
   const inspected = assertObservationProjectReady(root);
   const environmentKey = stableKey(input.environmentKey, "Delivery environment key", 128);
@@ -471,4 +472,8 @@ export async function inspectDeliveryState({ root = ".", environmentKey = "", ta
     ordinaryWorkBlocked: false,
   };
   return projectionIdentity(payload);
+}
+
+export async function recordDeliveryObservation(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => recordDeliveryObservationUncoordinated(options, ...rest));
 }

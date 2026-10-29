@@ -1,3 +1,5 @@
+import { verifyLooseSnapshotAddress } from "./snapshot-backend-reclamation.mjs";
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import { DOMAIN_BUNDLE_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
 import { GitSnapshotStore } from "./git-snapshot-store.mjs";
 import { storedSnapshotLocation, readSnapshotFile, writeStoredSnapshot, listStoredSnapshotIds } from "./snapshot-storage-codec.mjs";
@@ -123,6 +125,10 @@ export class LocalJsonWorldModelStoreAdapter {
   }
 
   async writeSnapshot(worldModelId, document) {
+    return withSnapshotReferencesAsync({ root: this.projectRoot, storage: this.storage }, () => this.#writeSnapshotUnderLifetime(worldModelId, document));
+  }
+
+  async #writeSnapshotUnderLifetime(worldModelId, document) {
     const existing = await this.readSnapshot(worldModelId);
     if (existing) return { ...existing, created: false };
     if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT) document = createSnapshotComposition({ root: this.projectRoot, storage: this.storage, document, encoding: this.bundleEncoding }).document;
@@ -134,9 +140,27 @@ export class LocalJsonWorldModelStoreAdapter {
   }
 
   writePointer(document) {
-    const location = this.pointerLocation();
-    atomicWrite(location, json(document));
-    return { location, document };
+    return withSnapshotReferences({ root: this.projectRoot, storage: this.storage }, () => {
+      // Revalidate precomputed exact targets after admission. No asynchronous
+      // pointer conversion or new Product semantic gate. Mixed Git is retained
+      // by collection and does not require a synchronous Git subprocess here.
+      const gitDirectory = path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "snapshot-objects.git");
+      for (const target of [document.worldModelId, document.previousWorldModelId]) {
+        if (!target) continue;
+        const targetFile = this.snapshotLocation(target);
+        if (!fs.existsSync(targetFile)) {
+          // This is a synchronous address revalidation under the active lifetime.
+          // Unsupported Git layouts retain their GC exclusion rather than adding a semantic preparation gate.
+          if(fs.existsSync(gitDirectory)&&verifyLooseSnapshotAddress({root:this.projectRoot,storage:this.storage,id:target}))continue;
+          throw Object.assign(new Error("Snapshot pointer target is missing."), { code: "SNAPSHOT_POINTER_TARGET_MISSING" });
+        }
+        const original = parseDocument(targetFile, "Snapshot pointer target");
+        if (original.worldModelId !== target) throw Object.assign(new Error("Snapshot pointer target identity changed."), { code: "SNAPSHOT_POINTER_TARGET_MISMATCH" });
+      }
+      const location = this.pointerLocation();
+      atomicWrite(location, json(document));
+      return { location, document };
+    });
   }
 
   async listSnapshotIds() {

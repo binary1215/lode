@@ -1256,10 +1256,18 @@ function formatSourceContext(value) {
 }
 
 function formatSnapshotStorage(value) {
+  if (value.requestedApply) return [
+    "Snapshot cleanup: " + value.status + ". Deleted: " + value.deletedCount + (value.retiredRefCount||value.writtenPackBytes||value.deletedDomainBundles ? "; unlinked file bytes: " : "; reclaimed bytes: ") + value.reclaimedBytes + ".",
+    value.nativeProcessCleanup ? "Native cleanup was not verified; process details: --json." : null,
+    value.retiredRefCount ? "Retired refs: "+value.retiredRefCount+"; other files unlinked: "+(value.deletedCount-value.retiredRefCount)+"." : null,
+    value.writtenPackBytes||value.publishedPackBytes ? "Published pack/index bytes: "+value.publishedPackBytes+"; net file bytes removed: "+value.netStorageBytes+"." : null,
+    value.code || value.deferred?.length ? "Preserved remainder: " + (value.code||[...new Set(value.deferred.map(item=>item.code))].slice(0,3).join(", ")) + ". Details: --json." : "Retained references preserved. Details: --json.", "",
+  ].filter(line=>line!==null).join("\n");
   return [
     "Snapshot storage: " + value.snapshotCount + " snapshot files; " + value.storedBytes + " stored bytes.",
+    value.backendInspection?.deferredBackends?.length ? "Git/domain storage is outside this synchronous count; typed retention details: --json." : null,
     "Observed without a retained reference: " + value.observedUnreferencedCount + "; " + value.observedUnreferencedBytes + " bytes (not certified safe to delete).",
-    "All snapshots preserved. Deleted: 0; reclaimable: 0. Apply is unavailable: reference-writer transaction coverage is incomplete.",
-    "Details and preservation reasons: --json. Ordinary work is unaffected.", "",
-  ].join("\n");
+    "Inspection preserved every file. Explicit --apply verifies supported references before cleanup.",
+    "Details and preservation reasons: --json.", "",
+  ].filter(line=>line!==null).join("\n");
 }

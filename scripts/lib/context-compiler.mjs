@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import crypto from "node:crypto";
 import { SOURCE_OBSERVATION_TYPE, DECLARATION_OBSERVATION_TYPE, sourceObservationNode, readSourceObservation } from "./source-observation.mjs";
 import fs from "node:fs";
@@ -1052,7 +1053,7 @@ function selectContext(candidates, needs, maximum, baseCost) {
   return { included, excluded, used, evidenceGaps };
 }
 
-export async function compileContext({ root = ".", task, budget = DEFAULT_CONTEXT_BUDGET, evidenceNeeds = [], persist = false, graphProjectionAdapter = null, sourceObservations = [], includeRepositoryWorld = true } = {}) {
+async function compileContextUncoordinated({ root = ".", task, budget = DEFAULT_CONTEXT_BUDGET, evidenceNeeds = [], persist = false, graphProjectionAdapter = null, sourceObservations = [], includeRepositoryWorld = true } = {}) {
   if (persist && sourceObservations.length) fail("Ephemeral source observations must be retained before durable Capsule compilation.", "EPHEMERAL_SOURCE_REFERENCE");
   if (typeof task !== "string" || !task.trim()) fail("Context compilation requires a task.", "TASK_REQUIRED");
   const normalizedBudget = normalizeContextBudget(budget);
@@ -1225,4 +1226,8 @@ export function readContextCapsule({ root = ".", capsuleId } = {}) {
     fail("Context Capsule belongs to another HEAD Project.", "CONTEXT_CAPSULE_PROJECT_MISMATCH");
   }
   return { status: "verified", file, capsule };
+}
+
+export async function compileContext(options = {}, ...rest) {
+  return (options.persist) ? withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => compileContextUncoordinated(options, ...rest)) : compileContextUncoordinated(options, ...rest);
 }

@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -362,7 +363,7 @@ function assertCurrentBaseline(expected, current) {
   if (conformanceCanonicalJson(expected) !== conformanceCanonicalJson(current.baseline)) fail(`Conformance baseline changed; rerun ${publicToolName("head_conformance_prepare")} and retry the read-only semantic assessment. Ordinary work remains available.`, "CONFORMANCE_BASELINE_DRIFT");
 }
 
-export async function proposeConformanceFindings({ root = ".", baseline, findings } = {}) {
+async function proposeConformanceFindingsUncoordinated({ root = ".", baseline, findings } = {}) {
   const inspected = readyProject(root, "Conformance proposal");
   if (!Array.isArray(findings) || findings.length < 1 || findings.length > 64) fail("Conformance proposal requires one through 64 candidates.", "INVALID_CONFORMANCE_FINDING_COUNT");
   const current = (await currentBaseline(inspected.project.projectRoot, inspected.storage));
@@ -486,7 +487,7 @@ async function recordConformanceDispositionLocked({ root = ".", findingId, dispo
   return { ...persisted, disposition: receipt, ordinaryWorkBlocked: false, authority: { disposition: "P3-exact-finding-evidence", executionAuthorized: false, productCanonMutated: false, recoveryDirectionMutated: false } };
 }
 
-export async function proposeConformanceResolution({ root = ".", findingId, baseline, evidenceAnchors, assessment, rationale } = {}) {
+async function proposeConformanceResolutionUncoordinated({ root = ".", findingId, baseline, evidenceAnchors, assessment, rationale } = {}) {
   const inspected = readyProject(root, "Conformance resolution proposal");
   const artifacts = readArtifacts(inspected.project.projectRoot, inspected.project.projectId, inspected.storage);
   const finding = artifacts.findingsById.get(findingId);
@@ -516,4 +517,12 @@ export function conformanceSourceDigest(root, relativePath) {
     }
   } finally { fs.closeSync(descriptor); }
   return { path: normalized, fileDigest: hash.digest("hex") };
+}
+
+export async function proposeConformanceFindings(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => proposeConformanceFindingsUncoordinated(options, ...rest));
+}
+
+export async function proposeConformanceResolution(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => proposeConformanceResolutionUncoordinated(options, ...rest));
 }

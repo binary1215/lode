@@ -27,7 +27,7 @@ export function storedSnapshotLocation(root, jsonFile, encoding = "gzip") {
   return json ? jsonFile : gzip ? jsonFile + '.gz' : jsonFile + (encoding === "gzip" ? '.gz' : '');
 }
 export function decodeSnapshotBytes(bytes, { compressed = false, compressedBytes = SNAPSHOT_STORAGE_LIMITS.compressedBytes,
-  decodedBytes = SNAPSHOT_STORAGE_LIMITS.decodedBytes } = {}) {
+  decodedBytes = SNAPSHOT_STORAGE_LIMITS.decodedBytes, onDecodedBytes = null } = {}) {
   if (!Buffer.isBuffer(bytes)) fail("Snapshot bytes must be a Buffer.");
   if (![compressedBytes, decodedBytes].every(value => Number.isSafeInteger(value) && value > 0)) fail("Invalid snapshot storage bound.");
   let decoded = bytes;
@@ -37,6 +37,9 @@ export function decodeSnapshotBytes(bytes, { compressed = false, compressedBytes
     catch (error) { fail("Snapshot gzip is corrupt, truncated or exceeds its decoded bound.", error.code === "ERR_BUFFER_TOO_LARGE" ? "SNAPSHOT_STORAGE_LIMIT" : "INVALID_SNAPSHOT_ENCODING"); }
   }
   if (decoded.length > decodedBytes) fail("Decoded snapshot exceeds its storage bound.", "SNAPSHOT_STORAGE_LIMIT");
+  // Optional internal accounting before parsing; ordinary readers keep their
+  // original return/error contracts and storage limits.
+  if (typeof onDecodedBytes === "function") onDecodedBytes(decoded.length);
   try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(decoded)); }
   catch { fail("Snapshot is not valid UTF-8 JSON."); }
 }

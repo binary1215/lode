@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import path from "node:path";
 import {
   ArcadeDbGraphProjectionAdapter,
@@ -86,7 +87,7 @@ function conformanceQueries(graph) {
   ];
 }
 
-export async function activateArcadeDbGraphProjection({ root = ".", transport = null } = {}) {
+async function activateArcadeDbGraphProjectionUncoordinated({ root = ".", transport = null } = {}) {
   const world = (await inspectWorldModel({ root }));
   const storage = world.storage;
   if (world.status !== "current") fail("A current verified World Model is required before GraphDB activation.", "WORLD_MODEL_STALE");
@@ -244,4 +245,8 @@ export async function inspectArcadeDbGraphProjectionStatus({ root = ".", transpo
     credentialsPersisted: false,
     authority: "rebuildable-derived-projection-not-project-canon",
   };
+}
+
+export async function activateArcadeDbGraphProjection(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => activateArcadeDbGraphProjectionUncoordinated(options, ...rest));
 }

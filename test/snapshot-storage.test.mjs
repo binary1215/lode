@@ -106,8 +106,8 @@ test("storage inspection traces retained history and reports unreferenced bytes 
  assert(report.snapshots.some(row=>row.id===first.snapshot.worldModelId&&row.reasonCode==="RETAINED_REFERENCE_CLOSURE"));
  assert(report.snapshots.some(row=>row.id===currentId&&row.reasonCode==="RETAINED_REFERENCE_CLOSURE"));
  assert(report.snapshots.some(row=>row.id===orphan.snapshot.worldModelId&&!row.observedReference));
- assert(report.uncoveredWriters.some(row=>row.entry==="compileContext"));assert.deepEqual(tree(f.root),before);
- const requested=await runCommand(["storage-gc",f.root,"--apply"]);assert.equal(requested.status,"gc_apply_unavailable_preserved");assert.equal(requested.reclaimableBytes,0);assert.deepEqual(tree(f.root),before);
+ assert.deepEqual(report.uncoveredWriters,[]);assert.deepEqual(tree(f.root),before);
+ const requested=await runCommand(["storage-gc",f.root,"--apply"]);assert.equal(requested.status,"gc_preserved");assert.equal(requested.code,"SNAPSHOT_GC_REFERENCE_COVERAGE_INCOMPLETE");assert.equal(requested.reclaimedBytes,0);assert.deepEqual(tree(f.root),before);
  const difference=(await diffGraphLineage({root:f.root,fromWorldModelId:first.snapshot.worldModelId,toWorldModelId:currentId}));assert(difference);assert.equal((await readWorldModelForDiscovery({root:f.root,worldModelId:first.snapshot.worldModelId})).snapshot.worldModelHash,first.snapshot.worldModelHash);
  fs.writeFileSync(path.join(f.root,f.storage.directory,"unknown-reference.json"),JSON.stringify({schemaVersion:999,worldModelId:orphan.snapshot.worldModelId}));
  const unknown=inspectSnapshotGarbageCollection({root:f.root,apply:true});assert(unknown.coverage.issues.some(issue=>issue.reasonCode==="UNKNOWN_REFERENCE_SCHEMA"));assert.equal(unknown.deletedCount,0);
@@ -149,7 +149,7 @@ test("generated ignore never overrides explicit user negations in storage or Pro
 });
 
 test("CLI distinguishes successful inspection from unavailable requested apply and keeps the useful zero-deletion report",async t=>{
- const f=fixture(t),before=tree(f.root),script=path.join(pluginRoot,"scripts/lode.mjs");
+ const f=fixture(t),script=path.join(pluginRoot,"scripts/lode.mjs");fs.writeFileSync(path.join(f.root,f.storage.directory,"future.json"),JSON.stringify({schemaVersion:999,kind:"FutureRoot"}));const before=tree(f.root);
  const invoke=apply=>new Promise((resolve,reject)=>{
    const args=[script,"storage-gc",f.root,...(apply?["--apply"]:[]),"--json"];
    t.diagnostic(JSON.stringify({event:"planned-storage-cli",command:process.execPath,args,cwd:f.root,parent:process.pid,ports:[]}));
@@ -161,8 +161,8 @@ test("CLI distinguishes successful inspection from unavailable requested apply a
    child.once("close",(code,signal)=>{clearTimeout(timer);t.diagnostic(JSON.stringify({event:"closed-storage-cli",pid:child.pid,code,signal,ports:[]}));resolve({code,signal,stdout,stderr});});
  });
  const dry=await invoke(false);assert.equal(dry.code,0,dry.stderr);assert.equal(JSON.parse(dry.stdout).status,"gc_dry_run");
- const apply=await invoke(true);assert.equal(apply.code,1,apply.stderr);assert.equal(apply.signal,null);
- const report=JSON.parse(apply.stdout);assert.equal(report.code,"SNAPSHOT_GC_APPLY_UNAVAILABLE");assert.equal(report.deletedCount,0);assert.equal(report.reclaimableBytes,0);assert.equal(report.applyPerformed,false);assert(report.uncoveredWriters.length);assert.deepEqual(tree(f.root),before);
+ const apply=await invoke(true);assert.equal(apply.code,1,apply.stderr);assert.equal(apply.signal,null);assert.equal(apply.stderr,"","normal cleanup output stays quiet; process details require diagnostics");
+ const report=JSON.parse(apply.stdout);assert.equal(report.code,"SNAPSHOT_GC_REFERENCE_COVERAGE_INCOMPLETE");assert.equal(report.deletedCount,0);assert.equal(report.reclaimedBytes,0);assert.equal(report.applyPerformed,false);assert(report.coverage.issues.length);assert.deepEqual(tree(f.root),before);
 });
 
 test("review F1: existing user ignore is never opened for append and an intervening create wins",t=>{

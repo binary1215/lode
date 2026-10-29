@@ -1,3 +1,4 @@
+import { withSnapshotReferences } from "./snapshot-reference-lifetime.mjs";
 import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact } from "./project-storage-format.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -151,7 +152,7 @@ function directory(root, storage) {
   return current;
 }
 
-export function retainSourceObservation(root, bundle, storage = null) {
+function retainSourceObservationUncoordinated(root, bundle, storage = null) {
   storage = formatForVerifiedOwner(storage);
   verifySourceObservation(root, bundle.evidence.projectId, bundle, { storage });
   const key = sourceBundleKey(bundle.evidence);
@@ -177,18 +178,38 @@ function retainBundle(root, key, bundle, storage) {
 }
 function cryptoRandom() { return sourceDigest(`${process.hrtime.bigint()}-${Math.random()}`).slice(0, 24); }
 
-function readSourceObservationEntry(root, projectId, key, options, captureOriginal) {
-  if (options === undefined) options = {};
+function readStoredSource(root, key, options) {
   if (!/^[a-f0-9]{64}$/.test(key)) throw sourceError("SOURCE_BUNDLE_KEY_INVALID");
   const storage = formatForVerifiedOwner(options?.storage);
   const relativePath = `${relativeProjectArtifact(storage, "observations", "source-bundles")}/${key}.json`;
   const bytes = readSourceBytes(root, relativePath, 16 * 1024 * 1024);
-  const bundle = parseStoredJson(bytes);
+  return { storage, relativePath, bytes, parsed: parseStoredJson(bytes) };
+}
+function verifyStoredSourceObservation(root, projectId, key, bundle, options, storage) {
   if (!recordShape(bundle) || !recordShape(bundle.evidence)) throw sourceError("SOURCE_OBSERVATION_INVALID");
   if (sourceBundleKey(bundle.evidence) !== key) throw sourceError("SOURCE_OBSERVATION_INVALID");
   verifySourceObservation(root, projectId, bundle, options === null ? null : { ...options, storage });
+  return bundle;
+}
+function originalSourceBytes(entry) {
+  return { relativePath: entry.relativePath, byteLength: entry.bytes.length, sha256: sourceDigest(entry.bytes) };
+}
+function readSourceObservationEntry(root, projectId, key, options, captureOriginal) {
+  if (options === undefined) options = {};
+  const entry = readStoredSource(root, key, options);
+  const bundle = verifyStoredSourceObservation(root, projectId, key, entry.parsed, options, entry.storage);
   // Raw identity is derived from exactly the buffer parsed and verified above.
-  return { bundle, ...(captureOriginal ? { original: { relativePath, byteLength: bytes.length, sha256: sourceDigest(bytes) } } : {}) };
+  return { bundle, ...(captureOriginal ? { original: originalSourceBytes(entry) } : {}) };
+}
+
+// Internal preservation union. Classify and verify success/failure from the
+// same bounded reader buffer, never a separate raw JSON look-ahead or retry.
+export function readSourceBundleOriginal(root, projectId, key, options = {}) {
+  const entry = readStoredSource(root, key, options);
+  if (recordShape(entry.parsed) && Object.hasOwn(entry.parsed, "failure")) {
+    return { ...verifyStoredSourceFailure(root, projectId, key, entry.parsed), original: originalSourceBytes(entry) };
+  }
+  return { bundle: verifyStoredSourceObservation(root, projectId, key, entry.parsed, options, entry.storage), original: originalSourceBytes(entry) };
 }
 
 export function readSourceObservation(root, projectId, key, options) {
@@ -206,7 +227,7 @@ export function sourceObservationNode(root, projectId, bundle, storage = undefin
     observationProjectionId: `source-projection-${record.observationHash.slice(0, 24)}`, observationProjectionHash: observationDigest(record) };
 }
 
-export function retainSourceFailure(root, input, storage = null) {
+function retainSourceFailureUncoordinated(root, input, storage = null) {
   const failure = { kind: "SourceCollectionFailure", version: 1, ...input,
     authority: "P3-failed-observation-evidence", authorityBoundary: artifactAuthorityBoundary("SourceCollectionFailure"),
     instructionAuthority: false, promotionAuthority: false, recoveryAuthority: false, mutatesCanon: false };
@@ -219,8 +240,10 @@ export function retainSourceFailure(root, input, storage = null) {
 }
 
 export function readSourceFailure(root, projectId, key, storage = undefined) {
-  if (!/^[a-f0-9]{64}$/.test(key)) throw sourceError("SOURCE_BUNDLE_KEY_INVALID");
-  const parsed = parseStoredJson(readSourceBytes(root, `${relativeProjectArtifact(storage, "observations", "source-bundles")}/${key}.json`, 16 * 1024 * 1024));
+  return verifyStoredSourceFailure(root, projectId, key, readStoredSource(root, key, { storage }).parsed);
+}
+
+function verifyStoredSourceFailure(root, projectId, key, parsed) {
   if (!recordShape(parsed)) throw sourceError("SOURCE_OBSERVATION_INVALID");
   const { failure } = parsed;
   if (!failure || sourceObjectDigest(failure) !== key || failure.projectId !== projectId
@@ -233,4 +256,12 @@ export function readSourceFailure(root, projectId, key, storage = undefined) {
     catch { sourceState = "unavailable"; }
   }
   return { failure, sourceState, authority: "historical-failure-evidence-only; never-retry-or-recovery-authority" };
+}
+
+export function retainSourceObservation(root, input, storage = null) {
+  return withSnapshotReferences({ root, storage }, () => retainSourceObservationUncoordinated(root, input, storage));
+}
+
+export function retainSourceFailure(root, input, storage = null) {
+  return withSnapshotReferences({ root, storage }, () => retainSourceFailureUncoordinated(root, input, storage));
 }

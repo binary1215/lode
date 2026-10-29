@@ -16,22 +16,33 @@
 
 압축은 디스크 사용량을 줄이고 계산을 추가합니다. 파싱·검증·질의가 빨라졌다는 근거가 아닙니다. 같은 Project·식별자·질의를 사용해 읽기·해제·파싱·typed 검증을 구분해 측정해야 합니다. fixture 준비 뒤 첫 질의는 OS 캐시까지 비운 측정이 아닙니다.
 
-## 저장 진단: 삭제 기능은 아직 지원하지 않습니다
+## 저장 진단과 명시적 정리
 
 ```powershell
 lode-agent storage-gc C:\path\to\project
 lode-agent storage-gc C:\path\to\project --json
+lode-agent storage-gc C:\path\to\project --apply --json
 ```
 
-CLI 진단은 선택된 Session이 필요하지 않으며 새 공개 MCP 작업을 추가하지 않습니다. 짧은 출력에 개수와 보존 상태를 보여주고 구조화 출력에 물리 바이트·관측한 의존성·coverage 공백을 포함합니다.
+기본 진단은 파일을 쓰거나 삭제하지 않습니다. 관측상 미참조 용량은 진단이며, 안전한 삭제의 증명이나 실행 권한은 아닙니다. 선택된 Session·새 MCP 도구·사용자 pin/save 입력·상주 수집기가 필요하지 않습니다.
 
-**GC apply는 미완성이며 사용할 수 없습니다.** `--apply`나 `apply: true`를 명시해도 모든 파일을 보존하고 삭제·회수 가능량 0을 반환합니다. 관측상 미참조 용량은 추가 검증할 후보이며 안전한 삭제 대상으로 인증한 것이 아닙니다. 진단은 리뷰·체크포인트·정리 계획을 쓰지 않습니다. 기본 진단의 종료 코드는 0이며, 미지원 apply 요청은 유용한 검사 결과를 보존한 채 종료 코드 1과 `SNAPSHOT_GC_APPLY_UNAVAILABLE`을 반환합니다.
+CLI에서 `--apply`를 명시하면 별도의 typed 참조 검증이 끝날 때까지 기다린 뒤, 미참조가 증명된 World/Graph JSON·gzip 표현, 지원하는 private Git 스냅샷 주소·객체, 보존 참조가 없는 domain 조각을 정리합니다. 현재·이전 포인터, 부모와 source alias, Capsule, 지원하는 ChangeSet/VCS·실행 계보·Session/checkpoint 및 정확한 물리 바이트 참조를 보존합니다. Canon·Session 기록과 유효 source bundle은 삭제하지 않습니다. 성공·실패 source bundle은 파일 자체가 P3 관찰 기록 원본이므로 보존 root입니다. 나이·최근 N개 기준은 없으며 모두 참조 중이면 정상 완료해도 삭제는 0개입니다.
 
-현재·이전 포인터, 부모, ChangeSet, refresh 요청·영수증, Capsule, Session·Run·체크포인트와 review·온보딩 기록의 식별자를 따라갑니다. 정확한 역사 바이트 참조도 확인합니다. 대응이 모호하면 관측된 의존성 전체를 보존합니다. 알 수 없는 스키마·안전하지 않은 경로·누락 원본·staging·진행 중이거나 불명인 writer·조회 한도 생략은 공백으로 표시합니다. 문자열 일치만으로 참조 유효성이나 부재를 인증하지 않습니다.
+지원하는 경로와 원본 검증기는 `scripts/lib/snapshot-deletion-closure.mjs`에 명시돼 있습니다. Core 초기화, whole snapshot, Capsule, 실행 계보, checkpoint, 일반 SessionWork/Todo, 별도로 선택되는 Session 포인터, 검토된 Run 원본, ChangeSet/영향 검토 포인터를 지원합니다. 나머지 Product/온보딩·refresh·Run/Session·관측 기록은 정확한 경로에 원본 검증기가 등록된 경우만 지원합니다. 알 수 없는 경로/스키마, 누락·손상된 의존성, 불완전한 제한 조회, 미지원 backend 구조, 위험 경로, 불명 소유자는 후보 전체를 보존하며 이유를 표시합니다. 이 첫 파일 collector가 기존의 모든 기록 형태를 처리한다고 주장하지 않습니다. 소스 원문 보존 부족과 snapshot 도달성은 구분하며 정리를 위해 원문을 다시 수집하지 않습니다.
 
-빠진 경계는 참조 저장 구간입니다. `compileContext`, `recordChangeSet`, 실행 계보 저장과 직접 어댑터 호출 모두가 대상 검증부터 저장 완료까지 GC와 배타적으로 보호되지는 않습니다. 삭제 전에 읽은 스냅샷을 나중에 참조할 수 있어 rename에서만 gate를 확인하면 늦습니다. apply를 완성하려면 async·중첩·전달받은 lease를 포함한 실제 transaction을 보호하고, 진행 중인 작업에는 즉시 양보해야 합니다. 이번 패치는 일반 작업에 전역 writer gate를 추가하지 않습니다.
+협조하는 현재 로컬 writer는 첫 원본 검증 전에 일시적인 Project 내부 P5 수명을 등록하고 실제 비동기 완료까지 유지합니다. 일반 작업이 들어오면 해당 GC 시도는 영구 무효화됩니다. 작업이 scan 도중 시작했다 끝난 경우도 놓치지 않습니다. 짧은 공용 잠금은 등록·한 파일 삭제에만 사용하고 파싱·해시·await 동안 일반 작업을 직렬화하지 않습니다. 빌린 lease·중첩 작업도 보호합니다. 끝난 부모의 detached 작업은 예전 참조를 그대로 게시하지 못합니다. 동기 pointer API와 기존 의미 계약을 유지하며 새 Product 승인 gate를 넣지 않습니다. 별도 저수준 호출 사이의 orphan 예약까지 보장하지는 않습니다.
 
-상주 수집기나 나이·최근 N개 기준 삭제는 없습니다. 모든 스냅샷이 참조돼 있으면 관측상 미참조 개수도 0입니다. 실제 정리에는 이후 구현·검증된 apply와 명시적 실행 권한이 필요합니다.
+순수 조회는 관리 파일을 쓰거나 참여 등록을 하지 않습니다. 계속 보존되는 불변 root의 전체 의존성이 과거 조회를 보호하며, 이미 확보한 바이트 계산은 추가 파일을 열 필요가 없습니다. 임의 orphan ID의 직접 조회와 명시 정리가 경합하면 실제 missing/unavailable을 반환할 수 있고 current로 대체하지 않습니다. 미지원·불명 범위에서는 정리를 보류하며 무관한 작업을 막지 않습니다. 등록 실패 후 그 순간 GC가 없다는 이유로 보호 없는 참조 게시를 계속하지 않습니다.
+
+스캔은 한 번에 원본 한 파일만 해제하고 기존 순수 typed 검증을 적용한 뒤 ID·source alias·전체 hash·정확한 물리 pin 요약만 보유합니다. 개별 파일의 기존 512 MiB 해제 상한은 할당/파싱 전에 적용하고, 전체 저장 입력 1 GiB·최대 50,000 항목·인코딩한 요약 64 MiB 상한을 적용합니다. 누적 해제량은 계측하되 작은 누적 decoded 한도로 정상 이력을 일괄 차단하지 않습니다. 이 수치는 V8 전체 RSS 보장이 아닙니다. 파일 사이에 event loop를 양보하고 취소를 확인해 일반 작업이 들어오면 다음 파일 전에 중단합니다.
+
+GC만 OS 파일시스템을 확인합니다. Windows는 숨김·기한 제한 DriveInfo 조회로 고정 드라이브 여부를 확인하고 mapped/network/불명 드라이브를 보존합니다. Linux는 statfs의 ext 계열·XFS·Btrfs·tmpfs만 현재 지원합니다. 다른 플랫폼·알 수 없는 FS는 정리를 보존합니다. 일반 작업에 PowerShell 조회를 추가하지 않으며, 정적으로 비지원인 플랫폼/UNC/Linux FS에서는 새 writer 등록도 요구하지 않습니다. OS 분류가 모든 숨겨진 backing layer나 비협조 host의 부재를 증명하지는 않습니다.
+
+지원하는 혼합 backend는 함께 검증하며, 디렉터리가 있다는 이유로 GC 전체를 막거나 게시 수명 등록을 우회하지 않습니다. owner/config가 없는 잘못된 Git marker는 계속 GC에서 제외하고 기존 일반 작업 우회를 유지합니다. 초기 Git retirement는 Core 소유 SHA256 direct loose ref이며 packed ref·reflog·snapshot symref가 없는 형식만 지원합니다. 두 lock을 대기 없이 소유하고 ref 하나를 정확한 OID·실물 identity로 비교·삭제합니다. 미지원 형식은 보존하며, source 원본은 다른 Git/domain orphan 정리를 막지 않고 자체 보존합니다.
+
+지원 경계는 협조하는 현재 로컬 entry와 일관된 로컬 파일시스템입니다. 구버전/raw writer·공유 host 전체의 배제를 증명하지 않습니다. 알려진 외부/불명 소유권·미지원 저장소는 보존하고, 새 lock이 없다는 이유로 옛 프로세스가 모두 종료됐다고 보지 않습니다. 나이·PID 추측으로 snapshot 수명 기록을 회수하지 않습니다. 일시 participant/attempt는 P2 방향·review·보존 계획이 아닙니다.
+
+구조화 결과는 삭제·실패·보존 경로를 구분합니다. 취소·변조·후속 unlink 실패가 있어도 이미 삭제한 개수와 바이트를 지우지 않습니다. `gc_applied`는 종료 코드 0, 보존·양보·부분 결과는 유용한 결과를 남기며 종료 코드 1입니다. 효과를 자동 재실행하지 않습니다. Git ref retirement와 실물 회수는 별도 결과입니다. 실제 unlink 바이트·새 pack 바이트·순수 관리 파일 감소량을 구분하며 파일 길이를 OS 할당 블록 반환으로 과장하지 않습니다. 이관·설치는 별도입니다.
 
 ## 생성하는 Git ignore 규칙
 
@@ -40,6 +51,7 @@ CLI 진단은 선택된 Session이 필요하지 않으며 새 공개 MCP 작업�
 | 저장 루트 내부 상대 패턴 | 재생성·폐기 가능한 이유 |
 | --- | --- |
 | `/graph-discovery/index.json` | 검증된 원본 기록에서 다시 만드는 색인. |
+| `/.snapshot-gc/` | 일시적 snapshot participant와 GC 시도. |
 | `/.operations/` | 프로세스가 소유하는 일시적 scope 잠금. |
 | `/refresh/writer.lock/` | 해당 Host의 실행 중 refresh lease. |
 | `/refresh/writer.lock.*.staging/` | 아직 게시되지 않은 lease staging. |
@@ -54,7 +66,7 @@ Git 원문에는 실제 파일 경로가 없으므로 필요한 World/Graph 반�
 
 이 I/O를 소비하는 World·freshness·Compiler·계보·Explorer 및 관련 workflow는 비동기 완료값을 기다립니다. factory, hash, verifier, diff 계산은 동기로 유지합니다. CLI와 MCP는 같은 완료값과 오류를 소비하며, 조회가 snapshot을 새로 수집하거나 외부 adapter를 자동 선택하지 않습니다. legacy historical inventory 0.1의 파일 pin 형식도 바꾸지 않습니다.
 
-각 private Git 작업은 하나의 deadline과 취소 신호를 사용하고 shell·filter·textconv·lazy fetch 없이 실행합니다. 자식 프로세스는 숨김으로 실행하고 종료까지 기다립니다. immutable ref는 create-only이며 같은 원문 경쟁 쓰기만 수렴합니다. Project/store/원문/object 불일치, 링크된 경로, 외부 alternates와 허용되지 않은 private 설정은 해당 작업을 실패시킵니다. ref 삭제·GC·자동 pack·source별 Git writer는 없습니다. 관리 store의 물리적 변경은 코드 source freshness의 입력이 아니며 실제 source·Canon·P3 변경 검사는 유지합니다.
+각 private Git 작업은 하나의 deadline과 취소 신호를 사용하고 shell·filter·textconv·lazy fetch 없이 실행합니다. 자식 프로세스는 숨김으로 실행하고 종료까지 기다립니다. immutable ref는 create-only이며 같은 원문 경쟁 쓰기만 수렴합니다. Project/store/원문/object 불일치, 링크된 경로, 외부 alternates와 허용되지 않은 private 설정은 해당 작업을 실패시킵니다. 일반 조회·쓰기는 ref 삭제·GC·자동 pack을 하지 않습니다. 위 명시적 정리만 지원하는 orphan 저장물을 회수하며 source별 Git writer는 추가하지 않습니다. 관리 store의 물리적 변경은 코드 source freshness의 입력이 아니며 실제 source·Canon·P3 변경 검사는 유지합니다.
 
 기본값 채택은 별도 실측·독립 검토 사항입니다. packed active store의 크기만으로 원본 백업까지 포함한 전체 디스크 절감이나 읽기 성능 향상을 주장하면 안 됩니다.
 
@@ -76,7 +88,7 @@ reader는 구성·묶음의 Project/type/schema/producer, 관리 영역 내 정�
 
 `storage-gc` 구조화 결과의 `typedClosure`는 실제 검증된 Capsule·ChangeSet·실행 계보 원본에서 정확한 World·Graph·domain 묶음·retained source bundle을 따릅니다. 의미상의 path/digest 참조와 물리 byte pin을 구분합니다. 알 수 없는 원본·누락 의존성·게시 중간 상태는 보존하고 불완전성을 표시합니다. World의 파일 메타데이터만으로 실제 소스 원문 보존을 증명하지 않습니다.
 
-조회 순서의 관측이며 트랜잭션이나 삭제 안전성 인증이 아닙니다. writer의 검증~참조 게시, active reader의 수명은 향후 collector를 위한 미완성 경계입니다. apply·ref 삭제·persistent lease는 도입하지 않으며 기존 저장을 모두 보존합니다.
+이 typedClosure는 조회 순서의 관측이며 삭제 안전성 인증이 아닙니다. 명시 apply는 위의 별도 typed 삭제 의존성 검증과 일시 writer 수명을 사용합니다. 이 관측 결과만으로 삭제하지 않으며 Git ref와 원본 묶음은 보존합니다.
 
 private Git 저장은 자기 소유 store/staging 내부에서만 ignore를 새로 만들고, 상위 사용자 정책에 명시적 !예외가 있으면 생성을 건너뜁니다. 기존 ignore와 tracked 상태를 보존하며 stage/untrack을 수행하지 않습니다. 내부 객체는 복구 가치가 있는 보존 자료이며 disposable cache가 아닙니다.
 
@@ -86,4 +98,16 @@ private Git 저장은 자기 소유 store/staging 내부에서만 ignore를 새�
 
 일반 whole gzip과 기존 domain-bundles-v1 계약은 유지합니다. 전체 World/Graph hash·원문·Project·권한 검증은 줄이지 않습니다. 같은 관측의 변경 원문은 분석 후 누적하지 않으며, 재사용하는 이전 분석의 소유 검증은 유지합니다. 사용자 cache/save/pin/승인 절차나 daemon은 추가하지 않습니다.
 
-파일별 관계 재사용과 두 packed-chunk 형식은 별도 로컬 고정 후보에서 시험했습니다. 관계 재사용의 검증/복사 비용과 chunk의 전체 복원·파일 검사 비용 때문에 해당 측정에서 전체 지연이 증가해 활성 제품 경로에는 채택하지 않았습니다. 기존 domain 시험의 정확한 전체 codeAnalysisInputBasis 재사용은 유지합니다. 전체 탐색/해시·관계 생성·직렬화/검증·스냅샷 목록 및 Git namespace 검사 비용은 남아 있으며, 이 수정만으로 전체 파이프라인이 변경량에 비례한다고 하지 않습니다. 이력/원문 이관·GC·ref 삭제는 없습니다.
+파일별 관계 재사용과 두 packed-chunk 형식은 별도 로컬 고정 후보에서 시험했습니다. 관계 재사용의 검증/복사 비용과 chunk의 전체 복원·파일 검사 비용 때문에 해당 측정에서 전체 지연이 증가해 활성 제품 경로에는 채택하지 않았습니다. 기존 domain 시험의 정확한 전체 codeAnalysisInputBasis 재사용은 유지합니다. 전체 탐색/해시·관계 생성·직렬화/검증·스냅샷 목록 및 Git namespace 검사 비용은 남아 있으며, 이 수정만으로 전체 파이프라인이 변경량에 비례한다고 하지 않습니다. 증분 분석 개선이 자동으로 이력·원문 이관이나 GC·ref 삭제를 실행하지 않으며, 명시적 storage-gc는 위의 별도 계약을 따릅니다.
+
+## 혼합 저장소의 실제 물리 회수
+
+명시적 정리는 stdout을 제한된 stream으로 받아 자기완결 pack을 만듭니다. 쓰기 전에 SHA256 index-v2 공간을 예약하고 하나의 전체 deadline을 공유합니다. 기존 DB나 alternate가 없는 격리 scratch에서 필요한 모든 OID·type·raw hash를 검증합니다. 새 pack을 먼저, idx를 마지막으로 공개하고 old idx부터 제거합니다. 완전히 같은 기존 pair는 검증해 재사용하며 삭제 대상에서 제외합니다. 보존·삭제 실패한 snapshot 표현의 domain/object 의존성은 계속 운영상 pin입니다. 실제 history 전체가 참조 중이면 스냅샷 삭제 0이 정답입니다.
+
+Pack 생성·index·검증은 기존 검증된 native process supervisor로 자식 트리를 정리합니다. 이 기능이 없으면 physical pack 단계만 보류하며 일반 조회·작업의 새 필수조건으로 삼지 않습니다. 기존 one-shot 입력 4 MiB 경계를 실행 전에 검사하고 목록을 잘라 부분 pack을 성공으로 만들지 않습니다. 취소·공간 부족·불명 lock/sidecar·부분 효과를 그대로 보고합니다. 일반 작업 옆에서 destructive Git prune/repack을 실행하지 않습니다. 순수 Git 조회는 제한된 pack 열기 경합에서 처음 고른 OID·store·raw hash만 재획득하며 current를 새로 고르거나 권한·digest 실패를 숨기지 않습니다.
+
+동기·zero-write 진단은 Git/domain 바이너리 내부를 잘못 텍스트로 읽지 않고 추가 backend 관측이 필요함을 표시합니다. CLI에는 기존의 비동기 typed 보존 투영도 포함됩니다. 어느 조회도 삭제 인증은 아닙니다. 불명 crash staging/pack은 보존하며 나이·PID 추측으로 소유권을 훔치거나 예전 효과를 자동 재실행하지 않습니다.
+
+후속 명시적 정리는 owner/config·정확한 실물 identity·PACK checksum·snapshot metadata를 격리 scratch에서 검증한 뒤 올바른 이름의 private pack을 idx 없이도 다시 조사할 수 있습니다. scratch는 순차 생성하고 다음 pack·producer 전에 제거하며, 전체 임시 저장 공간과 작업 deadline을 공유합니다. 순수 진단은 계속 무기록 조회입니다. 알 수 없거나 손상된 내용·다른 Project의 metadata, 보존 의존성 증명 부족은 남은 후보 전체를 보존합니다. 전체 의존성은 입증됐지만 main producer가 정확한 보존 객체를 읽을 수 없는 경우에만 물리 pack 단계를 보류합니다. scratch index로 main을 복구하지 않습니다. 새로운 producer가 전체 보존 집합을 독립 검증한 경우에만 변경 없는 동일 unindexed pack을 재사용하고 자기 index를 마지막으로 게시할 수 있으며, 이전 효과의 replay가 아닌 새 명시적 정리입니다.
+
+일시 participant/attempt와 두 create-only ref lock은 Project·nonce·host·PID·고정 Node runtime 시작 기준값을 결합합니다. 짧은 효과 경계에서 검증한 attempt 소유 정보를 전달하며 PID가 같아도 runtime 시작 기준값이 다르면 해당 소유자의 효과나 정리를 수행하지 않습니다. 명시된 runtime 기준값은 별도 조회한 OS CreationDate나 불명·과거 소유자를 회수할 근거가 아닙니다. 일반 작업에 OS 프로세스 조회를 추가하지 않습니다.
