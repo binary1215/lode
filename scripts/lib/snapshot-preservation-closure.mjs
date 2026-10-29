@@ -1,4 +1,4 @@
-import { readSourceObservationOriginal, readSourceFailure } from "./source-observation.mjs";
+import { readSourceBundleOriginal } from "./source-observation.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -139,9 +139,8 @@ export async function inspectSnapshotPreservationClosure({ root = "." } = {}) {
       if(!entry.isFile()||!match){issue(entry.name,"UNKNOWN_OR_INTERMEDIATE_SOURCE_BUNDLE");continue;}
       try {
         const file=path.join(sourceDirectory,entry.name);
-        const parsed=JSON.parse(fs.readFileSync(file,"utf8"));
-        if(parsed.failure){readSourceFailure(root,project.projectId,match[1],storage);pinFile(file,"exact-source-failure-original",match[1]);continue;}
-        const { bundle, original }=readSourceObservationOriginal(root,project.projectId,match[1],{storage,requireCurrent:false});
+        const { bundle, failure, original }=readSourceBundleOriginal(root,project.projectId,match[1],{storage,requireCurrent:false});
+        if(failure){pinFile(file,"exact-source-failure-original",match[1],original);continue;}
         const pin=pinFile(file,"exact-source-bundle",match[1],original);
         if(!pin)continue;
         for(const source of bundle.evidence.sources)retainedSources.set(JSON.stringify({path:source.path,digest:source.digest}),path.relative(root,file).replaceAll("\\","/"));

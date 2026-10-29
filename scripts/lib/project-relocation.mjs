@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
-import { withProjectMutation } from "./project-mutation-lock.mjs";
+import { withLocalMutation } from "./project-mutation-lock.mjs";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { safeLocationFile, verifyProjectLocation, locationJournalRelative } from "./project-location-proof.mjs";
 
@@ -123,5 +123,10 @@ export function resumeProjectLocation({ root, pluginRoot, runtimes, validateSele
   };
   const preparation = operation(false);
   if (inspectOnly) return preparation;
-  return withProjectMutation({ root: currentRoot, scope: "project-relocation", storage }, () => operation(true));
+  // An exact moved/pending location cannot be selected as an ordinary Project
+  // (or collected) yet. The preflight above authenticates the owner/journal and
+  // both permitted byte pairs; recheck them under the existing local lock.
+  // Do not introduce a caller-controlled snapshot-lifetime bypass for normal
+  // Project mutations merely because they supply a relocation scope string.
+  return withLocalMutation({ directory: safeLocationFile(currentRoot, directory, ".operations/project-relocation.lock") }, () => operation(true));
 }
