@@ -1409,7 +1409,7 @@ async function main() {
     const sameSeal = sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId });
     assert(sameSeal.status === "existing" && sameSeal.seal.sealId === sealedWave.seal.sealId,
       "Wave seal replay did not converge.");
-    const cliWaveStatus = runCommand(["worker-wave-status", resolvedRoot, "--wave", createdWave.wave.waveId]);
+    const cliWaveStatus = await runCommand(["worker-wave-status", resolvedRoot, "--wave", createdWave.wave.waveId]);
     assert(cliWaveStatus.projection.statusProjectionId === failedWave.statusProjectionId,
       "CLI wave status did not preserve Core identity.");
     const mcpWaveStatus = await dispatch({
