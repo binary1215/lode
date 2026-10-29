@@ -85,7 +85,7 @@ for (const hasCheckpoint of [false, true]) test(`lost common direction preserves
   const checkpoint = hasCheckpoint ? createRecoveryCheckpoint({ root, ...recoveryInput }).checkpoint : null;
   const evidence = recordSessionWorkEvidence({ root, input: { summary: "Retain synthetic reason", judgments: [{ assessment: "Keep exact keys", reason: "Case is meaningful" }] } }).evidence;
   loseDirection(root, layout); const before = snapshot(root);
-  const entry = enterConversationRecovery({ root }), status = inspectProjectExperience({ root });
+  const entry = (await enterConversationRecovery({ root })), status = (await inspectProjectExperience({ root }));
   for (const view of [entry, status, (await mcp(root, "head_conversation_enter")).structuredContent]) {
     assert.equal(view.ordinaryWorkBlocked, false); assert.equal(view.userDecisionRequired, false);
     assert.equal(view.recoveryDependentWorkBlocked, false);
@@ -170,19 +170,19 @@ for (const missingDirection of [false, true]) test(`diagnosis never combines an 
   assert.deepEqual(snapshot(root), before);
 });
 
-test("direction loss never masks corrupt checkpoint verification", t => {
+test("direction loss never masks corrupt checkpoint verification", async t => {
   const { root, layout } = fixture(t), checkpoint = createRecoveryCheckpoint({ root, ...recoveryInput }).checkpoint;
   loseDirection(root, layout);
   const file = path.join(root, layout.directory, "sessions/ledger", `${checkpoint.checkpointId}.json`);
   assert.ok(fs.existsSync(file));
   fs.appendFileSync(file, "invalid"); const before = snapshot(root);
-  const entry = enterConversationRecovery({ root });
+  const entry = (await enterConversationRecovery({ root }));
   assert.equal(entry.recoveryDependentWorkBlocked, true); assert.equal(entry.ordinaryWorkBlocked, false);
   assert.notEqual(entry.projectStatus.readiness.recovery.restorable, true);
   assert.deepEqual(snapshot(root), before);
 });
 
-test("direction availability changes during entry are not published as stable context", t => {
+test("direction availability changes during entry are not published as stable context", async t => {
   const { root, layout } = fixture(t); createRecoveryCheckpoint({ root, ...recoveryInput }); const lost = loseDirection(root, layout);
   const read = fs.readFileSync; let restoredPointer = false;
   fs.readFileSync = (file, ...args) => {
@@ -192,7 +192,7 @@ test("direction availability changes during entry are not published as stable co
     return read(file, ...args);
   };
   let entry;
-  try { entry = enterConversationRecovery({ root }); } finally { fs.readFileSync = read; }
+  try { entry = (await enterConversationRecovery({ root })); } finally { fs.readFileSync = read; }
   assert.equal(restoredPointer, true);
   assert.equal(entry.reasonCode, "CONVERSATION_ENTRY_BASIS_CHANGED");
   assert.equal(entry.persisted, false); assert.equal(entry.ordinaryWorkBlocked, false);

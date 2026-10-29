@@ -168,7 +168,7 @@ async function fixture(t, scopeKind = "run", { legacy = false } = {}) {
   const initialized = legacy ? seedLegacyProject(root) : initializeProject({ root, pluginRoot, runtimes: ["claude", "codex", "opencode"] });
   const storage = inspectProject(root).storage, directory = formatForVerifiedOwner(storage).directory;
   if (scopeKind === "run") {
-  const capsule = compileContext({ root, task: "Verify provider-neutral bounded worker admission", budget: 32_768, persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Verify provider-neutral bounded worker admission", budget: 32_768, persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Verify worker admission", plan: ["reserve", "consume", "release"], persist: true }).artifact;
   const contract = createExecutionContract({
     root,

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { canonicalGraphJson, projectGraphDigest, readGraphRecord, safeGraphFile } from "./discovery-index.mjs";
 import { relativeProjectArtifact } from "./project-storage-format.mjs";
-import { LocalJsonWorldModelStoreAdapter } from "./world-model-store.mjs";
+import { LocalJsonWorldModelStoreAdapter, createLocalReadOnlyWorldModelStoreAdapter } from "./world-model-store.mjs";
 import { readWorldModelForDiscovery } from "./world-model.mjs";
 import { createContextSourceReader } from "./context-source-reader.mjs";
 import { compareExactSourceVersions } from "./context-source-delta.mjs";
@@ -41,24 +41,24 @@ export async function explainContextLineage({ root, project, storage, selection 
   let snapshots = null;
   const snapshotKey = endpoint => JSON.stringify([endpoint?.sourceSnapshotId, endpoint?.graphSnapshotId]);
   const endpointKey = endpoint => JSON.stringify([endpoint?.worldModelId || null, endpoint?.sourceSnapshotId, endpoint?.graphSnapshotId]);
-  function snapshotsFor(changes) {
+  async function snapshotsFor(changes) {
     if (snapshots) return snapshots;
     snapshots = new Map();
-    const adapter = new LocalJsonWorldModelStoreAdapter({ projectRoot: root, storage });
+    const adapter = createLocalReadOnlyWorldModelStoreAdapter({ projectRoot: root, storage });
     adapter.readPointer = () => null; // explicit historical IDs, no current selection/read
     const endpoints = [...new Map(changes.flatMap(change => [change.before, change.after]).filter(Boolean).map(endpoint => [endpointKey(endpoint), endpoint])).values()];
     const pendingPairs = endpoints.filter(endpoint => !endpoint.worldModelId);
     const matches = (snapshot, endpoint) => snapshotKey(snapshot.temporalProvenanceGraph) === snapshotKey(endpoint);
-    const read = id => {
+    const read = async id => {
       safeGraphFile(root, path.relative(root, adapter.snapshotLocation(id)).replaceAll("\\", "/"));
-      return readWorldModelForDiscovery({ root, worldModelId: id, storeAdapter: adapter }).snapshot;
+      return (await readWorldModelForDiscovery({ root, worldModelId: id, storeAdapter: adapter })).snapshot;
     };
     // A recorded World ID is a direct address, independent of inventory order.
     // Older ChangeSets contain only a Source/Graph pair: never manufacture a
     // World ID from either member of that pair or choose today's pointer.
     for (const endpoint of endpoints.filter(item => item.worldModelId)) {
       try {
-        const snapshot = read(endpoint.worldModelId);
+        const snapshot = (await read(endpoint.worldModelId));
         if (!matches(snapshot, endpoint)) throw Object.assign(new Error("Recorded snapshot pair differs from World"), { code: "RETAINED_SOURCE_SNAPSHOT_PAIR_MISMATCH" });
         snapshots.set(endpointKey(endpoint), snapshot);
       } catch (error) { gaps.push({ ...endpoint, lookup: "recorded-exact-world-id", reasonCode: error.code || "RETAINED_SOURCE_SNAPSHOT_UNAVAILABLE" }); }
@@ -66,12 +66,12 @@ export async function explainContextLineage({ root, project, storage, selection 
     if (!pendingPairs.length) return snapshots;
     try {
       safeGraphFile(root, relativeProjectArtifact(storage, "world-model", "snapshots"));
-      const ids = adapter.listSnapshotIds();
+      const ids = (await adapter.listSnapshotIds());
       let inspected = 0;
       for (const id of ids.slice(0, 128)) {
         inspected++;
         try {
-          const snapshot = read(id);
+          const snapshot = (await read(id));
           for (const endpoint of pendingPairs) if (!snapshots.has(endpointKey(endpoint)) && matches(snapshot, endpoint)) snapshots.set(endpointKey(endpoint), snapshot);
         } catch (error) { gaps.push({ worldModelId: id, reasonCode: error.code || "RETAINED_SOURCE_SNAPSHOT_UNAVAILABLE" }); }
         if (pendingPairs.every(endpoint => snapshots.has(endpointKey(endpoint)))) break;
@@ -110,7 +110,7 @@ export async function explainContextLineage({ root, project, storage, selection 
     for (const { node, document } of changes) {
       const recorded = document.changes.filter(change => change.path === relative);
       if (!recorded.length) continue;
-      const retained = snapshotsFor(changes.map(item => item.document));
+      const retained = (await snapshotsFor(changes.map(item => item.document)));
       const before = retained.get(endpointKey(document.before));
       const after = retained.get(endpointKey(document.after));
       const exact = (snapshot, endpoint) => {

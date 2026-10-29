@@ -52,8 +52,8 @@ test("ordinary EN/KO CLI examples use the actual installed lode-agent launcher a
   assert(fs.existsSync(path.join(pluginRoot, "scripts/lib/head-core.mjs")), "Import shim is retained");
 });
 
-test("canonical light and complete help use the real launcher without changing surface or execution semantics", () => {
-  const light = runCommand(["help"]), complete = runCommand(["help-all"]);
+test("canonical light and complete help use the real launcher without changing surface or execution semantics", async () => {
+  const light = (await runCommand(["help"])), complete = (await runCommand(["help-all"]));
   assert.equal(light.surface, "light-default"); assert.equal(complete.surface, "ordinary-complete");
   assert(light.commands.every(line => line.startsWith("lode-agent ")));
   assert(complete.commands.every(line => line.startsWith("lode-agent ")));
@@ -105,11 +105,11 @@ test("an existing HEAD-labelled instruction and managed manifest are not rewritt
   assert.deepEqual(inventory(root), before);
 });
 
-test("context display note changes no serialized status, authority, Capsule identity or Project bytes", t => {
+test("context display note changes no serialized status, authority, Capsule identity or Project bytes", async t => {
   const root = fixture(t); initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const before = inventory(root), task = "Inspect current local evidence";
-  const preview = previewContextWorkflow({ root, task });
-  const prepared = prepareContextWorkflow({ root, task });
+  const preview = (await previewContextWorkflow({ root, task }));
+  const prepared = (await prepareContextWorkflow({ root, task }));
   assert(preview.workflow.nextAction.note.startsWith("Lode decides which evidence is needed"));
   assert.equal(preview.workflow.status, "ready_for_head_semantic_assessment");
   assert.equal(preview.workflow.evidenceNeeds.semanticAcceptance, "not-assessed-HEAD-owned");
@@ -118,7 +118,7 @@ test("context display note changes no serialized status, authority, Capsule iden
   assert.equal(preview.workflow.authority.advisoryOnly, true);
   assert.equal(preview.workflow.authority.judgesSemanticSufficiency, false);
   assert.equal(preview.workflow.authority.writesRecoveryDirection, false);
-  assert.equal(previewContextWorkflow({ root, task }).capsule.capsuleId, preview.capsule.capsuleId);
+  assert.equal((await previewContextWorkflow({ root, task })).capsule.capsuleId, preview.capsule.capsuleId);
   assert.deepEqual(prepared.preparation.selectedContext.repositoryFiles, preview.capsule.repositoryContext);
   assert.equal(prepared.preparation.nextAction.note, preview.workflow.nextAction.note);
   assert.deepEqual(inventory(root), before);

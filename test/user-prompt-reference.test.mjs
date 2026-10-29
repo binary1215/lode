@@ -248,8 +248,8 @@ test("visible Stop context is bounded Host input with unverified adjacency and h
   const { root, environment } = fixture(t);
   for (const runtime of ["codex", "claude"]) {
     const sessionId = runtime + "-visible";
-    const observe = (hook_event_name, fields) => runSessionHostHook({ runtime, environment, observeOnly: true,
-      event: { hook_event_name, cwd: root, session_id: sessionId, ...fields } });
+    const observe = async (hook_event_name, fields) => (await runSessionHostHook({ runtime, environment, observeOnly: true,
+      event: { hook_event_name, cwd: root, session_id: sessionId, ...fields } }));
     await observe("UserPromptSubmit", { turn_id: "proposal-turn", prompt: "Investigate the local implementation" });
     await observe("Stop", { turn_id: "proposal-turn", last_assistant_message: "Propose local patch; password=synthetic-private-value", reasoning: "hidden reasoning must stay absent" });
     await observe("UserPromptSubmit", { turn_id: "reply-turn", prompt: "취소. 설명만 해줘" });

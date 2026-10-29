@@ -74,7 +74,7 @@ function navigationCases(root, storage) {
   } })) };
 }
 
-test("global recent selection crosses 511/512/513/514 lexical boundaries; explicit pages and exact IDs retain their contracts", (t) => {
+test("global recent selection crosses 511/512/513/514 lexical boundaries; explicit pages and exact IDs retain their contracts", async (t) => {
   const { root, storage } = project(t), inspected = inspectProject(root);
   const inputs = Array.from({ length: 514 }, (_, i) => ({ summary: `Boundary evidence ${i}` }))
     .map((input) => ({ input, id: "work-evidence-" + sha(encoded({ projectId: inspected.project.projectId,
@@ -101,7 +101,7 @@ test("global recent selection crosses 511/512/513/514 lexical boundaries; explic
     assert.equal(value.omissions.byBudget, 0);
     assert.deepEqual(value.omissions.evidenceIds, []);
     accounting(value);
-    const entry = enterConversationRecovery({ root });
+    const entry = (await enterConversationRecovery({ root }));
     assert.deepEqual(entry.workContext.records.map((record) => record.evidenceId), expected);
     assert.equal(entry.workContext.ordinaryWorkBlocked, false);
     assert.deepEqual(snapshot(root), before);
@@ -139,7 +139,7 @@ test("timestamp ties use stable evidence IDs; exact retry retains the original r
   assert.deepEqual(snapshot(root), before);
 });
 
-test("early/late/newest corrupt originals are isolated with bounded default samples and truthful totals", (t) => {
+test("early/late/newest corrupt originals are isolated with bounded default samples and truthful totals", async (t) => {
   const { root, storage } = project(t), saved = Array.from({ length: 42 }, (_, i) => save(root, { summary: `Corruption ${i}` }, i));
   const sorted = [...saved].sort((a, b) => a.evidence.evidenceId.localeCompare(b.evidence.evidenceId));
   const intact = sorted.filter((record) => record !== saved.at(-1)).slice(20, 22);
@@ -158,7 +158,7 @@ test("early/late/newest corrupt originals are isolated with bounded default samp
   assert.equal(exact.unavailable.length, 40); // existing <=512 exact details are preserved
   assert.equal(exact.omissions.unavailableDetailCount, 0);
   accounting(exact);
-  const entry = enterConversationRecovery({ root });
+  const entry = (await enterConversationRecovery({ root }));
   assert.equal(entry.ordinaryWorkBlocked, false);
   assert.equal(entry.workContext.coverage.unavailable, 40);
   assert.deepEqual(snapshot(root), before);
@@ -269,7 +269,7 @@ test("full output and bare-size exclusions avoid reference reads; enriched overf
   assert.deepEqual(snapshot(root), before);
 });
 
-test("selected Session isolation and P2 basis changes remain enforced during global selection", (t) => {
+test("selected Session isolation and P2 basis changes remain enforced during global selection", async (t) => {
   const { root, storage } = project(t), a = createHeadSession({ root, purpose: "A only" }), b = createHeadSession({ root, purpose: "B only" });
   let saved;
   withSessionRoute(root, a.sessionId, () => { saved = save(root, { summary: "Only A" }); });
@@ -279,11 +279,11 @@ test("selected Session isolation and P2 basis changes remain enforced during glo
     const exact = readSessionWorkContext({ root, evidenceIds: [saved.evidence.evidenceId] });
     assert.equal(exact.unavailable[0].reasonCode, "ENOENT");
   });
-  withSessionRoute(root, a.sessionId, () => {
-    assert.equal(enterConversationRecovery({ root }).workContext.records[0].evidenceId, saved.evidence.evidenceId);
+  (await withSessionRoute(root, a.sessionId, async () => {
+    assert.equal((await enterConversationRecovery({ root })).workContext.records[0].evidenceId, saved.evidence.evidenceId);
     assert.equal(readSessionWorkContext({ root, expectedSessionId: b.sessionId }).status, "work_context_basis_changed");
     assert.equal(readSessionWorkContext({ root, expectedCheckpointId: "missing" }).status, "work_context_basis_changed");
-  });
+  }));
   assert.deepEqual(snapshot(root), before);
   withSessionRoute(root, a.sessionId, () => {
     const read = fs.readFileSync, file = sessionStatePath(root);

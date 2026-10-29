@@ -74,7 +74,7 @@ test("small default discovery keeps all optional contracts discoverable and mana
 test("raw MCP and CLI mutations cannot bypass discovery or write any project state", async t => {
   const root = fixture(t), before = snapshot(root), events = [];
   for (const [command, name] of mutations) {
-    assert.throws(() => runCommand([command, root], { onProcess: e => events.push(e) }), { code });
+    (await assert.rejects(async () => (await runCommand([command, root], { onProcess: e => events.push(e) })), { code }));
     if (!name) continue;
     const result = await dispatch(request(name, { project_root: root, surface: "managed-maintenance", maintenance: true }), { onProcess: e => events.push(e) });
     assert.match(result.error.message, /not available on the ordinary command surface/);
@@ -117,25 +117,25 @@ async function authorization(root, worker = undefined) {
 test("shared runtime remains available, but exact worker inputs and legacy dispatches cannot alias managed execution", async t => {
   const root = fixture(t);
   const input = path.join(root, "input.json"); fs.writeFileSync(input, JSON.stringify({ worker: {} }));
-  assert.throws(() => runCommand(["runtime-invocation-authorize", root, "--input", input]), { code });
+  (await assert.rejects(async () => (await runCommand(["runtime-invocation-authorize", root, "--input", input])), { code }));
   const ordinary = await authorization(root);
   const before = snapshot(root);
   // Non-worker Run application reaches the original Session-vs-Run verifier.
-  assert.throws(() => runCommand(["runtime-invocation-apply-run-result", root, "--authorization", ordinary.authorizationId]), error => error.code !== code);
+  (await assert.rejects(async () => (await runCommand(["runtime-invocation-apply-run-result", root, "--authorization", ordinary.authorizationId])), error => error.code !== code));
   assert.deepEqual(snapshot(root), before);
   createBoundedWorkerDispatch({ root, authorizationId: ordinary.authorizationId, role: "reviewer" });
   const legacyBefore = snapshot(root);
   for (const command of ["runtime-invocation-execute", "runtime-invocation-apply-run-result"]) {
-    assert.throws(() => runCommand([command, root, "--authorization", ordinary.authorizationId]), { code });
+    (await assert.rejects(async () => (await runCommand([command, root, "--authorization", ordinary.authorizationId])), { code }));
   }
   assert.deepEqual(snapshot(root), legacyBefore);
   const root2 = fixture(t);
   const worker = await authorization(root2, { taskKey: "review-a", role: "reviewer", outcome: "Inspect a.txt", selectedContext: "Synthetic input", sourcePaths: ["a.txt"] });
   const workerBefore = snapshot(root2);
-  assert.throws(() => runCommand(["runtime-invocation-execute", root2, "--authorization", worker.authorizationId]), { code });
+  (await assert.rejects(async () => (await runCommand(["runtime-invocation-execute", root2, "--authorization", worker.authorizationId])), { code }));
   assert.deepEqual(snapshot(root2), workerBefore);
   // Default historical read does not acquire a lease or repair anything.
-  assert.equal(runCommand(["worker-read", root, "--authorization", ordinary.authorizationId]).status, "verified");
+  assert.equal((await runCommand(["worker-read", root, "--authorization", ordinary.authorizationId])).status, "verified");
   assert.deepEqual(snapshot(root), legacyBefore);
 });
 
@@ -180,17 +180,17 @@ test("default diagnostics preserve exact history without recommending launches; 
   const waveId = created.wave.waveId;
   const before = snapshot(f.root);
   for (let i = 0; i < 2; i++) {
-    const cli = runCommand(["worker-wave-status", f.root, "--wave", waveId]);
+    const cli = (await runCommand(["worker-wave-status", f.root, "--wave", waveId]));
     const mcp = await dispatch(request("lode_bounded_worker_wave_status", { project_root: f.root, wave_id: waveId }));
     assert.deepEqual(mcp.result.structuredContent, cli);
     assert.equal(cli.projection.guidance.canSeal, true, "Mechanical evidence is retained, not authority to mutate");
     assert.match(cli.projection.guidance.nextStep, /status never seals or selects a maintenance mutation/);
-    const status = runCommand(["worker-integration-status", f.root, "--integration", f.integrationId]);
+    const status = (await runCommand(["worker-integration-status", f.root, "--integration", f.integrationId]));
     assert.match(status.application.guidance.nextStep, /does not select application/);
     assert.equal(status.application.guidance.ordinaryWorkBlocked, false);
   }
   assert.deepEqual(snapshot(f.root), before);
-  const seal = runCommand(["managed-maintenance", "worker-wave-seal", f.root, "--wave", waveId]);
+  const seal = (await runCommand(["managed-maintenance", "worker-wave-seal", f.root, "--wave", waveId]));
   assert.equal(seal.status, "sealed");
   const sealed = snapshot(f.root);
   const replay = await dispatch(request("lode_bounded_worker_wave_seal", { project_root: f.root, wave_id: waveId }), { surface: "managed-maintenance" });

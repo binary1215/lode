@@ -423,7 +423,7 @@ export function readIncrementalRefreshRequest({ root = ".", refreshRequestId } =
   return { status: "verified", file, request };
 }
 
-export function readIncrementalRefreshReceipt({ root = ".", refreshReceiptId, storeAdapter = null } = {}) {
+export async function readIncrementalRefreshReceipt({ root = ".", refreshReceiptId, storeAdapter = null } = {}) {
   const inspected = readyProject(root);
   const file = receiptFile(inspected.project.projectRoot, refreshReceiptId, inspected.storage);
   if (!fs.existsSync(file)) fail(`Incremental refresh receipt is missing: ${refreshReceiptId}`, "REFRESH_RECEIPT_NOT_FOUND");
@@ -435,10 +435,10 @@ export function readIncrementalRefreshReceipt({ root = ".", refreshReceiptId, st
     || requestEntry.request.baseSourceSnapshotId !== receipt.base.sourceSnapshotId) {
     fail("Incremental refresh request and receipt disagree.", "REFRESH_REQUEST_RECEIPT_MISMATCH");
   }
-  const baseSnapshot = readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: receipt.base.worldModelId, storeAdapter }).snapshot;
+  const baseSnapshot = (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: receipt.base.worldModelId, storeAdapter })).snapshot;
   const nextSnapshot = receipt.next.worldModelId === receipt.base.worldModelId
     ? baseSnapshot
-    : readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: receipt.next.worldModelId, storeAdapter }).snapshot;
+    : (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: receipt.next.worldModelId, storeAdapter })).snapshot;
   if (baseSnapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.base.sourceSnapshotId
     || baseSnapshot.temporalProvenanceGraph.graphSnapshotId !== receipt.base.graphSnapshotId
     || nextSnapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.next.sourceSnapshotId
@@ -451,10 +451,10 @@ export function readIncrementalRefreshReceipt({ root = ".", refreshReceiptId, st
   return { status: "verified", file, receipt, requestFile: requestEntry.file, request: requestEntry.request };
 }
 
-export function inspectIncrementalRefresh({ root = ".", storeAdapter = null } = {}) {
+export async function inspectIncrementalRefresh({ root = ".", storeAdapter = null } = {}) {
   const inspected = readyProject(root);
   const file = currentFile(inspected.project.projectRoot, inspected.storage);
-  const world = readWorldModel({ root: inspected.project.projectRoot, storeAdapter });
+  const world = (await readWorldModel({ root: inspected.project.projectRoot, storeAdapter }));
   if (!fs.existsSync(file)) return {
     status: "not-refreshed",
     currentWorldModelId: world.snapshot.worldModelId,
@@ -462,11 +462,11 @@ export function inspectIncrementalRefresh({ root = ".", storeAdapter = null } = 
   };
   const pointer = verifyPointer(readJson(file, "Incremental refresh pointer"), inspected.storage);
   if (pointer.projectId !== inspected.project.projectId) fail("Incremental refresh pointer belongs to another project.", "REFRESH_PROJECT_MISMATCH");
-  const receipt = readIncrementalRefreshReceipt({ root: inspected.project.projectRoot, refreshReceiptId: pointer.refreshReceiptId, storeAdapter }).receipt;
+  const receipt = (await readIncrementalRefreshReceipt({ root: inspected.project.projectRoot, refreshReceiptId: pointer.refreshReceiptId, storeAdapter })).receipt;
   if (receipt.refreshRequestId !== pointer.refreshRequestId || receipt.next.worldModelId !== pointer.worldModelId || receipt.next.sourceSnapshotId !== pointer.sourceSnapshotId) {
     fail("Incremental refresh pointer and receipt disagree.", "REFRESH_POINTER_MISMATCH");
   }
-  const freshness = inspectWorldModel({ root: inspected.project.projectRoot, storeAdapter });
+  const freshness = (await inspectWorldModel({ root: inspected.project.projectRoot, storeAdapter }));
   return {
     status: world.snapshot.worldModelId === receipt.next.worldModelId && freshness.status === "current" ? "current" : "stale",
     pointerFile: file,
@@ -478,9 +478,9 @@ export function inspectIncrementalRefresh({ root = ".", storeAdapter = null } = 
   };
 }
 
-export function readPostRefreshProjectionReceipt({ root = ".", postRefreshProjectionReceiptId, storeAdapter = null, documentProjectionAdapter = null } = {}) {
+export async function readPostRefreshProjectionReceipt({ root = ".", postRefreshProjectionReceiptId, storeAdapter = null, documentProjectionAdapter = null } = {}) {
   const post = readPostRefreshProjectionReceiptArtifact({ root, postRefreshProjectionReceiptId, documentProjectionAdapter });
-  const refresh = readIncrementalRefreshReceipt({ root, refreshReceiptId: post.receipt.refresh.refreshReceiptId, storeAdapter });
+  const refresh = (await readIncrementalRefreshReceipt({ root, refreshReceiptId: post.receipt.refresh.refreshReceiptId, storeAdapter }));
   if (post.receipt.refresh.refreshRequestId !== refresh.request.refreshRequestId
     || post.receipt.refresh.refreshRequestHash !== refresh.request.refreshRequestHash
     || post.receipt.refresh.refreshReceiptHash !== refresh.receipt.refreshReceiptHash
@@ -498,15 +498,15 @@ export function readPostRefreshProjectionReceipt({ root = ".", postRefreshProjec
   return { ...post, refresh };
 }
 
-export function inspectPostRefreshProjectionStatus({ root = ".", storeAdapter = null, documentProjectionAdapter = null } = {}) {
+export async function inspectPostRefreshProjectionStatus({ root = ".", storeAdapter = null, documentProjectionAdapter = null } = {}) {
   const status = inspectPostRefreshProjectionArtifact({ root, documentProjectionAdapter });
   if (!status.receipt) return status;
-  const verified = readPostRefreshProjectionReceipt({
+  const verified = (await readPostRefreshProjectionReceipt({
     root,
     postRefreshProjectionReceiptId: status.receipt.postRefreshProjectionReceiptId,
     storeAdapter,
     documentProjectionAdapter,
-  });
+  }));
   return { ...status, receipt: verified.receipt, refresh: verified.refresh };
 }
 
@@ -524,7 +524,7 @@ async function refreshWorldModelLocked({
 } = {}) {
   const inspected = readyProject(root);
   const projectRoot = inspected.project.projectRoot;
-  const stored = readWorldModel({ root: projectRoot, storeAdapter });
+  const stored = (await readWorldModel({ root: projectRoot, storeAdapter }));
   const previousSnapshot = stored.snapshot;
   const request = buildIncrementalRefreshRequest({
     projectId: inspected.project.projectId,
@@ -637,13 +637,13 @@ async function refreshWorldModelLocked({
 export async function refreshWorldModel(options = {}) {
   const root = options.root ?? ".";
   const inspected = readyProject(root);
-  return withRefreshWriterLease({
+  return (await withRefreshWriterLease({
     projectRoot: inspected.project.projectRoot,
     projectId: inspected.project.projectId,
     lease: options.writerLease || null,
     storage: inspected.storage,
   }, async (writerLease) => {
-    const beforeSnapshot = readWorldModel({ root: inspected.project.projectRoot, storeAdapter: options.storeAdapter || null }).snapshot;
+    const beforeSnapshot = (await readWorldModel({ root: inspected.project.projectRoot, storeAdapter: options.storeAdapter || null })).snapshot;
     const preflight = preparePostRefreshProjection({
       projectRoot: inspected.project.projectRoot,
       projectId: inspected.project.projectId,
@@ -652,7 +652,7 @@ export async function refreshWorldModel(options = {}) {
       documentProjectionAdapter: options.documentProjectionAdapter || null,
     });
     const refreshed = await refreshWorldModelLocked({ ...options, writerLease });
-    const afterSnapshot = readWorldModel({ root: inspected.project.projectRoot, storeAdapter: options.storeAdapter || null }).snapshot;
+    const afterSnapshot = (await readWorldModel({ root: inspected.project.projectRoot, storeAdapter: options.storeAdapter || null })).snapshot;
     const postRefreshProjection = completePostRefreshProjection({
       projectRoot: inspected.project.projectRoot,
       projectId: inspected.project.projectId,
@@ -665,5 +665,5 @@ export async function refreshWorldModel(options = {}) {
       documentProjectionAdapter: options.documentProjectionAdapter || null,
     });
     return { ...refreshed, postRefreshProjection };
-  });
+  }));
 }

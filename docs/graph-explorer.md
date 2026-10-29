@@ -420,3 +420,9 @@ not guessed. Resolve links from the document directory inside verified Project
 source; root escapes, external/drive/UNC/stream paths, unsafe links and managed
 namespaces are rejected locally. No external URL is downloaded, no World refresh
 or canonical write is performed, and unrelated work stays available.
+
+### Compact cards and independent comparisons
+
+Cards start with the recorded title. A preview identical to that title is omitted; ordinary current-snapshot labels do not consume a status badge. Necessary historical, partial, unknown and non-current conditions remain visible before opening the body. Expanded empty cards explain the export's missing display text once without claiming the original does not exist.
+
+Select several records to read their cards together. Full bodies and exact comparison pairs are independently collapsed by default; opening one does not close another. Partial-excerpt omissions stay outside the collapsed diff. Changed-region navigation opens the containing comparison before moving focus. Selection, expanded-card state and exact comparison reading state remain display-only and scoped to the same exported identities. This works with file/gzip input independently of the optional Git storage candidate.

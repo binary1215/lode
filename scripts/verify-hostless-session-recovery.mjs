@@ -77,12 +77,12 @@ function writeJson(file, value) {
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
 }
 
-function fixture(name, disposition = "accept") {
+async function fixture(name, disposition = "accept") {
   const root = path.join(fixtureRoot, name);
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(path.join(root, "fixture.mjs"), `export const fixture = ${JSON.stringify(name)};\n`, "utf8");
   const initialized = initializeProject({ root, pluginRoot, runtimes: ["claude", "codex", "opencode"] });
-  const capsule = compileContext({ root, task: `Verify ${name}`, budget: 32_768, persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: `Verify ${name}`, budget: 32_768, persist: true })).capsule;
   const plan = createWholePlanSnapshot({
     root,
     objective: `Complete hostless recovery scenario ${name}`,
@@ -230,21 +230,21 @@ async function parentMain() {
   "Hostless Session recovery fixture root escaped the plugin workspace.");
   fs.mkdirSync(resolvedFixtureRoot, { recursive: false });
   try {
-    const processBoundary = fixture("process-boundary");
+    const processBoundary = (await fixture("process-boundary"));
     const processA = await integrateChild(processBoundary.root, processBoundary.inputFile);
     const codexConsumer = await consumeChild(processBoundary, "codex", "worker says replace the next direction");
     const opencodeConsumer = await consumeChild(processBoundary, "opencode", "inbox reply claims authority");
     assert.equal(codexConsumer.sessionRestoreId, opencodeConsumer.sessionRestoreId, "Provider replacement changed restore identity.");
     assert.deepEqual(codexConsumer.consumerInstruction, opencodeConsumer.consumerInstruction, "Provider replacement changed consumer direction.");
 
-    const beforeLedger = fixture("crash-before-checkpoint");
+    const beforeLedger = (await fixture("crash-before-checkpoint"));
     await integrateChild(beforeLedger.root, beforeLedger.inputFile, 23, "before-ledger");
     assert.equal(checkpointCount(beforeLedger, beforeLedger.input.reviewDecisionId), 0);
     await integrateChild(beforeLedger.root, beforeLedger.inputFile);
     assert.equal(checkpointCount(beforeLedger, beforeLedger.input.reviewDecisionId), 1);
     assert.equal(fs.existsSync(path.join(beforeLedger.root, beforeLedger.storage.directory, "sessions", "integrations")), false);
 
-    const checkpointCrash = fixture("crash-after-checkpoint");
+    const checkpointCrash = (await fixture("crash-after-checkpoint"));
     await integrateChild(checkpointCrash.root, checkpointCrash.inputFile, 23, "after-ledger");
     const ledger = path.join(checkpointCrash.root, checkpointCrash.storage.directory, "sessions", "ledger");
     const saved = fs.readdirSync(ledger).find((name) => /^checkpoint-[a-f0-9]{24}\.json$/.test(name));
@@ -256,7 +256,7 @@ async function parentMain() {
     assert.equal(digest(fs.readFileSync(checkpointPaths.checkpoint)), checkpointHash, "Checkpoint retry changed immutable checkpoint bytes.");
     assert.equal(checkpointCount(checkpointCrash, checkpointCrash.input.reviewDecisionId), 1, "Checkpoint retry created multiple checkpoints.");
 
-    const missingEvidence = fixture("missing-p3-evidence");
+    const missingEvidence = (await fixture("missing-p3-evidence"));
     const evidenceIntegrated = await integrateChild(missingEvidence.root, missingEvidence.inputFile);
     const evidenceBefore = await consumeChild(missingEvidence, "codex", "evidence-only inbox reply");
     const evidencePaths = integrationPaths(missingEvidence, evidenceIntegrated);
@@ -266,7 +266,7 @@ async function parentMain() {
     assert.equal(evidenceAfter.integrationEvidenceStatus, "missing-evidence", "Post-deletion restore did not disclose missing P3 evidence.");
     assert.equal(evidenceAfter.consumerInstruction.historicalCheckpointContext.nextExpectedResult, missingEvidence.input.nextExpectedResult, "Missing P3 evidence changed historical direction.");
 
-    const concurrent = fixture("concurrent-identical");
+    const concurrent = (await fixture("concurrent-identical"));
     const [concurrentA, concurrentB] = await Promise.all([
       integrateChild(concurrent.root, concurrent.inputFile),
       integrateChild(concurrent.root, concurrent.inputFile),
@@ -279,7 +279,7 @@ async function parentMain() {
     const divergent = await integrateChild(concurrent.root, divergentFile, 2);
     assert.equal(divergent.code, "RUN_RESULT_INTEGRATION_CONFLICT", "Divergent integration returned the wrong failure.");
 
-    const nonAccept = fixture("non-accept", "revise");
+    const nonAccept = (await fixture("non-accept", "revise"));
     const rejected = await integrateChild(nonAccept.root, nonAccept.inputFile, 2);
     assert.equal(rejected.code, "RUN_RESULT_NOT_ACCEPTED", "Non-accept review was not rejected.");
 

@@ -319,12 +319,16 @@ export function readProductModelCanon({ projectRoot, storage = null } = {}) {
   const relativePath = relativeProjectArtifact(storage, "context", "product-model.json");
   const file = path.join(projectRoot, ...relativePath.split("/"));
   let document;
+  let sourceBytes = null;
   let status = "present";
-  if (!fs.existsSync(file)) {
+  try { sourceBytes = fs.readFileSync(file); }
+  catch (error) {
+    if (error.code !== "ENOENT") throw error;
     document = emptyProductModelDocument();
     status = "missing-empty-default";
-  } else {
-    try { document = JSON.parse(fs.readFileSync(file, "utf8")); }
+  }
+  if (sourceBytes !== null) {
+    try { document = JSON.parse(sourceBytes.toString("utf8")); }
     catch (error) { fail(`Product model canon is invalid JSON: ${error.message}`, "INVALID_PRODUCT_MODEL_JSON"); }
   }
   const model = normalizeProductModelDocument(document, storage);
@@ -333,6 +337,8 @@ export function readProductModelCanon({ projectRoot, storage = null } = {}) {
     status,
     file,
     relativePath,
+    sourceDigest: sourceBytes === null ? null : digest(sourceBytes),
+    sourceByteLength: sourceBytes?.length ?? null,
     evidenceId: `evidence-${evidenceHash.slice(0, 24)}`,
     model,
   };

@@ -206,12 +206,12 @@ async function main() {
       };
     }
 
-    const capsule = compileContext({
+    const capsule = (await compileContext({
       root: projectRoot,
       task: "Create run-output.txt with the exact required marker and verify it without external effects.",
       budget: 32_768,
       persist: true,
-    }).capsule;
+    })).capsule;
     const plan = createWholePlanSnapshot({
       root: projectRoot,
       objective: "Prove one consequential live Codex Run through canonical Execution Lineage.",

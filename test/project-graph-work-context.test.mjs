@@ -356,7 +356,7 @@ test("A-D: two long Todo revisions retain sparse source indices, status, provena
 test("A-D: actual snapshot and HTML export render Todo-only task, cancellation and reason in synthetic DOM cards", async t => {
   const f = fixture(t), saved = f.save({ todos: [{ todoId: "todo-display", task: "ReadableTodoOnlyGvhx7712", status: "cancelled", origin: "head-proposed",
     reason: "Cancelled because current scope changed", progress: "A partial attempt", priority: "Preserve original priority" }] });
-  const before = snapshot(f.root), data = await withoutGraphWrites(() => buildGraphExplorerSnapshot({ root: f.root, anchorIds: [saved.evidence.evidenceId] }));
+  const before = snapshot(f.root), data = await withoutGraphWrites(async () => (await buildGraphExplorerSnapshot({ root: f.root, anchorIds: [saved.evidence.evidenceId] })));
   const ui = explorerDom(data); await ui.settle();
   const rows = ui.ids.get("records").children, row = rows.find(row => row.textContent.includes("ReadableTodoOnlyGvhx7712"));
   assert.ok(row); ui.event(row.children[0]); await ui.settle();
@@ -404,7 +404,7 @@ test("Core topic-only lexical discovery carries the actual reason/result/pending
   // not mean Product governance or any authoritative Feature was activated.
   const productSeed = JSON.parse(fs.readFileSync(path.join(f.root, f.layout.directory, "context/product-model.json"), "utf8"));
   for (const field of ["featureGroups", "capabilities", "features", "requirements", "constraints", "decisions"]) assert.deepEqual(productSeed[field], []);
-  const experience = inspectProjectExperience({ root: f.root });
+  const experience = (await inspectProjectExperience({ root: f.root }));
   assert.equal(experience.readiness.product.governanceActivated, false, "Core topic discovery must not activate Product governance");
   assert.equal(experience.readiness.context.worldModelId, null, "Core topic discovery must not require a World model");
   const before = snapshot(f.base), relative = originalPath(f, saved);
@@ -552,7 +552,7 @@ test("partial graph topic bodies use exact source-index ranges and count topics 
     judgments: [{ assessment: "Preserve the choice", reason: "Original reason remains useful", alternatives: ["Rejected broad replacement"] }],
     pending: ["Remaining local verification"], unknowns: ["External outcome remains unknown"] }));
   const before = snapshot(f.base);
-  const result = await withoutGraphWrites(() => queryProjectGraph({ root: f.root, query: topic, depth: 0, maxEdges: 0 }));
+  const result = await withoutGraphWrites(async () => (await queryProjectGraph({ root: f.root, query: topic, depth: 0, maxEdges: 0 })));
   assert.equal(workNodes(result).length, 2);
   assert.ok(workNodes(result).some(node => node.contentPartial));
   assert.ok(workNodes(result).reduce((sum, node) => sum + JSON.stringify({ workContent: node.workContent, workContentExcerpts: node.workContentExcerpts }).length, 0) <= 32768);
@@ -584,7 +584,7 @@ test("same-name topic cannot create or retarget reviewed Product edges and chang
   const sourcePath = "src/delivery.mjs", testPath = "test/delivery.test.mjs", source = "export function deliver(value) { return value; }\n";
   fs.writeFileSync(path.join(f.root, sourcePath), source); fs.writeFileSync(path.join(f.root, testPath), "export function verifiesDelivery() { return true; }\n");
   await startFeatureMapping({ root: f.root });
-  const world = inspectWorldModel({ root: f.root }), graph = world.snapshot.temporalProvenanceGraph;
+  const world = (await inspectWorldModel({ root: f.root })), graph = world.snapshot.temporalProvenanceGraph;
   const product = graph.nodes.find(node => node.kind === "Feature" && node.key === "delivery");
   const candidates = [["IMPLEMENTS", "File", sourcePath], ["VERIFIED_BY", "Test", testPath]].map(([relationshipType, kind, file]) => ({
     relationshipType, sourceNodeId: graph.nodes.find(node => node.kind === kind && node.path === file).nodeId, productNodeId: product.nodeId,
@@ -592,7 +592,7 @@ test("same-name topic cannot create or retarget reviewed Product edges and chang
   const proposed = await startFeatureMapping({ root: f.root, semanticProposal: { schemaVersion: 1, sourceSnapshotId: graph.sourceSnapshotId,
     productModelId: world.snapshot.productModel.productModelId, candidates } });
   await reviewFeatureMapping({ root: f.root, candidateSetId: proposed.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Synthetic fixture accepts exact evidence" });
-  const reviewed = inspectWorldModel({ root: f.root }).snapshot.temporalProvenanceGraph.edges.filter(edge => ["IMPLEMENTS", "VERIFIED_BY"].includes(edge.type));
+  const reviewed = (await inspectWorldModel({ root: f.root })).snapshot.temporalProvenanceGraph.edges.filter(edge => ["IMPLEMENTS", "VERIFIED_BY"].includes(edge.type));
   assert.equal(reviewed.length, 2);
   const saved = f.save({ workTopics: [topic], judgments: [{ assessment: "Retain exact source context", reason: "Historical reasoning survives endpoint changes", alternatives: ["Do not retarget by label"] }],
     pending: ["Current verification still required"], references: [{ path: sourcePath, digest: sha(source), kind: "source" }] });
@@ -602,12 +602,12 @@ test("same-name topic cannot create or retarget reviewed Product edges and chang
     if (state === "changed") fs.writeFileSync(path.join(f.root, sourcePath), "export function renamed(value) { return String(value); }\n");
     if (state === "missing") fs.unlinkSync(path.join(f.root, sourcePath));
     const before = snapshot(f.base);
-    const value = await withoutGraphWrites(() => queryProjectGraph({ root: f.root, query: topic, depth: 1, maxNodes: 40, maxEdges: 60 }));
+    const value = await withoutGraphWrites(async () => (await queryProjectGraph({ root: f.root, query: topic, depth: 1, maxNodes: 40, maxEdges: 60 })));
     const node = completeNode(value, saved); completeNode(value, unlinked);
     assert.equal(node.referenceEvidence[0].currentness, state);
     assert.equal(value.edges.some(edge => ["IMPLEMENTS", "VERIFIED_BY"].includes(edge.type)
       && [saved.evidence.evidenceId, unlinked.evidence.evidenceId].includes(edge.from)), false);
-    assert.deepEqual(inspectWorldModel({ root: f.root }).snapshot.temporalProvenanceGraph.edges.filter(edge => ["IMPLEMENTS", "VERIFIED_BY"].includes(edge.type)), reviewed);
+    assert.deepEqual((await inspectWorldModel({ root: f.root })).snapshot.temporalProvenanceGraph.edges.filter(edge => ["IMPLEMENTS", "VERIFIED_BY"].includes(edge.type)), reviewed);
     assert.deepEqual(fs.readFileSync(saved.file), savedBytes);
     assert.deepEqual(snapshot(f.base), before);
   }

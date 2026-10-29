@@ -99,7 +99,7 @@ test("Hypothesis, Initiative and both exact review paths preserve committed reco
 
 test("Outcome returns its exact committed evidence without claiming Feature success or recovery authority", async t => {
   const { root, layout } = await fixture(t);
-  const capsule = compileContext({ root, task: "Synthetic bounded implementation", budget: 32_768, persist: true });
+  const capsule = (await compileContext({ root, task: "Synthetic bounded implementation", budget: 32_768, persist: true }));
   const plan = createWholePlanSnapshot({ root, objective: "Synthetic bounded implementation", plan: [{ id: "change", outcome: "A verified synthetic change" }] });
   const contract = createExecutionContract({ root, wholePlanId: plan.artifact.wholePlanId, capsuleId: capsule.capsule.capsuleId, scope: "Synthetic fixture only", acceptanceCriteria: ["Return fixture evidence"] });
   startRun({ root, executionContractId: contract.artifact.executionContractId });

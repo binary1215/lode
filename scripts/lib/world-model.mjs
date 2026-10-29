@@ -1,3 +1,4 @@
+import { stabilizeTemporalRelationIdentities } from "./temporal-relation-identity.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -13,7 +14,7 @@ import {
 import { buildSemanticGraph, querySemanticGraph, SEMANTIC_GRAPH_VERSION, verifySemanticGraph } from "./semantic-graph.mjs";
 import { collectSourceRelationEvidence, SOURCE_RELATION_EVIDENCE_VERSION } from "./source-relation-evidence.mjs";
 import { normalizeProductModelDocument, productModelDocument, PRODUCT_MODEL_RELATIVE_PATH, PRODUCT_MODEL_VERSION, readProductModelCanon } from "./product-model.mjs";
-import { assertProjectionDidNotMutateCanon } from "./authority-plane-contract.mjs";
+import { withProjectMutation } from "./project-mutation-lock.mjs";
 import { loadOnboardingGraphProjection, ONBOARDING_GRAPH_PROJECTION_VERSION } from "./onboarding-projection.mjs";
 import { loadProductPolicyGraphProjection, PRODUCT_POLICY_GRAPH_PROJECTION_VERSION } from "./product-policy-projection.mjs";
 import { FEATURE_MAPPING_VERSION, loadFeatureMappingProjection } from "./feature-mapping-projection.mjs";
@@ -70,6 +71,9 @@ import {
   GRAPH_PROJECTION_ADAPTER_VERSION,
   inspectGraphProjection,
   materializeGraphProjection,
+  prepareGraphProjection,
+  publishPreparedGraphProjection,
+  completePreparedGraphProjection,
   queryGraphProjection,
   verifyGraphProjectionPointer,
 } from "./graph-projection-adapter.mjs";
@@ -111,13 +115,13 @@ function canonical(value) {
   return value;
 }
 
-function readRecoverableTemporalGraphProjection({ projectRoot, projectId, adapter = null, expectedPointer = null, storage = null } = {}) {
+async function readRecoverableTemporalGraphProjection({ projectRoot, projectId, adapter = null, expectedPointer = null, storage = null } = {}) {
   const selected = createGraphProjectionAdapter({ storage, projectRoot, adapter });
-  const pointerEntry = selected.readPointer();
+  const pointerEntry = await selected.readPointer();
   if (!pointerEntry) return null;
   const pointer = verifyGraphProjectionPointer(pointerEntry.document);
   if (pointer.projectId !== projectId) fail("Graph projection recovery belongs to a different Project.", "GRAPH_PROJECTION_PROJECT_MISMATCH");
-  const snapshotEntry = selected.readSnapshot(pointer.graphSnapshotId);
+  const snapshotEntry = (await selected.readSnapshot(pointer.graphSnapshotId));
   if (!snapshotEntry) return null;
   const graph = verifyTemporalProvenanceGraph(snapshotEntry.document);
   verifyGraphProjectionPointer(pointer, graph);
@@ -154,40 +158,26 @@ function loadObservationProjectionForWorld({ projectRoot, projectId, storage = n
   }
 }
 
-function restoreCanonBytes(file, beforeBytes) {
-  if (beforeBytes === null) {
-    if (fs.existsSync(file)) fs.unlinkSync(file);
-    return;
-  }
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, beforeBytes, { flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+// A byte change proves basis drift, not which actor wrote Canon. Never restore it.
+function canonBytes(projectRoot, storage) {
+  const file = path.resolve(projectRoot, ...relativeProjectArtifact(storage, "context", "product-model.json").split("/"));
+  try { return fs.readFileSync(file); } catch (error) { if (error.code === "ENOENT") return null; throw error; }
+}
+
+function assertCanonBasis(projectRoot, storage, expected) {
+  const actual = canonBytes(projectRoot, storage);
+  if (actual === null ? expected !== null : expected === null || !actual.equals(expected)) {
+    fail("Product Canon changed while preparing the derived World/Graph view; preserve Canon and rebuild from its current basis.", "WORLD_MODEL_CANON_BASIS_CONFLICT");
   }
 }
 
-function materializeGraphProjectionWithCanonFence({ projectRoot, graph, adapter, storage = null }) {
-  const canonFile = path.resolve(projectRoot, ...relativeProjectArtifact(storage, "context", "product-model.json").split("/"));
-  const beforeBytes = fs.existsSync(canonFile) ? fs.readFileSync(canonFile) : null;
-  let result;
-  let operationError = null;
-  try {
-    result = materializeGraphProjection({ storage, projectRoot, graph, adapter });
-  } catch (error) {
-    operationError = error;
+function noteCanonBasisError(error, projectRoot, storage, expected) {
+  try { assertCanonBasis(projectRoot, storage, expected); }
+  catch (secondary) {
+    // Preserve the original permission, identity, or I/O failure as primary.
+    error.canonBasisDiagnostic = { code: secondary.code || "CANON_BASIS_CHECK_FAILED" };
   }
-  const afterBytes = fs.existsSync(canonFile) ? fs.readFileSync(canonFile) : null;
-  try {
-    assertProjectionDidNotMutateCanon({ beforeBytes, afterBytes });
-  } catch (error) {
-    restoreCanonBytes(canonFile, beforeBytes);
-    throw error;
-  }
-  if (operationError) throw operationError;
-  return result;
+  return error;
 }
 
 function readyProject(root) {
@@ -390,6 +380,8 @@ function verifiedSnapshot(snapshot, expectedId = "", storage = null) {
     }
   }
   if (snapshot.temporalProvenanceGraph) verifyTemporalProvenanceGraph(snapshot.temporalProvenanceGraph);
+  if (snapshot.temporalProvenanceGraph?.protocol?.version === "0.16.0"
+    && canonicalJson(snapshot.temporalProvenanceGraph.relationAnalysisBasis) !== canonicalJson(relationBasisFor(snapshot))) fail("World relation analysis basis differs from its verified code basis.", "WORLD_MODEL_ANALYSIS_BASIS_MISMATCH");
   if (new Set(["0.11.0", "0.12.0", "0.13.0", "0.14.0", "0.15.0", "0.16.0", "0.17.0", "0.18.0", WORLD_MODEL_VERSION]).has(snapshot.protocol?.version)) {
     const projection = snapshot.onboardingProjection;
     const graphProjection = snapshot.temporalProvenanceGraph?.onboardingProjection;
@@ -664,6 +656,10 @@ function codeAnalysisBasis(semanticGraph) {
     sourceRelationEvidenceHash: semanticGraph?.sourceRelationEvidence?.evidenceSetHash || null,
   };
 }
+function relationBasisFor(snapshot) {
+  const { sourceRelationEvidenceHash, ...analysisBasis } = snapshot.analysisBasis || {};
+  return { analysisBasis, rules: snapshot.rules, sourceScope: snapshot.repositoryScan?.sourceScope || null };
+}
 function domainBasesFor(snapshot, domains = WORLD_DOMAINS) {
   const bases = {
     code: () => digest(canonicalJson({
@@ -689,12 +685,12 @@ function domainBasesFor(snapshot, domains = WORLD_DOMAINS) {
 // A scoped read validates retained bytes first, then ONLY the requested live
 // domains. Unrelated invalid Product/runtime records are not a code gate.
 // These are P4 observations, never a refreshed snapshot or P2 recovery source.
-export function inspectWorldDomainFreshness({ root = ".", domains = WORLD_DOMAINS,
+export async function inspectWorldDomainFreshness({ root = ".", domains = WORLD_DOMAINS,
   worldModelId = "", storeAdapter = null, runtimeStateAdapter = null, temporalVerificationScope = null } = {}) {
   if (!Array.isArray(domains) || !domains.length || domains.some(domain => !WORLD_DOMAINS.includes(domain))) {
     fail("World freshness domains are invalid.", "INVALID_WORLD_FRESHNESS_DOMAINS");
   }
-  const stored = readWorldModelForDiscovery({ root, worldModelId, storeAdapter, temporalVerificationScope });
+  const stored = (await readWorldModelForDiscovery({ root, worldModelId, storeAdapter, temporalVerificationScope }));
   const snapshot = stored.snapshot, projectRoot = stored.storage.projectRoot;
   const { project, storage } = readGraphProject(projectRoot);
   const result = {};
@@ -805,7 +801,7 @@ export function buildWorldTraversalEligibility(snapshot, domainFreshness) {
     nodeIds, edgeIds, domains: domainFreshness, authority: "read-only-domain-eligibility-not-graph-snapshot" };
 }
 
-export function readWorldModel({ root = ".", storeAdapter = null } = {}) {
+export async function readWorldModel({ root = ".", storeAdapter = null } = {}) {
   const inspected = readyProject(root);
   const storage = inspected.storage;
   const projectRoot = inspected.project.projectRoot;
@@ -822,7 +818,7 @@ export function readWorldModel({ root = ".", storeAdapter = null } = {}) {
   if (!/^[a-f0-9]{64}$/.test(pointer.worldModelHash || "") || pointer.worldModelId !== `world-model-${pointer.worldModelHash.slice(0, 24)}`) {
     fail("World Model pointer hash does not match its identity.", "WORLD_MODEL_POINTER_MISMATCH");
   }
-  const snapshotEntry = adapter.readSnapshot(pointer.worldModelId);
+  const snapshotEntry = (await adapter.readSnapshot(pointer.worldModelId));
   if (!snapshotEntry) fail("World Model snapshot is missing.", "WORLD_MODEL_SNAPSHOT_MISSING");
   const snapshot = verifiedSnapshot(snapshotEntry.document, pointer.worldModelId, storage);
   if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedRoot(storage, snapshot.projectRoot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
@@ -832,24 +828,26 @@ export function readWorldModel({ root = ".", storeAdapter = null } = {}) {
     status: "verified",
     pointerFile: pointerEntry.location,
     file: snapshotEntry.location,
+    ...(snapshotEntry.snapshotStorage ? { snapshotStorage: snapshotEntry.snapshotStorage } : {}),
     pointer,
     snapshot,
     storeAdapter: adapter.describe(),
   };
 }
 
-export function readWorldModelSnapshot({ root = ".", worldModelId, storeAdapter = null } = {}) {
+export async function readWorldModelSnapshot({ root = ".", worldModelId, storeAdapter = null } = {}) {
   const inspected = readyProject(root);
   const storage = inspected.storage;
   if (!/^world-model-[a-f0-9]{24}$/.test(worldModelId || "")) fail("World Model snapshot id is invalid.", "INVALID_WORLD_MODEL_ID");
   const adapter = createWorldModelStoreAdapter({ storage, projectRoot: inspected.project.projectRoot, adapter: storeAdapter });
-  const snapshotEntry = adapter.readSnapshot(worldModelId);
+  const snapshotEntry = (await adapter.readSnapshot(worldModelId));
   if (!snapshotEntry) fail(`World Model snapshot is missing: ${worldModelId}`, "WORLD_MODEL_SNAPSHOT_MISSING");
   const snapshot = verifiedSnapshot(snapshotEntry.document, worldModelId, storage);
   if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedRoot(storage, snapshot.projectRoot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   return {
     status: "verified",
     file: snapshotEntry.location,
+    ...(snapshotEntry.snapshotStorage ? { snapshotStorage: snapshotEntry.snapshotStorage } : {}),
     snapshot,
     storage,
     storeAdapter: adapter.describe(),
@@ -859,7 +857,7 @@ export function readWorldModelSnapshot({ root = ".", worldModelId, storeAdapter 
 // Ordinary discovery verifies the retained bytes without making generated
 // installation drift or whole-repository freshness a prerequisite. Current
 // mutations and reproducible Capsule consumers keep their existing checks.
-export function readWorldModelForDiscovery({ root = ".", worldModelId = "", storeAdapter = null, temporalVerificationScope = null } = {}) {
+export async function readWorldModelForDiscovery({ root = ".", worldModelId = "", storeAdapter = null, temporalVerificationScope = null } = {}) {
   const { projectRoot, project, storage } = readGraphProject(root);
   if (!project) fail("Lode Agent Core is not initialized.", "NOT_INITIALIZED");
   if (worldModelId && !/^world-model-[a-f0-9]{24}$/.test(worldModelId)) fail("World Model snapshot id is invalid.", "INVALID_WORLD_MODEL_ID");
@@ -875,24 +873,30 @@ export function readWorldModelForDiscovery({ root = ".", worldModelId = "", stor
   }
   const selectedId = worldModelId || pointer?.worldModelId;
   if (!selectedId) fail("Repository World Model has not been built.", "WORLD_MODEL_NOT_BUILT");
-  if (!storeAdapter) safeGraphFile(projectRoot, relativeProjectArtifact(storage, "world-model", "snapshots", `${selectedId}.json`));
-  const entry = adapter.readSnapshot(selectedId);
+  if (!storeAdapter) safeGraphFile(projectRoot, path.relative(projectRoot, adapter.snapshotLocation(selectedId)).replaceAll("\\", "/"));
+  const pendingEntry = adapter.readSnapshot(selectedId);
+  const ownEntry = entry => !entry || temporalVerificationScope === null ? entry
+    : { ...entry, document: ownWorldSnapshotForTemporalScope(temporalVerificationScope, entry.document) };
+  // A synchronous adapter's returned value exists now: detach its aliases
+  // before yielding. A Promise value is not observed until it resolves.
+  const entry = pendingEntry && typeof pendingEntry.then === "function"
+    ? ownEntry(await pendingEntry) : ownEntry(pendingEntry);
   if (!entry) fail("World Model snapshot is missing.", "WORLD_MODEL_SNAPSHOT_MISSING");
-  const document = temporalVerificationScope === null ? entry.document : ownWorldSnapshotForTemporalScope(temporalVerificationScope, entry.document);
+  const document = entry.document;
   const snapshot = verifiedSnapshot(document, selectedId, storage);
   if (snapshot.projectId !== project.projectId || !projectOwnsRecordedRoot(storage, snapshot.projectRoot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   if (!worldModelId && pointer.worldModelHash !== snapshot.worldModelHash) fail("World pointer hash differs from retained bytes.", "WORLD_MODEL_POINTER_MISMATCH");
-  return { snapshot, pointer, storage, file: entry.location, historical: !pointer || selectedId !== pointer.worldModelId };
+  return { snapshot, pointer, storage, file: entry.location, ...(entry.snapshotStorage ? { snapshotStorage: entry.snapshotStorage } : {}), historical: !pointer || selectedId !== pointer.worldModelId };
 }
 
-export function findWorldModelSnapshot({ root = ".", graphSnapshotId = "", sourceSnapshotId = "", storeAdapter = null } = {}) {
+export async function findWorldModelSnapshot({ root = ".", graphSnapshotId = "", sourceSnapshotId = "", storeAdapter = null } = {}) {
   const inspected = readyProject(root);
   const storage = inspected.storage;
   if (!graphSnapshotId && !sourceSnapshotId) fail("A GraphSnapshot or SourceSnapshot identity is required.", "WORLD_MODEL_SNAPSHOT_QUERY_REQUIRED");
   const adapter = createWorldModelStoreAdapter({ storage, projectRoot: inspected.project.projectRoot, adapter: storeAdapter });
   const matches = [];
-  for (const worldModelId of adapter.listSnapshotIds()) {
-    const snapshot = readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId, storeAdapter: adapter }).snapshot;
+  for (const worldModelId of (await adapter.listSnapshotIds())) {
+    const snapshot = (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId, storeAdapter: adapter })).snapshot;
     if (graphSnapshotId && snapshot.temporalProvenanceGraph?.graphSnapshotId !== graphSnapshotId) continue;
     if (sourceSnapshotId && snapshot.temporalProvenanceGraph?.sourceSnapshotId !== sourceSnapshotId) continue;
     matches.push(snapshot);
@@ -902,8 +906,8 @@ export function findWorldModelSnapshot({ root = ".", graphSnapshotId = "", sourc
   return { status: "verified", matches };
 }
 
-export function inspectWorldModel({ root = ".", storeAdapter = null, runtimeStateAdapter = null } = {}) {
-  const stored = readWorldModel({ root, storeAdapter });
+export async function inspectWorldModel({ root = ".", storeAdapter = null, runtimeStateAdapter = null } = {}) {
+  const stored = (await readWorldModel({ root, storeAdapter }));
   const inspected = readyProject(root);
   const storage = inspected.storage;
   const sourceScopeState = readRepositorySourceScope({ storage, projectRoot: inspected.project.projectRoot });
@@ -1181,8 +1185,8 @@ export function buildWorldModelStatusProjection(inspection, { sampleLimit = WORL
   return projection;
 }
 
-export function inspectWorldModelStatus({ root = ".", storeAdapter = null, runtimeStateAdapter = null } = {}) {
-  return buildWorldModelStatusProjection(inspectWorldModel({ root, storeAdapter, runtimeStateAdapter }));
+export async function inspectWorldModelStatus({ root = ".", storeAdapter = null, runtimeStateAdapter = null } = {}) {
+  return buildWorldModelStatusProjection((await inspectWorldModel({ root, storeAdapter, runtimeStateAdapter })));
 }
 
 async function buildWorldModelLocked({
@@ -1218,6 +1222,11 @@ async function buildWorldModelLocked({
   const storage = inspected.storage;
   const project = inspected.project;
   const worldStoreAdapter = createWorldModelStoreAdapter({ storage, projectRoot: project.projectRoot, adapter: storeAdapter });
+  const initialPointerEntry = worldStoreAdapter.readPointer();
+  const initialPointerBasis = canonicalJson(initialPointerEntry?.document || null);
+  if (expectedCurrentWorldModelId && initialPointerEntry?.document?.worldModelId !== expectedCurrentWorldModelId) {
+    fail("World Model current pointer changed before refresh preparation.", "REFRESH_POINTER_CONFLICT");
+  }
   const managedRootFiles = managedRootFilesForProject(project, storage);
   const sourceScope = readRepositorySourceScope({ storage, projectRoot: project.projectRoot }).sourceScope;
   const selectedRepositoryScanExecution = repositoryScanExecution
@@ -1230,26 +1239,32 @@ async function buildWorldModelLocked({
     });
   const scan = validateRepositoryScanResult(selectedRepositoryScanExecution.result, { storage });
   const productCanon = readProductModelCanon({ storage, projectRoot: project.projectRoot });
+  const productCanonBasis = canonBytes(project.projectRoot, storage);
+  if ((productCanonBasis === null ? null : digest(productCanonBasis)) !== productCanon.sourceDigest) {
+    fail("Product Canon changed while its snapshot input was read.", "WORLD_MODEL_CANON_BASIS_CONFLICT");
+  }
   let previousTemporalGraph = null;
+  let previousWorldSnapshot = null;
   let previousTemporalStateUnavailable = false;
   let previousWorldReadCode = "";
   if (logicalLineageState == null) {
     try {
-      previousTemporalGraph = readWorldModel({ root: project.projectRoot, storeAdapter: worldStoreAdapter }).snapshot.temporalProvenanceGraph;
+      previousWorldSnapshot = (await readWorldModel({ root: project.projectRoot, storeAdapter: worldStoreAdapter })).snapshot;
+      previousTemporalGraph = previousWorldSnapshot.temporalProvenanceGraph;
     } catch (error) {
       if (!new Set(["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"]).has(error.code)) throw error;
       previousWorldReadCode = error.code;
       const failedWorldPointer = worldStoreAdapter.readPointer()?.document || null;
-      previousTemporalGraph = readRecoverableTemporalGraphProjection({ storage,
+      previousTemporalGraph = (await readRecoverableTemporalGraphProjection({ storage,
         projectRoot: project.projectRoot,
         projectId: project.projectId,
         adapter: graphProjectionAdapter,
         expectedPointer: failedWorldPointer,
-      });
+      }));
       if (error.code === "WORLD_MODEL_SNAPSHOT_MISSING") {
         if (!previousTemporalGraph) {
           const previousId = failedWorldPointer?.previousWorldModelId || "";
-          const previousEntry = /^world-model-[a-f0-9]{24}$/.test(previousId) ? worldStoreAdapter.readSnapshot(previousId) : null;
+          const previousEntry = /^world-model-[a-f0-9]{24}$/.test(previousId) ? (await worldStoreAdapter.readSnapshot(previousId)) : null;
           if (previousEntry) previousTemporalGraph = verifiedSnapshot(previousEntry.document, previousId, storage).temporalProvenanceGraph;
           previousTemporalStateUnavailable = true;
         }
@@ -1280,7 +1295,7 @@ async function buildWorldModelLocked({
     projectId: project.projectId,
   });
   if (logicalLineageState == null && previousWorldReadCode === "WORLD_MODEL_NOT_BUILT" && !previousTemporalGraph
-    && (worldStoreAdapter.listSnapshotIds().length > 0 || projectionProvesEarlierWorld({
+    && ((await worldStoreAdapter.listSnapshotIds()).length > 0 || projectionProvesEarlierWorld({
       productPolicyProjection,
       featureMappingProjection,
       changeSetProjection,
@@ -1309,7 +1324,28 @@ async function buildWorldModelLocked({
     files: scan.files.map((file) => ({ path: file.path, digest: file.digest, language: file.language })),
     adapter: sourceRelationEvidenceAdapter,
   });
-  const semanticGraph = buildSemanticGraph({ storage, files: scan.files, sourceRelationEvidence: sourceRelationResult.evidence });
+  const snapshotRules = {
+      maxFileBytes: REPOSITORY_SCAN_DEFAULTS.maxFileBytes,
+      maxFiles: REPOSITORY_SCAN_DEFAULTS.maxFiles,
+      maxTotalBytes: REPOSITORY_SCAN_DEFAULTS.maxTotalBytes,
+      maxSymbolsPerFile: REPOSITORY_SCAN_DEFAULTS.maxSymbolsPerFile,
+      excludedDirectories: REPOSITORY_SCAN_EXCLUDED_DIRECTORIES,
+      managedRootProjectionsExcluded: managedRootFilesForProject(project, storage),
+      sourceScope,
+    };
+  const domainBundleCandidate = worldStoreAdapter.describe().snapshotLayout === "domain-bundles-v1";
+  // Include every scanner fact and relation input consumed by semantic analysis,
+  // not only mtime/size/digest. A verified previous result is request-local reuse.
+  const codeAnalysisInputBasis = domainBundleCandidate ? digest(canonicalJson({
+    projectId: project.projectId, files: scan.files, sourceScope,
+    analysisBasis: codeAnalysisBasis({ sourceRelationEvidence: sourceRelationResult.evidence }),
+    sourceRelationEvidence: sourceRelationResult.evidence,
+    rules: { defaults: REPOSITORY_SCAN_DEFAULTS, excludedDirectories: REPOSITORY_SCAN_EXCLUDED_DIRECTORIES,
+      managedRootFiles, dialect: formatForVerifiedOwner(storage).dialect },
+  })) : null;
+  const codeAnalysisReused = domainBundleCandidate && previousWorldSnapshot?.codeAnalysisInputBasis === codeAnalysisInputBasis;
+  const semanticGraph = codeAnalysisReused ? previousWorldSnapshot.semanticGraph
+    : buildSemanticGraph({ storage, files: scan.files, sourceRelationEvidence: sourceRelationResult.evidence });
   const selectedRevisionParentIds = filterRevisionParentsToCurrentEntities
     ? filterRevisionParentsForCurrentTemporalEntities({
       projectId: project.projectId,
@@ -1332,7 +1368,7 @@ async function buildWorldModelLocked({
         logicalLineageState,
       })
       : logicalLineageState;
-  const temporalProvenanceGraph = buildTemporalProvenanceGraph({ storage,
+  let temporalProvenanceGraph = buildTemporalProvenanceGraph({ storage,
     projectId: project.projectId,
     files: scan.files,
     productModel: productCanon.model,
@@ -1349,6 +1385,10 @@ async function buildWorldModelLocked({
     revisionParentIds: selectedRevisionParentIds,
     logicalLineageState: selectedLogicalLineageState,
   });
+  if (worldStoreAdapter.describe().snapshotLayout === "domain-bundles-v1") {
+    temporalProvenanceGraph = stabilizeTemporalRelationIdentities(temporalProvenanceGraph, { relationAnalysisBasis: relationBasisFor({ analysisBasis: codeAnalysisBasis(semanticGraph), rules: snapshotRules, repositoryScan: { sourceScope } }) });
+    verifyTemporalProvenanceGraph(temporalProvenanceGraph);
+  }
   const sourceDigest = sourceDigestFor(
     scan.files,
     sourceScope,
@@ -1386,15 +1426,7 @@ async function buildWorldModelLocked({
     projectRoot: project.projectRoot,
     sourceDigest,
     indexer,
-    rules: {
-      maxFileBytes: REPOSITORY_SCAN_DEFAULTS.maxFileBytes,
-      maxFiles: REPOSITORY_SCAN_DEFAULTS.maxFiles,
-      maxTotalBytes: REPOSITORY_SCAN_DEFAULTS.maxTotalBytes,
-      maxSymbolsPerFile: REPOSITORY_SCAN_DEFAULTS.maxSymbolsPerFile,
-      excludedDirectories: REPOSITORY_SCAN_EXCLUDED_DIRECTORIES,
-      managedRootProjectionsExcluded: managedRootFilesForProject(project, storage),
-      sourceScope,
-    },
+    rules: snapshotRules,
     coverage: {
       files: "supported-text-files-within-rules",
       repositoryScan: "compute-adapter-validated-relative-path-digest-and-source-facts",
@@ -1569,6 +1601,7 @@ async function buildWorldModelLocked({
       runtimeObservationCount: externalRuntimeState.summary.observationCount,
     },
   };
+  if (domainBundleCandidate) payload.codeAnalysisInputBasis = codeAnalysisInputBasis;
   payload.analysisBasis = codeAnalysisBasis(semanticGraph);
   payload.domainBases = domainBasesFor(payload);
   const worldModelHash = digest(canonicalJson(payload));
@@ -1577,8 +1610,8 @@ async function buildWorldModelLocked({
   if (!persist) return {
     status: "preview",
     snapshot,
-    sourceAdapters: { compute: selectedRepositoryScanExecution.diagnostics, sourceRelationEvidence: sourceRelationResult.diagnostics },
-    sourceDiagnostics: { compute: selectedRepositoryScanExecution.diagnostics, sourceRelationEvidence: sourceRelationResult.diagnostics },
+    sourceAdapters: { compute: selectedRepositoryScanExecution.diagnostics, sourceRelationEvidence: sourceRelationResult.diagnostics, ...(domainBundleCandidate ? { codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis } } : {}) },
+    sourceDiagnostics: { compute: selectedRepositoryScanExecution.diagnostics, sourceRelationEvidence: sourceRelationResult.diagnostics, ...(domainBundleCandidate ? { codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis } } : {}) },
   };
 
   if (expectedWorldModelId && worldModelId !== expectedWorldModelId) {
@@ -1594,7 +1627,7 @@ async function buildWorldModelLocked({
   }
   if (currentPointerEntry) {
     try {
-      const current = readWorldModel({ root: project.projectRoot, storeAdapter: adapter });
+      const current = (await readWorldModel({ root: project.projectRoot, storeAdapter: adapter }));
       previous = current.snapshot;
       previousPointer = current.pointer;
     } catch (error) {
@@ -1604,20 +1637,20 @@ async function buildWorldModelLocked({
       if (error.code !== "WORLD_MODEL_SNAPSHOT_MISSING") throw error;
     }
   }
-  const existingSnapshot = adapter.readSnapshot(worldModelId);
+  const existingSnapshot = (await adapter.readSnapshot(worldModelId));
   let snapshotEntry;
   if (existingSnapshot) {
     verifiedSnapshot(existingSnapshot.document, worldModelId);
     snapshotEntry = existingSnapshot;
   } else {
-    snapshotEntry = adapter.writeSnapshot(worldModelId, snapshot);
+    snapshotEntry = (await adapter.writeSnapshot(worldModelId, snapshot));
   }
   verifiedSnapshot(snapshotEntry.document, worldModelId);
-  const graphProjection = materializeGraphProjectionWithCanonFence({ storage,
-    projectRoot: project.projectRoot,
-    graph: temporalProvenanceGraph,
-    adapter: graphProjectionAdapter,
-  });
+  let preparedGraph;
+  try {
+    preparedGraph = await prepareGraphProjection({ storage, projectRoot: project.projectRoot, graph: temporalProvenanceGraph, adapter: graphProjectionAdapter });
+  } catch (error) { throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis); }
+  const graphProjection = { adapter: { ...preparedGraph.selected.describe(), ...(typeof preparedGraph.selected.diagnostics === "function" ? preparedGraph.selected.diagnostics() : {}) }, pointer: preparedGraph.pointer };
   const changed = !previous || previous.worldModelId !== worldModelId;
   const fileChanges = changed ? changesBetween(previous, snapshot) : { added: [], changed: [], removed: [] };
   const changes = {
@@ -1669,21 +1702,59 @@ async function buildWorldModelLocked({
       hot: worldModelId,
       warm: changes,
       cold: "adapter-retained-snapshots",
-      coldSnapshotCount: adapter.listSnapshotIds().length,
+      coldSnapshotCount: (await adapter.listSnapshotIds()).length,
     },
   };
-  const pointerEntry = adapter.writePointer(pointer);
-  if (canonicalJson(pointerEntry.document) !== canonicalJson(pointer)) {
-    fail("World Model store adapter changed the pointer during persistence.", "WORLD_MODEL_STORE_WRITE_MISMATCH");
+  let pointerEntry;
+  let publishedGraph;
+  let graphPointerAttempted = false, worldPointerAttempted = false;
+  try {
+    withProjectMutation({ root: project.projectRoot, storage, scope: "session-recovery" }, () => {
+      const currentOwner = readyProject(project.projectRoot);
+      if (currentOwner.project.projectId !== project.projectId) fail("World publication Project identity changed.", "WORLD_MODEL_IDENTITY_MISMATCH");
+      assertCanonBasis(project.projectRoot, storage, productCanonBasis);
+      if (canonicalJson(adapter.readPointer()?.document || null) !== initialPointerBasis) {
+        fail("World Model current pointer changed during preparation.", "REFRESH_POINTER_CONFLICT");
+      }
+      graphPointerAttempted = true;
+      publishedGraph = publishPreparedGraphProjection(preparedGraph);
+      assertCanonBasis(project.projectRoot, storage, productCanonBasis);
+      worldPointerAttempted = true;
+      pointerEntry = adapter.writePointer(pointer);
+      if (pointerEntry && typeof pointerEntry.then === "function") fail("Current pointer publication must be synchronous within the short Canon commit scope.", "WORLD_MODEL_STORE_WRITE_MISMATCH");
+      if (canonicalJson(pointerEntry.document) !== canonicalJson(pointer)) {
+        fail("World Model store adapter changed the pointer during persistence.", "WORLD_MODEL_STORE_WRITE_MISMATCH");
+      }
+      assertCanonBasis(project.projectRoot, storage, productCanonBasis);
+    });
+  } catch (error) {
+    if (graphPointerAttempted) {
+      error.worldPublication = { world: worldPointerAttempted ? "failed-or-uncertain" : "not-attempted", graphLocal: publishedGraph ? "published" : "failed-or-uncertain", worldModelId };
+      error.message += ` Local Graph publication: ${error.worldPublication.graphLocal}; World pointer publication: ${error.worldPublication.world}. Current pointers were not rolled back.`;
+    }
+    throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis);
+  }
+  try {
+    assertCanonBasis(project.projectRoot, storage, productCanonBasis);
+    publishedGraph = await completePreparedGraphProjection(preparedGraph, publishedGraph);
+    assertCanonBasis(project.projectRoot, storage, productCanonBasis);
+    if (canonicalJson(adapter.readPointer()?.document || null) !== canonicalJson(pointer)) {
+      fail("World current changed while external projection was completing; preserve the newer current.", "REFRESH_POINTER_CONFLICT");
+    }
+  } catch (error) {
+    error.worldPublication = { world: "published", graphLocal: error.graphPublication?.local === "superseded" ? "published-then-superseded" : "published", worldModelId };
+    error.message += ` Local World pointer was published (${worldModelId}); local Graph publication: ${error.worldPublication.graphLocal}; dependent projection did not complete against the same current basis. Current pointers were not rolled back.`;
+    throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis);
   }
   return {
     status: changed ? "indexed" : "unchanged",
     pointerFile: pointerEntry.location,
     file: snapshotEntry.location,
+    ...(snapshotEntry.snapshotStorage ? { snapshotStorage: snapshotEntry.snapshotStorage } : {}),
     pointer,
     snapshot,
     storeAdapter: adapter.describe(),
-    graphProjection,
+    graphProjection: publishedGraph,
     sourceAdapters: {
       compute: pointer.sourceAdapters.compute,
       gitHistory: gitHistoryResult.adapter,
@@ -1696,24 +1767,25 @@ async function buildWorldModelLocked({
       gitHistory: gitHistoryResult.diagnostics,
       runtimeState: externalRuntimeResult.diagnostics,
       sourceRelationEvidence: sourceRelationResult.diagnostics,
+      ...(domainBundleCandidate ? { codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis } } : {}),
     },
   };
 }
 
 export async function buildWorldModel(options = {}) {
   const persist = options.persist ?? true;
-  if (!persist) return buildWorldModelLocked(options);
+  if (!persist) return (await buildWorldModelLocked(options));
   const inspected = readyProject(options.root ?? ".");
   const storage = inspected.storage;
-  return withRefreshWriterLease({ storage,
+  return (await withRefreshWriterLease({ storage,
     projectRoot: inspected.project.projectRoot,
     projectId: inspected.project.projectId,
     lease: options.writerLease || null,
-  }, (writerLease) => buildWorldModelLocked({ ...options, writerLease }));
+  }, async (writerLease) => (await buildWorldModelLocked({ ...options, writerLease }))));
 }
 
-export function queryWorldModel({ root = ".", query, depth = 1, maxResults = 100, storeAdapter = null } = {}) {
-  const inspected = inspectWorldDomainFreshness({ root, storeAdapter, domains: ["code"] });
+export async function queryWorldModel({ root = ".", query, depth = 1, maxResults = 100, storeAdapter = null } = {}) {
+  const inspected = (await inspectWorldDomainFreshness({ root, storeAdapter, domains: ["code"] }));
   if (inspected.freshness.domains.code.status !== "current") return {
     status: inspected.freshness.domains.code.status, worldModelId: inspected.snapshot.worldModelId,
     freshness: inspected.freshness, nodes: [], edges: [], fallback: "original-source",
@@ -1728,7 +1800,7 @@ export function queryWorldModel({ root = ".", query, depth = 1, maxResults = 100
   };
 }
 
-export function queryWorldTemporalGraph({
+export async function queryWorldTemporalGraph({
   root = ".",
   query = null,
   anchorIds = null,
@@ -1745,12 +1817,12 @@ export function queryWorldTemporalGraph({
   storeAdapter = null,
   graphProjectionAdapter = null,
 } = {}) {
-  const inspected = inspectWorldDomainFreshness({ root, storeAdapter });
+  const inspected = (await inspectWorldDomainFreshness({ root, storeAdapter }));
   if (!inspected.snapshot.temporalProvenanceGraph) fail("Repository World Model has no temporal provenance graph.", "TEMPORAL_PROVENANCE_NOT_BUILT");
   const graph = inspected.snapshot.temporalProvenanceGraph;
   const eligibility = buildWorldTraversalEligibility(inspected.snapshot, inspected.freshness.domains);
   const needsMask = eligibility.nodeIds.length !== graph.nodes.length || eligibility.edgeIds.length !== graph.edges.length;
-  const projected = queryGraphProjection({
+  const projected = (await queryGraphProjection({
     storage: inspected.storage,
     projectRoot: inspected.storage.projectRoot,
     graph: inspected.snapshot.temporalProvenanceGraph,
@@ -1770,7 +1842,7 @@ export function queryWorldTemporalGraph({
       maxEdges,
       ...(needsMask ? { eligibility } : {}),
     },
-  });
+  }));
   return {
     status: inspected.status === "current" ? "current" : "domain-scoped",
     freshness: inspected.freshness,
@@ -1780,14 +1852,14 @@ export function queryWorldTemporalGraph({
   };
 }
 
-export function inspectWorldGraphProjection({ root = ".", storeAdapter = null, graphProjectionAdapter = null } = {}) {
-  const inspected = inspectWorldModel({ root, storeAdapter });
-  const projection = inspectGraphProjection({
+export async function inspectWorldGraphProjection({ root = ".", storeAdapter = null, graphProjectionAdapter = null } = {}) {
+  const inspected = (await inspectWorldModel({ root, storeAdapter }));
+  const projection = (await inspectGraphProjection({
     storage: inspected.storage,
     projectRoot: inspected.storage.projectRoot,
     graph: inspected.snapshot.temporalProvenanceGraph,
     adapter: graphProjectionAdapter,
-  });
+  }));
   return {
     status: projection.status,
     worldModelStatus: inspected.status,
@@ -1798,8 +1870,8 @@ export function inspectWorldGraphProjection({ root = ".", storeAdapter = null, g
   };
 }
 
-export function materializeWorldMarkdownProjection({ root = ".", storeAdapter = null, documentProjectionAdapter = null } = {}) {
-  const inspected = inspectWorldModel({ root, storeAdapter });
+export async function materializeWorldMarkdownProjection({ root = ".", storeAdapter = null, documentProjectionAdapter = null } = {}) {
+  const inspected = (await inspectWorldModel({ root, storeAdapter }));
   if (inspected.status !== "current") fail("Repository World Model is stale and cannot regenerate document projections.", "WORLD_MODEL_STALE");
   const materialized = materializeMarkdownProjection({
     storage: inspected.storage,
@@ -1818,8 +1890,8 @@ export function materializeWorldMarkdownProjection({ root = ".", storeAdapter = 
   };
 }
 
-export function inspectWorldMarkdownProjection({ root = ".", storeAdapter = null, documentProjectionAdapter = null } = {}) {
-  const inspected = inspectWorldModel({ root, storeAdapter });
+export async function inspectWorldMarkdownProjection({ root = ".", storeAdapter = null, documentProjectionAdapter = null } = {}) {
+  const inspected = (await inspectWorldModel({ root, storeAdapter }));
   const projection = inspectMarkdownProjection({
     storage: inspected.storage,
     projectRoot: inspected.storage.projectRoot,
@@ -1840,8 +1912,8 @@ export function inspectWorldMarkdownProjection({ root = ".", storeAdapter = null
   };
 }
 
-export function captureWorldMarkdownChanges({ root = ".", storeAdapter = null, documentProjectionAdapter = null, persist = true } = {}) {
-  const inspected = inspectWorldModel({ root, storeAdapter });
+export async function captureWorldMarkdownChanges({ root = ".", storeAdapter = null, documentProjectionAdapter = null, persist = true } = {}) {
+  const inspected = (await inspectWorldModel({ root, storeAdapter }));
   const documentOnlyDriftKeys = new Set(["documentChangeProjectionChanged", "temporalProvenanceChanged"]);
   const nonDocumentDrift = Object.entries(inspected.changes || {}).some(([key, value]) => !documentOnlyDriftKeys.has(key)
     && (Array.isArray(value) ? value.length > 0 : value === true));
@@ -1870,8 +1942,8 @@ export function readWorldDocumentChangeCandidateSet({ root = ".", candidateSetId
   return readDocumentChangeCandidateSet({ storage, projectRoot: inspected.project.projectRoot, id });
 }
 
-export function queryWorldHistory({ root = ".", query = "", limit = 50, storeAdapter = null } = {}) {
-  const inspected = inspectWorldDomainFreshness({ root, storeAdapter, domains: ["git"] });
+export async function queryWorldHistory({ root = ".", query = "", limit = 50, storeAdapter = null } = {}) {
+  const inspected = (await inspectWorldDomainFreshness({ root, storeAdapter, domains: ["git"] }));
   if (inspected.freshness.domains.git.status !== "current") fail("Captured Git evidence is not current; unrelated code/runtime domains are not a gate.", "WORLD_MODEL_STALE");
   if (!inspected.snapshot.gitDecisionHistory) fail("Repository World Model has no Git decision history.", "GIT_DECISION_HISTORY_NOT_BUILT");
   return {
@@ -1882,8 +1954,8 @@ export function queryWorldHistory({ root = ".", query = "", limit = 50, storeAda
   };
 }
 
-export function queryWorldRuntimeState({ root = ".", query = "", runtime = "", state = "", kind = "", limit = 50, storeAdapter = null, runtimeStateAdapter = null } = {}) {
-  const inspected = inspectWorldDomainFreshness({ root, storeAdapter, runtimeStateAdapter, domains: ["runtime"] });
+export async function queryWorldRuntimeState({ root = ".", query = "", runtime = "", state = "", kind = "", limit = 50, storeAdapter = null, runtimeStateAdapter = null } = {}) {
+  const inspected = (await inspectWorldDomainFreshness({ root, storeAdapter, runtimeStateAdapter, domains: ["runtime"] }));
   if (inspected.freshness.domains.runtime.status !== "current") fail("Captured runtime evidence is not current; unrelated code/Product domains are not a gate.", "WORLD_MODEL_STALE");
   if (!inspected.snapshot.externalRuntimeState) fail("Repository World Model has no external runtime state.", "EXTERNAL_RUNTIME_STATE_NOT_BUILT");
   return {

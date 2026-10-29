@@ -1,3 +1,4 @@
+import { decodeSnapshotBytes } from "./snapshot-storage-codec.mjs";
 import crypto from "node:crypto";
 import { formatForVerifiedOwner, relativeProjectArtifact, resolveProjectStorage, projectLocationBasis } from "./project-storage-format.mjs";
 import fs from "node:fs";
@@ -77,7 +78,9 @@ export function readGraphRecord(root, relative, maximum = MAX_BYTES) {
   if (!stat.isFile() || stat.size > maximum) fail("PROJECT_GRAPH_RECORD_LIMIT");
   const bytes = fs.readFileSync(file);
   if (bytes.length > maximum) fail("PROJECT_GRAPH_RECORD_LIMIT");
-  return { document: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)), bytes, digest: hash(bytes) };
+  return { document: relative.endsWith(".json.gz")
+    ? decodeSnapshotBytes(bytes, { compressed: true, compressedBytes: maximum, decodedBytes: maximum })
+    : JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)), bytes, digest: hash(bytes) };
 }
 
 // Syntactic selectors only. The original typed reader still proves each record.

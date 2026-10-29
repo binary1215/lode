@@ -5,12 +5,13 @@ import path from "node:path";
 import test from "node:test";
 
 import { recordChangeSet, reviewChangeImpact, inspectChangeSets } from "../scripts/lib/change-set.mjs";
+import { verifyChangeSet, changeSetCanonicalJson, changeSetDigest, CHANGE_SET_VERSION, CHANGE_SET_RECORD_VERSION } from "../scripts/lib/change-set-projection.mjs";
 import { compileContext } from "../scripts/lib/context-compiler.mjs";
 import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
 import { startFeatureMapping, reviewFeatureMapping } from "../scripts/lib/feature-mapping.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
-import { buildWorldModel, inspectWorldModel } from "../scripts/lib/world-model.mjs";
+import { buildWorldModel, inspectWorldModel, readWorldModelSnapshot } from "../scripts/lib/world-model.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 
@@ -67,7 +68,7 @@ async function changeSetFixture(t, label) {
   fs.writeFileSync(path.join(root, "src", "message.mjs"), "export function send(message) { return message; }\n");
 
   await startFeatureMapping({ root });
-  const world = inspectWorldModel({ root }).snapshot;
+  const world = (await inspectWorldModel({ root })).snapshot;
   const graph = world.temporalProvenanceGraph;
   const sourceNode = graph.nodes.find((node) => node.kind === "File" && node.path === "src/message.mjs");
   const featureNode = graph.nodes.find((node) => node.kind === "Feature" && node.key === "send");
@@ -94,7 +95,7 @@ async function changeSetFixture(t, label) {
     rationale: "The fixture explicitly reviews the exact mapping.",
   });
 
-  const capsule = compileContext({ root, task: "Change the message implementation", budget: 32768, persist: true });
+  const capsule = (await compileContext({ root, task: "Change the message implementation", budget: 32768, persist: true }));
   const plan = createWholePlanSnapshot({
     root,
     objective: "Change the implementation with reviewed lineage",
@@ -154,10 +155,10 @@ test("stale Change impact candidates remain explicitly rejectable without anothe
   };
   const rejected = await reviewChangeImpact(rejectedRequest);
   assert.equal(rejected.status, "change_impacts_rejected");
-  assert.equal(inspectChangeSets({ root: fixture.root }).status, "rejected");
+  assert.equal((await inspectChangeSets({ root: fixture.root })).status, "rejected");
   assert.equal((await reviewChangeImpact(rejectedRequest)).reusedReviewDecision, true);
 
-  const rerecord = await captureError(() => recordChangeSet(fixture.recordRequest));
+  const rerecord = await captureError(async () => (await recordChangeSet(fixture.recordRequest)));
   assert.notEqual(rerecord.error?.code, "CHANGE_IMPACT_REVIEW_REQUIRED");
   assert.deepEqual(headSessionState(fixture.root), sessionBefore);
 });
@@ -196,7 +197,7 @@ test("Change impact review recovers exact P1 decisions across durable write boun
         }));
         assert.equal(divergent.error?.code, "CHANGE_IMPACT_REVIEW_CONFLICT");
         assert.equal(reviewFiles(fixture.root, fixture.layout).length, 1);
-        const pending = inspectChangeSets({ root: fixture.root });
+        const pending = (await inspectChangeSets({ root: fixture.root }));
         assert.equal(pending.reviewRecovery?.requiresNewUserDecision, false);
       }
 
@@ -204,8 +205,8 @@ test("Change impact review recovers exact P1 decisions across durable write boun
       assert.equal(recovered.status, "change_impacts_reviewed");
       assert.equal(recovered.reusedReviewDecision, boundary !== "decision");
       assert.equal(reviewFiles(fixture.root, fixture.layout).length, 1);
-      assert.equal(inspectChangeSets({ root: fixture.root }).status, "reviewed");
-      assert.equal(inspectWorldModel({ root: fixture.root }).status, "current");
+      assert.equal((await inspectChangeSets({ root: fixture.root })).status, "reviewed");
+      assert.equal((await inspectWorldModel({ root: fixture.root })).status, "current");
       assert.equal((await reviewChangeImpact(fixture.reviewRequest)).reusedReviewDecision, true);
     });
   }
@@ -219,7 +220,7 @@ test("legacy orphan P4 cannot authorize a divergent review but exact user intent
   const reviewFile = path.join(fixture.root, fixture.layout.directory, "change-sets", "impact-review-decisions", `${accepted.reviewDecision.reviewDecisionId}.json`);
   fs.unlinkSync(reviewFile);
   fs.writeFileSync(stateFile, pendingState);
-  assert.equal(inspectWorldModel({ root: fixture.root }).status, "stale");
+  assert.equal((await inspectWorldModel({ root: fixture.root })).status, "stale");
 
   await assert.rejects(() => reviewChangeImpact({
     ...fixture.reviewRequest,
@@ -231,13 +232,13 @@ test("legacy orphan P4 cannot authorize a divergent review but exact user intent
   assert.equal(repaired.status, "change_impacts_reviewed");
   assert.equal(repaired.reusedReviewDecision, false);
   assert.equal(reviewFiles(fixture.root, fixture.layout).length, 1);
-  assert.equal(inspectWorldModel({ root: fixture.root }).status, "current");
+  assert.equal((await inspectWorldModel({ root: fixture.root })).status, "current");
 });
 
 test("reviewed execution changes link exact source and Product revisions without claiming delivery", async (t) => {
   const fixture = await changeSetFixture(t, "exact-revision-lineage");
   await reviewChangeImpact(fixture.reviewRequest);
-  const graph = inspectWorldModel({ root: fixture.root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root: fixture.root })).snapshot.temporalProvenanceGraph;
   const nodes = new Map(graph.nodes.map((node) => [node.nodeId, node]));
   const retainedChangeReferences = graph.nodes.filter((node) => node.kind === "ChangeRevisionReference" && nodes.has(node.referencedRevisionId));
   assert.ok(retainedChangeReferences.length > 0);
@@ -251,4 +252,40 @@ test("reviewed execution changes link exact source and Product revisions without
   }
   assert.equal(graph.nodes.some((node) => node.kind === "ReleaseObservation"), false);
   assert.equal(graph.nodes.some((node) => node.kind === "DeploymentResultObservation"), false);
+});
+
+
+test("ChangeSet record 0.3 pins World endpoints while legacy originals and auxiliary contracts stay unchanged", async (t) => {
+  const f = await changeSetFixture(t, "world-endpoints");
+  const record = f.recorded.changeSet;
+  assert.equal(record.protocol.version, CHANGE_SET_RECORD_VERSION);
+  assert.equal(CHANGE_SET_VERSION, "0.2.0");
+  assert.equal(f.recorded.candidateSet.protocol.version, "0.2.0");
+  for (const endpoint of [record.before, record.after]) {
+    assert.deepEqual(Object.keys(endpoint).sort(), ["graphSnapshotId", "sourceSnapshotId", "worldModelId"]);
+    const retained = (await readWorldModelSnapshot({ root: f.root, worldModelId: endpoint.worldModelId })).snapshot;
+    assert.equal(retained.projectId, record.projectId);
+    assert.equal(retained.temporalProvenanceGraph.graphSnapshotId, endpoint.graphSnapshotId);
+    assert.equal(retained.temporalProvenanceGraph.sourceSnapshotId, endpoint.sourceSnapshotId);
+  }
+  const signed = (mutate) => {
+    const payload = structuredClone(record); delete payload.changeSetId; delete payload.changeSetHash; mutate(payload);
+    const hash = changeSetDigest(changeSetCanonicalJson(payload));
+    return { ...payload, changeSetId: "change-set-" + hash.slice(0, 24), changeSetHash: hash };
+  };
+  for (const version of ["0.1.0", "0.2.0"]) {
+    const legacy = signed(d => { d.protocol.version = version; delete d.before.worldModelId; delete d.after.worldModelId; });
+    const bytes = JSON.stringify(legacy), digest = changeSetDigest(bytes), id = legacy.changeSetId;
+    assert.equal(verifyChangeSet(legacy, record.projectId, f.layout), legacy);
+    assert.equal(JSON.stringify(legacy), bytes); assert.equal(changeSetDigest(bytes), digest); assert.equal(legacy.changeSetId, id);
+    assert.throws(() => verifyChangeSet(signed(d => { d.protocol.version = version; }), record.projectId, f.layout), { code: "INVALID_CHANGE_SET_SNAPSHOT_REFERENCE" });
+  }
+  for (const mutate of [d => { delete d.before.worldModelId; }, d => { d.after.extra = true; }, d => { d.before.worldModelId = "invalid"; }]) {
+    assert.throws(() => verifyChangeSet(signed(mutate), record.projectId, f.layout), { code: "INVALID_CHANGE_SET_SNAPSHOT_REFERENCE" });
+  }
+  assert.throws(() => verifyChangeSet(signed(d => { d.protocol.version = "0.4.0"; }), record.projectId, f.layout), { code: "INVALID_CHANGE_SET" });
+  const reviewed = await reviewChangeImpact(f.reviewRequest);
+  assert.equal(reviewed.reviewDecision.protocol.version, "0.2.0");
+  const state = JSON.parse(fs.readFileSync(path.join(f.root, f.layout.directory, "change-sets", "current.json"), "utf8"));
+  assert.equal(state.protocol.version, "0.2.0");
 });

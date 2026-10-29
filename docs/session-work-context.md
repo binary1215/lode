@@ -612,3 +612,5 @@ identities remain bound to the verified absolute root and actual Session owner. 
 Projects use `.lode/`; existing `.head/` records and exact selectors stay unchanged.
 These are existing path contracts, not workspace relocation or automatic repair.
 
+
+The read-only `sessionStartContext` renderer awaits the selected Host adapter and local snapshot reads before formatting. Codex/Claude command Hooks and the OpenCode context callback consume the completed value; an unresolved Promise is never presented as empty context. This changes no Session selection or P2 authority.

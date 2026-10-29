@@ -33,10 +33,10 @@ test("diagnostics preserve generic project bytes and Capsule identity with truth
   await buildWorldModel({ root });
   const task = "Explain how the queue appends one item";
   const before = treeDigest(root);
-  const expected = previewContextWorkflow({ root, task }).capsule;
+  const expected = (await previewContextWorkflow({ root, task })).capsule;
   const originalRead = fs.readFileSync;
   const originalWrite = fs.writeFileSync;
-  const report = measureContextDiagnostics({ project: root, task, iterations: 3 });
+  const report = await measureContextDiagnostics({ project: root, task, iterations: 3 });
   assert.deepEqual(treeDigest(root), before);
   assert.equal(fs.readFileSync, originalRead);
   assert.equal(fs.writeFileSync, originalWrite);
@@ -63,20 +63,20 @@ test("diagnostics preserve generic project bytes and Capsule identity with truth
 
   fs.writeFileSync(path.join(root, "src", "queue.mjs"), "export const enqueue = (items, value) => items.concat(value);\n");
   const staleBefore = treeDigest(root);
-  const stale = measureContextDiagnostics({ project: root, task, iterations: 1 });
+  const stale = await measureContextDiagnostics({ project: root, task, iterations: 1 });
   assert.equal(stale.contextPreview.samples[0].worldState, "stale-excluded");
   assert.equal(stale.contextPreview.samples[0].repositoryRecordCount, 0);
   assert.deepEqual(treeDigest(root), staleBefore);
   assert.equal(stale.contextPreview.repeatedCalls.p95Ms, null);
 });
 
-test("diagnostics reject malformed requests before preview and restore instrumentation on failure", () => {
-  for (const iterations of [0, 21, 1.5, NaN]) assert.throws(() => measureContextDiagnostics({ iterations }), /iterations/);
-  assert.throws(() => measureContextDiagnostics({ project: "." }), /both --project and --task/);
-  assert.throws(() => measureContextDiagnostics({ task: "a task" }), /both --project and --task/);
+test("diagnostics reject malformed requests before preview and restore instrumentation on failure", async () => {
+  for (const iterations of [0, 21, 1.5, NaN]) await assert.rejects(() => measureContextDiagnostics({ iterations }), /iterations/);
+  await assert.rejects(() => measureContextDiagnostics({ project: "." }), /both --project and --task/);
+  await assert.rejects(() => measureContextDiagnostics({ task: "a task" }), /both --project and --task/);
   const originalRead = fs.readFileSync;
   const originalWrite = fs.writeFileSync;
-  assert.throws(() => measureContextDiagnostics({ project: path.join(os.tmpdir(), "no-head-diagnostic-project"), task: "Inspect queue", iterations: 1 }));
+  await assert.rejects(() => measureContextDiagnostics({ project: path.join(os.tmpdir(), "no-head-diagnostic-project"), task: "Inspect queue", iterations: 1 }));
   assert.equal(fs.readFileSync, originalRead);
   assert.equal(fs.writeFileSync, originalWrite);
 });

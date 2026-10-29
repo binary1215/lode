@@ -231,7 +231,7 @@ export function createNativeSessionHostBridge({ environment = process.env, runti
         return handler(request, {});
       }
       if (request.method !== "tools/call") return handler(request, {});
-      if (helperName(request.params?.name)) return prepareHookRequest(request);
+      if (helperName(request.params?.name)) return (await prepareHookRequest(request));
       const routed = routerName(request.params?.name);
       const targetName = routed ? request.params?.arguments?.name : request.params?.name;
       if (helperName(targetName)) return reply(request, Object.assign(new Error(), { code: "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED" }));

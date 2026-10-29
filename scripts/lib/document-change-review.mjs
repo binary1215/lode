@@ -20,6 +20,7 @@ import {
   PRODUCT_MODEL_RELATIVE_PATH,
   readProductModelCanon,
 } from "./product-model.mjs";
+import { withProjectMutation } from "./project-mutation-lock.mjs";
 import { withRefreshWriterLease } from "./refresh-writer-lease.mjs";
 import {
   buildWorldModel,
@@ -430,7 +431,7 @@ async function buildDocumentAuditChild({ projectRoot, beforeWorld, storeAdapter,
   });
   const parentSourceSnapshotIds = [beforeWorld.temporalProvenanceGraph.sourceSnapshotId];
   const preview = await buildWorldModel({ ...common, parentSourceSnapshotIds, revisionParentIds });
-  return buildWorldModel({
+  return (await buildWorldModel({
     ...common,
     persist: true,
     parentSourceSnapshotIds,
@@ -438,7 +439,7 @@ async function buildDocumentAuditChild({ projectRoot, beforeWorld, storeAdapter,
     expectedWorldModelId: preview.snapshot.worldModelId,
     expectedCurrentWorldModelId: beforeWorld.worldModelId,
     writerLease,
-  });
+  }));
 }
 
 async function applyReviewLocked({ inspected, reviewDecisionId, storeAdapter = null, graphProjectionAdapter = null, documentProjectionAdapter = null, computeAdapter = null, writerLease }) {
@@ -460,7 +461,7 @@ async function applyReviewLocked({ inspected, reviewDecisionId, storeAdapter = n
   // A durable reject leaves Canon unchanged. Canon equality cannot distinguish
   // not-started from partially published; the resume primitive checks every
   // file against the reviewed preimage and immutable target instead.
-  const currentStatus = inspectWorldModel({ root: projectRoot, storeAdapter });
+  const currentStatus = (await inspectWorldModel({ root: projectRoot, storeAdapter }));
   const documentOnlyDriftKeys = new Set(["documentChangeProjectionChanged", "temporalProvenanceChanged"]);
   if (canonApplied) {
     // These derived inputs bind currentProductModelId and change with this exact
@@ -474,7 +475,7 @@ async function applyReviewLocked({ inspected, reviewDecisionId, storeAdapter = n
   }
   const basisFile = safeFile(projectRoot, ".head/document-changes/application-bases", review.reviewDecisionId, REVIEW_ID_PATTERN, "INVALID_DOCUMENT_CHANGE_REVIEW_ID", storage);
   let beforeWorld;
-  if (existingApplication) beforeWorld = readWorldModelSnapshot({ root: projectRoot, worldModelId: existingApplication.before.worldModelId, storeAdapter }).snapshot;
+  if (existingApplication) beforeWorld = (await readWorldModelSnapshot({ root: projectRoot, worldModelId: existingApplication.before.worldModelId, storeAdapter })).snapshot;
   else if (fs.existsSync(basisFile)) {
     const basis = parseJson(basisFile, "Document application basis");
     const { basisHash, ...payload } = basis;
@@ -484,12 +485,12 @@ async function applyReviewLocked({ inspected, reviewDecisionId, storeAdapter = n
       fail("Document application basis is invalid.", "DOCUMENT_CHANGE_APPLICATION_BASIS_INVALID");
     }
     verifyArtifactAuthorityBoundary("Evidence", basis.authorityBoundary);
-    beforeWorld = readWorldModelSnapshot({ root: projectRoot, worldModelId: basis.beforeWorldModelId, storeAdapter }).snapshot;
+    beforeWorld = (await readWorldModelSnapshot({ root: projectRoot, worldModelId: basis.beforeWorldModelId, storeAdapter })).snapshot;
   } else {
     // Older interrupted applications have no basis: use the exact reviewed
     // graph, not a made-up observation of the old process's current pointer.
     beforeWorld = canonApplied
-      ? findWorldModelSnapshot({ root: projectRoot, graphSnapshotId: candidateSet.graphSnapshotId, storeAdapter }).matches.find((world) => world.temporalProvenanceGraph.graphSnapshotHash === candidateSet.graphSnapshotHash)
+      ? (await findWorldModelSnapshot({ root: projectRoot, graphSnapshotId: candidateSet.graphSnapshotId, storeAdapter })).matches.find((world) => world.temporalProvenanceGraph.graphSnapshotHash === candidateSet.graphSnapshotHash)
       : currentStatus.snapshot;
     if (!beforeWorld) fail("Reviewed World basis is missing.", "DOCUMENT_CHANGE_CANDIDATE_GRAPH_MISSING");
     const payload = { schemaVersion: 1, kind: "Evidence", purpose: "document-application-basis",
@@ -507,7 +508,7 @@ async function applyReviewLocked({ inspected, reviewDecisionId, storeAdapter = n
   const selectedDocuments = createDocumentProjectionAdapter({ storage, projectRoot, adapter: documentProjectionAdapter });
   const canonFile = path.resolve(projectRoot, ...relativeProjectArtifact(storage, ...PRODUCT_MODEL_RELATIVE_PATH.split("/").slice(1)).split("/"));
   try {
-    let afterWorld = existingApplication ? readWorldModelSnapshot({ root: projectRoot, worldModelId: existingApplication.after.worldModelId, storeAdapter }).snapshot : beforeWorld;
+    let afterWorld = existingApplication ? (await readWorldModelSnapshot({ root: projectRoot, worldModelId: existingApplication.after.worldModelId, storeAdapter })).snapshot : beforeWorld;
     if (review.promotionAuthority && !existingApplication) {
       assertNoAuthorityAmplification({
         sourceKind: "CandidateSet",
@@ -516,7 +517,16 @@ async function applyReviewLocked({ inspected, reviewDecisionId, storeAdapter = n
         effect: "apply-exact-user-reviewed-product-model",
       });
       const revision = reviewed.resultingProductModelRevision;
-      if (!canonApplied) atomicWrite(canonFile, json(revision.document));
+      withProjectMutation({ root: projectRoot, storage, scope: "session-recovery" }, () => {
+        const owner = readyProject(projectRoot, "document-change Canon publication");
+        assertAuthorityMutable(owner);
+        if (owner.project.projectId !== inspected.project.projectId) fail("Document application Project identity changed.", "DOCUMENT_CHANGE_PRODUCT_CANON_DRIFT");
+        const latest = readProductModelCanon({ storage, projectRoot }).model;
+        if (latest.productModelId !== currentCanon.model.productModelId || latest.productModelHash !== currentCanon.model.productModelHash) {
+          fail("Product Canon changed during document application preparation; preserve it.", "DOCUMENT_CHANGE_PRODUCT_CANON_DRIFT");
+        }
+        if (!canonApplied) atomicWrite(canonFile, json(revision.document));
+      });
       const common = {
         root: projectRoot,
         persist: false,
@@ -565,7 +575,7 @@ async function applyReviewLocked({ inspected, reviewDecisionId, storeAdapter = n
       canonChanged: review.promotionAuthority,
     }, storage), review, candidateSet, inspected.project.projectId, storage);
     const persistedReceipt = persistImmutable(applicationFile(projectRoot, receipt.applicationReceiptId, storage), receipt, (value) => verifyDocumentChangeApplicationReceipt(value, review, candidateSet, inspected.project.projectId, storage), "Document-change application receipt");
-    const auditCurrent = inspectWorldModel({ root: projectRoot, storeAdapter: selectedStore });
+    const auditCurrent = (await inspectWorldModel({ root: projectRoot, storeAdapter: selectedStore }));
     const audit = auditCurrent.snapshot.temporalProvenanceGraph.documentChangeProjection.applicationReceiptIds.includes(receipt.applicationReceiptId)
       && auditCurrent.snapshot.temporalProvenanceGraph.parentSourceSnapshotIds.includes(afterWorld.temporalProvenanceGraph.sourceSnapshotId)
       ? { snapshot: auditCurrent.snapshot } : await buildDocumentAuditChild({
@@ -587,7 +597,7 @@ async function applyReviewLocked({ inspected, reviewDecisionId, storeAdapter = n
     });
     const auditProjection = resumeReviewedMarkdownProjection({ storage, projectRoot, graph: audit.snapshot.temporalProvenanceGraph, adapter: selectedDocuments,
       baseProjectionId: receipt.after.documentProjectionId });
-    const verifiedWorld = inspectWorldModel({ root: projectRoot, storeAdapter: selectedStore });
+    const verifiedWorld = (await inspectWorldModel({ root: projectRoot, storeAdapter: selectedStore }));
     if (verifiedWorld.status !== "current" || verifiedWorld.snapshot.worldModelId !== audit.snapshot.worldModelId) {
       fail("Applied document review did not leave a current verified World Model.", "DOCUMENT_CHANGE_APPLICATION_WORLD_MISMATCH");
     }
@@ -610,10 +620,10 @@ async function applyReviewLocked({ inspected, reviewDecisionId, storeAdapter = n
 export async function applyDocumentChangeReview({ root = ".", reviewDecisionId, storeAdapter = null, graphProjectionAdapter = null, documentProjectionAdapter = null, computeAdapter = null } = {}) {
   const inspected = readyProject(root, "document-change review application");
   const storage = inspected.storage;
-  return withRefreshWriterLease({
+  return (await withRefreshWriterLease({
     storage, projectRoot: inspected.project.projectRoot,
     projectId: inspected.project.projectId,
-  }, (writerLease) => applyReviewLocked({ inspected, reviewDecisionId: requiredText(reviewDecisionId, "reviewDecisionId"), storeAdapter, graphProjectionAdapter, documentProjectionAdapter, computeAdapter, writerLease }));
+  }, async (writerLease) => (await applyReviewLocked({ inspected, reviewDecisionId: requiredText(reviewDecisionId, "reviewDecisionId"), storeAdapter, graphProjectionAdapter, documentProjectionAdapter, computeAdapter, writerLease }))));
 }
 
 export async function reviewDocumentChanges({
@@ -631,7 +641,7 @@ export async function reviewDocumentChanges({
 } = {}) {
   const inspected = readyProject(root, "document-change review");
   const storage = inspected.storage;
-  return withRefreshWriterLease({
+  return (await withRefreshWriterLease({
     storage, projectRoot: inspected.project.projectRoot,
     projectId: inspected.project.projectId,
   }, async (writerLease) => {
@@ -641,7 +651,7 @@ export async function reviewDocumentChanges({
     const candidateSet = readDocumentChangeCandidateSet({ storage, projectRoot, id: requiredText(candidateSetId, "candidateSetId") }).candidateSet;
     const normalizedDisposition = requiredText(disposition, "Review disposition").toLowerCase();
     if (!["accept-all", "accept-selection", "reject"].includes(normalizedDisposition)) fail("Document-change review disposition is invalid.", "INVALID_DOCUMENT_CHANGE_REVIEW_DISPOSITION");
-    const historical = findWorldModelSnapshot({ root: projectRoot, graphSnapshotId: candidateSet.graphSnapshotId, storeAdapter });
+    const historical = (await findWorldModelSnapshot({ root: projectRoot, graphSnapshotId: candidateSet.graphSnapshotId, storeAdapter }));
     const candidateWorld = historical.matches.find((snapshot) => snapshot.temporalProvenanceGraph.graphSnapshotHash === candidateSet.graphSnapshotHash
       && snapshot.temporalProvenanceGraph.sourceSnapshotId === candidateSet.sourceSnapshotId);
     if (!candidateWorld) fail("DocumentChangeCandidateSet base GraphSnapshot is unavailable or divergent.", "DOCUMENT_CHANGE_CANDIDATE_GRAPH_MISSING");
@@ -669,7 +679,7 @@ export async function reviewDocumentChanges({
         || priorReview.resultingProductModelHash !== proposedHash) {
         fail("Document candidate already has a different explicit decision.", "DOCUMENT_CHANGE_ALREADY_REVIEWED");
       }
-      return apply ? applyReviewLocked({ inspected, reviewDecisionId: priorReview.reviewDecisionId, storeAdapter, graphProjectionAdapter, documentProjectionAdapter, computeAdapter, writerLease })
+      return apply ? (await applyReviewLocked({ inspected, reviewDecisionId: priorReview.reviewDecisionId, storeAdapter, graphProjectionAdapter, documentProjectionAdapter, computeAdapter, writerLease }))
         : { status: "reviewed-awaiting-application", reviewDecision: priorReview };
     }
     verifyDocumentChangeCandidateSetAgainstPublished({ storage, projectRoot, candidateSet, adapter: documentProjectionAdapter });
@@ -704,11 +714,11 @@ export async function reviewDocumentChanges({
     }
     persistImmutable(reviewFile(projectRoot, review.reviewDecisionId, storage), review, (value) => verifyDocumentChangeReviewDecision(value, candidateSet, inspected.project.projectId, storage), "Document-change ReviewDecision");
     if (!apply) return { status: "reviewed-awaiting-application", reviewDecision: review, productModelRevision: productRevision };
-    return applyReviewLocked({ inspected, reviewDecisionId: review.reviewDecisionId, storeAdapter, graphProjectionAdapter, documentProjectionAdapter, computeAdapter, writerLease });
-  });
+    return (await applyReviewLocked({ inspected, reviewDecisionId: review.reviewDecisionId, storeAdapter, graphProjectionAdapter, documentProjectionAdapter, computeAdapter, writerLease }));
+  }));
 }
 
-export function inspectDocumentChangeReviewStatus({ root = ".", candidateSetId } = {}) {
+export async function inspectDocumentChangeReviewStatus({ root = ".", candidateSetId } = {}) {
   const inspected = readyProject(root, "document-change review status");
   const storage = inspected.storage;
   const candidateSet = readDocumentChangeCandidateSet({ storage, projectRoot: inspected.project.projectRoot, id: requiredText(candidateSetId, "candidateSetId") }).candidateSet;
@@ -723,7 +733,7 @@ export function inspectDocumentChangeReviewStatus({ root = ".", candidateSetId }
   let projectionReasonCode = null;
   if (application && canonApplied) {
     try {
-      const world = inspectWorldModel({ root: inspected.project.projectRoot });
+      const world = (await inspectWorldModel({ root: inspected.project.projectRoot }));
       projectionsReady = world.status === "current"
         && world.snapshot.temporalProvenanceGraph.documentChangeProjection.applicationReceiptIds.includes(application.applicationReceiptId)
         && inspectMarkdownProjection({ storage, projectRoot: inspected.project.projectRoot, graph: world.snapshot.temporalProvenanceGraph }).status === "current";

@@ -9,7 +9,7 @@ import { readProductModelCanon } from "./product-model.mjs";
 import { inspectWorldModel } from "./world-model.mjs";
 import { readChangeSet } from "./change-set.mjs";
 import { readObservation } from "./observation-store.mjs";
-import { withProjectMutation } from "./project-mutation-lock.mjs";
+import { withProjectMutation, withProjectMutationAsync } from "./project-mutation-lock.mjs";
 import {
   CONFORMANCE_PROTOCOL_VERSION,
   HEAD_CONFORMANCE_MAINTENANCE_AUTHORITY,
@@ -91,9 +91,9 @@ function findProductEntity(model, anchor) {
   return map[anchor.entityKind]?.find((item) => item.key === anchor.entityKey) || null;
 }
 
-function worldState(projectRoot) {
+async function worldState(projectRoot) {
   try {
-    const inspection = inspectWorldModel({ root: projectRoot });
+    const inspection = (await inspectWorldModel({ root: projectRoot }));
     const snapshot = inspection.snapshot;
     return {
       status: inspection.status,
@@ -111,9 +111,9 @@ function worldState(projectRoot) {
   }
 }
 
-function currentBaseline(projectRoot, storage) {
+async function currentBaseline(projectRoot, storage) {
   const canon = readProductModelCanon({ projectRoot, storage });
-  const world = worldState(projectRoot);
+  const world = (await worldState(projectRoot));
   return {
     canon,
     world,
@@ -319,9 +319,9 @@ function findingGraphProjection(finding, dispositions, resolutions) {
   return { ...payload, projectionId: `conformance-finding-graph-${projectionHash.slice(0, 24)}`, projectionHash };
 }
 
-export function prepareConformanceAssessment({ root = ".", limit = 32, projectionId = "", cursor = "" } = {}) {
+export async function prepareConformanceAssessment({ root = ".", limit = 32, projectionId = "", cursor = "" } = {}) {
   const inspected = readyProject(root, "Conformance preparation");
-  const current = currentBaseline(inspected.project.projectRoot, inspected.storage);
+  const current = (await currentBaseline(inspected.project.projectRoot, inspected.storage));
   const entities = productEntities(current.canon.model);
   const boundedLimit = Number(limit);
   if (!Number.isInteger(boundedLimit) || boundedLimit < 1 || boundedLimit > MAX_PAGE) fail(`Conformance preparation limit must be between 1 and ${MAX_PAGE}.`, "INVALID_CONFORMANCE_PAGE_LIMIT");
@@ -362,10 +362,10 @@ function assertCurrentBaseline(expected, current) {
   if (conformanceCanonicalJson(expected) !== conformanceCanonicalJson(current.baseline)) fail(`Conformance baseline changed; rerun ${publicToolName("head_conformance_prepare")} and retry the read-only semantic assessment. Ordinary work remains available.`, "CONFORMANCE_BASELINE_DRIFT");
 }
 
-export function proposeConformanceFindings({ root = ".", baseline, findings } = {}) {
+export async function proposeConformanceFindings({ root = ".", baseline, findings } = {}) {
   const inspected = readyProject(root, "Conformance proposal");
   if (!Array.isArray(findings) || findings.length < 1 || findings.length > 64) fail("Conformance proposal requires one through 64 candidates.", "INVALID_CONFORMANCE_FINDING_COUNT");
-  const current = currentBaseline(inspected.project.projectRoot, inspected.storage);
+  const current = (await currentBaseline(inspected.project.projectRoot, inspected.storage));
   assertCurrentBaseline(baseline, current);
   if (!productEntities(current.canon.model).length) fail("Conformance assessment requires an existing Product Canon, but ordinary HEAD work remains available.", "CONFORMANCE_PRODUCT_CANON_UNAVAILABLE");
   const existingArtifacts = readArtifacts(inspected.project.projectRoot, inspected.project.projectId, inspected.storage);
@@ -403,7 +403,7 @@ export function readConformanceFinding({ root = ".", findingId } = {}) {
   return { status: "verified", finding, dispositions, resolutions, latestDisposition: tail ? { ...tail, actor: tail.authority === formatForVerifiedOwner(inspected.storage).value(HEAD_CONFORMANCE_MAINTENANCE_AUTHORITY) ? formatForVerifiedOwner(inspected.storage).roleField : "user" } : null, graphProjection: findingGraphProjection(finding, dispositions, resolutions) };
 }
 
-export function inspectConformanceQueue({ root = ".", status = "all", riskHint = "", limit = 25, projectionId = "", cursor = "", canonAnchor = null } = {}) {
+export async function inspectConformanceQueue({ root = ".", status = "all", riskHint = "", limit = 25, projectionId = "", cursor = "", canonAnchor = null } = {}) {
   const inspected = readyProject(root, "Conformance queue inspection");
   const selectedCanon = canonAnchor === null ? null : normalizeCanonAnchor(canonAnchor);
   if (!new Set(["all", "open", "acknowledged", "deferred", "action-requested", "needs-recheck", "resolution-proposed", "closed-dismissed", "closed-resolved"]).has(status)) fail("Conformance queue status filter is invalid.", "INVALID_CONFORMANCE_QUEUE_FILTER");
@@ -411,7 +411,7 @@ export function inspectConformanceQueue({ root = ".", status = "all", riskHint =
   const boundedLimit = Number(limit);
   if (!Number.isInteger(boundedLimit) || boundedLimit < 1 || boundedLimit > MAX_PAGE) fail(`Conformance queue limit must be between 1 and ${MAX_PAGE}.`, "INVALID_CONFORMANCE_PAGE_LIMIT");
   const artifacts = readArtifacts(inspected.project.projectRoot, inspected.project.projectId, inspected.storage);
-  const current = currentBaseline(inspected.project.projectRoot, inspected.storage);
+  const current = (await currentBaseline(inspected.project.projectRoot, inspected.storage));
   const selectedFindings = artifacts.findings.filter((finding) => !selectedCanon || (finding.canonAnchor.entityKind === selectedCanon.entityKind && finding.canonAnchor.entityKey === selectedCanon.entityKey));
   const rows = selectedFindings.map((finding) => {
     const tail = artifacts.tails.get(finding.findingId);
@@ -453,11 +453,11 @@ export function inspectConformanceQueue({ root = ".", status = "all", riskHint =
   };
 }
 
-export function recordConformanceDisposition(options = {}) {
-  return withProjectMutation({ root: options.root ?? ".", scope: "conformance-disposition" }, () => recordConformanceDispositionLocked(options));
+export async function recordConformanceDisposition(options = {}) {
+  return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "conformance-disposition" }, async () => (await recordConformanceDispositionLocked(options))));
 }
 
-function recordConformanceDispositionLocked({ root = ".", findingId, disposition, rationale, deferUntil = null, resolutionId = null, confirmUserDisposition = false, actor = "user" } = {}) {
+async function recordConformanceDispositionLocked({ root = ".", findingId, disposition, rationale, deferUntil = null, resolutionId = null, confirmUserDisposition = false, actor = "user" } = {}) {
   if (!["user", "head", "lode"].includes(actor)) fail("Conformance disposition actor is invalid.", "INVALID_CONFORMANCE_DISPOSITION");
   if (actor === "user" && confirmUserDisposition !== true) fail("User disposition requires explicit user confirmation; HEAD may acknowledge/defer honestly as maintenance.", "CONFORMANCE_USER_CONFIRMATION_REQUIRED");
   if (actor !== "user" && (confirmUserDisposition !== false || !["acknowledge", "defer"].includes(disposition) || resolutionId !== null)) fail("HEAD maintenance is acknowledge/defer only and must not claim user confirmation.", "CONFORMANCE_HEAD_MAINTENANCE_ONLY");
@@ -472,7 +472,7 @@ function recordConformanceDispositionLocked({ root = ".", findingId, disposition
   const previous = artifacts.tails.get(findingId);
   if (previous && previous.authority === authority && previous.disposition === disposition && previous.rationale === String(rationale || "").trim() && previous.deferUntil === normalizedDeferUntil && previous.resolutionId === (resolution?.resolutionId || null)) return { status: "existing", disposition: previous, ordinaryWorkBlocked: false };
   if (resolution) {
-    const current = currentBaseline(inspected.project.projectRoot, inspected.storage);
+    const current = (await currentBaseline(inspected.project.projectRoot, inspected.storage));
     if (resolution.assessment !== "appears-resolved" || conformanceCanonicalJson(resolution.baseline) !== conformanceCanonicalJson(current.baseline)) fail("Conformance resolution is not an exact current appears-resolved candidate.", "CONFORMANCE_RESOLUTION_STALE");
     try {
       verifyEvidenceAnchors({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, baseline: resolution.baseline, world: current.world, anchors: resolution.evidenceAnchors });
@@ -486,12 +486,12 @@ function recordConformanceDispositionLocked({ root = ".", findingId, disposition
   return { ...persisted, disposition: receipt, ordinaryWorkBlocked: false, authority: { disposition: "P3-exact-finding-evidence", executionAuthorized: false, productCanonMutated: false, recoveryDirectionMutated: false } };
 }
 
-export function proposeConformanceResolution({ root = ".", findingId, baseline, evidenceAnchors, assessment, rationale } = {}) {
+export async function proposeConformanceResolution({ root = ".", findingId, baseline, evidenceAnchors, assessment, rationale } = {}) {
   const inspected = readyProject(root, "Conformance resolution proposal");
   const artifacts = readArtifacts(inspected.project.projectRoot, inspected.project.projectId, inspected.storage);
   const finding = artifacts.findingsById.get(findingId);
   if (!finding) fail(`Conformance Finding not found: ${findingId}`, "CONFORMANCE_FINDING_NOT_FOUND");
-  const current = currentBaseline(inspected.project.projectRoot, inspected.storage);
+  const current = (await currentBaseline(inspected.project.projectRoot, inspected.storage));
   assertCurrentBaseline(baseline, current);
   const disclosures = verifyEvidenceAnchors({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, baseline, world: current.world, anchors: evidenceAnchors });
   const resolution = createConformanceResolutionCandidate({ projectId: inspected.project.projectId, sessionId: inspected.state.sessionId, finding, baseline, evidenceAnchors, assessment, rationale, disclosures }, inspected.storage);

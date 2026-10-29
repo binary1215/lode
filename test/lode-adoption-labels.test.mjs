@@ -11,7 +11,7 @@ import { runCommand } from "../scripts/lode.mjs";
 
 const source = path.resolve(import.meta.dirname, "..");
 
-test("current CLI input diagnostics use Lode while protected wire identities stay unchanged", () => {
+test("current CLI input diagnostics use Lode while protected wire identities stay unchanged", async () => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-input-labels-")));
   try {
     initializeProject({ root, pluginRoot: source, runtimes: ["codex"] });
@@ -21,7 +21,7 @@ test("current CLI input diagnostics use Lode while protected wire identities sta
       [["managed-maintenance", "conformance-resolution-propose", root, "--input", bad], "Conformance provider-Lode resolution"],
       [["compaction-lifecycle-step", root, "--input", bad], "Lode compaction direction"],
       [["context-preview", root, "--task", "Inspect fixture", "--evidence-needs", bad], "Lode evidence needs"],
-    ]) assert.throws(() => runCommand(args), error => error.message.includes(label));
+    ]) (await assert.rejects(async () => (await runCommand(args)), error => error.message.includes(label)));
   } finally { assert.equal(path.dirname(root), fs.realpathSync(os.tmpdir())); fs.rmSync(root, { recursive: true, force: true }); }
 });
 test("the twelve accepted current display labels use Lode and keep compatibility error codes", () => {
@@ -42,7 +42,7 @@ test("the twelve accepted current display labels use Lode and keep compatibility
   for (const tool of catalogTools) checkProse(tool);
 });
 
-test("not-initialized paths preserve exact error identity with the corrected display name", t => {
+test("not-initialized paths preserve exact error identity with the corrected display name", async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-label-errors-")));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   assert.throws(() => withProjectMutation({ root, scope: "fixture" }, () => assert.fail("not reached")), {
@@ -51,7 +51,7 @@ test("not-initialized paths preserve exact error identity with the corrected dis
   assert.throws(() => readContextCapsule({ root, capsuleId: `capsule-${"a".repeat(24)}` }), {
     code: "NOT_INITIALIZED", message: "Lode Agent Core is not initialized.",
   });
-  assert.throws(() => compileContext({ root, task: "synthetic fixture", budget: 32768, persist: false }), {
+  (await assert.rejects(async () => (await compileContext({ root, task: "synthetic fixture", budget: 32768, persist: false })), {
     code: "PROJECT_NOT_READY", message: "Project must be ready to compile context; current status: not_initialized.",
-  });
+  }));
 });

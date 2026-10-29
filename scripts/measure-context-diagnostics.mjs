@@ -90,7 +90,7 @@ function dependencySummary(root) {
 }
 
 // Process-local instrumentation only. It is never installed by the plugin runtime.
-function observePreview(operation) {
+async function observePreview(operation) {
   const originals = new Map();
   const metrics = { readFileSyncCalls: 0, readFileSyncReturnedPayloadBytes: 0, readSyncCalls: 0, readSyncReturnedBytes: 0, filesystemMutationAttempts: 0 };
   const replace = (name, fn) => { originals.set(name, fs[name]); fs[name] = fn; };
@@ -124,7 +124,7 @@ function observePreview(operation) {
     return Reflect.apply(open, fs, [file, flags, ...rest]);
   });
   const start = performance.now();
-  try { return { result: operation(), elapsedMs: performance.now() - start, observedFs: metrics }; }
+  try { return { result: await operation(), elapsedMs: performance.now() - start, observedFs: metrics }; }
   finally { for (const [name, original] of originals) fs[name] = original; }
 }
 
@@ -138,7 +138,7 @@ function percentiles(values) {
   };
 }
 
-export function measureContextDiagnostics({ project = null, task = null, iterations = 5 } = {}) {
+export async function measureContextDiagnostics({ project = null, task = null, iterations = 5 } = {}) {
   if (!Number.isInteger(iterations) || iterations < 1 || iterations > 20) throw new Error("iterations must be an integer from 1 to 20");
   if ((project !== null || task !== null) && (typeof project !== "string" || !project.trim() || typeof task !== "string" || !task.trim())) {
     throw new Error("Provide both --project and --task for optional Context preview measurements.");
@@ -168,7 +168,7 @@ export function measureContextDiagnostics({ project = null, task = null, iterati
   if (project !== null) {
     const samples = [];
     for (let index = 0; index < iterations; index += 1) {
-      const { result, elapsedMs, observedFs } = observePreview(() => previewContextWorkflow({ root: project, task, evidenceNeeds: [] }));
+      const { result, elapsedMs, observedFs } = await observePreview(async () => (await previewContextWorkflow({ root: project, task, evidenceNeeds: [] })));
       const { capsule, workflow } = result;
       samples.push({
         iteration: index + 1, phase: index === 0 ? "first-preview-in-process" : "repeated-preview-in-process",
@@ -209,7 +209,7 @@ if (invokedDirectly) {
         if (!key || args[index + 1] === undefined || Object.hasOwn(options, key)) throw new Error("Unknown, repeated, or incomplete option. Use --help.");
         options[key] = key === "iterations" ? Number(args[index + 1]) : args[index + 1];
       }
-      process.stdout.write(`${JSON.stringify(measureContextDiagnostics(options), null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify(await measureContextDiagnostics(options), null, 2)}\n`);
     }
   } catch (error) {
     process.stderr.write(`${JSON.stringify({ status: "failed", code: error.code || "DIAGNOSTIC_ERROR", message: error.message })}\n`);

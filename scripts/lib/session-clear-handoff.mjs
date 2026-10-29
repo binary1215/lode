@@ -29,6 +29,9 @@ const mapping = value => ["bound", "default"].includes(value?.status) && /^sessi
 const mappingRef = value => ({ status: value.status, sessionId: value.sessionId, revision: value.revision, bindingDigest: value.bindingDigest });
 const result = status => ({ status, authorityPlane: "P5", recoveryAuthority: false, instructionAuthority: false,
   executionReplayAllowed: false, ordinaryWorkBlocked: false });
+// Local, one-use ownership only. Neither serialized hints nor caller IDs can
+// recreate this proof or authorize a reference lookup.
+const promptTransfers = new WeakMap();
 
 function location(root, caller, instance, environment, create) {
   const base = fs.realpathSync(path.resolve(root)), storage = resolveProjectStorage(base);
@@ -140,7 +143,8 @@ export function reconcileNativeClearHandoff({ root, caller, observation, store, 
       if (!start?.observation.instance || !(Date.parse(start.receivedAt) > prior.createdAt)) return result("clear-order-unconfirmed");
       // Consume before binding. A partial P5 commit never becomes an automatic
       // retry or permission to repeat a task/tool effect.
-      writeHint(loc, { ...withoutDigest(prior), state: "consumed" }, check);
+      const consumed = { ...withoutDigest(prior), state: "consumed" };
+      writeHint(loc, consumed, check);
       if (prior.oldNativeId === caller.nativeSessionId) return result("same-caller-no-handoff");
       const oldCaller = { runtime: "claude", nativeSessionId: prior.oldNativeId, agentId: caller.agentId || null };
       const oldAdapter = createSessionHostAdapter({ ...oldCaller, environment, deadlineAt });
@@ -155,8 +159,47 @@ export function reconcileNativeClearHandoff({ root, caller, observation, store, 
         if (!row || row.key !== prior.endRow.key || row.sequence !== prior.endRow.sequence || sha(row.observation) !== prior.endRow.observationDigest) return result("clear-source-changed");
         check();
         const selected = nextAdapter.select({ root: loc.root, sessionId: old.sessionId, expectedRevision: 0 });
-        return result(selected.retained ? "same-session-link-retained" : "linkage-unconfirmed");
+        const handoff = result(selected.retained ? "same-session-link-retained" : "linkage-unconfirmed");
+        if (selected.retained && mapping(selected.binding)) promptTransfers.set(handoff, {
+          root: loc.root, owner: loc.owner, directory: loc.directory, instance,
+          oldCaller, nextCaller: { runtime: caller.runtime, nativeSessionId: caller.nativeSessionId, agentId: caller.agentId || null },
+          oldMapping: mappingRef(old), nextMapping: mappingRef(selected.binding), endRow: prior.endRow,
+          consumedDigest: sha(consumed), store, expiresAt: Math.min(prior.expiresAt, Date.now() + 10_000),
+        });
+        return handoff;
       });
     });
   } catch { return result("handoff-unavailable"); }
+}
+
+// Private Host composition, not a Core/MCP API. Long prompt ACL work happens
+// outside binding/clear locks. The destination commit alone reacquires the
+// existing clear lock then binding CAS, after the caller's sorted prompt locks.
+export function withVerifiedClearPromptTransfer({ handoff, root, caller, environment = process.env, deadlineAt } = {}, transfer) {
+  const proof = handoff && promptTransfers.get(handoff);
+  if (!proof) return { transferred: false, reasonCode: "CLEAR_REFERENCE_UNVERIFIED" };
+  promptTransfers.delete(handoff);
+  try {
+    const check = () => {
+      if (!Number.isSafeInteger(deadlineAt) || Date.now() >= deadlineAt || Date.now() >= proof.expiresAt
+        || !same(proof.nextCaller, { runtime: caller?.runtime, nativeSessionId: caller?.nativeSessionId, agentId: caller?.agentId || null })) fail();
+      const loc = location(root, caller, proof.instance, environment, false);
+      if (!loc || loc.root !== proof.root || loc.directory !== proof.directory || !same(loc.owner, proof.owner)) fail();
+      const hint = readHints(loc).find(row => same(instanceKey(row.instance), instanceKey(proof.instance)));
+      if (hint?.state !== "consumed" || hint.hintDigest !== proof.consumedDigest) fail();
+      for (const [which, expected] of [[proof.oldCaller, proof.oldMapping], [proof.nextCaller, proof.nextMapping]]) {
+        const current = createSessionHostAdapter({ ...which, environment, deadlineAt }).read({ root: proof.root });
+        if (!mapping(current) || !same(mappingRef(current), expected)) fail();
+      }
+      const row = clearRow(proof.store, proof.root, proof.oldCaller, proof.instance);
+      if (!row || !same({ key: row.key, sequence: row.sequence, observationDigest: sha(row.observation) }, proof.endRow)) fail();
+      return loc;
+    };
+    const loc = check();
+    return transfer({ root: proof.root, oldCaller: proof.oldCaller, nextCaller: proof.nextCaller, environment,
+      commit: operation => withLocalMutation({ directory: loc.lock, timeoutMs: 0 }, () =>
+        withProjectMutation({ root: proof.root, scope: "host-session-binding", timeoutMs: Math.max(0, deadlineAt - Date.now()) }, () => {
+          check(); return operation();
+        })) });
+  } catch { return { transferred: false, reasonCode: "CLEAR_REFERENCE_UNAVAILABLE" }; }
 }

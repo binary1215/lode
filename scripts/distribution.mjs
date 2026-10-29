@@ -85,7 +85,7 @@ export async function runDistributionCommand(argv = process.argv.slice(2)) {
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
-  Promise.resolve().then(() => runDistributionCommand()).then((result) => {
+  Promise.resolve().then(async () => (await runDistributionCommand())).then((result) => {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   }).catch((error) => {
     process.stdout.write(`${JSON.stringify({ status: "failed", code: error.code || "HEAD_DISTRIBUTION_ERROR", error: error.message }, null, 2)}\n`);

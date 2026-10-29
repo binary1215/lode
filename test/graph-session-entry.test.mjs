@@ -1,3 +1,4 @@
+import { worldSnapshotFile, graphSnapshotFile, readFixtureSnapshot, writeFixtureSnapshot } from "./helpers/snapshot-storage-fixture.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -62,7 +63,7 @@ test("public session creation preserves the default active Run and unknown effec
   const before = fs.readFileSync(defaultFile, "utf8");
   const [createdA, createdB] = await Promise.all([
     call("head_session_create", { project_root: root, purpose: "Inspect API" }),
-    Promise.resolve().then(() => runCommand(["session-create", root, "--purpose", "Inspect UI"])),
+    Promise.resolve().then(async () => (await runCommand(["session-create", root, "--purpose", "Inspect UI"]))),
   ]);
   assert.notEqual(createdA.sessionId, createdB.sessionId);
   assert.equal(fs.readFileSync(defaultFile, "utf8"), before);
@@ -99,8 +100,8 @@ test("concurrent public MCP awaits and CLI operations keep two Session checkpoin
   const runA = await startCliRun(root, ids[0], "api");
   const runB = await startCliRun(root, ids[1], "ui");
   assert.notEqual(runA.run.runId, runB.run.runId);
-  await Promise.all(ids.map((session_id, index) => call("head_checkpoint_sync", { project_root: root, session_id,
-    expected_recovery_basis_id: runCommand(["checkpoint-basis", root, "--session", session_id]).basis.basisId,
+  await Promise.all(ids.map(async (session_id, index) => call("head_checkpoint_sync", { project_root: root, session_id,
+    expected_recovery_basis_id: (await runCommand(["checkpoint-basis", root, "--session", session_id])).basis.basisId,
     purpose: `${index}: active Run`, approved_decisions: [], current_position: `${index}: active Run`,
     next_expected_result: `${index}: keep working`, open_review_ids: [] })));
   const restored = await Promise.all(ids.map(session_id => call("head_session_restore", { project_root: root, session_id })));
@@ -204,10 +205,10 @@ test("stale intact World evidence stays readable, while tampering and another ro
   assert(retained.summary.freshnessStates["historical-source-bytes"] >= 1);
   assert.equal(retained.authority.executionAuthority, false);
   assert.deepEqual(snapshot(root), before);
-  const snapshotFile = path.join(root, layout.directory, "world-model", "snapshots", `${world.snapshot.worldModelId}.json`);
-  const corrupt = JSON.parse(fs.readFileSync(snapshotFile, "utf8"));
+  const snapshotFile = worldSnapshotFile(root, world.snapshot.worldModelId);
+  const corrupt = readFixtureSnapshot(snapshotFile);
   corrupt.repositoryFingerprint = "tampered";
-  fs.writeFileSync(snapshotFile, JSON.stringify(corrupt));
+  writeFixtureSnapshot(snapshotFile, corrupt);
   const corruptedBefore = snapshot(root);
   const excluded = await runCommand(["graph-query", root, "--anchors", plan.artifact.wholePlanId]);
   assert(excluded.integrity.excluded.some(item => item.layer === "world"));
@@ -270,7 +271,7 @@ test("rejected relationships stored in a retained World remain rejected in graph
     capabilities: [{ key: "answer", name: "Answer", description: "Answer one request." }],
   } });
   await reviewOnboarding({ root, candidateSetId: started.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Approve the exact answer capability." });
-  const current = inspectWorldModel({ root });
+  const current = (await inspectWorldModel({ root }));
   const graph = current.snapshot.temporalProvenanceGraph;
   const source = graph.nodes.find(node => node.kind === "File" && node.path === "source.mjs");
   const product = graph.nodes.find(node => node.kind === "Capability" && node.key === "answer");
@@ -282,7 +283,7 @@ test("rejected relationships stored in a retained World remain rejected in graph
   const candidateId = mapping.candidateSet.candidates[0].candidateId;
   await reviewFeatureMapping({ root, candidateSetId: mapping.candidateSet.candidateSetId,
     disposition: "reject", rationale: "This relationship lacks product evidence." });
-  const rejectedWorld = inspectWorldModel({ root }).snapshot;
+  const rejectedWorld = (await inspectWorldModel({ root })).snapshot;
   fs.appendFileSync(path.join(root, "source.mjs"), "\n// Later source revision\n");
   const before = snapshot(root);
   const discovered = await call("head_project_graph", { project_root: root, anchor_ids: [candidateId], depth: 2,

@@ -22,8 +22,11 @@ Repository World Model은 재구축 가능한 구체화 뷰입니다. Context Co
 
 ```text
 .lode/world-model/current.json                    Warm pointer and change summary
-.lode/world-model/snapshots/world-model-*.json   Hot current / Cold prior snapshots
+.lode/world-model/snapshots/world-model-*.json.gz  New compact + gzip snapshots
+.lode/world-model/snapshots/world-model-*.json     Retained legacy snapshots
 ```
+
+새 로컬 스냅샷은 `.json.gz`를 사용하며 기존 `.json`은 원본을 유지하고 계속 읽을 수 있습니다. 물리 한도·ignore 규칙·읽기 전용 GC 진단은 [스냅샷 저장과 보존](snapshot-storage.md)을 참고하세요.
 
 `current.json`은 Hot 스냅샷을 가리키고 물리 어댑터 설명자를 기록하며 추가·변경·삭제된 경로를 Warm 티어로 기록합니다. 이전 콘텐츠 주소형 스냅샷이 Cold 티어를 이룹니다. 물리 어댑터 설명자는 시맨틱 스냅샷 해시에 포함되지 않으므로, 동일한 정규 입력은 규격을 준수하는 로컬, 메모리 또는 향후 GraphDB 어댑터에서 동일한 World Model ID를 생성합니다.
 

@@ -20,6 +20,7 @@ import { sessionStartContext, runSessionHostHook } from "../scripts/session-host
 import { createNativeObservationStore, normalizeNativeHook, observeNativeHook, projectNativeObservations } from "../scripts/lib/native-session-observations.mjs";
 import { probeClaudeProcesses } from "../scripts/lib/native-session-process.mjs";
 import { localContinuityCommand } from "./helpers/session-continuity-process.mjs";
+import { captureUserPrompt, captureVisibleAssistantReference, prepareUserPromptReference, acknowledgeUserPromptReference, transferNativeClearPromptReference, createUserPromptReferenceOperation } from "../scripts/lib/user-prompt-reference.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, ".."), caller = { runtime: "codex", nativeSessionId: "native-main", agentId: null };
 function fixture(t) {
@@ -58,6 +59,221 @@ const clearEvent = (f, id, ending = false) => ({ hook_event_name: ending ? "Sess
 const clearAdapter = (f, id) => createSessionHostAdapter({ runtime: "claude", nativeSessionId: id, environment: f.environment });
 const hintFile = f => path.join(f.operational, "native-clear-handoffs", fs.readdirSync(path.join(f.operational, "native-clear-handoffs"))[0], "hints.json");
 const clearOptions = (f, id, ending = false) => ({ runtime: "claude", event: clearEvent(f, id, ending), environment: f.environment, processObserver: async () => clearInstance() });
+
+test("paired clear carries the existing masked reference to a different native ID with prior-conversation provenance only once", async t => {
+  const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Synthetic clear prompt continuity" });
+  select(clearAdapter(f, "old-prompt-native"), f.root, chosen.sessionId);
+  const source = { root: f.root, runtime: "claude", nativeSessionId: "old-prompt-native", environment: f.environment };
+  assert.equal(captureUserPrompt({ ...source, messageId: "prior-message", text: "EarlierPromptCrossNative sk-syntheticsecretvalue" }).captured, true);
+  assert.equal(captureVisibleAssistantReference({ ...source, text: "Unapproved earlier proposal" }).captured, true);
+  const originals = tree(f.root), promptDirectory = path.join(f.operational, "user-prompt-reference"), sourceFiles = tree(promptDirectory);
+  await runSessionHostHook(clearOptions(f, "old-prompt-native", true));
+  const output = await runSessionHostHook(clearOptions(f, "new-prompt-native")), text = output.hookSpecificOutput.additionalContext;
+  assert(text.includes("EarlierPromptCrossNative")); assert(!text.includes("sk-syntheticsecretvalue"));
+  assert(text.includes('"conversationOrigin":"previous-native-conversation"'));
+  assert(text.includes('"originalMessageId":"prior-message"')); assert(text.includes('"approval":"not-inferred"'));
+  assert(text.includes("Unapproved earlier proposal"));
+  assert.deepEqual(tree(promptDirectory), sourceFiles, "The old record remains unchanged; only the delivered destination is acknowledged");
+  const replay = await runSessionHostHook(clearOptions(f, "new-prompt-native"));
+  assert(!replay.hookSpecificOutput.additionalContext.includes("EarlierPromptCrossNative"));
+  assert.deepEqual(tree(promptDirectory), sourceFiles); assert.deepEqual(tree(f.root), originals);
+});
+
+
+// These are synthetic Hook/direct-capture contracts, not actual Claude UI or
+// model receipt evidence. A clear retry is explicitly requested below.
+test("paired clear separates inherited and current prompts with the same message ID while merging current chunks", async t => {
+  const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Synthetic message origin boundary" });
+  select(clearAdapter(f, "old-origin"), f.root, chosen.sessionId);
+  const source = { root: f.root, runtime: "claude", nativeSessionId: "old-origin", environment: f.environment };
+  const receiver = { ...source, nativeSessionId: "new-origin" };
+  assert(captureUserPrompt({ ...source, messageId: "same-id", text: "Inherited earlier request" }).captured);
+  await runSessionHostHook(clearOptions(f, "old-origin", true));
+  await assert.rejects(runSessionHostHook({ ...clearOptions(f, "new-origin"), deliver() { throw new Error("synthetic local delivery failure"); } }), /synthetic local delivery failure/);
+  assert.equal(prepareUserPromptReference(receiver), null, "An unfrozen inherited reference is not injected on ordinary requests");
+  assert(captureUserPrompt({ ...receiver, messageId: "same-id", text: "Current request first chunk" }).captured);
+  assert(captureUserPrompt({ ...receiver, messageId: "same-id", text: "Current request second chunk" }).captured);
+  const prepared = prepareUserPromptReference({ ...receiver, force: true }); assert(prepared);
+  const rows = prepared.text.split("\n").filter(line => /^\d+\. /.test(line)).map(line => JSON.parse(line.replace(/^\d+\. /, "")));
+  assert.equal(rows.length, 2, "Only chunks within the current conversation merge");
+  assert.equal(rows[0].hostDeliveredPrompt, "Inherited earlier request");
+  assert.equal(rows[0].conversationOrigin, "previous-native-conversation"); assert.equal(rows[0].originalMessageId, "same-id");
+  assert.equal(rows[1].hostDeliveredPrompt, "Current request first chunk\nCurrent request second chunk");
+  assert.equal(rows[1].conversationOrigin, undefined); assert.equal(rows[1].originalMessageId, undefined);
+  assert(acknowledgeUserPromptReference(prepared));
+});
+
+test("paired clear retains a failed or over-limit copy for an explicit forced reader without re-copy or rebinding", async t => {
+  for (const failure of ["delivery", "output-limit"]) await t.test(failure, async t => {
+    const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Synthetic retained reference retry" });
+    select(clearAdapter(f, "old-retry"), f.root, chosen.sessionId);
+    const source = { root: f.root, runtime: "claude", nativeSessionId: "old-retry", environment: f.environment };
+    const receiver = { ...source, nativeSessionId: "new-retry" }, prompt = "Earlier bounded retry reference";
+    assert(captureUserPrompt({ ...source, messageId: "earlier-retry-message", text: prompt }).captured);
+    const directory = path.join(f.operational, "user-prompt-reference"), original = tree(directory);
+    await runSessionHostHook(clearOptions(f, "old-retry", true));
+    if (failure === "delivery") {
+      let attempted = false;
+      await assert.rejects(runSessionHostHook({ ...clearOptions(f, "new-retry"), deliver(context) {
+        attempted = true; assert(context.hookSpecificOutput.additionalContext.includes(prompt)); throw new Error("synthetic rejected sink");
+      } }), /synthetic rejected sink/); assert(attempted);
+    } else {
+      const observed = await observeNativeHook(clearOptions(f, "new-retry"));
+      assert(observed.clearHandoff);
+      const deadlineAt = Date.now() + 10_000, operation = createUserPromptReferenceOperation({ deadlineAt });
+      assert.equal(transferNativeClearPromptReference({ handoff: observed.clearHandoff, root: f.root, deadlineAt, operation,
+        caller: { runtime: "claude", nativeSessionId: "new-retry", agentId: null }, environment: f.environment }).transferred, true);
+      assert.equal(prepareUserPromptReference({ ...receiver, force: true, additionalContext: "full", limit: 4 }), null);
+    }
+    const retained = tree(directory); assert.equal(retained.length, original.length + 1);
+    assert.equal(prepareUserPromptReference(receiver), null, "Default reader is deliberately not a retry");
+    const binding = clearAdapter(f, "new-retry").read({ root: f.root }), handoffs = tree(path.join(f.operational, "native-clear-handoffs"));
+    const forced = prepareUserPromptReference({ ...receiver, force: true }); assert(forced?.text.includes(prompt));
+    let delivered = false;
+    const retry = await runSessionHostHook({ ...clearOptions(f, "new-retry"), deliver(context) {
+      delivered = true; assert(context.hookSpecificOutput.additionalContext.includes(prompt));
+      assert.deepEqual(tree(directory), retained, "The forced retry reads the existing destination generation");
+    } });
+    assert(delivered); assert.equal(retry.referenceTransfer, undefined, "No new clear proof or copy on explicit retry");
+    assert.deepEqual(clearAdapter(f, "new-retry").read({ root: f.root }), binding);
+    assert.deepEqual(tree(path.join(f.operational, "native-clear-handoffs")), handoffs);
+    assert.deepEqual(tree(directory), original, "Successful local retry acknowledges only destination; old source stays unchanged");
+    const replay = await runSessionHostHook(clearOptions(f, "new-retry"));
+    assert(!replay.hookSpecificOutput.additionalContext.includes(prompt)); assert.deepEqual(tree(directory), original);
+  });
+});
+
+
+test("paired clear reference proof rejects forged, stale and mismatched scopes without changing the selected Session", async t => {
+  for (const variant of ["forged", "expired", "caller", "agent", "project", "old-selection", "new-selection"]) await t.test(variant, async t => {
+    const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Synthetic clear scope boundary" });
+    select(clearAdapter(f, "scope-old"), f.root, chosen.sessionId);
+    assert(captureUserPrompt({ root: f.root, runtime: "claude", nativeSessionId: "scope-old", text: "Scope-bounded earlier reference", environment: f.environment }).captured);
+    const directory = path.join(f.operational, "user-prompt-reference"), original = tree(directory);
+    await runSessionHostHook(clearOptions(f, "scope-old", true));
+    const observed = await observeNativeHook(clearOptions(f, "scope-new")); assert(observed.clearHandoff);
+    let root = f.root, caller = { runtime: "claude", nativeSessionId: "scope-new", agentId: null };
+    if (variant === "caller") caller.nativeSessionId = "unrelated-native";
+    if (variant === "agent") caller.agentId = "unrelated-agent";
+    if (variant === "project") root = fixture(t).root;
+    if (variant.endsWith("selection")) {
+      const other = createHeadSession({ root: f.root, purpose: "User explicitly changed selection" });
+      select(clearAdapter(f, variant === "old-selection" ? "scope-old" : "scope-new"), f.root, other.sessionId);
+    }
+    const before = tree(f.root), bound = clearAdapter(f, "scope-new").read({ root: f.root });
+    const deadlineAt = Date.now() + (variant === "expired" ? -1 : 10_000);
+    const options = { root, caller, environment: f.environment, deadlineAt,
+      operation: createUserPromptReferenceOperation({ deadlineAt }),
+      handoff: variant === "forged" ? { ...observed.clearHandoff } : observed.clearHandoff,
+      oldNativeId: "scope-old" };
+    assert.equal(transferNativeClearPromptReference(options).transferred, false);
+    assert.deepEqual(tree(directory), original); assert.deepEqual(tree(f.root), before);
+    assert.deepEqual(clearAdapter(f, "scope-new").read({ root: f.root }), bound);
+    if (variant !== "forged") assert.equal(transferNativeClearPromptReference({ ...options, deadlineAt: Date.now() + 10_000 }).reasonCode, "CLEAR_REFERENCE_UNVERIFIED");
+  });
+});
+
+test("paired clear never overwrites an existing receiver reference, including an empty file", async t => {
+  for (const empty of [false, true]) await t.test(empty ? "empty" : "current-prompt", async t => {
+    const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Synthetic existing receiver" });
+    select(clearAdapter(f, "exists-old"), f.root, chosen.sessionId);
+    for (const [id, text] of [["exists-old", "Earlier source"], ["exists-new", "Current receiver prompt"]]) {
+      assert(captureUserPrompt({ root: f.root, runtime: "claude", nativeSessionId: id, text, environment: f.environment }).captured);
+    }
+    const directory = path.join(f.operational, "user-prompt-reference");
+    if (empty) for (const name of fs.readdirSync(directory)) {
+      const file = path.join(directory, name);
+      if (fs.readFileSync(file, "utf8").includes("Current receiver prompt")) fs.writeFileSync(file, "");
+    }
+    const before = tree(directory);
+    await runSessionHostHook(clearOptions(f, "exists-old", true));
+    const observed = await observeNativeHook(clearOptions(f, "exists-new")), deadlineAt = Date.now() + 10_000;
+    const result = transferNativeClearPromptReference({ handoff: observed.clearHandoff, root: f.root,
+      caller: { runtime: "claude", nativeSessionId: "exists-new", agentId: null }, environment: f.environment, deadlineAt,
+      operation: createUserPromptReferenceOperation({ deadlineAt }) });
+    assert.equal(result.reasonCode, "CLEAR_REFERENCE_DESTINATION_EXISTS"); assert.deepEqual(tree(directory), before);
+    assert.equal(clearAdapter(f, "exists-new").read({ root: f.root }).sessionId, chosen.sessionId);
+  });
+});
+
+test("paired clear rejects a changed source generation at publication even with unchanged revision", async t => {
+  const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Synthetic source generation race" });
+  select(clearAdapter(f, "race-old"), f.root, chosen.sessionId);
+  assert(captureUserPrompt({ root: f.root, runtime: "claude", nativeSessionId: "race-old", text: "Original generation", environment: f.environment }).captured);
+  const directory = path.join(f.operational, "user-prompt-reference"), source = path.join(directory, fs.readdirSync(directory)[0]);
+  await runSessionHostHook(clearOptions(f, "race-old", true));
+  const observed = await observeNativeHook(clearOptions(f, "race-new")), deadlineAt = Date.now() + 10_000;
+  const write = fs.writeFileSync; let changed = false;
+  t.mock.method(fs, "writeFileSync", function(file, ...args) {
+    if (!changed && typeof file === "number" && String(args[0]).includes('"previousConversation":true')) {
+      changed = true; write(source, fs.readFileSync(source, "utf8").replace("Original generation", "Modified generation"));
+    }
+    return write.call(this, file, ...args);
+  });
+  const result = transferNativeClearPromptReference({ handoff: observed.clearHandoff, root: f.root,
+    caller: { runtime: "claude", nativeSessionId: "race-new", agentId: null }, environment: f.environment, deadlineAt,
+    operation: createUserPromptReferenceOperation({ deadlineAt }) });
+  assert(changed); assert.equal(result.transferred, false); assert.equal(result.created, false);
+  assert.deepEqual(fs.readdirSync(directory), [path.basename(source)]);
+  assert.equal(clearAdapter(f, "race-new").read({ root: f.root }).sessionId, chosen.sessionId);
+});
+
+
+test("paired clear publication and acknowledgement failures preserve independent receiver state", async t => {
+  for (const variant of ["destination-race", "stage-unlink", "deadline", "new-capture"]) await t.test(variant, async t => {
+    const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Synthetic bounded publication failures" });
+    select(clearAdapter(f, "publish-old"), f.root, chosen.sessionId);
+    assert(captureUserPrompt({ root: f.root, runtime: "claude", nativeSessionId: "publish-old", text: "Original publication reference", environment: f.environment }).captured);
+    const directory = path.join(f.operational, "user-prompt-reference"), originals = tree(directory);
+    const receiver = { root: f.root, runtime: "claude", nativeSessionId: "publish-new", environment: f.environment };
+    await runSessionHostHook(clearOptions(f, "publish-old", true));
+    if (variant === "new-capture") {
+      await runSessionHostHook({ ...clearOptions(f, "publish-new"), deliver(context) {
+        assert(context.hookSpecificOutput.additionalContext.includes("Original publication reference"));
+        assert(captureUserPrompt({ ...receiver, text: "New current request during local delivery" }).captured);
+      } });
+      const retained = prepareUserPromptReference({ ...receiver, force: true });
+      assert(retained?.text.includes("New current request during local delivery"));
+      assert(retained.text.includes("Original publication reference")); assert(acknowledgeUserPromptReference(retained));
+    } else {
+      const observed = await observeNativeHook(clearOptions(f, "publish-new")), deadlineAt = Date.now() + 10_000;
+      const operation = createUserPromptReferenceOperation({ deadlineAt });
+      const link = fs.linkSync, unlink = fs.unlinkSync; let changed = false, linked = false;
+      if (variant === "destination-race") t.mock.method(fs, "linkSync", function(from, to) {
+        changed = true; fs.writeFileSync(to, "Existing concurrent receiver bytes", { flag: "wx", mode: 0o600 });
+        return link.call(this, from, to);
+      });
+      if (variant === "stage-unlink") {
+        t.mock.method(fs, "linkSync", function(...args) { const value = link.apply(this, args); linked = true; return value; });
+        t.mock.method(fs, "unlinkSync", function(file) {
+          if (linked && !changed && String(file).endsWith(".tmp")) { changed = true; throw Object.assign(new Error("Synthetic stage unlink failure"), { code: "EIO" }); }
+          return unlink.call(this, file);
+        });
+      }
+      const result = transferNativeClearPromptReference({ handoff: observed.clearHandoff, root: f.root,
+        caller: { runtime: "claude", nativeSessionId: "publish-new", agentId: null }, environment: f.environment, deadlineAt, operation });
+      if (variant === "destination-race") {
+        assert(changed); assert.equal(result.transferred, false); assert.equal(result.created, false);
+        const receiverFiles = tree(directory).filter(([name]) => !originals.some(([old]) => old === name)); assert.equal(receiverFiles.length, 1);
+        assert.equal(fs.readFileSync(path.join(directory, receiverFiles[0][0]), "utf8"), "Existing concurrent receiver bytes");
+      } else {
+        assert.equal(result.created, true);
+        assert.equal(result.transferred, variant === "deadline");
+        if (variant === "stage-unlink") { assert(changed); assert.equal(result.reasonCode, "CLEAR_REFERENCE_CREATED_UNCONFIRMED"); }
+        const prepared = prepareUserPromptReference({ ...receiver, force: true, operation }); assert(prepared);
+        if (variant === "deadline") {
+          const now = Date.now; t.mock.method(Date, "now", () => now() + 11_000);
+          assert.equal(acknowledgeUserPromptReference(prepared), false, "Acknowledgement shares the expired operation budget");
+          t.mock.restoreAll();
+        }
+        const retry = prepareUserPromptReference({ ...receiver, force: true }); assert(retry?.text.includes("Original publication reference"));
+        assert(acknowledgeUserPromptReference(retry)); assert.deepEqual(tree(directory), originals);
+      }
+    }
+    assert.equal(clearAdapter(f, "publish-new").read({ root: f.root }).sessionId, chosen.sessionId);
+    assert(fs.readdirSync(directory).every(name => !name.endsWith(".tmp")), "No owned staging file is left");
+  });
+});
 
 test("host-c: actual Hook writer carries a verified old clear to the same Session and consumes it once", async t => {
   const f = fixture(t), chosen = createHeadSession({ root: f.root, purpose: "Selected clear task, independent of default" });
@@ -627,7 +843,7 @@ test("large transcript accepts bounded first own header; oversized/unsupported f
 
 test("ordinary startup serializer remains byte-identical; observer failure/uninitialized Project stays optional", async t => {
   const f = fixture(t), start = event(f.root, "SessionStart", { source: "startup", transcript_path: "never-read" });
-  const original = sessionStartContext({ runtime: "codex", event: start, environment: f.environment });
+  const original = await sessionStartContext({ runtime: "codex", event: start, environment: f.environment });
   assert.deepEqual(await runSessionHostHook({ runtime: "codex", event: start, environment: f.environment }), original);
   const fresh = path.join(f.base, "untouched"); fs.mkdirSync(fresh);
   assert.deepEqual(await runSessionHostHook({ runtime: "codex", event: event(fresh, "SessionStart", { source: "startup" }), environment: f.environment }), {});
@@ -635,12 +851,12 @@ test("ordinary startup serializer remains byte-identical; observer failure/unini
   assert.equal(fs.existsSync(path.join(fresh, ".lode")), false);
 });
 
-test("entry still performs final child basis check after optional source callback", t => {
+test("entry still performs final child basis check after optional source callback", async t => {
   const f = fixture(t), current = path.join(f.root, f.layout.directory, "sessions", "current.json");
-  const res = enterConversationRecovery({ root: f.root, readRelatedNativeContext: () => {
+  const res = (await enterConversationRecovery({ root: f.root, readRelatedNativeContext: () => {
     const state = JSON.parse(fs.readFileSync(current, "utf8")); state.purpose = "LATER CANCELLATION";
     fs.writeFileSync(current, JSON.stringify(state)); return { sources: [{ wrong: "old result" }] };
-  } });
+  } }));
   assert.equal(res.reasonCode, "CONVERSATION_ENTRY_BASIS_CHANGED");
   assert.equal(res.relatedNativeWorkContext, undefined); assert.equal(res.ordinaryWorkBlocked, false);
 });

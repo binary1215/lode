@@ -69,8 +69,11 @@ export function readSessionWorkTodos(owner, { maxRecords = 8, maxCharacters = 32
         authorityChanged: false, historicalObservationIsCompletion: false });
     }
     all.sort((a, b) => a.todoId.localeCompare(b.todoId));
-    const open = all.filter(item => todoId || !["completed", "cancelled"].includes(item.status));
-    const remaining = open.filter(item => !afterTodoId || item.todoId > afterTodoId), items = [], omitted = [];
+    // Status counts describe verified items in this query scope, before display
+    // cursors/budgets. An exact terminal detail is visible without becoming open.
+    const open = all.filter(item => !["completed", "cancelled"].includes(item.status));
+    const selected = todoId ? all : open;
+    const remaining = selected.filter(item => !afterTodoId || item.todoId > afterTodoId), items = [], omitted = [];
     for (const item of remaining) {
       if (items.length >= maxRecords || JSON.stringify([...items, item]).length > maxCharacters) omitted.push(item.todoId);
       else items.push(item);

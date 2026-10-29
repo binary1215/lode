@@ -118,12 +118,12 @@ test("rejected prepare preserves every project byte and validates the turn befor
   assert.equal(verifyCompaction({ root, epochId: prepared.epoch.epochId, checkpointDigest: prepared.checkpoint.checkpointDigest, currentUserTurnId: 7, providerCompacted: true }).status, "compaction_verified");
 });
 
-test("a public checkpoint change prevents stale continuation without consuming its token", (t) => {
+test("a public checkpoint change prevents stale continuation without consuming its token", async (t) => {
   const { root, layout } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const prepared = prepareCompaction({ root, ...recoveryInput() });
   verifyCompaction({ root, epochId: prepared.epoch.epochId, checkpointDigest: prepared.checkpoint.checkpointDigest, currentUserTurnId: 7, providerCompacted: true });
-  runCommand(["checkpoint", root, "--summary", "Current checkpoint B", "--next", "Do B"]);
+  (await runCommand(["checkpoint", root, "--summary", "Current checkpoint B", "--next", "Do B"]));
   const before = projectBytes(root);
   assert.throws(() => continueCompaction({ root, epochId: prepared.epoch.epochId, continuationToken: prepared.continuationToken, currentUserTurnId: 7 }), { code: "COMPACTION_CHECKPOINT_STALE" });
   assert.deepEqual(projectBytes(root), before);
@@ -228,7 +228,7 @@ test("independent continuation waits for a checkpoint writer and verifies the co
   await withProjectMutationAsync({ root, scope: "session-recovery" }, async () => {
     waiting = recoveryChild(t, "continue", { root, epochId: prepared.epoch.epochId, continuationToken: prepared.continuationToken, currentUserTurnId: 7 });
     await new Promise((resolve) => setTimeout(resolve, 150));
-    runCommand(["checkpoint", root, "--summary", "Concurrent checkpoint B", "--next", "Do B"]);
+    (await runCommand(["checkpoint", root, "--summary", "Concurrent checkpoint B", "--next", "Do B"]));
   });
   assert.equal((await waiting.done).code, "COMPACTION_CHECKPOINT_STALE");
   assert.equal(inspectCompaction({ root }).epoch.state, "verified");
@@ -247,7 +247,7 @@ test("interrupted prepare preserves complete P2 direction and closes only uncert
   for (const crashAfter of ["/compaction/current.json", "/sessions/current.json"]) {
     const { root, layout } = initialize(temporaryProject());
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    const before = runCommand(["checkpoint", root, "--summary", "Prior direction", "--next", "Prior next"]).checkpoint;
+    const before = (await runCommand(["checkpoint", root, "--summary", "Prior direction", "--next", "Prior next"])).checkpoint;
     await recoveryChild(t, "prepare", { root, ...recoveryInput() }, { crashAfter }).done;
     const interrupted = inspectCompaction({ root });
     assert.equal(interrupted.status, "interrupted-prepare");
@@ -289,12 +289,12 @@ test("concurrent continuation consumes once and an interrupted consumption never
   }
 });
 
-test("a Run started after verification invalidates the old continuation without a new user turn", (t) => {
+test("a Run started after verification invalidates the old continuation without a new user turn", async (t) => {
   const { root, layout } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const prepared = prepareCompaction({ root, ...recoveryInput() });
   verifyCompaction({ root, epochId: prepared.epoch.epochId, checkpointDigest: prepared.checkpoint.checkpointDigest, currentUserTurnId: 7, providerCompacted: true });
-  const capsule = compileContext({ root, task: "A bounded new Run", persist: true });
+  const capsule = (await compileContext({ root, task: "A bounded new Run", persist: true }));
   const plan = createWholePlanSnapshot({ root, objective: "A bounded new Run", plan: [{ id: "observe", outcome: "Observe only" }] });
   const contract = createExecutionContract({ root, wholePlanId: plan.artifact.wholePlanId, capsuleId: capsule.capsule.capsuleId, scope: "Observe only", acceptanceCriteria: ["Observation recorded"] });
   startRun({ root, executionContractId: contract.artifact.executionContractId });
@@ -698,10 +698,10 @@ test("provider failure and checkpoint tamper abort instead of guessing recovery"
   assert.equal(inspectCompaction({ root }).epoch.state, "aborted");
 });
 
-test("an active Run checkpoint pins verified plan, contract, and capsule identities", (t) => {
+test("an active Run checkpoint pins verified plan, contract, and capsule identities", async (t) => {
   const { root, layout } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const capsule = compileContext({ root, task: "Preserve the active Run across compaction", budget: 32_768, persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Preserve the active Run across compaction", budget: 32_768, persist: true })).capsule;
   const plan = createWholePlanSnapshot({
     root,
     objective: "Complete the provider-neutral compaction recovery vertical",
@@ -753,10 +753,10 @@ test("compaction verification rejects Session pointer drift beyond the active Ru
   assert.equal(inspectCompaction({ root }).epoch.state, "aborted");
 });
 
-test("checkpoint recovery remains sufficient after ResultPacket evidence is deleted", (t) => {
+test("checkpoint recovery remains sufficient after ResultPacket evidence is deleted", async (t) => {
   const { root, layout } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const capsule = compileContext({ root, task: "Prove checkpoint-only recovery", budget: 32_768, persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Prove checkpoint-only recovery", budget: 32_768, persist: true })).capsule;
   const plan = createWholePlanSnapshot({
     root,
     objective: "Keep the next expected result recoverable without ResultPacket evidence",
@@ -795,12 +795,12 @@ test("CLI default help exposes safe compaction status while mutations remain adv
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const inputFile = path.join(root, "compact-prepare.json");
   fs.writeFileSync(inputFile, `${JSON.stringify(recoveryInput({ runtime: "manual", userTurnIdAtPrepare: 30 }), null, 2)}\n`);
-  const prepared = runCommand(["compact-prepare", root, "--input", inputFile]);
+  const prepared = (await runCommand(["compact-prepare", root, "--input", inputFile]));
   assert.equal(prepared.epoch.runtime, "manual");
-  assert.equal(runCommand(["compact-status", root]).epoch.state, "prepared");
-  assert.equal(runCommand(["help"]).commands.some((command) => command.includes("compact-status")), true);
-  assert.equal(runCommand(["help"]).commands.some((command) => command.includes("compact-prepare")), false);
-  assert.equal(runCommand(["help-all"]).commands.some((command) => command.includes("compact-prepare")), true);
+  assert.equal((await runCommand(["compact-status", root])).epoch.state, "prepared");
+  assert.equal((await runCommand(["help"])).commands.some((command) => command.includes("compact-status")), true);
+  assert.equal((await runCommand(["help"])).commands.some((command) => command.includes("compact-prepare")), false);
+  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("compact-prepare")), true);
   assert.equal(mcpTools.some((tool) => tool.name === "lode_compact_prepare"), true);
   const status = await dispatch({
     jsonrpc: "2.0",

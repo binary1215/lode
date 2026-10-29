@@ -118,9 +118,9 @@ for (const [runtime, limit] of [["codex", 32768], ["claude", 10000]]) {
       }
     }
   });
-  test(`${runtime}: public invalid caller diagnostic is finite, read-only and nonblocking`, t => {
+  test(`${runtime}: public invalid caller diagnostic is finite, read-only and nonblocking`, async t => {
     const f = fixture(t), before = snapshot(f.base);
-    const output = sessionStartContext({ runtime, event: { hook_event_name: "SessionStart", source: "compact", cwd: f.root, session_id: "x".repeat(513) } });
+    const output = (await sessionStartContext({ runtime, event: { hook_event_name: "SessionStart", source: "compact", cwd: f.root, session_id: "x".repeat(513) } }));
     const text = output.hookSpecificOutput.additionalContext;
     assert.ok(text.length <= limit);
     const diagnostic = JSON.parse(text);
@@ -131,7 +131,7 @@ for (const [runtime, limit] of [["codex", 32768], ["claude", 10000]]) {
     assert.equal(typeof diagnostic.coreGuidance, "string");
     assert(diagnostic.coreGuidance.length > 0); assert.deepEqual(snapshot(f.base), before);
   });
-  test(`${runtime}: public writer->entry->Hook retains fitting >7000 reason with no extra reads or writes`, t => {
+  test(`${runtime}: public writer->entry->Hook retains fitting >7000 reason with no extra reads or writes`, async t => {
     const f = fixture(t), root = f.save({ summary: "Initial purpose anchor" });
     const reason = "EXACT REASON START " + "이유를 보존한다 Keep provenance 日本語 😀 ".repeat(100) + " EXACT REASON END";
     const judgment = f.save({ judgments: [{ assessment: "Use B", reason, alternatives: ["A loses provenance"] }] });
@@ -142,8 +142,8 @@ for (const [runtime, limit] of [["codex", 32768], ["claude", 10000]]) {
     const environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: f.operational }, nativeSessionId = "synthetic-delivery-" + runtime;
     const host = createSessionHostAdapter({ runtime, nativeSessionId, environment });
     host.select({ root: f.root, sessionId: f.session.sessionId, expectedRevision: 0 });
-    const before = snapshot(f.base), entry = host.enter({ root: f.root });
-    const text = sessionStartContext({ runtime, environment, event: { hook_event_name: "SessionStart", source: "compact", cwd: f.root, session_id: nativeSessionId } }).hookSpecificOutput.additionalContext;
+    const before = snapshot(f.base), entry = (await host.enter({ root: f.root }));
+    const text = (await sessionStartContext({ runtime, environment, event: { hook_event_name: "SessionStart", source: "compact", cwd: f.root, session_id: nativeSessionId } })).hookSpecificOutput.additionalContext;
     const value = JSON.parse(text); assert.ok(text.length > 7000 && text.length <= limit);
     for (const saved of [root, judgment, recent]) {
       const actual = value.records.find(r => r.evidenceId === saved.evidence.evidenceId), original = entry.workContext.records.find(r => r.evidenceId === saved.evidence.evidenceId);
@@ -153,12 +153,12 @@ for (const [runtime, limit] of [["codex", 32768], ["claude", 10000]]) {
     assert.ok(text.includes("X remains")); assert.equal(value.omittedEvidenceCount, 0);
     assert.deepEqual(snapshot(f.base), before); assert.equal(value.ordinaryWorkBlocked, false);
   });
-  test(`${runtime}: compact guidance admits a near-limit cited original before optional prose`, t => {
+  test(`${runtime}: compact guidance admits a near-limit cited original before optional prose`, async t => {
     // Test-only sizing: use actual writer metadata and the actual root width,
     // not a fixed reason length that can miss the defect on shorter CI paths.
     const seed = fixture(t, prosePurpose);
     proseOriginals(seed, "Short synthetic reason");
-    const seedEntry = seed.route(() => enterConversationRecovery({ root: seed.root }));
+    const seedEntry = (await seed.route(async () => (await enterConversationRecovery({ root: seed.root }))));
     const f = fixture(t, prosePurpose);
     const compact = JSON.parse(format(seedEntry, f.root, "claude"));
     compact.scope = compactScope;
@@ -176,8 +176,8 @@ for (const [runtime, limit] of [["codex", 32768], ["claude", 10000]]) {
     const environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: f.operational }, nativeSessionId = "synthetic-prose-admission-" + runtime;
     const host = createSessionHostAdapter({ runtime, nativeSessionId, environment });
     host.select({ root: f.root, sessionId: f.session.sessionId, expectedRevision: 0 });
-    const before = snapshot(f.base), entry = host.enter({ root: f.root });
-    const text = sessionStartContext({ runtime, environment, event: { hook_event_name: "SessionStart", source: "resume", cwd: f.root, session_id: nativeSessionId } }).hookSpecificOutput.additionalContext;
+    const before = snapshot(f.base), entry = (await host.enter({ root: f.root }));
+    const text = (await sessionStartContext({ runtime, environment, event: { hook_event_name: "SessionStart", source: "resume", cwd: f.root, session_id: nativeSessionId } })).hookSpecificOutput.additionalContext;
     const value = JSON.parse(text); assert.ok(text.length <= limit);
     assert.equal(value.records.length, 2); assert.equal(value.omittedEvidenceCount, 0);
     for (const record of value.records) assert.deepEqual(record.content, entry.workContext.records.find(r => r.evidenceId === record.evidenceId).content);
@@ -188,7 +188,7 @@ for (const [runtime, limit] of [["codex", 32768], ["claude", 10000]]) {
   });
 }
 
-test("Codex numeric zero is paired with a finite local complete-output cap and the unchanged handler", () => {
+test("Codex numeric zero is paired with a finite local complete-output cap and the unchanged handler", async () => {
   const doc = JSON.parse(fs.readFileSync(path.join(pluginRoot, "hooks/codex.json")));
   assert.deepEqual(Object.keys(doc.hooks), ["SessionStart", "UserPromptSubmit", "PreCompact", "Stop", "SubagentStart", "SubagentStop", "SessionEnd"]);
   assert.equal(doc.hooks.SessionStart.length, 1);
@@ -202,5 +202,5 @@ test("Codex numeric zero is paired with a finite local complete-output cap and t
   }
   const claude = JSON.parse(fs.readFileSync(path.join(pluginRoot, "hooks/claude.json")));
   assert.equal(Object.hasOwn(claude.hooks.SessionStart[0].hooks[0], "additionalContextLimit"), false);
-  assert.deepEqual(sessionStartContext({ runtime: "opencode", event: {} }), {});
+  assert.deepEqual((await sessionStartContext({ runtime: "opencode", event: {} })), {});
 });

@@ -40,15 +40,15 @@ function projection(capsule) {
   };
 }
 
-export function previewContextWorkflow({ root = ".", task, budget = DEFAULT_CONTEXT_BUDGET, evidenceNeeds = [],
+export async function previewContextWorkflow({ root = ".", task, budget = DEFAULT_CONTEXT_BUDGET, evidenceNeeds = [],
   graphProjectionAdapter = null, sourceObservations = [], includeRepositoryWorld = true } = {}) {
-  const preview = compileContext({ root, task, budget, evidenceNeeds, persist: false,
-    graphProjectionAdapter, sourceObservations, includeRepositoryWorld });
+  const preview = (await compileContext({ root, task, budget, evidenceNeeds, persist: false,
+    graphProjectionAdapter, sourceObservations, includeRepositoryWorld }));
   return { ...preview, workflow: projection(preview.capsule) };
 }
 
-export function prepareContextWorkflow({ root = ".", task, budget = DEFAULT_CONTEXT_BUDGET, graphProjectionAdapter = null } = {}) {
-  const preview = previewContextWorkflow({ root, task, budget, graphProjectionAdapter });
+export async function prepareContextWorkflow({ root = ".", task, budget = DEFAULT_CONTEXT_BUDGET, graphProjectionAdapter = null } = {}) {
+  const preview = (await previewContextWorkflow({ root, task, budget, graphProjectionAdapter }));
   const { capsule, workflow } = preview;
   return {
     status: "prepared",

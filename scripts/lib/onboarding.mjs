@@ -625,25 +625,25 @@ async function rebuildWithOnboardingProjection({
     additionalReviewDecisions,
     additionalProductModelRevisions,
   });
-  return buildWorldModel({
+  return (await buildWorldModel({
     root: projectRoot,
     persist: true,
     onboardingProjectionInput,
     parentSourceSnapshotIds: parentSourceSnapshotIds ?? sourceGraph.parentSourceSnapshotIds,
     revisionParentIds: revisionParentIds ?? sourceGraph.revisionParentIds,
-  });
+  }));
 }
 
 export async function startOnboarding(options = {}) {
-  return withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, () => startOnboardingLocked(options));
+  return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, async () => (await startOnboardingLocked(options))));
 }
 
 export async function proposeOnboardingSemanticRefresh(options = {}) {
-  return withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, () => proposeOnboardingSemanticRefreshLocked(options));
+  return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, async () => (await proposeOnboardingSemanticRefreshLocked(options))));
 }
 
 async function proposeOnboardingSemanticRefreshLocked({ root = ".", semanticProposal, recoveryBasis = null } = {}) {
-  if (recoveryBasis) return recoverableCandidateRefresh({ root, semanticProposal, recoveryBasis });
+  if (recoveryBasis) return (await recoverableCandidateRefresh({ root, semanticProposal, recoveryBasis }));
   const inspected = readyProject(root, "historical onboarding semantic refresh");
   const storageOwner = inspected.storage;
   if (inspected.state.activeRunId || inspected.state.pendingReview) fail("Semantic refresh cannot change product authority while a Run is active or awaiting review.", "ONBOARDING_RUN_CONFLICT");
@@ -657,7 +657,7 @@ async function proposeOnboardingSemanticRefreshLocked({ root = ".", semanticProp
   const productCanon = readProductModelCanon({ storage: storageOwner, projectRoot });
   if (productCanon.status !== "present" || productCanon.model.productModelId !== previousState.productModelId) fail("Product Canon changed before semantic refresh.", "ONBOARDING_PRODUCT_CANON_DRIFT");
   let world;
-  try { world = inspectWorldModel({ root: projectRoot }); }
+  try { world = (await inspectWorldModel({ root: projectRoot })); }
   catch (error) { if (!ABSENT_WORLD_CODES.has(error.code)) throw error; }
   if (!world || world.status !== "current") world = await buildWorldModel({ root: projectRoot, persist: true });
   const semantic = candidatesFromSemanticProposal(semanticProposal, world.snapshot, projectRoot, storageOwner);
@@ -802,7 +802,7 @@ async function startOnboardingLocked({ root = ".", mode = "existing", storage = 
 }
 
 export async function refreshOnboardingCandidates(options = {}) {
-  return withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, () => recoverableCandidateRefresh(options));
+  return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, async () => (await recoverableCandidateRefresh(options))));
 }
 
 // The exact caller-observed pointer/raw digest also identifies custody after a
@@ -879,7 +879,7 @@ async function refreshOnboardingCandidatesLocked({ root = ".", semanticProposal 
     previousSet = { candidateSetId: state.candidateSetId, productModelId: state.productModelId,
       inputMode: "existing", storageSelectionId: state.storageSelectionId, sourceSnapshotId: state.sourceSnapshotId };
     // Validate meaning and current cited bytes before relocating damaged evidence.
-    candidatesFromSemanticProposal(semanticProposal, readWorldModelSnapshot({ root, worldModelId: state.worldModelId }).snapshot, projectRoot, storageOwner);
+    candidatesFromSemanticProposal(semanticProposal, (await readWorldModelSnapshot({ root, worldModelId: state.worldModelId })).snapshot, projectRoot, storageOwner);
     preserveCandidateBytes(projectRoot, state.candidateSetId, damagedBytes, storageOwner);
     if (rawHash(candidateBytes(projectRoot, state.candidateSetId, storageOwner)) !== recoveryBasis.rawHash) fail("Candidate changed before custody relocation.", "ONBOARDING_RECOVERY_CONFLICT");
     if (damagedBytes) fs.unlinkSync(candidateSetFile(projectRoot, state.candidateSetId, storageOwner));
@@ -890,13 +890,13 @@ async function refreshOnboardingCandidatesLocked({ root = ".", semanticProposal 
   let currentWorld;
   try {
     currentWorld = recoveryBasis ? await buildWorldModel({ root: projectRoot, persist: true })
-      : await reconcileOrphanedOnboardingProjection({ projectRoot, state, candidateSet: previousSet, world: inspectWorldModel({ root: projectRoot }) }, storageOwner);
+      : await reconcileOrphanedOnboardingProjection({ projectRoot, state, candidateSet: previousSet, world: (await inspectWorldModel({ root: projectRoot })) }, storageOwner);
   } catch (error) {
     if (!ABSENT_WORLD_CODES.has(error.code)) throw error;
     // Explicit Product resume may reconstruct a missing view, never a decision.
     // Read-only status and Core resume do not enter this mutation path.
     await buildWorldModel({ root: projectRoot, persist: true });
-    currentWorld = inspectWorldModel({ root: projectRoot });
+    currentWorld = (await inspectWorldModel({ root: projectRoot }));
   }
   if (currentWorld.status === "current" && currentWorld.snapshot.temporalProvenanceGraph.sourceSnapshotId === previousSet.sourceSnapshotId && semanticProposal == null) {
     return { status: "onboarding_candidates_current", refreshed: false, reason: "source-snapshot-current", state, candidateSet: previousSet };
@@ -1266,7 +1266,7 @@ async function applyApprovedPromotion({ projectRoot, state, review, publishRevie
       let world = null;
       let reasonCode = null;
       try {
-        world = inspectWorldModel({ root: projectRoot });
+        world = (await inspectWorldModel({ root: projectRoot }));
         if (world.status !== "current") reasonCode = "WORLD_MODEL_STALE";
       } catch (error) { if (!ABSENT_WORLD_CODES.has(error.code)) throw error; reasonCode = error.code; }
       return { ...promotionResult({ state, review, productModel: normalizeProductModelDocument(verified.resulting.document, storageOwner), world, reasonCode }), productCanonChanged: false };
@@ -1302,7 +1302,7 @@ async function applyApprovedPromotion({ projectRoot, state, review, publishRevie
   let { nextState } = prepared;
   try {
     let currentWorld = null;
-    try { currentWorld = inspectWorldModel({ root: projectRoot }); }
+    try { currentWorld = (await inspectWorldModel({ root: projectRoot })); }
     catch (error) { if (!ABSENT_WORLD_CODES.has(error.code)) throw error; }
     const alreadyProjected = currentWorld?.status === "current"
       && currentWorld.snapshot.productModel.productModelId === nextModel.productModelId
@@ -1316,7 +1316,7 @@ async function applyApprovedPromotion({ projectRoot, state, review, publishRevie
       parentSourceSnapshotIds: [candidateSet.sourceSnapshotId],
       revisionParentIds: {},
     }, storageOwner);
-    const verifiedWorld = inspectWorldModel({ root: projectRoot });
+    const verifiedWorld = (await inspectWorldModel({ root: projectRoot }));
     if (verifiedWorld.status !== "current"
       || rebuilt.snapshot.productModel.productModelId !== nextModel.productModelId
       || rebuilt.snapshot.temporalProvenanceGraph.productModelId !== nextModel.productModelId
@@ -1395,16 +1395,19 @@ function verifiedNonPromotion({ projectRoot, state, review, allowUnpublishedRevi
     || onboardingStateLatestReviewDecisionId(state) !== onboardingCandidateProducerReviewDecisionId(candidateSet))) {
     fail("A historical disposition cannot replace later onboarding direction.", "ONBOARDING_REVIEW_CONFLICT");
   }
-  let projectedWorld = null;
-  if (applied && state.worldModelId) {
-    try {
-      const stored = readWorldModelSnapshot({ root: projectRoot, worldModelId: state.worldModelId });
-      const projection = stored.snapshot.temporalProvenanceGraph.onboardingProjection;
-      if (projection.reviewDecisionIds.includes(review.reviewDecisionId)
-        && (!successor || projection.candidateSetIds.includes(successor.candidateSetId))) projectedWorld = stored;
-    } catch (error) { if (!ABSENT_WORLD_CODES.has(error.code)) throw error; }
-  }
+  const projectedWorld = null;
   return { candidateSet, successor, canon, applied, projectedWorld };
+}
+
+// P4 lookup stays outside the synchronous Canon application scope.
+async function projectedNonPromotionWorld({ projectRoot, state, review, verified }) {
+  if (!verified.applied || !state.worldModelId) return null;
+  try {
+    const stored = await readWorldModelSnapshot({ root: projectRoot, worldModelId: state.worldModelId });
+    const projection = stored.snapshot.temporalProvenanceGraph.onboardingProjection;
+    return projection.reviewDecisionIds.includes(review.reviewDecisionId)
+      && (!verified.successor || projection.candidateSetIds.includes(verified.successor.candidateSetId)) ? stored : null;
+  } catch (error) { if (!ABSENT_WORLD_CODES.has(error.code)) throw error; return null; }
 }
 
 function nonPromotionResult({ state, review, successor, world, reasonCode = null }) {
@@ -1436,22 +1439,30 @@ async function applyNonPromotingReview({ projectRoot, state, review, publishRevi
     return { ...verified, state: nextState };
   });
   let nextState = prepared.state;
+  if (prepared.applied && state.worldModelId) {
+    try {
+      const stored = await readWorldModelSnapshot({ root: projectRoot, worldModelId: state.worldModelId });
+      const projection = stored.snapshot.temporalProvenanceGraph.onboardingProjection;
+      if (projection.reviewDecisionIds.includes(review.reviewDecisionId)
+        && (!prepared.successor || projection.candidateSetIds.includes(prepared.successor.candidateSetId))) prepared.projectedWorld = stored;
+    } catch (error) { if (!ABSENT_WORLD_CODES.has(error.code)) throw error; }
+  }
   if (prepared.projectedWorld) {
     let reasonCode = null;
-    try { if (inspectWorldModel({ root: projectRoot }).status !== "current") reasonCode = "WORLD_MODEL_STALE"; }
+    try { if ((await inspectWorldModel({ root: projectRoot })).status !== "current") reasonCode = "WORLD_MODEL_STALE"; }
     catch (error) { if (!ABSENT_WORLD_CODES.has(error.code)) throw error; reasonCode = error.code; }
     return nonPromotionResult({ state: nextState, review, successor: prepared.successor, world: prepared.projectedWorld, reasonCode });
   }
   try {
     let sourceWorld = { snapshot: { temporalProvenanceGraph: {} } };
-    try { sourceWorld = readWorldModelSnapshot({ root: projectRoot, worldModelId: state.worldModelId }); }
+    try { sourceWorld = (await readWorldModelSnapshot({ root: projectRoot, worldModelId: state.worldModelId })); }
     catch (error) { if (!ABSENT_WORLD_CODES.has(error.code)) throw error; }
     const world = await rebuildWithOnboardingProjection({ projectRoot, projectId: state.projectId,
       currentProductModelId: prepared.canon.model.productModelId, sourceWorld,
       parentSourceSnapshotIds: sourceWorld.snapshot.temporalProvenanceGraph.parentSourceSnapshotIds || [],
       revisionParentIds: sourceWorld.snapshot.temporalProvenanceGraph.revisionParentIds || {},
     }, storageOwner);
-    const current = inspectWorldModel({ root: projectRoot });
+    const current = (await inspectWorldModel({ root: projectRoot }));
     const graph = world.snapshot.temporalProvenanceGraph;
     if (current.status !== "current" || !graph.onboardingProjection.reviewDecisionIds.includes(review.reviewDecisionId)
       || (prepared.successor && !graph.onboardingProjection.candidateSetIds.includes(prepared.successor.candidateSetId))) fail("The reviewed disposition projection did not verify.", "ONBOARDING_GRAPH_VERIFICATION_FAILED");
@@ -1490,12 +1501,12 @@ async function reconcileOrphanedOnboardingProjection({ projectRoot, state, candi
   // Older code could publish a P4 graph containing a decision that never reached
   // its P1 file. Rebuild from persisted records; never extract that decision.
   let sourceWorld = world;
-  try { sourceWorld = readWorldModelSnapshot({ root: projectRoot, worldModelId: state.worldModelId }); }
+  try { sourceWorld = (await readWorldModelSnapshot({ root: projectRoot, worldModelId: state.worldModelId })); }
   catch (error) { if (!ABSENT_WORLD_CODES.has(error.code)) throw error; }
   await rebuildWithOnboardingProjection({ projectRoot, projectId: state.projectId,
     currentProductModelId: state.productModelId, sourceWorld,
   }, storageOwner);
-  const current = inspectWorldModel({ root: projectRoot });
+  const current = (await inspectWorldModel({ root: projectRoot }));
   if (current.status !== "current" || current.snapshot.temporalProvenanceGraph.sourceSnapshotId !== candidateSet.sourceSnapshotId) {
     fail("Canonical evidence changed while reconciling the orphaned projection.", "ONBOARDING_SOURCE_DRIFT");
   }
@@ -1517,21 +1528,22 @@ async function recoverOnboardingPromotionLocked({ root = "." } = {}) {
   const nonPromoting = nonPromotingDecisionForState(projectRoot, state, own, storageOwner);
   if (nonPromoting) {
     const verified = verifiedNonPromotion({ projectRoot, state, review: nonPromoting }, storageOwner);
-    return verified.projectedWorld ? null : applyNonPromotingReview({ projectRoot, state, review: nonPromoting }, storageOwner);
+    verified.projectedWorld = await projectedNonPromotionWorld({ projectRoot, state, review: nonPromoting, verified });
+    return verified.projectedWorld ? null : (await applyNonPromotingReview({ projectRoot, state, review: nonPromoting }, storageOwner));
   }
   const review = own?.promotionAuthority ? own : null;
   if (!review) return null;
   // A completed historical review is not a request to refresh every later World.
   if (state.phase === "ready" && state.sourceSnapshotId !== readOnboardingCandidateSet({ root: projectRoot, candidateSetId: review.candidateSetId }).candidateSet.sourceSnapshotId) return null;
-  return applyApprovedPromotion({ projectRoot, state, review }, storageOwner);
+  return (await applyApprovedPromotion({ projectRoot, state, review }, storageOwner));
 }
 
 export async function recoverOnboardingPromotion(options = {}) {
-  return withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, () => recoverOnboardingPromotionLocked(options));
+  return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, async () => (await recoverOnboardingPromotionLocked(options))));
 }
 
 export async function reviewOnboarding(options = {}) {
-  return withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, () => reviewOnboardingLocked(options));
+  return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "onboarding-promotion" }, async () => (await reviewOnboardingLocked(options))));
 }
 
 function assertAcceptanceReplay({ projectRoot, state, candidateSet, review, disposition, acceptedCandidateIds, removedCandidateIds, userEdits, addedEntities, rationale }, storageOwner) {
@@ -1605,16 +1617,16 @@ async function reviewOnboardingLocked({
   if (recorded) {
     if (recorded.promotionAuthority) {
       assertAcceptanceReplay({ projectRoot, state, candidateSet, review: recorded, disposition, acceptedCandidateIds, removedCandidateIds, userEdits, addedEntities, rationale }, storageOwner);
-      return applyApprovedPromotion({ projectRoot, state, review: recorded }, storageOwner);
+      return (await applyApprovedPromotion({ projectRoot, state, review: recorded }, storageOwner));
     }
     assertNonPromotionReplay({ projectRoot, state, candidateSet, review: recorded, disposition, acceptedCandidateIds, removedCandidateIds, userEdits, addedEntities, rationale }, storageOwner);
-    return applyNonPromotingReview({ projectRoot, state, review: recorded }, storageOwner);
+    return (await applyNonPromotingReview({ projectRoot, state, review: recorded }, storageOwner));
   }
   if (state.candidateSetId !== reviewedSetId) fail("Onboarding review references a stale candidate set.", "STALE_ONBOARDING_CANDIDATE_SET");
   if (candidateSet.sourceSnapshotId !== state.sourceSnapshotId) {
     fail("Onboarding candidate set no longer matches the recorded source snapshot.", "ONBOARDING_SOURCE_SNAPSHOT_CONFLICT");
   }
-  const currentWorld = await reconcileOrphanedOnboardingProjection({ projectRoot, state, candidateSet, world: inspectWorldModel({ root: projectRoot }) }, storageOwner);
+  const currentWorld = await reconcileOrphanedOnboardingProjection({ projectRoot, state, candidateSet, world: (await inspectWorldModel({ root: projectRoot })) }, storageOwner);
   if (currentWorld.status !== "current"
     || currentWorld.snapshot.temporalProvenanceGraph.sourceSnapshotId !== candidateSet.sourceSnapshotId) {
     fail("Observed project state changed after candidate proposal; re-index and create a new candidate set.", "ONBOARDING_SOURCE_DRIFT");
@@ -1645,7 +1657,7 @@ async function reviewOnboardingLocked({
       previousProductModel: currentCanon.model,
     }, storageOwner);
     verifyReviewDecision(review, inspected.project.projectId);
-    return applyNonPromotingReview({ projectRoot, state, review, publishReview: true }, storageOwner);
+    return (await applyNonPromotingReview({ projectRoot, state, review, publishReview: true }, storageOwner));
   }
 
   if (normalizedDisposition === "reject") {
@@ -1663,7 +1675,7 @@ async function reviewOnboardingLocked({
       previousProductModel: currentCanon.model,
     }, storageOwner);
     verifyReviewDecision(review, inspected.project.projectId);
-    return applyNonPromotingReview({ projectRoot, state, review, publishReview: true }, storageOwner);
+    return (await applyNonPromotingReview({ projectRoot, state, review, publishReview: true }, storageOwner));
   }
 
   if (!candidateSet.candidates.length) fail("An empty candidate set cannot be accepted.", "ONBOARDING_EVIDENCE_REQUIRED");
@@ -1697,7 +1709,7 @@ async function reviewOnboardingLocked({
     resultingProductModel: nextModel,
   }, storageOwner);
   verifyReviewDecision(review, inspected.project.projectId);
-  return applyApprovedPromotion({ projectRoot, state, review, publishReview: true }, storageOwner);
+  return (await applyApprovedPromotion({ projectRoot, state, review, publishReview: true }, storageOwner));
 }
 
 function verifyCurrentOnboardingReviewLineage({ projectRoot, state, candidateSet, latestReviewDecision }, storageOwner) {
@@ -1757,19 +1769,19 @@ function verifyCurrentOnboardingReviewLineage({ projectRoot, state, candidateSet
 
 // A diagnostic boundary, never a replacement for strict promotion validation.
 // Core/P2 validation deliberately remains outside the optional capability catch.
-export function inspectOptionalOnboarding({ root = "." } = {}) {
-  return inspectOptionalOnboardingRecords(root, true);
+export async function inspectOptionalOnboarding({ root = "." } = {}) {
+  return (await inspectOptionalOnboardingRecords(root, true));
 }
 
 // Intra-package conversation composition only; no public diagnostic selector.
 // Product originals keep their normal validation, not aggregate World freshness.
-export function inspectOptionalOnboardingForEntry({ root = "." } = {}) {
-  return inspectOptionalOnboardingRecords(root, false);
+export async function inspectOptionalOnboardingForEntry({ root = "." } = {}) {
+  return (await inspectOptionalOnboardingRecords(root, false));
 }
 
-function inspectOptionalOnboardingRecords(root, inspectWorld) {
+async function inspectOptionalOnboardingRecords(root, inspectWorld) {
   const inspected = readyProject(root, "optional Product inspection", "selected");
-  try { return inspectOnboardingRecords(root, inspectWorld); }
+  try { return (await inspectOnboardingRecords(root, inspectWorld)); }
   catch (error) {
     const unrelatedDefaultFailure = error.headSessionRecordPath === defaultSessionStatePath(root, inspected.storage)
       && sessionStatePath(root, inspected.storage) !== defaultSessionStatePath(root, inspected.storage);
@@ -1787,8 +1799,8 @@ function inspectOptionalOnboardingRecords(root, inspectWorld) {
   }
 }
 
-export function inspectOnboarding({ root = "." } = {}) {
-  return inspectOnboardingRecords(root, true);
+export async function inspectOnboarding({ root = "." } = {}) {
+  return (await inspectOnboardingRecords(root, true));
 }
 
 function uninspectedWorld(state) {
@@ -1798,7 +1810,7 @@ function uninspectedWorld(state) {
     matchesCandidateSource: null, matchesOnboardingSnapshot: null };
 }
 
-function inspectOnboardingRecords(root, inspectWorld) {
+async function inspectOnboardingRecords(root, inspectWorld) {
   const inspected = readyProject(root, "onboarding inspection");
   const storageOwner = inspected.storage;
   const projectRoot = inspected.project.projectRoot;
@@ -1855,7 +1867,7 @@ function inspectOnboardingRecords(root, inspectWorld) {
     if (state.worldModelId && !inspectWorld) world = uninspectedWorld(state);
     else if (state.worldModelId) {
       try {
-        const inspectedWorld = inspectWorldModel({ root: projectRoot });
+        const inspectedWorld = (await inspectWorldModel({ root: projectRoot }));
         world = { status: inspectedWorld.status, worldModelId: inspectedWorld.snapshot.worldModelId,
           sourceSnapshotId: inspectedWorld.snapshot.temporalProvenanceGraph.sourceSnapshotId,
           graphSnapshotId: inspectedWorld.snapshot.temporalProvenanceGraph.graphSnapshotId,
@@ -1901,6 +1913,7 @@ function inspectOnboardingRecords(root, inspectWorld) {
   const pendingDisposition = nonPromotingDecisionForState(projectRoot, state, own, storageOwner);
   if (pendingDisposition) {
     const disposition = verifiedNonPromotion({ projectRoot, state, review: pendingDisposition }, storageOwner);
+    disposition.projectedWorld = await projectedNonPromotionWorld({ projectRoot, state, review: pendingDisposition, verified: disposition });
     if (!disposition.projectedWorld) return {
       status: "review_recovery_pending", state, sessionRecord, storageSelection, candidateSet,
       reviewDecision: pendingDisposition, productModel: productCanon.model, worldModel: null,
@@ -1947,7 +1960,7 @@ function inspectOnboardingRecords(root, inspectWorld) {
   if (state.worldModelId && !inspectWorld) world = uninspectedWorld(state);
   else if (state.worldModelId) {
     try {
-      const inspectedWorld = inspectWorldModel({ root: projectRoot });
+      const inspectedWorld = (await inspectWorldModel({ root: projectRoot }));
       world = {
         status: inspectedWorld.status,
         worldModelId: inspectedWorld.snapshot.worldModelId,

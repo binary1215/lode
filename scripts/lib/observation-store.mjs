@@ -300,10 +300,10 @@ export async function recordDeliveryCollectedObservation({ root = ".", descripto
       fail("Verified delivery revisions require every exact source-revision field.", "INVALID_DELIVERY_REVISION_BINDING");
     }
     const { readWorldModelSnapshot } = await import("./world-model.mjs");
-    const snapshot = readWorldModelSnapshot({
+    const snapshot = (await readWorldModelSnapshot({
       root: inspected.project.projectRoot,
       worldModelId: payload.bound_world_model_id,
-    }).snapshot;
+    })).snapshot;
     const revision = snapshot.temporalProvenanceGraph?.nodes.find((node) => node.nodeId === payload.bound_revision_id);
     if (!revision || revision.kind !== "FileRevision"
       || revision.logicalEntityId !== payload.bound_logical_entity_id

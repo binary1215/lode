@@ -111,7 +111,7 @@ test("metric evidence remains P3/P4, discloses partial coverage, and requires th
   assert.equal(fs.readFileSync(sessionFile, "utf8"), sessionBefore);
   assert.equal(fs.existsSync(path.join(root, layout.directory, "conformance")), false);
 
-  const graph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   const ids = new Set(graph.nodes.map((node) => node.nodeId));
   assert.ok(ids.has(defined.descriptor.descriptorId));
   assert.ok(ids.has(baseline.observation.observationId));
@@ -123,7 +123,7 @@ test("metric evidence remains P3/P4, discloses partial coverage, and requires th
   assert.ok(graph.edges.some((edge) => edge.type === "REFERENCES" && edge.from === assessed.hypothesis.hypothesisId && edge.to === compared.comparison.derivedObservationId));
   assert.ok(graph.edges.some((edge) => edge.type === "PROPOSES_FROM" && edge.from === followUp.initiativeCandidate.initiativeCandidateId && edge.to === assessed.hypothesis.hypothesisId));
   assert.equal(graph.nodes.some((node) => node.kind === "ProductInitiativeReviewDecision"), false);
-  const trace = traceMeasurementLineage({ root, anchorId: compared.comparison.derivedObservationId });
+  const trace = (await traceMeasurementLineage({ root, anchorId: compared.comparison.derivedObservationId }));
   const reference = queryTemporalProvenanceGraph(graph, trace.queryParameters);
   assert.equal(trace.graph.resultId, reference.resultId);
   assert.equal(trace.graph.resultHash, reference.resultHash);
@@ -148,7 +148,7 @@ test("metric comparison fails closed only for real comparability mismatches", as
   assert.equal(exactDefinitionReplay.status, "existing");
   assert.equal(exactDefinitionReplay.descriptor.descriptorHash, firstDefinition.descriptor.descriptorHash);
   await assert.rejects(
-    () => defineMetric({ root, metricKey: "request-latency", unit: "seconds", direction: "decrease", typeVersion: "1" }),
+    async () => (await defineMetric({ root, metricKey: "request-latency", unit: "seconds", direction: "decrease", typeVersion: "1" })),
     { code: "METRIC_DEFINITION_CONFLICT" },
   );
   await defineMetric({ root, metricKey: "request-latency", unit: "seconds", direction: "decrease", typeVersion: "2" });
@@ -186,7 +186,7 @@ test("metric comparison fails closed only for real comparability mismatches", as
     sourceEventKeyDigest: sha("other-version-event"),
     sourceEvidenceDigest: sha("other-version-evidence"),
   }) });
-  await assert.rejects(() => compareMetricObservations({ root, baselineObservationId: baseline.observation.observationId, currentObservationId: otherVersion.observation.observationId }), { code: "INCOMPARABLE_METRIC_OBSERVATIONS" });
+  await assert.rejects(async () => (await compareMetricObservations({ root, baselineObservationId: baseline.observation.observationId, currentObservationId: otherVersion.observation.observationId })), { code: "INCOMPARABLE_METRIC_OBSERVATIONS" });
 
   const otherSubject = await recordMetricObservation({ root, ...observationInput({
     typeVersion: "1",
@@ -196,7 +196,7 @@ test("metric comparison fails closed only for real comparability mismatches", as
     sourceEventKeyDigest: sha("other-subject-event"),
     sourceEvidenceDigest: sha("other-subject-evidence"),
   }) });
-  await assert.rejects(() => compareMetricObservations({ root, baselineObservationId: baseline.observation.observationId, currentObservationId: otherSubject.observation.observationId }), { code: "INCOMPARABLE_METRIC_OBSERVATIONS" });
+  await assert.rejects(async () => (await compareMetricObservations({ root, baselineObservationId: baseline.observation.observationId, currentObservationId: otherSubject.observation.observationId })), { code: "INCOMPARABLE_METRIC_OBSERVATIONS" });
   assert.equal(inspectMeasurements({ root }).ordinaryWorkBlocked, false);
 });
 
@@ -211,7 +211,7 @@ test("metric observation retry without an observed timestamp reuses the durable 
   assert.equal(replay.observation.observationId, first.observation.observationId);
   assert.equal(replay.observation.temporalScope.observedAt, first.observation.temporalScope.observedAt);
   await assert.rejects(
-    () => recordMetricObservation({ root, ...input, value: 121 }),
+    async () => (await recordMetricObservation({ root, ...input, value: 121 })),
     { code: "DIVERGENT_OBSERVATION_REPLAY" },
   );
 });

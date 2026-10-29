@@ -53,11 +53,44 @@ function git(root, args, maximum = MAX_REFERENCE_BYTES) {
 export function createContextSourceReader(root, projectId, { storage = null, bundleHints = [] } = {}) {
   const retained = new Map(), histories = new Map(); let prefix, gitCalls = 0, lastCommandReason = null, prefixReason = null;
   const bundles = new Map(); let bundleKeys, inventoryReason = null, inventoryPartial = false, inspectedEntries = 0, bundleBytes = 0;
+  function bundleVersion(key, relative, expectedDigest, maxBytes = MAX_REFERENCE_BYTES, countBudget = false) {
+    const file = safeGraphFile(root, `${relativeProjectArtifact(storage, "observations", "source-bundles")}/${key}.json`);
+    const before = fs.lstatSync(file);
+    if (!before.isFile() || before.isSymbolicLink()) throw Object.assign(new Error("Not a regular bundle"), { code: "SOURCE_NOT_REGULAR_FILE" });
+    if (before.size > MAX_REFERENCE_BYTES || countBudget && bundleBytes + before.size > MAX_REFERENCE_BYTES) throw Object.assign(new Error("Source bundle byte budget"), { code: "RETAINED_SOURCE_BUNDLE_BYTE_BUDGET_REACHED" });
+    if (countBudget) bundleBytes += before.size;
+    const bundle = readSourceObservation(root, projectId, key, { requireCurrent: false, storage });
+    const after = fs.lstatSync(file);
+    if (countBudget) bundleBytes += Math.max(0, after.size - before.size);
+    if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size
+      || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || after.isSymbolicLink()) {
+      throw Object.assign(new Error("Bundle changed during lookup"), { code: "SOURCE_DRIFT" });
+    }
+    const source = bundle.evidence.sources[0];
+    bundles.set(key, { source: { path: source.path, digest: source.digest } });
+    if (source.path !== relative || source.digest !== expectedDigest) return null;
+    const bytes = Buffer.from(source.base64, "base64");
+    if (bytes.length > maxBytes) throw Object.assign(new Error("Source byte bound"), { code: "SOURCE_BYTE_BOUND" });
+    return { projectId, path: relative, digest: expectedDigest, text: decode(bytes), basis: {
+      kind: "retained-source-observation", bundleKey: key, observationId: bundle.observation.observationId,
+      observationHash: bundle.observation.observationHash, commitAttribution: "byte-location-only-not-Run-or-decision-cause" } };
+  }
   function retainedBundleVersion(relative, expectedDigest) {
     const errors = []; let omittedErrors = 0, inspected = 0, byteBound = false;
     const note = (key, reasonCode) => { if (errors.length < 8) errors.push({ bundleKey: key, reasonCode }); else omittedErrors++; };
+    const hints = [...new Set(bundleHints.filter(key => typeof key === "string" && /^[a-f0-9]{64}$/.test(key)))];
+    // Recorded addresses are read before opening an unrelated directory inventory.
+    for (const key of hints.slice(0, DEFAULT_SCAN)) {
+      const known = bundles.get(key);
+      if (known?.source && (known.source.path !== relative || known.source.digest !== expectedDigest)) continue;
+      if (known?.reasonCode) continue;
+      try { const version = bundleVersion(key, relative, expectedDigest, MAX_REFERENCE_BYTES, true); if (version) return { version }; }
+      catch (error) {
+        if (error.code === "RETAINED_SOURCE_BUNDLE_BYTE_BUDGET_REACHED") { byteBound = true; break; }
+        bundles.set(key, { reasonCode: error.code || "RETAINED_SOURCE_BUNDLE_UNAVAILABLE" });
+      }
+    }
     if (!bundleKeys) {
-      const hints = [...new Set(bundleHints.filter(key => typeof key === "string" && /^[a-f0-9]{64}$/.test(key)))];
       bundleKeys = hints.slice(0, DEFAULT_SCAN); inventoryPartial = hints.length > DEFAULT_SCAN;
       let directory;
       try {
@@ -81,33 +114,12 @@ export function createContextSourceReader(root, projectId, { storage = null, bun
       if (known?.source && known.source.path === relative && known.source.digest === expectedDigest) bundles.delete(key);
       if (!bundles.has(key)) {
         try {
-          const file = safeGraphFile(root, `${relativeProjectArtifact(storage, "observations", "source-bundles")}/${key}.json`);
-          const before = fs.lstatSync(file);
-          if (!before.isFile()) throw Object.assign(new Error("Not a regular bundle"), { code: "SOURCE_NOT_REGULAR_FILE" });
-          if (before.size > MAX_REFERENCE_BYTES || bundleBytes + before.size > MAX_REFERENCE_BYTES) { byteBound = true; break; }
-          bundleBytes += before.size;
-          // The existing verifier owns JSON/UTF-8, bundle identity, Project,
-          // source digest and observation hash checks. Never run a collector.
-          const bundle = readSourceObservation(root, projectId, key, { requireCurrent: false, storage });
-          const after = fs.lstatSync(file);
-          bundleBytes += Math.max(0, after.size - before.size);
-          if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size
-            || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || after.isSymbolicLink()) {
-            throw Object.assign(new Error("Bundle changed during lookup"), { code: "SOURCE_DRIFT" });
-          }
-          const source = bundle.evidence.sources[0];
-          bundles.set(key, { source: { path: source.path, digest: source.digest } });
-          if (source.path === relative && source.digest === expectedDigest) {
-            const bytes = Buffer.from(source.base64, "base64");
-            if (bytes.length > MAX_REFERENCE_BYTES) throw Object.assign(new Error("Source byte bound"), { code: "SOURCE_BYTE_BOUND" });
-            // Decode again with BOM preservation: exact cited bytes, not the
-            // bounded observation payload or today's current source.
-            return { version: { projectId, path: relative, digest: expectedDigest, text: decode(bytes), basis: {
-              kind: "retained-source-observation", bundleKey: key,
-              observationId: bundle.observation.observationId, observationHash: bundle.observation.observationHash,
-              commitAttribution: "byte-location-only-not-Run-or-decision-cause" } } };
-          }
-        } catch (error) { bundles.set(key, { reasonCode: error.code || "RETAINED_SOURCE_BUNDLE_UNAVAILABLE" }); }
+          const version = bundleVersion(key, relative, expectedDigest, MAX_REFERENCE_BYTES, true);
+          if (version) return { version };
+        } catch (error) {
+          if (error.code === "RETAINED_SOURCE_BUNDLE_BYTE_BUDGET_REACHED") { byteBound = true; break; }
+          bundles.set(key, { reasonCode: error.code || "RETAINED_SOURCE_BUNDLE_UNAVAILABLE" });
+        }
       }
       inspected++;
       const entry = bundles.get(key);
@@ -126,10 +138,22 @@ export function createContextSourceReader(root, projectId, { storage = null, bun
     gitCalls++; const result = await git(root, args, maximum); lastCommandReason = result.reasonCode; return result.bytes;
   };
   return {
-    async read(relative, expectedDigest = null, { maxBytes = MAX_REFERENCE_BYTES } = {}) {
+    async read(relative, expectedDigest = null, { maxBytes = MAX_REFERENCE_BYTES, bundleKey = null } = {}) {
       if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_REFERENCE_BYTES) return { status: "unavailable", path: relative, reasonCode: "SOURCE_BYTE_BOUND" };
-      const cacheKey = JSON.stringify(maxBytes === MAX_REFERENCE_BYTES ? [relative, expectedDigest] : [relative, expectedDigest, maxBytes]);
+      const cacheKey = JSON.stringify(bundleKey !== null ? [relative, expectedDigest, maxBytes, bundleKey]
+        : maxBytes === MAX_REFERENCE_BYTES ? [relative, expectedDigest] : [relative, expectedDigest, maxBytes]);
       if (retained.has(cacheKey)) return retained.get(cacheKey);
+      if (bundleKey !== null) {
+        try {
+          if (/^(?:\.git|\.head|\.lode)(?:\/|$)/i.test(relative)) throw Object.assign(new Error("Not repository source"), { code: "SOURCE_PATH_NOT_CODE" });
+          safeGraphFile(root, relative);
+          if (typeof bundleKey !== "string" || !/^[a-f0-9]{64}$/.test(bundleKey)) throw Object.assign(new Error("Invalid bundle key"), { code: "SOURCE_BUNDLE_KEY_INVALID" });
+          if (!/^[a-f0-9]{64}$/.test(expectedDigest || "")) throw Object.assign(new Error("Exact source digest required"), { code: "EXACT_SOURCE_DIGEST_REQUIRED" });
+          const version = bundleVersion(bundleKey, relative, expectedDigest, maxBytes);
+          if (!version) throw Object.assign(new Error("Bundle source differs from the exact reference"), { code: "SOURCE_BUNDLE_REFERENCE_MISMATCH" });
+          retained.set(cacheKey, version); return version;
+        } catch (error) { return { status: "unavailable", path: relative, expectedDigest, bundleKey, reasonCode: error.code || "RETAINED_SOURCE_BUNDLE_UNAVAILABLE" }; }
+      }
       let current = null, currentReason = null;
       try {
         if (/^(?:\.git|\.head|\.lode)(?:\/|$)/i.test(relative)) throw Object.assign(new Error("Not repository source"), { code: "SOURCE_PATH_NOT_CODE" });

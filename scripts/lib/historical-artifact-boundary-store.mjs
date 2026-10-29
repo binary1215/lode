@@ -122,7 +122,8 @@ export function verifyHistoricalInventoryEntries(entries, { projectRoot, project
       if (historicalBoundaryDigest(bytes) !== entry.sha256) fail(`Historical artifact digest changed: ${entry.path}`, "HISTORICAL_BOUNDARY_INTEGRITY_DRIFT");
     }
     const roleSpec = ROLE_PATH_SPECS[entry.role];
-    if (!roleSpec.id.test(entry.artifactId) || entry.path !== roleSpec.path(entry.artifactId, storage)) {
+    if (!roleSpec.id.test(entry.artifactId) || entry.path !== roleSpec.path(entry.artifactId, storage)
+      && !(entry.role === "legacy-world-embedding-reference" && entry.path === roleSpec.path(entry.artifactId, storage) + ".gz")) {
       fail("Historical inventory role, path, and artifact identity do not agree.", "HISTORICAL_BOUNDARY_ROLE_PATH_MISMATCH");
     }
     seenRoles.add(entry.role);

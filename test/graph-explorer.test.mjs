@@ -136,9 +136,10 @@ test("actual code reader imports/calls reach exact cited/current diff in the Sou
   ui.event(ui.ids.get("records").children.find(row => row.children[0].getAttribute("data-record-entry") === node.nodeId).children[0]);
   assert.equal(ui.ids.get("context-lineage").open, false, "A source selection must not automatically dump all comparison bodies");
   ui.event("show-code-diff"); assert(ui.ids.get("context-lineage").open);
+  ui.event("change-next"); // Navigation explicitly opens only the selected diff disclosure.
   const body = visibleText(ui.ids.get("context-lineage-body"));
   assert(body.includes(f.sourcePath)); assert.match(body, /− .*before/); assert.match(body, /\+ .*after/);
-  assert.match(body, /Cited revision \/ export-observed current/); ui.event("change-next"); assert.match(ui.ids.get("comparison-position").textContent, /changed region 1\//);
+  assert.match(body, /Cited revision \/ export-observed current/); assert.match(ui.ids.get("comparison-position").textContent, /changed region 1\//);
   const retained = result.graph.contextLineage.files.find(file => file.path === "src/missing-later.mjs"); assert(retained.currentObservation); assert.equal(retained.currentObservation.deletionEstablished, false);
   const renamed = result.graph.contextLineage.files.find(file => file.path === "src/rename-before.mjs"); assert(renamed.currentObservation); assert.equal(renamed.currentObservation.renameEstablished, false);
   assert(!result.codeGraph.nodes.some(node => node.path === "src/missing-later.mjs"));
@@ -182,15 +183,15 @@ test("self-contained HTML escapes repository text, keeps strong CSP and creates 
   const executableMarkup = html.replace(/<script nonce="[^"]+" id="snapshot" type="application\/json">[\s\S]*?<\/script>/, "");
   assert(!/\b(?:src|href)=["']https?:/i.test(executableMarkup)); assert(!html.includes("innerHTML"));
   const exact = await buildGraphExplorerSnapshot({ root: f.root }); assert(renderGraphExplorer(exact).includes("Project purpose &amp; lineage"));
-  await assert.rejects(exportGraphExplorer({ root: f.root, output }), { code: "GRAPH_EXPLORER_OUTPUT_EXISTS" });
-  await assert.rejects(exportGraphExplorer({ root: f.root, output: path.join(f.root, ".lode/view.html") }), { code: "GRAPH_EXPLORER_PROTECTED_OUTPUT" });
+  await assert.rejects(((exportGraphExplorer({ root: f.root, output }))), { code: "GRAPH_EXPLORER_OUTPUT_EXISTS" });
+  await assert.rejects(((exportGraphExplorer({ root: f.root, output: path.join(f.root, ".lode/view.html") }))), { code: "GRAPH_EXPLORER_PROTECTED_OUTPUT" });
 });
 
 test("protected output aliases and symlinked World originals cannot escape the local read boundary", async t => {
   const f = await explorerFixture(t), alias = path.join(f.base, "output-alias");
   try { fs.symlinkSync(path.join(f.root, ".lode"), alias, process.platform === "win32" ? "junction" : "dir"); }
   catch (error) { if (["EPERM", "EACCES"].includes(error.code)) { t.skip("Host does not permit this synthetic directory-link probe"); return; } throw error; }
-  await assert.rejects(exportGraphExplorer({ root: f.root, output: path.join(alias, "view.html") }), { code: "GRAPH_EXPLORER_PROTECTED_OUTPUT" });
+  await assert.rejects(((exportGraphExplorer({ root: f.root, output: path.join(alias, "view.html") }))), { code: "GRAPH_EXPLORER_PROTECTED_OUTPUT" });
   const world = path.join(f.root, ".lode/world-model/snapshots"), retained = path.join(f.base, "retained-outside-project");
   fs.renameSync(world, retained); fs.symlinkSync(retained, world, process.platform === "win32" ? "junction" : "dir");
   const result = await buildGraphExplorerSnapshot({ root: f.root, query: "relay", history: true });
@@ -235,7 +236,7 @@ test("actual Product Canon, reviewed mapping and Work writers reach same-Feature
   fs.writeFileSync(productFile, JSON.stringify({ schemaVersion: 1, featureGroups: [{ key: "reports", name: "Reports", description: "Portable views" }], capabilities: [],
     features: [{ key: "portable", name: "Portable report", description: "Read exact evidence in a portable view", featureGroupKeys: ["reports"], capabilityKeys: [], governedBy: [] }], requirements: [], constraints: [], decisions: [] }));
   await buildWorldModel({ root: f.root });
-  const world = inspectWorldModel({ root: f.root }).snapshot, graph = world.temporalProvenanceGraph;
+  const world = (await inspectWorldModel({ root: f.root })).snapshot, graph = world.temporalProvenanceGraph;
   const feature = graph.nodes.find(node => node.kind === "Feature" && node.key === "portable"), source = graph.nodes.find(node => node.kind === "Symbol" && node.path === "src/relay.mjs" && node.name === "relay"); assert(feature && source);
   const proposed = await startFeatureMapping({ root: f.root, semanticProposal: { schemaVersion: 1, sourceSnapshotId: graph.sourceSnapshotId, productModelId: world.productModel.productModelId,
     candidates: [{ relationshipType: "IMPLEMENTS", sourceNodeId: source.nodeId, productNodeId: feature.nodeId, explanation: "Synthetic explicit semantic proposal; not lexical inference", confidence: .9 }] } });

@@ -279,7 +279,7 @@ async function runFixture(iterations, queryText) {
     serverTraversalRequired: true,
     preparedTraversalRequired: true,
   });
-  materializeGraphProjection({ projectRoot: ".", graph, adapter });
+  (await materializeGraphProjection({ projectRoot: ".", graph, adapter }));
   const alternateAnchor = graph.nodes.find((node) => !request.traversalQuery.anchorIds.includes(node.nodeId));
   if (!alternateAnchor) fail("Benchmark requires a second graph anchor for receipt replay rejection.", "BENCHMARK_REPLAY_ANCHOR_MISSING");
   const alternateResult = queryTemporalProvenanceGraph(graph, {
@@ -289,12 +289,12 @@ async function runFixture(iterations, queryText) {
     maxEdges: 0,
   });
   const alternateRequest = buildPreparedTraversalRequest({ graph, result: alternateResult });
-  const replayedVerification = adapter.queryPrepared(alternateRequest);
+  const replayedVerification = (await adapter.queryPrepared(alternateRequest));
   const queryPrepared = adapter.queryPrepared.bind(adapter);
   adapter.queryPrepared = () => replayedVerification;
   let receiptReplayRejected = false;
   try {
-    queryGraphProjection({ projectRoot: ".", graph, adapter, query });
+    (await queryGraphProjection({ projectRoot: ".", graph, adapter, query }));
   } catch (error) {
     if (error.code !== "PREPARED_TRAVERSAL_VERIFICATION_MISMATCH") throw error;
     receiptReplayRejected = true;
@@ -307,7 +307,7 @@ async function runFixture(iterations, queryText) {
   let receiptReuseCount = 0;
   for (let index = 0; index < iterations; index += 1) {
     const started = performance.now();
-    const execution = queryGraphProjection({ projectRoot: ".", graph, adapter, query });
+    const execution = (await queryGraphProjection({ projectRoot: ".", graph, adapter, query }));
     elapsedMs.push(Math.max(0, performance.now() - started));
     if (execution.result.resultId !== result.resultId || execution.result.resultHash !== result.resultHash) {
       fail("Fixture benchmark semantic identity drifted.", "BENCHMARK_SEMANTIC_IDENTITY_DRIFT");
@@ -355,7 +355,7 @@ async function runLive(projectRoot, iterations, queryText) {
     || inspected.conformanceReport?.candidateAdapter?.preparedTraversalProtocolVersion !== "0.1.0") {
     fail("Live benchmark requires a verified prepared-traversal ArcadeDB activation.", "LIVE_PREPARED_TRAVERSAL_NOT_ACTIVE");
   }
-  const world = inspectWorldModel({ root: projectRoot });
+  const world = (await inspectWorldModel({ root: projectRoot }));
   const graph = world.snapshot.temporalProvenanceGraph;
   const query = queryFor(graph, queryText);
   const result = queryTemporalProvenanceGraph(graph, query);
@@ -371,7 +371,7 @@ async function runLive(projectRoot, iterations, queryText) {
   let receiptReuseCount = 0;
   for (let index = 0; index < iterations; index += 1) {
     const started = performance.now();
-    const execution = queryGraphProjection({ projectRoot, graph, adapter, query });
+    const execution = (await queryGraphProjection({ projectRoot, graph, adapter, query }));
     elapsedMs.push(Math.max(0, performance.now() - started));
     if (execution.result.resultId !== result.resultId || execution.result.resultHash !== result.resultHash
       || execution.diagnostics.fallbackUsed) {

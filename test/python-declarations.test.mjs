@@ -26,7 +26,7 @@ function project(t, source) {
   return { root, storage };
 }
 const need = (kind, symbol = "", selection) => ({ kind, path: "module.py", symbol, ...(selection ? { selection } : {}) });
-const query = (root, needs, options = {}) => prepareSourceContext({ root, task: "Inspect exact source", needs, onProcess, ...options });
+const query = async (root, needs, options = {}) => (await prepareSourceContext({ root, task: "Inspect exact source", needs, onProcess, ...options }));
 const details = (result) => JSON.parse(result.context.capsule.observationEvidence[0].payload.details);
 
 test("known decorated async method preserves literal spaces, CRLF, tabs, Unicode and long header exactly", async (t) => {
@@ -92,9 +92,9 @@ test("retained declaration evidence revalidates at Context consumption and detec
   const result = await query(root, [need("selected-source", "f")], { retain: true });
   const record = result.results[0];
   const args = { root, task: "Inspect", includeRepositoryWorld: false, evidenceNeeds: [{ id: "body", kind: "observation", observationIds: [record.observationId] }] };
-  compileContext(args);
+  (await compileContext(args));
   fs.appendFileSync(path.join(root, "module.py"), "# changed\n");
-  assert.throws(() => compileContext(args), { code: "SOURCE_DRIFT" });
+  (await assert.rejects(async () => (await compileContext(args)), { code: "SOURCE_DRIFT" }));
   assert.equal(inspectSourceObservation({ root, bundleKey: record.bundleKey }).sourceState, "stale");
   const file = path.join(root, storage.directory, "observations/source-bundles", `${record.bundleKey}.json`);
   const bundle = JSON.parse(fs.readFileSync(file)); bundle.evidence.query[0].symbol = "other";

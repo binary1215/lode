@@ -544,6 +544,7 @@ export function verifyOnboardingGraphProjectionInput(document) {
         || typeof reference.artifactId !== "string" || !reference.artifactId || !/^[a-f0-9]{64}$/.test(reference.sha256 || "")
         || !spec || !spec.id.test(reference.artifactId) || !spec.modes.has(reference.interpretationMode)
         || reference.path !== spec.path(reference.artifactId)
+          && !(reference.role === "legacy-world-embedding-reference" && reference.path === spec.path(reference.artifactId) + ".gz")
         || referenceById.has(`${reference.role}:${reference.artifactId}`)) {
         fail("Historical onboarding reference is invalid.", "INVALID_ONBOARDING_HISTORICAL_COVERAGE");
       }

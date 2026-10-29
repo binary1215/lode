@@ -178,12 +178,12 @@ test('default selected work coverage crosses CLI and direct/router MCP without e
  assert.deepEqual(snapshot(f.base),before);
  }
 });
-for(const runtime of['codex','claude'])test(`${runtime} healthy startup is useful without a mandatory follow-up or selection write`,t=>{
+for(const runtime of['codex','claude'])test(`${runtime} healthy startup is useful without a mandatory follow-up or selection write`,async t=>{
  const f=fixture(t),environment={HEAD_AGENT_OPERATIONAL_STATE_ROOT:f.operational};
  updateProjectDirection({root:f.root,input:{goal:'Explain only',constraints:['No external effects'],cancelledActions:['deployment']}});
  const host=createSessionHostAdapter({runtime,nativeSessionId:'synthetic-surface',environment});assert.equal(host.select({root:f.root,sessionId:f.selected.sessionId,expectedRevision:0}).retained,true);
- const entry=host.enter({root:f.root}),before=snapshot(f.base);
- const output=sessionStartContext({runtime,environment,event:{hook_event_name:'SessionStart',source:'compact',session_id:'synthetic-surface',cwd:f.root}});
+ const entry=await host.enter({root:f.root}),before=snapshot(f.base);
+ const output=await sessionStartContext({runtime,environment,event:{hook_event_name:'SessionStart',source:'compact',session_id:'synthetic-surface',cwd:f.root}});
  const text=output.hookSpecificOutput.additionalContext,value=JSON.parse(text);
  assert.ok(text.length<=(runtime==="codex"?32768:10000));assert.equal(value.sessionPurpose,entry.workContext.sessionPurpose);
  assert.deepEqual(value.currentProjectDirection,directionView(entry.projectStatus.currentProjectDirection));
@@ -191,16 +191,16 @@ for(const runtime of['codex','claude'])test(`${runtime} healthy startup is usefu
  assert.equal(value.persisted,false);assert.equal(value.ordinaryWorkBlocked,false);assert.equal(value.userDecisionRequired,false);
  assert.equal(value.sessionRecovery,null);assert.deepEqual(snapshot(f.base),before);
 });
-for(const runtime of['codex','claude'])test(`${runtime} lost linkage keeps independent current work visible without guessing or repair`,t=>{
+for(const runtime of['codex','claude'])test(`${runtime} lost linkage keeps independent current work visible without guessing or repair`,async t=>{
  const f=fixture(t),environment={HEAD_AGENT_OPERATIONAL_STATE_ROOT:f.operational};
  updateProjectDirection({root:f.root,input:{goal:'Explain only',cancelledActions:['deployment']}});
  const host=createSessionHostAdapter({runtime,nativeSessionId:'synthetic-lost-linkage',environment});
  assert.equal(host.select({root:f.root,sessionId:f.selected.sessionId,expectedRevision:0}).retained,true);
  const binding=fs.readdirSync(f.operational,{recursive:true}).find(file=>file.endsWith('binding.json'));
  assert.ok(binding);fs.unlinkSync(path.join(f.operational,binding));
- const before=snapshot(f.base),entry=host.enter({root:f.root});
+ const before=snapshot(f.base),entry=await host.enter({root:f.root});
  assert.equal(entry.status,'session_selection_unresolved');
- const hook=sessionStartContext({runtime,environment,event:{hook_event_name:'SessionStart',source:'resume',session_id:'synthetic-lost-linkage',cwd:f.root}});
+ const hook=await sessionStartContext({runtime,environment,event:{hook_event_name:'SessionStart',source:'resume',session_id:'synthetic-lost-linkage',cwd:f.root}});
  const text=hook.hookSpecificOutput.additionalContext,value=JSON.parse(text);
  assert.ok(text.length<=(runtime==="codex"?32768:10000));assert.equal(value.status,'session_selection_unresolved');
  assert.equal(value.logicalSessionId,null);assert.equal(value.sessionPurpose,null);assert.equal(value.route,null);

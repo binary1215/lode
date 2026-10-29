@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { boundedPossibleMoves } from "./lineage-moves.mjs";
 import { inspectProject } from "./lode-core.mjs";
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { readLineageArtifact } from "./execution-lineage.mjs";
@@ -61,17 +62,17 @@ function snapshotDescriptor(snapshot, currentWorldModelId, currentParentSourceId
   };
 }
 
-export function inspectGraphLineage({ root = ".", cursor = "", limit = 25, storeAdapter = null } = {}) {
+export async function inspectGraphLineage({ root = ".", cursor = "", limit = 25, storeAdapter = null } = {}) {
   const inspected = readyProject(root);
   const selectedLimit = normalizeLimit(limit, 25, PAGE_LIMIT_MAX, "Graph lineage page limit");
-  const current = readWorldModel({ root: inspected.project.projectRoot, storeAdapter });
+  const current = (await readWorldModel({ root: inspected.project.projectRoot, storeAdapter }));
   const adapter = createWorldModelStoreAdapter({ projectRoot: inspected.project.projectRoot, adapter: storeAdapter, storage: inspected.storage });
-  const ids = adapter.listSnapshotIds();
+  const ids = (await adapter.listSnapshotIds());
   const start = cursor ? ids.findIndex((id) => id === cursor) + 1 : 0;
   if (cursor && start === 0) fail("Graph lineage cursor is not a retained World Model snapshot.", "INVALID_GRAPH_LINEAGE_CURSOR");
   const pageIds = ids.slice(start, start + selectedLimit);
   const currentParents = new Set(current.snapshot.temporalProvenanceGraph.parentSourceSnapshotIds);
-  const snapshots = pageIds.map((worldModelId) => readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId, storeAdapter: adapter }).snapshot);
+  const snapshots = (await Promise.all(pageIds.map(async (worldModelId) => (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId, storeAdapter: adapter })).snapshot)));
   const entries = snapshots.map((snapshot) => snapshotDescriptor(snapshot, current.snapshot.worldModelId, currentParents));
   const segmentPayload = { projectId: inspected.project.projectId, cursor: cursor || null, entries };
   const segmentHash = digest(canonicalJson(segmentPayload));
@@ -93,14 +94,14 @@ export function inspectGraphLineage({ root = ".", cursor = "", limit = 25, store
   };
 }
 
-function selectedSnapshot({ root, worldModelId, requireCurrent, storeAdapter }) {
-  if (worldModelId) return readWorldModelSnapshot({ root, worldModelId, storeAdapter }).snapshot;
+async function selectedSnapshot({ root, worldModelId, requireCurrent, storeAdapter }) {
+  if (worldModelId) return (await readWorldModelSnapshot({ root, worldModelId, storeAdapter })).snapshot;
   if (requireCurrent) {
-    const inspected = inspectWorldModel({ root, storeAdapter });
+    const inspected = (await inspectWorldModel({ root, storeAdapter }));
     if (inspected.status !== "current") fail("Current World Model is stale; refresh it or select an exact retained snapshot.", "WORLD_MODEL_STALE");
     return inspected.snapshot;
   }
-  return readWorldModel({ root, storeAdapter }).snapshot;
+  return (await readWorldModel({ root, storeAdapter })).snapshot;
 }
 
 export function projectExecutionLineageOverlay(root, graphResult) {
@@ -146,13 +147,13 @@ export function projectExecutionLineageOverlay(root, graphResult) {
   };
 }
 
-export function traceGraphLineage({
+export async function traceGraphLineage({
   root = ".", worldModelId = "", anchorId = "", query = "", depth = 2,
   maxNodes = 100, maxEdges = 200, includeExecution = true, storeAdapter = null,
 } = {}) {
   const inspected = readyProject(root);
   if (!anchorId && !String(query || "").trim()) fail("Graph lineage trace requires an exact anchorId or discovery query.", "GRAPH_LINEAGE_ANCHOR_REQUIRED");
-  const snapshot = selectedSnapshot({ root: inspected.project.projectRoot, worldModelId, requireCurrent: !worldModelId, storeAdapter });
+  const snapshot = (await selectedSnapshot({ root: inspected.project.projectRoot, worldModelId, requireCurrent: !worldModelId, storeAdapter }));
   const graph = snapshot.temporalProvenanceGraph;
   const result = queryTemporalProvenanceGraph(graph, {
     anchorIds: anchorId ? [anchorId] : null,
@@ -194,52 +195,74 @@ function boundedChanges(values, limit) {
   return { count: values.length, items: values.slice(0, limit), omittedCount: Math.max(0, values.length - limit) };
 }
 
-function possibleMoves(fromSnapshot, toSnapshot) {
-  const before = new Map(fromSnapshot.files.map((item) => [item.path, item.digest]));
-  const after = new Map(toSnapshot.files.map((item) => [item.path, item.digest]));
-  const removed = [...before].filter(([path]) => !after.has(path));
-  const added = [...after].filter(([path]) => !before.has(path));
-  const moves = [];
-  for (const [fromPath, fromDigest] of removed) for (const [toPath, toDigest] of added) if (fromDigest === toDigest) moves.push({
-    fromPath, toPath, digest: fromDigest,
-    classification: "exact-content-possible-move",
-    semanticContinuityClaimed: false,
-    automaticSameAsRelation: false,
-    reviewRequiredOnlyForSemanticPromotion: true,
-  });
-  return moves.sort((a, b) => canonicalJson(a).localeCompare(canonicalJson(b)));
-}
-
-export function diffGraphLineage({ root = ".", fromWorldModelId, toWorldModelId, limit = 100, storeAdapter = null } = {}) {
+export async function diffGraphLineage({ root = ".", fromWorldModelId, toWorldModelId, limit = 100, storeAdapter = null, scopePaths = null, cursor = "" } = {}) {
   const inspected = readyProject(root);
   const selectedLimit = normalizeLimit(limit, 100, 500, "Graph lineage diff limit");
   if (fromWorldModelId === toWorldModelId) fail("Graph lineage diff requires two different snapshots.", "GRAPH_LINEAGE_DIFF_IDENTICAL");
-  const fromSnapshot = readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: fromWorldModelId, storeAdapter }).snapshot;
-  const toSnapshot = readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: toWorldModelId, storeAdapter }).snapshot;
-  const beforeNodes = new Map(fromSnapshot.temporalProvenanceGraph.nodes.map((node) => [node.nodeId, node]));
-  const afterNodes = new Map(toSnapshot.temporalProvenanceGraph.nodes.map((node) => [node.nodeId, node]));
-  const beforeEdges = new Map(fromSnapshot.temporalProvenanceGraph.edges.map((edge) => [edge.edgeId, edge]));
-  const afterEdges = new Map(toSnapshot.temporalProvenanceGraph.edges.map((edge) => [edge.edgeId, edge]));
+  const scoped = scopePaths !== null || Boolean(cursor);
+  let selectedPaths = null;
+  if (scopePaths !== null) {
+    if (!Array.isArray(scopePaths) || !scopePaths.length || scopePaths.length > 500 || scopePaths.some(p => typeof p !== "string" || !p || p.includes(String.fromCharCode(92)) || p.includes(String.fromCharCode(0)) || p.startsWith("/") || /^[A-Za-z]:/.test(p) || p.split("/").some(s => !s || s === "." || s === ".."))) fail("Diff scope requires normalized exact repository paths.", "INVALID_GRAPH_LINEAGE_SCOPE");
+    selectedPaths = [...new Set(scopePaths)].sort();
+  }
+  const fromSnapshot = (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: fromWorldModelId, storeAdapter })).snapshot;
+  const toSnapshot = (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: toWorldModelId, storeAdapter })).snapshot;
+  const pageBasis = { projectId: inspected.project.projectId, from: fromSnapshot.worldModelId, fromHash: fromSnapshot.worldModelHash,
+    to: toSnapshot.worldModelId, toHash: toSnapshot.worldModelHash, paths: selectedPaths, order: "lineage-diff-v1" };
+  let previousEnds = {};
+  if (cursor) {
+    if (typeof cursor !== "string" || cursor.length > 131072 || !/^[A-Za-z0-9_-]+$/.test(cursor)) fail("Invalid diff page cursor.", "INVALID_GRAPH_LINEAGE_CURSOR");
+    let parsed; try { parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")); } catch { fail("Invalid diff page cursor.", "INVALID_GRAPH_LINEAGE_CURSOR"); }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) fail("Invalid diff page cursor.", "INVALID_GRAPH_LINEAGE_CURSOR");
+    if (canonicalJson(parsed.basis) !== canonicalJson(pageBasis) || !parsed.ends || typeof parsed.ends !== "object" || Array.isArray(parsed.ends)
+      || Object.keys(parsed.ends).some(k => !["addedNodes","removedNodes","changedNodes","addedEdges","removedEdges","possibleMoves"].includes(k))
+      || Object.entries(parsed.ends).some(([k,v]) => k === "possibleMoves" ? v !== null && (!v || typeof v.key !== "string" || v.key.length > 100000 || !Number.isSafeInteger(v.ordinal) || v.ordinal < 0) : typeof v !== "string" || v.length > 256)) fail("Diff cursor belongs to different endpoints, scope or order.", "INVALID_GRAPH_LINEAGE_CURSOR");
+    previousEnds = parsed.ends;
+  }
+  const pathSet = selectedPaths ? new Set(selectedPaths) : null;
+  const incidentIds = pathSet ? new Set() : null;
+  if (pathSet) for (const graph of [fromSnapshot.temporalProvenanceGraph, toSnapshot.temporalProvenanceGraph]) {
+    for (const node of graph.nodes) if (pathSet.has(node.path)) incidentIds.add(node.nodeId);
+  }
+  const nodeSelected = n => pathSet.has(n.path);
+  const edgeSelected = e => incidentIds.has(e.from) || incidentIds.has(e.to) || pathSet.has(e.evidence?.path);
+  const beforeNodes = new Map((pathSet ? fromSnapshot.temporalProvenanceGraph.nodes.filter(nodeSelected) : fromSnapshot.temporalProvenanceGraph.nodes).map((node) => [node.nodeId, node]));
+  const afterNodes = new Map((pathSet ? toSnapshot.temporalProvenanceGraph.nodes.filter(nodeSelected) : toSnapshot.temporalProvenanceGraph.nodes).map((node) => [node.nodeId, node]));
+  const beforeEdges = new Map((pathSet ? fromSnapshot.temporalProvenanceGraph.edges.filter(edgeSelected) : fromSnapshot.temporalProvenanceGraph.edges).map((edge) => [edge.edgeId, edge]));
+  const afterEdges = new Map((pathSet ? toSnapshot.temporalProvenanceGraph.edges.filter(edgeSelected) : toSnapshot.temporalProvenanceGraph.edges).map((edge) => [edge.edgeId, edge]));
   const addedNodes = [...afterNodes.keys()].filter((id) => !beforeNodes.has(id)).sort();
   const removedNodes = [...beforeNodes.keys()].filter((id) => !afterNodes.has(id)).sort();
   const changedNodes = [...afterNodes.keys()].filter((id) => beforeNodes.has(id) && canonicalJson(afterNodes.get(id)) !== canonicalJson(beforeNodes.get(id))).sort();
   const addedEdges = [...afterEdges.keys()].filter((id) => !beforeEdges.has(id)).sort();
   const removedEdges = [...beforeEdges.keys()].filter((id) => !afterEdges.has(id)).sort();
-  const moves = possibleMoves(fromSnapshot, toSnapshot);
+  const beforeFiles = selectedPaths ? fromSnapshot.files.filter(f => pathSet.has(f.path)) : fromSnapshot.files;
+  const afterFiles = selectedPaths ? toSnapshot.files.filter(f => pathSet.has(f.path)) : toSnapshot.files;
+  const moves = boundedPossibleMoves(beforeFiles, afterFiles, selectedLimit, scoped ? { after: previousEnds.possibleMoves || null } : null);
+  const ends = {}, remaining = {};
+  function pageValues(name, values) {
+    if (!scoped) return boundedChanges(values, selectedLimit);
+    const eligible = previousEnds[name] ? values.filter(id => id > previousEnds[name]) : values;
+    const items = eligible.slice(0, selectedLimit);
+    ends[name] = items.at(-1) || previousEnds[name] || "";
+    remaining[name] = Math.max(0, eligible.length - items.length);
+    return { count: values.length, items, omittedCount: values.length - items.length };
+  }
+  const changes = { addedNodes: pageValues("addedNodes", addedNodes), removedNodes: pageValues("removedNodes", removedNodes),
+    changedNodes: pageValues("changedNodes", changedNodes), addedEdges: pageValues("addedEdges", addedEdges), removedEdges: pageValues("removedEdges", removedEdges),
+    possibleMoves: { count: moves.count, items: moves.items, omittedCount: moves.omittedCount } };
+  if (scoped) { ends.possibleMoves = moves.endAfter; remaining.possibleMoves = moves.remainingCount; }
+  const nextCursor = scoped && Object.values(remaining).some(n => n > 0) ? Buffer.from(canonicalJson({basis:pageBasis,ends})).toString("base64url") : null;
   return {
     kind: "GraphLineageDiffProjection",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-graph-lineage-view"), version: GRAPH_LINEAGE_VIEW_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-graph-lineage-view"), version: scoped ? "0.3.0" : GRAPH_LINEAGE_VIEW_VERSION },
     projectId: inspected.project.projectId,
     from: { worldModelId: fromSnapshot.worldModelId, graphSnapshotId: fromSnapshot.temporalProvenanceGraph.graphSnapshotId, sourceSnapshotId: fromSnapshot.temporalProvenanceGraph.sourceSnapshotId },
     to: { worldModelId: toSnapshot.worldModelId, graphSnapshotId: toSnapshot.temporalProvenanceGraph.graphSnapshotId, sourceSnapshotId: toSnapshot.temporalProvenanceGraph.sourceSnapshotId },
-    changes: {
-      addedNodes: boundedChanges(addedNodes, selectedLimit),
-      removedNodes: boundedChanges(removedNodes, selectedLimit),
-      changedNodes: boundedChanges(changedNodes, selectedLimit),
-      addedEdges: boundedChanges(addedEdges, selectedLimit),
-      removedEdges: boundedChanges(removedEdges, selectedLimit),
-      possibleMoves: boundedChanges(moves, selectedLimit),
-    },
+    changes,
+    ...(scoped ? { scope: { paths: selectedPaths, verification: "full-endpoint-snapshots", counts: "exact-within-selected-path-scope",
+      edges: "incident-to-scoped-nodes-or-exact-evidence-path", possibleMoves: "both-paths-within-scope",
+      globalChangeCounts: selectedPaths ? "not-computed" : "exact", rootContextChanged: fromSnapshot.sourceDigest !== toSnapshot.sourceDigest },
+      page: { remaining, nextCursor, endpointsFixed: true } } : {}),
     semantics: {
       exactContentPossibleMoveIsIdentityProof: false,
       semanticContinuityRequiresHeadProposal: true,

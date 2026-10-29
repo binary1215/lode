@@ -319,7 +319,7 @@ test("lets CLI and MCP collect a Host-injected source by opaque ID without user-
   assert.equal(beforeCollection.configuredSources.matchingSourceCount, 1);
   assert.equal(beforeCollection.workflow.nextAction, "head-may-collect-one-source-if-durable-current-evidence-is-required");
 
-  const cliSources = runCommand(["observation-sources", root], { observationRegistry: registry });
+  const cliSources = (await runCommand(["observation-sources", root], { observationRegistry: registry }));
   assert.equal(cliSources.registry.configuredSourceCount, 1);
   assert.equal(cliSources.registry.sources[0].sourceId, registered.sourceId);
   const cliCollected = await runCommand(["observation-source-collect", root, "--source", registered.sourceId], { observationRegistry: registry });
@@ -411,12 +411,12 @@ test("exposes the same bounded contract through CLI and MCP while requiring Host
   fs.writeFileSync(cliInput, JSON.stringify({ binding: binding(), descriptor: type, input: observed }));
   const cli = await runCommand(["observation-ingest", root, "--input", cliInput]);
   assert.equal(cli.observation.typeKey, "head.test.summary");
-  assert.equal(runCommand(["observation-query", root]).inventorySummary.counts.observations, 1);
-  assert.equal(runCommand(["observation-sources", root]).dynamicProjectCodeLoading, false);
-  const cliQuery = runCommand(["observation-query", root, "--type-key", type.typeKey, "--limit", "1"]);
+  assert.equal((await runCommand(["observation-query", root])).inventorySummary.counts.observations, 1);
+  assert.equal((await runCommand(["observation-sources", root])).dynamicProjectCodeLoading, false);
+  const cliQuery = (await runCommand(["observation-query", root, "--type-key", type.typeKey, "--limit", "1"]));
   assert.equal(cliQuery.results[0].observationId, cli.observation.observationId);
   assert.equal(cliQuery.results[0].payload, undefined);
-  const cliRead = runCommand(["observation-read", root, "--observation", cli.observation.observationId]);
+  const cliRead = (await runCommand(["observation-read", root, "--observation", cli.observation.observationId]));
   assert.equal(cliRead.descriptor.descriptorId, cli.observation.descriptorId);
   assert.equal(cliRead.lineage.receiptId, cli.receipt.receiptId);
 
@@ -455,11 +455,11 @@ test("keeps unrelated ProductSignal flow independent from unused Observation sto
   fs.unlinkSync(path.join(root, layout.directory, "observations", "receipts", `${recorded.receipt.receiptId}.json`));
   const signal = await recordProductSignal({ root, statement: "A separate user-authored product fact.", source: "user" });
   assert.equal(signal.signal.kind, "ProductSignal");
-  const isolatedWorld = readWorldModel({ root }).snapshot;
+  const isolatedWorld = (await readWorldModel({ root })).snapshot;
   assert.equal(isolatedWorld.observationProjection.status, "unavailable");
   assert.equal(isolatedWorld.observationProjection.reasonCode, "OBSERVATION_RECEIPT_MISSING");
   assert.equal(isolatedWorld.temporalProvenanceGraph.summary.observationRecordCount, 0);
-  assert.deepEqual(inspectWorldModelStatus({ root }).observations, {
+  assert.deepEqual((await inspectWorldModelStatus({ root })).observations, {
     status: "unavailable",
     reasonCode: "OBSERVATION_RECEIPT_MISSING",
     descriptorCount: 0,
@@ -508,16 +508,16 @@ test("admits Observation evidence only by exact HEAD need and keeps semantic int
     input: input({ suffix: "latency", subjectType: "example.delivery.endpoint", payload: { milliseconds: 42 } }),
   });
   const task = "Investigate the unrelated onboarding experience";
-  const withoutExactNeed = compileContext({ root, task });
+  const withoutExactNeed = (await compileContext({ root, task }));
   assert.deepEqual(withoutExactNeed.capsule.observationEvidence, []);
   assert.equal(withoutExactNeed.capsule.selection.candidateIds.includes(observed.observation.observationId), false);
 
-  const withExactNeed = compileContext({ root, task, evidenceNeeds: [{
+  const withExactNeed = (await compileContext({ root, task, evidenceNeeds: [{
     id: "exact-latency-evidence",
     kind: "observation",
     observationIds: [observed.observation.observationId],
     rationale: "Fresh HEAD selected this immutable observation after semantic task analysis.",
-  }] });
+  }] }));
   assert.deepEqual(withExactNeed.capsule.evidenceGaps, []);
   assert.deepEqual(withExactNeed.capsule.observationEvidence.map((item) => item.nodeId), [observed.observation.observationId]);
   assert.equal(withExactNeed.capsule.observationEvidence[0].semanticAuthority, false);
@@ -532,11 +532,11 @@ test("admits Observation evidence only by exact HEAD need and keeps semantic int
   assert.deepEqual(hypothesis.hypothesis.signalIds, []);
   assert.equal(hypothesis.hypothesis.epistemicClass, "hypothesis");
   assert.equal(hypothesis.hypothesis.promotionAuthority, false);
-  const graph = readWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await readWorldModel({ root })).snapshot.temporalProvenanceGraph;
   assert.equal(graph.nodes.some((node) => node.nodeId === observed.observation.observationId && node.kind === "ObservationRecord"), true);
   assert.equal(graph.edges.some((edge) => edge.type === "REFERENCES" && edge.from === hypothesis.hypothesis.hypothesisId && edge.to === observed.observation.observationId), true);
 
-  assert.throws(() => compileContext({ root, task, evidenceNeeds: [{ id: "invalid-observation", kind: "observation", observationIds: [] }] }), { code: "INVALID_EVIDENCE_NEEDS" });
+  (await assert.rejects(async () => (await compileContext({ root, task, evidenceNeeds: [{ id: "invalid-observation", kind: "observation", observationIds: [] }] })), { code: "INVALID_EVIDENCE_NEEDS" }));
   await assert.rejects(() => recordProductHypothesis({ root, statement: "Unsupported", observationIds: ["observation-000000000000000000000000"] }), (error) => error.code === "UNKNOWN_OBSERVATION");
 });
 

@@ -33,7 +33,7 @@ function bindingIdentity({ projectId, sourceKey, triggerKinds, mode, providerAss
   return { sourceId: `conformance-trigger-source-${hash.slice(0, 24)}`, bindingHash: hash };
 }
 
-function verifyTriggerArtifact(projectRoot, projectId, trigger, storage) {
+async function verifyTriggerArtifact(projectRoot, projectId, trigger, storage) {
   const kind = key(trigger?.kind, "Conformance trigger kind", 32);
   if (!CONFORMANCE_TRIGGER_KINDS.includes(kind)) fail("Conformance trigger kind is unsupported.", "INVALID_CONFORMANCE_TRIGGER");
   const artifactId = key(trigger?.artifactId, "Conformance trigger artifactId", 128);
@@ -45,7 +45,7 @@ function verifyTriggerArtifact(projectRoot, projectId, trigger, storage) {
     const artifact = readObservation({ root: projectRoot, observationId: artifactId }).observation;
     artifactHash = artifact.observationHash || artifact.derivedObservationHash;
   } else if (kind === "refresh-receipt") {
-    const artifact = readIncrementalRefreshReceipt({ root: projectRoot, refreshReceiptId: artifactId }).receipt;
+    const artifact = (await readIncrementalRefreshReceipt({ root: projectRoot, refreshReceiptId: artifactId })).receipt;
     artifactHash = artifact.refreshReceiptHash;
   } else {
     const projection = loadReleaseObservationProjection({ projectRoot, projectId, storage });
@@ -111,9 +111,9 @@ export class ConformanceTriggerRegistry {
     return source;
   }
 
-  enqueue({ root, sourceId, trigger } = {}) {
+  async enqueue({ root, sourceId, trigger } = {}) {
     const source = this.source(root, sourceId);
-    const verified = verifyTriggerArtifact(source.projectRoot, source.projectId, trigger, source.storage);
+    const verified = (await verifyTriggerArtifact(source.projectRoot, source.projectId, trigger, source.storage));
     if (!source.triggerKinds.includes(verified.kind)) fail("Conformance trigger kind is outside this Host binding.", "CONFORMANCE_TRIGGER_KIND_NOT_BOUND");
     const exactId = `${verified.kind}:${verified.artifactId}:${verified.artifactHash}`;
     if (source.queue.some((item) => item.exactId === exactId)
@@ -134,7 +134,7 @@ export class ConformanceTriggerRegistry {
     return { status: "configured", source: this.describeSource(source), nextAction: source.queue.length ? "prepare-bounded-assessment" : "continue-ordinary-work", authority: "P5-status-only" };
   }
 
-  prepare({ root, sourceId, limit = MAX_TRIGGER_PAGE } = {}) {
+  async prepare({ root, sourceId, limit = MAX_TRIGGER_PAGE } = {}) {
     const source = this.source(root, sourceId);
     const boundedLimit = Number(limit);
     if (!Number.isInteger(boundedLimit) || boundedLimit < 1 || boundedLimit > MAX_TRIGGER_PAGE) fail(`Conformance trigger page must be between 1 and ${MAX_TRIGGER_PAGE}.`, "INVALID_CONFORMANCE_TRIGGER_LIMIT");
@@ -143,7 +143,7 @@ export class ConformanceTriggerRegistry {
     if (!source.queue.length) return { status: "idle", source: this.describeSource(source), nextAction: "continue-ordinary-work", ordinaryWorkBlocked: false, authority: "P5-status-only" };
     const triggers = source.queue.slice(0, boundedLimit);
     const remainingTriggers = source.queue.slice(triggers.length);
-    const preparation = prepareConformanceAssessment({ root: source.projectRoot, limit: 32 });
+    const preparation = (await prepareConformanceAssessment({ root: source.projectRoot, limit: 32 }));
     const batchCoalescedRefreshCount = coalescedRefreshCount(triggers);
     const payload = { projectId: source.projectId, sourceId: source.sourceId, bindingHash: source.bindingHash, triggerIds: triggers.map((item) => item.exactId), preparationId: preparation.projectionId, coalescedRefreshCount: batchCoalescedRefreshCount };
     const batchHash = conformanceDigest(conformanceCanonicalJson(payload));

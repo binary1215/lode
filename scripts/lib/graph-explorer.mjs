@@ -5,7 +5,7 @@ import path from "node:path";
 import { readGraphProject, safeGraphFile } from "./discovery-index.mjs";
 import { relativeProjectArtifact } from "./project-storage-format.mjs";
 import { collectGraphExplorerInventory } from "./project-graph.mjs";
-import { LocalJsonWorldModelStoreAdapter } from "./world-model-store.mjs";
+import { LocalJsonWorldModelStoreAdapter, createLocalReadOnlyWorldModelStoreAdapter } from "./world-model-store.mjs";
 import { inspectGraphLineage, diffGraphLineage } from "./graph-lineage.mjs";
 import { renderGraphExplorer } from "./graph-explorer-html.mjs";
 
@@ -16,7 +16,7 @@ const reason = error => /^[A-Z][A-Z0-9_]{0,95}$/.test(error?.code || "") ? error
 export const explorerReferenceKey = reference => JSON.stringify([reference?.path || null, reference?.digest || null]);
 
 function readOnlyLocalAdapter(Base, owner, directory) {
-  const adapter = new Base(owner);
+  const adapter = createLocalReadOnlyWorldModelStoreAdapter(owner);
   for (const method of ["pointerLocation", "snapshotLocation"]) {
     const original = adapter[method].bind(adapter);
     adapter[method] = (...args) => safeGraphFile(owner.projectRoot, path.relative(owner.projectRoot, original(...args)).replaceAll("\\", "/"));
@@ -134,14 +134,14 @@ export async function buildGraphExplorerSnapshot({ root = ".", query = "", ancho
   let retainedHistory = { status: "not-requested", entries: [], diff: null };
   if (history && owner.project) {
     try {
-      const lineage = inspectGraphLineage({ root: projectRoot, limit: 3, storeAdapter: worldAdapter });
+      const lineage = (await inspectGraphLineage({ root: projectRoot, limit: 3, storeAdapter: worldAdapter }));
       if (lineage.projectId !== owner.project.projectId) fail("GRAPH_EXPLORER_PROJECT_MISMATCH");
       const entries = lineage.segment.entries;
       const current = entries.find(entry => entry.worldModelId === lineage.currentWorldModelId);
       const parent = entries.find(entry => current?.parentSourceSnapshotIds.includes(entry.sourceSnapshotId));
       const pair = current && parent ? [parent, current] : entries.slice(0, 2);
-      const diff = pair.length === 2 ? diffGraphLineage({ root: projectRoot,
-        fromWorldModelId: pair[0].worldModelId, toWorldModelId: pair[1].worldModelId, limit: 40, storeAdapter: worldAdapter }) : null;
+      const diff = pair.length === 2 ? (await diffGraphLineage({ root: projectRoot,
+        fromWorldModelId: pair[0].worldModelId, toWorldModelId: pair[1].worldModelId, limit: 40, storeAdapter: worldAdapter })) : null;
       retainedHistory = { status: "retained", lineage, entries, diff,
         comparison: parent ? "retained-parent-to-current" : "exact-retained-pair-not-chronological-inference" };
     } catch (error) { retainedHistory = { status: "unavailable", entries: [], diff: null, reasonCode: reason(error) }; }

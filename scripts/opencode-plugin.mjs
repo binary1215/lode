@@ -155,7 +155,7 @@ export default {
           let text, prepared;
           try {
             const adapter = createSessionHostAdapter({ runtime: "opencode", nativeSessionId: session.id, environment });
-            text = startupProjection(adapter.enter({ root: directory }), directory, "opencode");
+            text = startupProjection((await adapter.enter({ root: directory })), directory, "opencode");
             if (text.length > MAX_CONTEXT_CHARACTERS.opencode) throw new Error("Context exceeds its delivery bound.");
             prepared = prepareUserPromptReference({ root: directory, runtime: "opencode", nativeSessionId: session.id, environment,
               additionalContext: text, limit: MAX_CONTEXT_CHARACTERS.opencode });

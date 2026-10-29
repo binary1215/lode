@@ -44,7 +44,7 @@ test("projects retained graph genealogy without creating another artifact stream
 
   const snapshotsDirectory = path.join(root, layout.directory, "world-model", "snapshots");
   const beforeRead = fs.readdirSync(snapshotsDirectory).sort();
-  const status = inspectGraphLineage({ root, limit: 100 });
+  const status = (await inspectGraphLineage({ root, limit: 100 }));
   const afterRead = fs.readdirSync(snapshotsDirectory).sort();
   assert.deepEqual(afterRead, beforeRead);
   assert.equal(status.totalRetainedSnapshots, 2);
@@ -54,13 +54,13 @@ test("projects retained graph genealogy without creating another artifact stream
   assert.equal(status.segment.entries.find((item) => item.worldModelId === second.snapshot.worldModelId).tier, "hot");
   assert.equal(status.segment.entries.find((item) => item.worldModelId === first.snapshot.worldModelId).tier, "warm");
 
-  const diff = diffGraphLineage({ root, fromWorldModelId: first.snapshot.worldModelId, toWorldModelId: second.snapshot.worldModelId });
+  const diff = (await diffGraphLineage({ root, fromWorldModelId: first.snapshot.worldModelId, toWorldModelId: second.snapshot.worldModelId }));
   assert.deepEqual(diff.changes.possibleMoves.items.map((item) => [item.fromPath, item.toPath]), [["src/before.mjs", "src/after.mjs"]]);
   assert.equal(diff.changes.possibleMoves.items[0].semanticContinuityClaimed, false);
   assert.equal(diff.semantics.reviewRequiredOnlyIfContinuityIsPromoted, true);
 
   const afterFile = second.snapshot.temporalProvenanceGraph.nodes.find((node) => node.kind === "File" && node.path === "src/after.mjs");
-  const trace = traceGraphLineage({ root, anchorId: afterFile.nodeId, depth: 1 });
+  const trace = (await traceGraphLineage({ root, anchorId: afterFile.nodeId, depth: 1 }));
   assert.equal(trace.anchorMode, "exact");
   assert.equal(trace.graph.traversalQuery.anchorIds.includes(afterFile.nodeId), true);
   assert.equal(trace.semantics.graphWritesRecoveryDirection, false);
@@ -72,16 +72,16 @@ test("projects retained graph genealogy without creating another artifact stream
   assert.equal(mcp.result.structuredContent.kind, "GraphLineageTraceProjection");
 
   fs.writeFileSync(path.join(root, "src", "unindexed.mjs"), "export const drift = true;\n");
-  assert.throws(() => traceGraphLineage({ root, anchorId: afterFile.nodeId }), { code: "WORLD_MODEL_STALE" });
-  const historical = traceGraphLineage({ root, worldModelId: second.snapshot.worldModelId, anchorId: afterFile.nodeId, depth: 0 });
+  (await assert.rejects(async () => (await traceGraphLineage({ root, anchorId: afterFile.nodeId })), { code: "WORLD_MODEL_STALE" }));
+  const historical = (await traceGraphLineage({ root, worldModelId: second.snapshot.worldModelId, anchorId: afterFile.nodeId, depth: 0 }));
   assert.equal(historical.worldModelId, second.snapshot.worldModelId);
   assert.equal(historical.authority.ordinaryWorkBlocked, false);
 });
 
-test("execution overlay reads exact lineage but cannot promote or recover", (t) => {
+test("execution overlay reads exact lineage but cannot promote or recover", async (t) => {
   const { root, layout } = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const compiled = compileContext({ root, task: "Verify a bounded execution overlay", persist: true });
+  const compiled = (await compileContext({ root, task: "Verify a bounded execution overlay", persist: true }));
   const plan = createWholePlanSnapshot({ root, objective: "Keep graph reads non-authoritative", plan: ["create lineage", "read projection"] });
   const contract = createExecutionContract({
     root,

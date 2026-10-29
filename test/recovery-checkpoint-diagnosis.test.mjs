@@ -72,8 +72,8 @@ function fileSnapshot(root, storage) {
   return files;
 }
 
-function prepareRun(root, label = "checkpoint diagnosis") {
-  const capsule = compileContext({ root, task: `Verify ${label}`, budget: 32_768, persist: true }).capsule;
+async function prepareRun(root, label = "checkpoint diagnosis") {
+  const capsule = (await compileContext({ root, task: `Verify ${label}`, budget: 32_768, persist: true })).capsule;
   const plan = createWholePlanSnapshot({
     root,
     objective: `Complete ${label}`,
@@ -90,8 +90,8 @@ function prepareRun(root, label = "checkpoint diagnosis") {
   return { capsule, plan, contract };
 }
 
-function startFixtureRun(root, label) {
-  const prepared = prepareRun(root, label);
+async function startFixtureRun(root, label) {
+  const prepared = (await prepareRun(root, label));
   return { ...prepared, run: startRun({ root, executionContractId: prepared.contract.executionContractId }).run };
 }
 
@@ -124,7 +124,7 @@ function withDeniedMutators(operation) {
   }
 }
 
-test("diagnosis distinguishes no pointer, missing ledger artifact, corruption, and optional P3 evidence loss", (t) => {
+test("diagnosis distinguishes no pointer, missing ledger artifact, corruption, and optional P3 evidence loss", async (t) => {
   const { root: noPointerRoot, storage: noPointerStorage } = fixture(t);
   const noPointer = inspectRecoveryCheckpointDiagnosis({ root: noPointerRoot });
   assert.equal(noPointer.diagnosis.state, "no-current-checkpoint");
@@ -153,7 +153,7 @@ test("diagnosis distinguishes no pointer, missing ledger artifact, corruption, a
   assert.notEqual(corrupt.diagnosis.state, "no-current-checkpoint");
 
   const { root: optionalRoot, storage: optionalStorage } = fixture(t);
-  startFixtureRun(optionalRoot, "optional result evidence loss");
+  (await startFixtureRun(optionalRoot, "optional result evidence loss"));
   const finished = finishFixtureRun(optionalRoot);
   checkpoint(optionalRoot, { currentPosition: "One result is awaiting Fresh HEAD review" });
   fs.unlinkSync(path.join(optionalRoot, optionalStorage.directory, "lineage", "result-packets", `${finished.resultPacket.resultPacketId}.json`));
@@ -166,10 +166,10 @@ test("diagnosis distinguishes no pointer, missing ledger artifact, corruption, a
   assert.equal(optional.userDecisionRequired, false);
 });
 
-test("same checkpoint bytes never become a mechanical semantic-freshness claim after Session lineage changes", (t) => {
+test("same checkpoint bytes never become a mechanical semantic-freshness claim after Session lineage changes", async (t) => {
   const { root, storage } = fixture(t);
   const current = checkpoint(root);
-  startFixtureRun(root, "new Session lineage after checkpoint");
+  (await startFixtureRun(root, "new Session lineage after checkpoint"));
   const diagnosis = inspectRecoveryCheckpointDiagnosis({ root });
   assert.equal(diagnosis.currentCheckpoint.checkpointId, current.checkpointId);
   assert.equal(diagnosis.diagnosis.state, "verified-checkpoint");
@@ -182,9 +182,9 @@ test("same checkpoint bytes never become a mechanical semantic-freshness claim a
   assert.equal(diagnosis.ordinaryWorkBlocked, false);
 });
 
-test("structurally invalid lineage remains an integrity failure rather than reference drift", (t) => {
+test("structurally invalid lineage remains an integrity failure rather than reference drift", async (t) => {
   const { root, storage } = fixture(t);
-  const prepared = prepareRun(root, "invalid lineage classification");
+  const prepared = (await prepareRun(root, "invalid lineage classification"));
   startRun({ root, executionContractId: prepared.contract.executionContractId });
   checkpoint(root);
   const planFile = path.join(root, storage.directory, "lineage", "whole-plans", `${prepared.plan.wholePlanId}.json`);
@@ -199,9 +199,9 @@ test("structurally invalid lineage remains an integrity failure rather than refe
   assert.notEqual(diagnosis.diagnosis.state, "checkpoint-reference-drift");
 });
 
-test("missing required lineage is a hard recovery failure, not optional ResultPacket loss", (t) => {
+test("missing required lineage is a hard recovery failure, not optional ResultPacket loss", async (t) => {
   const { root, storage } = fixture(t);
-  const prepared = prepareRun(root, "required lineage loss");
+  const prepared = (await prepareRun(root, "required lineage loss"));
   startRun({ root, executionContractId: prepared.contract.executionContractId });
   checkpoint(root);
   fs.unlinkSync(path.join(root, storage.directory, "lineage", "whole-plans", `${prepared.plan.wholePlanId}.json`));
@@ -215,9 +215,9 @@ test("missing required lineage is a hard recovery failure, not optional ResultPa
   assert.notEqual(diagnosis.diagnosis.state, "verified-checkpoint-with-missing-result-evidence");
 });
 
-test("missing selected Run canon and malformed present Run canon remain different failure classes", (t) => {
+test("missing selected Run canon and malformed present Run canon remain different failure classes", async (t) => {
   const { root: missingRoot, storage: missingStorage } = fixture(t);
-  const missing = startFixtureRun(missingRoot, "missing selected Run canon");
+  const missing = (await startFixtureRun(missingRoot, "missing selected Run canon"));
   checkpoint(missingRoot);
   const missingRunFile = path.join(missingRoot, missingStorage.directory, "sessions", "runs", missing.run.runId, "run.json");
   fs.unlinkSync(missingRunFile);
@@ -226,7 +226,7 @@ test("missing selected Run canon and malformed present Run canon remain differen
   assert.equal(missingDiagnosis.diagnosis.reasonCode, "INVALID_RUN_CANON");
 
   const { root: malformedRoot, storage: malformedStorage } = fixture(t);
-  const malformed = startFixtureRun(malformedRoot, "malformed selected Run canon");
+  const malformed = (await startFixtureRun(malformedRoot, "malformed selected Run canon"));
   checkpoint(malformedRoot);
   const malformedRunFile = path.join(malformedRoot, malformedStorage.directory, "sessions", "runs", malformed.run.runId, "run.json");
   const malformedRun = JSON.parse(fs.readFileSync(malformedRunFile, "utf8"));
@@ -256,9 +256,9 @@ test("verified open compaction reports a mechanical sync defer without blocking 
   assert.deepEqual(fileSnapshot(root, storage), before);
 });
 
-test("a Session change between B0, restore, and B1 returns retry-needed instead of a synthesized normal state", (t) => {
+test("a Session change between B0, restore, and B1 returns retry-needed instead of a synthesized normal state", async (t) => {
   const { root, storage } = fixture(t);
-  const prepared = prepareRun(root, "sequential diagnosis drift");
+  const prepared = (await prepareRun(root, "sequential diagnosis drift"));
   const current = checkpoint(root);
   const checkpointFile = path.join(root, storage.directory, "sessions", "ledger", `${current.checkpointId}.json`);
   const originalRead = fs.readFileSync;
@@ -316,7 +316,7 @@ test("CLI, typed MCP, project readiness, and human presentation share the bounde
   const { root, storage } = fixture(t);
   checkpoint(root);
   const direct = inspectRecoveryCheckpointDiagnosis({ root });
-  const cli = runCommand(["checkpoint-diagnose", root]);
+  const cli = (await runCommand(["checkpoint-diagnose", root]));
   assert.deepEqual(cli, direct);
 
   const tool = mcpTools.find((candidate) => candidate.name === "lode_checkpoint_diagnose");
@@ -330,8 +330,8 @@ test("CLI, typed MCP, project readiness, and human presentation share the bounde
   });
   assert.deepEqual(mcp.result.structuredContent, direct);
   assert.equal(mcp.result.content[0].text, formatMcpToolContent("head_checkpoint_diagnose", direct));
-  assert.equal(runCommand(["help"]).commands.some((command) => command.includes("checkpoint-diagnose")), true);
-  assert.equal(runCommand(["help-all"]).commands.some((command) => command.includes("checkpoint-diagnose")), true);
+  assert.equal((await runCommand(["help"])).commands.some((command) => command.includes("checkpoint-diagnose")), true);
+  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("checkpoint-diagnose")), true);
 
   const output = formatCheckpointDiagnosis(direct);
   assert.match(output, /artifact recovery verified/u);

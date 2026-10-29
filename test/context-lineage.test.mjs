@@ -1,3 +1,4 @@
+import { worldSnapshotFile } from "./helpers/snapshot-storage-fixture.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -365,7 +366,7 @@ test("recorded exact World IDs bypass the 128 inventory window while pair-only e
   const pair = { sourceSnapshotId: world.temporalProvenanceGraph.sourceSnapshotId, graphSnapshotId: world.temporalProvenanceGraph.graphSnapshotId };
   const directory = path.join(f.root, ".lode/world-model/snapshots");
   for (let i = 0; i < 129; i++) fs.writeFileSync(path.join(directory, `world-model-${i.toString(16).padStart(24, "0")}.json`), "{}");
-  assert(fs.readdirSync(directory).sort().indexOf(`${world.worldModelId}.json`) >= 128);
+  assert(fs.readdirSync(directory).sort().indexOf(path.basename(worldSnapshotFile(f.root, world.worldModelId))) >= 128);
   const query = async endpoint => {
     const document = { projectId: f.owner.project.projectId, before: endpoint, after: endpoint, changes: [{ path: "src/action.mjs" }], resultPacketId: null, reviewDecisionId: null };
     const text = JSON.stringify(document); fs.writeFileSync(path.join(f.root, "change-original.json"), text);
@@ -536,7 +537,7 @@ async function localGit(t, f, source = oldSource) {
   await git(["init", "--quiet"]); await git(["add", "--", "src/action.mjs"]); await git(["commit", "--quiet", "-m", "Synthetic baseline; no Run attribution"]);
   return git;
 }
-function graph(root, extra = {}) { return queryProjectGraph({ root, paths: ["src/action.mjs"], details: true, depth: 3, ...extra }); }
+async function graph(root, extra = {}) { return (await queryProjectGraph({ root, paths: ["src/action.mjs"], details: true, depth: 3, ...extra })); }
 
 test("Run-free and non-Git work preserves recorded reasons, proposal-only gaps and same-mtime source drift without World or new writes", async t => {
   const f = fixture(t); fs.mkdirSync(path.join(f.root, "src")); fs.writeFileSync(path.join(f.root, "src/action.mjs"), oldSource);
@@ -578,7 +579,7 @@ test("local exact Git bytes connect writer, query, typed MCP, CLI and Explorer w
 test("a reviewed ChangeSet exposes exact recorded before/after separately from later current and unchanged g revisions", async t => {
   const f = fixture(t); await localGit(t, f);
   const beforeWorld = await buildWorldModel({ root: f.root });
-  const capsule = f.route(() => compileContext({ root: f.root, task: "Change f, preserve g", budget: 32768, persist: true })).capsule;
+  const capsule = (await f.route(async () => (await compileContext({ root: f.root, task: "Change f, preserve g", budget: 32768, persist: true })))).capsule;
   const plan = f.route(() => createWholePlanSnapshot({ root: f.root, objective: "Change f only", plan: [{ id: "edit", outcome: "Exact f edit" }] })).artifact;
   const contract = f.route(() => createExecutionContract({ root: f.root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId, scope: "f only", acceptanceCriteria: ["g bytes unchanged"] })).artifact;
   f.route(() => startRun({ root: f.root, executionContractId: contract.executionContractId })); fs.writeFileSync(path.join(f.root, "src/action.mjs"), newSource);
@@ -586,7 +587,7 @@ test("a reviewed ChangeSet exposes exact recorded before/after separately from l
   const pending = f.route(() => getPendingReviewContext({ root: f.root }));
   const review = f.route(() => reviewRun({ root: f.root, reviewContextId: pending.review.reviewContextId, disposition: "accept", rationale: "Synthetic review of exact recorded f scope" }));
   await buildWorldModel({ root: f.root });
-  const recorded = await f.route(() => recordChangeSet({ root: f.root, resultPacketId: result.resultPacket.resultPacketId, reviewDecisionId: review.reviewDecision.reviewDecisionId, beforeWorldModelId: beforeWorld.snapshot.worldModelId }));
+  const recorded = await f.route(async () => (await recordChangeSet({ root: f.root, resultPacketId: result.resultPacket.resultPacketId, reviewDecisionId: review.reviewDecision.reviewDecisionId, beforeWorldModelId: beforeWorld.snapshot.worldModelId })));
   assert(recorded.changeSet.changes.some(change => change.name === "g" && change.changeKind === "modified"));
   const found = await graph(f.root, { depth: 4 });
   const pair = found.contextLineage.files[0].comparisons.find(item => item.scope === "recorded-changeset-snapshot-pair");
@@ -717,4 +718,41 @@ test("merge parents, literal paths, rename/delete and missing promisor blob neve
   // A local absent path only; even a broken lazy-fetch guard cannot contact a service.
   await git(["config", "remote.origin.url", path.join(f.base, "no-remote-exists")]);
   const unavailable = await createContextSourceReader(f.root, f.owner.project.projectId).read("src/renamed.mjs", sha(oldSource)); assert.equal(unavailable.status, "unavailable");
+});
+
+
+test("exact bundle addresses bypass inventory and retain physical provenance even when current bytes match", async t => {
+  const f=fixture(t),relative="source.mjs";fs.writeFileSync(path.join(f.root,relative),oldSource);
+  const bundle=createSourceObservation({version:1,projectId:f.owner.project.projectId,kind:"source",
+    query:[{path:relative,symbol:""}],sources:[{path:relative,digest:sha(oldSource),base64:Buffer.from(oldSource).toString("base64")}],
+    profile:{},observedAt:"2026-01-01T00:00:00Z",response:null,envelopeHash:null},f.storage);
+  const key=retainSourceObservation(f.root,bundle,f.storage),before=snapshot(f.root);
+  let inventories=0;const opendir=fs.opendirSync;
+  t.mock.method(fs,"opendirSync",function(file,...args){if(String(file).includes("source-bundles")){inventories++;throw Object.assign(new Error("Inventory is not needed for an exact address"),{code:"EACCES"});}return opendir.call(this,file,...args);});
+  const reader=createContextSourceReader(f.root,f.owner.project.projectId,{storage:f.storage,bundleHints:[key]});
+  assert.equal((await reader.read(relative,sha(oldSource))).basis.kind,"current-disk-bytes");
+  const physical=await reader.read(relative,sha(oldSource),{bundleKey:key});
+  assert.equal(physical.text,oldSource);assert.equal(physical.basis.kind,"retained-source-observation");assert.equal(physical.basis.bundleKey,key);assert.deepEqual(snapshot(f.root),before);
+  fs.writeFileSync(path.join(f.root,relative),newSource);const afterEdit=snapshot(f.root);
+  const hinted=await createContextSourceReader(f.root,f.owner.project.projectId,{storage:f.storage,bundleHints:[key]}).read(relative,sha(oldSource));
+  assert.equal(hinted.text,oldSource);assert.equal(hinted.basis.bundleKey,key);assert.equal(inventories,0);
+  assert.deepEqual(snapshot(f.root),afterEdit);
+});
+
+test("exact bundle failure preserves error identity and never substitutes current or another retained original",async t=>{
+  const f=fixture(t),relative="source.mjs";fs.writeFileSync(path.join(f.root,relative),oldSource);
+  const bundle=createSourceObservation({version:1,projectId:f.owner.project.projectId,kind:"source",
+    query:[{path:relative,symbol:""}],sources:[{path:relative,digest:sha(oldSource),base64:Buffer.from(oldSource).toString("base64")}],
+    profile:{},observedAt:"2026-01-01T00:00:00Z",response:null,envelopeHash:null},f.storage);
+  const key=retainSourceObservation(f.root,bundle,f.storage),file=path.join(f.root,f.storage.directory,"observations/source-bundles",key+".json"),bytes=fs.readFileSync(file);
+  const read=(digest=sha(oldSource),options={bundleKey:key})=>createContextSourceReader(f.root,f.owner.project.projectId,{storage:f.storage,bundleHints:[key]}).read(relative,digest,options);
+  assert.equal((await read(sha(oldSource),{bundleKey:"a".repeat(64)})).reasonCode,"ENOENT");
+  assert.equal((await read(sha(newSource))).reasonCode,"SOURCE_BUNDLE_REFERENCE_MISMATCH");
+  assert.equal((await read(sha(oldSource),{bundleKey:"../bad"})).reasonCode,"SOURCE_BUNDLE_KEY_INVALID");
+  assert.equal((await read(sha(oldSource),{bundleKey:key,maxBytes:4})).reasonCode,"SOURCE_BYTE_BOUND");
+  const lstat=fs.lstatSync;t.mock.method(fs,"lstatSync",function(target,...args){if(path.resolve(String(target))===path.resolve(file))throw Object.assign(new Error("Synthetic bundle permission failure"),{code:"EACCES"});return lstat.call(this,target,...args);});
+  assert.equal((await read()).reasonCode,"EACCES");t.mock.restoreAll();
+  const changed=JSON.parse(bytes);changed.evidence.sources[0].base64=Buffer.from(newSource).toString("base64");fs.writeFileSync(file,JSON.stringify(changed));
+  const tampered=await read();assert.equal(tampered.status,"unavailable");assert.notEqual(tampered.reasonCode,"ENOENT");assert.equal(tampered.text,undefined);
+  fs.writeFileSync(file,bytes);assert.equal((await read()).text,oldSource);
 });

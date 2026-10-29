@@ -229,7 +229,7 @@ function recordedReview(projectRoot, candidate, storage = null) {
 }
 
 export async function proposeProductPolicy({ root = ".", operation = "create", key, name = null, description = null, statement = null, appliesTo = null, governedBy = null, evidenceAnchors = [], explanation = "" } = {}) {
-  return withProjectMutationAsync({ root, scope: "onboarding-promotion" }, async () => {
+  return (await withProjectMutationAsync({ root, scope: "onboarding-promotion" }, async () => {
     const inspected = readyProject(root, "Product Policy proposal");
     const canon = readProductModelCanon({ projectRoot: inspected.project.projectRoot, storage: inspected.storage }).model;
     const normalizedOperation = requiredText(operation, "Policy operation", 16).toLowerCase();
@@ -256,7 +256,7 @@ export async function proposeProductPolicy({ root = ".", operation = "create", k
       ordinaryWorkBlocked: false,
       userAction: `Review exact candidate ${candidate.candidateId}; accepting changes Product Canon, rejecting only records the disposition.`,
     };
-  });
+  }));
 }
 
 export function readProductPolicyCandidate({ root = ".", candidateId } = {}) {
@@ -271,11 +271,11 @@ export function readProductPolicyReviewDecision({ root = ".", reviewDecisionId }
 
 async function refreshPolicyProjection(projectRoot, reviewDecisionId) {
   try {
-    readWorldModel({ root: projectRoot });
+    (await readWorldModel({ root: projectRoot }));
     return await refreshWorldModel({ root: projectRoot, triggerKind: "manual", triggerEvidenceIds: [reviewDecisionId] });
   } catch (error) {
     if (!new Set(["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"]).has(error.code)) throw error;
-    return buildWorldModel({ root: projectRoot });
+    return (await buildWorldModel({ root: projectRoot }));
   }
 }
 

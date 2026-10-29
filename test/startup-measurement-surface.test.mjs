@@ -109,7 +109,7 @@ test("healthy metric consumer retains the original two-ID World response and JSO
   assert.deepEqual(JSON.parse(formatCliResult("metric-define", cli)), cli);
 });
 
-test("actual hook command retains no-checkpoint purpose and unavailable direction; only optional caller P5 is written", t => {
+test("actual hook command retains no-checkpoint purpose and unavailable direction; only optional caller P5 is written", async t => {
   const { root, storage } = fixture(t), operational = `${root}-host`;
   if (process.env.HEAD_AGENT_KEEP_TEST_TMP !== "1") t.after(() => fs.rmSync(operational, { recursive: true, force: true }));
   const selected = createHeadSession({ root, purpose: "Explain this synthetic issue only; no external effects" });
@@ -157,7 +157,7 @@ test("actual hook command retains no-checkpoint purpose and unavailable directio
   assert.equal(state.rows.length, 1);
   assert.deepEqual(state.rows[0].observation, { kind: "event", event: "SessionStart", phase: "start-observed",
     requestId: null, source: "compact", reason: null });
-  assert.deepEqual(sessionStartContext({ runtime: "claude", environment, event }), hook);
+  assert.deepEqual((await sessionStartContext({ runtime: "claude", environment, event })), hook);
   assert.deepEqual(snapshot(root), before);
   assert.deepEqual(snapshot(operational), afterOperational, "Subsequent observation/startup reads have zero writes.");
 });

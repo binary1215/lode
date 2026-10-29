@@ -64,7 +64,7 @@ async function fixture(t) {
   });
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const storage = inspectProject(root).storage;
-  const capsule = compileContext({ root, task: "Verify synthetic connected worker execution evidence", persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Verify synthetic connected worker execution evidence", persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Verify bounded worker process and Git evidence",
     plan: [{ id: "verify", outcome: "Verified local fixtures, no model invocation" }] }).artifact;
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,

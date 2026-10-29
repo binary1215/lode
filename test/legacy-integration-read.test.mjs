@@ -23,7 +23,7 @@ const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value
   ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
 const hash = (value) => crypto.createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
 const write = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`); };
-function fixture(t, { legacy = false } = {}) {
+async function fixture(t, { legacy = false } = {}) {
   const parent = process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
   fs.mkdirSync(parent, { recursive: true });
   const root = fs.mkdtempSync(path.join(parent, "head-legacy-integration-"));
@@ -31,7 +31,7 @@ function fixture(t, { legacy = false } = {}) {
   if (legacy) seedLegacyProject(root, pluginRoot);
   else initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const storage = inspectProject(root).storage, directory = formatForVerifiedOwner(storage).directory;
-  const capsule = compileContext({ root, task: "Verify legacy integration original reading", budget: 2048, persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Verify legacy integration original reading", budget: 2048, persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Preserve original approval", plan: [{ id: "execute", outcome: "Original identity survives" }] }).artifact;
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
     scope: "Bounded legacy fixture", acceptanceCriteria: ["Original approval is exact"] }).artifact;
@@ -93,8 +93,8 @@ function checkpointFiles(root) {
   return fs.existsSync(ledger) ? fs.readdirSync(ledger).filter((name) => name.endsWith(".json")) : [];
 }
 
-test("new integration accepts only three fields and never produces historical request or receipt", (t) => {
-  const f = fixture(t);
+test("new integration accepts only three fields and never produces historical request or receipt", async (t) => {
+  const f = (await fixture(t));
   assert.throws(() => createRecoveryCheckpoint({ root: f.root, ...f.input, reviewedRunIntegration: {
     runId: f.input.runId, reviewDecisionId: f.input.reviewDecisionId, integrationInputHash: hash(f.input),
     integrationRequestId: "run-result-integration-request-000000000000000000000000" } }), { code: "INVALID_RUN_RESULT_INTEGRATION" });
@@ -107,8 +107,8 @@ test("new integration accepts only three fields and never produces historical re
   assert.deepEqual(bytes([f.stateFile, recorded.file]), originals);
 });
 
-test("fully committed historical originals reuse identity and bytes even after independent newer direction", (t) => {
-  const f = fixture(t, { legacy: true });
+test("fully committed historical originals reuse identity and bytes even after independent newer direction", async (t) => {
+  const f = (await fixture(t, { legacy: true }));
   const legacy = committedHistorical(f);
   const files = [legacy.requestFile, legacy.checkpointFile, legacy.receiptFile, f.stateFile];
   const originals = bytes(files);
@@ -123,8 +123,8 @@ test("fully committed historical originals reuse identity and bytes even after i
   assert.deepEqual(bytes(files.slice(0, 3)), originals.slice(0, 3));
 });
 
-test("historical restore preserves missing optional result evidence and latest common cancellation", (t) => {
-  const f = fixture(t, { legacy: true });
+test("historical restore preserves missing optional result evidence and latest common cancellation", async (t) => {
+  const f = (await fixture(t, { legacy: true }));
   const legacy = committedHistorical(f);
   const originals = bytes([legacy.requestFile, legacy.checkpointFile, legacy.receiptFile]);
   const direction = updateProjectDirection({ root: f.root, input: { goal: "Current common goal", cancelledActions: ["Manual next authorized work"] } }).direction;
@@ -136,8 +136,8 @@ test("historical restore preserves missing optional result evidence and latest c
   assert.deepEqual(bytes([legacy.requestFile, legacy.checkpointFile, legacy.receiptFile]), originals);
 });
 
-test("verified request-only interruption remains pending without writes and cannot block independent Session work", (t) => {
-  const f = fixture(t, { legacy: true });
+test("verified request-only interruption remains pending without writes and cannot block independent Session work", async (t) => {
+  const f = (await fixture(t, { legacy: true }));
   const legacy = historicalRequest(f.root, f.input);
   const cancellation = updateProjectDirection({ root: f.root, input: { goal: "Current goal", cancelledActions: [f.input.nextExpectedResult] } }).direction;
   const originals = bytes([legacy.file, f.stateFile]);
@@ -174,8 +174,8 @@ test("verified request-only interruption remains pending without writes and cann
   assert.equal(fs.readFileSync(legacy.file, "utf8"), originals[0]);
 });
 
-test("historical target request corruption, wrong owner and malformed originals fail locally and are preserved", (t) => {
-  const f = fixture(t, { legacy: true });
+test("historical target request corruption, wrong owner and malformed originals fail locally and are preserved", async (t) => {
+  const f = (await fixture(t, { legacy: true }));
   let legacy = historicalRequest(f.root, f.input, { projectId: "another-project" });
   assert.throws(() => readRunResultIntegration({ root: f.root, reviewDecisionId: f.input.reviewDecisionId }), { code: "RUN_RESULT_INTEGRATION_REQUEST_CONFLICT" });
   legacy = historicalRequest(f.root, f.input, { sessionId: "session-00000000-0000-0000-0000-000000000000" });
@@ -191,8 +191,8 @@ test("historical target request corruption, wrong owner and malformed originals 
   assert.doesNotThrow(() => createRecoveryCheckpoint({ root: f.root, purpose: "Unrelated local work", currentPosition: "Target failure only", nextExpectedResult: "Direct work" }));
 });
 
-test("historical committed receipt damage is not bypassed by an exact replay", (t) => {
-  const f = fixture(t, { legacy: true });
+test("historical committed receipt damage is not bypassed by an exact replay", async (t) => {
+  const f = (await fixture(t, { legacy: true }));
   const legacy = committedHistorical(f);
   write(legacy.receiptFile, { ...legacy.receipt, checkpointDigest: "0".repeat(64) });
   const originals = bytes([legacy.requestFile, legacy.checkpointFile, legacy.receiptFile, f.stateFile]);

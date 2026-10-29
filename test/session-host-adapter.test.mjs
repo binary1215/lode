@@ -185,8 +185,8 @@ test("public adapter select/register -> new instance -> per-request resolver -> 
   assert.equal(results[1].result.structuredContent.workContext.records.length, 0);
   const before = files(root).concat(files(operational));
   for (const source of ["startup", "resume", "clear", "compact"]) {
-    const output = sessionStartContext({ runtime: "codex", environment,
-      event: { hook_event_name: "SessionStart", session_id: "native-A", cwd: root, source } });
+    const output = (await sessionStartContext({ runtime: "codex", environment,
+      event: { hook_event_name: "SessionStart", session_id: "native-A", cwd: root, source } }));
     const context = JSON.parse(output.hookSpecificOutput.additionalContext);
     assert.equal(context.logicalSessionId, a.sessionId);
     assert.equal(context.records[0].content.unknowns[0], "Caller A observation unresolved");
@@ -201,10 +201,10 @@ test("absent/fork caller never chooses default or sole candidate; explicit curre
   const { root, host, operational, environment } = fixture(t);
   const a = createHeadSession({ root, purpose: "Only extra Session" }), caller = host("never-registered");
   const before = files(root);
-  assert.equal(caller.enter({ root }).status, "session_selection_unresolved");
+  assert.equal((await caller.enter({ root })).status, "session_selection_unresolved");
   assert.equal(fs.existsSync(operational), false);
-  const output = sessionStartContext({ runtime: "codex", environment,
-    event: { hook_event_name: "SessionStart", session_id: "new-fork", cwd: root, source: "fork" } });
+  const output = (await sessionStartContext({ runtime: "codex", environment,
+    event: { hook_event_name: "SessionStart", session_id: "new-fork", cwd: root, source: "fork" } }));
   assert.equal(JSON.parse(output.hookSpecificOutput.additionalContext).logicalSessionId, null);
   const explicit = await call(root, "head_conversation_enter", { session_id: a.sessionId }, caller);
   assert.equal(explicit.result.structuredContent.workContext.sessionId, a.sessionId);
@@ -219,11 +219,11 @@ test("declared sharing/default/loss and compare-and-swap are caller scoped, not 
   const first = host("first"), second = host("second");
   first.select({ root, sessionId: a.sessionId, expectedRevision: 0 });
   second.select({ root, sessionId: a.sessionId, expectedRevision: 0 });
-  assert.equal(second.enter({ root }).workContext.sessionId, a.sessionId);
+  assert.equal((await second.enter({ root })).workContext.sessionId, a.sessionId);
   const conflicting = first.select({ root, sessionId: b.sessionId, expectedRevision: 0 });
   assert.equal(conflicting.reasonCode, "SESSION_HOST_BINDING_CONFLICT");
-  assert.equal(first.enter({ root }).status, "session_selection_unresolved");
-  assert.equal(second.enter({ root }).workContext.sessionId, a.sessionId);
+  assert.equal((await first.enter({ root })).status, "session_selection_unresolved");
+  assert.equal((await second.enter({ root })).workContext.sessionId, a.sessionId);
   const bound = first.select({ root, sessionId: b.sessionId, expectedRevision: 1 });
   assert.equal(bound.retained, true);
   assert.equal(first.select({ root, sessionId: b.sessionId, expectedRevision: 1 }).binding.revision, 2);
@@ -234,27 +234,27 @@ test("declared sharing/default/loss and compare-and-swap are caller scoped, not 
   assert.equal(lost.ordinaryWorkBlocked, false);
   assert.equal((await call(root, "head_project_direction_read", {}, host("first"))).result.content[0].text, "null");
   first.select({ root, sessionId: "", expectedRevision: 3 });
-  assert.equal(first.enter({ root }).workContext.sessionId, inspectProject(root).state.sessionId);
+  assert.equal((await first.enter({ root })).workContext.sessionId, inspectProject(root).state.sessionId);
 });
 
-test("verified child caller cannot overwrite parent; ambiguous Codex tool Hook writes nothing", (t) => {
+test("verified child caller cannot overwrite parent; ambiguous Codex tool Hook writes nothing", async (t) => {
   const { root, host, operational, environment } = fixture(t);
   const a = createHeadSession({ root, purpose: "Parent" }), b = createHeadSession({ root, purpose: "Child" });
   host("shared-native").select({ root, sessionId: a.sessionId, expectedRevision: 0 });
   host("shared-native", "verified-child").select({ root, sessionId: b.sessionId, expectedRevision: 0 });
-  assert.equal(host("shared-native").enter({ root }).workContext.sessionId, a.sessionId);
-  assert.equal(host("shared-native", "verified-child").enter({ root }).workContext.sessionId, b.sessionId);
+  assert.equal((await host("shared-native").enter({ root })).workContext.sessionId, a.sessionId);
+  assert.equal((await host("shared-native", "verified-child").enter({ root })).workContext.sessionId, b.sessionId);
   const before = files(root).concat(files(operational));
-  assert.deepEqual(sessionStartContext({ runtime: "codex", environment,
-    event: { hook_event_name: "PostToolUse", session_id: "shared-native", cwd: root, tool_use_id: "child-call", tool_input: { session_id: b.sessionId } } }), {});
+  assert.deepEqual((await sessionStartContext({ runtime: "codex", environment,
+    event: { hook_event_name: "PostToolUse", session_id: "shared-native", cwd: root, tool_use_id: "child-call", tool_input: { session_id: b.sessionId } } })), {});
   assert.deepEqual(files(root).concat(files(operational)), before);
   const claudeRoot = host("claude-native", null, "claude"), claudeChild = host("claude-native", "claude-child", "claude");
   claudeRoot.select({ root, sessionId: a.sessionId, expectedRevision: 0 });
   claudeChild.select({ root, sessionId: b.sessionId, expectedRevision: 0 });
-  const childOutput = sessionStartContext({ runtime: "claude", environment,
-    event: { hook_event_name: "SessionStart", source: "resume", session_id: "claude-native", agent_id: "claude-child", cwd: root } });
+  const childOutput = (await sessionStartContext({ runtime: "claude", environment,
+    event: { hook_event_name: "SessionStart", source: "resume", session_id: "claude-native", agent_id: "claude-child", cwd: root } }));
   assert.equal(JSON.parse(childOutput.hookSpecificOutput.additionalContext).logicalSessionId, b.sessionId);
-  assert.equal(claudeRoot.enter({ root }).workContext.sessionId, a.sessionId);
+  assert.equal((await claudeRoot.enter({ root })).workContext.sessionId, a.sessionId);
 });
 
 test("interrupted binding commit stays pending after restart; repair repeats persistence, not tool effects", async (t) => {
@@ -272,14 +272,14 @@ test("interrupted binding commit stays pending after restart; repair repeats per
   finally { fs.renameSync = rename; }
   assert.equal(failed.retained, false);
   assert.equal(host("interrupted").read({ root }).status, "pending");
-  assert.equal(host("interrupted").enter({ root }).status, "session_selection_unresolved");
+  assert.equal((await host("interrupted").enter({ root })).status, "session_selection_unresolved");
   const explicit = await call(root, "head_conversation_enter", { session_id: b.sessionId }, caller);
   assert.equal(explicit.result.structuredContent.workContext.sessionId, b.sessionId);
   assert.equal(host("interrupted").read({ root }).status, "pending", "Successful current request does not invent a completed registration.");
   const repaired = host("interrupted").select({ root, sessionId: b.sessionId, expectedRevision: 1 });
   assert.equal(repaired.retained, true);
   assert.equal(repaired.binding.revision, 2);
-  assert.equal(host("interrupted").enter({ root }).workContext.sessionId, b.sessionId);
+  assert.equal((await host("interrupted").enter({ root })).workContext.sessionId, b.sessionId);
 });
 
 test("tampered/foreign binding never reaches default; explicit validated request survives resolver failure", async (t) => {
@@ -289,19 +289,19 @@ test("tampered/foreign binding never reaches default; explicit validated request
   const bindingFile = files(operational).find(([file]) => file.endsWith("binding.json"))[0];
   const record = JSON.parse(fs.readFileSync(bindingFile, "utf8"));
   fs.writeFileSync(bindingFile, JSON.stringify({ ...record, projectId: "head-" + "0".repeat(20) }));
-  assert.equal(caller.enter({ root }).status, "session_selection_unresolved");
+  assert.equal((await caller.enter({ root })).status, "session_selection_unresolved");
   const explicit = await call(root, "head_conversation_enter", { session_id: a.sessionId }, caller);
   assert.equal(explicit.result.structuredContent.workContext.sessionId, a.sessionId);
   assert.equal(explicit.result._meta.headSessionBinding.persisted, false);
 });
 
-test("large startup direction/evidence is disclosed, bounded and never silently treated as empty", (t) => {
+test("large startup direction/evidence is disclosed, bounded and never silently treated as empty", async (t) => {
   const { root, host, environment } = fixture(t);
   host("large").select({ root, sessionId: "", expectedRevision: 0 });
   updateProjectDirection({ root, input: { goal: "Preserve current scope", constraints: ["x".repeat(40000)], cancelledActions: ["deploy"] } });
   const saved = recordSessionWorkEvidence({ root, input: { unknowns: ["u".repeat(40000)] } });
-  const output = sessionStartContext({ runtime: "codex", environment,
-    event: { hook_event_name: "SessionStart", source: "compact", session_id: "large", cwd: root } });
+  const output = (await sessionStartContext({ runtime: "codex", environment,
+    event: { hook_event_name: "SessionStart", source: "compact", session_id: "large", cwd: root } }));
   assert.ok(output.hookSpecificOutput.additionalContext.length <= 32768);
   const context = JSON.parse(output.hookSpecificOutput.additionalContext);
   assert.equal(context.currentProjectDirection.contentIncluded, false);
@@ -366,7 +366,7 @@ test("real hidden Node command consumes official-style startup stdin and exits; 
   assert.equal(state.rows.length, 1);
   assert.deepEqual(state.rows[0].observation, { kind: "event", event: "SessionStart", phase: "start-observed",
     requestId: null, source: "compact", reason: null });
-  assert.deepEqual(sessionStartContext({ runtime: "codex", environment, event }), output);
+  assert.deepEqual((await sessionStartContext({ runtime: "codex", environment, event })), output);
   assert.deepEqual(exactFiles(), after, "Observation read and pure startup projection write nothing.");
 });
 

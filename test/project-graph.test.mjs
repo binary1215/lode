@@ -1,3 +1,4 @@
+import { readFixtureSnapshot } from "./helpers/snapshot-storage-fixture.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -59,7 +60,7 @@ function noAuthority(result) {
 
 test("compact Run and Session state preserves active/unknown status and ownership without effects", async t => {
   const { root, storage, layout } = fixture(t);
-  const capsule = compileContext({ root, task: "Inspect synthetic request", persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Inspect synthetic request", persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Inspect synthetic request", plan: ["Read local fixture"] }).artifact;
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
     scope: "Synthetic read", acceptanceCriteria: ["Observed local fixture"] }).artifact;
@@ -232,7 +233,7 @@ test("the derived index and a forged previous result cannot supply graph meaning
 test("execution contracts/results/reviews keep their own identities and historical approvals confer no effect", async t => {
   const { root, storage, layout } = fixture(t);
   const plan = createWholePlanSnapshot({ root, objective: "Inspect result identity", plan: ["read source"] }).artifact;
-  const capsule = compileContext({ root, task: "Inspect result identity", persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Inspect result identity", persist: true })).capsule;
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
     scope: "Read result reference", acceptanceCriteria: ["IDs remain distinct"] }).artifact;
   const packet = createResultPacket({ root, executionContractId: contract.executionContractId, outcome: "Bounded result returned",
@@ -383,7 +384,7 @@ function committedHistoricalFixture(root, candidateSet, storage, layout) {
   const entries = Object.keys(originals).filter(file => file === `${layout.directory}/onboarding/candidate-sets/${candidateSet.candidateSetId}.json`
     || file.startsWith(`${layout.directory}/onboarding/review-decisions/`) || file === `${layout.directory}/onboarding/product-model-revisions/${candidateSet.productModelId}.json`
     || file.startsWith(`${layout.directory}/world-model/snapshots/`)).map(file => {
-    const bytes = fs.readFileSync(path.join(root, file)), document = JSON.parse(bytes);
+    const bytes = fs.readFileSync(path.join(root, file)), document = file.endsWith(".json.gz") ? readFixtureSnapshot(path.join(root,file)) : JSON.parse(bytes);
     const role = file.includes("/candidate-sets/") ? "historical-candidate-set" : file.includes("/review-decisions/") ? "historical-review"
       : file.includes("/product-model-revisions/") ? "historical-product-revision" : "legacy-world-embedding-reference";
     return { path: file, role, artifactId: role === "historical-candidate-set" ? document.candidateSetId : role === "historical-review" ? document.reviewDecisionId
@@ -478,7 +479,7 @@ test("optional adapter failures coalesce per basis and fall back to verified emb
 test("verified optional adapter retains exact query semantics without claiming whole retrieval acceleration", async t => {
   const { root, storage, layout } = fixture(t), world = await buildWorldModel({ root });
   const adapter = new InMemoryGraphProjectionAdapter();
-  materializeGraphProjection({ projectRoot: root, storage, graph: world.snapshot.temporalProvenanceGraph, adapter });
+  (await materializeGraphProjection({ projectRoot: root, storage, graph: world.snapshot.temporalProvenanceGraph, adapter }));
   const result = await queryProjectGraph({ root, query: "answer", graphProjectionAdapter: adapter });
   assert.equal(result.adapter.status, "verified");
   assert.equal(result.adapter.scope, "temporal-query-verification");

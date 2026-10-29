@@ -368,7 +368,7 @@ export async function ingestStructuredObservation({ root = ".", binding, descrip
   // Only the subsequently verified owner selects the persisted wire family.
   new StructuredObservationAdapter({ descriptor, input });
   const inspected = assertObservationProjectReady(root);
-  return collectObservation({ root, binding, descriptor, adapter: new StructuredObservationAdapter({ descriptor, input }, inspected.storage) });
+  return (await collectObservation({ root, binding, descriptor, adapter: new StructuredObservationAdapter({ descriptor, input }, inspected.storage) }));
 }
 
 export async function ingestJsonObservationEventFile({ root = ".", sourceKey, binding, descriptor, eventFile, maxBytes } = {}) {

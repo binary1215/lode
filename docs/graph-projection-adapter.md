@@ -60,8 +60,11 @@ The default local adapter stores:
 
 ```text
 .lode/graph-projection/current.json
+.lode/graph-projection/snapshots/graph-snapshot-*.json.gz
 .lode/graph-projection/snapshots/graph-snapshot-*.json
 ```
+
+New local snapshot files use compact `.json.gz`; existing `.json` snapshots remain byte-for-byte intact. See [Snapshot storage and preservation](snapshot-storage.md) for physical encoding and the current inspection-only GC surface.
 
 The snapshot is immutable and byte-semantically equivalent under canonical JSON to the verified graph embedded in the current World Model. The pointer is content-addressed and records the project, GraphSnapshot, GraphSnapshot hash, and SourceSnapshot identities plus the non-authoritative projection flags.
 

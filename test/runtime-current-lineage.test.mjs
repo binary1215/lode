@@ -70,7 +70,7 @@ async function fixture(t, { scopeKind = "run", worker = false } = {}) {
   assert.equal(fs.existsSync(path.resolve(root, ".lode/project.json")), true);
   assert.equal(fs.existsSync(path.resolve(root, ".head/project.json")), false);
   fs.writeFileSync(path.join(root, "selected.txt"), "selected initial bytes\n");
-  const capsule = compileContext({ root, task: "Verify exact synthetic current execution lineage", persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Verify exact synthetic current execution lineage", persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Keep exact execution lineage", plan: [{ id: "check", outcome: "Verify current binding" }] }).artifact;
   const contractOptions = { root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
     scope: "Synthetic current-lineage fixture", acceptanceCriteria: ["No stale execution"], allowedActions: ["runtime.invoke", "project.read"] };
@@ -185,8 +185,8 @@ test("followup: historical originals distinguish missing, integrity and unretain
   const transplanted = path.join(foreign.root, foreign.storage.directory, "runtime/execution-authorizations", `${f.authorization.authorizationId}.json`);
   fs.copyFileSync(selectedAuthorization.file, transplanted);
   const foreignBefore = snapshot(foreign.root);
-  assert.throws(() => runCommand(["runtime-invocation-read", foreign.root, "--authorization", f.authorization.authorizationId]),
-    { code: "RUNTIME_INVOCATION_PROJECT_MISMATCH" });
+  (await assert.rejects(async () => (await runCommand(["runtime-invocation-read", foreign.root, "--authorization", f.authorization.authorizationId])),
+    { code: "RUNTIME_INVOCATION_PROJECT_MISMATCH" }));
   const foreignRead = await dispatch({ id: "foreign-owner", method: "tools/call", params: {
     name: "head_runtime_invocation_authorization", arguments: { project_root: foreign.root, authorization_id: f.authorization.authorizationId } } });
   assert.match(foreignRead.error.message, /another project/);
@@ -199,7 +199,7 @@ test("followup: historical originals distinguish missing, integrity and unretain
   const authFile = readRuntimeInvocationAuthorization({ root: f.root, authorizationId: f.authorization.authorizationId }).file;
   fs.writeFileSync(authFile, JSON.stringify({ ...f.authorization, authorizationHash: "0".repeat(64) }));
   before = snapshot(f.root);
-  assert.throws(() => runCommand(["runtime-invocation-read", f.root, "--authorization", f.authorization.authorizationId]), { code: "RUNTIME_INVOCATION_AUTHORIZATION_DIGEST_MISMATCH" });
+  (await assert.rejects(async () => (await runCommand(["runtime-invocation-read", f.root, "--authorization", f.authorization.authorizationId])), { code: "RUNTIME_INVOCATION_AUTHORIZATION_DIGEST_MISMATCH" }));
   assert.deepEqual(snapshot(f.root), before);
 });
 
@@ -294,7 +294,7 @@ test("active Session pointers cannot conceal missing, terminal or mismatched Run
 test("individually digest-valid plan and Capsule cannot be mixed with another contract", async (t) => {
   const f = await fixture(t);
   const otherPlan = createWholePlanSnapshot({ root: f.root, objective: "Independent synthetic plan", plan: [{ id: "other", outcome: "Separate lineage" }] }).artifact;
-  const otherCapsule = compileContext({ root: f.root, task: "Independent synthetic Capsule", persist: true }).capsule;
+  const otherCapsule = (await compileContext({ root: f.root, task: "Independent synthetic Capsule", persist: true })).capsule;
   for (const contractOptions of [{ ...f.contractOptions, wholePlanId: otherPlan.wholePlanId },
     { ...f.contractOptions, capsuleId: otherCapsule.capsuleId }]) {
     const contract = createExecutionContract(contractOptions).artifact;

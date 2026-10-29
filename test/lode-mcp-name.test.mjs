@@ -95,7 +95,7 @@ for (const identity of ["lode", "head"]) {
     assert(hooks.hooks.PreToolUse[0].matcher.startsWith("^mcp__lode__"));
     const staged = await import(pathToFileURL(path.join(releaseRoot, "scripts/mcp-server.mjs")).href);
     const stagedCli = await import(pathToFileURL(path.join(releaseRoot, "scripts/lode.mjs")).href);
-    const stagedHelp = stagedCli.runCommand(["help"]);
+    const stagedHelp = (await stagedCli.runCommand(["help"]));
     assert(stagedHelp.commands.every(line => line.startsWith(`${identity}-agent `)));
     assert.equal(stagedHelp.advancedCommand, `${identity}-agent help-all`);
     assert(staged.tools.every(tool => tool.name.startsWith(composition.toolPrefix)));

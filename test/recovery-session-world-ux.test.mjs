@@ -30,8 +30,8 @@ function fixture(t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return { root, storage };
 }
-function contract(root) {
-  const capsule = compileContext({ root, task: "Inspect a synthetic local library", persist: true }).capsule;
+async function contract(root) {
+  const capsule = (await compileContext({ root, task: "Inspect a synthetic local library", persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Inspect a synthetic local library", plan: [{ id: "inspect", outcome: "Bounded evidence" }], invariants: ["No external effects"] }).artifact;
   return createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId, scope: "Local evidence", acceptanceCriteria: ["Exact result"] }).artifact;
 }
@@ -48,7 +48,7 @@ function bytes(root) {
 const call = (root, name, args = {}, options = {}) => dispatch({ jsonrpc: "2.0", id: "local-fixture", method: "tools/call", params: { name, arguments: { project_root: root, ...args } } }, options);
 
 test("checkpoint/start/finish/review restore current facts without rewriting meaning or replaying historical actions", async (t) => {
-  const { root, storage } = fixture(t), c = contract(root);
+  const { root, storage } = fixture(t), c = (await contract(root));
   const checkpoint = createRecoveryCheckpoint({ root, ...direction }).checkpoint;
   const ledger = path.join(root, storage.directory, "sessions", "ledger", `${checkpoint.checkpointId}.json`);
   const checkpointBytes = fs.readFileSync(ledger);
@@ -125,16 +125,16 @@ test("trusted caller contexts preserve A/B, sharing, explicit default and known 
   assert.throws(() => first.select(root, b.sessionId, 0), { code: "HEAD_SESSION_BINDING_CONFLICT" });
 });
 
-test("CLI context and explicit routes agree; no checkpoint and unsupported binding remain nonblocking", (t) => {
+test("CLI context and explicit routes agree; no checkpoint and unsupported binding remain nonblocking", async (t) => {
   const { root, storage } = fixture(t), a = createHeadSession({ root, purpose: "A" }), context = createSessionCallContext();
-  const initial = runCommand(["conversation-enter", root]);
+  const initial = (await runCommand(["conversation-enter", root]));
   assert.equal(initial.recoveryState, "no-current-checkpoint");
   assert.equal(initial.ordinaryWorkBlocked, false);
-  runCommand(["status", root, "--session", a.sessionId], { sessionContext: context });
-  assert.equal(runCommand(["status", root], { sessionContext: context }).project.sessionId, a.sessionId);
+  (await runCommand(["status", root, "--session", a.sessionId], { sessionContext: context }));
+  assert.equal((await runCommand(["status", root], { sessionContext: context })).project.sessionId, a.sessionId);
   context.lose(root);
-  assert.equal(runCommand(["status", root], { sessionContext: context }).sessionId, null);
-  assert.equal(runCommand(["project-direction-read", root], { sessionContext: context }), null);
+  assert.equal((await runCommand(["status", root], { sessionContext: context })).sessionId, null);
+  assert.equal((await runCommand(["project-direction-read", root], { sessionContext: context })), null);
   assert.equal(withSessionRoute(root, a.sessionId, () => inspectProject(root).state.sessionId), a.sessionId);
 });
 
@@ -182,7 +182,7 @@ test("lost caller binding never gates CLI information or Project evidence but st
   for (const name of ["version", "--version", "help", "--help", "-h", "help-all", "observation-sources", "observation-query", "session-list", "project-direction-read"]) {
     assert.deepEqual(await runCommand([name, root], { sessionContext: context }), await runCommand([name, root]));
   }
-  assert.deepEqual(runCommand(["version"], { sessionContext: context }), runCommand(["version"]), "global information requires no initialized Project");
+  assert.deepEqual((await runCommand(["version"], { sessionContext: context })), (await runCommand(["version"])), "global information requires no initialized Project");
   const source = await runCommand(["source-context", root, "--task", "Inspect local source", "--source", "independent.mjs", "--kind", "source"], { sessionContext: context });
   assert.equal(source.status, "observed");
   assert.equal(source.context.capsule.sessionId, undefined, "Project-only evidence must not claim the default is the selected Session");
@@ -213,8 +213,8 @@ test("general meaning recovery cannot relax exact one-shot targets or consumed t
   assert.equal(restoreSessionFromArtifacts({ root }).projection.consumerInstruction.nextExpectedResult, undefined);
 });
 
-test("operational lock cleanup failure after commit never changes the original retry target", (t) => {
-  const { root, storage } = fixture(t), c = contract(root), unlink = fs.unlinkSync;
+test("operational lock cleanup failure after commit never changes the original retry target", async (t) => {
+  const { root, storage } = fixture(t), c = (await contract(root)), unlink = fs.unlinkSync;
   let result;
   fs.unlinkSync = function(file, ...args) {
     if (String(file).includes("session-recovery.lock") && path.basename(String(file)).startsWith("owner-")) throw Object.assign(new Error("Synthetic release failure"), { code: "EIO" });
@@ -228,8 +228,8 @@ test("operational lock cleanup failure after commit never changes the original r
   assert.equal(inspectProject(root).state.activeRunId, result.run.runId);
 });
 
-test("a demonstrably default-owned historical active Run is not another Session's start gate", (t) => {
-  const { root, storage } = fixture(t), c = contract(root);
+test("a demonstrably default-owned historical active Run is not another Session's start gate", async (t) => {
+  const { root, storage } = fixture(t), c = (await contract(root));
   const original = startRun({ root, executionContractId: c.executionContractId });
   const file = path.join(root, storage.directory, "sessions/runs", original.run.runId, "run.json");
   const legacy = JSON.parse(fs.readFileSync(file));
@@ -237,7 +237,7 @@ test("a demonstrably default-owned historical active Run is not another Session'
   fs.writeFileSync(file, JSON.stringify(legacy));
   const defaultBytes = fs.readFileSync(path.join(root, storage.directory, "sessions/current.json"));
   const second = createHeadSession({ root, purpose: "Independent bounded work" });
-  const started = withSessionRoute(root, second.sessionId, () => startRun({ root, executionContractId: contract(root).executionContractId, startRequestId: "independent-session" }));
+  const started = (await withSessionRoute(root, second.sessionId, async () => startRun({ root, executionContractId: (await contract(root)).executionContractId, startRequestId: "independent-session" })));
   assert.equal(started.run.sessionId, second.sessionId);
   assert.deepEqual(fs.readFileSync(path.join(root, storage.directory, "sessions/current.json")), defaultBytes);
 });
@@ -281,7 +281,7 @@ test("partial availability: mixed reads expose only Project facts without fallba
       }
     }
     for (const command of ["status", "doctor", "conversation-enter"]) {
-      const value = runCommand([command, root], { sessionContext: context });
+      const value = (await runCommand([command, root], { sessionContext: context }));
       assert.deepEqual(value.project, values[0].project); assert.deepEqual(value.currentProjectDirection, common);
     }
   } finally { Object.assign(fs, original); }
@@ -293,10 +293,10 @@ test("partial availability: mixed reads expose only Project facts without fallba
   assert.deepEqual(bytes(root), before);
 });
 
-test("partial availability: unresolved CLI consumers never invent recovery, checkpoint or diagnostics", (t) => {
+test("partial availability: unresolved CLI consumers never invent recovery, checkpoint or diagnostics", async (t) => {
   const { root, storage } = fixture(t), context = createSessionCallContext(); context.lose(root);
   for (const command of ["status", "doctor", "conversation-enter", "session-restore", "init", "resume"]) {
-    const value = runCommand([command, root], { sessionContext: context });
+    const value = (await runCommand([command, root], { sessionContext: context }));
     assert.equal(value.status, "session_selection_unresolved");
     const text = formatCliResult(command, value);
     assert.match(text, /independent work.*(?:available|continue)/iu);
@@ -306,7 +306,7 @@ test("partial availability: unresolved CLI consumers never invent recovery, chec
     assert.equal(JSON.parse(JSON.stringify(value)).status, value.status);
     console.log(JSON.stringify({ command, status: value.status, text }));
   }
-  const unresolved = runCommand(["status", root], { sessionContext: context });
+  const unresolved = (await runCommand(["status", root], { sessionContext: context }));
   for (const formatter of [formatProjectStatus, formatSessionRestore, formatConversationRecovery]) {
     assert.doesNotMatch(formatter(unresolved), /recovered the current direction|unverified checkpoint|No recovery checkpoint/iu);
   }
@@ -323,7 +323,7 @@ test("partial availability: missing direction is distinct from corrupt direction
     for (const options of [{ sessionContext: context }, { resolveSessionContext() { throw new Error("offline"); } }]) {
       assert((await call(root, "head_conversation_enter", {}, options)).error, "corruption must not become absent direction");
     }
-    assert.throws(() => runCommand(["status", root], { sessionContext: context }), { code: "INVALID_PROJECT_DIRECTION" });
+    (await assert.rejects(async () => (await runCommand(["status", root], { sessionContext: context })), { code: "INVALID_PROJECT_DIRECTION" }));
   } finally { fs.writeFileSync(directionFile, directionBytes); }
   assert.equal((await call(root, "head_project_status", {}, { sessionContext: context })).result.structuredContent.currentProjectDirection.directionId, common.directionId);
   const { root: otherRoot, storage: otherStorage } = fixture(t), otherDirection = updateProjectDirection({ root: otherRoot, input: { goal: "Foreign direction" } }).direction;
@@ -341,7 +341,7 @@ test("partial availability: missing direction is distinct from corrupt direction
   const empty = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "head-partial-uninitialized-")));
   t.after(() => fs.rmSync(empty, { recursive: true, force: true }));
   const emptyContext = createSessionCallContext(); emptyContext.lose(empty);
-  assert.throws(() => runCommand(["status", empty], { sessionContext: emptyContext }), { code: "NOT_INITIALIZED" });
+  (await assert.rejects(async () => (await runCommand(["status", empty], { sessionContext: emptyContext })), { code: "NOT_INITIALIZED" }));
 });
 
 test("partial availability: healthy default/bound/explicit output and no-checkpoint meaning stay unchanged", async (t) => {

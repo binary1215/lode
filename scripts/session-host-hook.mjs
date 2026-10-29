@@ -4,13 +4,13 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { coreEntryGuidance } from "./lib/lode-entry-guidance.mjs";
-// Node >=24 supports synchronous ESM loading. Keep the existing synchronous
-// renderer API without loading recovery/prompt readers for an End-only Hook.
+// Node >=24 supports synchronous ESM module loading. Load readers lazily so an
+// End-only Hook does not import recovery/prompt readers; Start awaits storage I/O.
 const require = createRequire(import.meta.url);
 
 // A read-only command Hook renderer. The outer driver may retain P5 observations
 // and exact paired-clear carrier continuity; neither path writes P2 direction.
-export function sessionStartContext({ runtime, event, environment = process.env } = {}) {
+export async function sessionStartContext({ runtime, event, environment = process.env } = {}) {
   if (!["codex", "claude"].includes(runtime) || event?.hook_event_name !== "SessionStart"
     || !["startup", "resume", "clear", "compact", "fork"].includes(event.source)
     || typeof event.cwd !== "string" || typeof event.session_id !== "string") return {};
@@ -23,7 +23,7 @@ export function sessionStartContext({ runtime, event, environment = process.env 
     const { createSessionHostAdapter } = require("./lib/session-host-adapter.mjs");
     const adapter = createSessionHostAdapter({ runtime, nativeSessionId: event.session_id,
       agentId: runtime === "claude" ? event.agent_id || null : null, environment });
-    entry = adapter.enter({ root: event.cwd });
+    entry = (await adapter.enter({ root: event.cwd }));
   } catch (error) {
     const code = typeof error?.code === "string" && /^[A-Z0-9_]{1,128}$/.test(error.code)
       ? error.code : "HOST_CONTEXT_UNAVAILABLE";
@@ -60,19 +60,30 @@ function noteNativePrompt(runtime, event, environment) {
 
 export async function runSessionHostHook({ runtime, event, environment = process.env, observeOnly = false, deliver,
   processObserver = null, deadlineAt = null } = {}) {
+  const startedAt = Date.now();
+  const promptDeadlineAt = Math.min(deadlineAt ?? Infinity, startedAt + 10_000);
+  let nativeOutcome;
   try {
     const { observeNativeHook } = await import("./lib/native-session-observations.mjs");
-    await observeNativeHook({ runtime, event, environment, processObserver, deadlineAt });
+    nativeOutcome = await observeNativeHook({ runtime, event, environment, processObserver, deadlineAt });
   } catch { /* Observations cannot block native flow or existing recovery. */ }
   try { noteNativePrompt(runtime, event, environment); }
   catch { /* A missing prompt reference never blocks the host. */ }
-  let context = observeOnly ? {} : sessionStartContext({ runtime, event, environment }), prepared;
+  let promptOperation, referenceTransfer;
+  if (!observeOnly && event?.hook_event_name === "SessionStart" && ["clear", "compact"].includes(event.source)) try {
+    const helpers = require("./lib/user-prompt-reference.mjs");
+    promptOperation = helpers.createUserPromptReferenceOperation({ deadlineAt: promptDeadlineAt });
+    if (event.source === "clear" && nativeOutcome?.clearHandoff) referenceTransfer = helpers.transferNativeClearPromptReference({
+      handoff: nativeOutcome.clearHandoff, root: event.cwd, caller: promptCaller(runtime, event), environment,
+      deadlineAt: promptDeadlineAt, operation: promptOperation });
+  } catch { /* Optional reference work cannot undo an existing Session link. */ }
+  let context = observeOnly ? {} : (await sessionStartContext({ runtime, event, environment })), prepared;
   if (context.hookSpecificOutput?.additionalContext && ["compact", "clear"].includes(event?.source)) try {
     const { prepareUserPromptReference, appendUserPromptReference } = require("./lib/user-prompt-reference.mjs");
     const { MAX_CONTEXT_CHARACTERS } = require("./lib/session-host-context-projection.mjs");
     const caller = promptCaller(runtime, event);
     prepared = caller && prepareUserPromptReference({ root: event.cwd, ...caller, environment, force: true,
-      additionalContext: context.hookSpecificOutput.additionalContext, limit: MAX_CONTEXT_CHARACTERS[runtime] || 0 });
+      additionalContext: context.hookSpecificOutput.additionalContext, limit: MAX_CONTEXT_CHARACTERS[runtime] || 0, operation: promptOperation });
     if (prepared) context = { hookSpecificOutput: { ...context.hookSpecificOutput,
       additionalContext: appendUserPromptReference(context.hookSpecificOutput.additionalContext, prepared.text, MAX_CONTEXT_CHARACTERS[runtime] || 0) } };
   } catch { /* Preserve primary context and the undelivered reference. */ }
@@ -80,6 +91,7 @@ export async function runSessionHostHook({ runtime, event, environment = process
   // stdout callback instead. Neither boundary proves Host or model reception.
   if (deliver) await deliver(context);
   if (prepared) require("./lib/user-prompt-reference.mjs").acknowledgeUserPromptReference(prepared);
+  if (referenceTransfer) Object.defineProperty(context, "referenceTransfer", { value: referenceTransfer });
   return context;
 }
 

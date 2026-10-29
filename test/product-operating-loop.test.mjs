@@ -53,7 +53,7 @@ test("new neutral hypotheses preserve historical support interpretation and exac
   const before = protectedPaths.map(p => fs.readFileSync(p));
   assert.equal(verifyProductHypothesis(legacy).hypothesisId, legacy.hypothesisId);
   await buildWorldModel({ root });
-  const graph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   assert.ok(graph.edges.some(e => e.from === fresh.hypothesisId && e.to === signal.signalId && e.type === "REFERENCES"));
   assert.ok(graph.edges.some(e => e.from === legacy.hypothesisId && e.to === signal.signalId && e.type === "SUPPORTED_BY"));
   assert.equal(graph.edges.some(e => e.from === fresh.hypothesisId && e.type === "SUPPORTED_BY"), false);
@@ -124,14 +124,14 @@ test("connects the minimal Product Operating Loop while keeping Product Canon an
   const deniedReview = await dispatchMcp({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "head_product_initiative_review", arguments: { project_root: root, initiative_candidate_id: gapProposal.initiativeCandidate.initiativeCandidateId, disposition: "reject", rationale: "The gap is intentionally unresolved.", confirm_user_review: false } } });
   assert.match(deniedReview.error.message, /explicit user confirmation/);
 
-  const graph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   assert.equal(graph.nodes.some((node) => node.kind === "ProductSignal" && node.nodeId === signal.signal.signalId), true);
   assert.equal(graph.nodes.some((node) => node.kind === "ReviewedProductInitiative" && node.nodeId === reviewed.reviewedInitiative.initiativeId), true);
   assert.equal(graph.nodes.some((node) => node.kind === "ProductFeatureCandidate" && node.nodeId === candidateProposal.featureCandidate.featureCandidateId), true);
   assert.equal(graph.edges.some((edge) => edge.type === "REFERENCES" && edge.from === hypothesis.hypothesis.hypothesisId && edge.to === signal.signal.signalId), true);
   assert.equal(graph.edges.some((edge) => edge.type === "PRODUCES" && edge.from === reviewed.reviewDecision.reviewDecisionId && edge.to === reviewed.reviewedInitiative.initiativeId), true);
 
-  const capsule = compileContext({ root, task: "Implement the reviewed continuity initiative", budget: 32_768, persist: true });
+  const capsule = (await compileContext({ root, task: "Implement the reviewed continuity initiative", budget: 32_768, persist: true }));
   const plan = createWholePlanSnapshot({ root, objective: "Implement continuity with reviewed execution lineage", plan: [{ id: "implement", outcome: "Verified continuity implementation" }] });
   const contract = createExecutionContract({ root, wholePlanId: plan.artifact.wholePlanId, capsuleId: capsule.capsule.capsuleId, scope: "Change the fixture implementation", acceptanceCriteria: ["Return implementation evidence"] });
   startRun({ root, executionContractId: contract.artifact.executionContractId });
@@ -144,9 +144,9 @@ test("connects the minimal Product Operating Loop while keeping Product Canon an
   const observation = await observeProductOutcome({ root, initiativeId: reviewed.reviewedInitiative.initiativeId, changeSetId: change.changeSet.changeSetId, statement: "The accepted ChangeSet now exposes exact continuity references in the fixture.", epistemicClass: "observed-fact", evidenceIds: ["fixture-product-loop"] });
   assert.equal(observation.featureStatusMutated, false);
   assert.equal(observation.successJudgmentRecorded, false);
-  const outcomeGraph = queryWorldTemporalGraph({ root, query: "exact continuity references", kinds: ["OutcomeObservation", "ChangeSet", "ReviewedProductInitiative"], relations: ["OBSERVES"], includeUnreviewedCandidates: true, depth: 2, maxNodes: 100, maxEdges: 100 });
+  const outcomeGraph = (await queryWorldTemporalGraph({ root, query: "exact continuity references", kinds: ["OutcomeObservation", "ChangeSet", "ReviewedProductInitiative"], relations: ["OBSERVES"], includeUnreviewedCandidates: true, depth: 2, maxNodes: 100, maxEdges: 100 }));
   assert.equal(outcomeGraph.nodes.some((node) => node.nodeId === observation.outcomeObservation.outcomeObservationId), true);
-  assert.equal(inspectWorldModel({ root }).snapshot.temporalProvenanceGraph.edges.some((edge) => edge.type === "OBSERVES" && edge.from === observation.outcomeObservation.outcomeObservationId && edge.to === change.changeSet.changeSetId), true);
+  assert.equal((await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph.edges.some((edge) => edge.type === "OBSERVES" && edge.from === observation.outcomeObservation.outcomeObservationId && edge.to === change.changeSet.changeSetId), true);
 
   const continuity = await buildHeadContinuitySnapshot({ root });
   assert.equal(continuity.snapshot.persisted, false);
@@ -154,7 +154,7 @@ test("connects the minimal Product Operating Loop while keeping Product Canon an
   assert.equal(continuity.snapshot.reviewedProductInitiativeIds.includes(reviewed.reviewedInitiative.initiativeId), true);
   assert.deepEqual(continuity.snapshot.outcomeObservationIds, [observation.outcomeObservation.outcomeObservationId]);
   assert.equal(fs.existsSync(path.join(root, directory, "continuity")), false);
-  assert.equal(runCommand(["product-operating-status", root]).authority.graph, "derived-projection");
+  assert.equal((await runCommand(["product-operating-status", root])).authority.graph, "derived-projection");
   const mcp = await dispatchMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "head_continuity_snapshot", arguments: { project_root: root } } });
   assert.equal(mcp.result.structuredContent.snapshot.snapshotId, continuity.snapshot.snapshotId);
   assert.equal(inspectProductOperatingLoop({ root }).projection.outcomeObservations.length, 1);
@@ -168,8 +168,8 @@ test("removes prose formatting, defers Feature resolution to review, and caches 
   await buildWorldModel({ root, persist: true });
   assert.equal(productOperatingAPI.prepareProductLearningNote, undefined);
   assert.equal(fs.existsSync(path.join(root, directory, "product-operations")), false);
-  assert.equal(runCommand(["help"]).commands.includes("lode-agent product-signal-record <project> --input <signal.json>"), false);
-  assert.equal(runCommand(["help-all"]).commands.includes("lode-agent product-signal-record <project> --input <signal.json>"), true);
+  assert.equal((await runCommand(["help"])).commands.includes("lode-agent product-signal-record <project> --input <signal.json>"), false);
+  assert.equal((await runCommand(["help-all"])).commands.includes("lode-agent product-signal-record <project> --input <signal.json>"), true);
 
   const proposed = await proposeProductInitiative({
     root,
@@ -213,7 +213,7 @@ test("removes prose formatting, defers Feature resolution to review, and caches 
   assert.equal(cachedContinuity.snapshot.snapshotId, firstContinuity.snapshot.snapshotId);
   assert.equal(cachedContinuity.snapshot.persisted, false);
   assert.equal(cachedContinuity.snapshot.recoveryAuthority, false);
-  assert.equal(runCommand(["product-operating-status", root, "--fresh"]).readVerification.mode, "fresh-full-verification");
+  assert.equal((await runCommand(["product-operating-status", root, "--fresh"])).readVerification.mode, "fresh-full-verification");
   assert.equal((await runCommand(["head-continuity", root, "--fresh"])).readVerification.productOperating.mode, "fresh-full-verification");
 
   await recordProductSignal({ root, statement: "A write must invalidate the verified read cache." });

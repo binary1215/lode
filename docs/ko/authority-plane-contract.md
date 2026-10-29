@@ -58,7 +58,7 @@ Host와 provider Lode는 보호된 변경을 호출하기 전에 현재 사용�
 영수증을 검증할 수 있으며, 영수증과 provider identity는 Host 경계에 남습니다.
 일반 작업에 추가 승인 절차가 생기지는 않습니다.
 
-한 평면이 다른 평면을 가리킨다는 이유만으로 권한이 위로 이동할 수 없습니다. P3 후보는 명시적으로 검증된 ReviewDecision과 정확히 검토된 변경 작업을 통해서만 P1에 영향을 줄 수 있습니다. P4 그래프 쓰기는 정확한 Product Canon 바이트로 차단됩니다. adapter가 해당 바이트를 변경하거나 삭제하면 Core는 그 바이트를 복원하고 World Model pointer를 전진시키기 전에 `GRAPH_PROJECTION_AUTHORITY_AMPLIFICATION`으로 실패합니다.
+한 평면이 다른 평면을 가리킨다는 이유만으로 권한이 위로 이동할 수 없습니다. P3 후보는 명시적으로 검증된 ReviewDecision과 정확히 검토된 변경 작업을 통해서만 P1에 영향을 줄 수 있습니다. World/Graph는 snapshot이 소비한 정확한 Product Canon 바이트를 기준으로 고정합니다. immutable 준비는 짧은 `session-recovery` commit scope 밖에서 수행합니다. current pointer 게시 전에 그 scope에서 Project/storage identity·Canon 기준·예상 current World pointer를 재검증합니다. 기준이 달라지면 `WORLD_MODEL_CANON_BASIS_CONFLICT`로 실패하고 현재 Canon을 보존합니다. 바이트 차이만으로 작성자를 단정하거나 이전 Canon을 덮어써 복원하지 않습니다. 권한·identity·I/O 오류는 원래 코드를 유지합니다. 명시적으로 금지된 권한 API는 계속 증폭을 거부합니다. 이는 Core 간 협력적 직렬화이며 OS sandbox 또는 여러 pointer의 crash atomicity를 보장하지 않습니다.
 
 후보 제품 개념과 검토된 제품 개념은 이름과 평면이 서로 다릅니다. 그래프 node가 일반 또는 미검토 Feature/Policy label을 사용한다는 이유만으로 해당 개념이 P1로 분류되는 일은 없습니다. Product Canon 또는 별도로 검토된 Feature/Policy만 P1이며, FeatureCandidate, ProductFeatureCandidate, PolicyCandidate는 P3에 남습니다.
 
@@ -148,7 +148,7 @@ Core는 양쪽을 모두 검증합니다. 이름으로 지정된 그래프에는
 
 - 현재의 모든 lineage, checkpoint, GraphSnapshot과 application-receipt builder는 자신의 정확한 평면 경계를 내보내고, 현재 reader는 이를 검증합니다.
 - 명시적 ReviewDecision 없는 P4-to-P1 승격은 실패합니다.
-- Product Canon 바이트를 변경하는 그래프 adapter는 실패하고 Canon 바이트는 정확히 복원됩니다.
+- Canon 기준이 바뀌면 파생 pointer 게시를 거부하고 변경된 Canon 바이트를 보존합니다.
 - checkpoint 생성 후 ResultPacket 증거를 삭제해도 `nextExpectedResult` 복구가 달라지거나 막히지 않습니다.
 - receipt는 자신이 이름으로 지정한 그래프에는 없고 이후 child에만 나타납니다.
 - 로컬, in-memory, 활성화된 GraphDB backend는 동일한 의미 GraphSnapshot과 TraversalResult identity를 보존합니다.
@@ -176,3 +176,11 @@ direction, P3 result meaning, Product Canon 또는 wave completion을 만들거�
 전체 World current, Product 승인, Run/Capsule, DB와 무관하게 유효한 층을 탐색하며
 손상된 층만 제외합니다. 부분·빈 결과는 사실 부재의 증명이 아니고 원본 fallback을
 제공합니다. 같은 기준의 결과/실패는 재사용하고 읽기는 승인·checkpoint를 만들지 않습니다.
+
+## Canon 게시 조정
+
+온보딩 승격과 Product Policy 수락은 기존의 짧은 `session-recovery` scope 안에서 Canon을 게시합니다. 문서 검토 Canon 적용도 같은 scope에 참여하고 검토한 preimage를 재검증합니다. 어떤 경로도 비동기 projection 작업 동안 이 scope를 보유하지 않습니다. World refresh는 기존 writer lease 이후 이 scope에 진입할 수 있습니다. Canon 게시자는 scope를 먼저 해제한 뒤 파생 refresh를 요청하므로 역순 잠금을 피합니다. 새 초기화는 collision 검사로 아직 게시되지 않은 Project를 생성하며 기존 Canon 교체 경로가 아닙니다. 충돌 시 immutable snapshot 준비물이 남을 수 있지만 권한을 부여하거나 current pointer를 전진시키지 않습니다.
+
+내장 Activated ArcadeDB 경로도 실제 local mirror pointer 게시와 원격 게시를 분리합니다. 짧은 Canon commit scope에는 로컬 Graph·World current pointer 쓰기만 들어갑니다. 원격 pointer·topology activation·sync receipt 작업은 scope를 해제한 뒤 실행하며, 기존의 원격 관측 전 unavailable 상태에만 허용하는 fallback을 유지합니다. 원격 무결성·권한·불확실한 쓰기 실패는 오류로 남습니다. 성공 receipt를 만들거나 새 Canon/current pointer를 rollback할 수 없습니다. 오류 문구에는 확인된 로컬 게시와 완료되지 않은 외부 작업을 구분합니다. 로컬·원격 저장소 전체의 원자적 트랜잭션을 보장하지 않습니다.
+
+원격 게시를 기다린 뒤에는 실제 현재 local mirror를 다시 읽고 나서만 topology/sync receipt가 `localMirrorVerified`를 주장할 수 있습니다. 직접 materialize도 성공 반환 전에 실제 local current를 재검증합니다. World 완료는 실제 파싱에 사용한 Canon 바이트와 예상 current World pointer를 다시 확인합니다. 더 새 local/current 값은 보존하고, 확인된 이전 원격 효과와 함께 충돌로 보고합니다. 자동 재실행이나 rollback은 추가하지 않습니다.

@@ -802,3 +802,16 @@ test("compact display preserves unfamiliar currentness and absent or unknown Tod
     assert(!labels.some(label => /cancelled|completed/.test(label))); assert.equal(JSON.stringify(data), original);
   }
 });
+
+
+test("title-first cards avoid repeated preview while material historical and partial conditions stay visible", async () => {
+ const graph={nodes:[{nodeId:"A",name:"Retry failed uploads",description:"Retry failed uploads",kind:"Feature",integrity:"verified",freshness:"snapshot-evidence",views:["work"]},
+ {nodeId:"B",name:"Historical source observation",kind:"File",path:"src/previous.mjs",integrity:"verified",freshness:"historical-source-bytes",contentPartial:true,currentTraversalEligible:false,views:["work"]}],edges:[edge("A","B")]};
+ const data=input(graph),before=JSON.stringify(data),ui=explorerDom(data);await ui.settle();
+ const first=readingCard(ui,"A"),header=visibleText(first.children[0]);
+ assert.equal(header.split("Retry failed uploads").length-1,1);assert(!header.includes("Snapshot"));assert.equal(first.open,false);
+ ui.ids.get("include-history").checked=true;ui.event("include-history","change");ui.event(recordButton(ui,"Historical source observation"));
+ const historical=readingCard(ui,"B"),conditions=visibleText(historical.children[0]);
+ assert.match(conditions,/Historical source bytes/);assert.match(conditions,/Partial content/);assert.match(conditions,/Not current traversal/);
+ first.open=true;historical.open=true;assert(first.open&&historical.open);assert.equal(JSON.stringify(data),before);
+});

@@ -119,7 +119,7 @@ export async function runTrial(trial, output) {
     measurements.push({ ...empty, label: "world.build", localOperations: 1, elapsedMs: performance.now() - start, filesystemApiCalls: delta(io, before), verified: true,
       note: "local JS build; validity checked by subsequent currentness and queries; not sent to model" });
     for (const pass of ["initial", "repeated"]) {
-      local(`world.currentness.${pass}`, () => inspectWorldModelStatus({ root }), (v) => { assert.equal(v.status, "current"); return { status: "current" }; });
+      local(`world.currentness.${pass}`, async () => (await inspectWorldModelStatus({ root })), (v) => { assert.equal(v.status, "current"); return { status: "current" }; });
       for (const [label, query, limit] of [["known", "target", 2], ["outline", "module.py", 500]]) {
         const graph = await call(`world.${label}-query.${pass}`, "head_world_query", { query, depth: 0, limit }, (g) => {
           assert.equal(g.status, "current"); assert.equal(g.truncated, false);

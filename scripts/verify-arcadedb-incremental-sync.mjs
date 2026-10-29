@@ -163,21 +163,21 @@ function adapter(transport, baseGraphValue = null) {
 
 const transport = new MemorySyncTransport();
 const initial = adapter(transport);
-initial.writeSnapshot(baseGraph.graphSnapshotId, baseGraph);
-initial.writePointer(buildGraphProjectionPointer(baseGraph));
+(await initial.writeSnapshot(baseGraph.graphSnapshotId, baseGraph));
+await initial.writePointer(buildGraphProjectionPointer(baseGraph));
 const initialState = initial.takeCompletedIncrementalSync();
 assert.equal(initialState.manifest.batchCount > 0, true);
 
 const unchanged = adapter(transport, baseGraph);
-unchanged.writeSnapshot(baseGraph.graphSnapshotId, baseGraph);
-unchanged.writePointer(buildGraphProjectionPointer(baseGraph));
+(await unchanged.writeSnapshot(baseGraph.graphSnapshotId, baseGraph));
+await unchanged.writePointer(buildGraphProjectionPointer(baseGraph));
 const unchangedState = unchanged.takeCompletedIncrementalSync();
 assert.equal(unchangedState.manifest.noChange, true);
 assert.equal(unchangedState.manifest.batchCount, 0);
 
 const delta = adapter(transport, baseGraph);
-delta.writeSnapshot(targetGraph.graphSnapshotId, targetGraph);
-delta.writePointer(buildGraphProjectionPointer(targetGraph));
+(await delta.writeSnapshot(targetGraph.graphSnapshotId, targetGraph));
+await delta.writePointer(buildGraphProjectionPointer(targetGraph));
 const deltaState = delta.takeCompletedIncrementalSync();
 assert.equal(deltaState.manifest.nodeDelta.rebased.count > 0, true);
 assert.equal(deltaState.manifest.edgeDelta.rebased.count > 0, true);
@@ -195,19 +195,19 @@ assert.equal(receipt.atomicPointerTransitionVerified, true);
 
 const interruptedTransport = new MemorySyncTransport({ failCheckpointAfter: 1 });
 const interrupted = adapter(interruptedTransport);
-assert.throws(() => interrupted.writeSnapshot(targetGraph.graphSnapshotId, targetGraph), { code: "ARCADEDB_WRITE_OUTCOME_UNKNOWN" });
+(await assert.rejects(async () => (await interrupted.writeSnapshot(targetGraph.graphSnapshotId, targetGraph)), { code: "ARCADEDB_WRITE_OUTCOME_UNKNOWN" }));
 assert.equal(interruptedTransport.readPointer(projectId), null);
 const resumed = adapter(interruptedTransport);
-resumed.writeSnapshot(targetGraph.graphSnapshotId, targetGraph);
-resumed.writePointer(buildGraphProjectionPointer(targetGraph));
+(await resumed.writeSnapshot(targetGraph.graphSnapshotId, targetGraph));
+await resumed.writePointer(buildGraphProjectionPointer(targetGraph));
 assert.equal(resumed.takeCompletedIncrementalSync().syncState.resumedBatchCount > 0, true);
 
 const conflictTransport = new MemorySyncTransport();
 const conflict = adapter(conflictTransport);
-conflict.writeSnapshot(baseGraph.graphSnapshotId, baseGraph);
+(await conflict.writeSnapshot(baseGraph.graphSnapshotId, baseGraph));
 const externalPointer = buildGraphProjectionPointer(baseGraph);
 conflictTransport.pointers.set(projectId, JSON.stringify(externalPointer));
-assert.throws(() => conflict.writePointer(externalPointer), { code: "ARCADEDB_INCREMENTAL_SYNC_POINTER_CONFLICT" });
+await assert.rejects(() => conflict.writePointer(externalPointer), { code: "ARCADEDB_INCREMENTAL_SYNC_POINTER_CONFLICT" });
 
 class HttpCommandContractTransport extends ArcadeDbHttpTransport {
   constructor() {

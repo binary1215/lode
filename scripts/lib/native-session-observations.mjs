@@ -284,11 +284,15 @@ export async function observeNativeHook({ runtime, event, environment = process.
   if (membership && callerDigest(membership.caller) !== callerDigest(caller)) {
     try { await store.observe({ root, ...membership, deadlineAt }); } catch { /* Independent bounded second publication, not a transaction. */ }
   }
+  let clearHandoff;
   if (clearTransition && retained && !(observation.event === "SessionStart" && replay) && observation.instance && Date.now() < deadlineAt) try {
     const { reconcileNativeClearHandoff } = await import("./session-clear-handoff.mjs");
-    reconcileNativeClearHandoff({ root, caller, observation, store, environment, deadlineAt });
+    const handoff = reconcileNativeClearHandoff({ root, caller, observation, store, environment, deadlineAt });
+    if (observation.event === "SessionStart" && handoff.status === "same-session-link-retained") clearHandoff = handoff;
   } catch { /* An unavailable carrier link never changes P2 or blocks native work. */ }
-  return { retained };
+  const outcome = { retained };
+  if (clearHandoff) Object.defineProperty(outcome, "clearHandoff", { value: clearHandoff });
+  return outcome;
 }
 
 export function readRelatedNativeWorkContext({ root, caller, childSessionId, environment = process.env } = {}) {

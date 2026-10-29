@@ -521,20 +521,20 @@ export function inspectProjectLocationExperience({ root = ".", sessionId } = {})
   });
 }
 
-export function inspectProjectExperience({ root = ".", recoveryOverride = null } = {}) {
+export async function inspectProjectExperience({ root = ".", recoveryOverride = null } = {}) {
   const location = inspectProjectLocationExperience({ root });
   if (location) return location;
   const project = inspectProject(root);
   if (project.status !== "ready") return projectExperience(project, null, recoveryOverride);
-  return projectExperience(project, inspectOptionalOnboarding({ root }), recoveryOverride);
+  return projectExperience(project, (await inspectOptionalOnboarding({ root })), recoveryOverride);
 }
 
 // Fixed internal consumer boundary. Keep the later managed-file/selected-owner
 // observation; the entry's final pointer check does not rehash managed files.
-export function inspectConversationProjectExperience({ root = ".", recoveryOverride = null } = {}) {
+export async function inspectConversationProjectExperience({ root = ".", recoveryOverride = null } = {}) {
   const project = inspectProject(root);
   if (project.status !== "ready") return projectExperience(project, null, recoveryOverride);
-  return projectExperience(project, inspectOptionalOnboardingForEntry({ root }), recoveryOverride);
+  return projectExperience(project, (await inspectOptionalOnboardingForEntry({ root })), recoveryOverride);
 }
 
 function bootstrapResponse({ root, profile, before, installation, onboardingAction, inputDisposition, inspected, extra = {} }) {
@@ -567,8 +567,8 @@ export async function initializeOrResumeProject(options = {}) {
   }
   const location = resumeProjectLocation({ root, pluginRoot, runtimes,
     validateSelection: owner => validateRelocationSessionSelection(owner, projectSessionRoute ?? {}) });
-  const operation = () => initializeOrResumeCurrentProject({ ...options, root, profile, onboardingInput, location });
-  if (!projectSessionRoute) return operation();
+  const operation = async () => (await initializeOrResumeCurrentProject({ ...options, root, profile, onboardingInput, location }));
+  if (!projectSessionRoute) return (await operation());
   const route = { sessionId: projectSessionRoute.sessionId, context: projectSessionRoute.context };
   const unresolved = reasonCode => {
     const value = sessionSelectionUnresolved(root, { reasonCode });
@@ -619,7 +619,7 @@ async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = n
   // inventories are refreshed by actual record writers or explicit indexing;
   // unchanged resume must not create a new derived generation after view loss.
   if (!fs.existsSync(path.join(root, projectGraphIndexPath(initialization.storage ?? before.storage)))) noteProjectGraphChange(root);
-  let current = profile === "core" ? inspectOptionalOnboarding({ root }) : inspectOnboarding({ root });
+  let current = profile === "core" ? (await inspectOptionalOnboarding({ root })) : (await inspectOnboarding({ root }));
   if (profile === "core") {
     const productGovernanceActivated = !["initialized", "migration_required"].includes(current.status);
     return bootstrapResponse({
@@ -639,7 +639,7 @@ async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = n
     || (current.status === "awaiting_evidence" && Object.keys(onboardingInput).length)) {
     const started = await startOnboarding({ root, ...onboardingInput });
     onboardingAction = current.status === "initialized" || current.status === "migration_required" ? "started" : "resumed-analysis";
-    const inspected = inspectOnboarding({ root });
+    const inspected = (await inspectOnboarding({ root }));
     return bootstrapResponse({
       root,
       profile,
@@ -666,7 +666,7 @@ async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = n
 
   if (current.status === "awaiting_review" || current.status === "revision_required") {
     const refresh = await refreshOnboardingCandidates({ root, semanticProposal: onboardingInput.semanticProposal || null });
-    current = inspectOnboarding({ root });
+    current = (await inspectOnboarding({ root }));
     if (refresh.refreshed) {
       return bootstrapResponse({
         root,

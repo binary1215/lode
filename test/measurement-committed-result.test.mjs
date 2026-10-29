@@ -182,15 +182,15 @@ test("primary validation, conflicts and divergent replay still reject under brok
   breakPointer(root, layout);
   const before = files(root, layout);
   const cases = [
-    ["INVALID_MEASUREMENT_INPUT", () => defineMetric({ root, ...definition, direction: "sideways" })],
-    ["METRIC_DEFINITION_CONFLICT", () => defineMetric({ root, ...definition, unit: "seconds" })],
-    ["INVALID_MEASUREMENT_INPUT", () => recordMetricObservation({ root, ...input({ value: NaN }) })],
-    ["UNPROVEN_COMPLETE_MEASUREMENT_COVERAGE", () => recordMetricObservation({ root, ...input({ coverage: { state: "complete" } }) })],
-    ["INVALID_OBSERVATION_INPUT", () => recordMetricObservation({ root, ...input({ sourceScopeDigest: "bad" }) })],
-    ["DIVERGENT_OBSERVATION_REPLAY", () => recordMetricObservation({ root, ...input({ value: 121 }) })],
-    ["INCOMPARABLE_METRIC_OBSERVATIONS", () => compareMetricObservations({ ...comparisonInput, currentObservationId: baseline.observation.observationId })],
-    ["INCOMPARABLE_METRIC_OBSERVATIONS", () => compareMetricObservations({ ...comparisonInput, currentObservationId: other.observation.observationId })],
-    ["INCOMPARABLE_METRIC_OBSERVATIONS", () => compareMetricObservations({ root, baselineObservationId: current.observation.observationId, currentObservationId: baseline.observation.observationId })],
+    ["INVALID_MEASUREMENT_INPUT", async () => (await defineMetric({ root, ...definition, direction: "sideways" }))],
+    ["METRIC_DEFINITION_CONFLICT", async () => (await defineMetric({ root, ...definition, unit: "seconds" }))],
+    ["INVALID_MEASUREMENT_INPUT", async () => (await recordMetricObservation({ root, ...input({ value: NaN }) }))],
+    ["UNPROVEN_COMPLETE_MEASUREMENT_COVERAGE", async () => (await recordMetricObservation({ root, ...input({ coverage: { state: "complete" } }) }))],
+    ["INVALID_OBSERVATION_INPUT", async () => (await recordMetricObservation({ root, ...input({ sourceScopeDigest: "bad" }) }))],
+    ["DIVERGENT_OBSERVATION_REPLAY", async () => (await recordMetricObservation({ root, ...input({ value: 121 }) }))],
+    ["INCOMPARABLE_METRIC_OBSERVATIONS", async () => (await compareMetricObservations({ ...comparisonInput, currentObservationId: baseline.observation.observationId }))],
+    ["INCOMPARABLE_METRIC_OBSERVATIONS", async () => (await compareMetricObservations({ ...comparisonInput, currentObservationId: other.observation.observationId }))],
+    ["INCOMPARABLE_METRIC_OBSERVATIONS", async () => (await compareMetricObservations({ root, baselineObservationId: current.observation.observationId, currentObservationId: baseline.observation.observationId }))],
   ];
   for (const [code, operation] of cases) { await assert.rejects(operation, { code }); assert.deepEqual(files(root, layout), before); }
 });
@@ -203,7 +203,7 @@ test("original digest, owner and read-permission failures escape before derived 
   const file = fs.readdirSync(directory).map((name) => path.join(directory, name))
     .find((candidate) => JSON.parse(fs.readFileSync(candidate, "utf8")).observationId === baseline.observation.observationId);
   const original = fs.readFileSync(file, "utf8");
-  const invoke = () => defineMetric({ root, metricKey: "new-metric", unit: "count", direction: "increase" });
+  const invoke = async () => (await defineMetric({ root, metricKey: "new-metric", unit: "count", direction: "increase" }));
   try {
     const changed = JSON.parse(original); changed.payload.value += 1;
     fs.writeFileSync(file, JSON.stringify(changed));
@@ -258,25 +258,25 @@ async function failFinalPublish(t, root, layout, relative, kind, operation) {
 test("final primary publish and multi-artifact partial commits remain failures", { concurrency: false }, async (t) => {
   await t.test("descriptor final publish", async (t) => {
     const { root, storage, layout } = fixture(t);
-    await failFinalPublish(t, root, layout, `${layout.directory}/observations/descriptors`, "ObservationTypeDescriptor", () => defineMetric({ root, ...definition }));
+    await failFinalPublish(t, root, layout, `${layout.directory}/observations/descriptors`, "ObservationTypeDescriptor", async () => (await defineMetric({ root, ...definition })));
     assert.deepEqual(files(root, layout), {});
   });
   await t.test("observation final publish", async (t) => {
     const { root, storage, layout } = fixture(t); await defineMetric({ root, ...definition }); breakPointer(root, layout);
     const before = files(root, layout);
-    await failFinalPublish(t, root, layout, `${layout.directory}/observations/records/by-source-key`, "ObservationRecord", () => recordMetricObservation({ root, ...input() }));
+    await failFinalPublish(t, root, layout, `${layout.directory}/observations/records/by-source-key`, "ObservationRecord", async () => (await recordMetricObservation({ root, ...input() })));
     assert.deepEqual(files(root, layout), before);
   });
   await t.test("receipt failure preserves the partial observation without reporting success", async (t) => {
     const { root, storage, layout } = fixture(t); await defineMetric({ root, ...definition }); breakPointer(root, layout);
-    await failFinalPublish(t, root, layout, `${layout.directory}/observations/receipts`, "ObservationCollectionReceipt", () => recordMetricObservation({ root, ...input() }));
+    await failFinalPublish(t, root, layout, `${layout.directory}/observations/receipts`, "ObservationCollectionReceipt", async () => (await recordMetricObservation({ root, ...input() })));
     assert.equal(fs.readdirSync(path.join(root, `${layout.directory}/observations/records/by-source-key`)).filter((name) => name.endsWith(".json")).length, 1);
     assert.equal(fs.readdirSync(path.join(root, `${layout.directory}/observations/receipts`)).length, 0);
     assert.throws(() => artifacts(root, storage), { code: "OBSERVATION_RECEIPT_MISSING" });
   });
   await t.test("derived failure preserves the comparison descriptor without reporting success", async (t) => {
     const { root, storage, layout } = fixture(t); const { comparisonInput } = await pair(root); breakPointer(root, layout);
-    await failFinalPublish(t, root, layout, `${layout.directory}/observations/derived`, "DerivedObservationRecord", () => compareMetricObservations(comparisonInput));
+    await failFinalPublish(t, root, layout, `${layout.directory}/observations/derived`, "DerivedObservationRecord", async () => (await compareMetricObservations(comparisonInput)));
     const stored = artifacts(root, storage);
     assert.equal(stored.descriptors.filter((descriptor) => descriptor.typeKey.endsWith(".comparison")).length, 1);
     assert.equal(stored.derivedObservations.length, 0);

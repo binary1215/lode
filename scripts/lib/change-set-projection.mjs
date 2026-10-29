@@ -3,7 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
 
+// Auxiliary state, impact candidates and impact reviews retain their own contract.
 export const CHANGE_SET_VERSION = "0.2.0";
+export const CHANGE_SET_RECORD_VERSION = "0.3.0";
 export const CHANGE_SET_PROJECTION_VERSION = "0.3.0";
 export const VCS_EVIDENCE_VERSION = "0.1.0";
 export const CHANGE_SET_DIRECTORY = ".head/change-sets/records";
@@ -69,11 +71,13 @@ function sortedUnique(values, label) {
   return normalized;
 }
 
-function verifySnapshotReference(reference, label) {
+function verifySnapshotReference(reference, label, version) {
+  const keys = version === CHANGE_SET_RECORD_VERSION ? ["graphSnapshotId", "sourceSnapshotId", "worldModelId"] : ["graphSnapshotId", "sourceSnapshotId"];
   if (!reference || typeof reference !== "object" || Array.isArray(reference)
-    || changeSetCanonicalJson(Object.keys(reference).sort()) !== changeSetCanonicalJson(["graphSnapshotId", "sourceSnapshotId"])
+    || changeSetCanonicalJson(Object.keys(reference).sort()) !== changeSetCanonicalJson(keys)
     || !/^graph-snapshot-[a-f0-9]{24}$/.test(reference.graphSnapshotId || "")
-    || !/^source-snapshot-[a-f0-9]{24}$/.test(reference.sourceSnapshotId || "")) {
+    || !/^source-snapshot-[a-f0-9]{24}$/.test(reference.sourceSnapshotId || "")
+    || version === CHANGE_SET_RECORD_VERSION && !/^world-model-[a-f0-9]{24}$/.test(reference.worldModelId || "")) {
     fail(`${label} is invalid.`, "INVALID_CHANGE_SET_SNAPSHOT_REFERENCE");
   }
   return reference;
@@ -104,7 +108,7 @@ function verifyChange(change) {
 export function verifyChangeSet(document, projectId = "", storage = undefined) {
   verifyIdentity(document, { idField: "changeSetId", hashField: "changeSetHash", prefix: "change-set", label: "ChangeSet" });
   if (document.schemaVersion !== 1 || document.kind !== "ChangeSet"
-    || !familyFormatForOriginal("head-agent-core-change-set", document, storage) || !["0.1.0", CHANGE_SET_VERSION].includes(document.protocol?.version)
+    || !familyFormatForOriginal("head-agent-core-change-set", document, storage) || !["0.1.0", "0.2.0", CHANGE_SET_RECORD_VERSION].includes(document.protocol?.version)
     || (projectId && document.projectId !== projectId)
     || typeof document.sessionId !== "string" || !document.sessionId
     || !/^result-packet-[a-f0-9]{24}$/.test(document.resultPacketId || "")
@@ -115,8 +119,8 @@ export function verifyChangeSet(document, projectId = "", storage = undefined) {
     || !Array.isArray(document.changes) || document.changes.length < 1 || document.changes.length > LIMITS.maxChangesPerSet) {
     fail("ChangeSet fields or authority are invalid.", "INVALID_CHANGE_SET");
   }
-  verifySnapshotReference(document.before, "ChangeSet before snapshot");
-  verifySnapshotReference(document.after, "ChangeSet after snapshot");
+  verifySnapshotReference(document.before, "ChangeSet before snapshot", document.protocol.version);
+  verifySnapshotReference(document.after, "ChangeSet after snapshot", document.protocol.version);
   if (document.before.sourceSnapshotId === document.after.sourceSnapshotId) {
     fail("ChangeSet before and after snapshots must differ.", "EMPTY_CHANGE_SET");
   }

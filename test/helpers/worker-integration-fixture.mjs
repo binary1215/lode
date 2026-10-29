@@ -73,7 +73,7 @@ export async function workerIntegrationFixture(t, options = {}) {
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const storage = inspectProject(root).storage;
   const layout = formatForVerifiedOwner(storage);
-  const capsule = compileContext({ root, task: "Verify a bounded synthetic whole worker integration", persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Verify a bounded synthetic whole worker integration", persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Integrate exact worker evidence once", plan: [{ id: "integrate", outcome: "One reviewed whole result" }] }).artifact;
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
     scope: "Schema-only integration fixture", acceptanceCriteria: ["Preserve all worker provenance and exact Run"],

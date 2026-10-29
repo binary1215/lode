@@ -341,7 +341,11 @@ export function inspectRepositoryScanForWorld(options, previousResult, { sourceS
     file(metadata, raw, base) {
       const previous = previousFiles.get(metadata.path);
       const reusable = reusableProducer && sameObservedFile(previous, metadata);
-      observed.push(reusable ? { metadata, reusable: true } : { metadata, raw, base });
+      // Consume changed bytes synchronously from this exact observation. Keeping
+      // every changed raw buffer until the full walk ends can retain the entire
+      // repository in addition to its analysis. Unchanged files do no new work.
+      observed.push(reusable ? { metadata, reusable: true }
+        : { metadata, record: sourceFileRecord(metadata, raw, base) });
     },
     finish(freshness, { input, skipped, totalBytes }) {
       if (freshness.status === "unchanged" && !sourceScopeChanged) return { freshness, scan: { files: previousResult.files } };
@@ -353,7 +357,8 @@ export function inspectRepositoryScanForWorld(options, previousResult, { sourceS
         // donate analysis; recompute through the existing safe reference path.
         return { freshness, scan: scanRepositoryReference(input, { limits: options.limits }) };
       }
-      const files = observed.map(({ metadata, reusable, raw, base }) => sourceFileRecord(metadata, raw, base, reusable ? ownedFiles.get(metadata.path) : null))
+      const files = observed.map(({ metadata, reusable, record }) => reusable
+        ? sourceFileRecord(metadata, null, null, ownedFiles.get(metadata.path)) : record)
         .sort((a, b) => compareText(a.path, b.path));
       const scan = validateRepositoryScanResult(withIdentity(scanResultPayload(input, files, skipped, totalBytes)));
       return { freshness, scan };

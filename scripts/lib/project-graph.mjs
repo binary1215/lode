@@ -637,7 +637,7 @@ export async function queryProjectGraph(options = {}) {
     const { inspectWorldDomainFreshness, buildWorldTraversalEligibility } = await import("./world-model.mjs");
     const { createTemporalVerificationScope } = await import("./temporal-provenance.mjs");
     temporalVerificationScope = createTemporalVerificationScope();
-    world = inspectWorldDomainFreshness({ root, worldModelId: options.worldModelId || "", storeAdapter: options.storeAdapter || null, temporalVerificationScope });
+    world = (await inspectWorldDomainFreshness({ root, worldModelId: options.worldModelId || "", storeAdapter: options.storeAdapter || null, temporalVerificationScope }));
     const graph = world.snapshot.temporalProvenanceGraph;
     if (!graph) fail("TEMPORAL_PROVENANCE_NOT_BUILT");
     const proposedEligibility = world.historical ? null : buildWorldTraversalEligibility(world.snapshot, world.freshness.domains);
@@ -677,11 +677,11 @@ export async function queryProjectGraph(options = {}) {
       }
       if (!temporalAnchors.length && !normalized.query) return { status: "not-used", fallbackUsed: false,
         reasonCode: "COMBINED_LOCAL_ONLY", scope: "combined-local-navigation", acceleratesCombinedTraversal: false };
-      const projected = queryGraphProjection({ projectRoot: root, storage, graph, adapter: options.graphProjectionAdapter || null,
+      const projected = (await queryGraphProjection({ projectRoot: root, storage, graph, adapter: options.graphProjectionAdapter || null,
         query: { query: temporalAnchors.length ? null : normalized.query || null, anchorIds: temporalAnchors.length ? temporalAnchors : null,
           expectedGraphSnapshotId: temporalAnchors.length ? graph.graphSnapshotId : null, freshness: ["current", "historical", "stale"],
           authorityClasses: ["canon-projected", "reviewed", "derived", "heuristic", "runtime-observed"], includeUnreviewedCandidates: normalized.includeCandidates,
-          depth: Math.min(normalized.depth, 3), maxNodes: normalized.maxNodes, maxEdges: normalized.maxEdges, eligibility } });
+          depth: Math.min(normalized.depth, 3), maxNodes: normalized.maxNodes, maxEdges: normalized.maxEdges, eligibility } }));
         return { status: "verified", ...projected.diagnostics, scope: "temporal-query-verification", verifiedDepth: Math.min(normalized.depth, 3), acceleratesCombinedTraversal: false };
       } catch (error) {
         return boundedCache(adapterFailures, key, { status: "unavailable", fallbackUsed: true, fallbackReasonCode: reason(error), executionMode: "verified-embedded-fallback",
@@ -874,10 +874,10 @@ export async function queryProjectGraph(options = {}) {
 
 // Private display consumer, not a new conversational query or authority surface.
 // It reuses the typed readers above; original byte/path/integrity limits remain.
-export function collectGraphExplorerInventory({ root = ".", query = "", anchorIds = [], paths = [], layer = "project", storeAdapter = null } = {}) {
+export async function collectGraphExplorerInventory({ root = ".", query = "", anchorIds = [], paths = [], layer = "project", storeAdapter = null } = {}) {
   const codeIds = layer === "code" ? limits({ anchorIds }).anchorIds : null;
-  return queryProjectGraph({ root, query, anchorIds: codeIds ? [] : anchorIds, paths, storeAdapter, details: true, depth: 2,
-    [viewerInventory]: true, ...(codeIds ? { [viewerCodeFocus]: codeIds } : {}) });
+  return (await queryProjectGraph({ root, query, anchorIds: codeIds ? [] : anchorIds, paths, storeAdapter, details: true, depth: 2,
+    [viewerInventory]: true, ...(codeIds ? { [viewerCodeFocus]: codeIds } : {}) }));
 }
 
 function fallbackProjection(query, reasonCode) {
