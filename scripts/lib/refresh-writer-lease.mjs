@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -224,7 +225,7 @@ export function verifyRefreshWriterLease({ projectRoot, projectId, lease, storag
   return lease;
 }
 
-export async function withRefreshWriterLease({ projectRoot, projectId, lease = null, storage = null }, operation) {
+async function withRefreshWriterLeaseUncoordinated({ projectRoot, projectId, lease = null, storage = null }, operation) {
   if (typeof operation !== "function") fail("Refresh writer lease requires an operation.", "INVALID_REFRESH_WRITER_LEASE_OPERATION");
   if (lease) {
     verifyRefreshWriterLease({ projectRoot, projectId, lease, storage });
@@ -247,4 +248,8 @@ export function inspectRefreshWriterLease({ projectRoot, projectId, storage = nu
     leaseDirectory: directory,
     owner: { pid: owner.pid, startedAt: owner.startedAt, protocol: owner.protocol },
   };
+}
+
+export async function withRefreshWriterLease(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.projectRoot ?? ".", storage: options.storage }, () => withRefreshWriterLeaseUncoordinated(options, ...rest));
 }

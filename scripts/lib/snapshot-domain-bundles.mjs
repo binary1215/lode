@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -117,7 +118,7 @@ function joinGraph(context, ref, depth) {
     return { ...composition.body, nodes: merge(composition.nodeOrder, composition.otherNodes, code.nodes), edges: merge(composition.edgeOrder, composition.otherEdges, code.edges) };
   } finally { context.active.delete(ref.sha256); }
 }
-export function createSnapshotComposition({ root, storage, document, encoding = "gzip" }) {
+function createSnapshotCompositionUncoordinated({ root, storage, document, encoding = "gzip" }) {
   const context = contextFor(root, storage, encoding), world = document.kind === "RepositoryWorldModel" || Boolean(document.worldModelId);
   const body = { ...document };
   const graph = world ? document.temporalProvenanceGraph : document;
@@ -173,4 +174,8 @@ export function hydrateSnapshotEntry({ root, storage, entry }) {
   const hydrated = hydrateSnapshotComposition({ root, storage, document: entry.document });
   return { ...entry, document: hydrated.document, snapshotStorage: { ...(entry.snapshotStorage || { kind: "local-file" }),
     layout: DOMAIN_BUNDLE_LAYOUT, reconstructedSha256: entry.document.reconstructedSha256, dependencies: hydrated.dependencies } };
+}
+
+export function createSnapshotComposition(options = {}, ...rest) {
+  return withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createSnapshotCompositionUncoordinated(options, ...rest));
 }

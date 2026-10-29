@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -115,7 +116,7 @@ function stateArtifact(project, body, storage) {
   return { ...payload, stateId: `change-set-state-${stateHash.slice(0, 24)}`, stateHash };
 }
 
-function verifyState(document, project, storage) {
+export function verifyChangeSetStatePointer(document, project, storage) {
   if (!document || document.kind !== "ChangeSetStatePointer" || !familyFormatForOriginal("head-agent-core-change-set-state", document, storage) || document.protocol?.version !== CHANGE_SET_VERSION
     || document.projectId !== project.projectId || document.sessionId !== project.sessionId
     || !["awaiting-review", "awaiting-evidence", "reviewed", "rejected"].includes(document.phase)) {
@@ -434,7 +435,7 @@ function buildVcsEvidence(changeSet, history, commitIds, rationale, storage) {
   return verifyVcsEvidence({ ...payload, vcsEvidenceId: `vcs-evidence-${hash.slice(0, 24)}`, vcsEvidenceHash: hash }, changeSet, changeSet.projectId, storage);
 }
 
-export async function attachVcsEvidence({ root = ".", changeSetId, commitIds = [], rationale } = {}) {
+async function attachVcsEvidenceUncoordinated({ root = ".", changeSetId, commitIds = [], rationale } = {}) {
   const inspected = readyProject(root, "VCS evidence attachment");
   const storage = inspected.storage;
   if (inspected.state.activeRunId || inspected.state.pendingReview) {
@@ -459,7 +460,7 @@ export async function attachVcsEvidence({ root = ".", changeSetId, commitIds = [
   persistImmutable(safeFile(projectRoot, VCS_EVIDENCE_DIRECTORY, vcsEvidence.vcsEvidenceId, "vcs-evidence", storage), vcsEvidence, "VCS evidence");
   let state = null;
   if (fs.existsSync(stateFile(projectRoot, storage))) {
-    const previous = verifyState(readJson(stateFile(projectRoot, storage), "ChangeSet state pointer"), { ...inspected.project, sessionId: inspected.state.sessionId }, storage);
+    const previous = verifyChangeSetStatePointer(readJson(stateFile(projectRoot, storage), "ChangeSet state pointer"), { ...inspected.project, sessionId: inspected.state.sessionId }, storage);
     const vcsEvidenceIds = projected.changeSetProjectionInput.vcsEvidence
       .filter((item) => item.changeSetId === previous.changeSetId).map((item) => item.vcsEvidenceId).sort();
     state = writeState(projectRoot, inspected.project, {
@@ -486,14 +487,14 @@ export async function attachVcsEvidence({ root = ".", changeSetId, commitIds = [
   };
 }
 
-export async function recordChangeSet({ root = ".", resultPacketId, reviewDecisionId, beforeWorldModelId = "", parentChangeSetIds = [] } = {}) {
+async function recordChangeSetUncoordinated({ root = ".", resultPacketId, reviewDecisionId, beforeWorldModelId = "", parentChangeSetIds = [] } = {}) {
   const inspected = readyProject(root, "ChangeSet recording");
   const storage = inspected.storage;
   if (inspected.state.activeRunId || inspected.state.pendingReview) fail("ChangeSet recording requires the execution Run and Fresh HEAD review to be complete.", "CHANGE_SET_RUN_CONFLICT");
   const projectRoot = inspected.project.projectRoot;
   const existingStateFile = stateFile(projectRoot, storage);
   if (fs.existsSync(existingStateFile)) {
-    const currentState = verifyState(readJson(existingStateFile, "ChangeSet state pointer"), { ...inspected.project, sessionId: inspected.state.sessionId }, storage);
+    const currentState = verifyChangeSetStatePointer(readJson(existingStateFile, "ChangeSet state pointer"), { ...inspected.project, sessionId: inspected.state.sessionId }, storage);
     if (currentState.phase === "awaiting-review") fail("The current Change impact candidate set requires review before another ChangeSet is recorded.", "CHANGE_IMPACT_REVIEW_REQUIRED");
   }
   const lineage = lineageForChangeSet(projectRoot, resultPacketId, reviewDecisionId);
@@ -667,7 +668,7 @@ async function reviewChangeImpactLocked({ root = ".", candidateSetId, dispositio
   if (inspected.state.activeRunId || inspected.state.pendingReview) fail("Change impact review cannot advance while a Run is active or awaiting review.", "CHANGE_SET_RUN_CONFLICT");
   const projectRoot = inspected.project.projectRoot;
   if (!fs.existsSync(stateFile(projectRoot, storage))) fail("No ChangeSet is awaiting impact review.", "CHANGE_SET_NOT_STARTED");
-  const state = verifyState(readJson(stateFile(projectRoot, storage), "ChangeSet state pointer"), { ...inspected.project, sessionId: inspected.state.sessionId }, storage);
+  const state = verifyChangeSetStatePointer(readJson(stateFile(projectRoot, storage), "ChangeSet state pointer"), { ...inspected.project, sessionId: inspected.state.sessionId }, storage);
   if (!["awaiting-review", "reviewed", "rejected"].includes(state.phase) || state.candidateSetId !== candidateSetId) fail("Change impact review references a stale or non-reviewable candidate set.", "STALE_CHANGE_IMPACT_CANDIDATE_SET");
   const candidateSet = readChangeImpactCandidateSet({ root: projectRoot, candidateSetId }).candidateSet;
   if (candidateSet.sessionId !== state.sessionId || candidateSet.changeSetId !== state.changeSetId) fail("Change impact candidate set belongs to different ChangeSet lineage.", "CHANGE_IMPACT_CANDIDATE_SET_IDENTITY_MISMATCH");
@@ -720,7 +721,7 @@ export async function inspectChangeSets({ root = "." } = {}) {
   const storage = inspected.storage;
   const file = stateFile(inspected.project.projectRoot, storage);
   if (!fs.existsSync(file)) return { status: "not_started", projectId: inspected.project.projectId, sessionId: inspected.state.sessionId, nextAction: "Record a ChangeSet after an accepted execution review and repository re-index." };
-  const state = verifyState(readJson(file, "ChangeSet state pointer"), { ...inspected.project, sessionId: inspected.state.sessionId }, storage);
+  const state = verifyChangeSetStatePointer(readJson(file, "ChangeSet state pointer"), { ...inspected.project, sessionId: inspected.state.sessionId }, storage);
   const changeSet = readChangeSet({ root: inspected.project.projectRoot, changeSetId: state.changeSetId }).changeSet;
   const candidateSet = readChangeImpactCandidateSet({ root: inspected.project.projectRoot, candidateSetId: state.candidateSetId }).candidateSet;
   const savedReview = recordedImpactReview({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, candidateSet }, storage);
@@ -751,4 +752,12 @@ export async function inspectChangeSets({ root = "." } = {}) {
     worldModel: { status: world.status, worldModelId: world.snapshot.worldModelId, graphSnapshotId: world.snapshot.temporalProvenanceGraph.graphSnapshotId, sourceSnapshotId: world.snapshot.temporalProvenanceGraph.sourceSnapshotId, matchesState: world.snapshot.worldModelId === state.worldModelId },
     authority: { changeSet: "reviewed-execution-change-lineage", impactCandidates: "non-authoritative-until-explicit-review", reviewedImpacts: "explicit-user-reviewed-impact-facts", vcsEvidence: "optional-derived-evidence-not-instruction", graph: "rebuildable-derived-projection", git: "optional-vcs-evidence-not-required" },
   };
+}
+
+export async function recordChangeSet(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => recordChangeSetUncoordinated(options, ...rest));
+}
+
+export async function attachVcsEvidence(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => attachVcsEvidenceUncoordinated(options, ...rest));
 }

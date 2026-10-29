@@ -395,7 +395,7 @@ function buildPointer(receipt) {
   return { ...payload, refreshPointerId: pointerIdentity.id, refreshPointerHash: pointerIdentity.hash };
 }
 
-function verifyPointer(pointer, storage = null) {
+export function verifyIncrementalRefreshPointer(pointer, storage = null) {
   const format = formatForVerifiedOwner(storage);
   assertFields(pointer, ["schemaVersion", "kind", "projectId", "refreshRequestId", "refreshReceiptId", "worldModelId", "sourceSnapshotId", "refreshPointerId", "refreshPointerHash"], "Incremental refresh pointer");
   if (!pointer || pointer.schemaVersion !== SCHEMA_VERSION || pointer.kind !== "IncrementalRefreshPointer"
@@ -460,7 +460,7 @@ export async function inspectIncrementalRefresh({ root = ".", storeAdapter = nul
     currentWorldModelId: world.snapshot.worldModelId,
     currentSourceSnapshotId: world.snapshot.temporalProvenanceGraph.sourceSnapshotId,
   };
-  const pointer = verifyPointer(readJson(file, "Incremental refresh pointer"), inspected.storage);
+  const pointer = verifyIncrementalRefreshPointer(readJson(file, "Incremental refresh pointer"), inspected.storage);
   if (pointer.projectId !== inspected.project.projectId) fail("Incremental refresh pointer belongs to another project.", "REFRESH_PROJECT_MISMATCH");
   const receipt = (await readIncrementalRefreshReceipt({ root: inspected.project.projectRoot, refreshReceiptId: pointer.refreshReceiptId, storeAdapter })).receipt;
   if (receipt.refreshRequestId !== pointer.refreshRequestId || receipt.next.worldModelId !== pointer.worldModelId || receipt.next.sourceSnapshotId !== pointer.sourceSnapshotId) {
@@ -611,7 +611,7 @@ async function refreshWorldModelLocked({
   const receiptEntry = persistImmutable(receiptFile(projectRoot, receipt.refreshReceiptId, inspected.storage), receipt, (record) => verifyIncrementalRefreshReceipt(record, inspected.storage), "Incremental refresh receipt");
   const pointer = buildPointer(receipt);
   atomicWrite(currentFile(projectRoot, inspected.storage), json(pointer));
-  const storedPointer = verifyPointer(readJson(currentFile(projectRoot, inspected.storage), "Incremental refresh pointer"), inspected.storage);
+  const storedPointer = verifyIncrementalRefreshPointer(readJson(currentFile(projectRoot, inspected.storage), "Incremental refresh pointer"), inspected.storage);
   if (canonicalJson(storedPointer) !== canonicalJson(pointer)) fail("Incremental refresh pointer changed during persistence.", "REFRESH_POINTER_WRITE_MISMATCH");
 
   return {

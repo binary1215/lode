@@ -14,22 +14,33 @@ Historical boundary references bind exact physical path, byte length and raw SHA
 
 Compression saves disk bytes and adds computation. It does not prove faster parsing, verification or queries. Measure the same Project/identities/query and report read, decompression, parse and typed verification separately. A first query after fixture preparation is not OS-cache-cold.
 
-## Storage inspection; deletion is not available yet
+## Storage inspection and explicit cleanup
 
 ```powershell
 lode-agent storage-gc C:\path\to\project
 lode-agent storage-gc C:\path\to\project --json
+lode-agent storage-gc C:\path\to\project --apply --json
 ```
 
-CLI inspection requires no selected Session; it adds no public MCP operation. The short output shows counts and preservation; structured output adds physical bytes, observed dependencies and coverage gaps.
+Default inspection is zero-write. Observed unreferenced bytes are a diagnostic, not permission or proof that deletion is safe. No selected Session, new MCP tool, user pin/save form or background collector is required.
 
-**GC apply is incomplete and unavailable.** Even `--apply` or `apply: true` preserves every file and returns zero deleted/reclaimable bytes. Observed unreferenced bytes are candidates for further checking, not certified safe deletions. Inspection writes no review, checkpoint or cleanup plan. Default inspection exits 0; unsupported apply exits 1 with `SNAPSHOT_GC_APPLY_UNAVAILABLE` while preserving the useful inspection result.
+Explicit CLI `--apply` awaits a separate typed reachability check and deletes proven orphan World/Graph JSON/gzip representations, supported private Git snapshot addresses/objects, and unreferenced domain fragments. It preserves current/previous pointers, parents and source aliases, Capsules, supported ChangeSet/VCS and execution-lineage roots, verified Session/checkpoint roots, and physical byte references. It never deletes Canon, Session records or valid source bundles: successful and failed source bundles are original P3 evidence and remain roots themselves. There is no age or last-N deletion. When every snapshot is referenced, successful apply deletes zero files.
 
-The diagnostic follows identifiers from current/previous pointers, parents, ChangeSets, refresh requests/receipts, Capsules, Session/Run/checkpoint and review/onboarding records, including exact historical byte references. Ambiguous matches retain the entire observed closure. Unknown schema, unsafe paths, missing roots, stages, active/unknown writers and bounded-scan omissions remain explicit gaps. String matching does not certify reference validity or absence.
+The closed root/path verifier registry is in `scripts/lib/snapshot-deletion-closure.mjs`. Core initialization, whole snapshots, Capsules, execution-lineage, checkpoints, normal SessionWork/Todo, separately routed Session pointers, reviewed Run originals and ChangeSet/impact pointers have supported paths. Additional Product/onboarding, refresh, Run/Session and observation layouts are supported only where their exact paths have a registered original verifier. Unknown paths/schema, corrupt or missing dependencies, incomplete bounded scans, unsupported backend structures, unsafe paths and unknown owners preserve the candidate set with specific coverage reasons. This first file collector does not claim complete support for every existing artifact layout. Missing source-byte retention is distinct from snapshot reachability; cleanup never captures replacement originals.
 
-The missing boundary is reference publication: `compileContext`, `recordChangeSet`, execution-lineage publication and direct adapter callers do not yet all protect snapshot validation through commit against GC. A gate at rename alone is too late for a writer that read a snapshot before deletion. Full apply requires actual transaction coverage, including async/nested/inherited-lease paths, and must yield promptly to active work. This patch adds no global writer gate to ordinary work.
+Current cooperating local publishers register a transient Project-local P5 lifetime before original validation and retain it through actual asynchronous completion. New ordinary work invalidates that GC attempt permanently, even if the work finishes before the scan does. Only registration and one-file unlink use short admission; parsing, hashes and awaits do not serialize ordinary work. Borrowed/nested lifetimes remain covered. An expired detached callback cannot publish cached references without reacquiring its exact originals. Synchronous pointer APIs stay synchronous, validate exact file targets under a lifetime and do not gain Product approval gates. Separate low-level calls do not reserve an orphan between calls.
 
-There is no background collector or age/last-N deletion. When all snapshots are referenced, observed unreferenced count is zero. Real cleanup requires a later implemented and verified apply path and explicit execution authority.
+Pure readers do not register or write management files. A retained immutable closure protects historical reads; already materialized calculations need no further opens. An explicit arbitrary orphan-ID read racing cleanup can return the real missing/unavailable error, never a substituted current snapshot. Unsupported or ambiguous coverage prevents cleanup rather than blocking unrelated work. Registration failure cannot silently run a dependent publication unguarded while a collector may start.
+
+The scan decodes one original file at a time, runs the same pure typed verifier, and retains only ID/source-alias/full-hash/exact-byte-pin summaries. The existing 512 MiB per-file decoded bound applies before allocation/parsing. Stored input remains bounded at 1 GiB and 50,000 entries; encoded reference summaries are bounded at 64 MiB. Total decoded input is measured without a small cumulative decoded limit that permanently excludes ordinary history. These are not total V8 RSS guarantees. File-level event-loop yields and cancellation checks stop a cancelled scan before the next file.
+
+Only explicit GC qualifies the filesystem. Windows uses a hidden, deadline-bound DriveInfo query and preserves mapped/network/unknown drive types. Linux currently supports statfs types for ext filesystems, XFS, Btrfs and tmpfs. Other platforms and unknown filesystems preserve cleanup. Ordinary work gains no PowerShell probe; statically unsupported platforms, UNC roots and Linux filesystem types do not require new publisher registration. OS classification does not prove every hidden backing layer or exclude noncooperating hosts.
+
+Supported mixed backends are verified together; their presence no longer excludes all cleanup or bypasses publisher lifetimes. A malformed Git placeholder without an owner/config remains excluded while ordinary work retains its existing bypass. Initial Git retirement supports only the owned SHA256 direct loose-ref format with no packed refs, reflogs or snapshot symrefs. One ref is compared under nonblocking ref and packed-ref locks; unsupported forms are preserved. Source originals are verified and retained without blocking unrelated domain/Git orphan cleanup.
+
+This is a cooperative local filesystem protocol, not universal exclusion of old/raw writers or shared hosts. Known foreign/unknown ownership and unsupported storage are preserved; absence of new lock files is not proof that every old process has stopped. No age/PID guess reclaims snapshot lifetime records. Participant/attempt records are transient operations, not P2 direction, review or retention plans.
+
+Structured apply output separates deleted, failed and preserved paths and reports actual completed count/bytes after cancellation, drift or a later unlink failure. Successful `gc_applied` exits 0; preserved/yielded/partial results exit 1 and retain their useful structured result. No effect is automatically replayed. Git ref retirement and physical file reclamation are separate results. Output reports actual unlinked bytes, new pack bytes and net managed-file bytes; file length is not allocated disk blocks. Migration and installation are separate.
 
 ## Generated Git ignore rules
 
@@ -38,6 +49,7 @@ Initialization and explicit resume create the selected `.lode/.gitignore` or ret
 | Relative pattern inside storage | Why disposable |
 | --- | --- |
 | `/graph-discovery/index.json` | Rebuilt from verified original records. |
+| `/.snapshot-gc/` | Transient local snapshot participants and GC attempts. |
 | `/.operations/` | Transient process-owned scoped locks. |
 | `/refresh/writer.lock/` | Host-local active refresh lease. |
 | `/refresh/writer.lock.*.staging/` | Unpublished refresh lease staging. |
@@ -74,7 +86,7 @@ The same trial can use explicit Git roots plus gzip domain files. This is a hybr
 
 Structured `storage-gc` inspection now includes `typedClosure` over actual verified Capsules, ChangeSets and execution-lineage artifacts, then exact World, Graph, domain dependencies and retained source bundles. Semantic path/digest references are distinct from physical byte pins. Unknown roots, missing dependencies and intermediate publication are retained and disclosed. A World file record alone does not retain the original source bytes.
 
-This projection is an observed read sequence, not a transaction or deletion certificate. Writer validation-to-publication and active-reader lifetime remain uncovered for a future collector. Apply, ref deletion and persistent leases remain absent; all existing storage is preserved. Do not use a successful inspection to claim cleanup is safe.
+This projection is an observed read sequence, not a deletion certificate. Explicit apply uses the separate typed deletion closure and transient publisher lifetimes described above. This observation alone never authorizes deletion; Git refs and original bundles remain retained. Do not use a successful inspection to claim cleanup is safe.
 
 The private Git store creates an ignore file only inside its own newly owned store/staging area and only when parent user policies have no explicit negation. It preserves existing ignore files and tracking; it neither stages nor untracks anything. These retained objects have recovery value and are not disposable cache.
 
@@ -85,3 +97,15 @@ An exact source-bundle pin uses the raw digest of the same buffer parsed by the 
 Ordinary whole gzip and the existing domain-bundles-v1 contract remain unchanged. Full World/Graph hash, original-byte, Project and authority checks are retained. Changed bytes from one synchronous source observation are consumed by analysis instead of accumulated until the walk ends; ownership validation of reused previous analysis stays intact. There is no new cache/save/pin/approval step or daemon.
 
 File-level relation reuse and two packed-chunk formats were evaluated in separate local frozen trials. Additional validation/copy and full reconstruction/file-check costs increased observed end-to-end latency, so these trials are not adopted into the active product path. The existing domain trial's exact whole codeAnalysisInputBasis reuse is preserved. Full traversal/hash, relationship generation, serialization/verification, snapshot listing and Git namespace checks remain; this patch does not claim an O(change) whole pipeline. No history/original migration, GC or ref deletion occurs.
+
+## Mixed-backend physical cleanup
+
+Explicit cleanup builds a self-contained replacement pack through bounded stdout streaming. It reserves SHA256 index-v2 space before writing, uses one overall deadline, and verifies every required OID/type/raw hash in isolated scratch with no old-DB or alternate fallback. A new pack is published before its index; old indexes are retired before old packs. A verified identical existing pair is reused and excluded from retirement. Kept or failed snapshot representations remain operational pins for all their domain/object dependencies. A fully referenced history correctly reclaims zero snapshots.
+
+Pack production, indexing and verification use the existing verified native process supervisor for process-tree cleanup. If its capability is unavailable, only physical pack cleanup is deferred; ordinary reads and writes do not gain this requirement. The existing one-shot 4 MiB input boundary is checked before execution, never truncated into a partial successful pack. Cancellation, disk exhaustion, unknown locks, sidecars and partial effects remain visible. No destructive Git prune/repack child runs beside ordinary work. Pure rooted Git reads reacquire only the first chosen OID/store/raw hash for a bounded transient pack-open failure, never a new current target or a permission/digest failure.
+
+The synchronous zero-write inspection skips binary Git/domain internals and reports deferred backend observation; the CLI also returns its existing asynchronous typed retention projection. Neither view is a deletion certificate. An incomplete or crashed unknown staging/pack state is preserved; no age-based ownership stealing or automatic effect replay occurs.
+
+A later explicit cleanup can reinventory an unindexed, correctly named private pack after verifying owner/config, exact physical identity, PACK checksum and snapshot metadata in bounded isolated scratch. Recovery scratch directories are sequential, removed before the next pack or producer, and share the same aggregate disk cap and whole-operation deadline. Pure inspection remains zero-write. Unknown/corrupt/foreign content, or an incomplete retained dependency proof, preserves every remaining candidate. If the full closure is proven but an exact retained object is unavailable to the main producer, only physical packing is deferred. Scratch indexes never repair the main store. Only a fresh, fully verified replacement producer may reuse an unchanged identical unindexed pack and publish its own index last; this is a new explicit collection, not replay of an earlier effect.
+
+Transient participant/attempt ownership and both create-only ref locks bind Project, nonce, host, PID and a fixed Node runtime time origin. The verified attempt owner is passed through the short effect boundary; a different runtime origin cannot perform or clean up that owner’s effect even if the PID matches. This explicitly labelled runtime origin is not an independently queried OS process CreationDate or permission to reclaim unknown/old owners. Ordinary work gains no OS process probe.

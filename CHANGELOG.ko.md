@@ -9,6 +9,21 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.67 — 게시 여부는 별도 추적
+
+- 참조 검증을 거친 명시적 로컬 정리로 orphan World·Graph 파일, private Git
+  ref·객체, domain bundle을 회수합니다. 현재·역사 원본, 정확한 byte pin, 복구
+  기록과 성공·실패 source 원본은 보존합니다.
+- 순수 조회의 무기록 동작과 동기 pointer API를 유지합니다. 일반 게시 작업이
+  시작되면 남은 정리 효과를 중단하며 새 사용자 승인 절차를 추가하지 않습니다.
+- 격리된 저장소에서 replacement pack을 제한·검증하고, 유효한 unindexed pack은
+  새 명시적 정리에서만 다시 조사합니다. 불명 소유자·손상·부분 결과와 불완전한
+  보존 근거는 그대로 표시하고 남은 후보를 보존합니다.
+- pack 읽기 경합과 Windows scratch 경로를 수정하고, ref lock을 검증된 Project·
+  attempt·host·runtime 프로세스 시작 신원에 결합합니다.
+- 고정 v8의 GC 회귀 84건과 독립 Windows 합성 저장소·CLI 검수를 통과했습니다.
+  마켓플레이스 게시와 Host 로딩은 별도 결과로 확인합니다.
+
 ## 0.3.0-beta.66 — 게시 여부는 별도 추적
 
 - 고정 Git revision의 World 근거를 불변 스냅샷과 도메인별 freshness, 정확한

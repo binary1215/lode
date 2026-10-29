@@ -1,3 +1,4 @@
+import { withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import { inspectProject } from "./lode-core.mjs";
 import { publicToolName } from "./lode-artifact-composition.mjs";
 import { loadObservationArtifacts } from "./observation-store.mjs";
@@ -37,7 +38,7 @@ function normalizeNeeds(needs) {
   });
 }
 
-export async function prepareSourceContext({ root = ".", task, needs = [], retain = false, budget,
+async function prepareSourceContextUnderLifetime({ root = ".", task, needs = [], retain = false, budget,
   signal, timeoutMs = 15_000, onProcess } = {}) {
   if (typeof task !== "string" || !task.trim()) throw sourceError("TASK_REQUIRED");
   const normalized = normalizeNeeds(needs);
@@ -195,4 +196,8 @@ export function inspectSourceObservation({ root = ".", bundleKey, failureKey } =
   return { status: sourceState === "current-source-bytes" ? sourceState : "historical", sourceState,
     currentContextEligible: sourceState === "current-source-bytes", observation: bundle.observation, evidence: bundle.evidence,
     truth: "unknown", collectionProfile: "historical; new collection checks installed collector profile" };
+}
+
+export async function prepareSourceContext(options = {}) {
+  return options.retain ? withSnapshotReferencesAsync({root:options.root ?? "."},()=>prepareSourceContextUnderLifetime(options)) : prepareSourceContextUnderLifetime(options);
 }

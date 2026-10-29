@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import { formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -426,23 +427,23 @@ async function serializedProductMutation(options, action, operation) {
   ));
 }
 
-export async function recordProductSignal(options = {}) {
+async function recordProductSignalUncoordinated(options = {}) {
   return (await serializedProductMutation(options, "a ProductSignal is recorded", recordProductSignalUnlocked));
 }
 
-export async function recordProductHypothesis(options = {}) {
+async function recordProductHypothesisUncoordinated(options = {}) {
   return (await serializedProductMutation(options, "a ProductHypothesis is recorded", recordProductHypothesisUnlocked));
 }
 
-export async function proposeProductInitiative(options = {}) {
+async function proposeProductInitiativeUncoordinated(options = {}) {
   return (await serializedProductMutation(options, "a ProductInitiativeCandidate is proposed", proposeProductInitiativeUnlocked));
 }
 
-export async function reviewProductInitiative(options = {}) {
+async function reviewProductInitiativeUncoordinated(options = {}) {
   return (await serializedProductMutation(options, "a Product Initiative is reviewed", reviewProductInitiativeUnlocked));
 }
 
-export async function observeProductOutcome(options = {}) {
+async function observeProductOutcomeUncoordinated(options = {}) {
   return (await serializedProductMutation(options, "an OutcomeObservation is recorded", observeProductOutcomeUnlocked));
 }
 
@@ -484,3 +485,23 @@ export async function buildHeadContinuitySnapshot({ root = ".", fresh = false } 
 
 // Canonical public name and historical name share one implementation.
 export { buildHeadContinuitySnapshot as buildLodeContinuitySnapshot };
+
+export async function recordProductSignal(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => recordProductSignalUncoordinated(options, ...rest));
+}
+
+export async function recordProductHypothesis(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => recordProductHypothesisUncoordinated(options, ...rest));
+}
+
+export async function proposeProductInitiative(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => proposeProductInitiativeUncoordinated(options, ...rest));
+}
+
+export async function reviewProductInitiative(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => reviewProductInitiativeUncoordinated(options, ...rest));
+}
+
+export async function observeProductOutcome(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => observeProductOutcomeUncoordinated(options, ...rest));
+}

@@ -1,3 +1,4 @@
+import { withSnapshotReferences } from "./snapshot-reference-lifetime.mjs";
 import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact } from "./project-storage-format.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -151,7 +152,7 @@ function directory(root, storage) {
   return current;
 }
 
-export function retainSourceObservation(root, bundle, storage = null) {
+function retainSourceObservationUncoordinated(root, bundle, storage = null) {
   storage = formatForVerifiedOwner(storage);
   verifySourceObservation(root, bundle.evidence.projectId, bundle, { storage });
   const key = sourceBundleKey(bundle.evidence);
@@ -206,7 +207,7 @@ export function sourceObservationNode(root, projectId, bundle, storage = undefin
     observationProjectionId: `source-projection-${record.observationHash.slice(0, 24)}`, observationProjectionHash: observationDigest(record) };
 }
 
-export function retainSourceFailure(root, input, storage = null) {
+function retainSourceFailureUncoordinated(root, input, storage = null) {
   const failure = { kind: "SourceCollectionFailure", version: 1, ...input,
     authority: "P3-failed-observation-evidence", authorityBoundary: artifactAuthorityBoundary("SourceCollectionFailure"),
     instructionAuthority: false, promotionAuthority: false, recoveryAuthority: false, mutatesCanon: false };
@@ -233,4 +234,12 @@ export function readSourceFailure(root, projectId, key, storage = undefined) {
     catch { sourceState = "unavailable"; }
   }
   return { failure, sourceState, authority: "historical-failure-evidence-only; never-retry-or-recovery-authority" };
+}
+
+export function retainSourceObservation(root, input, storage = null) {
+  return withSnapshotReferences({ root, storage }, () => retainSourceObservationUncoordinated(root, input, storage));
+}
+
+export function retainSourceFailure(root, input, storage = null) {
+  return withSnapshotReferences({ root, storage }, () => retainSourceFailureUncoordinated(root, input, storage));
 }

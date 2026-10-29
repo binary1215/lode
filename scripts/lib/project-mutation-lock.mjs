@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -192,7 +193,7 @@ export function withLocalMutation({ directory, timeoutMs = WAIT_MS }, operation)
   } finally { release(owner); }
 }
 
-export function withProjectMutation({ root = ".", scope, storage, timeoutMs }, operation) {
+function withProjectMutationUncoordinated({ root = ".", scope, storage, timeoutMs }, operation) {
   if (!/^[a-z][a-z0-9-]{0,63}$/.test(scope)) fail("Invalid mutation scope.", "INVALID_PROJECT_MUTATION_SCOPE");
   storage ??= resolveProjectStorage(root);
   const recheck = () => { if (storage?.projectFile) assertProjectStorageUnchanged(storage); };
@@ -200,7 +201,7 @@ export function withProjectMutation({ root = ".", scope, storage, timeoutMs }, o
   return withLocalMutation({ directory: lockFor(root, scope, storage), timeoutMs }, () => { recheck(); return operation(); });
 }
 
-export async function withProjectMutationAsync({ root = ".", scope, storage }, operation) {
+async function withProjectMutationAsyncUncoordinated({ root = ".", scope, storage }, operation) {
   if (!/^[a-z][a-z0-9-]{0,63}$/.test(scope)) fail("Invalid mutation scope.", "INVALID_PROJECT_MUTATION_SCOPE");
   storage ??= resolveProjectStorage(root);
   const recheck = () => { if (storage?.projectFile) assertProjectStorageUnchanged(storage); };
@@ -220,4 +221,12 @@ export async function withProjectMutationAsync({ root = ".", scope, storage }, o
     active.set(directory, owner);
     return await context.run(active, operation);
   } finally { release(owner); }
+}
+
+export function withProjectMutation(options = {}, ...rest) {
+  return withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => withProjectMutationUncoordinated(options, ...rest));
+}
+
+export async function withProjectMutationAsync(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => withProjectMutationAsyncUncoordinated(options, ...rest));
 }

@@ -11,6 +11,21 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.67 — publication tracked separately
+
+- Add explicit, reference-verified local cleanup for orphan World/Graph files,
+  private Git refs and objects, and domain bundles. Retain current/history, exact
+  byte pins, recovery records, and successful or failed source originals.
+- Keep pure reads zero-write and pointer APIs synchronous. Ordinary publication
+  invalidates remaining cleanup effects without adding a user approval ritual.
+- Bound replacement packs in isolated storage and recover valid unindexed packs
+  only during a new explicit cleanup. Preserve unknown owners, damaged content,
+  partial results, and incomplete retention evidence.
+- Fix rooted pack-read races and Windows scratch paths; bind ref locks to the
+  verified Project, attempt, host and runtime process origin.
+- Verified frozen v8 with 84 GC regressions and independent Windows synthetic
+  storage/CLI review. Marketplace publication and Host loading remain separate.
+
 ## 0.3.0-beta.66 — publication tracked separately
 
 - Preserve revision-anchored Git/World evidence with immutable snapshot storage,

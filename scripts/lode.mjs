@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { inspectSnapshotPreservationClosure } from "./lib/snapshot-preservation-closure.mjs";
-import { inspectSnapshotGarbageCollection } from "./lib/snapshot-gc.mjs";
+import { inspectSnapshotGarbageCollection, applySnapshotGarbageCollection } from "./lib/snapshot-gc.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,7 +86,7 @@ export function parse(argv) {
     const item = rest[index];
     if (!item.startsWith("--")) throw new Error(`Unexpected argument: ${item}`);
     const key = item.slice(2);
-    if (command === "storage-gc" && key === "apply") { options[key] = true; continue; }
+    if (command === "storage-gc" && ["apply", "diagnostics"].includes(key)) { options[key] = true; continue; }
     if (command === "graph-explorer" && ["history", "share"].includes(key)) { options[key] = true; continue; }
     if (key === "details" || command === "session-work-read" && key === "scan-evidence" || command === "graph-query" && key === "inventory-page") {
       const value = rest[index + 1];
@@ -207,7 +207,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
       `${cliDisplay} ${continuityName} <project> [--fresh]`,
       `${cliDisplay} world-index <project> [--git-log <host-exported-log-file>] [--runtime-state <host-exported-json-file>] [--parent-snapshot <id,id>] [--revision-parents <json-file>]`,
       `${cliDisplay} world-status <project>`,
-    `${cliDisplay} storage-gc <project> [--apply]  # reference inspection; apply currently preserves all snapshots`,
+    `${cliDisplay} storage-gc <project> [--apply]  # inspect; explicitly reclaim verified orphan snapshot storage`,
       `${cliDisplay} world-refresh <project> [--expect-changed <path,path>] [--trigger-evidence <id,id>] [--parent-snapshot <id,id>]`,
       `${cliDisplay} world-refresh-status <project>`,
       `${cliDisplay} world-refresh-read <project> --receipt <incremental-refresh-receipt-id>`,
@@ -665,7 +665,8 @@ async function runRoutedCommand(argv, { observationRegistry = null, compactionLi
     revisionParentIds: options["revision-parents"] ? readJsonFile(options["revision-parents"], "Revision parent map") : {},
   }));
   if (command === "storage-gc") {
-    const inspection = inspectSnapshotGarbageCollection({ root, apply: options.apply === true || options.apply === "true" });
+    if (options.apply === true || options.apply === "true") return await applySnapshotGarbageCollection({ root, signal, onProcess });
+    const inspection = inspectSnapshotGarbageCollection({ root });
     try { inspection.typedClosure = await inspectSnapshotPreservationClosure({ root }); }
     catch (error) { inspection.typedClosure = { status: "partial-preserved", reasonCode: error.code || "TYPED_CLOSURE_UNAVAILABLE", deletedCount: 0 }; }
     return inspection;
@@ -846,12 +847,16 @@ export function runCliMain(directArgs = process.argv.slice(2)) {
   const normalizedArgs = withoutJson.filter(item => directCommand !== "graph-query" || item !== "--diagnostics");
   const sourceController = new AbortController();
   const abortSource = () => sourceController.abort();
-  if (["source-context", "worker-execute", "runtime-invocation-execute"].includes(directCommand)) {
+  if (["source-context", "worker-execute", "runtime-invocation-execute"].includes(directCommand) || directCommand === "storage-gc" && directArgs.includes("--apply")) {
     process.on("SIGINT", abortSource); process.on("SIGTERM", abortSource);
   }
   return Promise.resolve().then(async () => (await runCommand(normalizedArgs, { signal: sourceController.signal,
-    onProcess: (event) => process.stderr.write(`${JSON.stringify({ sourceProcess: event })}\n`) }))).then((result) => {
-    if (directCommand === "storage-gc" && result?.requestedApply && result.applyAvailable === false) process.exitCode = 1;
+    onProcess: (event) => {
+      if(directCommand === "storage-gc" && !directArgs.includes("--diagnostics")) return;
+      if (event.purpose === "snapshot-filesystem-qualification" && !directArgs.includes("--diagnostics")) return;
+      process.stderr.write(`${JSON.stringify({ sourceProcess: event })}\n`);
+    } }))).then((result) => {
+    if (directCommand === "storage-gc" && result?.requestedApply && result.status !== "gc_applied") process.exitCode = 1;
     process.stdout.write(jsonOutput ? `${JSON.stringify(result, null, 2)}\n` : formatCliResult(directCommand, result, { diagnostics: directArgs.includes("--diagnostics") }));
   }).catch((error) => {
     const failure = { status: "failed", code: error.code || "HEAD_CLI_ERROR", error: error.message };

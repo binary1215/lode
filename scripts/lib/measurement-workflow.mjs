@@ -1,3 +1,4 @@
+import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
 import {
   createObservationTypeDescriptor,
@@ -177,7 +178,7 @@ async function projectCommittedObservations(root) {
   }
 }
 
-export async function defineMetric({ root = ".", metricKey, unit, direction, typeVersion = "1" } = {}) {
+async function defineMetricUncoordinated({ root = ".", metricKey, unit, direction, typeVersion = "1" } = {}) {
   const inspected = assertObservationProjectReady(root);
   const descriptor = metricDescriptor({ metricKey, unit, direction, typeVersion }, inspected.storage);
   const existing = loadObservationArtifacts({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, storage: inspected.storage })
@@ -195,7 +196,7 @@ export async function defineMetric({ root = ".", metricKey, unit, direction, typ
   };
 }
 
-export async function recordMetricObservation({
+async function recordMetricObservationUncoordinated({
   root = ".", metricKey, typeVersion = "", subjectType, subjectKey, value, sampleSize = null,
   form = "snapshot", observedAt = null, start = null, end = null,
   coverage = {}, adapterKey, adapterVersion = MEASUREMENT_WORKFLOW_VERSION,
@@ -248,7 +249,7 @@ function observedMetric(read) {
   return { record, definition, receipt: read.receipt };
 }
 
-export async function compareMetricObservations({ root = ".", baselineObservationId, currentObservationId } = {}) {
+async function compareMetricObservationsUncoordinated({ root = ".", baselineObservationId, currentObservationId } = {}) {
   const inspected = assertObservationProjectReady(root);
   const baseline = observedMetric(readObservation({ root: inspected.project.projectRoot, observationId: baselineObservationId }));
   const current = observedMetric(readObservation({ root: inspected.project.projectRoot, observationId: currentObservationId }));
@@ -326,7 +327,7 @@ export async function compareMetricObservations({ root = ".", baselineObservatio
   };
 }
 
-export async function assessMetricComparison({ root = ".", comparisonObservationId, assessment, statement, rationale = "" } = {}) {
+async function assessMetricComparisonUncoordinated({ root = ".", comparisonObservationId, assessment, statement, rationale = "" } = {}) {
   const inspected = assertObservationProjectReady(root);
   const read = readObservation({ root: inspected.project.projectRoot, observationId: comparisonObservationId });
   if (read.observation.kind !== "DerivedObservationRecord" || !read.observation.typeKey.startsWith(METRIC_PREFIX) || !read.observation.typeKey.endsWith(".comparison")) {
@@ -401,4 +402,20 @@ export async function traceMeasurementLineage({ root = ".", anchorId = "", metri
     semantics: { correlationImpliesCausation: false, graphWritesCanon: false, graphWritesRecoveryDirection: false, partialCoverageHidden: false },
     authority: { plane: "P4-derived-read-only", persisted: false, instructionAuthority: false, promotionAuthority: false, recoveryAuthority: false, ordinaryWorkBlocked: false },
   };
+}
+
+export async function defineMetric(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => defineMetricUncoordinated(options, ...rest));
+}
+
+export async function recordMetricObservation(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => recordMetricObservationUncoordinated(options, ...rest));
+}
+
+export async function compareMetricObservations(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => compareMetricObservationsUncoordinated(options, ...rest));
+}
+
+export async function assessMetricComparison(options = {}, ...rest) {
+  return withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => assessMetricComparisonUncoordinated(options, ...rest));
 }

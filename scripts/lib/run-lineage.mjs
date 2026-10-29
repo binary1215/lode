@@ -514,3 +514,21 @@ function reviewRunLocked({ root = ".", reviewContextId, disposition, rationale, 
   return committedResponse(projectRoot, { status: "run_reviewed", run: publicRun(reviewedRun), reviewDecision, state },
     alreadyCommitted ? null : [path.relative(projectRoot, file).replaceAll("\\", "/"), relativeProjectArtifact(inspected.storage, "lineage", "review-decisions", `${reviewDecision.reviewDecisionId}.json`), path.relative(projectRoot, stateFile(projectRoot, inspected.storage)).replaceAll("\\", "/")]);
 }
+
+// Internal historical-reader composition: validate original lineage and
+// transition structure without treating a later Session pointer as corruption
+// or repairing P2. Used by the explicit snapshot collector only.
+export function verifyRetainedRunOriginal({ root, run, storage }) {
+  if (!run || run.schemaVersion !== 1 || !["active", "awaiting_review", "reviewed"].includes(run.status)) fail("Retained Run schema is unsupported.", "INVALID_RUN_CANON");
+  const ownerId = run.sessionId || readJson(defaultSessionStatePath(root, storage), "Default Session owner").sessionId;
+  return withSessionRoute(root, ownerId, () => {
+    const inspected = readyProject(root, "retained Run lineage is read");
+    verifyRunLineage(root, run, inspected);
+    verifyStartOperation(root, run, inspected);
+    const transition = inspectTransition(inspected, run);
+    if (transition.transition?.artifactStatus === "missing-evidence") fail("Retained Run transition original is missing.", "RUN_LINEAGE_CONFLICT");
+    if (run.resultPacketId) requireArtifact(root, run.resultPacketId, "ResultPacket");
+    if (run.reviewDecisionId) requireArtifact(root, run.reviewDecisionId, "ReviewDecision");
+    return run;
+  });
+}
