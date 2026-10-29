@@ -137,3 +137,8 @@ Thumbs.db
 !test/path-purity.test.mjs
 !test/subagent-write-guard.test.mjs
 !test/user-prompt-reference.test.mjs
+!test/snapshot-storage.test.mjs
+!test/helpers/snapshot-storage-fixture.mjs
+
+# Local project records stay outside source and distribution.
+.lode/

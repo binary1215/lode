@@ -17,9 +17,9 @@ async function fixture(disposition = "accept-all") {
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const layout = inspectProject(root).storage;
   await buildWorldModel({ root });
-  materializeWorldMarkdownProjection({ root });
+  (await materializeWorldMarkdownProjection({ root }));
   fs.appendFileSync(path.join(root, layout.directory, "generated/knowledge/index.md"), "\nReviewed proposal: message delivery.\n");
-  const captured = captureWorldMarkdownChanges({ root, persist: true });
+  const captured = (await captureWorldMarkdownChanges({ root, persist: true }));
   const request = { root, candidateSetId: captured.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Adopt the reviewed delivery capability.",
     resultingProductModel: { schemaVersion: 1, featureGroups: [], capabilities: [{ key: "delivery", name: "Delivery", description: "Deliver a message." }], features: [], requirements: [], constraints: [], decisions: [] } };
   if (disposition === "reject") { request.disposition = "reject"; delete request.resultingProductModel; }
@@ -83,13 +83,13 @@ test("durable document approval resumes actual Canon, partial Markdown, receipt 
         fs.unlinkSync(path.join(root, layout.directory, "document-changes/application-bases", `${review.reviewDecisionId}.json`));
         await buildWorldModel({ root });
       }
-      process.stderr.write(`${JSON.stringify({ boundary, changes: inspectWorldModel({ root }).changes })}\n`);
+      process.stderr.write(`${JSON.stringify({ boundary, changes: (await inspectWorldModel({ root })).changes })}\n`);
       const result = await applyDocumentChangeReview({ root, reviewDecisionId: review.reviewDecisionId });
       assert.ok(["applied", "already-applied"].includes(result.status));
       assert.deepEqual(fs.readFileSync(path.join(root, layout.directory, "context/product-model.json")), canon);
       assert.deepEqual(fs.readFileSync(path.join(root, layout.directory, "sessions/current.json")), p2);
-      assert.equal(inspectWorldModel({ root }).status, "current");
-      assert.equal(inspectDocumentChangeReviewStatus({ root, candidateSetId: request.candidateSetId }).projectionsReady, true);
+      assert.equal((await inspectWorldModel({ root })).status, "current");
+      assert.equal((await inspectDocumentChangeReviewStatus({ root, candidateSetId: request.candidateSetId })).projectionsReady, true);
       assert.equal((await reviewDocumentChanges(request)).status, "already-applied");
       assert.equal(fs.readdirSync(path.join(root, layout.directory, "document-changes/review-decisions")).length, 1);
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
@@ -126,8 +126,8 @@ test("durable reject resumes partial publication before and after receipt withou
         assert.deepEqual(fs.readFileSync(file), edited);
       } else {
         await applyDocumentChangeReview({ root, reviewDecisionId: review.reviewDecisionId });
-        assert.equal(inspectWorldModel({ root }).status, "current");
-        assert.equal(inspectDocumentChangeReviewStatus({ root, candidateSetId: request.candidateSetId }).projectionsReady, true);
+        assert.equal((await inspectWorldModel({ root })).status, "current");
+        assert.equal((await inspectDocumentChangeReviewStatus({ root, candidateSetId: request.candidateSetId })).projectionsReady, true);
       }
       assert.deepEqual(fs.readFileSync(path.join(root, layout.directory, "context/product-model.json")), canon);
       assert.deepEqual(fs.readFileSync(path.join(root, layout.directory, "sessions/current.json")), p2);

@@ -77,13 +77,13 @@ test("delivery history derives mixed, failed, and rollback state without authori
   const aTwoV1 = await recordDeliveryObservation({ root, ...input({ targetKey: "target-two", revision: v1, revisionKey: "v1", suffix: "a-two-v1", worldModelId }) });
   await recordDeliveryObservation({ root, ...input({ targetKey: "target-one", revision: v2, revisionKey: "v2", suffix: "b-one-v2", environmentKey: "environment-b", worldModelId }) });
   await recordDeliveryObservation({ root, ...input({ targetKey: "target-two", revision: v2, revisionKey: "v2", suffix: "b-two-v2", environmentKey: "environment-b", worldModelId }) });
-  assert.equal(inspectDeliveryState({ root, environmentKey: "environment-a" }).environments[0].state, "uniform");
+  assert.equal((await inspectDeliveryState({ root, environmentKey: "environment-a" })).environments[0].state, "uniform");
 
   const aOneV2 = await recordDeliveryObservation({ root, ...input({
     targetKey: "target-one", revision: v2, revisionKey: "v2", suffix: "a-one-v2", sequence: 1,
     predecessorObservationId: aOneV1.observation.observationId, worldModelId,
   }) });
-  const mixed = inspectDeliveryState({ root, environmentKey: "environment-a" });
+  const mixed = (await inspectDeliveryState({ root, environmentKey: "environment-a" }));
   assert.equal(mixed.environments[0].state, "mixed");
   assert.equal(mixed.environments[0].deploymentCompleteEstablished, false);
   assert.equal(mixed.environments[0].unobservedTargetsInferred, false);
@@ -92,7 +92,7 @@ test("delivery history derives mixed, failed, and rollback state without authori
     targetKey: "target-one", revision: v2, revisionKey: "v2", suffix: "a-one-failed", sequence: 2, outcome: "failed",
     predecessorObservationId: aOneV2.observation.observationId, worldModelId,
   }) });
-  const afterFailure = inspectDeliveryState({ root, environmentKey: "environment-a", targetKey: "target-one" }).targets[0];
+  const afterFailure = (await inspectDeliveryState({ root, environmentKey: "environment-a", targetKey: "target-one" })).targets[0];
   assert.equal(afterFailure.current.revisionKey, "v2");
   assert.equal(afterFailure.lastAttempt.outcome, "failed");
 
@@ -102,7 +102,7 @@ test("delivery history derives mixed, failed, and rollback state without authori
     rollbackTargetObservationId: aOneV2.observation.observationId,
     worldModelId,
   }) });
-  const final = inspectDeliveryState({ root, environmentKey: "environment-a" });
+  const final = (await inspectDeliveryState({ root, environmentKey: "environment-a" }));
   assert.equal(final.environments[0].state, "uniform");
   assert.equal(final.targets.find((target) => target.targetKey === "target-one").current.observationId, rollback.observation.observationId);
   assert.equal(final.targets.find((target) => target.targetKey === "target-two").current.observationId, aTwoV1.observation.observationId);
@@ -113,7 +113,7 @@ test("delivery history derives mixed, failed, and rollback state without authori
   assert.equal(fs.readFileSync(canonFile, "utf8"), canonBefore);
   assert.equal(fs.readFileSync(sessionFile, "utf8"), sessionBefore);
 
-  const graph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   for (const observed of [aOneV1, aTwoV1, aOneV2, failed, rollback]) {
     assert.ok(graph.edges.some((edge) => edge.type === "AT_REVISION" && edge.from === observed.observation.observationId && edge.to === observed.observation.payload.bound_revision_id));
   }
@@ -131,7 +131,7 @@ test("delivery order conflicts remain unknown and never select newest receipt ti
     predecessorObservationId: first.observation.observationId, worldModelId: initialWorld.worldModelId,
     observedAt: "2026-09-01T00:00:00.000Z",
   }) });
-  const status = inspectDeliveryState({ root, targetKey: "target-conflict" });
+  const status = (await inspectDeliveryState({ root, targetKey: "target-conflict" }));
   assert.equal(status.targets[0].state, "unknown");
   assert.equal(status.targets[0].current, null);
   assert.equal(status.targets[0].ordering.coherent, false);
@@ -147,7 +147,7 @@ test("independent artifacts on one target keep independent order and do not manu
   await recordDeliveryObservation({ root, ...input({
     targetKey: "shared-target", artifactKey: "service.worker", revision: v2, revisionKey: "v2", suffix: "artifact-worker", worldModelId: initialWorld.worldModelId,
   }) });
-  const status = inspectDeliveryState({ root, environmentKey: "environment-a", targetKey: "shared-target" });
+  const status = (await inspectDeliveryState({ root, environmentKey: "environment-a", targetKey: "shared-target" }));
   assert.equal(status.targets.length, 2);
   assert.equal(status.environments[0].observedTargetCount, 1);
   assert.equal(status.environments[0].observedArtifactTargetCount, 2);
@@ -158,7 +158,7 @@ test("independent artifacts on one target keep independent order and do not manu
 test("declared revisions remain disclosed while invalid exact bindings fail before persistence", async (t) => {
   const { root, layout, initialWorld, v1 } = await fixture(t);
   const before = loadObservationArtifacts({ projectRoot: root, projectId: initialWorld.projectId, storage: layout }).observations.length;
-  await assert.rejects(() => recordDeliveryObservation({ root, ...input({
+  await assert.rejects(async () => (await recordDeliveryObservation({ root, ...input({
     targetKey: "invalid", revision: v1, revisionKey: "v1", suffix: "invalid", worldModelId: initialWorld.worldModelId,
     revisionReference: undefined,
   }), revisionReference: {
@@ -166,14 +166,14 @@ test("declared revisions remain disclosed while invalid exact bindings fail befo
     revisionId: v1.nodeId,
     sourcePath: v1.path,
     digest: sha("not-the-revision"),
-  } }), { code: "DELIVERY_REVISION_REFERENCE_INVALID" });
+  } })), { code: "DELIVERY_REVISION_REFERENCE_INVALID" });
   assert.equal(loadObservationArtifacts({ projectRoot: root, projectId: initialWorld.projectId, storage: layout }).observations.length, before);
 
   const declared = await recordDeliveryObservation({ root, ...input({ targetKey: "declared", revision: v1, revisionKey: "v1", suffix: "declared", worldModelId: initialWorld.worldModelId, exact: false }) });
   assert.equal(declared.observation.payload.revision_binding, "declared");
-  const current = inspectDeliveryState({ root, targetKey: "declared" }).targets[0].current;
+  const current = (await inspectDeliveryState({ root, targetKey: "declared" })).targets[0].current;
   assert.equal(current.revisionReference.exactRevisionReferenceEstablished, false);
-  const graph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   assert.equal(graph.edges.some((edge) => edge.type === "AT_REVISION" && edge.from === declared.observation.observationId), false);
 });
 
@@ -216,7 +216,7 @@ test("generic Observation ingest cannot self-assert Core delivery revision proof
     sourceScopeDigest: sha("generic-delivery-scope"),
   }), { code: "RESERVED_OBSERVATION_TYPE_REQUIRES_SPECIALIZED_WRITER" });
   assert.equal(loadObservationArtifacts({ projectRoot: root, projectId: initialWorld.projectId, storage: layout }).observations.length, before);
-  assert.equal(inspectDeliveryState({ root }).status, "not_started");
+  assert.equal((await inspectDeliveryState({ root })).status, "not_started");
 
   const mcp = await dispatch({ jsonrpc: "2.0", id: "generic-delivery", method: "tools/call", params: {
     name: "head_observation_ingest",
@@ -279,7 +279,7 @@ test("verified historical source revisions remain connected through a derived Re
   const observed = await recordDeliveryObservation({ root, ...input({
     targetKey: "historical-target", revision: v1, revisionKey: "v1", suffix: "historical-v1", worldModelId: initialWorld.worldModelId,
   }) });
-  const graph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   const reference = graph.nodes.find((node) => node.nodeId === v1.nodeId);
   assert.equal(reference.kind, "RevisionReference");
   assert.equal(reference.referencedWorldModelId, initialWorld.worldModelId);
@@ -295,7 +295,7 @@ test("delivery observation replay is exact and CLI and typed MCP agree on bounde
   const replay = await recordDeliveryObservation({ root, ...firstInput });
   assert.equal(replay.status, "existing");
   assert.equal(replay.observation.observationId, first.observation.observationId);
-  await assert.rejects(() => recordDeliveryObservation({ root, ...firstInput, outcome: "failed" }), { code: "DIVERGENT_OBSERVATION_REPLAY" });
+  await assert.rejects(async () => (await recordDeliveryObservation({ root, ...firstInput, outcome: "failed" })), { code: "DIVERGENT_OBSERVATION_REPLAY" });
 
   assert.ok(tools.some((tool) => tool.name === "lode_delivery_observe"));
   assert.ok(tools.some((tool) => tool.name === "lode_delivery_status"));

@@ -84,7 +84,7 @@ async function fixture(t, { withWave = false, withWrite = false } = {}) {
   assert.equal(storage.directory, ".lode");
   assert.equal(fs.existsSync(path.resolve(root, ".lode/project.json")), true);
   assert.equal(fs.existsSync(path.resolve(root, ".head/project.json")), false);
-  const capsule = compileContext({ root, task: "Verify a synthetic completed record is applied to its own Run", persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Verify a synthetic completed record is applied to its own Run", persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Verify exact application target", plan: [{ id: "apply", outcome: "Exact application evidence" }] }).artifact;
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId, scope: "Synthetic fixture A only", acceptanceCriteria: ["Preserve exact Run identity"], allowedActions: ["runtime.invoke", "project.read", ...(withWrite ? ["project.write"] : [])] }).artifact;
   const run = startRun({ root, executionContractId: contract.executionContractId }).run;
@@ -268,7 +268,7 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
   process.kill = () => true; // A reused numeric PID must not hide actual owner exit.
   try { assert.deepEqual(readBoundedWorkerJob({ root: f.root, authorizationId: authorization.authorizationId }), state); }
   finally { process.kill = kill; }
-  assert.deepEqual(runCommand(["managed-maintenance", "worker-job-reconcile", f.root, "--authorization", authorization.authorizationId]), state);
+  assert.deepEqual((await runCommand(["managed-maintenance", "worker-job-reconcile", f.root, "--authorization", authorization.authorizationId])), state);
   assert.deepEqual(cancelBoundedWorkerJob({ root: f.root, authorizationId: authorization.authorizationId }), state);
   const record = readRuntimeInvocationRecord({ root: f.root, storage: f.storage, authorizationId: authorization.authorizationId });
   assert.equal(record.receipt.receiptId, state.result.receiptId);

@@ -288,10 +288,10 @@ export function createSessionHostAdapter({ runtime, nativeSessionId, agentId = n
       if (!args?.project_root) fail("Expected an exact Project-scoped MCP request.");
       return contextFor(args.project_root, options);
     },
-    enter({ root = "." } = {}) {
+    async enter({ root = "." } = {}) {
       try {
         const context = contextFor(root);
-        return withSessionCallContext({ root, context }, () => enterConversationRecovery({ root }));
+        return (await withSessionCallContext({ root, context }, async () => (await enterConversationRecovery({ root }))));
       } catch (error) {
         // Same narrow Project-only path as MCP; no default Session is inspected
         // and then hidden. A damaged common original remains an error.

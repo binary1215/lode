@@ -122,7 +122,7 @@ function walkRegularFiles(root, relative = "") {
     .sort((left, right) => left.name.localeCompare(right.name, "en"));
   const files = [];
   for (const entry of entries) {
-    if (entry.isDirectory() && entry.name.toLowerCase() === ".agent-work") continue;
+    if (entry.isDirectory() && [".agent-work", ".lode"].includes(entry.name.toLowerCase())) continue;
     if (EXCLUDED_DIRECTORY_NAMES.has(entry.name)) continue;
     const childRelative = path.join(relative, entry.name);
     const child = path.join(root, childRelative);

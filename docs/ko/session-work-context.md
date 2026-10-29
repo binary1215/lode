@@ -539,3 +539,5 @@ Markdown의 `relativePath`는 게시 root 기준이고, href는 해당 문서 �
 사용하고 기존 `.head/` 원문과 exact selector는 그대로 유지합니다. 이는 기존 경로
 계약의 설명이며, workspace 이동 지원이나 자동 repair 기능이 아닙니다.
 
+
+읽기 전용 `sessionStartContext`는 선택된 Host 어댑터와 로컬 snapshot 읽기가 끝난 뒤 표시 내용을 만듭니다. Codex·Claude command Hook과 OpenCode context callback은 완료된 값을 사용하며, 아직 끝나지 않은 Promise를 빈 context로 표시하지 않습니다. Session 선택과 P2 권한은 바꾸지 않습니다.

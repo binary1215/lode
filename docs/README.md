@@ -25,6 +25,7 @@ work logs are intentionally excluded from the distribution and are not runtime a
 - [Recorded code context and before/after comparison](context-lineage.md)
 - [Lode Context Compiler design](context-compiler.md)
 - [Repository World Model semantic alpha](world-model.md)
+- [Snapshot encoding, storage inspection and preservation](snapshot-storage.md)
 - [Temporal provenance GraphSnapshot alpha](temporal-provenance.md)
 - [Review-gated Feature mapping](feature-mapping.md)
 - [Incremental observed-state refresh](incremental-refresh.md)

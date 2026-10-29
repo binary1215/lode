@@ -166,7 +166,7 @@ test("records Git refs and an approved successful deployment as P3 release evide
   assert.equal(projection.commonObservationContract.genericReplacement, false);
   assert.equal(projection.releases.length, 1);
   assert.equal(projection.deploymentResults.length, 1);
-  const graph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   assert.equal(graph.nodes.some((node) => node.kind === "ReleaseObservation" && node.nodeId === observed.release.releaseObservationId), true);
   assert.equal(graph.edges.some((edge) => edge.type === "EVIDENCED_BY" && edge.from === observed.release.releaseObservationId), true);
   assert.equal(graph.edges.some((edge) => edge.type === "AT_REVISION" && edge.from === observed.release.releaseObservationId), true);
@@ -178,7 +178,7 @@ test("records Git refs and an approved successful deployment as P3 release evide
   const replay = await observeReleaseState({ root, input: deployment(commit, "success") });
   assert.equal(replay.release.releaseObservationId, observed.release.releaseObservationId);
   assert.equal(inspectReleaseObservations({ root }).projection.releases.length, 1);
-  assert.equal(runCommand(["release-status", root]).projection.releases.length, 1);
+  assert.equal((await runCommand(["release-status", root])).projection.releases.length, 1);
 });
 
 test("fails closed for unapproved, failed, stale-ref, and divergent deployment results", async (t) => {
@@ -222,7 +222,7 @@ test("release writer retains the optional current-source readers and durable pre
   assert.equal(paired.status, "release_observed");
   assert.equal(paired.release.changeSetId, pair.changeSetId);
   assert.equal(paired.release.vcsEvidenceId, pair.vcsEvidenceId);
-  const graph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   assert.ok(graph.edges.some(edge => edge.type === "DEPLOYS" && edge.from === paired.release.releaseObservationId));
   const before = inspectReleaseObservations({ root }).projection;
   const missing = `change-set-${"a".repeat(24)}`;
@@ -270,15 +270,15 @@ test("stored releases reach World, temporal, exact Conformance and lazy Project 
     const registry = new ConformanceTriggerRegistry();
     const binding = registry.register({ root, sourceKey: "release-exact", triggerKinds: ["release-observation"], mode: "opportunistic" });
     const trigger = { kind: "release-observation", artifactId: observed.release.releaseObservationId, artifactHash: observed.release.releaseObservationHash };
-    assert.equal(registry.enqueue({ root, sourceId: binding.sourceId, trigger }).status, "queued");
-    assert.equal(registry.enqueue({ root, sourceId: binding.sourceId, trigger }).status, "existing");
-    const noHash = registry.enqueue({ root, sourceId: binding.sourceId, trigger: { kind: trigger.kind, artifactId: trigger.artifactId } });
+    assert.equal((await registry.enqueue({ root, sourceId: binding.sourceId, trigger })).status, "queued");
+    assert.equal((await registry.enqueue({ root, sourceId: binding.sourceId, trigger })).status, "existing");
+    const noHash = (await registry.enqueue({ root, sourceId: binding.sourceId, trigger: { kind: trigger.kind, artifactId: trigger.artifactId } }));
     assert.equal(noHash.trigger.artifactHash, trigger.artifactHash);
     for (const [overrides, code, message] of [[{ artifactId: `release-observation-${"f".repeat(24)}` }, "CONFORMANCE_TRIGGER_ARTIFACT_NOT_FOUND", "Conformance release trigger artifact is missing."],
       [{ artifactHash: "0".repeat(64) }, "CONFORMANCE_TRIGGER_ARTIFACT_DRIFT", "Conformance trigger artifact digest changed."]]) {
-      assert.throws(() => registry.enqueue({ root, sourceId: binding.sourceId, trigger: { ...trigger, ...overrides } }), error => {
+      (await assert.rejects(async () => (await registry.enqueue({ root, sourceId: binding.sourceId, trigger: { ...trigger, ...overrides } })), error => {
         assert.equal(error.constructor, Error); assert.equal(error.code, code); assert.equal(error.message, message); return true;
-      });
+      }));
     }
     const result = await queryProjectGraph({ root, anchorIds: [trigger.artifactId], depth: 1, limit: 64 });
     assert.ok(result.coverage.layers.some(layer => layer.layer === "releases" && layer.status === "verified"));
@@ -299,7 +299,7 @@ test("stored releases reach World, temporal, exact Conformance and lazy Project 
   const added = identified(branch, "branch-state-observation", "branchStateObservationId", "branchStateObservationHash");
   fs.writeFileSync(path.join(root, layout.directory, "release-observations/branch-states", `${added.branchStateObservationId}.json`), JSON.stringify(added));
   await withoutWrites(root, async () => {
-    const domains = inspectWorldDomainFreshness({ root });
+    const domains = (await inspectWorldDomainFreshness({ root }));
     assert.equal(domains.freshness.domains.git.status, "stale"); assert.equal(domains.freshness.domains.code.status, "current");
   });
   const releaseFile = path.join(root, layout.directory, "release-observations/releases", `${observed.release.releaseObservationId}.json`);

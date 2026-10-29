@@ -100,7 +100,7 @@ test("typed MCP exposes and carries the same optional setup choice", async t => 
 
 test("invalid choices and changed or duplicated link blocks fail only the affected link", async t => {
   const root = project(t);
-  await assert.rejects(initializeOrResumeProject({ root, pluginRoot, instructionIntegration: "automatic" }), { code: "PROJECT_INSTRUCTION_CHOICE_INVALID" });
+  await assert.rejects(((initializeOrResumeProject({ root, pluginRoot, instructionIntegration: "automatic" }))), { code: "PROJECT_INSTRUCTION_CHOICE_INVALID" });
   assert.equal(inspectProject(root).status, "not_initialized");
   initializeProject({ root, pluginRoot, runtimes: ["codex", "claude"] });
   linkProjectInstructions({ root, choice: "link" });

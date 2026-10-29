@@ -474,12 +474,12 @@ async function main() {
     }
     assert(projectLocalOperationalRootRejected, "Project-local operational root was accepted.");
     assert(!fs.existsSync(unsafeProjectLocalOperationalRoot), "Rejected project-local operational root was created before validation.");
-    const capsule = compileContext({
+    const capsule = (await compileContext({
       root: resolvedRoot,
       task: "Prove bounded provider-neutral runtime lifecycle conformance without changing project files.",
       budget: 32_768,
       persist: true,
-    }).capsule;
+    })).capsule;
     const plan = createWholePlanSnapshot({
       root: resolvedRoot,
       objective: "Verify the runtime invocation lifecycle boundary.",
@@ -1409,7 +1409,7 @@ async function main() {
     const sameSeal = sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId });
     assert(sameSeal.status === "existing" && sameSeal.seal.sealId === sealedWave.seal.sealId,
       "Wave seal replay did not converge.");
-    const cliWaveStatus = runCommand(["worker-wave-status", resolvedRoot, "--wave", createdWave.wave.waveId]);
+    const cliWaveStatus = await runCommand(["worker-wave-status", resolvedRoot, "--wave", createdWave.wave.waveId]);
     assert(cliWaveStatus.projection.statusProjectionId === failedWave.statusProjectionId,
       "CLI wave status did not preserve Core identity.");
     const mcpWaveStatus = await dispatch({

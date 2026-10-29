@@ -95,7 +95,7 @@ test("fixture publication success stays silent and restores the exact rename fun
 test("publication EPERM captures staging metadata before cleanup and rethrows the identical error once", async t => {
   const fault = injectPublicationFailure(t), diagnostics = [];
   const keys = Object.keys(fault.error);
-  await assert.rejects(workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }), error => error === fault.error);
+  await assert.rejects(((workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }))), error => error === fault.error);
   assert.equal(fault.calls, 1, "no retry of the publisher");
   assert.equal(fs.renameSync, fault.mock, "the caller's previous mock/function is restored");
   assert.deepEqual(Object.keys(fault.error), keys, "the original error is not decorated or replaced");
@@ -129,9 +129,9 @@ test("publication EPERM captures staging metadata before cleanup and rethrows th
 test("diagnostic sink failure cannot replace the publication error or prevent wrapper cleanup", async t => {
   const fault = injectPublicationFailure(t);
   let diagnostics = 0;
-  await assert.rejects(workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: () => {
+  await assert.rejects(((workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: () => {
     diagnostics += 1; throw new Error("synthetic diagnostic sink unavailable");
-  } }), error => error === fault.error);
+  } }))), error => error === fault.error);
   assert.equal(diagnostics, 1);
   assert.equal(fault.calls, 1);
   assert.equal(fs.renameSync, fault.mock);
@@ -149,7 +149,7 @@ test("metadata failures are disclosed and do not mask or retry the original erro
   });
   const fault = injectPublicationFailure(t, { beforeThrow: () => { failing = true; } }), diagnostics = [];
   try {
-    await assert.rejects(workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }), error => error === fault.error);
+    await assert.rejects(((workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }))), error => error === fault.error);
   } finally { failing = false; }
   const info = JSON.parse(diagnostics[0]);
   assert.deepEqual(Object.values(info.paths).map(item => item.errorCode), ["EACCES", "EACCES", "EACCES"]);
@@ -163,7 +163,7 @@ test("diagnostics bound entries and omit unrelated names, contents, commands and
   const fault = injectPublicationFailure(t, { beforeThrow: source => {
     for (let index = 0; index < 40; index += 1) fs.writeFileSync(path.join(source, `${marker}-${index}`), marker);
   } }), diagnostics = [];
-  await assert.rejects(workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }), error => error === fault.error);
+  await assert.rejects(((workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }))), error => error === fault.error);
   const info = JSON.parse(diagnostics[0]);
   assert.equal(info.paths.temporary.entries.length, 16);
   assert.equal(info.paths.temporary.entriesTruncated, true);
@@ -186,7 +186,7 @@ test("changed fixture root identity prevents further diagnostic traversal", asyn
   });
   const fault = injectPublicationFailure(t, { beforeThrow: () => { failing = true; } }), diagnostics = [];
   try {
-    await assert.rejects(workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }), error => error === fault.error);
+    await assert.rejects(((workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }))), error => error === fault.error);
   } finally { failing = false; }
   const info = JSON.parse(diagnostics[0]);
   assert.ok(Object.values(info.paths).every(item => item.inspection === "fixture-root-changed-not-inspected"));
@@ -205,7 +205,7 @@ test("an observed link ancestor blocks diagnostic child inspection", async t => 
   });
   const fault = injectPublicationFailure(t, { beforeThrow: source => { replacedAncestor = path.dirname(source); } }), diagnostics = [];
   try {
-    await assert.rejects(workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }), error => error === fault.error);
+    await assert.rejects(((workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }))), error => error === fault.error);
   } finally { replacedAncestor = undefined; }
   const info = JSON.parse(diagnostics[0]);
   assert.equal(info.paths.temporary.inspection, "ancestor-not-plain-directory");
@@ -227,7 +227,7 @@ test("destination links are observed without reading the external synthetic targ
   });
   const fault = injectPublicationFailure(t, { beforeThrow: (_source, destination) => fs.symlinkSync(outside, destination, process.platform === "win32" ? "junction" : "dir") });
   const diagnostics = [];
-  await assert.rejects(workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }), error => error === fault.error);
+  await assert.rejects(((workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }))), error => error === fault.error);
   const info = JSON.parse(diagnostics[0]);
   assert.equal(info.paths.destination.type, "symbolic-link");
   assert.equal(info.paths.destination.inspection, "link-target-not-inspected");
@@ -240,7 +240,7 @@ test("destination links are observed without reading the external synthetic targ
 test("only registered synthetic fixture work is reported, never fabricated cross-process ownership", async t => {
   const first = await workerIntegrationFixture(t, { workers: selectedWorker });
   const fault = injectPublicationFailure(t), diagnostics = [];
-  await assert.rejects(workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }), error => error === fault.error);
+  await assert.rejects(((workerIntegrationFixture(t, { workers: selectedWorker, publicationDiagnosticSink: value => diagnostics.push(value) }))), error => error === fault.error);
   const info = JSON.parse(diagnostics[0]);
   assert.equal(info.concurrency.activeFixtureCount, 2);
   assert.equal(info.concurrency.activePublicationCount, 1);

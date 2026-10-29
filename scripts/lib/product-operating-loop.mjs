@@ -208,7 +208,7 @@ async function readWorldSummary(inspected, { fresh = false } = {}) {
     return { summary: cached.summary, verification: { mode: "cached-verified-snapshot", cacheKey: `${cached.summary.worldModelId}:${cached.summary.worldModelHash}`, writeInvalidates: true } };
   }
   const { readWorldModel } = await import("./world-model.mjs");
-  const world = readWorldModel({ root: inspected.project.projectRoot }).snapshot;
+  const world = (await readWorldModel({ root: inspected.project.projectRoot })).snapshot;
   if (pointer.worldModelId !== world.worldModelId || pointer.worldModelHash !== world.worldModelHash) fail("World Model pointer changed during continuity read.", "WORLD_MODEL_POINTER_MISMATCH");
   const summary = {
     worldModelId: world.worldModelId,
@@ -420,30 +420,30 @@ async function observeProductOutcomeUnlocked({ root = ".", changeSetId, statemen
 async function serializedProductMutation(options, action, operation) {
   const requested = options && typeof options === "object" ? options : {};
   const inspected = readyProject(requested.root || ".", action);
-  return withProjectMutationAsync(
+  return (await withProjectMutationAsync(
     { root: inspected.project.projectRoot, scope: "product-operating-write" },
     () => operation({ ...requested, root: inspected.project.projectRoot }),
-  );
+  ));
 }
 
 export async function recordProductSignal(options = {}) {
-  return serializedProductMutation(options, "a ProductSignal is recorded", recordProductSignalUnlocked);
+  return (await serializedProductMutation(options, "a ProductSignal is recorded", recordProductSignalUnlocked));
 }
 
 export async function recordProductHypothesis(options = {}) {
-  return serializedProductMutation(options, "a ProductHypothesis is recorded", recordProductHypothesisUnlocked);
+  return (await serializedProductMutation(options, "a ProductHypothesis is recorded", recordProductHypothesisUnlocked));
 }
 
 export async function proposeProductInitiative(options = {}) {
-  return serializedProductMutation(options, "a ProductInitiativeCandidate is proposed", proposeProductInitiativeUnlocked);
+  return (await serializedProductMutation(options, "a ProductInitiativeCandidate is proposed", proposeProductInitiativeUnlocked));
 }
 
 export async function reviewProductInitiative(options = {}) {
-  return serializedProductMutation(options, "a Product Initiative is reviewed", reviewProductInitiativeUnlocked);
+  return (await serializedProductMutation(options, "a Product Initiative is reviewed", reviewProductInitiativeUnlocked));
 }
 
 export async function observeProductOutcome(options = {}) {
-  return serializedProductMutation(options, "an OutcomeObservation is recorded", observeProductOutcomeUnlocked);
+  return (await serializedProductMutation(options, "an OutcomeObservation is recorded", observeProductOutcomeUnlocked));
 }
 
 export function inspectProductOperatingLoop({ root = ".", fresh = false } = {}) {

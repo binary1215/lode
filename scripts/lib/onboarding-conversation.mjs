@@ -86,8 +86,8 @@ function choicesFor(status) {
   return [];
 }
 
-function optionalProjection(read) {
-  try { return read(); }
+async function optionalProjection(read) {
+  try { return await read(); }
   catch (error) {
     if (!/^(?:INVALID_)?(?:GRAPH_|DOCUMENT_|PUBLISHED_|ARCADEDB|WORLD_MODEL|TEMPORAL_)/.test(error.code || "")
       && !["ENOENT", "EACCES", "EPERM", "EISDIR"].includes(error.code)) throw error;
@@ -95,7 +95,7 @@ function optionalProjection(read) {
   }
 }
 
-export function inspectConversationalOnboarding({ root = ".", candidateLimit = 25 } = {}) {
+export async function inspectConversationalOnboarding({ root = ".", candidateLimit = 25 } = {}) {
   const limit = boundedLimit(candidateLimit);
   const project = inspectProject(root);
   if (project.status === "not_initialized") return {
@@ -117,7 +117,7 @@ export function inspectConversationalOnboarding({ root = ".", candidateLimit = 2
     },
   };
 
-  const onboarding = inspectOptionalOnboarding({ root });
+  const onboarding = (await inspectOptionalOnboarding({ root }));
   if (onboarding.status === "integrity_attention") return {
     schemaVersion: 1, kind: "ConversationalOnboardingProjection",
     protocolVersion: ONBOARDING_CONVERSATION_PROTOCOL_VERSION,
@@ -148,8 +148,8 @@ export function inspectConversationalOnboarding({ root = ".", candidateLimit = 2
   };
 
   const availableWorld = onboarding.worldModel && onboarding.worldModel.status !== "unavailable";
-  const graph = availableWorld ? optionalProjection(() => inspectWorldGraphProjection({ root })) : null;
-  const documents = availableWorld ? optionalProjection(() => inspectWorldMarkdownProjection({ root })) : null;
+  const graph = availableWorld ? (await optionalProjection(async () => (await inspectWorldGraphProjection({ root })))) : null;
+  const documents = availableWorld ? (await optionalProjection(async () => (await inspectWorldMarkdownProjection({ root })))) : null;
   const nextAction = actionFor({ status: onboarding.status, world: onboarding.worldModel, graph, documents });
   return {
     schemaVersion: 1,

@@ -24,12 +24,12 @@ async function tool(root, request, readOnly = false) {
   return response.result.structuredContent;
 }
 let inputIndex = 0;
-function cli(f, request) {
+async function cli(f, request) {
   const file = path.join(f.container, `head-request-${inputIndex++}.json`);
   fs.writeFileSync(file, JSON.stringify(request), { flag: "wx" });
-  return runCommand(["managed-maintenance", "worker-integrate", f.root, "--input", file]);
+  return (await runCommand(["managed-maintenance", "worker-integrate", f.root, "--input", file]));
 }
-const cliStatus = f => runCommand(["worker-integration-status", f.root, "--integration", f.integrationId]);
+const cliStatus = async f => (await runCommand(["worker-integration-status", f.root, "--integration", f.integrationId]));
 function snapshot(root) {
   const found = {};
   function walk(directory) {
@@ -75,7 +75,7 @@ test("two integration tools describe exact actions and separate file effects fro
 test("ordinary integration status machine guidance inspects retained work without selecting application", async t => {
   const f = await workerIntegrationFixture(t), before = snapshot(f.root);
   for (let attempt = 0; attempt < 2; attempt++) {
-    const cli = cliStatus(f);
+    const cli = (await cliStatus(f));
     const mcp = await tool(f.root, { integrationId: f.integrationId }, true);
     assert.deepEqual(mcp, cli);
     for (const status of [cli, mcp]) {
@@ -100,7 +100,7 @@ test("CLI and MCP reuse exact prepared membership and status without artifacts o
   const command = await cli(f, request);
   assert.equal(command.status, "existing");
   assert.deepEqual(await tool(f.root, request), command);
-  const commandStatus = cliStatus(f);
+  const commandStatus = (await cliStatus(f));
   assert.deepEqual(await tool(f.root, { integrationId: f.integrationId }, true), commandStatus);
   assert.equal(commandStatus.application.status, "not-started");
   assert.equal(commandStatus.result.status, "not-published");
@@ -113,7 +113,7 @@ test("status retains lineage and drift but omits duplicate raw patches without r
   const f = await workerIntegrationFixture(t, { workers: [{ path: "value.txt", after: "candidate value\n" }], readDependencies: ["config.txt"] });
   fs.writeFileSync(path.join(f.root, "config.txt"), "changed dependency\n");
   const before = snapshot(f.root);
-  const status = cliStatus(f);
+  const status = (await cliStatus(f));
   assert.deepEqual(await tool(f.root, { integrationId: f.integrationId }, true), status);
   assert.equal(status.application.currentBasis.headReassessmentRequired, true);
   assert.equal(status.integration.members.length, 1);
@@ -130,7 +130,7 @@ test("unobservable read dependency guides HEAD without creating claims or blocki
   const f = await workerIntegrationFixture(t, { workers: [{ path: "a.txt", after: "new A" }], readDependencies: ["config.txt"] });
   fs.unlinkSync(path.join(f.root, "config.txt")); fs.mkdirSync(path.join(f.root, "config.txt"));
   const before = snapshot(f.root);
-  const status = cliStatus(f);
+  const status = (await cliStatus(f));
   assert.deepEqual(await tool(f.root, { integrationId: f.integrationId }, true), status);
   const guide = status.application.guidance;
   assert.equal(guide.automaticApplicationBlocked, true);
@@ -200,13 +200,13 @@ test("typed and CLI no-effect integration publishes one whole result and still r
   assert.equal(fs.readdirSync(path.join(f.root, relativeProjectArtifact(f.storage, "lineage", "result-packets"))).length, 1);
   assert.equal(result.resultPacket.evidence[0].memberProvenance.length, 2);
   const beforeRead = snapshot(f.root);
-  assert.deepEqual(cliStatus(f), await tool(f.root, { integrationId: f.integrationId }, true));
-  assert.equal(cliStatus(f).result.status, "published");
-  assert.equal(cliStatus(f).result.resultPacket.read.tool, "lode_lineage_artifact");
-  assert.equal(cliStatus(f).result.resultPacket.resultPacketId, result.resultPacket.resultPacketId);
-  assert.equal(Object.hasOwn(cliStatus(f).result.verification, "headReport"), false);
-  assert.equal(Object.hasOwn(cliStatus(f).result.verification, "wholeResultPacket"), false);
-  assert.equal(cliStatus(f).result.verification.evidenceCount, 1);
-  assert.equal(cliStatus(f).result.verification.verificationCount, 1);
+  assert.deepEqual((await cliStatus(f)), await tool(f.root, { integrationId: f.integrationId }, true));
+  assert.equal((await cliStatus(f)).result.status, "published");
+  assert.equal((await cliStatus(f)).result.resultPacket.read.tool, "lode_lineage_artifact");
+  assert.equal((await cliStatus(f)).result.resultPacket.resultPacketId, result.resultPacket.resultPacketId);
+  assert.equal(Object.hasOwn((await cliStatus(f)).result.verification, "headReport"), false);
+  assert.equal(Object.hasOwn((await cliStatus(f)).result.verification, "wholeResultPacket"), false);
+  assert.equal((await cliStatus(f)).result.verification.evidenceCount, 1);
+  assert.equal((await cliStatus(f)).result.verification.verificationCount, 1);
   assert.deepEqual(snapshot(f.root), beforeRead);
 });

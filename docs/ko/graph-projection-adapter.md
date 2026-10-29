@@ -61,8 +61,11 @@ project canon, 지시, 승격 또는 유일한 권위를 주장하는 adapter는
 
 ```text
 .lode/graph-projection/current.json
+.lode/graph-projection/snapshots/graph-snapshot-*.json.gz
 .lode/graph-projection/snapshots/graph-snapshot-*.json
 ```
+
+새 로컬 스냅샷은 공백을 줄인 `.json.gz`를 사용하며 기존 `.json`은 원본 바이트를 유지합니다. 물리 인코딩과 현재 조회 전용 GC 표면은 [스냅샷 저장과 보존](snapshot-storage.md)을 참고하세요.
 
 snapshot은 불변이며 canonical JSON 기준으로 현재 World Model에 내장된 검증된 graph와 byte-semantic하게 동등합니다. pointer는 콘텐츠 주소 기반이며 project, GraphSnapshot, GraphSnapshot hash, SourceSnapshot identity와 비권위 프로젝션 flag를 기록합니다.
 

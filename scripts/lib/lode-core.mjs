@@ -1,3 +1,4 @@
+import { ensureProjectStorageIgnore } from "./project-storage-ignore.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -314,6 +315,8 @@ export function initializeProject({ root = ".", pluginRoot, runtimes, installati
     const manifestFile = path.join(canonicalRoot, storage.directory, "generated", "manifest.json");
     atomicWrite(manifestFile, json({ schemaVersion: SCHEMA_VERSION, generatedAt: now(), pluginRoot: canonicalPluginRoot, packageVersion: packageVersionAt(canonicalPluginRoot), managed }));
     createdFiles.push(manifestFile);
+    const generatedIgnore = ensureProjectStorageIgnore({ root: canonicalRoot, storage: resolveProjectStorage(canonicalRoot) });
+    if (generatedIgnore.status === "created") createdFiles.push(path.join(canonicalRoot, generatedIgnore.path));
     noteProjectGraphChange(canonicalRoot);
     return {
       status: Object.entries(integrations).some(([runtime, item]) => item.status === "manual"
@@ -323,6 +326,7 @@ export function initializeProject({ root = ".", pluginRoot, runtimes, installati
       storage: resolveProjectStorage(canonicalRoot),
       integrations,
       managedFiles: managed.length,
+      generatedIgnore,
     };
   } catch (error) {
     for (const file of createdFiles.reverse()) {
@@ -368,6 +372,7 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
   // preflight. No existing pure refusal can leave a P5 pending selection.
   if (onValidatedSessionSelection) onValidatedSessionSelection({ root: projectRoot,
     projectId: inspected.project.projectId, sessionId: inspected.state.sessionId });
+  const generatedIgnore = ensureProjectStorageIgnore({ root: projectRoot, storage });
   if (manifest.pluginRoot === canonicalPluginRoot && manifest.packageVersion === packageVersion && !additions.size) {
     return {
       status: "current",
@@ -375,6 +380,7 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
       sessionId: inspected.state.sessionId,
       pluginRootChanged: false,
       updatedManagedFiles: [],
+      generatedIgnore,
     };
   }
 
@@ -465,6 +471,7 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
     pluginRootChanged: manifest.pluginRoot !== canonicalPluginRoot,
     packageVersionChanged,
     updatedManagedFiles: [...new Set([...replacements.keys(), ...additions.keys()])].sort(),
+    generatedIgnore,
   };
 }
 

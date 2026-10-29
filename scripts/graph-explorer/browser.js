@@ -83,8 +83,8 @@
     control.setAttribute("data-card-control", ""); control.setAttribute("aria-expanded", String(expanded));
     control.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} details: ${descriptor.title}`);
     const heading = text("div", "", "map-card-heading");
-    heading.append(text("h3", descriptor.title, "map-card-title"), text("p", descriptor.kind, "map-card-kind"),
-      text("p", shorten(descriptor.preview || descriptor.emptyNotice, 180), "map-card-preview"));
+    heading.append(text("h3", descriptor.title, "map-card-title"), text("p", descriptor.kind, "map-card-kind"));
+    if (descriptor.preview) heading.append(text("p", shorten(descriptor.preview, 180), "map-card-preview"));
     if (descriptor.summaryConditions.length) {
       const badges = text("div", "", "map-card-summary-status");
       for (const condition of descriptor.summaryConditions) badges.append(text("span", condition, "map-card-status-badge"));
@@ -94,6 +94,7 @@
     const content = text("div", "", "map-card-body"); content.setAttribute("data-card-body", "");
     content.append(text("p", descriptor.kind, "map-card-kind"));
     if (descriptor.preview) content.append(text("p", shorten(descriptor.preview, 420), "map-card-excerpt"));
+    else if (!descriptor.hasDisplayText) content.append(text("p", descriptor.emptyNotice, "map-card-notice"));
     if (descriptor.conditions.length) content.append(text("p", descriptor.conditions.join(" · "), "map-card-conditions"));
     if (descriptor.groups.length) content.append(text("p", descriptor.groups.slice(0, 2).map(group => `${group.type}: ${group.title}`).join(" · ")
       + (descriptor.groups.length > 2 ? ` · +${descriptor.groups.length - 2} memberships in the reading card` : ""), "map-card-memberships"));
@@ -116,8 +117,8 @@
     // The fallback is only an estimate when DOM layout is unavailable. Real
     // browsers measure the same HTML/CSS used by visible foreignObject cards.
     let collapsedHeight = 36 + basis.size * (Math.min(2, lines(descriptor.title, basis.size)) * 1.4 + 1.35
-      + Math.min(3, lines(shorten(descriptor.preview || descriptor.emptyNotice, 180), basis.size * .85)) * 1.35
-      + lines(descriptor.summaryConditions.join(" · "), basis.size * .75) * 1.8);
+      + (descriptor.preview ? Math.min(3, lines(shorten(descriptor.preview, 180), basis.size * .85)) * 1.35 : 0)
+      + (descriptor.summaryConditions.length ? lines(descriptor.summaryConditions.join(" · "), basis.size * .75) * 1.8 : 0));
     let height = expanded ? collapsedHeight + 30 + basis.size * (1.4 + Math.min(2, lines(descriptor.title, basis.size)) * 1.4
       + Math.min(3, lines(shorten(descriptor.preview, 420), basis.size)) * 1.45
       + lines(descriptor.conditions.join(" · "), basis.size * .86) * 1.3
@@ -668,16 +669,17 @@
         const descriptor = index.describe(value), node = Boolean(value.nodeId), entryModel = model, card = text("details", "", "selection-card");
         card.setAttribute("data-record", identity);
         const summary = text("summary", node ? label(value) : relation(value));
-        summary.append(text("span", descriptor.kind, "record-kind"), text("span", shorten(descriptor.preview || descriptor.emptyNotice, 220), "selection-preview"));
-        if (descriptor.conditions.length) summary.append(text("span", descriptor.conditions.join(" · "), "selection-status"));
+        summary.append(text("span", descriptor.kind, "record-kind"));
+        if (descriptor.preview) summary.append(text("span", shorten(descriptor.preview, 220), "selection-preview"));
+        if (descriptor.summaryConditions.length) summary.append(text("span", descriptor.summaryConditions.join(" · "), "selection-status"));
         card.append(summary);
-        card.append(text("p", `${descriptor.kind} · ${value.kind || value.type || "relationship"}`, "record-kind"));
         const conditions = [...descriptor.conditions,
           node && !inDisplayScope(value) || !node && !edgeInScope(value) ? "outside evidence scope — selection retained" : null].filter(item => typeof item === "string" && item);
         const conditionsElement = text("p", conditions.join(" · "), "card-conditions"); card.append(conditionsElement);
         for (const note of descriptor.notes) card.append(text("p", note, "hint"));
         if (descriptor.body) card.append(text("p", descriptor.body));
-        else if (!descriptor.hasDisplayText && !node) card.append(text("p", `${label(model.nodes.get(value.from))} → ${label(model.nodes.get(value.to))}`));
+        else if (!descriptor.hasDisplayText) card.append(text("p", descriptor.emptyNotice, "hint"));
+        if (!descriptor.hasDisplayText && !node) card.append(text("p", `${label(model.nodes.get(value.from))} → ${label(model.nodes.get(value.to))}`));
         for (const [heading, facts] of descriptor.facts) {
           card.append(text("strong", heading)); const list = text("ul", "", "record-facts");
           for (const fact of facts) {
@@ -1025,7 +1027,7 @@
         }
       }
     }
-    $("comparison-position").textContent = `File ${comparisonFiles.length ? fileCursor + 1 : 0}/${comparisonFiles.length} · changed region ${changeCursor >= 0 ? changeCursor + 1 : 0}/${changeHunks.length}. All included comparisons stay open; missing regions are not reconstructed.`;
+    $("comparison-position").textContent = `File ${comparisonFiles.length ? fileCursor + 1 : 0}/${comparisonFiles.length} · changed region ${changeCursor >= 0 ? changeCursor + 1 : 0}/${changeHunks.length}. Each exact comparison opens independently; missing regions are not reconstructed.`;
     $("file-prev").disabled = fileCursor <= 0; $("file-next").disabled = fileCursor >= comparisonFiles.length - 1;
     $("change-prev").disabled = changeCursor <= 0; $("change-next").disabled = changeCursor >= changeHunks.length - 1;
   }
@@ -1164,15 +1166,23 @@
         if (pair.recordedReviewDecisionId) relatedIds.add(pair.recordedReviewDecisionId);
         const linkedText = `Linked selected records: ${values.filter(value => pairMatches(value, file, pair)).map(value => value.nodeId ? label(value) : relation(value)).join(" · ")}`;
         if (retained) {
-          retained.linked.textContent = displayText(linkedText); body.append(retained.body);
+          retained.linked.textContent = displayText(linkedText); body.append(...(retained.notices || []), retained.body);
           for (const [element, top, left] of retained.scroll || []) { element.scrollTop = top; element.scrollLeft = left; }
           if (retained.hunks.length) { $("show-code-diff").hidden = false; $("jump-diff").disabled = false; }
           for (const element of retained.hunks) changeHunks.push({ element, file: fileIndex, pair });
           continue;
         }
-        const parent = body;
+        const parent = body, partialNotices = [];
+        // Material omissions remain readable before the detailed diff opens.
+        const includedRegions = pair.diff?.regions || (pair.diff?.before && pair.diff?.after ? [{ before: pair.diff.before, after: pair.diff.after }] : []);
+        for (const region of includedRegions) for (const side of ["before", "after"]) {
+          const excerpt = region[side];
+          if (excerpt?.omittedLines || excerpt?.textTruncated) partialNotices.push(text("p", `Partial comparison excerpt (${side}): ${excerpt.omittedLines ?? "unknown"} omitted lines; text truncated: ${excerpt.textTruncated === true ? "yes" : "no"}. More remains outside this included comparison.`, "comparison-partial"));
+        }
+        parent.append(...partialNotices);
         {
-        const body = text("section", "", "comparison-pair"); parent.append(body);
+        const body = text("details", "", "comparison-pair");
+        body.append(text("summary", `${pair.status} · ${pair.scope} · ${file.path}`)); parent.append(body);
         body.setAttribute("data-comparison-before", pair.before?.digest || ""); body.setAttribute("data-comparison-after", pair.after?.digest || "");
         appendCitingWork(body, file, pair);
         const firstHunk = changeHunks.length;
@@ -1223,7 +1233,7 @@
         }
         if (pair.reasonCode || pair.gap) body.append(text("p", pair.reasonCode || pair.gap.reasonCode, "hint"));
         for (const gap of pair.gaps || []) body.append(text("p", gap.reasonCode || "Source bytes unavailable", "hint"));
-        entries.set(file.path, { body, linked, hunks: changeHunks.slice(firstHunk).map(item => item.element) });
+        entries.set(file.path, { body, linked, notices: partialNotices, hunks: changeHunks.slice(firstHunk).map(item => item.element) });
         }
       }
       body.append(text("p", file.unrecordedIntervals, "hint"));
@@ -1464,7 +1474,8 @@
   });
   for (const [id, delta] of [["change-prev", -1], ["change-next", 1]]) $(id).addEventListener("click", () => {
     $("context-lineage").open = true;
-    changeCursor = Math.max(0, Math.min(changeHunks.length - 1, changeCursor + delta)); const target = changeHunks[changeCursor]; if (target) { fileCursor = target.file; target.element.scrollIntoView({ block: "nearest" }); target.element.focus(); } comparisonPosition("hunk");
+    changeCursor = Math.max(0, Math.min(changeHunks.length - 1, changeCursor + delta)); const target = changeHunks[changeCursor]; if (target) { fileCursor = target.file; for (let parent = target.element.parentNode; parent; parent = parent.parentNode) if (String(parent.tagName).toLowerCase() === "details") parent.open = true;
+      target.element.scrollIntoView({ block: "nearest" }); target.element.focus(); } comparisonPosition("hunk");
   });
   $("show-code-diff").addEventListener("click", () => { $("context-lineage").open = true; $("context-lineage").scrollIntoView({ block: "nearest" }); });
   $("jump-diff").addEventListener("click", () => { $("context-lineage").open = true; $("context-lineage").setAttribute("tabindex", "-1"); $("context-lineage").scrollIntoView({ block: "start" }); $("context-lineage").focus(); });

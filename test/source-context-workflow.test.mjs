@@ -49,8 +49,8 @@ test("actual isolated Python collection reaches helper and Context, reuses bytes
   assert.equal(historical.sourceState, "stale");
   assert.equal(historical.currentContextEligible, false);
   assert.equal(historical.evidence.sources[0].digest, first.results[0].sourceDigest);
-  assert.throws(() => compileContext({ root, task: "Inspect", includeRepositoryWorld: false,
-    evidenceNeeds: [{ id: "old", kind: "observation", observationIds: [first.results[0].observationId] }] }), { code: "SOURCE_DRIFT" });
+  (await assert.rejects(async () => (await compileContext({ root, task: "Inspect", includeRepositoryWorld: false,
+    evidenceNeeds: [{ id: "old", kind: "observation", observationIds: [first.results[0].observationId] }] })), { code: "SOURCE_DRIFT" }));
   const third = await prepareSourceContext(args);
   assert.equal(third.results[0].reused, false);
   assert.notEqual(third.results[0].observationId, first.results[0].observationId);
@@ -161,7 +161,7 @@ test("retained source tamper and ephemeral record substitution fail closed at Co
   const bundle = JSON.parse(fs.readFileSync(file, "utf8"));
   bundle.observation.payload.details = "forged relationship";
   assert.throws(() => verifySourceObservation(root, bundle.evidence.projectId, bundle));
-  assert.throws(() => compileContext({ root, task: "Inspect", evidenceNeeds: [{ id: "exact", kind: "observation", observationIds: [bundle.observation.observationId] }], sourceObservations: [bundle], includeRepositoryWorld: false }));
+  (await assert.rejects(async () => (await compileContext({ root, task: "Inspect", evidenceNeeds: [{ id: "exact", kind: "observation", observationIds: [bundle.observation.observationId] }], sourceObservations: [bundle], includeRepositoryWorld: false }))));
   fs.writeFileSync(file, JSON.stringify(bundle));
   assert.throws(() => inspectSourceObservation({ root, bundleKey: result.results[0].bundleKey }));
   assert.equal(sourceObservationDescriptor.recoveryAuthority, false);

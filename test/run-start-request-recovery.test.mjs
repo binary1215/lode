@@ -13,7 +13,7 @@ import { createHeadSession, withSessionRoute } from "../scripts/lib/session-rout
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 console.log(JSON.stringify({ event: "owned-test-process", pid: process.pid, parentPid: process.ppid, command: process.execPath, args: process.argv.slice(1), cwd: process.cwd(), ports: [] }));
-function fixture(t) {
+async function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "head-start-request-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
@@ -21,7 +21,7 @@ function fixture(t) {
   assert.equal(storage.directory, ".lode");
   assert.equal(fs.existsSync(path.resolve(root, ".lode/project.json")), true);
   assert.equal(fs.existsSync(path.resolve(root, ".head/project.json")), false);
-  const capsule = compileContext({ root, task: "Observe a local fixture", persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Observe a local fixture", persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Observe a local fixture", plan: [{ id: "observe", outcome: "Recorded fact" }] }).artifact;
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId, scope: "Observe a local fixture", acceptanceCriteria: ["Fact recorded"] }).artifact;
   return { root, storage, contract, input: { root, executionContractId: contract.executionContractId, startRequestId: "same-request" } };
@@ -42,8 +42,8 @@ function interruptSession(operation) {
 const finishInput = (root) => ({ root, outcome: "Observed", evidence: [{ uri: "fixture-only", digest: "fact" }], verification: [{ check: "local", status: "passed" }] });
 const reviewInput = (root) => ({ root, reviewContextId: getPendingReviewContext({ root }).review.reviewContextId, disposition: "accept", rationale: "Exact local evidence accepted" });
 
-test("same key retry is an acknowledgment, not new execution; distinct key creates distinct Run", (t) => {
-  const { root, storage, input } = fixture(t);
+test("same key retry is an acknowledgment, not new execution; distinct key creates distinct Run", async (t) => {
+  const { root, storage, input } = (await fixture(t));
   const started = startRun(input);
   const before = snapshot(root);
   const replay = startRun(input);
@@ -62,8 +62,8 @@ test("same key retry is an acknowledgment, not new execution; distinct key creat
   assert.equal(runs(root, storage).length, 2);
 });
 
-test("same key divergent exact input is rejected without writes", (t) => {
-  const { root, storage, input, contract } = fixture(t);
+test("same key divergent exact input is rejected without writes", async (t) => {
+  const { root, storage, input, contract } = (await fixture(t));
   startRun(input);
   const other = createExecutionContract({ root, wholePlanId: contract.wholePlanId, capsuleId: contract.capsuleId, scope: "Different scope", acceptanceCriteria: ["Different criterion"] }).artifact;
   const before = snapshot(root);
@@ -71,8 +71,8 @@ test("same key divergent exact input is rejected without writes", (t) => {
   assert.deepEqual(snapshot(root), before);
 });
 
-test("exact key repairs Run-only start without touching checkpoint metadata or creating more Runs", (t) => {
-  const { root, storage, input } = fixture(t);
+test("exact key repairs Run-only start without touching checkpoint metadata or creating more Runs", async (t) => {
+  const { root, storage, input } = (await fixture(t));
   interruptSession(() => startRun(input));
   assert.equal(inspectProject(root).state.activeRunId, null);
   assert.equal(runs(root, storage).length, 1);
@@ -87,8 +87,8 @@ test("exact key repairs Run-only start without touching checkpoint metadata or c
 });
 
 for (const boundary of ["run", "session"]) for (const after of [false, true]) {
-  test(`start exact retry converges ${after ? "after" : "before"} ${boundary} publication`, (t) => {
-    const { root, storage, input } = fixture(t);
+  test(`start exact retry converges ${after ? "after" : "before"} ${boundary} publication`, async (t) => {
+    const { root, storage, input } = (await fixture(t));
     const link = fs.linkSync, rename = fs.renameSync;
     let injected = false;
     const intercept = (publish, a, b) => {
@@ -111,7 +111,7 @@ for (const boundary of ["run", "session"]) for (const after of [false, true]) {
 }
 
 test("two hidden concurrent exact-key callers converge on one Run without a duplicate launch authorization", async (t) => {
-  const { root, storage, input } = fixture(t);
+  const { root, storage, input } = (await fixture(t));
   const module = pathToFileURL(path.join(pluginRoot, "scripts/lib/run-lineage.mjs")).href;
   const child = () => new Promise((resolve, reject) => {
     const code = `import {startRun} from ${JSON.stringify(module)}; console.log(JSON.stringify({event:'owned-start-child',pid:process.pid,parentPid:process.ppid,command:process.execPath,cwd:process.cwd(),at:new Date().toISOString(),ports:[]})); console.log(JSON.stringify(startRun(${JSON.stringify(input)})));`;
@@ -133,16 +133,16 @@ test("two hidden concurrent exact-key callers converge on one Run without a dupl
   assert.equal(results.every(result => result.executionReplayAllowed === false), true);
 });
 
-test("lost key never guesses a replacement", (t) => {
-  const { root, storage, input } = fixture(t);
+test("lost key never guesses a replacement", async (t) => {
+  const { root, storage, input } = (await fixture(t));
   interruptSession(() => startRun({ ...input, startRequestId: undefined }));
   const before = snapshot(root);
   assert.throws(() => startRun(input), { code: "RUN_START_UNRESOLVED" });
   assert.deepEqual(snapshot(root), before);
 });
 
-test("multiple exact-key candidates are unresolved instead of latest-wins", (t) => {
-  const { root, storage, input } = fixture(t);
+test("multiple exact-key candidates are unresolved instead of latest-wins", async (t) => {
+  const { root, storage, input } = (await fixture(t));
   interruptSession(() => startRun(input));
   const prior = JSON.parse(fs.readFileSync(runFile(root, storage, runs(root, storage)[0])));
   const other = structuredClone(prior), newId = "run-1-000001";
@@ -162,8 +162,8 @@ test("multiple exact-key candidates are unresolved instead of latest-wins", (t) 
   assert.deepEqual(snapshot(root), before);
 });
 
-test("deleted result after committed finish is an evidence gap, not an unsaved transition", (t) => {
-  const { root, storage, input } = fixture(t);
+test("deleted result after committed finish is an evidence gap, not an unsaved transition", async (t) => {
+  const { root, storage, input } = (await fixture(t));
   startRun(input);
   const result = finishRun(finishInput(root));
   fs.unlinkSync(path.join(root, storage.directory, "lineage/result-packets", `${result.resultPacket.resultPacketId}.json`));
@@ -175,8 +175,8 @@ test("deleted result after committed finish is an evidence gap, not an unsaved t
   assert.throws(() => getPendingReviewContext({ root }), { code: "LINEAGE_ARTIFACT_NOT_FOUND" });
 });
 
-test("unrelated proven Session owner corruption is not a global start gate", (t) => {
-  const { root, storage, input } = fixture(t);
+test("unrelated proven Session owner corruption is not a global start gate", async (t) => {
+  const { root, storage, input } = (await fixture(t));
   const other = createHeadSession({ root, purpose: "Independent owner" }).sessionId;
   const foreign = withSessionRoute(root, other, () => startRun(input));
   const file = runFile(root, storage, foreign.run.runId), record = JSON.parse(fs.readFileSync(file));
@@ -184,8 +184,8 @@ test("unrelated proven Session owner corruption is not a global start gate", (t)
   assert.equal(startRun(input).status, "run_started");
 });
 
-test("an unattached active Run with unknown owner is not silently discarded", (t) => {
-  const { root, storage, input } = fixture(t);
+test("an unattached active Run with unknown owner is not silently discarded", async (t) => {
+  const { root, storage, input } = (await fixture(t));
   const other = createHeadSession({ root, purpose: "Owner loss fixture" }).sessionId;
   withSessionRoute(root, other, () => startRun(input));
   fs.unlinkSync(path.join(root, storage.directory, "sessions/by-id", other, "current.json"));
@@ -194,8 +194,8 @@ test("an unattached active Run with unknown owner is not silently discarded", (t
   assert.deepEqual(snapshot(root), before);
 });
 
-test("Run start preimage drift and metadata tamper never overwrite current Session", (t) => {
-  const { root, storage, input } = fixture(t);
+test("Run start preimage drift and metadata tamper never overwrite current Session", async (t) => {
+  const { root, storage, input } = (await fixture(t));
   interruptSession(() => startRun(input));
   const state = inspectProject(root).state;
   fs.writeFileSync(stateFile(root, storage), JSON.stringify({ ...state, mode: "explicit-current-head-change" }));
@@ -209,8 +209,8 @@ test("Run start preimage drift and metadata tamper never overwrite current Sessi
 });
 
 for (const kind of ["finish", "review"]) {
-  test(`${kind} verified artifact permits storage-only repair; read is immutable`, (t) => {
-    const { root, storage, input } = fixture(t);
+  test(`${kind} verified artifact permits storage-only repair; read is immutable`, async (t) => {
+    const { root, storage, input } = (await fixture(t));
     startRun(input);
     if (kind === "review") finishRun(finishInput(root));
     const operation = kind === "finish" ? finishRun : reviewRun;
@@ -225,8 +225,8 @@ for (const kind of ["finish", "review"]) {
     assert.equal(inspectRunStorageTransition({ root }).status, "committed");
   });
 
-  test(`${kind} missing immutable evidence remains incomplete and cannot fabricate judgment/result`, (t) => {
-    const { root, storage, input } = fixture(t);
+  test(`${kind} missing immutable evidence remains incomplete and cannot fabricate judgment/result`, async (t) => {
+    const { root, storage, input } = (await fixture(t));
     const started = startRun(input);
     if (kind === "review") finishRun(finishInput(root));
     const operation = kind === "finish" ? finishRun : reviewRun;
@@ -241,8 +241,8 @@ for (const kind of ["finish", "review"]) {
   });
 }
 
-test("derived index failure leaves required storage committed without replay instruction", (t) => {
-  const { root, storage, input } = fixture(t);
+test("derived index failure leaves required storage committed without replay instruction", async (t) => {
+  const { root, storage, input } = (await fixture(t));
   const rename = fs.renameSync;
   fs.renameSync = (a, b) => { if (b.includes(`${path.sep}graph-discovery${path.sep}`)) throw Object.assign(new Error("Fixture derived index failure"), { code: "EIO" }); return rename(a, b); };
   try {

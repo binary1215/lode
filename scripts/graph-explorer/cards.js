@@ -93,8 +93,12 @@ const explorerCards = (() => {
       const hasDisplayText = Boolean(body || facts.length || excerpts.length);
       const firstFact = facts[0]?.[1]?.[0];
       const factPreview = firstFact && (typeof firstFact === "string" ? firstFact : first(firstFact.task, firstFact.assessment, firstFact.reason));
-      const preview = body || (factPreview ? `${facts[0][0]}: ${factPreview}` : "")
+      const rawPreview = body || (factPreview ? `${facts[0][0]}: ${factPreview}` : "")
         || (excerpts[0] ? `${excerpts[0].heading}: ${excerpts[0].text}` : "");
+      const displayTitle = first(value.name, value.title, value.qualifiedName, semantic?.name, semantic?.statement) || title(value);
+      const sameText = text => String(text || "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+      // Presentation deduplication only; source, digest and authority stay separate.
+      const preview = sameText(rawPreview) === sameText(displayTitle) || rawPreview === value.path && displayTitle === value.path ? "" : rawPreview;
       const emptyNotice = value.kind === "ProductPolicyEvidence" && value.evidenceKind === "user-request" && value.reference
         ? "Reference-only evidence in this projection; no summary is included. This does not establish whether request text exists elsewhere."
         : value.detailCoverage === "metadata-only"
@@ -142,13 +146,15 @@ const explorerCards = (() => {
           "historical-source-bytes": "Historical source bytes", unavailable: "Source unavailable", "domain-not-current": "Non-current domain", historical: "Historical", "intact-historical-work-evidence": "Retained work" };
         return Object.hasOwn(labels, state) ? labels[state] : "Currentness: " + state;
       };
-      for (const state of new Set([value.freshness, value.sourceCurrentness?.freshness, value.viewerCurrentness, value.snapshotState].filter(state => typeof state === "string" && state))) summaryConditions.push(compactFreshness(state));
+      for (const state of new Set([value.freshness, value.sourceCurrentness?.freshness, value.viewerCurrentness, value.snapshotState].filter(state => typeof state === "string" && state))) {
+        if (!["snapshot-evidence", "current-canon-bytes", "current-source-bytes", "current", "not-applicable"].includes(state)) summaryConditions.push(compactFreshness(state));
+      }
       if (value.currentTraversalEligible === false) summaryConditions.push("Not current traversal");
       if (historical(value) || value.origin?.layer === "sessionWork") summaryConditions.push("Historical record", "Not live / no permission");
       if (value.contentPartial || value.workContentCoverage?.partial || value.directionContentCoverage?.partial) summaryConditions.push("Partial content");
       if (todos.length || todoExcerpts.length || value.workContentCoverage?.fieldItems?.todos?.originalItems) summaryConditions.push("Historical Todo states: " + (todoStates.join(", ") || "not included"));
       if (todoCoverageText) summaryConditions.push("Todo coverage: " + todoCoverageText);
-      const result = { title: first(value.name, value.title, value.qualifiedName, semantic?.name, semantic?.statement) || title(value), kind: kindName(value), body, facts, excerpts, preview, hasDisplayText, emptyNotice, conditions, summaryConditions: [...new Set(summaryConditions)], notes,
+      const result = { title: displayTitle, kind: kindName(value), body, facts, excerpts, preview, hasDisplayText, emptyNotice, conditions, summaryConditions: [...new Set(summaryConditions)], notes,
         source: first(value.sourceReference?.path, value.path, value.provenance?.path, value.origin?.path),
         groups: [...(memberships.get(value.nodeId) || [])].map(key => groups.get(key)),
         excerptNotice: hasDisplayText ? "Excerpt, not a complete summary. Read the record for all wording and conditions." : "" };

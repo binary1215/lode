@@ -138,10 +138,10 @@ function recoveryAttention(error, details = {}) {
   };
 }
 
-function conversationProjection(root, recovery) {
+async function conversationProjection(root, recovery) {
   const publicRecovery = { ...recovery };
   delete publicRecovery.restore;
-  const projectStatus = inspectConversationProjectExperience({ root, recoveryOverride: publicRecovery });
+  const projectStatus = (await inspectConversationProjectExperience({ root, recoveryOverride: publicRecovery }));
   return {
     ...actionability(projectStatus),
     projectStatus,
@@ -151,12 +151,12 @@ function conversationProjection(root, recovery) {
   };
 }
 
-export function enterConversationRecovery({ root = ".", readRelatedNativeContext = null } = {}) {
+export async function enterConversationRecovery({ root = ".", readRelatedNativeContext = null } = {}) {
   const inspected = inspectProject(root);
   const readable = isProjectRecoveryReadable(inspected);
   const entryDirection = readable ? readProjectDirectionView({ root }) : null;
   const recovery = recoveryReadiness(inspected, { includeRestore: true });
-  const composed = conversationProjection(root, recovery);
+  const composed = (await conversationProjection(root, recovery));
   // Optional P3 work is never a prerequisite for P2 restore or ordinary work.
   // Its absence/corruption cannot manufacture a purpose, next action or approval.
   if (readable) {
@@ -248,13 +248,13 @@ function currentEpochForEvent(root, event) {
   return status;
 }
 
-function currentDirectionAfterContinuationDrift(error, { root, event, hostAdapter }) {
+async function currentDirectionAfterContinuationDrift(error, { root, event, hostAdapter }) {
   if (!new Set(["COMPACTION_CHECKPOINT_STALE", "COMPACTION_SESSION_DRIFT", "COMPACTION_RUN_DRIFT", "COMPACTION_RUN_POINTER_MISMATCH"]).has(error.code)) throw error;
   const current = inspectCompaction({ root });
   if (current.epoch?.epochId === event.epochId && ["prepared", "provider_compacted", "verified"].includes(current.epoch.state)) {
     abortCompaction({ root, epochId: event.epochId, reason: "current-p2-direction-superseded-transport-continuation" });
   }
-  const conversationEntry = enterConversationRecovery({ root });
+  const conversationEntry = (await enterConversationRecovery({ root }));
   return {
     status: conversationEntry.status === "recovery_attention_required"
       ? "recovery_attention_required"
@@ -273,8 +273,8 @@ function currentDirectionAfterContinuationDrift(error, { root, event, hostAdapte
   };
 }
 
-export function processCompactionLifecycle({ root = ".", hostAdapter = null, direction = null } = {}) {
-  const entry = enterConversationRecovery({ root });
+export async function processCompactionLifecycle({ root = ".", hostAdapter = null, direction = null } = {}) {
+  const entry = (await enterConversationRecovery({ root }));
   if (!hostAdapter) {
     return {
       status: "host_lifecycle_unavailable",
@@ -326,7 +326,7 @@ export function processCompactionLifecycle({ root = ".", hostAdapter = null, dir
         superseded = true;
       }
     }
-    const refreshed = enterConversationRecovery({ root: identity.projectRoot });
+    const refreshed = (await enterConversationRecovery({ root: identity.projectRoot }));
     return {
       status: refreshed.status,
       eventKind: event.kind,
@@ -400,7 +400,7 @@ export function processCompactionLifecycle({ root = ".", hostAdapter = null, dir
   }
 
   const compaction = currentEpochForEvent(identity.projectRoot, event);
-  const restored = enterConversationRecovery({ root: identity.projectRoot });
+  const restored = (await enterConversationRecovery({ root: identity.projectRoot }));
   if (restored.recoveryDependentWorkBlocked) {
     return recoveryAttention({ code: restored.reasonCode }, { eventKind: event.kind, conversationEntry: restored });
   }
@@ -541,7 +541,7 @@ export function processCompactionLifecycle({ root = ".", hostAdapter = null, dir
     return {
       status: "compaction_lifecycle_superseded",
       eventKind: event.kind,
-      conversationEntry: enterConversationRecovery({ root: identity.projectRoot }),
+      conversationEntry: (await enterConversationRecovery({ root: identity.projectRoot })),
       continuationConsumed: false,
       acknowledgement: safeAcknowledge(hostAdapter, event, "processed"),
       ordinaryWorkBlocked: false,
@@ -558,7 +558,7 @@ export function processCompactionLifecycle({ root = ".", hostAdapter = null, dir
       currentUserTurnId: event.userTurnId,
       providerCompacted: true,
     }); } catch (error) {
-      return currentDirectionAfterContinuationDrift(error, { root: identity.projectRoot, event, hostAdapter });
+      return (await currentDirectionAfterContinuationDrift(error, { root: identity.projectRoot, event, hostAdapter }));
     }
   } else if (compaction.epoch.state !== "verified") {
     fail(`After-compaction success cannot continue from state ${compaction.epoch.state}.`, "INVALID_COMPACTION_STATE");
@@ -598,7 +598,7 @@ export function processCompactionLifecycle({ root = ".", hostAdapter = null, dir
     continuationToken: loaded.continuationToken,
     currentUserTurnId: event.userTurnId,
   }); } catch (error) {
-    return currentDirectionAfterContinuationDrift(error, { root: identity.projectRoot, event, hostAdapter });
+    return (await currentDirectionAfterContinuationDrift(error, { root: identity.projectRoot, event, hostAdapter }));
   }
   return {
     status: "compaction_lifecycle_continued",

@@ -1,3 +1,6 @@
+import { DOMAIN_BUNDLE_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
+import { GitSnapshotStore } from "./git-snapshot-store.mjs";
+import { storedSnapshotLocation, readSnapshotFile, writeStoredSnapshot, listStoredSnapshotIds } from "./snapshot-storage-codec.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -42,8 +45,12 @@ function snapshotId(value) {
 }
 
 function parseDocument(file, label) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`${label} is invalid JSON: ${error.message}`, "INVALID_WORLD_MODEL_STORE_DOCUMENT"); }
+  try { return file.endsWith(".json.gz") ? readSnapshotFile(file).document : JSON.parse(fs.readFileSync(file, "utf8")); }
+  catch (error) {
+    // Corrupt encoding is a document error; operational failures keep their code.
+    if (file.endsWith(".json.gz") && error.code && error.code !== "INVALID_SNAPSHOT_ENCODING") throw error;
+    fail(`${label} is invalid JSON: ${error.message}`, "INVALID_WORLD_MODEL_STORE_DOCUMENT");
+  }
 }
 
 export function assertWorldModelStoreAdapter(adapter) {
@@ -68,21 +75,27 @@ export function assertWorldModelStoreAdapter(adapter) {
 }
 
 export class LocalJsonWorldModelStoreAdapter {
-  constructor({ projectRoot, storage = null }) {
+  constructor({ projectRoot, storage = null, snapshotEncoding = "gzip", snapshotLayout = "whole", bundleEncoding = "gzip", gitOptions = {} }) {
     if (typeof projectRoot !== "string" || !projectRoot.trim()) fail("Local JSON adapter requires projectRoot.", "WORLD_MODEL_STORE_ROOT_REQUIRED");
     this.projectRoot = path.resolve(projectRoot);
     this.storage = storage;
+    if (!["whole", DOMAIN_BUNDLE_LAYOUT].includes(snapshotLayout)) fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
+    this.snapshotLayout = snapshotLayout; this.bundleEncoding = bundleEncoding;
+    this.snapshotEncoding = snapshotEncoding;
+    this.gitOptions = gitOptions;
+    this.gitStore = () => new GitSnapshotStore({ projectRoot: this.projectRoot, storage: this.storage, ...this.gitOptions });
     this.adapterVersion = WORLD_MODEL_STORE_ADAPTER_VERSION;
   }
 
   describe() {
     return {
       contract: WORLD_MODEL_STORAGE_CONTRACT,
-      adapterKind: "local-json",
+      adapterKind: this.snapshotEncoding === "git" ? "local-git-snapshot-candidate" : "local-json",
       adapterVersion: this.adapterVersion,
       authority: "derived-evidence-only",
       rebuildable: true,
       uniqueAuthority: false,
+      ...(this.snapshotLayout !== "whole" ? { snapshotLayout: this.snapshotLayout } : {}),
       remote: false,
       durable: true,
     };
@@ -93,7 +106,7 @@ export class LocalJsonWorldModelStoreAdapter {
   }
 
   snapshotLocation(worldModelId) {
-    return path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "world-model", "snapshots", `${snapshotId(worldModelId)}.json`);
+    return storedSnapshotLocation(this.projectRoot, path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "world-model", "snapshots", `${snapshotId(worldModelId)}.json`), this.snapshotEncoding === "git" ? "gzip" : this.snapshotEncoding);
   }
 
   readPointer() {
@@ -102,17 +115,22 @@ export class LocalJsonWorldModelStoreAdapter {
     return { location, document: parseDocument(location, "World Model pointer") };
   }
 
-  readSnapshot(worldModelId) {
+  async readSnapshot(worldModelId) {
     const location = this.snapshotLocation(worldModelId);
-    if (!fs.existsSync(location)) return null;
-    return { location, document: parseDocument(location, "World Model snapshot") };
+    const entry = fs.existsSync(location) ? { location, document: parseDocument(location, "World Model snapshot") }
+      : this.storage?.projectFile ? await this.gitStore().read(worldModelId) : null;
+    return hydrateSnapshotEntry({ root: this.projectRoot, storage: this.storage, entry });
   }
 
-  writeSnapshot(worldModelId, document) {
-    const location = this.snapshotLocation(worldModelId);
-    if (fs.existsSync(location)) return { location, created: false, document: parseDocument(location, "World Model snapshot") };
-    atomicWrite(location, json(document));
-    return { location, created: true, document };
+  async writeSnapshot(worldModelId, document) {
+    const existing = await this.readSnapshot(worldModelId);
+    if (existing) return { ...existing, created: false };
+    if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT) document = createSnapshotComposition({ root: this.projectRoot, storage: this.storage, document, encoding: this.bundleEncoding }).document;
+    if (this.snapshotEncoding === "git") {
+      return hydrateSnapshotEntry({ root: this.projectRoot, storage: this.storage, entry: await this.gitStore().write(worldModelId, document) });
+    }
+    const written = writeStoredSnapshot({ root: this.projectRoot, jsonFile: path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "world-model", "snapshots", `${snapshotId(worldModelId)}.json`), document, encoding: this.snapshotEncoding, readDocument: file => parseDocument(file, "World Model snapshot") });
+    return hydrateSnapshotEntry({ root: this.projectRoot, storage: this.storage, entry: written });
   }
 
   writePointer(document) {
@@ -121,16 +139,19 @@ export class LocalJsonWorldModelStoreAdapter {
     return { location, document };
   }
 
-  listSnapshotIds() {
+  async listSnapshotIds() {
     const directory = path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "world-model", "snapshots");
-    if (!fs.existsSync(directory)) return [];
-    return fs.readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /^world-model-[a-f0-9]{24}\.json$/.test(entry.name))
-      .map((entry) => entry.name.slice(0, -5))
-      .sort();
+    return [...new Set([...listStoredSnapshotIds(this.projectRoot, directory, "world-model"), ...(this.storage?.projectFile ? await this.gitStore().list("world-model") : [])])].sort();
   }
 }
 
 export function createWorldModelStoreAdapter({ projectRoot, adapter = null, storage = null } = {}) {
   return assertWorldModelStoreAdapter(adapter || new LocalJsonWorldModelStoreAdapter({ projectRoot, storage }));
+}
+
+// Local-only discovery never selects configured external storage or creates a store.
+export function createLocalReadOnlyWorldModelStoreAdapter(options = {}) {
+  const adapter = new LocalJsonWorldModelStoreAdapter(options);
+  adapter.writePointer = adapter.writeSnapshot = () => fail("Historical discovery is read only.", "WORLD_MODEL_STORE_READ_ONLY");
+  return adapter;
 }

@@ -16,7 +16,7 @@ const pluginRoot = path.resolve(import.meta.dirname, "..");
 const moduleUrl = pathToFileURL(path.join(pluginRoot, "scripts/lib/run-lineage.mjs")).href;
 console.log(JSON.stringify({ event: "owned-test-process", pid: process.pid, parentPid: process.ppid, command: process.execPath, args: process.argv.slice(1), cwd: process.cwd(), ports: [] }));
 
-function fixture(t) {
+async function fixture(t) {
   const parent = process.env.LODE_AGENT_TEST_TMP || process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
   fs.mkdirSync(parent, { recursive: true });
   const root = fs.mkdtempSync(path.join(parent, "head-run-transition-"));
@@ -30,7 +30,7 @@ function fixture(t) {
   assert.equal(storage.directory, ".lode");
   assert.equal(fs.existsSync(path.resolve(root, ".lode/project.json")), true);
   assert.equal(fs.existsSync(path.resolve(root, ".head/project.json")), false);
-  const capsule = compileContext({ root, task: "Observe one local fixture fact", persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Observe one local fixture fact", persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Observe one local fixture fact", plan: [{ id: "observe", outcome: "Recorded fact" }] }).artifact;
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId, scope: "Observe one local fixture fact", acceptanceCriteria: ["Evidence is recorded"] }).artifact;
   const { run } = startRun({ root, executionContractId: contract.executionContractId });
@@ -104,10 +104,10 @@ function freshRetry(kind, input) {
 }
 
 for (const kind of ["finish", "review"]) {
-  test(`${kind} converges before and after every durable boundary in a fresh process`, (t) => {
+  test(`${kind} converges before and after every durable boundary in a fresh process`, async (t) => {
     for (const boundary of ["run", "artifact", "session"]) {
       for (const after of [false, true]) {
-        const { root, storage, run, contract, finishInput } = fixture(t);
+        const { root, storage, run, contract, finishInput } = (await fixture(t));
         if (kind === "review") finishRun(finishInput);
         const input = kind === "finish" ? finishInput : reviewInput(root);
         const operation = kind === "finish" ? finishRun : reviewRun;
@@ -139,9 +139,9 @@ for (const kind of ["finish", "review"]) {
   });
 }
 
-test("review convergence preserves every non-accept disposition and its existing next-work boundary", (t) => {
+test("review convergence preserves every non-accept disposition and its existing next-work boundary", async (t) => {
   for (const disposition of ["revise", "expand", "rollback", "escalate"]) {
-    const { root, storage, contract, finishInput } = fixture(t);
+    const { root, storage, contract, finishInput } = (await fixture(t));
     finishRun(finishInput);
     const input = { ...reviewInput(root), disposition };
     failAt("review", "session", false, () => reviewRun(input));
@@ -157,9 +157,9 @@ test("review convergence preserves every non-accept disposition and its existing
   }
 });
 
-test("already-partial legacy Run records converge only through their exact stored result and decision", (t) => {
+test("already-partial legacy Run records converge only through their exact stored result and decision", async (t) => {
   for (const kind of ["finish", "review"]) {
-    const { root, storage, run, finishInput } = fixture(t);
+    const { root, storage, run, finishInput } = (await fixture(t));
     if (kind === "review") finishRun(finishInput);
     const input = kind === "finish" ? finishInput : reviewInput(root);
     const operation = kind === "finish" ? finishRun : reviewRun;
@@ -179,8 +179,8 @@ test("already-partial legacy Run records converge only through their exact store
 });
 
 for (const kind of ["finish", "review"]) {
-  test(`${kind} incomplete transition cannot overwrite fields changed by intervening HEAD work`, (t) => {
-    const { root, storage, finishInput } = fixture(t);
+  test(`${kind} incomplete transition cannot overwrite fields changed by intervening HEAD work`, async (t) => {
+    const { root, storage, finishInput } = (await fixture(t));
     if (kind === "review") finishRun(finishInput);
     const input = kind === "finish" ? finishInput : reviewInput(root);
     const operation = kind === "finish" ? finishRun : reviewRun;
@@ -192,8 +192,8 @@ for (const kind of ["finish", "review"]) {
     assert.deepEqual(snapshot(root), unchanged);
   });
 
-  test(`${kind} completed replay preserves later checkpoint metadata but rejects changed operation pointers`, (t) => {
-    const { root, storage, finishInput } = fixture(t);
+  test(`${kind} completed replay preserves later checkpoint metadata but rejects changed operation pointers`, async (t) => {
+    const { root, storage, finishInput } = (await fixture(t));
     if (kind === "review") finishRun(finishInput);
     const input = kind === "finish" ? finishInput : reviewInput(root);
     const operation = kind === "finish" ? finishRun : reviewRun;
@@ -216,8 +216,8 @@ for (const kind of ["finish", "review"]) {
 }
 
 for (const kind of ["finish", "review"]) {
-  test(`${kind} rejects divergent retries, Session drift and tampered evidence without writes`, (t) => {
-    const { root, storage, run, finishInput } = fixture(t);
+  test(`${kind} rejects divergent retries, Session drift and tampered evidence without writes`, async (t) => {
+    const { root, storage, run, finishInput } = (await fixture(t));
     if (kind === "review") finishRun(finishInput);
     const input = kind === "finish" ? finishInput : reviewInput(root);
     const operation = kind === "finish" ? finishRun : reviewRun;

@@ -3,6 +3,7 @@ import childProcess from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { readFixtureSnapshot, writeFixtureSnapshot } from "./helpers/snapshot-storage-fixture.mjs";
 import { ArcadeDbHttpTransport, ActivatedArcadeDbGraphProjectionAdapter, LocalJsonGraphProjectionAdapter, buildGraphProjectionPointer } from "../scripts/lib/graph-projection-adapter.mjs";
 import { buildStorageSelection } from "../scripts/lib/onboarding-contract.mjs";
 import { buildTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
@@ -14,7 +15,7 @@ const selection = buildStorageSelection({ projectId: "bridge-test-project", sele
   secretReferenceNames: { username: "HEAD_TEST_BRIDGE_USER", password: "HEAD_TEST_BRIDGE_PASSWORD" },
 } });
 
-test("actual bridge classifies body interruption and adapter only falls back before remote observation", () => {
+test("actual bridge classifies body interruption and adapter only falls back before remote observation", async () => {
   const root = fs.mkdtempSync(path.join(pluginRoot, ".qa-bridge-recovery-"));
   const originalSpawn = childProcess.spawnSync;
   const oldUser = process.env.HEAD_TEST_BRIDGE_USER, oldPassword = process.env.HEAD_TEST_BRIDGE_PASSWORD;
@@ -33,33 +34,33 @@ test("actual bridge classifies body interruption and adapter only falls back bef
   try {
     const graph = buildTemporalProvenanceGraph({ projectId: selection.projectId, files: [] });
     const local = new LocalJsonGraphProjectionAdapter({ projectRoot: root });
-    local.writeSnapshot(graph.graphSnapshotId, graph);
+    (await local.writeSnapshot(graph.graphSnapshotId, graph));
     local.writePointer(buildGraphProjectionPointer(graph));
     for (mode of ["headers", "body", "timeout"]) {
       const transport = new ArcadeDbHttpTransport({ storageSelection: selection });
       assert.throws(() => transport.invoke("query", { command: "SELECT 1" }), { code: "ARCADEDB_TRANSPORT_UNAVAILABLE" });
       const adapter = new ActivatedArcadeDbGraphProjectionAdapter({ projectRoot: root, storageSelection: selection, transport });
-      assert.equal(adapter.readPointer().document.graphSnapshotId, graph.graphSnapshotId);
+      assert.equal((await adapter.readPointer()).document.graphSnapshotId, graph.graphSnapshotId);
       assert.equal(adapter.fallbackUsed, true);
       assert.throws(() => transport.invoke("command", { command: "UPDATE synthetic SET value=1" }), { code: "ARCADEDB_WRITE_OUTCOME_UNKNOWN" });
     }
     for (const [fault, code] of [["empty", "ARCADEDB_REMOTE_RESPONSE_INVALID"], ["malformed", "ARCADEDB_REMOTE_RESPONSE_INVALID"], ["auth", "ARCADEDB_AUTHENTICATION_FAILED"]]) {
       mode = fault;
       const adapter = new ActivatedArcadeDbGraphProjectionAdapter({ projectRoot: root, storageSelection: selection });
-      assert.throws(() => adapter.readPointer(), { code });
+      await assert.rejects(() => adapter.readPointer(), { code });
       assert.equal(adapter.fallbackUsed, false);
     }
     mode = "body";
     const unavailable = () => { throw Object.assign(new Error("lost"), { code: "ARCADEDB_TRANSPORT_UNAVAILABLE" }); };
     const observed = new ActivatedArcadeDbGraphProjectionAdapter({ projectRoot: root, storageSelection: selection,
       remoteAdapter: { readPointer: () => null, readSnapshot: unavailable } });
-    assert.equal(observed.readPointer(), null);
-    assert.throws(() => observed.readSnapshot(graph.graphSnapshotId), { code: "ARCADEDB_TRANSPORT_UNAVAILABLE" });
+    assert.equal(await observed.readPointer(), null);
+    (await assert.rejects(async () => (await observed.readSnapshot(graph.graphSnapshotId)), { code: "ARCADEDB_TRANSPORT_UNAVAILABLE" }));
     assert.equal(observed.fallbackUsed, false);
-    const tampered = JSON.parse(fs.readFileSync(local.snapshotLocation(graph.graphSnapshotId), "utf8"));
+    const tampered = readFixtureSnapshot(local.snapshotLocation(graph.graphSnapshotId));
     tampered.projectId = "wrong-project";
-    fs.writeFileSync(local.snapshotLocation(graph.graphSnapshotId), JSON.stringify(tampered));
-    assert.throws(() => new ActivatedArcadeDbGraphProjectionAdapter({ projectRoot: root, storageSelection: selection }).readPointer());
+    writeFixtureSnapshot(local.snapshotLocation(graph.graphSnapshotId), tampered);
+    await assert.rejects(() => new ActivatedArcadeDbGraphProjectionAdapter({ projectRoot: root, storageSelection: selection }).readPointer());
   } finally {
     childProcess.spawnSync = originalSpawn;
     if (oldUser === undefined) delete process.env.HEAD_TEST_BRIDGE_USER; else process.env.HEAD_TEST_BRIDGE_USER = oldUser;

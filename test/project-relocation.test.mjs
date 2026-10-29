@@ -40,16 +40,16 @@ test("explicit public resume preserves Project/default/named Session and Work/Wo
     if (!relative.includes("world-model/snapshots") && !relative.includes("session-work") && !relative.includes("sessions/records") && !relative.endsWith("sessions/current.json")) continue;
     assert.equal(snapshot(root)[relative].digest, value.digest, relative);
   }
-  const stored = inspectWorldDomainFreshness({ root, domains: ["code"] });
+  const stored = (await inspectWorldDomainFreshness({ root, domains: ["code"] }));
   assert.equal(stored.freshness.domains.code.status, "current"); assert.equal(stored.snapshot.projectRoot, f.root);
-  assert.equal(readWorldModelSnapshot({ root, worldModelId: stored.snapshot.worldModelId }).snapshot.projectRoot, f.root);
+  assert.equal((await readWorldModelSnapshot({ root, worldModelId: stored.snapshot.worldModelId })).snapshot.projectRoot, f.root);
   const work = withSessionRoute(root, f.session.sessionId, () => readSessionWorkContext({ root }));
   assert(work.records.length > 0);
   const graph = await queryProjectGraph({ root, query: "relay", details: true });
   assert(graph.nodes.length > 0); assert.equal(graph.basis.projectId, original.project.projectId);
-  const temporal = queryWorldTemporalGraph({ root, query: "relay", maxNodes: 30, maxEdges: 50 });
+  const temporal = (await queryWorldTemporalGraph({ root, query: "relay", maxNodes: 30, maxEdges: 50 }));
   assert(temporal);
-  const capsule = compileContext({ root, task: "Inspect relay", persist: false }); assert(capsule.capsule);
+  const capsule = (await compileContext({ root, task: "Inspect relay", persist: false })); assert(capsule.capsule);
   const owner = resolveProjectStorage(root); assert(projectOwnsRecordedRoot(owner, f.root)); assert(!projectOwnsRecordedRoot(owner, "C:\\unrelated"));
   assert.equal(response.projectLocation.executionReplayAllowed, false);
   assert.equal(response.projectLocation.nativeBindingTransferred, false);
@@ -77,7 +77,7 @@ test("successive folder moves preserve the full location chain, user-owned confi
   assert.equal(inspectProject(second).project.projectId, f.projectId);
   assert.equal(bytes(second, ".lode/sessions/current.json"), session);
   assert.equal(bytes(second, "preferences.json"), '{"keep":"exact"}\n');
-  assert.equal(inspectWorldDomainFreshness({ root: second, domains: ["code"] }).freshness.domains.code.status, "stale");
+  assert.equal((await inspectWorldDomainFreshness({ root: second, domains: ["code"] })).freshness.domains.code.status, "stale");
   // A new real source file causes honest drift; it is not hidden by ownership aliasing.
 });
 
@@ -159,12 +159,12 @@ test("invalid profile/runtime/package/Session or lost binding refuses before loc
     ["session", { projectSessionRoute: { sessionId: "session-00000000-0000-0000-0000-000000000000" } }],
   ]) {
     const root = copy(f, name), before = snapshot(root);
-    await assert.rejects(initializeOrResumeProject({ root, pluginRoot, ...options }));
+    await assert.rejects(((initializeOrResumeProject({ root, pluginRoot, ...options }))));
     assert.deepEqual(snapshot(root), before, name);
   }
   const root = copy(f, "lost"), context = createSessionCallContext(); context.lose(root);
   const before = snapshot(root);
-  await assert.rejects(initializeOrResumeProject({ root, pluginRoot, projectSessionRoute: { context } }), { code: "HEAD_SESSION_SELECTION_LOST" });
+  await assert.rejects(((initializeOrResumeProject({ root, pluginRoot, projectSessionRoute: { context } }))), { code: "HEAD_SESSION_SELECTION_LOST" });
   assert.deepEqual(snapshot(root), before);
 });
 
@@ -180,7 +180,7 @@ test("interrupted two-file publication fails closed for readers and exact retry 
   assert.throws(() => resumeProjectLocation({ root: divergent, pluginRoot, onPublication() { throw Error("synthetic crash"); } }));
   fs.appendFileSync(path.join(divergent, ".lode/generated/manifest.json"), " ");
   const before = snapshot(divergent);
-  await assert.rejects(initializeOrResumeProject({ root: divergent, pluginRoot }), { code: "PROJECT_RELOCATION_CONFLICT" });
+  await assert.rejects(((initializeOrResumeProject({ root: divergent, pluginRoot }))), { code: "PROJECT_RELOCATION_CONFLICT" });
   assert.deepEqual(snapshot(divergent), before);
 });
 
@@ -190,11 +190,11 @@ test("both publication-stage interruptions recover through an exact existing nam
     const root = copy(f, `interrupted-${stage}`);
     assert.throws(() => resumeProjectLocation({ root, pluginRoot, onPublication(boundary) { if (boundary === stage) throw Error("synthetic interruption"); } }), /synthetic interruption/);
     const before = snapshot(root);
-    await assert.rejects(initializeOrResumeProject({ root, pluginRoot,
-      projectSessionRoute: { sessionId: "session-00000000-0000-0000-0000-000000000000" } }), { code: "HEAD_SESSION_NOT_FOUND" });
+    await assert.rejects(((initializeOrResumeProject({ root, pluginRoot,
+      projectSessionRoute: { sessionId: "session-00000000-0000-0000-0000-000000000000" } }))), { code: "HEAD_SESSION_NOT_FOUND" });
     assert.deepEqual(snapshot(root), before);
     const context = createSessionCallContext(); context.lose(root);
-    await assert.rejects(initializeOrResumeProject({ root, pluginRoot, projectSessionRoute: { context } }), { code: "HEAD_SESSION_SELECTION_LOST" });
+    await assert.rejects(((initializeOrResumeProject({ root, pluginRoot, projectSessionRoute: { context } }))), { code: "HEAD_SESSION_SELECTION_LOST" });
     assert.deepEqual(snapshot(root), before);
     const resumed = await runCommand(["resume", root, "--session", f.session.sessionId]);
     assert.equal(resumed.projectLocation.status, "relocated"); assert.equal(resumed.project.sessionId, f.session.sessionId);
@@ -212,8 +212,8 @@ test("history tamper, local owner conflicts and managed drift cannot acquire a n
   assert.throws(() => inspectProject(root), { code: "PROJECT_LOCATION_IDENTITY_MISMATCH" });
   const unavailable = await queryProjectGraph({ root }); assert.equal(unavailable.status, "source-fallback"); assert.equal(unavailable.nodes.length, 0);
   const conflict = copy(f, "conflict"); fs.mkdirSync(path.join(conflict, ".head")); fs.copyFileSync(path.join(conflict, ".lode/project.json"), path.join(conflict, ".head/project.json"));
-  await assert.rejects(initializeOrResumeProject({ root: conflict, pluginRoot }), { code: "PROJECT_STORAGE_CONFLICT" });
+  await assert.rejects(((initializeOrResumeProject({ root: conflict, pluginRoot }))), { code: "PROJECT_STORAGE_CONFLICT" });
   const drift = copy(f, "drift"); fs.appendFileSync(path.join(drift, "AGENTS.md"), "\nuser change\n");
   const before = snapshot(drift);
-  await assert.rejects(initializeOrResumeProject({ root: drift, pluginRoot }), { code: "PROJECT_NOT_READY" }); assert.deepEqual(snapshot(drift), before);
+  await assert.rejects(((initializeOrResumeProject({ root: drift, pluginRoot }))), { code: "PROJECT_NOT_READY" }); assert.deepEqual(snapshot(drift), before);
 });

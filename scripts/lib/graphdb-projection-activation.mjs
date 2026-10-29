@@ -60,8 +60,8 @@ export function inspectArcadeDbCredentialPreflight({ root = ".", transport = nul
   };
 }
 
-function activationStage(name, operation) {
-  try { return operation(); }
+async function activationStage(name, operation) {
+  try { return await operation(); }
   catch (error) { fail(`ArcadeDB activation stage failed: ${name}.`, `ARCADEDB_ACTIVATION_STAGE_${name.toUpperCase().replaceAll("-", "_")}:${error.code || "UNKNOWN"}`); }
 }
 
@@ -86,8 +86,8 @@ function conformanceQueries(graph) {
   ];
 }
 
-export function activateArcadeDbGraphProjection({ root = ".", transport = null } = {}) {
-  const world = inspectWorldModel({ root });
+export async function activateArcadeDbGraphProjection({ root = ".", transport = null } = {}) {
+  const world = (await inspectWorldModel({ root }));
   const storage = world.storage;
   if (world.status !== "current") fail("A current verified World Model is required before GraphDB activation.", "WORLD_MODEL_STALE");
   const configured = inspectArcadeDbGraphProjectionActivation({ projectRoot: storage.projectRoot, storage });
@@ -104,7 +104,7 @@ export function activateArcadeDbGraphProjection({ root = ".", transport = null }
   const graph = world.snapshot.temporalProvenanceGraph;
   const localAdapter = new LocalJsonGraphProjectionAdapter({ projectRoot: storage.projectRoot, storage });
   const localPointer = localAdapter.readPointer();
-  const localBase = localPointer == null ? null : localAdapter.readSnapshot(localPointer.document.graphSnapshotId)?.document || null;
+  const localBase = localPointer == null ? null : (await localAdapter.readSnapshot(localPointer.document.graphSnapshotId))?.document || null;
   const targetPointer = buildGraphProjectionPointer(graph, storage);
   const remoteAdapter = new ArcadeDbGraphProjectionAdapter({
     storage, storageSelection: configured.storageSelection,
@@ -118,7 +118,7 @@ export function activateArcadeDbGraphProjection({ root = ".", transport = null }
   remoteAdapter.transport.ensureSyncSchema();
   const provisionedAudit = inspectArcadeDbDatabaseCompatibility({ root: storage.projectRoot, storage, transport: remoteAdapter.transport });
   if (!provisionedAudit.canActivateNow) fail("Required reserved schema was not verified after provisioning.", "ARCADEDB_SCHEMA_UNVERIFIED");
-  activationStage("incremental-snapshot-sync", () => remoteAdapter.writeSnapshot(graph.graphSnapshotId, graph));
+  (await activationStage("incremental-snapshot-sync", async () => (await remoteAdapter.writeSnapshot(graph.graphSnapshotId, graph))));
   const topology = remoteAdapter.pendingIncrementalSync?.topology;
   if (!topology) fail("Incremental GraphDB sync did not produce verified topology evidence.", "ARCADEDB_INCREMENTAL_SYNC_TOPOLOGY_MISSING");
   const baselineAdapter = new ArcadeDbGraphProjectionAdapter({
@@ -126,13 +126,13 @@ export function activateArcadeDbGraphProjection({ root = ".", transport = null }
     transport,
     stagedPointer: targetPointer,
   });
-  activationStage("baseline-conformance", () => verifyGraphProjectionAdapterConformance({
+  (await activationStage("baseline-conformance", async () => (await verifyGraphProjectionAdapterConformance({
     projectRoot: storage.projectRoot, storage,
     graph,
     referenceAdapter: localAdapter,
     candidateAdapter: baselineAdapter,
     queries: conformanceQueries(graph),
-  }));
+  }))));
   const serverTraversalAdapter = new ArcadeDbGraphProjectionAdapter({
     storage, storageSelection: configured.storageSelection,
     transport,
@@ -141,19 +141,19 @@ export function activateArcadeDbGraphProjection({ root = ".", transport = null }
     preparedTraversalRequired: true,
     stagedPointer: targetPointer,
   });
-  const conformanceReport = activationStage("server-conformance", () => verifyGraphProjectionAdapterConformance({
+  const conformanceReport = (await activationStage("server-conformance", async () => (await verifyGraphProjectionAdapterConformance({
     projectRoot: storage.projectRoot, storage,
     graph,
     referenceAdapter: localAdapter,
     candidateAdapter: serverTraversalAdapter,
     queries: conformanceQueries(graph),
-  }));
-  const localSnapshot = activationStage("local-recovery-snapshot", () => localAdapter.writeSnapshot(graph.graphSnapshotId, graph));
+  }))));
+  const localSnapshot = (await activationStage("local-recovery-snapshot", async () => (await localAdapter.writeSnapshot(graph.graphSnapshotId, graph))));
   if (incrementalSyncCanonicalJson(localSnapshot.document) !== incrementalSyncCanonicalJson(graph)) {
     fail("Local recovery GraphSnapshot differs from the verified remote target.", "ARCADEDB_INCREMENTAL_SYNC_LOCAL_MIRROR_MISMATCH");
   }
-  const remotePointer = activationStage("atomic-pointer-transition", () => remoteAdapter.writePointer(targetPointer));
-  const localMirrorPointer = activationStage("local-recovery-pointer", () => localAdapter.writePointer(targetPointer));
+  const remotePointer = (await activationStage("atomic-pointer-transition", () => remoteAdapter.writePointer(targetPointer)));
+  const localMirrorPointer = (await activationStage("local-recovery-pointer", () => localAdapter.writePointer(targetPointer)));
   if (incrementalSyncCanonicalJson(remotePointer.document) !== incrementalSyncCanonicalJson(localMirrorPointer.document)) {
     fail("Local recovery pointer differs from the verified remote pointer.", "ARCADEDB_INCREMENTAL_SYNC_LOCAL_MIRROR_MISMATCH");
   }
@@ -203,8 +203,8 @@ export function activateArcadeDbGraphProjection({ root = ".", transport = null }
   };
 }
 
-export function inspectArcadeDbGraphProjectionStatus({ root = ".", transport = null } = {}) {
-  const world = inspectWorldModel({ root });
+export async function inspectArcadeDbGraphProjectionStatus({ root = ".", transport = null } = {}) {
+  const world = (await inspectWorldModel({ root }));
   const storage = world.storage;
   const activation = inspectArcadeDbGraphProjectionActivation({ projectRoot: storage.projectRoot, storage });
   const topology = inspectArcadeDbGraphTopologyActivation({
@@ -229,7 +229,7 @@ export function inspectArcadeDbGraphProjectionStatus({ root = ".", transport = n
     authority: "rebuildable-derived-projection-not-project-canon",
   };
   const adapter = createActivatedArcadeDbGraphProjectionAdapter({ projectRoot: storage.projectRoot, storage, transport });
-  const projection = inspectWorldGraphProjection({ root, graphProjectionAdapter: adapter });
+  const projection = (await inspectWorldGraphProjection({ root, graphProjectionAdapter: adapter }));
   return {
     status: projection.status === "current" ? "verified-active-current" : projection.status,
     worldModelStatus: world.status,

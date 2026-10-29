@@ -36,8 +36,8 @@ function fixture(t, runtime, purpose = "Selected current purpose; investigate on
   const host = createSessionHostAdapter({ runtime, nativeSessionId, environment });
   assert.equal(host.select({ root, sessionId: session.sessionId, expectedRevision: 0 }).retained, true);
   const event = { hook_event_name: "SessionStart", source: "startup", cwd: root, session_id: nativeSessionId };
-  const read = () => {
-    const text = sessionStartContext({ runtime, event, environment }).hookSpecificOutput.additionalContext;
+  const read = async () => {
+    const text = (await sessionStartContext({ runtime, event, environment })).hookSpecificOutput.additionalContext;
     assert.ok(text.length <= (runtime === "codex" ? 32768 : 10000), `Final JSON length ${text.length}`);
     const value = JSON.parse(text);
     assert.equal(value.ordinaryWorkBlocked, false);
@@ -142,34 +142,34 @@ function assertPartialWorkExpansion(f, raw, value, runtime, mode) {
 }
 
 for (const runtime of ["codex", "claude"]) {
-  test(`${runtime}: selected purpose survives no checkpoint with empty and saved work; reads write nothing`, (t) => {
-    const f = fixture(t, runtime), before = snapshot(f.base), raw = f.host.enter({ root: f.root });
-    const empty = f.read();
+  test(`${runtime}: selected purpose survives no checkpoint with empty and saved work; reads write nothing`, async (t) => {
+    const f = fixture(t, runtime), before = snapshot(f.base), raw = (await f.host.enter({ root: f.root }));
+    const empty = (await f.read());
     assert.equal(raw.workContext.records.length, 0);
     assert.equal(empty.sessionPurpose, raw.workContext.sessionPurpose);
     assert.equal(empty.sessionRecovery, null);
     assert.deepEqual(snapshot(f.base), before);
     const retained = evidence(f, "Reason retained without changing current Session purpose");
-    const savedBefore = snapshot(f.base), savedRaw = f.host.enter({ root: f.root }), saved = f.read();
+    const savedBefore = snapshot(f.base), savedRaw = (await f.host.enter({ root: f.root })), saved = (await f.read());
     assert.equal(saved.sessionPurpose, savedRaw.workContext.sessionPurpose);
     assert.equal(saved.records[0].evidenceId, retained.evidence.evidenceId);
     assert.equal(saved.sessionRecovery, null);
     assert.deepEqual(snapshot(f.base), savedBefore);
   });
 
-  test(`${runtime}: never-recorded, intact and lost direction remain distinct without repair`, (t) => {
+  test(`${runtime}: never-recorded, intact and lost direction remain distinct without repair`, async (t) => {
     const f = fixture(t, runtime);
     checkpoint(f);
-    const absentBefore = snapshot(f.base), absent = f.read();
+    const absentBefore = snapshot(f.base), absent = (await f.read());
     assert.equal(absent.currentProjectDirection, null);
     assert.equal(Object.hasOwn(absent, "currentProjectDirectionAvailability"), false);
     assert.deepEqual(snapshot(f.base), absentBefore);
     const direction = updateProjectDirection({ root: f.root, input: { goal: "Inspect only", cancelledActions: ["deploy"] } }).direction;
-    const intactBefore = snapshot(f.base), intact = f.read();
+    const intactBefore = snapshot(f.base), intact = (await f.read());
     assert.deepEqual(intact.currentProjectDirection, directionView(direction));
     assert.deepEqual(snapshot(f.base), intactBefore);
     fs.unlinkSync(path.join(f.root, relativeProjectArtifact(f.storage, "project-direction", "current.json")));
-    const lostBefore = snapshot(f.base), raw = f.host.enter({ root: f.root }), lost = f.read();
+    const lostBefore = snapshot(f.base), raw = (await f.host.enter({ root: f.root })), lost = (await f.read());
     assert.deepEqual(raw.projectStatus.currentProjectDirectionAvailability, unavailable);
     assert.deepEqual(lost.currentProjectDirectionAvailability, unavailable);
     assert.equal(lost.currentProjectDirection, null);
@@ -178,11 +178,11 @@ for (const runtime of ["codex", "claude"]) {
     assert.deepEqual(snapshot(f.base), lostBefore);
   });
 
-  test(`${runtime}: current selected purpose and historical checkpoint/other Session stay separate`, (t) => {
+  test(`${runtime}: current selected purpose and historical checkpoint/other Session stay separate`, async (t) => {
     const f = fixture(t, runtime), otherPurpose = "OTHER SESSION PURPOSE MUST NOT APPEAR";
     createHeadSession({ root: f.root, purpose: otherPurpose });
     checkpoint(f);
-    const before = snapshot(f.base), raw = f.host.enter({ root: f.root }), value = f.read();
+    const before = snapshot(f.base), raw = (await f.host.enter({ root: f.root })), value = (await f.read());
     assert.notEqual(raw.workContext.sessionPurpose, raw.restore.checkpoint.purpose);
     assert.equal(value.sessionPurpose, raw.workContext.sessionPurpose);
     assert.equal(value.sessionRecovery.purpose, raw.restore.checkpoint.purpose);
@@ -191,12 +191,12 @@ for (const runtime of ["codex", "claude"]) {
     assert.deepEqual(snapshot(f.base), before);
   });
 
-  test(`${runtime}: supported huge current purpose and common/history are honestly omitted`, (t) => {
+  test(`${runtime}: supported huge current purpose and common/history are honestly omitted`, async (t) => {
     const purpose = "Exact current selected purpose " + "목적\\\"".repeat(6000);
     const f = fixture(t, runtime, purpose);
     checkpoint(f, "Historical purpose " + "h".repeat(40000));
     const direction = updateProjectDirection({ root: f.root, input: { goal: "Large valid goal", constraints: ["c".repeat(40000)], cancelledActions: ["deploy"] } }).direction;
-    let before = snapshot(f.base), value = f.read();
+    let before = snapshot(f.base), value = (await f.read());
     assert.equal(value.sessionPurpose, null);
     assert.deepEqual(value.sessionPurposeCoverage, { contentIncluded: false, reason: "startup-output-bound", source: "workContext.sessionPurpose" });
     assert.deepEqual(value.currentProjectDirection, { directionId: direction.directionId, directionHash: direction.directionHash, contentIncluded: false });
@@ -207,13 +207,13 @@ for (const runtime of ["codex", "claude"]) {
     assert.match(value.requiredSourceExpansion, /no constraint or cancellation is assumed absent/);
     assert.deepEqual(snapshot(f.base), before);
     fs.unlinkSync(path.join(f.root, relativeProjectArtifact(f.storage, "project-direction", "current.json")));
-    before = snapshot(f.base); value = f.read();
+    before = snapshot(f.base); value = (await f.read());
     assert.equal(value.sessionPurposeCoverage.contentIncluded, false);
     assert.deepEqual(value.currentProjectDirectionAvailability, unavailable);
     assert.deepEqual(snapshot(f.base), before);
   });
 
-  test(`${runtime}: final bound includes P3 coverage, omitted IDs and expansion; fitting purpose stays exact`, (t) => {
+  test(`${runtime}: final bound includes P3 coverage, omitted IDs and expansion; fitting purpose stays exact`, async (t) => {
     const f = fixture(t, runtime);
     for (let i = 0; i < 40; i += 1) evidence(f, `${i}: ` + "reviewable evidence ".repeat(100));
     updateProjectDirection({ root: f.root, input: { goal: "Preserve unavailable diagnosis under evidence budget" } });
@@ -221,7 +221,7 @@ for (const runtime of ["codex", "claude"]) {
     let selectedBodies;
     for (const variant of navigationCases(f)) {
     variant.prepare();
-    const before = snapshot(f.base), raw = f.host.enter({ root: f.root }), value = f.read();
+    const before = snapshot(f.base), raw = (await f.host.enter({ root: f.root })), value = (await f.read());
     assert.equal(raw.workContext.records.length, 8);
     assertPartialWorkExpansion(f, raw, value, runtime, variant.mode);
     const bodies = raw.workContext.records.map(({ evidenceId, evidenceDigest, content }) => ({ evidenceId, evidenceDigest, content }));
@@ -243,14 +243,14 @@ for (const runtime of ["codex", "claude"]) {
     }
   });
 
-  test(`${runtime}: compact optional coverage before omitting a current purpose that fits`, (t) => {
+  test(`${runtime}: compact optional coverage before omitting a current purpose that fits`, async (t) => {
     const purpose = "Fitting current purpose " + "p".repeat(4200), f = fixture(t, runtime, purpose);
     for (let i = 0; i < 40; i += 1) evidence(f, `${i}: ` + "bounded P3 history ".repeat(100));
     updateProjectDirection({ root: f.root, input: { goal: "Known direction loss with a fitting current purpose" } });
     fs.unlinkSync(path.join(f.root, relativeProjectArtifact(f.storage, "project-direction", "current.json")));
     for (const variant of navigationCases(f)) {
     variant.prepare();
-    const before = snapshot(f.base), raw = f.host.enter({ root: f.root }), value = f.read();
+    const before = snapshot(f.base), raw = (await f.host.enter({ root: f.root })), value = (await f.read());
     assertPartialWorkExpansion(f, raw, value, runtime, variant.mode);
     assert.equal(value.sessionPurpose, purpose);
     assert.equal(Object.hasOwn(value, "sessionPurposeCoverage"), false);
@@ -260,13 +260,13 @@ for (const runtime of ["codex", "claude"]) {
     }
   });
 
-  test(`${runtime}: malformed/unbound events do not guess or register a Session`, (t) => {
+  test(`${runtime}: malformed/unbound events do not guess or register a Session`, async (t) => {
     const f = fixture(t, runtime), before = snapshot(f.base);
     for (const event of [{ ...f.event, hook_event_name: "PostToolUse" }, { ...f.event, source: "unsupported" }, { ...f.event, session_id: null }]) {
-      assert.deepEqual(sessionStartContext({ runtime, event, environment: f.environment }), {});
+      assert.deepEqual((await sessionStartContext({ runtime, event, environment: f.environment })), {});
     }
-    if (runtime === "codex") assert.deepEqual(sessionStartContext({ runtime, event: { ...f.event, agent_id: "ambiguous" }, environment: f.environment }), {});
-    const unbound = JSON.parse(sessionStartContext({ runtime, event: { ...f.event, session_id: "unbound-synthetic-caller" }, environment: f.environment }).hookSpecificOutput.additionalContext);
+    if (runtime === "codex") assert.deepEqual((await sessionStartContext({ runtime, event: { ...f.event, agent_id: "ambiguous" }, environment: f.environment })), {});
+    const unbound = JSON.parse((await sessionStartContext({ runtime, event: { ...f.event, session_id: "unbound-synthetic-caller" }, environment: f.environment })).hookSpecificOutput.additionalContext);
     assert.equal(unbound.status, "session_selection_unresolved");
     assert.equal(unbound.logicalSessionId, null);
     assert.equal(unbound.route, null);
@@ -276,14 +276,14 @@ for (const runtime of ["codex", "claude"]) {
   });
 }
 
-test("host-a: supported SessionStart sources receive shared guidance once without changing originals", t => {
+test("host-a: supported SessionStart sources receive shared guidance once without changing originals", async t => {
   for (const runtime of ["codex", "claude"]) {
     const f = fixture(t, runtime);
     updateProjectDirection({ root: f.root, input: { goal: "Current 실제 목적 😀", cancelledActions: ["Never deploy"] } });
     evidence(f, "Short retained reason: investigate locally; false, 0 and null are not permission.");
     const before = snapshot(f.base);
     for (const source of ["startup", "resume", "clear", "compact"]) {
-      const text = sessionStartContext({ runtime, event: { ...f.event, source }, environment: f.environment }).hookSpecificOutput.additionalContext;
+      const text = (await sessionStartContext({ runtime, event: { ...f.event, source }, environment: f.environment })).hookSpecificOutput.additionalContext;
       const value = JSON.parse(text); assert.equal(value.coreGuidance, coreEntryGuidance());
       assert.equal(text.split(coreEntryGuidance()).length, 2); assert.equal(value.currentProjectDirection.input.cancelledActions[0], "Never deploy");
       assert(value.records.some(row => row.content.summary.includes("Short retained reason"))); assert.equal(value.sessionRecovery, null);
@@ -293,10 +293,10 @@ test("host-a: supported SessionStart sources receive shared guidance once withou
   }
 });
 
-test("host-a: failed owner recovery still supplies generic guidance without inventing Session or candidates", t => {
+test("host-a: failed owner recovery still supplies generic guidance without inventing Session or candidates", async t => {
   const f = fixture(t, "claude"), project = path.join(f.root, f.storage.directory, "project.json");
   fs.writeFileSync(project, "{"); const before = snapshot(f.base);
-  const text = sessionStartContext({ runtime: "claude", event: f.event, environment: f.environment }).hookSpecificOutput.additionalContext;
+  const text = (await sessionStartContext({ runtime: "claude", event: f.event, environment: f.environment })).hookSpecificOutput.additionalContext;
   const value = JSON.parse(text); assert.equal(value.coreGuidance, coreEntryGuidance()); assert.equal(value.status, "host_context_unavailable");
   assert.equal(value.logicalSessionId, undefined); assert.equal(value.conversationCandidates, undefined); assert.equal(value.sessionSelection, "not-inferred");
   assert.equal(value.ordinaryWorkBlocked, false); assert.deepEqual(snapshot(f.base), before);

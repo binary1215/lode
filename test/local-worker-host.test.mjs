@@ -70,7 +70,7 @@ async function fixture(t, { nativeFixtureRoot = nativeRoot } = {}) {
   const importLocal = file => import(pathToFileURL(path.join(installed, "scripts", file)).href);
   const host = await importLocal("lib/local-worker-host.mjs"), jobs = await importLocal("lib/bounded-worker-job.mjs");
   const cliModule = await importLocal("head.mjs"), mcpModule = await importLocal("mcp-server.mjs");
-  const cli = { ...cliModule, runCommand: (args, options) => cliModule.runCommand(isManagedMutation(args[0]) ? ["managed-maintenance", ...args] : args, options) };
+  const cli = { ...cliModule, runCommand: async (args, options) => (await cliModule.runCommand(isManagedMutation(args[0]) ? ["managed-maintenance", ...args] : args, options)) };
   const mcp = { ...mcpModule, dispatch: (request, options) => mcpModule.dispatch(request, { ...options, surface: isManagedMutation(request.params?.name) ? "managed-maintenance" : "ordinary" }) };
   const previous = process.env.HEAD_AGENT_OPERATIONAL_STATE_ROOT;
   process.env.HEAD_AGENT_OPERATIONAL_STATE_ROOT = operational;
@@ -466,7 +466,7 @@ test("default shipped CLI and stdio MCP start prepared workers without injected 
 
 test("public preparation uses an existing Run without creating or widening its contract", { skip }, async t => {
   const f = await fixture(t);
-  const capsule = compileContext({ root: f.root, task: f.input.task, persist: true }).capsule;
+  const capsule = (await compileContext({ root: f.root, task: f.input.task, persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root: f.root, objective: f.input.task, plan: [{ id: "proposal", outcome: "Evidence only" }] }).artifact;
   const contract = createExecutionContract({ root: f.root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
     scope: "Synthetic proposal", acceptanceCriteria: ["No worker writes"], allowedActions: ["runtime.invoke", "project.read"] }).artifact;
@@ -482,7 +482,7 @@ test("public preparation uses an existing Run without creating or widening its c
 async function twoRunMembers(t, secondKey = "second-member", fixtureOptions = {}, firstKey = "first-member") {
   const f = await fixture(t, fixtureOptions);
   fs.writeFileSync(path.join(f.root, "other.txt"), "other original\n");
-  const capsule = compileContext({ root: f.root, task: f.input.task, persist: true }).capsule;
+  const capsule = (await compileContext({ root: f.root, task: f.input.task, persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root: f.root, objective: f.input.task,
     plan: [{ id: "proposals", outcome: "HEAD inspects two independent proposals" }] }).artifact;
   const contract = createExecutionContract({ root: f.root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
@@ -579,7 +579,7 @@ test("public partial launch stays open and can be abandoned without success or P
   const wave_id = created.wave.waveId;
   await f.publicCli(["worker-start", "--task-key", "first-member"]);
   fs.writeFileSync(path.join(f.root, "other.txt"), "source changed before second launch\n");
-  await assert.rejects(f.cli.runCommand(["worker-start", f.root, "--task-key", "second-member"]));
+  await assert.rejects((f.cli.runCommand(["worker-start", f.root, "--task-key", "second-member"])));
   assert.equal((await f.closed(f.prepared[0])).status, "completed");
   const status = await f.publicMcp("head_bounded_worker_wave_status", { wave_id });
   assert.equal(status.projection.state, "open");

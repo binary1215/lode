@@ -221,7 +221,7 @@ function validateKnowledge(value) {
   return value;
 }
 
-function loadSources(root, includeRepositoryWorld = true, worldDomains = null, storage = null) {
+async function loadSources(root, includeRepositoryWorld = true, worldDomains = null, storage = null) {
   const files = {
     project: path.join(root, relativeProjectArtifact(storage, "project.json")),
     projectContext: path.join(root, relativeProjectArtifact(storage, "instructions", "project.md")),
@@ -233,7 +233,7 @@ function loadSources(root, includeRepositoryWorld = true, worldDomains = null, s
   }
   const raw = Object.fromEntries(Object.entries(files).map(([name, file]) => [name, fs.readFileSync(file, "utf8")]));
   let worldModel = null;
-  try { if (includeRepositoryWorld) worldModel = inspectWorldDomainFreshness({ root, storage, ...(worldDomains ? { domains: worldDomains } : {}) }); }
+  try { if (includeRepositoryWorld) worldModel = (await inspectWorldDomainFreshness({ root, storage, ...(worldDomains ? { domains: worldDomains } : {}) })); }
   catch (error) { worldModel = { status: "unavailable", reasonCode: error.code || "WORLD_EVIDENCE_UNAVAILABLE" }; }
   const direction = readProjectDirection({ root, storage });
   if (direction) raw.projectDirection = canonicalJson(direction);
@@ -268,10 +268,10 @@ function contextSnapshot(inspected, sources) {
   };
 }
 
-export function buildContextSnapshot(root = ".") {
+export async function buildContextSnapshot(root = ".") {
   const inspected = inspectProject(root);
   if (inspected.status !== "ready") fail(`Project must be ready to build a context snapshot; current status: ${inspected.status}.`, "PROJECT_NOT_READY");
-  const sources = loadSources(inspected.project.projectRoot, true, null, inspected.storage);
+  const sources = (await loadSources(inspected.project.projectRoot, true, null, inspected.storage));
   return contextSnapshot(inspected, sources);
 }
 
@@ -329,17 +329,17 @@ function activeCandidates(knowledge, task, historyClass) {
 }
 
 function domainCurrent(worldModel, domain) { return worldModel?.freshness?.domains?.[domain]?.status === "current"; }
-function queryTemporalProjection(worldModel, graphProjectionAdapter, query) {
+async function queryTemporalProjection(worldModel, graphProjectionAdapter, query) {
   const graph = worldModel.snapshot.temporalProvenanceGraph;
   const eligibility = buildWorldTraversalEligibility(worldModel.snapshot, worldModel.freshness.domains);
   const needsMask = eligibility.nodeIds.length !== graph.nodes.length || eligibility.edgeIds.length !== graph.edges.length;
-  return queryGraphProjection({
+  return (await queryGraphProjection({
     projectRoot: worldModel.storage.projectRoot,
     storage: worldModel.storage,
     graph: worldModel.snapshot.temporalProvenanceGraph,
     adapter: graphProjectionAdapter,
     query: { ...query, ...(needsMask ? { eligibility } : {}) },
-  }).result;
+  })).result;
 }
 
 function relationEndpointPaths(relation) {
@@ -510,7 +510,7 @@ function repositoryCandidates(worldModel, task, budget = DEFAULT_CONTEXT_BUDGET,
   }).sort((left, right) => right.score - left.score || left.id.localeCompare(right.id));
 }
 
-function productContextCandidates(worldModel, task, graphProjectionAdapter = null, evidenceNeeds = []) {
+async function productContextCandidates(worldModel, task, graphProjectionAdapter = null, evidenceNeeds = []) {
   if (!domainCurrent(worldModel, "product")) return [];
   const { temporalProvenanceGraph: graph, productModel } = worldModel.snapshot;
   if (!graph || !productModel) return [];
@@ -527,13 +527,13 @@ function productContextCandidates(worldModel, task, graphProjectionAdapter = nul
   if (!anchors.length) return [];
   // One bounded relation query serves the selected original identities. Missing
   // requested entities/facets remain gaps, rather than triggering another state.
-  const traversal = queryTemporalProjection(worldModel, graphProjectionAdapter, {
+  const traversal = (await queryTemporalProjection(worldModel, graphProjectionAdapter, {
     anchorIds: anchors.slice(0, 32).map(node => node.nodeId), expectedGraphSnapshotId: graph.graphSnapshotId,
     relations: ["CONTAINS", "REALIZES", "GOVERNED_BY", "HAS_REVISION", "CURRENT_REVISION", "PARENT_OF",
       "IMPLEMENTS", "VERIFIED_BY", "IMPACTS", "MATERIALIZED_AS", "REFERENCES", "PROMOTED_FROM", "PRODUCES", "REVIEWED_BY"],
     authorityClasses: ["canon-projected", "reviewed", "derived", "heuristic"], freshness: ["current"],
     includeUnreviewedCandidates: false, depth: 3, maxNodes: 100, maxEdges: 200,
-  });
+  }));
   const exactIds = new Set(anchors.slice(0, 32).flatMap(node => [node.nodeId, currentRevisionIds.get(node.nodeId)].filter(Boolean)));
   const exactNodes = traversal.nodes.filter(node => exactIds.has(node.nodeId));
   const selectedNodes = [...exactNodes, ...rankBounded(traversal.nodes.filter(node => !exactIds.has(node.nodeId)),
@@ -561,7 +561,7 @@ function productContextCandidates(worldModel, task, graphProjectionAdapter = nul
     approxTokens: approxTokens(canonicalJson(record)), record }];
 }
 
-function graphTraversalCandidates(worldModel, evidenceNeeds, graphProjectionAdapter = null) {
+async function graphTraversalCandidates(worldModel, evidenceNeeds, graphProjectionAdapter = null) {
   const anchoredNeeds = evidenceNeeds.filter((need) => need.kind === "temporal-relation" && need.graphAnchor);
   if (!anchoredNeeds.length) return [];
   if (!worldModel?.snapshot) {
@@ -570,7 +570,7 @@ function graphTraversalCandidates(worldModel, evidenceNeeds, graphProjectionAdap
   const snapshot = worldModel.snapshot;
   const graph = snapshot.temporalProvenanceGraph;
   if (!graph) fail("HEAD graph anchors require a current temporal GraphSnapshot.", "GRAPH_ANCHOR_GRAPH_NOT_BUILT");
-  return anchoredNeeds.map((need) => {
+  return (await Promise.all(anchoredNeeds.map(async (need) => {
     const proposal = need.graphAnchor;
     if (proposal.projectId !== snapshot.projectId) fail(`Evidence need ${need.id} graphAnchor belongs to another Project.`, "GRAPH_ANCHOR_PROJECT_MISMATCH");
     if (proposal.worldModelId !== snapshot.worldModelId) fail(`Evidence need ${need.id} graphAnchor is stale for the current World Model.`, "GRAPH_ANCHOR_WORLD_MODEL_MISMATCH");
@@ -579,7 +579,7 @@ function graphTraversalCandidates(worldModel, evidenceNeeds, graphProjectionAdap
     if (proposal.nodeIds.some(id => graph.nodes.some(node => node.nodeId === id && node.freshness === "current") && !eligibility.nodeIds.includes(id))) {
       fail(`Evidence need ${need.id} selected an anchor whose domain is not current; independent source discovery remains available.`, "GRAPH_ANCHOR_WORLD_MODEL_STALE");
     }
-    const traversal = queryTemporalProjection(worldModel, graphProjectionAdapter, {
+    const traversal = (await queryTemporalProjection(worldModel, graphProjectionAdapter, {
       anchorIds: proposal.nodeIds,
       expectedGraphSnapshotId: proposal.graphSnapshotId,
       relations: need.relationTypes,
@@ -590,7 +590,7 @@ function graphTraversalCandidates(worldModel, evidenceNeeds, graphProjectionAdap
       depth: proposal.depth,
       maxNodes: proposal.maxNodes,
       maxEdges: proposal.maxEdges,
-    });
+    }));
     const nodePaths = new Map(traversal.nodes.map((node) => [node.nodeId, node.path || null]));
     const relationships = traversal.edges.map((edge) => ({
       ...edge,
@@ -623,7 +623,7 @@ function graphTraversalCandidates(worldModel, evidenceNeeds, graphProjectionAdap
       approxTokens: approxTokens(canonicalJson(record)),
       record,
     };
-  }).sort((left, right) => left.id.localeCompare(right.id));
+  }))).sort((left, right) => left.id.localeCompare(right.id));
 }
 
 function gitDecisionCandidates(worldModel, task, historyClass) {
@@ -1052,7 +1052,7 @@ function selectContext(candidates, needs, maximum, baseCost) {
   return { included, excluded, used, evidenceGaps };
 }
 
-export function compileContext({ root = ".", task, budget = DEFAULT_CONTEXT_BUDGET, evidenceNeeds = [], persist = false, graphProjectionAdapter = null, sourceObservations = [], includeRepositoryWorld = true } = {}) {
+export async function compileContext({ root = ".", task, budget = DEFAULT_CONTEXT_BUDGET, evidenceNeeds = [], persist = false, graphProjectionAdapter = null, sourceObservations = [], includeRepositoryWorld = true } = {}) {
   if (persist && sourceObservations.length) fail("Ephemeral source observations must be retained before durable Capsule compilation.", "EPHEMERAL_SOURCE_REFERENCE");
   if (typeof task !== "string" || !task.trim()) fail("Context compilation requires a task.", "TASK_REQUIRED");
   const normalizedBudget = normalizeContextBudget(budget);
@@ -1064,7 +1064,7 @@ export function compileContext({ root = ".", task, budget = DEFAULT_CONTEXT_BUDG
   const needContract = evidenceNeedContract(task, evidenceNeeds, format);
   const codeOnlyNeeds = needContract.needs.length && needContract.needs.every(need =>
     ["repository-file", "repository-source", "repository-test", "semantic-relation"].includes(need.kind));
-  const sources = loadSources(projectRoot, includeRepositoryWorld, codeOnlyNeeds ? ["code"] : null, inspected.storage);
+  const sources = (await loadSources(projectRoot, includeRepositoryWorld, codeOnlyNeeds ? ["code"] : null, inspected.storage));
   const snapshot = contextSnapshot(inspected, sources);
   const projectContext = sources.raw.projectContext.trim();
   const historyClass = historyRelevance(task);
@@ -1078,8 +1078,8 @@ export function compileContext({ root = ".", task, budget = DEFAULT_CONTEXT_BUDG
   };
   const candidates = [
     ...activeCandidates(sources.knowledge, task, historyClass),
-    ...productContextCandidates(sources.worldModel, task, graphProjectionAdapter, needContract.needs),
-    ...graphTraversalCandidates(sources.worldModel, needContract.needs, graphProjectionAdapter),
+    ...(await productContextCandidates(sources.worldModel, task, graphProjectionAdapter, needContract.needs)),
+    ...(await graphTraversalCandidates(sources.worldModel, needContract.needs, graphProjectionAdapter)),
     ...repositoryCandidates(sources.worldModel, task, maxApproxTokens, needContract.needs),
     ...gitDecisionCandidates(sources.worldModel, task, historyClass),
     ...runtimeStateCandidates(sources.worldModel, task),

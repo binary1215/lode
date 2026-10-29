@@ -59,7 +59,7 @@ const output = await withSessionRoute(root, sessionId, async () => {
       workIds: [first.evidence.evidenceId, partial.evidence.evidenceId], firstDigest: sha(initial), partialDigest: sha(after),
       diff: pair.diff, originals: [directionFile, first.file, partial.file].map(original) };
   }
-  const entered = enterConversationRecovery({ root });
+  const entered = (await enterConversationRecovery({ root }));
   assert.equal(entered.workContext.sessionId, sessionId);
   const current = readProjectDirection({ root });
   assert(current.input.cancelledActions.includes("deploy"));

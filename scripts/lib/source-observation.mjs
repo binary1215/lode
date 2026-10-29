@@ -177,15 +177,27 @@ function retainBundle(root, key, bundle, storage) {
 }
 function cryptoRandom() { return sourceDigest(`${process.hrtime.bigint()}-${Math.random()}`).slice(0, 24); }
 
-export function readSourceObservation(root, projectId, key, options) {
+function readSourceObservationEntry(root, projectId, key, options, captureOriginal) {
   if (options === undefined) options = {};
   if (!/^[a-f0-9]{64}$/.test(key)) throw sourceError("SOURCE_BUNDLE_KEY_INVALID");
   const storage = formatForVerifiedOwner(options?.storage);
-  const bundle = parseStoredJson(readSourceBytes(root, `${relativeProjectArtifact(storage, "observations", "source-bundles")}/${key}.json`, 16 * 1024 * 1024));
+  const relativePath = `${relativeProjectArtifact(storage, "observations", "source-bundles")}/${key}.json`;
+  const bytes = readSourceBytes(root, relativePath, 16 * 1024 * 1024);
+  const bundle = parseStoredJson(bytes);
   if (!recordShape(bundle) || !recordShape(bundle.evidence)) throw sourceError("SOURCE_OBSERVATION_INVALID");
   if (sourceBundleKey(bundle.evidence) !== key) throw sourceError("SOURCE_OBSERVATION_INVALID");
   verifySourceObservation(root, projectId, bundle, options === null ? null : { ...options, storage });
-  return bundle;
+  // Raw identity is derived from exactly the buffer parsed and verified above.
+  return { bundle, ...(captureOriginal ? { original: { relativePath, byteLength: bytes.length, sha256: sourceDigest(bytes) } } : {}) };
+}
+
+export function readSourceObservation(root, projectId, key, options) {
+  return readSourceObservationEntry(root, projectId, key, options, false).bundle;
+}
+
+// Internal preservation reader. No extra hash or public option on ordinary reads.
+export function readSourceObservationOriginal(root, projectId, key, options) {
+  return readSourceObservationEntry(root, projectId, key, options, true);
 }
 
 export function sourceObservationNode(root, projectId, bundle, storage = undefined) {

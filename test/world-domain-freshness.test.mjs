@@ -1,3 +1,4 @@
+import { worldSnapshotFile, graphSnapshotFile, readFixtureSnapshot, writeFixtureSnapshot } from "./helpers/snapshot-storage-fixture.mjs";
 import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -97,7 +98,7 @@ function retainedStore(snapshot) {
 }
 
 test("temporal verification scopes own immutable copies without trusting frozen lookalikes or closed scopes", async t => {
-  const { root } = await fixture(t), snapshot = readWorldModelForDiscovery({ root }).snapshot;
+  const { root } = await fixture(t), snapshot = (await readWorldModelForDiscovery({ root })).snapshot;
   const api = await import("../scripts/lib/temporal-provenance.mjs");
   assert.equal(typeof api.createTemporalVerificationScope, "function");
   const scope = api.createTemporalVerificationScope(), nested = api.createTemporalVerificationScope();
@@ -138,8 +139,8 @@ test("temporal verification scopes own immutable copies without trusting frozen 
     // contract. Request-local optimization must not reject an accepted store.
     const extended = { ...snapshot, unusedInspectionHelper() { return "not graph evidence"; } };
     const extendedStore = retainedStore(extended);
-    assert.equal(readWorldModelForDiscovery({ root, storeAdapter: extendedStore }).snapshot, extended);
-    const extendedRead = readWorldModelForDiscovery({ root, storeAdapter: extendedStore, temporalVerificationScope: nested });
+    assert.equal((await readWorldModelForDiscovery({ root, storeAdapter: extendedStore })).snapshot, extended);
+    const extendedRead = (await readWorldModelForDiscovery({ root, storeAdapter: extendedStore, temporalVerificationScope: nested }));
     assert.equal(extendedRead.snapshot, extended, "uncloneable accepted input must retain the ordinary full-verification path");
     assert.equal(Object.isFrozen(extended.temporalProvenanceGraph.nodes[0]), false);
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -158,7 +159,7 @@ test("temporal verification scopes own immutable copies without trusting frozen 
 });
 
 test("project graph isolates retained adapter aliases before await and leaves returned projections mutable", async t => {
-  const { root } = await fixture(t), snapshot = readWorldModelForDiscovery({ root }).snapshot;
+  const { root } = await fixture(t), snapshot = (await readWorldModelForDiscovery({ root })).snapshot;
   const { queryProjectGraph } = await import("../scripts/lib/project-graph.mjs");
   const store = retainedStore(snapshot), read = store.readSnapshot;
   store.readSnapshot = function(id) {
@@ -182,31 +183,31 @@ test("project graph isolates retained adapter aliases before await and leaves re
   assert.equal(Object.isFrozen(result.authority), true);
   checkMutable(result.nodes, "nodes"); checkMutable(result.edges, "edges");
   result.nodes[0].sourceReference.path = "caller-only-change";
-  assert.throws(() => readWorldModelForDiscovery({ root, storeAdapter: store }), { code: "WORLD_MODEL_DIGEST_MISMATCH" });
+  (await assert.rejects(async () => (await readWorldModelForDiscovery({ root, storeAdapter: store })), { code: "WORLD_MODEL_DIGEST_MISMATCH" }));
   assert.equal(Object.isFrozen(snapshot), false);
   assert.equal(Object.isFrozen(snapshot.temporalProvenanceGraph.nodes[0]), false);
 });
 
 test("runtime/checkpoint drift preserves code query and Context; reads leave every byte unchanged", async t => {
-  const { root, storage } = await fixture(t), original = readWorldModelForDiscovery({ root }).snapshot;
-  assert.equal(inspectWorldModel({ root }).status, "current");
+  const { root, storage } = await fixture(t), original = (await readWorldModelForDiscovery({ root })).snapshot;
+  assert.equal((await inspectWorldModel({ root })).status, "current");
   mutateSession(root, storage, { latestCheckpoint: { checkpointId: "checkpoint-fixture", digest: "a".repeat(64) } });
   const before = bytes(root);
-  const full = inspectWorldModel({ root });
+  const full = (await inspectWorldModel({ root }));
   assert.equal(full.status, "stale");
   assert.equal(full.freshness.domains.runtime.status, "stale");
   assert.equal(full.freshness.domains.code.status, "current");
-  const scoped = inspectWorldDomainFreshness({ root, domains: ["code"] });
+  const scoped = (await inspectWorldDomainFreshness({ root, domains: ["code"] }));
   assert.deepEqual(Object.keys(scoped.freshness.domains), ["code"]);
-  const queried = queryWorldModel({ root, query: "start", depth: 2 });
+  const queried = (await queryWorldModel({ root, query: "start", depth: 2 }));
   assert.equal(queried.status, "current");
   assert(queried.edges.some(edge => edge.type === "CALLS"));
   assert(queried.edges.some(edge => edge.type === "IMPORTS"));
-  const capsule = compileContext({ root, task: "Inspect relay implementation" }).capsule;
+  const capsule = (await compileContext({ root, task: "Inspect relay implementation" })).capsule;
   assert(capsule.repositoryContext.some(item => item.path === "src/relay.mjs"));
   assert.equal(capsule.repositoryWorldFreshness.domains.runtime.status, "stale");
   assert.equal(capsule.repositoryGraph.semanticGraphId, original.semanticGraph.semanticGraphId);
-  const temporal = queryWorldTemporalGraph({ root, query: "main.mjs" });
+  const temporal = (await queryWorldTemporalGraph({ root, query: "main.mjs" }));
   assert.equal(temporal.graphSnapshotId, original.temporalProvenanceGraph.graphSnapshotId);
   assert.equal(temporal.graphSnapshotHash, original.temporalProvenanceGraph.graphSnapshotHash);
   assert.deepEqual(bytes(root), before);
@@ -215,14 +216,14 @@ test("runtime/checkpoint drift preserves code query and Context; reads leave eve
 test("code-only query never reads unrelated current Product, Session, observation or runtime readers", async t => {
   const { root, storage } = await fixture(t);
   fs.writeFileSync(path.join(root, relativeProjectArtifact(storage, "context", "product-model.json")), "broken-product-json");
-  const codeContext = compileContext({ root, task: "Inspect source", evidenceNeeds: [{ id: "code", kind: "repository-source", paths: ["src/main.mjs"] }] }).capsule;
+  const codeContext = (await compileContext({ root, task: "Inspect source", evidenceNeeds: [{ id: "code", kind: "repository-source", paths: ["src/main.mjs"] }] })).capsule;
   assert.deepEqual(Object.keys(codeContext.repositoryWorldFreshness.domains), ["code"]);
   assert(codeContext.repositoryContext.some(item => item.path === "src/main.mjs"));
   fs.writeFileSync(path.join(root, relativeProjectArtifact(storage, "sessions", "current.json")), "broken-session-json");
   const before = bytes(root);
-  assert.equal(inspectWorldDomainFreshness({ root, domains: ["code"] }).freshness.domains.code.status, "current");
-  assert.equal(queryWorldModel({ root, query: "relay" }).status, "current");
-  const mixed = inspectWorldDomainFreshness({ root });
+  assert.equal((await inspectWorldDomainFreshness({ root, domains: ["code"] })).freshness.domains.code.status, "current");
+  assert.equal((await queryWorldModel({ root, query: "relay" })).status, "current");
+  const mixed = (await inspectWorldDomainFreshness({ root }));
   assert.equal(mixed.freshness.domains.code.status, "current");
   assert.equal(mixed.freshness.domains.product.status, "unavailable");
   assert.equal(mixed.freshness.domains.runtime.status, "unavailable");
@@ -230,19 +231,19 @@ test("code-only query never reads unrelated current Product, Session, observatio
 });
 
 test("capture owner remains Session A while Session B is selected; no World copy per Session", async t => {
-  const { root, storage } = await fixture(t), original = readWorldModelForDiscovery({ root }).snapshot;
+  const { root, storage } = await fixture(t), original = (await readWorldModelForDiscovery({ root })).snapshot;
   const second = createHeadSession({ root, purpose: "Independent work" }).sessionId;
   const before = bytes(root);
-  withSessionRoute(root, second, () => {
-    const full = inspectWorldModel({ root });
+  (await withSessionRoute(root, second, async () => {
+    const full = (await inspectWorldModel({ root }));
     assert.equal(full.status, "current");
     assert.equal(full.capturedRuntimeSessionId, original.runtimeState.sessionId);
     assert.equal(full.selectedSessionState.sessionId, second);
-    const runtime = inspectWorldDomainFreshness({ root, domains: ["runtime"] });
+    const runtime = (await inspectWorldDomainFreshness({ root, domains: ["runtime"] }));
     assert.equal(runtime.freshness.domains.runtime.status, "current");
     assert.equal(runtime.freshness.domains.runtime.capturedSessionId, original.runtimeState.sessionId);
-    assert.equal(queryWorldModel({ root, query: "relay" }).status, "current");
-  });
+    assert.equal((await queryWorldModel({ root, query: "relay" })).status, "current");
+  }));
   assert.deepEqual(bytes(root), before);
 });
 
@@ -253,29 +254,29 @@ test("add/delete/rename invalidate all code relations, including unchanged impor
     if (operation === "delete") fs.unlinkSync(path.join(root, "src/relay.mjs"));
     if (operation === "rename") fs.renameSync(path.join(root, "src/relay.mjs"), path.join(root, "src/renamed.mjs"));
     if (operation === "edit") fs.appendFileSync(path.join(root, "src/relay.mjs"), "export const changed = 1;\n");
-    const before = bytes(root), scoped = inspectWorldDomainFreshness({ root, domains: ["code"] });
+    const before = bytes(root), scoped = (await inspectWorldDomainFreshness({ root, domains: ["code"] }));
     assert.equal(scoped.freshness.domains.code.status, "stale", operation);
     assert.deepEqual(fs.readFileSync(path.join(root, "src/main.mjs")), importer);
-    const queried = queryWorldModel({ root, query: "main.mjs" });
+    const queried = (await queryWorldModel({ root, query: "main.mjs" }));
     assert.equal(queried.status, "stale"); assert.equal(queried.fallback, "original-source"); assert.deepEqual(queried.edges, []);
-    assert.equal(compileContext({ root, task: "main" }).capsule.repositoryGraph, null);
+    assert.equal((await compileContext({ root, task: "main" })).capsule.repositoryGraph, null);
     assert.deepEqual(bytes(root), before);
   }
 });
 
 test("SourceScope and recorded analyzer basis are genuine invalidators, not runtime aliases", async t => {
-  const { root, storage } = await fixture(t), snapshot = readWorldModelForDiscovery({ root }).snapshot;
+  const { root, storage } = await fixture(t), snapshot = (await readWorldModelForDiscovery({ root })).snapshot;
   assert.equal(snapshot.analysisBasis.sourceAnalysisVersion, SOURCE_ANALYSIS_VERSION);
   assert.equal(snapshot.indexer.sourceAnalysisVersion, SOURCE_ANALYSIS_VERSION);
   writeRepositorySourceScope({ projectRoot: root, selection: { excludeRoots: ["src"] }, storage });
   const before = bytes(root);
-  assert.equal(inspectWorldDomainFreshness({ root, domains: ["code"] }).freshness.domains.code.status, "stale");
+  assert.equal((await inspectWorldDomainFreshness({ root, domains: ["code"] })).freshness.domains.code.status, "stale");
   assert.deepEqual(bytes(root), before);
   const tampered = structuredClone(snapshot);
   tampered.analysisBasis.sourceAnalysisVersion = "unproved-parser";
   delete tampered.worldModelId; delete tampered.worldModelHash;
   tampered.worldModelHash = hash(tampered); tampered.worldModelId = `world-model-${tampered.worldModelHash.slice(0, 24)}`;
-  assert.throws(() => readWorldModelForDiscovery({ root, storeAdapter: retainedStore(tampered) }), { code: "WORLD_DOMAIN_BASIS_MISMATCH" });
+  (await assert.rejects(async () => (await readWorldModelForDiscovery({ root, storeAdapter: retainedStore(tampered) })), { code: "WORLD_DOMAIN_BASIS_MISMATCH" }));
 });
 
 test("an unchanged importer's newly resolved target needs the existing refresh, not guessed traversal", async t => {
@@ -285,14 +286,14 @@ test("an unchanged importer's newly resolved target needs the existing refresh, 
   assert(first.semanticGraph.summary.unresolvedImportCount > 0);
   const importerDigest = first.files.find(file => file.path === "src/main.mjs").digest;
   fs.writeFileSync(path.join(root, "src/optional.mjs"), "export const optional = true;\n");
-  assert.equal(inspectWorldDomainFreshness({ root, domains: ["code"] }).freshness.domains.code.status, "stale");
-  assert.deepEqual(queryWorldModel({ root, query: "main.mjs" }).edges, []);
+  assert.equal((await inspectWorldDomainFreshness({ root, domains: ["code"] })).freshness.domains.code.status, "stale");
+  assert.deepEqual((await queryWorldModel({ root, query: "main.mjs" })).edges, []);
   const second = (await buildWorldModel({ root })).snapshot;
   assert.equal(second.files.find(file => file.path === "src/main.mjs").digest, importerDigest);
   assert.notEqual(second.worldModelId, first.worldModelId);
   assert.equal(second.semanticGraph.summary.unresolvedImportCount, 0);
-  assert(queryWorldModel({ root, query: "optional.mjs" }).edges.some(edge => edge.type === "IMPORTS"));
-  assert(fs.existsSync(path.join(root, relativeProjectArtifact(storage, "world-model", "snapshots"), `${first.worldModelId}.json`)));
+  assert((await queryWorldModel({ root, query: "optional.mjs" })).edges.some(edge => edge.type === "IMPORTS"));
+  assert(fs.existsSync(worldSnapshotFile(root, first.worldModelId)));
 });
 
 test("product Git branch drift remains observable without invalidating unrelated code", async t => {
@@ -300,10 +301,10 @@ test("product Git branch drift remains observable without invalidating unrelated
   fs.mkdirSync(path.join(root, ".git/refs/heads"), { recursive: true });
   fs.writeFileSync(path.join(root, ".git/HEAD"), "ref: refs/heads/main\n");
   fs.writeFileSync(path.join(root, ".git/refs/heads/main"), `${"1".repeat(40)}\n`);
-  const before = bytes(root), domains = inspectWorldDomainFreshness({ root });
+  const before = bytes(root), domains = (await inspectWorldDomainFreshness({ root }));
   assert.equal(domains.freshness.domains.git.status, "stale");
   assert.equal(domains.freshness.domains.code.status, "current");
-  assert.equal(queryWorldModel({ root, query: "main.mjs" }).status, "current");
+  assert.equal((await queryWorldModel({ root, query: "main.mjs" })).status, "current");
   assert.deepEqual(bytes(root), before);
 });
 
@@ -314,14 +315,14 @@ test("Product drift excludes only Product links while current code remains avail
   fs.writeFileSync(productFile, JSON.stringify(product)); await buildWorldModel({ root });
   product.capabilities[0].description = "Different current Product meaning";
   fs.writeFileSync(productFile, JSON.stringify(product));
-  const before = bytes(root), inspected = inspectWorldDomainFreshness({ root });
+  const before = bytes(root), inspected = (await inspectWorldDomainFreshness({ root }));
   assert.equal(inspected.freshness.domains.product.status, "stale");
   assert.equal(inspected.freshness.domains.code.status, "current");
-  assert.equal(queryWorldModel({ root, query: "start" }).status, "current");
-  const capsule = compileContext({ root, task: "Relay source implementation" }).capsule;
+  assert.equal((await queryWorldModel({ root, query: "start" })).status, "current");
+  const capsule = (await compileContext({ root, task: "Relay source implementation" })).capsule;
   assert(capsule.repositoryContext.some(item => item.path === "src/relay.mjs"));
   assert.deepEqual(capsule.productContext, []);
-  const temporal = queryWorldTemporalGraph({ root, query: "main.mjs", depth: 3 });
+  const temporal = (await queryWorldTemporalGraph({ root, query: "main.mjs", depth: 3 }));
   assert(temporal.nodes.some(node => node.kind === "File"));
   assert(!temporal.nodes.some(node => node.kind === "Capability"));
   assert(temporal.exclusion.domainExcludedNodes > 0);
@@ -329,7 +330,7 @@ test("Product drift excludes only Product links while current code remains avail
 });
 
 test("legacy 0.18 snapshots remain verified historical evidence without invented analysis currentness", async t => {
-  const { root, storage } = await fixture(t, { legacy: true }), original = readWorldModelForDiscovery({ root }).snapshot;
+  const { root, storage } = await fixture(t, { legacy: true }), original = (await readWorldModelForDiscovery({ root })).snapshot;
   assert.equal(storage.directory, ".head");
   assert.equal(original.protocol.name, "head-agent-core-world-model");
   const legacy = structuredClone(original);
@@ -337,18 +338,18 @@ test("legacy 0.18 snapshots remain verified historical evidence without invented
   legacy.protocol.version = "0.18.0";
   legacy.worldModelHash = hash(legacy); legacy.worldModelId = `world-model-${legacy.worldModelHash.slice(0, 24)}`;
   const storeAdapter = retainedStore(legacy);
-  assert.equal(readWorldModelForDiscovery({ root, storeAdapter }).snapshot.worldModelId, legacy.worldModelId);
-  const scoped = inspectWorldDomainFreshness({ root, storeAdapter, domains: ["code"] });
+  assert.equal((await readWorldModelForDiscovery({ root, storeAdapter })).snapshot.worldModelId, legacy.worldModelId);
+  const scoped = (await inspectWorldDomainFreshness({ root, storeAdapter, domains: ["code"] }));
   assert.equal(scoped.freshness.domains.code.status, "unknown");
-  assert.equal(queryWorldModel({ root, storeAdapter, query: "relay" }).fallback, "original-source");
+  assert.equal((await queryWorldModel({ root, storeAdapter, query: "relay" })).fallback, "original-source");
   const tampered = structuredClone(legacy); tampered.productPolicyProjection.projectionInputHash = "f".repeat(64);
   delete tampered.worldModelId; delete tampered.worldModelHash;
   tampered.worldModelHash = hash(tampered); tampered.worldModelId = `world-model-${tampered.worldModelHash.slice(0, 24)}`;
-  assert.throws(() => readWorldModelForDiscovery({ root, storeAdapter: retainedStore(tampered) }), { code: "PRODUCT_POLICY_TEMPORAL_IDENTITY_MISMATCH" });
+  (await assert.rejects(async () => (await readWorldModelForDiscovery({ root, storeAdapter: retainedStore(tampered) })), { code: "PRODUCT_POLICY_TEMPORAL_IDENTITY_MISMATCH" }));
 });
 
 test("mixed traversal filters stale bridge BEFORE expansion, retains exact identity, and avoids unsupported remote adapter", async t => {
-  const { root, storage } = await fixture(t), snapshot = readWorldModelForDiscovery({ root }).snapshot;
+  const { root, storage } = await fixture(t), snapshot = (await readWorldModelForDiscovery({ root })).snapshot;
   const productModel = normalizeProductModelDocument({ schemaVersion: 1, featureGroups: [],
     capabilities: [{ key: "relay", name: "Relay", description: "Forward messages" }], features: [], requirements: [], constraints: [], decisions: [] });
   const graph = buildTemporalProvenanceGraph({ projectId: snapshot.projectId, files: snapshot.files, productModel });
@@ -371,7 +372,7 @@ test("mixed traversal filters stale bridge BEFORE expansion, retains exact ident
   assert.throws(() => queryTemporalProvenanceGraph(graph, { ...query, eligibility: { ...eligibility, graphSnapshotHash: "f".repeat(64) } }), { code: "TEMPORAL_ELIGIBILITY_SNAPSHOT_MISMATCH" });
   let remoteCalls = 0;
   const adapter = new Proxy({}, { get() { remoteCalls++; throw Error("unsupported remote must not be invoked"); } });
-  const projected = queryGraphProjection({ projectRoot: root, graph, adapter, query });
+  const projected = (await queryGraphProjection({ projectRoot: root, graph, adapter, query }));
   assert.equal(remoteCalls, 0); assert.equal(projected.diagnostics.executionMode, "embedded-domain-eligibility-fallback");
   assert.deepEqual(projected.result, result); assert.equal(JSON.stringify(graph), before);
 });

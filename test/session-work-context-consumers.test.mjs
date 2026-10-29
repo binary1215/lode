@@ -35,7 +35,7 @@ test("ABC: partial originals survive entry, real CLI, direct/router MCP and publ
   const environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: f.operational };
   for (const runtime of ["codex", "claude"]) createSessionHostAdapter({ runtime, nativeSessionId: `abc-${runtime}`, environment })
     .select({ root: f.root, sessionId: f.session.sessionId, expectedRevision: 0 });
-  const before = snapshot(f.base), entry = f.route(() => enterConversationRecovery({ root: f.root }));
+  const before = snapshot(f.base), entry = (await f.route(async () => (await enterConversationRecovery({ root: f.root }))));
   assert(entry.workContext.recordExcerpts.length); assert.equal(entry.projectStatus.currentProjectDirection.directionId, current.directionId);
   for (const routed of [false, true]) {
     const result = await call(f, "head_session_work_read", {}, routed);
@@ -57,7 +57,7 @@ test("ABC: partial originals survive entry, real CLI, direct/router MCP and publ
   const json = JSON.parse(jsonRun.stdout.trim()); assert(json.workContext.recordExcerpts.length);
   assert.deepEqual(json.projectStatus.currentProjectDirection.input.cancelledActions, ["deploy", "publish"]);
   for (const runtime of ["codex", "claude"]) {
-    const hook = sessionStartContext({ runtime, event: { hook_event_name: "SessionStart", source: "compact", cwd: f.root, session_id: `abc-${runtime}` }, environment });
+    const hook = (await sessionStartContext({ runtime, event: { hook_event_name: "SessionStart", source: "compact", cwd: f.root, session_id: `abc-${runtime}` }, environment }));
     const serialized = hook.hookSpecificOutput.additionalContext, startup = JSON.parse(serialized);
     assert(serialized.length <= (runtime === "claude" ? 10000 : 32768));
     assert(startup.recordExcerpts.length); assert(startup.omittedEvidenceCount > 0);
@@ -124,7 +124,7 @@ test("A-D: concise Work/Todo text preserves exact branches, old tasks, unknown f
   const unknownBefore = JSON.stringify(unknown), unknownText = formatCliResult("session-work-read", unknown);
   assert.ok(unknownText.includes("UnknownCoverageMarkerXqvr1933")); assert.ok(unknownText.includes("UnknownTaskMarkerBvnq7831"));
   assert.equal(JSON.stringify(unknown), unknownBefore);
-  const list = runCommand(["session-list", f.root]), listBefore = JSON.stringify(list), listText = formatCliResult("session-list", list);
+  const list = (await runCommand(["session-list", f.root])), listBefore = JSON.stringify(list), listText = formatCliResult("session-list", list);
   assert.equal(listText.split("PurposeFirstQjvm7812").length - 1, 1);
   assert.match(listText, /remaining tasks are uninspected/u); assert.match(listText, /existing list session_id/u);
   assert.equal(JSON.stringify(list), listBefore); assert.deepEqual(snapshot(f.base), before);
@@ -152,7 +152,7 @@ test("S1-S6: CLI and direct/router MCP previews preserve bound/unselected/lost c
     const selection = context.read(f.root);
     await withSessionRoute(f.root, a.sessionId, async () => {
       const aPath = sessionStatePath(f.root, f.storage);
-      const cli = runCommand(["session-list", f.root, "--session", f.session.sessionId, "--max-sessions", "1"], { sessionContext: context });
+      const cli = (await runCommand(["session-list", f.root, "--session", f.session.sessionId, "--max-sessions", "1"], { sessionContext: context }));
       assert.equal(cli.preview.workContext.sessionId, f.session.sessionId);
       assert.equal(cli.preview.conclusion.representativeResult, "not-designated");
       assert.match(formatCliResult("session-list", cli), /B original conclusion/u);
@@ -176,12 +176,12 @@ test("S1-S6: CLI and direct/router MCP previews preserve bound/unselected/lost c
         return open.call(this, file, ...args);
       };
       let listOnly;
-      try { listOnly = runCommand(["session-list", f.root], { sessionContext: context }); }
+      try { listOnly = (await runCommand(["session-list", f.root], { sessionContext: context })); }
       finally { fs.openSync = open; }
       assert.equal(listOnly.preview, undefined);
-      await assert.rejects(withSessionRoute(f.root, f.session.sessionId, async () => {
+      await assert.rejects((withSessionRoute(f.root, f.session.sessionId, async () => {
         await Promise.resolve(); throw new Error("Synthetic async preview failure");
-      }), /Synthetic async preview failure/u);
+      })), /Synthetic async preview failure/u);
       assert.equal(sessionStatePath(f.root, f.storage), aPath);
     });
     if (state === "bound") assert.equal(withSessionCallContext({ root: f.root, context }, () => inspectProject(f.root).state.sessionId), a.sessionId);
@@ -373,8 +373,8 @@ function hostFixture(f, runtime) {
   const environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: f.operational }, nativeSessionId = "synthetic-linked-" + runtime;
   const host = createSessionHostAdapter({ runtime, nativeSessionId, environment });
   assert.equal(host.select({ root: f.root, sessionId: f.session.sessionId, expectedRevision: 0 }).retained, true);
-  return { host, read() {
-    const output = sessionStartContext({ runtime, environment, event: { hook_event_name: "SessionStart", source: "resume", cwd: f.root, session_id: nativeSessionId } });
+  return { host, async read() {
+    const output = (await sessionStartContext({ runtime, environment, event: { hook_event_name: "SessionStart", source: "resume", cwd: f.root, session_id: nativeSessionId } }));
     const text = output.hookSpecificOutput.additionalContext;
     assert.ok(text.length <= (runtime === "codex" ? 32768 : 10000));
     return { text, value: JSON.parse(text) };
@@ -445,7 +445,7 @@ test("shared optional schema travels through direct record, CLI JSON and checkpo
   assert.equal(recordSchema.required?.includes("workTopics") || false, false);
   const input = { summary: "CLI running note", workTopics: topics, workLink: link(root), executionObservation: { state: "running" } };
   const inputFile = path.join(f.base, "cli-evidence.json"); fs.writeFileSync(inputFile, JSON.stringify(input));
-  const running = runCommand(["session-work-record", f.root, "--session", f.session.sessionId, "--input", inputFile]);
+  const running = (await runCommand(["session-work-record", f.root, "--session", f.session.sessionId, "--input", inputFile]));
   assert.deepEqual(running.evidence.content.workLink, input.workLink);
   assert.deepEqual(running.evidence.content.workTopics, topics);
   const basis = f.route(() => inspectRecoveryCheckpointBasis({ root: f.root }).basis.basisId);
@@ -495,7 +495,7 @@ test("authored topics connect old reason and checkpoint result to selected reade
       const { workTopics, ...searchableBody } = record.content;
       assert.equal(JSON.stringify(searchableBody).includes(topic), false, "The connected label witness must be absent from every ordinary body");
     }
-    const cli = runCommand(["session-work-read", f.root, "--session", f.session.sessionId]);
+    const cli = (await runCommand(["session-work-read", f.root, "--session", f.session.sessionId]));
     assert.deepEqual(cli, expected);
     const outputs = [formatCliResult("session-work-read", cli)];
     for (const routed of [false, true]) {
@@ -507,7 +507,7 @@ test("authored topics connect old reason and checkpoint result to selected reade
         ?? entry.structuredContent.projectStatus?.currentProjectDirection ?? entry.structuredContent.currentProjectDirection, direction);
       assert.equal(entry.structuredContent.ordinaryWorkBlocked, false); outputs.push(entry.content[0].text);
     }
-    const entry = f.route(() => enterConversationRecovery({ root: f.root }));
+    const entry = (await f.route(async () => (await enterConversationRecovery({ root: f.root }))));
     assert.deepEqual(entry.workContext, expected); outputs.push(formatCliResult("conversation-enter", entry));
     for (const text of outputs) {
       assertPresentedWork(text, expected); assertGroupedBodyOwnership(text, expected.records);
@@ -515,7 +515,7 @@ test("authored topics connect old reason and checkpoint result to selected reade
         assert.equal(text.split(marker).length - 1, 1, "One coherent output carries each retained body once");
     }
     for (const caller of callers) {
-      const { value, text } = caller.read();
+      const { value, text } = (await caller.read());
       assert.ok(text.length <= (caller.runtime === "codex" ? 32768 : 10000));
       assert.equal(value.records.length, expected.records.length, "Small fitting bodies survive optional grouping metadata");
       assertSelectedBodyGroups({ ...value, projectId: expected.projectId, sessionId: expected.sessionId });
@@ -587,7 +587,7 @@ test("organized originals and overlays reach CLI, direct/router MCP and entry wi
   if (variant.mode === "hinted") defaultAccounting(expected); else accounting(expected);
   const bodies = expected.records.map(({ evidenceId, evidenceDigest, content, selectionRole }) => ({ evidenceId, evidenceDigest, content, selectionRole }));
   if (selectedBodies) assert.deepEqual(bodies, selectedBodies); else selectedBodies = bodies;
-  const cli = withoutSyncWrites(() => runCommand(["session-work-read", f.root, "--session", f.session.sessionId]));
+  const cli = await withoutSyncWrites(async () => (await runCommand(["session-work-read", f.root, "--session", f.session.sessionId])));
   assert.deepEqual(cli, expected);
   const presentation = formatCliResult("session-work-read", cli);
   assertPresentedWork(presentation, expected);
@@ -604,7 +604,7 @@ test("organized originals and overlays reach CLI, direct/router MCP and entry wi
     assert.ok(JSON.stringify(entry.content).includes("EXACT REASON: A loses retained provenance"));
     assert.equal(entry.structuredContent.ordinaryWorkBlocked, false);
   }
-  assert.deepEqual(withoutSyncWrites(() => f.route(() => enterConversationRecovery({ root: f.root }))).workContext, expected);
+  assert.deepEqual((await withoutSyncWrites(async () => (await f.route(async () => (await enterConversationRecovery({ root: f.root })))))).workContext, expected);
   assert.deepEqual(snapshot(f.base), before);
   assert.deepEqual(recordFor(expected, saved.running).savedActivity.states, ["ended"]);
   }
@@ -630,7 +630,7 @@ test("empty exact IDs and an exhausted lexical page retain their scope in CLI an
       assert.equal(expected.coverage.selection, item.selection);
       assert.equal(expected.omissions.uninspected, item.uninspected); assert.equal(expected.nextAfterEvidenceId, null);
       accounting(expected); // Existing scoped exact/page accounting is unchanged.
-      const cli = runCommand(["session-work-read", f.root, "--session", f.session.sessionId, "--input", item.input]);
+      const cli = (await runCommand(["session-work-read", f.root, "--session", f.session.sessionId, "--input", item.input]));
       assert.deepEqual(cli, expected);
       const cliText = formatCliResult("session-work-read", cli);
       assertPresentedWork(cliText, expected);
@@ -658,7 +658,7 @@ test("only observed numeric zero originals keeps default no-history entry quiet"
       const read = await call(f, "head_session_work_read", {}, routed);
       assert.deepEqual(read.structuredContent, empty); assert.equal(read.content[0].text, quiet);
     }
-    const entry = f.route(() => enterConversationRecovery({ root: f.root }));
+    const entry = (await f.route(async () => (await enterConversationRecovery({ root: f.root }))));
     assert.doesNotMatch(formatCliResult("conversation-enter", entry), /Selected Session work evidence \(P3/u);
     assert.equal(entry.ordinaryWorkBlocked, false); assert.equal(entry.userDecisionRequired, false);
     // Serializer-only unknown/malformed counts must not become observed numeric
@@ -713,7 +713,7 @@ test("hinted and canonical-fallback counts disclose actual inspection without in
     assert.ok(record.savedActivity.relations.some(relation => relation.role === "target" && relation.status === "verified"));
     // Neither current inspected proof nor historical hints imply a live-state
     // or returned-at-integrity guarantee for the unselected archive.
-    const cli = runCommand(["session-work-read", f.root, "--session", f.session.sessionId, "--input", input]);
+    const cli = (await runCommand(["session-work-read", f.root, "--session", f.session.sessionId, "--input", input]));
     assert.deepEqual(cli, expected); assertPresentedWork(formatCliResult("session-work-read", cli), expected);
     for (const routed of [false, true]) {
       const read = await call(f, "head_session_work_read", { max_records: 1 }, routed);
@@ -725,13 +725,13 @@ test("hinted and canonical-fallback counts disclose actual inspection without in
   }
 });
 
-for (const runtime of ["codex", "claude"]) test(`${runtime} public synthetic Hook carries saved activity with its body and current P2/common priority`, t => {
+for (const runtime of ["codex", "claude"]) test(`${runtime} public synthetic Hook carries saved activity with its body and current P2/common priority`, async t => {
   const f = fixture(t, "CURRENT SELECTED PURPOSE: investigate locally"), saved = representative(f);
   const direction = updateProjectDirection({ root: f.root, input: { goal: "CURRENT COMMON GOAL: explain only", constraints: ["No external effects"], cancelledActions: ["deployment"] } }).direction;
   const synced = checkpoint(f), caller = hostFixture(f, runtime);
   for (const variant of navigationCases(f)) {
   variant.prepare(); const before = snapshot(f.base);
-  const entry = withoutSyncWrites(() => caller.host.enter({ root: f.root })), { value, text } = withoutSyncWrites(() => caller.read());
+  const entry = await withoutSyncWrites(async () => (await caller.host.enter({ root: f.root }))), { value, text } = await withoutSyncWrites(async () => (await caller.read()));
   assertHookWorkScope(value, entry.workContext);
   assertDefaultInspection(entry.workContext, variant.mode, 14);
   if (variant.mode !== "hinted") assert.ok(entry.workContext.coverage.valid > entry.workContext.coverage.included);
@@ -758,11 +758,11 @@ for (const runtime of ["codex", "claude"]) test(`${runtime} public synthetic Hoo
   }
 });
 
-for (const runtime of ["codex", "claude"]) test(`${runtime} optional organized bodies cannot evict a fitting long current purpose or leave an overlayless note`, t => {
+for (const runtime of ["codex", "claude"]) test(`${runtime} optional organized bodies cannot evict a fitting long current purpose or leave an overlayless note`, async t => {
   const f = fixture(t, "CURRENT LONG PURPOSE " + "p".repeat(4100)); representative(f);
   const direction = updateProjectDirection({ root: f.root, input: { goal: "Current common direction", cancelledActions: ["deployment"] } }).direction;
-  const caller = hostFixture(f, runtime), before = snapshot(f.base), entry = caller.host.enter({ root: f.root });
-  const { value } = caller.read();
+  const caller = hostFixture(f, runtime), before = snapshot(f.base), entry = (await caller.host.enter({ root: f.root }));
+  const { value } = (await caller.read());
   assert.equal(value.sessionPurpose, entry.workContext.sessionPurpose); assert.deepEqual(value.currentProjectDirection, directionView(direction));
   for (const record of value.records) {
     const original = entry.workContext.records.find(item => item.evidenceId === record.evidenceId);
@@ -774,27 +774,27 @@ for (const runtime of ["codex", "claude"]) test(`${runtime} optional organized b
   assert.deepEqual(snapshot(f.base), before);
 });
 
-test("P3 ended never clears canonical pending review, and CLI/Hook expose the separate verified axis", t => {
+test("P3 ended never clears canonical pending review, and CLI/Hook expose the separate verified axis", async t => {
   const f = fixture(t), root = f.save({ summary: "Original bounded work", executionObservation: { state: "running" } });
   checkpoint(f);
-  f.route(() => {
-    const capsule = compileContext({ root: f.root, task: "Synthetic local bounded implementation", persist: true }).capsule;
+  (await f.route(async () => {
+    const capsule = (await compileContext({ root: f.root, task: "Synthetic local bounded implementation", persist: true })).capsule;
     const plan = createWholePlanSnapshot({ root: f.root, objective: "Synthetic bounded result", plan: [{ id: "inspect", outcome: "Local evidence" }], invariants: ["No external effects"] }).artifact;
     const contract = createExecutionContract({ root: f.root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
       scope: "Synthetic local evidence", acceptanceCriteria: ["Local evidence returned"] }).artifact;
     startRun({ root: f.root, executionContractId: contract.executionContractId, startRequestId: "synthetic-linked-run" });
     finishRun({ root: f.root, outcome: "Local synthetic result", evidence: [{ uri: "synthetic", digest: "evidence" }], verification: [{ check: "local", status: "passed" }] });
-  });
+  }));
   f.save({ executionObservation: { state: "ended", target: exact(root) }, pending: ["X remains and review is separate"], workLink: link(root) });
   const callers = ["codex", "claude"].map(runtime => hostFixture(f, runtime)), before = snapshot(f.base);
-  const entry = f.route(() => enterConversationRecovery({ root: f.root }));
+  const entry = (await f.route(async () => (await enterConversationRecovery({ root: f.root }))));
   const current = entry.restore.projection.currentExecution;
   assert.equal(current.status, "verified"); assert.ok(current.sessionPointer.pendingReview);
   assert.deepEqual(recordFor(entry.workContext, root).savedActivity.states, ["ended"]);
   const cli = formatCliResult("conversation-enter", entry);
   assert.ok(cli.includes(current.sessionPointer.pendingReview.runId));
   for (const caller of callers) {
-    const { value } = caller.read();
+    const { value } = (await caller.read());
     assert.equal(value.currentExecution.status, current.status);
     assert.ok(JSON.stringify(value.currentExecution).includes(current.sessionPointer.pendingReview.runId));
     assert.ok(JSON.stringify(value.records).includes("X remains and review is separate"));
@@ -920,4 +920,40 @@ test("private Hook execution-detail omission keeps an expansion notice without e
   assert.ok(value.scope.includes("Execution details omitted; expand entry"));
   assert.equal(value.persisted, false); assert.deepEqual(entry, original);
   t.diagnostic("private serializer capacity only; no P2 transition or actual execution fault was injected");
+});
+
+
+test("Todo terminal detail counts flow unchanged through CLI, direct/router MCP and conversation startup", async t => {
+  const f = fixture(t, "Synthetic Todo count consumers only");
+  f.save({ todos: [
+    { todoId: "todo-done", task: "Completed local inspection", status: "completed", origin: "head-proposed" },
+    { todoId: "todo-stop", task: "Cancelled synthetic proposal", status: "cancelled", reason: "Synthetic fixture scope", origin: "head-proposed" },
+    { todoId: "todo-wait", task: "Remaining local inspection", status: "waiting", nextAction: "Read local evidence", reason: "Synthetic dependency", origin: "user-directed" },
+  ] });
+  const before = snapshot(f.base);
+  for (const todoId of ["todo-done", "todo-stop"]) {
+    const expected = f.read({ todoId });
+    assert.equal(expected.todoContext.knownOpenCount, 0); assert.equal(expected.todoContext.knownItemCount, 1);
+    assert.equal(expected.todoContext.items.length, 1);
+    for (const routed of [false, true]) {
+      const response = await call(f, "head_session_work_read", { todo_id: todoId }, routed);
+      assert.deepEqual(response.structuredContent, expected);
+      assert.match(response.content[0].text, /known unresolved: 0/u);
+    }
+    const input = path.join(f.base, "read-" + todoId + ".json"); fs.writeFileSync(input, JSON.stringify({ todoId }));
+    const cli = await runCommand(["session-work-read", f.root, "--session", f.session.sessionId, "--input", input]);
+    assert.deepEqual(cli.todoContext, expected.todoContext);
+    assert.match(formatCliResult("session-work-read", cli), /known unresolved: 0/u);
+    fs.unlinkSync(input);
+  }
+  const entry = await f.route(() => enterConversationRecovery({ root: f.root }));
+  assert.equal(entry.workContext.todoContext.knownOpenCount, 1);
+  assert.deepEqual(entry.workContext.todoContext.items.map(item => item.todoId), ["todo-wait"]);
+  for (const runtime of ["codex", "claude", "opencode"]) {
+    const startup = JSON.parse(startupProjection(entry, f.root, runtime));
+    assert.equal(startup.todoContext.knownOpenCount, 1); assert.equal(startup.todoContext.currentness, "within-inspected-originals-only");
+    assert.deepEqual(startup.todoContext.items.map(item => item.todoId), ["todo-wait"]);
+    assert.equal(startup.todoContext.coverage.indexIsAuthority, false);
+  }
+  assert.deepEqual(snapshot(f.base), before);
 });

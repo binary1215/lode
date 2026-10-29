@@ -171,7 +171,7 @@ test("explicit Policy applications preserve review and revision genealogy withou
   assert.equal(canon.schemaVersion, 2);
   assert.deepEqual(canon.policies[0].appliesTo, [{ kind: "FeatureGroup", key: "platform" }]);
   assert.deepEqual(canon.policies[0].governedBy, [{ kind: "Requirement", key: "review-evidence" }]);
-  const graph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   const policy = graph.nodes.find((node) => node.kind === "Policy" && node.key === "review-required");
   const policyRevision = graph.nodes.find((node) => node.kind === "PolicyRevision" && node.key === "review-required");
   const policyCandidate = graph.nodes.find((node) => node.kind === "ProductPolicyCandidate" && node.nodeId === proposed.candidate.candidateId);
@@ -192,13 +192,13 @@ test("explicit Policy applications preserve review and revision genealogy withou
   const replay = await reviewProductPolicy({ root, candidateId: proposed.candidate.candidateId, disposition: "accept", rationale: "Approve this exact explicit group application." });
   assert.equal(replay.review.reviewDecisionId, accepted.review.reviewDecisionId);
   assert.equal(replay.canonChanged, false);
-  await assert.rejects(() => reviewProductPolicy({ root, candidateId: proposed.candidate.candidateId, disposition: "accept", rationale: "A divergent reason." }), { code: "PRODUCT_POLICY_REVIEW_CONFLICT" });
+  await assert.rejects(async () => (await reviewProductPolicy({ root, candidateId: proposed.candidate.candidateId, disposition: "accept", rationale: "A divergent reason." })), { code: "PRODUCT_POLICY_REVIEW_CONFLICT" });
 
   const revised = await proposeProductPolicy({ root, operation: "revise", key: "review-required", appliesTo: [{ kind: "Feature", key: "request" }], explanation: "Narrow the exact application." });
   await reviewProductPolicy({ root, candidateId: revised.candidate.candidateId, disposition: "accept", rationale: "Approve the narrower explicit application." });
   assert.equal(inspectProductPolicyStatus({ root, candidateId: proposed.candidate.candidateId }).status, "accepted-historical");
   assert.equal(inspectProductPolicyStatus({ root, candidateId: proposed.candidate.candidateId }).canonState, "superseded");
-  const revisedGraph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const revisedGraph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   const revisions = revisedGraph.nodes.filter((node) => node.kind === "PolicyRevision" && node.key === "review-required");
   assert.equal(revisions.length, 1);
   assert.equal(revisions[0].parentRevisionIds.length, 1);
@@ -211,7 +211,7 @@ test("explicit Policy applications preserve review and revision genealogy withou
 
   const retired = await proposeProductPolicy({ root, operation: "retire", key: "review-required", explanation: "Retire without deleting its lineage." });
   await reviewProductPolicy({ root, candidateId: retired.candidate.candidateId, disposition: "accept", rationale: "Approve retirement while preserving history." });
-  const retiredGraph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const retiredGraph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   const retiredRevision = retiredGraph.nodes.find((node) => node.kind === "PolicyRevision" && node.key === "review-required");
   assert.equal(retiredRevision.semantic.status, "retired");
   assert.equal(retiredRevision.parentRevisionIds.length, 1);
@@ -267,7 +267,7 @@ test("Policy artifact identity, declared transition scope, evidence freshness, a
   assert.equal(sourceProposal.candidate.evidenceStatus, "local-source-bound");
   assert.equal(sourceProposal.candidate.evidenceAnchors[0].digest, sha("export function serve() { return true; }\n"));
   fs.writeFileSync(path.join(root, "src", "service.mjs"), "export function serve() { return false; }\n");
-  await assert.rejects(() => reviewProductPolicy({ root, candidateId: sourceProposal.candidate.candidateId, disposition: "accept", rationale: "Do not accept stale evidence." }), { code: "PRODUCT_POLICY_EVIDENCE_STALE" });
+  await assert.rejects(async () => (await reviewProductPolicy({ root, candidateId: sourceProposal.candidate.candidateId, disposition: "accept", rationale: "Do not accept stale evidence." })), { code: "PRODUCT_POLICY_EVIDENCE_STALE" });
 
   let releaseFence;
   let fenceReady;
@@ -278,13 +278,13 @@ test("Policy artifact identity, declared transition scope, evidence freshness, a
     await held;
   });
   await ready;
-  await assert.rejects(() => reviewProductPolicy({ root, candidateId: first.candidate.candidateId, disposition: "accept", rationale: "This cannot cross an active Session fence." }), { code: "PROJECT_MUTATION_BUSY" });
+  await assert.rejects(async () => (await reviewProductPolicy({ root, candidateId: first.candidate.candidateId, disposition: "accept", rationale: "This cannot cross an active Session fence." })), { code: "PROJECT_MUTATION_BUSY" });
   releaseFence();
   await fence;
   fs.writeFileSync(path.join(root, "src", "service.mjs"), "export function serve() { return true; }\n");
   const accepted = await reviewProductPolicy({ root, candidateId: sourceProposal.candidate.candidateId, disposition: "accept", rationale: "Approve the exact restored source digest." });
   assert.equal(accepted.status, "accepted", JSON.stringify(accepted.projectionError));
-  const graph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   const evidence = graph.nodes.find((node) => node.kind === "ProductPolicyEvidence" && node.candidateId === sourceProposal.candidate.candidateId);
   assert.equal(evidence.reference, "src/service.mjs");
   assert.ok(graph.edges.some((edge) => edge.type === "SUPPORTED_BY" && edge.from === sourceProposal.candidate.candidateId && edge.to === evidence.nodeId));
@@ -300,7 +300,7 @@ test("Policy artifact identity, declared transition scope, evidence freshness, a
   assert.equal(status.evidenceCurrentness.automaticReviewRequired, false);
   assert.equal(status.ordinaryWorkBlocked, false);
   await buildWorldModel({ root, persist: true });
-  const trace = traceGraphLineage({ root, anchorId: sourceProposal.candidate.candidateId, depth: 1, includeExecution: false });
+  const trace = (await traceGraphLineage({ root, anchorId: sourceProposal.candidate.candidateId, depth: 1, includeExecution: false }));
   assert.equal(trace.policyEvidenceCurrentness[0].candidateId, sourceProposal.candidate.candidateId);
   assert.equal(trace.policyEvidenceCurrentness[0].byteFreshness, "changed-or-missing");
   fs.unlinkSync(path.join(root, "src", "service.mjs"));
@@ -328,7 +328,7 @@ test("mixed Policy evidence keeps exact anchor mapping while exact replay repair
   const accepted = await reviewProductPolicy({ root, candidateId: proposed.candidate.candidateId, disposition: "accept", rationale });
   assert.equal(accepted.status, "accepted", JSON.stringify(accepted.projectionError));
 
-  const graph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   const candidateNode = graph.nodes.find((node) => node.nodeId === proposed.candidate.candidateId);
   assert.ok(candidateNode);
   const evidenceNodes = graph.nodes.filter((node) => node.kind === "ProductPolicyEvidence" && node.candidateId === proposed.candidate.candidateId);
@@ -372,7 +372,7 @@ test("mixed Policy evidence keeps exact anchor mapping while exact replay repair
   assert.equal(fs.readFileSync(canonFile, "utf8"), canonBytes);
   assert.equal(fs.readFileSync(reviewFile, "utf8"), reviewBytes);
   assert.deepEqual(fs.readdirSync(reviewDirectory).sort(), reviewNames);
-  assert.equal(inspectWorldModel({ root }).status, "current");
+  assert.equal((await inspectWorldModel({ root })).status, "current");
 });
 
 test("Policy candidates are nonblocking while stale acceptance and divergent decisions fail closed", async (t) => {
@@ -381,7 +381,7 @@ test("Policy candidates are nonblocking while stale acceptance and divergent dec
   const second = await proposeProductPolicy({ root, operation: "create", key: "second", name: "Second", statement: "Second explicit policy." });
   assert.equal(inspectProductPolicyStatus({ root, candidateId: second.candidate.candidateId }).ordinaryWorkBlocked, false);
   await reviewProductPolicy({ root, candidateId: first.candidate.candidateId, disposition: "accept", rationale: "Approve the first exact candidate." });
-  await assert.rejects(() => reviewProductPolicy({ root, candidateId: second.candidate.candidateId, disposition: "accept", rationale: "Attempt stale approval." }), { code: "PRODUCT_POLICY_CANON_DRIFT" });
+  await assert.rejects(async () => (await reviewProductPolicy({ root, candidateId: second.candidate.candidateId, disposition: "accept", rationale: "Attempt stale approval." })), { code: "PRODUCT_POLICY_CANON_DRIFT" });
   const rejected = await reviewProductPolicy({ root, candidateId: second.candidate.candidateId, disposition: "reject", rationale: "Reject the stale candidate without blocking work." });
   assert.equal(rejected.status, "rejected");
   assert.equal(rejected.ordinaryWorkBlocked, false);
@@ -399,7 +399,7 @@ test("content-addressed Policy history supports repeated semantics, multiple suc
   const acceptedC = await reviewProductPolicy({ root, candidateId: revisedC.candidate.candidateId, disposition: "accept", rationale: "Approve C from the repeated A model." });
   assert.equal(acceptedC.status, "accepted", JSON.stringify(acceptedC.projectionError));
   assert.equal(inspectProductPolicyStatus({ root, candidateId: created.candidate.candidateId }).status, "accepted-historical");
-  assert.equal(inspectWorldModel({ root }).status, "current");
+  assert.equal((await inspectWorldModel({ root })).status, "current");
 });
 
 test("unrelated Policy changes preserve current entity approval lineage and unreviewed candidates stay opt-in", async (t) => {
@@ -411,14 +411,14 @@ test("unrelated Policy changes preserve current entity approval lineage and unre
   const unreviewed = await proposeProductPolicy({ root, operation: "create", key: "third", name: "Third", statement: "Unreviewed policy candidate." });
 
   await buildWorldModel({ root, persist: true });
-  const current = inspectWorldModel({ root });
+  const current = (await inspectWorldModel({ root }));
   const graph = current.snapshot.temporalProvenanceGraph;
   const firstRevision = graph.nodes.find((node) => node.kind === "PolicyRevision" && node.key === "first");
   const firstCandidate = graph.nodes.find((node) => node.nodeId === first.candidate.candidateId);
   assert.equal(firstCandidate.applicationStatus, "applied-historical");
   assert.ok(graph.edges.some((edge) => edge.type === "PRODUCES" && edge.from === firstReview.review.reviewDecisionId && edge.to === firstRevision.nodeId));
 
-  const hidden = queryWorldTemporalGraph({
+  const hidden = (await queryWorldTemporalGraph({
     root,
     query: "third",
     kinds: ["ProductPolicyCandidate", "ProductPolicyEvidence"],
@@ -426,10 +426,10 @@ test("unrelated Policy changes preserve current entity approval lineage and unre
     authorityClasses: ["derived"],
     includeUnreviewedCandidates: false,
     depth: 0,
-  });
+  }));
   assert.equal(hidden.nodes.some((node) => node.nodeId === unreviewed.candidate.candidateId), false);
   assert.ok(hidden.exclusion.unreviewedCandidatesExcluded >= 1);
-  const explicit = queryWorldTemporalGraph({
+  const explicit = (await queryWorldTemporalGraph({
     root,
     anchorIds: [unreviewed.candidate.candidateId],
     expectedGraphSnapshotId: graph.graphSnapshotId,
@@ -438,7 +438,7 @@ test("unrelated Policy changes preserve current entity approval lineage and unre
     authorityClasses: ["derived"],
     includeUnreviewedCandidates: true,
     depth: 0,
-  });
+  }));
   assert.equal(explicit.nodes[0].nodeId, unreviewed.candidate.candidateId);
 });
 

@@ -158,19 +158,19 @@ test("independent async routes preserve original identity, unknown execution and
   const a = createHeadSession({ root, purpose: "A" });
   const b = createHeadSession({ root, purpose: "B" });
   const gate = Promise.withResolvers();
-  const first = withSessionRoute(root, a.sessionId, async () => {
+  const first = (withSessionRoute(root, a.sessionId, async () => {
     await gate.promise;
     createRecoveryCheckpoint({ root, ...direction("A") });
     assert.equal(inspectProject(root).state.sessionId, a.sessionId);
     return restoreSessionFromArtifacts({ root }).projection;
-  });
-  const second = withSessionRoute(root, b.sessionId, async () => {
+  }));
+  const second = (withSessionRoute(root, b.sessionId, async () => {
     createRecoveryCheckpoint({ root, ...direction("B") });
     gate.resolve();
     await Promise.resolve();
     assert.equal(inspectProject(root).state.sessionId, b.sessionId);
     return restoreSessionFromArtifacts({ root }).projection;
-  });
+  }));
   const results = await Promise.all([first, second]);
   assert.equal(results[0].consumerInstruction.purpose, "Session purpose A");
   assert.equal(results[1].consumerInstruction.purpose, "Session purpose B");
@@ -179,7 +179,7 @@ test("independent async routes preserve original identity, unknown execution and
   assert.equal(listHeadSessions({ root }).sessions.length, 3);
 });
 
-test("common current cancellation survives every Session restore without rewriting checkpoints", (t) => {
+test("common current cancellation survives every Session restore without rewriting checkpoints", async (t) => {
   const { root, storage, layout } = project(t);
   const a = createHeadSession({ root, purpose: "Deployment investigation" });
   const b = createHeadSession({ root, purpose: "Independent docs" });
@@ -192,7 +192,7 @@ test("common current cancellation survives every Session restore without rewriti
   assert.equal(restored.projection.consumerInstruction.currentProjectDirection.directionId, final.directionId);
   assert.throws(() => assertProjectActionsCurrent({ root, actions: ["deploy"] }), { code: "PROJECT_ACTION_CANCELLED" });
   assert.doesNotThrow(() => assertProjectActionsCurrent({ root, actions: ["source.read"] }));
-  assert.equal(withSessionRoute(root, b.sessionId, () => inspectProjectExperience({ root })).currentProjectDirection.directionId, final.directionId);
+  assert.equal((await withSessionRoute(root, b.sessionId, async () => (await inspectProjectExperience({ root })))).currentProjectDirection.directionId, final.directionId);
   assert.equal(withSessionRoute(root, b.sessionId, () => inspectProject(root).state.purpose), "Independent docs");
 });
 
@@ -225,10 +225,10 @@ test("routing rejects escape, foreign identity and divergent create without defa
   assert.throws(() => withSessionRoute(root, a.sessionId, () => {}), { code: "HEAD_SESSION_IDENTITY_MISMATCH" });
 });
 
-test("default project onboarding remains readable within a new logical Session", (t) => {
-  const { root, storage, layout } = project(t); const before = inspectOptionalOnboarding({ root });
+test("default project onboarding remains readable within a new logical Session", async (t) => {
+  const { root, storage, layout } = project(t); const before = (await inspectOptionalOnboarding({ root }));
   const a = createHeadSession({ root });
-  const after = withSessionRoute(root, a.sessionId, () => inspectOptionalOnboarding({ root }));
+  const after = (await withSessionRoute(root, a.sessionId, async () => (await inspectOptionalOnboarding({ root }))));
   assert.equal(after.state.sessionId, before.state.sessionId);
   assert.equal(after.state.pointerHash, before.state.pointerHash);
 });
@@ -241,14 +241,14 @@ test("new common direction invalidates stale checkpoint publication basis", (t) 
   assert.equal(inspectProject(root).state.latestCheckpoint, null);
 });
 
-test("active Runs stay Session-owned and another route cannot finish a copied pointer", (t) => {
+test("active Runs stay Session-owned and another route cannot finish a copied pointer", async (t) => {
   const { root, storage, layout } = project(t); const a = createHeadSession({ root }); const b = createHeadSession({ root });
-  const started = withSessionRoute(root, a.sessionId, () => {
-    const capsule = compileContext({ root, task: "Synthetic source work", budget: 32768, persist: true }).capsule;
+  const started = (await withSessionRoute(root, a.sessionId, async () => {
+    const capsule = (await compileContext({ root, task: "Synthetic source work", budget: 32768, persist: true })).capsule;
     const plan = createWholePlanSnapshot({ root, objective: "Synthetic work", plan: [{ id: "work", outcome: "Done" }] }).artifact;
     const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId, scope: "Synthetic work", acceptanceCriteria: ["Done"] }).artifact;
     return startRun({ root, executionContractId: contract.executionContractId });
-  });
+  }));
   const aState = withSessionRoute(root, a.sessionId, () => inspectProject(root).state);
   withSessionRoute(root, b.sessionId, () => fs.writeFileSync(sessionStatePath(root, storage), JSON.stringify({ ...aState, sessionId: b.sessionId })));
   assert.throws(() => withSessionRoute(root, b.sessionId, () => finishRun({ root, outcome: "Copied", evidence: ["x"], verification: ["x"] })), { code: "RUN_SESSION_MISMATCH" });
@@ -266,7 +266,7 @@ test("lost direction response converges without another revision or approval", (
   assert.throws(() => updateProjectDirection({ root, expectedDirectionId: null, input: { goal: "Different user direction" } }), { code: "PROJECT_DIRECTION_CONFLICT" });
 });
 
-test("direction constraint changes invalidate old effects while unknown outcomes remain unchanged", (t) => {
+test("direction constraint changes invalidate old effects while unknown outcomes remain unchanged", async (t) => {
   const { root, storage, layout } = project(t); const file = sessionStatePath(root, storage);
   const original = { ...read(file), externalEffect: { status: "unknown", replayAllowed: false } };
   fs.writeFileSync(file, JSON.stringify(original));
@@ -276,7 +276,7 @@ test("direction constraint changes invalidate old effects while unknown outcomes
   updateProjectDirection({ root, expectedDirectionId: first.directionId, input: { goal: "Build", constraints: ["Keep public schema unchanged"] } });
   assert.throws(() => assertAuthorizationProjectDirection(root, { currentProjectDirectionId: first.directionId }), { code: "RUNTIME_PROJECT_DIRECTION_DRIFT" });
   assert.deepEqual(fs.readFileSync(file), before);
-  assert.equal(inspectProjectExperience({ root }).readiness.core.state, "ready");
+  assert.equal((await inspectProjectExperience({ root })).readiness.core.state, "ready");
 });
 
 test("selected route remains bound to its original path despite default identity tamper", (t) => {
@@ -418,18 +418,18 @@ test("historical migration separates common onboarding identity from selected re
   await reviewOnboarding({ root, candidateSetId: started.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Synthetic acceptance." });
   const defaultFile = sessionStatePath(root, storage);
   const defaultSessionId = inspectProject(root).state.sessionId;
-  const beginRun = () => {
-    const capsule = compileContext({ root, task: "Synthetic source work", budget: 32768, persist: true }).capsule;
+  const beginRun = async () => {
+    const capsule = (await compileContext({ root, task: "Synthetic source work", budget: 32768, persist: true })).capsule;
     const plan = createWholePlanSnapshot({ root, objective: "Synthetic work", plan: [{ id: "work", outcome: "Done" }] }).artifact;
     const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
       scope: "Synthetic work", acceptanceCriteria: ["Done"] }).artifact;
     return startRun({ root, executionContractId: contract.executionContractId });
   };
-  const defaultRun = beginRun();
+  const defaultRun = (await beginRun());
   fs.writeFileSync(defaultFile, JSON.stringify({ ...read(defaultFile), unknownExternalOutcome: { replayAllowed: false, action: "deploy" } }));
   const selected = createHeadSession({ root });
   await withSessionRoute(root, selected.sessionId, async () => {
-    const run = beginRun();
+    const run = (await beginRun());
     const checkpointResult = createRecoveryCheckpoint({ root, ...direction("historical selected") });
     const checkpoint = checkpointResult.checkpoint;
     const selectedFile = sessionStatePath(root, storage);

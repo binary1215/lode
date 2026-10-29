@@ -391,17 +391,17 @@ async function rebuildWithProjection({ projectRoot, projectId, currentProductMod
     additionalCandidateSets,
     additionalReviewDecisions,
   });
-  return buildWorldModel({
+  return (await buildWorldModel({
     root: projectRoot,
     persist: true,
     featureMappingProjectionInput: projection,
     parentSourceSnapshotIds: sourceWorld.temporalProvenanceGraph.parentSourceSnapshotIds,
     revisionParentIds: sourceWorld.temporalProvenanceGraph.revisionParentIds,
-  });
+  }));
 }
 
 export async function startFeatureMapping(options = {}) {
-  return withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, () => startFeatureMappingLocked(options));
+  return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, async () => (await startFeatureMappingLocked(options))));
 }
 
 async function startFeatureMappingLocked({ root = ".", semanticProposal = null, expectedCandidateSetId = null } = {}) {
@@ -428,19 +428,19 @@ async function startFeatureMappingLocked({ root = ".", semanticProposal = null, 
     fail(`Inspect pending evidence ${previousState.candidateSetId}; HEAD may explicitly replace it with an exact expected candidate-set ID and fresh proposal, or present it for user review when promotion is needed.`, "FEATURE_MAPPING_REVIEW_REQUIRED");
   }
   let indexed;
-  try { indexed = inspectWorldModel({ root: projectRoot }); }
+  try { indexed = (await inspectWorldModel({ root: projectRoot })); }
   catch (error) {
     if (semanticProposal != null || !["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"].includes(error.code)) throw error;
     // The explicit no-proposal setup may create its first derived view. An exact
     // proposal, however, must be checked against the World HEAD actually read.
     await buildWorldModel({ root: projectRoot, persist: true });
-    indexed = inspectWorldModel({ root: projectRoot });
+    indexed = (await inspectWorldModel({ root: projectRoot }));
   }
   if (indexed.status !== "current" && semanticProposal == null) {
     // Setup without pinned evidence can refresh in the same explicit operation.
     // The refresh pipeline preserves source/revision ancestry for real changes.
     await refreshWorldModel({ root: projectRoot });
-    indexed = inspectWorldModel({ root: projectRoot });
+    indexed = (await inspectWorldModel({ root: projectRoot }));
   }
   if (indexed.status !== "current") {
     fail("Repository evidence or Product Canon changed; explicitly refresh the World before proposing mappings.", "FEATURE_MAPPING_SOURCE_DRIFT");
@@ -596,7 +596,7 @@ function exactRequestCanRepairOrphanProjection({ projectRoot, projectId, candida
 }
 
 export async function reviewFeatureMapping(options = {}) {
-  return withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, () => reviewFeatureMappingLocked(options));
+  return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, async () => (await reviewFeatureMappingLocked(options))));
 }
 
 async function reviewFeatureMappingLocked({ root = ".", candidateSetId, disposition, acceptedCandidateIds = [], rationale } = {}) {
@@ -649,7 +649,7 @@ async function reviewFeatureMappingLocked({ root = ".", candidateSetId, disposit
     if (!pointerPending) fail("Feature mapping review references an already reviewed candidate set.", "STALE_FEATURE_MAPPING_CANDIDATE_SET");
     fail(`A different Feature mapping ReviewDecision is already durable for this exact candidate set. Retry the unchanged saved decision ${recordedReview.reviewDecisionId} to finish its pending state update.`, "FEATURE_MAPPING_REVIEW_CONFLICT");
   }
-  let currentWorld = inspectWorldModel({ root: projectRoot });
+  let currentWorld = (await inspectWorldModel({ root: projectRoot }));
   if (recordedReview) {
     const projectionState = reviewProjectionState(currentWorld.snapshot, recordedReview);
     if (!projectionState.exact && !projectionState.absent) {
@@ -662,7 +662,7 @@ async function reviewFeatureMappingLocked({ root = ".", candidateSetId, disposit
         currentProductModelId: currentWorld.snapshot.productModel.productModelId,
         sourceWorld: currentWorld.snapshot,
       }, storage);
-      currentWorld = inspectWorldModel({ root: projectRoot });
+      currentWorld = (await inspectWorldModel({ root: projectRoot }));
       if (!reviewProjectionState(currentWorld.snapshot, recordedReview).exact) {
         fail("The saved Feature mapping decision could not be verified in the rebuilt World projection.", "FEATURE_MAPPING_REVIEW_PROJECTION_MISMATCH");
       }
@@ -684,7 +684,7 @@ async function reviewFeatureMappingLocked({ root = ".", candidateSetId, disposit
     // evidence is current. Refresh only its derived view, preserving ancestry.
     // All request/authority validation above must finish before this write.
     await refreshWorldModel({ root: projectRoot });
-    currentWorld = inspectWorldModel({ root: projectRoot });
+    currentWorld = (await inspectWorldModel({ root: projectRoot }));
     if (currentWorld.status !== "current") {
       fail("World evidence changed during rejection refresh; retry the same explicit rejection after concurrent changes settle.", "FEATURE_MAPPING_SOURCE_DRIFT");
     }
@@ -820,7 +820,7 @@ function reviewedRelationshipDiagnostics(world) {
   };
 }
 
-export function inspectFeatureMapping({ root = "." } = {}) {
+export async function inspectFeatureMapping({ root = "." } = {}) {
   const inspected = readyProject(root, "Feature mapping inspection");
   const storage = inspected.storage;
   const file = stateFile(inspected.project.projectRoot, storage);
@@ -843,7 +843,7 @@ export function inspectFeatureMapping({ root = "." } = {}) {
   const reviewDecision = state.reviewDecisionId
     ? readFeatureMappingReviewDecision({ root: inspected.project.projectRoot, reviewDecisionId: state.reviewDecisionId }).reviewDecision
     : savedReview;
-  const world = inspectWorldModel({ root: inspected.project.projectRoot });
+  const world = (await inspectWorldModel({ root: inspected.project.projectRoot }));
   const awaitingReview = state.phase === "awaiting-review";
   const currentEvidence = candidateSet && candidateEvidenceIsCurrent(candidateSet, world);
   const runConflict = Boolean(inspected.state.activeRunId || inspected.state.pendingReview);

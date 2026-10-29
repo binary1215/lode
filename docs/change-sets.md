@@ -6,14 +6,14 @@ this contract.
 
 ## Purpose and authority
 
-ChangeSet protocol `0.1.0` records one reviewed logical change independently from Git commits, branches, providers, or executor attempts. A ChangeSet is created only from:
+ChangeSet record protocol `0.3.0` records one reviewed logical change independently from Git commits, branches, providers, or executor attempts. A ChangeSet is created only from:
 
 - the verified World Model and temporal GraphSnapshot pinned by an ExecutionContract ContextCapsule;
 - a different, current post-execution World Model and SourceSnapshot;
 - the matching ResultPacket;
 - an accepted execution ReviewDecision.
 
-It records exact added, modified, and removed `File`, `Symbol`, and `Test` revisions. It has reviewed change-lineage status but no instruction or promotion authority. Operational World Model identities are excluded from the ChangeSet body because they may include optional Git, runtime, or physical projection inputs; the Git-independent GraphSnapshot, SourceSnapshot, revision, ResultPacket, and ReviewDecision identities form the semantic record. Git may later attach optional `VcsEvidence`; no `.git` directory or commit identity is required.
+It records exact added, modified, and removed `File`, `Symbol`, and `Test` revisions. It has reviewed change-lineage status but no instruction or promotion authority. New records pin each endpoint with the exact `worldModelId`, `graphSnapshotId`, and `sourceSnapshotId` already observed before the record is created. Retrieval verifies the retained World identity, Project, and graph/source pair directly; it does not need to inventory unrelated snapshots. World IDs locate exact retained evidence and do not confer authority. The Git-independent graph/source revisions, ResultPacket, and ReviewDecision remain the semantic evidence. Existing record `0.1.0` and `0.2.0` originals retain their two-key endpoints, bytes, hashes, and IDs; their bounded pair lookup can report partial coverage. State, impact candidates, and impact reviews remain protocol `0.2.0`. Git may later attach optional `VcsEvidence`; no `.git` directory or commit identity is required.
 
 ## Two-stage identity boundary
 

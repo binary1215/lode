@@ -31,8 +31,8 @@ function snapshot(root, layout) {
   visit(path.join(root, layout.directory)); return files;
 }
 
-test("static execution help needs no initialized project or classifier and grants no permission", () => {
-  const help = runCommand(["help"]), guidance = help.executionMeans;
+test("static execution help needs no initialized project or classifier and grants no permission", async () => {
+  const help = (await runCommand(["help"])), guidance = help.executionMeans;
   assert.equal(guidance.default, "lode-direct");
   assert.equal(guidance.delegation, "existing-host-tools-when-useful");
   assert.equal(guidance.managedSelectionIsAutomatic, false);
@@ -44,13 +44,13 @@ test("static execution help needs no initialized project or classifier and grant
   assert.equal(help.contextPreparationRequired, false);
   assert.equal(Object.hasOwn(guidance, "laneSelectsExecutionMeans"), false);
   guidance.hostFallback.length = 0;
-  assert.deepEqual(runCommand(["help"]).executionMeans.hostFallback, ["lode-direct", "sequential"]);
+  assert.deepEqual((await runCommand(["help"])).executionMeans.hostFallback, ["lode-direct", "sequential"]);
 });
 
-test("ordinary project inspection preserves Session and artifacts without Run or Capsule preparation", t => {
+test("ordinary project inspection preserves Session and artifacts without Run or Capsule preparation", async t => {
   const { root, layout } = fixture(t), before = snapshot(root, layout), initial = inspectProject(root);
   assert.equal(initial.status, "ready");
-  const status = runCommand(["status", root]);
+  const status = (await runCommand(["status", root]));
   assert.equal(status.readiness.core.state, "ready");
   assert.equal(inspectProject(root).state.sessionId, initial.state.sessionId);
   assert.equal(inspectProject(root).state.activeRunId, initial.state.activeRunId);
@@ -63,8 +63,8 @@ test("removed lane API has no module, CLI command or MCP tool and creates no fal
   const { root, layout } = fixture(t), before = snapshot(root, layout);
   assert.equal(fs.existsSync(path.join(pluginRoot, "scripts/lib/operating-lane.mjs")), false);
   assert(!catalogTools.some(tool => tool.name === "head_operating_lane_recommend"));
-  for (const mode of ["help", "help-all"]) assert(!runCommand([mode]).commands.some(command => command.includes("operating-lane-recommend")));
-  assert.throws(() => runCommand(["operating-lane-recommend", root]), /Unknown command/u);
+  for (const mode of ["help", "help-all"]) assert(!(await runCommand([mode])).commands.some(command => command.includes("operating-lane-recommend")));
+  (await assert.rejects(async () => (await runCommand(["operating-lane-recommend", root])), /Unknown command/u));
   const response = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "head_operating_lane_recommend", arguments: { project_root: root, intent: "execute" } } });
   assert.match(response.error?.message || "", /Unknown tool/u);
   assert.deepEqual(snapshot(root, layout), before);

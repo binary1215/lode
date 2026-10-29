@@ -72,7 +72,7 @@ async function fixture(t, { allowWrite = true, forbidWrite = false, noOp = false
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const storage = inspectProject(root).storage;
   fs.writeFileSync(path.join(root, "sum.mjs"), "export const sum = (a, b) => a - b;\n");
-  const capsule = compileContext({ root, task: "Propose a bounded synthetic arithmetic fix", persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Propose a bounded synthetic arithmetic fix", persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Integrate a proposal as HEAD", plan: [{ id: "fix", outcome: "Correct arithmetic" }] }).artifact;
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
     scope: "Synthetic proposal integration", acceptanceCriteria: ["One verified whole result"],

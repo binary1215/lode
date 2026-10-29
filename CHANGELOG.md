@@ -11,6 +11,19 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.66 — publication tracked separately
+
+- Preserve revision-anchored Git/World evidence with immutable snapshot storage,
+  domain freshness and exact temporal lineage. Keep whole-gzip storage as the default.
+- Bound move matching and expose exact path-scoped, paged lineage queries across
+  Core, CLI and MCP without turning partial coverage into semantic sufficiency.
+- Count completed/cancelled Todo details separately from unresolved work; retain
+  branch conflicts, unknown coverage and existing conversation/startup behavior.
+- Exclude actual `.lode` directories at every distribution depth while preserving
+  local records and ordinary `.lode` names in support code and documents.
+- No tag or GitHub Release is created for this intermediate beta. Marketplace
+  publication, disk installation and current Host loading are verified separately.
+
 ## 0.3.0-beta.65 — publication tracked separately
 
 - Explore one exact Feature through structure, recorded work, and changes/related

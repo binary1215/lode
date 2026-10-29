@@ -17,14 +17,14 @@ test("viewer collection retains complete verified topology beyond conversational
   const full = await collectGraphExplorerInventory({ root: f.root, query: "generic", storeAdapter });
   assert(full.nodes.length > 500); assert(full.edges.length > 1000);
   assert.equal(full.coverage.verifiedNodeCount, full.nodes.length);
-  const world = inspectWorldDomainFreshness({ root: f.root, storeAdapter });
+  const world = (await inspectWorldDomainFreshness({ root: f.root, storeAdapter }));
   const edgeIds = new Set(full.edges.map(edge => edge.edgeId));
   for (const edge of world.snapshot.temporalProvenanceGraph.edges) assert(edgeIds.has(edge.edgeId));
   assert.equal(full.basis.projectId, f.projectId); assert.equal(full.authority.instructionAuthority, false);
   assert(full.structural.graph.nodes.length > 500); assert(full.detailSelection.nodes.length <= 60);
   const ordinary = await queryProjectGraph({ root: f.root, query: "generic", details: true, viewerInventory: true, storeAdapter });
   assert(ordinary.nodes.length <= 60); assert(ordinary.edges.length <= 120);
-  await assert.rejects(queryProjectGraph({ root: f.root, maxNodes: 501 }), { code: "INVALID_PROJECT_GRAPH_BOUND" });
+  await assert.rejects(((queryProjectGraph({ root: f.root, maxNodes: 501 }))), { code: "INVALID_PROJECT_GRAPH_BOUND" });
   assert.deepEqual(snapshot(f.base), before);
 });
 

@@ -25,6 +25,7 @@
 - [기록된 코드 맥락과 전후 비교](context-lineage.md)
 - [Lode Context Compiler 설계](context-compiler.md)
 - [저장소 World Model 의미론](world-model.md)
+- [스냅샷 인코딩·저장 진단과 보존](snapshot-storage.md)
 - [시간 출처 GraphSnapshot](temporal-provenance.md)
 - [검토 게이트 Feature 매핑](feature-mapping.md)
 - [관찰 상태 증분 갱신](incremental-refresh.md)

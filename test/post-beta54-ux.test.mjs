@@ -68,14 +68,14 @@ test("MCP human descriptions and attention labels use Lode without rewriting wir
 
 test("copied and interrupted status is project-only P4, readonly even with explicit/lost/native context", async t => {
   const f = fixture(t);
-  const guide = inspectProjectExperience({ root: f.root });
+  const guide = (await inspectProjectExperience({ root: f.root }));
   for (const capability of guide.capabilities) if (typeof capability.entrypoint === "string") assert.doesNotMatch(capability.entrypoint, /\bHEAD\b/);
   for (const stage of [null, "project", "manifest"]) {
     const root = path.join(f.base, `copy-${stage ?? "new"}`); fs.cpSync(f.root, root, { recursive: true });
     if (stage) assert.throws(() => resumeProjectLocation({ root, pluginRoot, onPublication(at) { if (at === stage) throw Error("synthetic interruption"); } }));
     const context = createSessionCallContext(); context.lose(root);
     const before = snapshot(f.base), expected = stage ? "relocation_pending" : "relocation_available";
-    assert.equal(inspectProjectExperience({ root }).status, expected);
+    assert.equal((await inspectProjectExperience({ root })).status, expected);
     for (const argv of [["status", root], ["doctor", root, "--session", f.session.sessionId]]) {
       const result = await runCommand(argv, { sessionContext: context });
       assert.equal(result.status, expected); assert.equal(result.retainedProject.projectId, f.owner.project.projectId);
@@ -98,15 +98,15 @@ test("copied and interrupted status is project-only P4, readonly even with expli
     if (!stage) assert.equal(inspectProject(root).status, "not_initialized");
   }
   const lost = createSessionCallContext(); lost.lose(f.root);
-  const normal = runCommand(["status", f.root], { sessionContext: lost });
+  const normal = (await runCommand(["status", f.root], { sessionContext: lost }));
   assert.equal(normal.status, "session_selection_unresolved"); assert(!normal?.then, "normal-root diagnostics stay synchronous");
 });
 
-test("tampered copied metadata remains an integrity failure, not relocation or new initialization advice", t => {
+test("tampered copied metadata remains an integrity failure, not relocation or new initialization advice", async t => {
   const f = fixture(t), root = path.join(f.base, "tampered"); fs.cpSync(f.root, root, { recursive: true });
   const project = path.join(root, ".lode/project.json"), value = JSON.parse(fs.readFileSync(project));
   value.authority.lode = "foreign"; fs.writeFileSync(project, JSON.stringify(value));
-  const before = snapshot(f.base); assert.throws(() => inspectProjectExperience({ root })); assert.deepEqual(snapshot(f.base), before);
+  const before = snapshot(f.base); (await assert.rejects(async () => (await inspectProjectExperience({ root })))); assert.deepEqual(snapshot(f.base), before);
 });
 
 test("shared metadata omits generated host paths but retains exact evidence and every exported ID", async t => {
@@ -125,7 +125,7 @@ test("shared metadata omits generated host paths but retains exact evidence and 
   assert.equal(Number(html.match(/HTML size: (\d+) bytes/)[1]), result.bytes);
   assert.match(html, /not anonymization/); assert(result.advisories.length); assert.equal(result.ordinaryWorkBlocked, false);
   assert.deepEqual(snapshot(f.root), before);
-  await assert.rejects(exportGraphExplorer({ root: f.root, share: "yes", output: path.join(f.base, "invalid.html") }), { code: "GRAPH_EXPLORER_INVALID_SHARE_OPTION" });
+  await assert.rejects(((exportGraphExplorer({ root: f.root, share: "yes", output: path.join(f.base, "invalid.html") }))), { code: "GRAPH_EXPLORER_INVALID_SHARE_OPTION" });
   assert.equal(fs.existsSync(path.join(f.base, "invalid.html")), false);
   const empty = path.join(f.base, "empty-target"); fs.mkdirSync(empty);
   const absent = await buildGraphExplorerSnapshot({ root: empty });

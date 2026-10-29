@@ -1154,6 +1154,7 @@ export function formatCliResult(command, value, presentation = {}) {
   if (command === "context-prepare") return formatContextPreparation(value);
   if (command === "context-preview") return formatContextPreview(value);
   if (command === "checkpoint-basis") return formatCheckpointBasis(value);
+  if (command === "storage-gc") return formatSnapshotStorage(value);
   if (command === "checkpoint-diagnose") return formatCheckpointDiagnosis(value);
   if (command === "checkpoint-sync") return formatCheckpointSync(value);
   if (command === "session-work-record") return formatSessionWorkRecord(value);
@@ -1252,4 +1253,13 @@ function formatSourceContext(value) {
   if (value.results.some((item) => item.storageIssues?.length)) lines.push("Stored-evidence issues are listed in the result; damaged originals were not overwritten or deleted.");
   lines.push("Partial source observations, not runtime truth or semantic sufficiency. Lode assesses what the task still needs.");
   return `${lines.join("\n")}\n`;
+}
+
+function formatSnapshotStorage(value) {
+  return [
+    "Snapshot storage: " + value.snapshotCount + " snapshot files; " + value.storedBytes + " stored bytes.",
+    "Observed without a retained reference: " + value.observedUnreferencedCount + "; " + value.observedUnreferencedBytes + " bytes (not certified safe to delete).",
+    "All snapshots preserved. Deleted: 0; reclaimable: 0. Apply is unavailable: reference-writer transaction coverage is incomplete.",
+    "Details and preservation reasons: --json. Ordinary work is unaffected.", "",
+  ].join("\n");
 }

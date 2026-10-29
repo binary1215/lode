@@ -367,13 +367,13 @@ export function inspectMeasurements({ root = "." } = {}) {
   };
 }
 
-export function traceMeasurementLineage({ root = ".", anchorId = "", metricKey = "", typeVersion = "", depth = 3, maxNodes = 128, maxEdges = 256, graphProjectionAdapter = null } = {}) {
+export async function traceMeasurementLineage({ root = ".", anchorId = "", metricKey = "", typeVersion = "", depth = 3, maxNodes = 128, maxEdges = 256, graphProjectionAdapter = null } = {}) {
   const inspected = assertObservationProjectReady(root);
   if (anchorId && metricKey) fail("Select either an exact measurement anchor or a metric key, not both.", "INVALID_MEASUREMENT_TRACE_INPUT");
   let selectedAnchorId = String(anchorId || "").trim();
   if (!selectedAnchorId && metricKey) selectedAnchorId = findMetricDefinition(inspected.project.projectRoot, inspected.project.projectId, metricKey, typeVersion, inspected.storage).descriptor.descriptorId;
   if (!selectedAnchorId) fail("Measurement lineage requires an exact anchorId or metricKey.", "MEASUREMENT_TRACE_ANCHOR_REQUIRED");
-  const currentWorld = inspectWorldModel({ root: inspected.project.projectRoot });
+  const currentWorld = (await inspectWorldModel({ root: inspected.project.projectRoot }));
   if (currentWorld.status !== "current") fail("Measurement lineage requires the current verified World Model.", "WORLD_MODEL_STALE");
   const queryParameters = {
     anchorIds: [selectedAnchorId],
@@ -390,7 +390,7 @@ export function traceMeasurementLineage({ root = ".", anchorId = "", metricKey =
     maxNodes,
     maxEdges,
   };
-  const graph = queryWorldTemporalGraph({ root: inspected.project.projectRoot, graphProjectionAdapter, ...queryParameters });
+  const graph = (await queryWorldTemporalGraph({ root: inspected.project.projectRoot, graphProjectionAdapter, ...queryParameters }));
   return {
     kind: "MeasurementLineageProjection",
     protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-measurement-lineage"), version: MEASUREMENT_WORKFLOW_VERSION },

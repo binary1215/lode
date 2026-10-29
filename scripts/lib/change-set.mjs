@@ -18,6 +18,7 @@ import {
   CHANGE_IMPACT_REVIEW_DIRECTORY,
   CHANGE_SET_DIRECTORY,
   CHANGE_SET_VERSION,
+  CHANGE_SET_RECORD_VERSION,
   VCS_EVIDENCE_DIRECTORY,
   VCS_EVIDENCE_VERSION,
   changeSetCanonicalJson,
@@ -170,8 +171,9 @@ function revisionChanges(before, after) {
   }).sort((left, right) => left.changeId.localeCompare(right.changeId));
 }
 
-function snapshotReference(snapshot) {
+function snapshotReference(snapshot, includeWorldModelId = false) {
   return {
+    ...(includeWorldModelId ? { worldModelId: snapshot.worldModelId } : {}),
     graphSnapshotId: snapshot.temporalProvenanceGraph.graphSnapshotId,
     sourceSnapshotId: snapshot.temporalProvenanceGraph.sourceSnapshotId,
   };
@@ -441,7 +443,7 @@ export async function attachVcsEvidence({ root = ".", changeSetId, commitIds = [
   const projectRoot = inspected.project.projectRoot;
   const changeSet = readChangeSet({ root: projectRoot, changeSetId: requiredText(changeSetId, "ChangeSet id") }).changeSet;
   const originalIdentity = { changeSetId: changeSet.changeSetId, changeSetHash: changeSet.changeSetHash };
-  const current = inspectWorldModel({ root: projectRoot });
+  const current = (await inspectWorldModel({ root: projectRoot }));
   if (current.status !== "current") fail("Current repository evidence is stale; index it before attaching VCS evidence.", "VCS_EVIDENCE_SOURCE_DRIFT");
   const history = current.snapshot.gitDecisionHistory;
   if (!history || history.status !== "available" || history.coverage !== "all-reachable-commits") {
@@ -496,14 +498,14 @@ export async function recordChangeSet({ root = ".", resultPacketId, reviewDecisi
   }
   const lineage = lineageForChangeSet(projectRoot, resultPacketId, reviewDecisionId);
   let before;
-  if (beforeWorldModelId) before = readWorldModelSnapshot({ root: projectRoot, worldModelId: beforeWorldModelId }).snapshot;
+  if (beforeWorldModelId) before = (await readWorldModelSnapshot({ root: projectRoot, worldModelId: beforeWorldModelId })).snapshot;
   else {
-    const matches = findWorldModelSnapshot({ root: projectRoot, graphSnapshotId: lineage.capsule.repositoryTemporalGraph.graphSnapshotId }).matches;
+    const matches = (await findWorldModelSnapshot({ root: projectRoot, graphSnapshotId: lineage.capsule.repositoryTemporalGraph.graphSnapshotId })).matches;
     const expectedHash = lineage.capsule.snapshot?.sourceDigests?.repositoryWorldModel || "";
     before = matches.find((snapshot) => !expectedHash || snapshot.worldModelHash === expectedHash) || null;
     if (!before) fail("The ContextCapsule World Model snapshot cannot be recovered.", "CHANGE_SET_BASE_SNAPSHOT_MISSING");
   }
-  const current = inspectWorldModel({ root: projectRoot });
+  const current = (await inspectWorldModel({ root: projectRoot }));
   if (current.status !== "current") fail("Current repository evidence is stale; index it before recording a ChangeSet.", "CHANGE_SET_SOURCE_DRIFT");
   const after = current.snapshot;
   const changes = revisionChanges(before, after);
@@ -513,12 +515,12 @@ export async function recordChangeSet({ root = ".", resultPacketId, reviewDecisi
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ChangeSet",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-change-set"), version: CHANGE_SET_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-change-set"), version: CHANGE_SET_RECORD_VERSION },
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     parentChangeSetIds: parents,
-    before: snapshotReference(before),
-    after: snapshotReference(after),
+    before: snapshotReference(before, true),
+    after: snapshotReference(after, true),
     wholePlanId: lineage.review.wholePlanId,
     executionContractId: lineage.result.executionContractId,
     resultPacketId: lineage.result.resultPacketId,
@@ -656,7 +658,7 @@ function completeImpactReview({ projectRoot, inspected, state, review, snapshot,
 }
 
 export async function reviewChangeImpact(options = {}) {
-  return withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, () => reviewChangeImpactLocked(options));
+  return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, async () => (await reviewChangeImpactLocked(options))));
 }
 
 async function reviewChangeImpactLocked({ root = ".", candidateSetId, disposition, acceptedCandidateIds = [], rationale } = {}) {
@@ -682,13 +684,13 @@ async function reviewChangeImpactLocked({ root = ".", candidateSetId, dispositio
     if (!pointerPending) fail("Change impact review references an already reviewed candidate set.", "STALE_CHANGE_IMPACT_CANDIDATE_SET");
     fail(`A different Change impact ReviewDecision is already durable for this exact candidate set. Retry the unchanged saved decision ${recordedReview.reviewDecisionId} to finish its pending state update.`, "CHANGE_IMPACT_REVIEW_CONFLICT");
   }
-  let current = inspectWorldModel({ root: projectRoot });
+  let current = (await inspectWorldModel({ root: projectRoot }));
   if (recordedReview) {
     const projectionState = impactReviewProjectionState(current.snapshot, recordedReview);
     if (!projectionState.exact && !projectionState.absent) fail("The World projection does not match the exact saved Change impact decision.", "CHANGE_IMPACT_REVIEW_PROJECTION_MISMATCH");
     if (projectionState.absent) {
       await rebuildProjection({ projectRoot, projectId: inspected.project.projectId, sourceWorld: current.snapshot }, storage);
-      current = inspectWorldModel({ root: projectRoot });
+      current = (await inspectWorldModel({ root: projectRoot }));
       if (!impactReviewProjectionState(current.snapshot, recordedReview).exact) fail("The saved Change impact decision could not be verified in the rebuilt World projection.", "CHANGE_IMPACT_REVIEW_PROJECTION_MISMATCH");
     }
     return completeImpactReview({ projectRoot, inspected, state, review: recordedReview, snapshot: current.snapshot,
@@ -703,7 +705,7 @@ async function reviewChangeImpactLocked({ root = ".", candidateSetId, dispositio
   }
   if (normalizedDisposition === "reject" && current.status !== "current") {
     await refreshWorldModel({ root: projectRoot });
-    current = inspectWorldModel({ root: projectRoot });
+    current = (await inspectWorldModel({ root: projectRoot }));
     if (current.status !== "current") fail("World evidence changed during rejection refresh; retry the same explicit rejection after concurrent changes settle.", "CHANGE_IMPACT_SOURCE_DRIFT");
   }
   // P1 authority is durable before its rebuildable P4 projection. Exact retry
@@ -713,7 +715,7 @@ async function reviewChangeImpactLocked({ root = ".", candidateSetId, dispositio
   return completeImpactReview({ projectRoot, inspected, state, review, snapshot: projected.snapshot }, storage);
 }
 
-export function inspectChangeSets({ root = "." } = {}) {
+export async function inspectChangeSets({ root = "." } = {}) {
   const inspected = readyProject(root, "ChangeSet inspection");
   const storage = inspected.storage;
   const file = stateFile(inspected.project.projectRoot, storage);
@@ -725,7 +727,7 @@ export function inspectChangeSets({ root = "." } = {}) {
   const reviewDecision = state.reviewDecisionId ? readChangeImpactReviewDecision({ root: inspected.project.projectRoot, reviewDecisionId: state.reviewDecisionId }).reviewDecision : savedReview;
   const projection = loadChangeSetProjection({ storage, projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId });
   const vcsEvidence = projection.vcsEvidence.filter((item) => item.changeSetId === changeSet.changeSetId);
-  const world = inspectWorldModel({ root: inspected.project.projectRoot });
+  const world = (await inspectWorldModel({ root: inspected.project.projectRoot }));
   const awaitingReview = state.phase === "awaiting-review";
   const evidenceCurrent = currentCandidateEvidence(candidateSet, state, world);
   const runConflict = Boolean(inspected.state.activeRunId || inspected.state.pendingReview);

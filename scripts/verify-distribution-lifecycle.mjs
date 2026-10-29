@@ -62,7 +62,7 @@ function copySourceFixture() {
     value.version = upgradedVersion;
     fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   }
-  for (const relative of [".agent-work/review.md", "docs/.agent-work/review.md", "scripts/nested/.agent-work/result.json", "skills/.AGENT-WORK/review.md", "docs/.custom-source/keep.md"]) {
+  for (const relative of [".agent-work/review.md", "docs/.agent-work/review.md", "scripts/nested/.agent-work/result.json", "skills/.AGENT-WORK/review.md", ".lode/context.json", "docs/.lode/context.json", "scripts/nested/.lode/result.json", "skills/.LODE/context.json", "docs/.lode-state.json", "docs/file-case/.lode", "docs/.custom-source/keep.md"]) {
     const file = path.join(upgradedSource, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, "work evidence fixture\n");
@@ -323,10 +323,15 @@ try {
   assert.equal(upgraded.status, "upgraded");
   assert.notEqual(upgraded.releaseId, installed.releaseId);
   const upgradedReleaseRoot = path.join(installRoot, "releases", upgraded.releaseId);
-  for (const relative of [".agent-work", "docs/.agent-work", "scripts/nested/.agent-work", "skills/.AGENT-WORK"]) {
+  for (const relative of [".agent-work", "docs/.agent-work", "scripts/nested/.agent-work", "skills/.AGENT-WORK", ".lode", "docs/.lode", "scripts/nested/.lode", "skills/.LODE"]) {
     assert.equal(fs.existsSync(path.join(upgradedReleaseRoot, relative)), false);
   }
-  assert.equal(fs.existsSync(path.join(upgradedReleaseRoot, "docs/.custom-source/keep.md")), true);
+  for (const relative of ["docs/.custom-source/keep.md", "docs/.lode-state.json", "docs/file-case/.lode"]) {
+    assert.equal(fs.existsSync(path.join(upgradedReleaseRoot, relative)), true, relative);
+  }
+  for (const relative of [".lode/context.json", "docs/.lode/context.json", "scripts/nested/.lode/result.json", "skills/.LODE/context.json"]) {
+    assert.equal(fs.readFileSync(path.join(upgradedSource, relative), "utf8"), "work evidence fixture\n");
+  }
   assert.equal(upgraded.project.installationAction, "converged");
   assert.equal(upgraded.project.project.projectId, projectBeforeResume.projectId);
   await verifyOpenCodeInstallation(upgradedReleaseRoot);

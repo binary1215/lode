@@ -7,14 +7,14 @@
 
 ## 목적과 권한
 
-ChangeSet protocol `0.1.0`은 Git commit, branch, provider 또는 executor attempt와 독립적으로 검토된 하나의 logical change를 기록합니다. ChangeSet은 다음으로부터만 생성됩니다.
+ChangeSet record protocol `0.3.0`은 Git commit, branch, provider 또는 executor attempt와 독립적으로 검토된 하나의 logical change를 기록합니다. ChangeSet은 다음으로부터만 생성됩니다.
 
 - ExecutionContract ContextCapsule에 고정된 검증된 World Model 및 temporal GraphSnapshot;
 - 서로 다른 현재의 post-execution World Model 및 SourceSnapshot;
 - 일치하는 ResultPacket;
 - 수락된 execution ReviewDecision.
 
-ChangeSet은 추가, 수정 및 제거된 `File`, `Symbol`, `Test` revision을 정확히 기록합니다. 검토된 change-lineage status를 갖지만 instruction authority 또는 promotion authority는 없습니다. operational World Model identity는 선택적 Git, runtime 또는 physical projection input을 포함할 수 있으므로 ChangeSet body에서 제외됩니다. Git과 독립적인 GraphSnapshot, SourceSnapshot, revision, ResultPacket 및 ReviewDecision identity가 semantic record를 구성합니다. Git은 나중에 선택적 `VcsEvidence`를 첨부할 수 있으며, `.git` directory 또는 commit identity는 필요하지 않습니다.
+ChangeSet은 추가, 수정 및 제거된 `File`, `Symbol`, `Test` revision을 정확히 기록합니다. 검토된 change-lineage status를 갖지만 instruction authority 또는 promotion authority는 없습니다. 새 기록은 생성 전에 이미 관측한 정확한 `worldModelId`, `graphSnapshotId`, `sourceSnapshotId`를 각 endpoint에 고정합니다. 조회 시 보관된 World의 identity·Project·graph/source 쌍을 직접 검증하므로 관련 없는 snapshot 목록을 탐색할 필요가 없습니다. World ID는 정확한 보관 근거의 위치이며 권한을 부여하지 않습니다. Git과 독립적인 graph/source revision, ResultPacket, ReviewDecision이 의미적 근거로 유지됩니다. 기존 record `0.1.0`·`0.2.0` 원문은 두-key endpoint와 bytes·hash·ID를 유지하며, 제한된 pair 조회는 부분 탐색으로 표시할 수 있습니다. state·impact candidate·impact review는 protocol `0.2.0`을 유지합니다. Git은 나중에 선택적 `VcsEvidence`를 첨부할 수 있으며, `.git` directory 또는 commit identity는 필요하지 않습니다.
 
 ## 2단계 identity 경계
 

@@ -21,8 +21,11 @@ The active dependency-free local JSON adapter stores:
 
 ```text
 .lode/world-model/current.json                    Warm pointer and change summary
-.lode/world-model/snapshots/world-model-*.json   Hot current / Cold prior snapshots
+.lode/world-model/snapshots/world-model-*.json.gz  New compact + gzip snapshots
+.lode/world-model/snapshots/world-model-*.json     Retained legacy snapshots
 ```
+
+New local snapshots use `.json.gz`; existing `.json` files remain unchanged and readable. See [Snapshot storage and preservation](snapshot-storage.md) for physical bounds, ignore rules and the read-only GC diagnostic.
 
 `current.json` points to the Hot snapshot, records the physical adapter descriptor, and records added, changed, and removed paths as the Warm tier. Previous content-addressed snapshots form the Cold tier. The physical adapter descriptor is not part of the semantic snapshot hash, so the same canonical inputs produce the same World Model ID through a conforming local, memory, or future GraphDB adapter.
 

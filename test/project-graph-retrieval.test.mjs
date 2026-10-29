@@ -45,7 +45,7 @@ test("literal code identifiers precede repeated document headings without exclud
   assert(filtered.nodes.length > 0); assert(filtered.nodes.every(node => node.path === "delivery-0.md"));
   fs.appendFileSync(path.join(root, "src/delivery.mjs"), "// Later source drift\n");
   const stale = await queryProjectGraph({ root, query: "resolveDelivery implementation", depth: 0, maxNodes: 60 });
-  const observed = inspectWorldDomainFreshness({ root });
+  const observed = (await inspectWorldDomainFreshness({ root }));
   assert.equal(observed.freshness.domains.code.status, "stale");
   const eligible = new Set(buildWorldTraversalEligibility(observed.snapshot, observed.freshness.domains).nodeIds);
   for (const node of stale.nodes.filter(node => node.origin?.layer === "world")) assert(eligible.has(node.nodeId),
@@ -211,9 +211,9 @@ test("paths-only adapter query binds exact verified File anchors and preserves f
 
 test("paths-only verified adapter and local-only selectors are correctly distinguished", async t => {
   const { root, storage, layout } = await worldFixture(t);
-  const graph = readWorldModelForDiscovery({ root }).snapshot.temporalProvenanceGraph;
+  const graph = (await readWorldModelForDiscovery({ root })).snapshot.temporalProvenanceGraph;
   const graphProjectionAdapter = new InMemoryGraphProjectionAdapter();
-  materializeGraphProjection({ projectRoot: root, storage, graph, adapter: graphProjectionAdapter });
+  (await materializeGraphProjection({ projectRoot: root, storage, graph, adapter: graphProjectionAdapter }));
   const result = await queryProjectGraph({ root, paths: ["src/queue.mjs"], graphProjectionAdapter });
   assert.equal(result.adapter.status, "verified");
   safe(result);

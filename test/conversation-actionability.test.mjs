@@ -46,9 +46,9 @@ function readSnapshot(root) {
 }
 async function verifySurfaces(root, { headActionRequired, recoveryBlocked = false, recoveryHeadAction = false, presentation = headActionRequired ? "exception" : "quiet" }) {
   const before = bytes(root);
-  const status = inspectProjectExperience({ root });
-  const entry = enterConversationRecovery({ root });
-  const cli = runCommand(["conversation-enter", root]);
+  const status = (await inspectProjectExperience({ root }));
+  const entry = (await enterConversationRecovery({ root }));
+  const cli = (await runCommand(["conversation-enter", root]));
   const mcp = await dispatch({ jsonrpc: "2.0", id: "actionability", method: "tools/call",
     params: { name: "head_conversation_enter", arguments: { project_root: root } } });
   assert.equal(mcp.result?.isError, undefined, JSON.stringify(mcp));
@@ -70,7 +70,7 @@ async function verifySurfaces(root, { headActionRequired, recoveryBlocked = fals
   assert.equal(entry.authorityChanged, false);
   assert.equal(entry.persisted, false);
   assert.equal(entry.projectStatus.authority.grantsAuthorization, false);
-  const hostless = processCompactionLifecycle({ root });
+  const hostless = (await processCompactionLifecycle({ root }));
   assert.equal(hostless.headActionRequired, entry.headActionRequired);
   assert.equal(hostless.recoveryDependentWorkBlocked, recoveryBlocked);
   assert.equal(hostless.userDecisionRequired, false);
@@ -179,7 +179,7 @@ test("managed projection drift with no checkpoint never invents a checkpoint-dep
   assert.throws(() => checkpoint(root), { code: "MANAGED_DRIFT" });
 });
 
-test("entry retains its second managed-file observation instead of trusting final pointer equality", (t) => {
+test("entry retains its second managed-file observation instead of trusting final pointer equality", async (t) => {
   const { root, layout } = fixture(t), target = path.join(root, "AGENTS.md"), originalRead = fs.readFileSync;
   const original = originalRead(target), altered = Buffer.concat([original, Buffer.from("\nConcurrent synthetic managed drift.\n")]);
   const before = readSnapshot(root);
@@ -193,7 +193,7 @@ test("entry retains its second managed-file observation instead of trusting fina
     }
     return originalRead.call(this, file, ...args);
   };
-  try { entry = enterConversationRecovery({ root }); } finally { fs.readFileSync = originalRead; }
+  try { entry = (await enterConversationRecovery({ root })); } finally { fs.readFileSync = originalRead; }
   assert.ok(reads >= 2, "The later managed-file hash must still be observed");
   assert.equal(entry.projectStatus.readiness.core.state, "drifted");
   assert.ok(entry.projectStatus.drift.some(item => item.path === "AGENTS.md" && item.reason === "modified"));

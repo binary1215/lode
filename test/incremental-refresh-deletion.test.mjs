@@ -90,7 +90,7 @@ test("refresh drops deleted revision-parent keys while preserving surviving and 
   fs.writeFileSync(path.join(root, layout.directory, "context", "product-model.json"), `${JSON.stringify(evolvedProductModel, null, 2)}\n`);
   assert.equal((await refreshWorldModel({ root })).status, "refreshed");
   const protectedBefore = authorityBytes(root, layout);
-  const beforeDeletion = readWorldModel({ root }).snapshot;
+  const beforeDeletion = (await readWorldModel({ root })).snapshot;
   const beforeGraph = beforeDeletion.temporalProvenanceGraph;
   const removedRevision = currentRevision(beforeGraph, "SymbolRevision", (node) => node.name === "removed_token");
   const survivingRevision = currentRevision(beforeGraph, "SymbolRevision", (node) => node.name === "surviving_token");
@@ -106,7 +106,7 @@ test("refresh drops deleted revision-parent keys while preserving surviving and 
   fs.writeFileSync(path.join(root, "src", "tokens.py"), "def surviving_token():\n    return 10\n");
   const deleted = await refreshWorldModel({ root });
   assert.equal(deleted.status, "refreshed");
-  const afterDeletion = readWorldModel({ root }).snapshot;
+  const afterDeletion = (await readWorldModel({ root })).snapshot;
   const afterGraph = afterDeletion.temporalProvenanceGraph;
   assert.equal(afterGraph.nodes.some((node) => node.logicalEntityId === removedRevision.logicalEntityId), false);
   assert.equal(Object.hasOwn(afterGraph.revisionParentIds, removedRevision.logicalEntityId), false);
@@ -120,11 +120,11 @@ test("refresh drops deleted revision-parent keys while preserving surviving and 
   assert.deepEqual(featureAfter.parentRevisionIds, featureRevision.parentRevisionIds);
   assert.ok(afterGraph.parentSourceSnapshotIds.includes(beforeGraph.sourceSnapshotId));
 
-  const lineageDiff = diffGraphLineage({
+  const lineageDiff = (await diffGraphLineage({
     root,
     fromWorldModelId: beforeDeletion.worldModelId,
     toWorldModelId: afterDeletion.worldModelId,
-  });
+  }));
   assert.equal(lineageDiff.kind, "GraphLineageDiffProjection");
   assert.ok(lineageDiff.changes.removedNodes.count > 0);
   assert.deepEqual(authorityBytes(root, layout), protectedBefore);
@@ -135,15 +135,15 @@ test("refresh drops deleted revision-parent keys while preserving surviving and 
   assert.deepEqual(authorityBytes(root, layout), protectedBefore);
 
   const currentWorldModelId = afterDeletion.worldModelId;
-  await assert.rejects(buildWorldModel({
+  await assert.rejects(((buildWorldModel({
     root,
     expectedWorldModelId: `world-model-${"0".repeat(24)}`,
-  }), { code: "REFRESH_PREVIEW_DRIFT" });
-  await assert.rejects(buildWorldModel({
+  }))), { code: "REFRESH_PREVIEW_DRIFT" });
+  await assert.rejects(((buildWorldModel({
     root,
     expectedCurrentWorldModelId: `world-model-${"f".repeat(24)}`,
-  }), { code: "REFRESH_POINTER_CONFLICT" });
-  assert.equal(readWorldModel({ root }).snapshot.worldModelId, currentWorldModelId);
+  }))), { code: "REFRESH_POINTER_CONFLICT" });
+  assert.equal((await readWorldModel({ root })).snapshot.worldModelId, currentWorldModelId);
 });
 
 test("refresh handles linked symbol rename, file deletion, and source-scope exclusion", async (t) => {
@@ -152,12 +152,12 @@ test("refresh handles linked symbol rename, file deletion, and source-scope excl
   await buildWorldModel({ root: renameRoot });
   fs.writeFileSync(path.join(renameRoot, "src", "rename.py"), "def old_name():\n    return 2\n");
   await refreshWorldModel({ root: renameRoot });
-  const beforeRename = readWorldModel({ root: renameRoot }).snapshot.temporalProvenanceGraph;
+  const beforeRename = (await readWorldModel({ root: renameRoot })).snapshot.temporalProvenanceGraph;
   const oldRevision = currentRevision(beforeRename, "SymbolRevision", (node) => node.name === "old_name");
   assert.ok(beforeRename.revisionParentIds[oldRevision.logicalEntityId]?.length > 0);
   fs.writeFileSync(path.join(renameRoot, "src", "rename.py"), "def new_name():\n    return 2\n");
   assert.equal((await refreshWorldModel({ root: renameRoot })).status, "refreshed");
-  const afterRename = readWorldModel({ root: renameRoot }).snapshot.temporalProvenanceGraph;
+  const afterRename = (await readWorldModel({ root: renameRoot })).snapshot.temporalProvenanceGraph;
   assert.equal(Object.hasOwn(afterRename.revisionParentIds, oldRevision.logicalEntityId), false);
   assert.deepEqual(currentRevision(afterRename, "SymbolRevision", (node) => node.name === "new_name").parentRevisionIds, []);
 
@@ -168,13 +168,13 @@ test("refresh handles linked symbol rename, file deletion, and source-scope excl
     await buildWorldModel({ root });
     fs.writeFileSync(path.join(root, "src", "item.py"), "def item():\n    return 2\n");
     await refreshWorldModel({ root });
-    const before = readWorldModel({ root }).snapshot.temporalProvenanceGraph;
+    const before = (await readWorldModel({ root })).snapshot.temporalProvenanceGraph;
     const itemRevision = currentRevision(before, "FileRevision", (node) => node.path === "src/item.py");
     assert.ok(before.revisionParentIds[itemRevision.logicalEntityId]?.length > 0);
     if (mode === "delete-file") fs.rmSync(path.join(root, "src", "item.py"));
     else writeRepositorySourceScope({ projectRoot: root, storage, selection: { includeRoots: [], excludeRoots: ["src/item.py"] } });
     assert.equal((await refreshWorldModel({ root })).status, "refreshed");
-    const after = readWorldModel({ root }).snapshot.temporalProvenanceGraph;
+    const after = (await readWorldModel({ root })).snapshot.temporalProvenanceGraph;
     assert.equal(after.nodes.some((node) => node.logicalEntityId === itemRevision.logicalEntityId), false);
     assert.equal(Object.hasOwn(after.revisionParentIds, itemRevision.logicalEntityId), false);
   }

@@ -106,7 +106,7 @@ async function fixture(t) {
     '}',
     '',
   ].join("\n"));
-  const capsule = compileContext({ root, task: "Combine two read-only worker proposals into one verified consumer outcome", persist: true }).capsule;
+  const capsule = (await compileContext({ root, task: "Combine two read-only worker proposals into one verified consumer outcome", persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Verify connected proposal integration without a model",
     plan: [{ id: "combine", outcome: "Both independently proposed data changes reach the unchanged consumer" }] }).artifact;
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
@@ -146,11 +146,11 @@ async function fixture(t) {
     async startAll() {
       // Launch independent owners together; this test does not equate launch
       // overlap with measured model execution concurrency.
-      const launches = await Promise.allSettled(members.map(async member => {
+      const launches = await Promise.allSettled((await Promise.all(members.map(async member => {
         const host = createBoundedWorkerJobHost({ policy: member.policy, workspaceBinding: member.workspaceBinding });
         member.started = true;
         await startBoundedWorkerJob(member.input, { host, supervisorSelection: selection, onProcess });
-      }));
+      }))));
       const failures = launches.filter(result => result.status === "rejected").map(result => result.reason);
       if (failures.length) throw new AggregateError(failures, "One or more connected worker launches failed");
       for (const member of members) {

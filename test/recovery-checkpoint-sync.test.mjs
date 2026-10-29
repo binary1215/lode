@@ -80,8 +80,8 @@ function fileSnapshot(root, storage) {
   return files;
 }
 
-function startFixtureRun(root, label = "checkpoint sync") {
-  const capsule = compileContext({ root, task: `Verify ${label}`, budget: 32_768, persist: true }).capsule;
+async function startFixtureRun(root, label = "checkpoint sync") {
+  const capsule = (await compileContext({ root, task: `Verify ${label}`, budget: 32_768, persist: true })).capsule;
   const plan = createWholePlanSnapshot({
     root,
     objective: `Complete ${label}`,
@@ -193,10 +193,10 @@ test("one sync creates once and one hundred identical retries write no artifact 
   assert.equal(restoreSessionFromArtifacts({ root }).checkpoint.checkpointId, first.checkpoint.checkpointId);
 });
 
-test("the same direction text cannot hide changed Run, plan, contract, or Capsule references", (t) => {
+test("the same direction text cannot hide changed Run, plan, contract, or Capsule references", async (t) => {
   const { root, storage } = fixture(t);
   const stale = syncInput(root);
-  const lineage = startFixtureRun(root, "changed lineage references");
+  const lineage = (await startFixtureRun(root, "changed lineage references"));
   const before = fileSnapshot(root, storage);
   const rejected = syncRecoveryCheckpoint(stale);
   assert.equal(rejected.outcome, "conflict");
@@ -229,9 +229,9 @@ test("concurrent identical syncs converge and concurrent divergent direction can
   }
 });
 
-test("incomplete Run publication defers sync while stable pending review remains eligible", (t) => {
+test("incomplete Run publication defers sync while stable pending review remains eligible", async (t) => {
   const { root, storage } = fixture(t);
-  startFixtureRun(root, "interrupted Run transition");
+  (await startFixtureRun(root, "interrupted Run transition"));
   const finish = finishInput(root);
   injectRenameFailure(root, storage, "before-pointer", () => finishRun(finish));
   const deferredBasis = inspectRecoveryCheckpointBasis({ root });
@@ -274,9 +274,9 @@ test("open compaction preserves its checkpoint and defers only a changed general
   assert.deepEqual(fileSnapshot(root, storage), before);
 });
 
-test("accepted Run integration is reused exactly but never copied into changed general direction", (t) => {
+test("accepted Run integration is reused exactly but never copied into changed general direction", async (t) => {
   const { root, storage } = fixture(t);
-  const lineage = startFixtureRun(root, "accepted integration reuse");
+  const lineage = (await startFixtureRun(root, "accepted integration reuse"));
   const finished = finishRun(finishInput(root));
   const reviewed = reviewAccepted(root);
   const integrationDirection = direction({
@@ -356,9 +356,9 @@ test("an orphaned request cannot revert a different direction published before i
   assert.equal(ledgerFiles(root, storage).length, 2, "the original orphan and the selected replacement remain distinct; retry adds nothing");
 });
 
-test("an interrupted review Session publish defers sync and the exact review retry recovers", (t) => {
+test("an interrupted review Session publish defers sync and the exact review retry recovers", async (t) => {
   const { root, storage } = fixture(t);
-  startFixtureRun(root, "interrupted review transition");
+  (await startFixtureRun(root, "interrupted review transition"));
   finishRun(finishInput(root));
   const review = acceptedReviewInput(root);
   injectRenameFailure(root, storage, "before-pointer", () => reviewRun(review));
@@ -374,9 +374,9 @@ test("an interrupted review Session publish defers sync and the exact review ret
   assert.equal(inspectRecoveryCheckpointBasis({ root }).syncAvailability, "ready");
 });
 
-test("missing pending ResultPacket remains non-authoritative evidence loss and preserves exact reuse", (t) => {
+test("missing pending ResultPacket remains non-authoritative evidence loss and preserves exact reuse", async (t) => {
   const { root, storage } = fixture(t);
-  startFixtureRun(root, "missing pending ResultPacket evidence");
+  (await startFixtureRun(root, "missing pending ResultPacket evidence"));
   const finished = finishRun(finishInput(root));
   const input = syncInput(root);
   const created = syncRecoveryCheckpoint(input);
@@ -396,12 +396,12 @@ test("missing pending ResultPacket remains non-authoritative evidence loss and p
 test("CLI and typed MCP share Core semantics while entry and missing Host hooks remain read-only", async (t) => {
   const { root, storage } = fixture(t);
   const initial = fileSnapshot(root, storage);
-  const cliBasis = runCommand(["checkpoint-basis", root]);
+  const cliBasis = (await runCommand(["checkpoint-basis", root]));
   const mcpBasis = await dispatch({ jsonrpc: "2.0", id: 801, method: "tools/call", params: { name: "head_checkpoint_basis", arguments: { project_root: root } } });
   assert.equal(mcpBasis.result.structuredContent.basis.basisId, cliBasis.basis.basisId);
   assert.deepEqual(fileSnapshot(root, storage), initial);
-  assert.equal(runCommand(["help"]).commands.some((command) => command.includes("checkpoint-sync")), false);
-  assert.equal(runCommand(["help-all"]).commands.some((command) => command.includes("checkpoint-sync")), true);
+  assert.equal((await runCommand(["help"])).commands.some((command) => command.includes("checkpoint-sync")), false);
+  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("checkpoint-sync")), true);
   assert.equal(mcpTools.find((tool) => tool.name === "lode_checkpoint_basis").annotations.readOnlyHint, true);
   assert.equal(mcpTools.find((tool) => tool.name === "lode_checkpoint_sync").annotations.idempotentHint, true);
 

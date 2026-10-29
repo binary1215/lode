@@ -26,8 +26,8 @@ function fixture(t) {
   const layout = inspectProject(root).storage;
   return { root, layout };
 }
-function start(root) {
-  const capsule = compileContext({ root, task: "Preserve exact decision and unknown effects", budget: 32768, persist: true }).capsule;
+async function start(root) {
+  const capsule = (await compileContext({ root, task: "Preserve exact decision and unknown effects", budget: 32768, persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Finish the bounded task", plan: ["Return evidence"] }).artifact;
   const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId, scope: "Return the result", acceptanceCriteria: ["Preserve unknowns"] }).artifact;
   return startRun({ root, executionContractId: contract.executionContractId });
@@ -64,9 +64,9 @@ function allBytes(root, layout) {
   return files;
 }
 
-test("one decision binds the exact result and exact replay creates no additional record or Session write", (t) => {
+test("one decision binds the exact result and exact replay creates no additional record or Session write", async (t) => {
   const { root, layout } = fixture(t);
-  start(root);
+  (await start(root));
   const finished = finishRun(resultInput(root));
   const input = reviewInput(root);
   assert.throws(() => reviewRun({ ...input, reviewContextId: "fresh-head-review-000000000000000000000000" }), { code: "STALE_FRESH_HEAD_REVIEW" });
@@ -80,9 +80,9 @@ test("one decision binds the exact result and exact replay creates no additional
   assert.deepEqual(readLineageArtifact({ root, artifactId: finished.resultPacket.resultPacketId }).artifact.unknowns, resultInput(root).unknowns);
 });
 
-test("interrupted finish and review resume only the missing Session publication", (t) => {
+test("interrupted finish and review resume only the missing Session publication", async (t) => {
   const { root, layout } = fixture(t);
-  const begun = start(root);
+  const begun = (await start(root));
   publishFault(root, layout, () => finishRun(resultInput(root)));
   const pendingRun = JSON.parse(fs.readFileSync(runFile(root, layout, begun.run.runId)));
   assert.equal(pendingRun.status, "awaiting_review");
@@ -98,9 +98,9 @@ test("interrupted finish and review resume only the missing Session publication"
   assert.equal(inspectRecoveryCheckpointBasis({ root }).syncAvailability, "ready");
 });
 
-test("an interrupted Session patch never overwrites a competing change to the same fields", (t) => {
+test("an interrupted Session patch never overwrites a competing change to the same fields", async (t) => {
   const { root, layout } = fixture(t);
-  start(root);
+  (await start(root));
   publishFault(root, layout, () => finishRun(resultInput(root)));
   const state = JSON.parse(fs.readFileSync(stateFile(root, layout)));
   state.mode = "paused-by-owner";
@@ -110,9 +110,9 @@ test("an interrupted Session patch never overwrites a competing change to the sa
   assert.deepEqual(fs.readFileSync(stateFile(root, layout)), bytes);
 });
 
-test("interrupted Session publication preserves unrelated latest-checkpoint metadata", (t) => {
+test("interrupted Session publication preserves unrelated latest-checkpoint metadata", async (t) => {
   const { root, layout } = fixture(t);
-  start(root);
+  (await start(root));
   publishFault(root, layout, () => finishRun(resultInput(root)));
   const state = JSON.parse(fs.readFileSync(stateFile(root, layout)));
   state.latestCheckpoint = "checkpoint-000000000000000000000001";
@@ -124,9 +124,9 @@ test("interrupted Session publication preserves unrelated latest-checkpoint meta
   assert.equal(finished.state.ownerNote, state.ownerNote);
 });
 
-test("legacy prepared hash transitions retain their identity and resume without a new approval", (t) => {
+test("legacy prepared hash transitions retain their identity and resume without a new approval", async (t) => {
   const { root, layout } = fixture(t);
-  const begun = start(root);
+  const begun = (await start(root));
   publishFault(root, layout, () => finishRun(resultInput(root)));
   const file = runFile(root, layout, begun.run.runId);
   const run = JSON.parse(fs.readFileSync(file));
@@ -139,11 +139,11 @@ test("legacy prepared hash transitions retain their identity and resume without 
   assert.deepEqual(fs.readFileSync(file), oldBytes);
 });
 
-test("independent Sessions restore owned originals with latest common cancellation and missing optional result evidence", (t) => {
+test("independent Sessions restore owned originals with latest common cancellation and missing optional result evidence", async (t) => {
   const { root, layout } = fixture(t);
   const originalId = inspectProject(root).state.sessionId;
   const other = createHeadSession({ root, purpose: "Independent investigation" });
-  start(root);
+  (await start(root));
   const finished = finishRun(resultInput(root));
   reviewRun(reviewInput(root));
   const checkpoint = createRecoveryCheckpoint({ root, ...direction }).checkpoint;
@@ -179,9 +179,9 @@ test("compaction records only epoch verification and actual one-shot consumption
   assert.throws(() => continueCompaction(input), { code: "COMPACTION_TOKEN_CONSUMED" });
 });
 
-test("reviewed integration stores one checkpoint, resumes interruption, rejects divergent direction and cannot replace later direction", (t) => {
+test("reviewed integration stores one checkpoint, resumes interruption, rejects divergent direction and cannot replace later direction", async (t) => {
   const { root, layout } = fixture(t);
-  const begun = start(root);
+  const begun = (await start(root));
   finishRun(resultInput(root));
   const accepted = reviewRun(reviewInput(root));
   const input = { root, runId: begun.run.runId, reviewDecisionId: accepted.reviewDecision.reviewDecisionId, ...direction };
@@ -223,16 +223,16 @@ test("Product approval has one original decision; derived outputs rebuild and le
   assert.equal(fs.readFileSync(file, "utf8"), original);
 });
 
-function acceptedIntegrationInput(root) {
-  const begun = start(root);
+async function acceptedIntegrationInput(root) {
+  const begun = (await start(root));
   const finished = finishRun(resultInput(root));
   const accepted = reviewRun(reviewInput(root));
   return { input: { root, runId: begun.run.runId, reviewDecisionId: accepted.reviewDecision.reviewDecisionId, ...direction }, finished };
 }
 
-test("normal shared ledger keeps two accepted Session integrations independent for first publication, read and exact replay", (t) => {
+test("normal shared ledger keeps two accepted Session integrations independent for first publication, read and exact replay", async (t) => {
   const { root, layout } = fixture(t);
-  const primary = acceptedIntegrationInput(root);
+  const primary = (await acceptedIntegrationInput(root));
   const primaryIntegration = integrateReviewedRunCheckpoint(primary.input);
   createRecoveryCheckpoint({ root, ...direction, purpose: "Normal primary checkpoint before secondary integration" });
   const primaryOriginals = Object.fromEntries(Object.entries(allBytes(root, layout)).filter(([file]) => {
@@ -241,12 +241,12 @@ test("normal shared ledger keeps two accepted Session integrations independent f
       || [`${layout.directory}/lineage/`, `${layout.directory}/context/capsules/`, `${layout.directory}/sessions/runs/`, `${layout.directory}/sessions/ledger/`, `${layout.directory}/sessions/records/`].some((prefix) => name.startsWith(prefix));
   }));
   const secondary = createHeadSession({ root, purpose: "Independent secondary accepted result" });
-  const other = withSessionRoute(root, secondary.sessionId, () => {
-    const accepted = acceptedIntegrationInput(root);
+  const other = (await withSessionRoute(root, secondary.sessionId, async () => {
+    const accepted = (await acceptedIntegrationInput(root));
     const integrated = integrateReviewedRunCheckpoint(accepted.input);
     assert.equal(integrated.status, "run_result_integrated_checkpointed");
     return { ...accepted, integrated };
-  });
+  }));
   for (const [file, content] of Object.entries(primaryOriginals)) {
     assert.equal(fs.readFileSync(path.join(root, file), "base64"), content, "secondary integration preserves all existing primary originals");
   }
@@ -272,11 +272,11 @@ test("normal shared ledger keeps two accepted Session integrations independent f
   assert.deepEqual(fs.readFileSync(other.integrated.file), checkpointOriginal);
 });
 
-test("exact decision ledger lookup still rejects related damage, duplicate records and another Project or Session without writes", (t) => {
+test("exact decision ledger lookup still rejects related damage, duplicate records and another Project or Session without writes", async (t) => {
   const { root, layout } = fixture(t);
   const secondary = createHeadSession({ root, purpose: "Validate only exact secondary decision" });
-  withSessionRoute(root, secondary.sessionId, () => {
-    const accepted = acceptedIntegrationInput(root);
+  (await withSessionRoute(root, secondary.sessionId, async () => {
+    const accepted = (await acceptedIntegrationInput(root));
     const integrated = integrateReviewedRunCheckpoint(accepted.input);
     const originalBytes = fs.readFileSync(integrated.file);
     const original = JSON.parse(originalBytes);
@@ -307,5 +307,5 @@ test("exact decision ledger lookup still rejects related damage, duplicate recor
     try { unchangedFailure("RUN_RESULT_INTEGRATION_MULTIPLE_CHECKPOINTS"); }
     finally { fs.unlinkSync(duplicateFile); }
     assert.deepEqual(fs.readFileSync(integrated.file), originalBytes);
-  });
+  }));
 });

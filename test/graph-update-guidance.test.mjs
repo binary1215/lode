@@ -93,7 +93,7 @@ test("Core-only retained originals reuse indexing without World, Canon or recove
   assert.equal(current.status, "observed");
   assert.notEqual(current.results[0].sourceDigest, original.sourceDigest);
   assert.equal(indexProjectGraph({ root }).status, "reused");
-  assert.throws(() => readWorldModel({ root }), { code: "WORLD_MODEL_NOT_BUILT" });
+  (await assert.rejects(async () => (await readWorldModel({ root })), { code: "WORLD_MODEL_NOT_BUILT" }));
   assert.deepEqual(authorityBytes(root, layout), before);
 });
 
@@ -113,7 +113,7 @@ test("HEAD refreshes integrated additions and changed code, reusing unchanged ca
   assert.ok(scan.reusedPaths.includes("src/app.mjs"));
   assert.ok(scan.analyzedPaths.includes("src/greeting.mjs"));
   assert.ok(scan.changes.added.includes("test/farewell.test.mjs"));
-  const graph = readWorldModel({ root }).snapshot.semanticGraph;
+  const graph = (await readWorldModel({ root })).snapshot.semanticGraph;
   const call = relation(graph, "CALLS", "src/app.mjs", "greeting");
   assert.ok(call);
   assert.equal(call.confidence, "heuristic");
@@ -147,14 +147,14 @@ test("Rename/delete recomputes unchanged importers; failed refresh leaves source
   write(root, "src/app.mjs", "import { greeting } from './old.mjs';\nexport function render() { return greeting(); }\n");
   await buildWorldModel({ root });
   const before = authorityBytes(root, layout);
-  const previous = readWorldModel({ root }).snapshot;
+  const previous = (await readWorldModel({ root })).snapshot;
   fs.unlinkSync(path.join(root, "src/old.mjs"));
   write(root, "src/new.mjs", "export function salute() { return 'Hello'; }\n");
   const renamed = await refreshWorldModel({ root });
   assert.ok(renamed.diagnostics.repositoryScan.changes.removed.includes("src/old.mjs"));
   assert.ok(renamed.diagnostics.repositoryScan.changes.added.includes("src/new.mjs"));
   assert.ok(renamed.diagnostics.repositoryScan.reusedPaths.includes("src/app.mjs"));
-  const unresolved = readWorldModel({ root }).snapshot;
+  const unresolved = (await readWorldModel({ root })).snapshot;
   assert.equal(unresolved.semanticGraph.nodes.some(node => node.path === "src/old.mjs"), false);
   assert.ok(unresolved.semanticGraph.summary.unresolvedImportCount > 0);
   assert.equal(Boolean(relation(unresolved.semanticGraph, "CALLS", "src/app.mjs", "greeting")), false);
@@ -163,7 +163,7 @@ test("Rename/delete recomputes unchanged importers; failed refresh leaves source
   // Deliberately wrong EXACT expectation, not a changed-files-only selection.
   await assert.rejects(refreshWorldModel({ root, expectedChangedPaths: ["src/not-changed.mjs"] }),
     { code: "REFRESH_CHANGE_EXPECTATION_MISMATCH" });
-  assert.equal(readWorldModel({ root }).snapshot.worldModelId, unresolved.worldModelId);
+  assert.equal((await readWorldModel({ root })).snapshot.worldModelId, unresolved.worldModelId);
   const fallback = await prepareSourceContext({ root, task: "Inspect current importer while World is unrefreshed",
     needs: [{ kind: "source", path: "src/app.mjs" }] });
   assert.equal(fallback.status, "observed");
@@ -171,6 +171,6 @@ test("Rename/delete recomputes unchanged importers; failed refresh leaves source
   assert.ok(fs.readFileSync(path.join(root, "independent.md"), "utf8"));
   const recovered = await refreshWorldModel({ root });
   assert.equal(recovered.status, "refreshed");
-  assert.ok(relation(readWorldModel({ root }).snapshot.semanticGraph, "CALLS", "src/app.mjs", "salute"));
+  assert.ok(relation((await readWorldModel({ root })).snapshot.semanticGraph, "CALLS", "src/app.mjs", "salute"));
   assert.deepEqual(authorityBytes(root, layout), before);
 });

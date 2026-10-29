@@ -58,7 +58,7 @@ test("original family matching rejects hybrid owner fields without changing sign
 
 const preparedAnchorDigest = value => crypto.createHash("sha256").update(value).digest("hex");
 const preparedAnchorDocumentDigest = value => preparedAnchorDigest(graphProjectionCanonicalJson(value));
-function preparedAnchorFixture(t, ownerAware = false) {
+async function preparedAnchorFixture(t, ownerAware = false) {
   const parent = fs.realpathSync(process.env.LODE_AGENT_TEST_TMP || process.env.HEAD_AGENT_TEST_TMP || os.tmpdir());
   const root = fs.realpathSync(fs.mkdtempSync(path.join(parent, "lode-prepared-anchor-")));
   t.after(() => {
@@ -84,7 +84,7 @@ function preparedAnchorFixture(t, ownerAware = false) {
     files, ...(storage ? { storage } : {}) });
   const local = new LocalJsonGraphProjectionAdapter({ projectRoot: root, ...(storage ? { storage } : {}) });
   const memory = new InMemoryGraphProjectionAdapter();
-  for (const adapter of [local, memory]) adapter.writeSnapshot(graph.graphSnapshotId, structuredClone(graph));
+  for (const adapter of [local, memory]) (await adapter.writeSnapshot(graph.graphSnapshotId, structuredClone(graph)));
   return { root, storage, graph, local, memory, files };
 }
 function preparedAnchorQuery(graph, exact) {
@@ -116,7 +116,7 @@ function assertPreparedAnchorDigests(request) {
   assert.equal(request.requestHash, preparedAnchorDocumentDigest(payload));
   assert.equal(request.requestId, "prepared-traversal-" + request.requestHash.slice(0, 24));
 }
-function preparedAnchorReplay(fixture, exact) {
+async function preparedAnchorReplay(fixture, exact) {
   const { storage, graph, local, memory } = fixture;
   const result = queryTemporalProvenanceGraph(graph, preparedAnchorQuery(graph, exact));
   const before = graphProjectionCanonicalJson({ graph, result });
@@ -133,7 +133,7 @@ function preparedAnchorReplay(fixture, exact) {
   const diskEntriesBefore = fs.readdirSync(path.dirname(location)).sort();
   const memoryBefore = graphProjectionCanonicalJson([...memory.snapshots]);
   for (const adapter of [local, memory]) {
-    const verification = adapter.queryPrepared(request);
+    const verification = (await adapter.queryPrepared(request));
     assert.strictEqual(verifyPreparedTraversalVerification(verification, request, storage), verification);
     assert.equal(verification.protocol.name, request.protocol.name);
     for (const key of ["requestId", "requestHash", "queryId", "queryHash", "resultId", "resultHash", "expansionHash"]) {
@@ -148,31 +148,31 @@ function preparedAnchorReplay(fixture, exact) {
   return { request, result };
 }
 
-test("pure legacy prepared traversal retains default original digests and replays lexical and exact anchors in both local adapters", t => {
-  const fixture = preparedAnchorFixture(t);
+test("pure legacy prepared traversal retains default original digests and replays lexical and exact anchors in both local adapters", async t => {
+  const fixture = (await preparedAnchorFixture(t));
   assert.equal(fixture.graph.protocol.name, "head-agent-core-temporal-provenance");
   assert.equal(graphProjectionCanonicalJson(buildTemporalProvenanceGraph({ projectId: fixture.graph.projectId, files: fixture.files })),
     graphProjectionCanonicalJson(fixture.graph));
   for (const exact of [false, true]) {
-    const { request, result } = preparedAnchorReplay(fixture, exact);
+    const { request, result } = (await preparedAnchorReplay(fixture, exact));
     assert.equal(request.protocol.name, "head-agent-core-prepared-traversal");
     assert.equal(graphProjectionCanonicalJson(buildPreparedTraversalRequest({ graph: fixture.graph, result, storage: null })),
       graphProjectionCanonicalJson(request));
   }
 });
 
-test("owner-aware Lode prepared traversal preserves canonical lexical and exact anchors through both local adapters", t => {
-  const fixture = preparedAnchorFixture(t, true);
+test("owner-aware Lode prepared traversal preserves canonical lexical and exact anchors through both local adapters", async t => {
+  const fixture = (await preparedAnchorFixture(t, true));
   assert.equal(fixture.graph.protocol.name, "lode-agent-core-temporal-provenance");
-  for (const exact of [false, true]) preparedAnchorReplay(fixture, exact);
+  for (const exact of [false, true]) (await preparedAnchorReplay(fixture, exact));
   assert.equal(fs.existsSync(path.join(fixture.root, ".head")), false);
   assert(fs.existsSync(path.join(fixture.root, ".lode", "project.json")));
 });
 
-test("prepared traversal rejects rehashed exact anchor hybrids and cross-family lexical graph expectations", t => {
+test("prepared traversal rejects rehashed exact anchor hybrids and cross-family lexical graph expectations", async t => {
   for (const ownerAware of [false, true]) {
-    const fixture = preparedAnchorFixture(t, ownerAware), { graph, storage } = fixture;
-    const { request } = preparedAnchorReplay(fixture, true);
+    const fixture = (await preparedAnchorFixture(t, ownerAware)), { graph, storage } = fixture;
+    const { request } = (await preparedAnchorReplay(fixture, true));
     const hybrid = structuredClone(request);
     hybrid.traversalQuery.anchorMode = ownerAware ? "exact-head-proposed" : "exact-lode-proposed";
     preparedAnchorRehash(hybrid, { query: true });
@@ -180,12 +180,12 @@ test("prepared traversal rejects rehashed exact anchor hybrids and cross-family 
     assert.throws(() => verifyPreparedTraversalRequest(hybrid, { ...(storage ? { storage } : {}) }),
       { code: "INVALID_PREPARED_TRAVERSAL_REQUEST" });
     for (const adapter of [fixture.local, fixture.memory]) {
-      assert.throws(() => adapter.queryPrepared(hybrid), { code: "INVALID_PREPARED_TRAVERSAL_REQUEST" });
+      (await assert.rejects(async () => (await adapter.queryPrepared(hybrid)), { code: "INVALID_PREPARED_TRAVERSAL_REQUEST" }));
     }
     assert.throws(() => buildPreparedTraversalRequest({ graph, result: { ...queryTemporalProvenanceGraph(graph, preparedAnchorQuery(graph, true)),
       traversalQuery: hybrid.traversalQuery }, ...(storage ? { storage } : {}) }), { code: "INVALID_PREPARED_TRAVERSAL_REQUEST" });
 
-    const lexical = preparedAnchorReplay(fixture, false);
+    const lexical = (await preparedAnchorReplay(fixture, false));
     const lexicalHybrid = structuredClone(lexical.request);
     lexicalHybrid.protocol.name = ownerAware ? "head-agent-core-prepared-traversal" : "lode-agent-core-prepared-traversal";
     preparedAnchorRehash(lexicalHybrid);
@@ -199,11 +199,11 @@ test("prepared traversal rejects rehashed exact anchor hybrids and cross-family 
   }
 });
 
-test("prepared traversal preserves query expansion manifest and request digest tamper errors in both original families", t => {
+test("prepared traversal preserves query expansion manifest and request digest tamper errors in both original families", async t => {
   const wrongDigest = value => (value[0] === "0" ? "1" : "0") + value.slice(1);
   for (const ownerAware of [false, true]) {
-    const fixture = preparedAnchorFixture(t, ownerAware);
-    const { request } = preparedAnchorReplay(fixture, true);
+    const fixture = (await preparedAnchorFixture(t, ownerAware));
+    const { request } = (await preparedAnchorReplay(fixture, true));
     const original = graphProjectionCanonicalJson(request);
     const cases = [
       [document => { document.traversalQuery.minConfidence = 0.5; }, "PREPARED_TRAVERSAL_QUERY_DIGEST_MISMATCH"],

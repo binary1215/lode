@@ -74,8 +74,8 @@ test("synthetic Claude changed native ID never falls through to default or anoth
   await claudeCall(native, claudeRequest(root, "head_project_initialize_or_resume", { session_id: a }, "old-a-init"), "old-a");
   await claudeCall(native, claudeRequest(root, "head_project_initialize_or_resume", { session_id: b }, "old-b-init"), "old-b");
   const before = snapshot(root).concat(snapshot(operational));
-  const output = sessionStartContext({ runtime: "claude", environment,
-    event: { hook_event_name: "SessionStart", source: "clear", cwd: root, session_id: "new-a", old_session_id: "old-a" } });
+  const output = (await sessionStartContext({ runtime: "claude", environment,
+    event: { hook_event_name: "SessionStart", source: "clear", cwd: root, session_id: "new-a", old_session_id: "old-a" } }));
   assert.equal(JSON.parse(output.hookSpecificOutput.additionalContext).logicalSessionId, null,
     "An unverified old_session_id field is not a continuity contract.");
   const unresolved = await claudeCall(native, claudeRequest(root, "head_conversation_enter", {}, "new-a-enter"), "new-a");
@@ -248,13 +248,13 @@ test("P5 settlement handles reverse completion and proven pre-effect failure wit
   assert.equal(owner.read({root}).status,"bound");
 });
 
-test("uncertain/cancel outcome is not inferred successful; restart and exact settlement retry are bounded", t => {
+test("uncertain/cancel outcome is not inferred successful; restart and exact settlement retry are bounded", async t => {
   const { root, storage,host }=fixture(t),owner=host("native-A"),a=createHeadSession({root,purpose:"A"}).sessionId;
   const prepared=owner.prepareSelection({root,sessionId:a});
   const result=owner.settleSelection({ticket:prepared.ticket,outcome:"uncertain"});
   assert.equal(owner.settleSelection({ticket:prepared.ticket,outcome:"uncertain"}),result);
   assert.throws(()=>owner.settleSelection({ticket:prepared.ticket,outcome:"succeeded"}),{code:"SESSION_HOST_SETTLEMENT_CONFLICT"});
-  assert.equal(host("native-A").enter({root}).status,"session_selection_unresolved");
+  assert.equal((await host("native-A").enter({root})).status,"session_selection_unresolved");
 });
 
 test("pending preparation or final storage failure preserves original Core success and never reruns it", async t => {
@@ -279,16 +279,16 @@ test("pending preparation or final storage failure preserves original Core succe
   }
 });
 
-test("proven failure before a first selection preserves verified default rather than a loss gate", t => {
+test("proven failure before a first selection preserves verified default rather than a loss gate", async t => {
   const {root,storage,host}=fixture(t),owner=host("first-selection"),defaultId=inspectProject(root).state.sessionId;
   const other=createHeadSession({root,purpose:"Not selected"}).sessionId;
   const pending=owner.prepareSelection({root,sessionId:other});
   owner.settleSelection({ticket:pending.ticket,outcome:"not-started"});
   assert.equal(owner.read({root}).status,"default");
-  assert.equal(owner.enter({root}).workContext.sessionId,defaultId);
+  assert.equal((await owner.enter({root})).workContext.sessionId,defaultId);
 });
 
-test("A failure followed by B failure restores the actual prior choice, not an uncertain predecessor", t => {
+test("A failure followed by B failure restores the actual prior choice, not an uncertain predecessor", async t => {
   const {root,storage,host}=fixture(t),owner=host("failed-intents"),defaultId=inspectProject(root).state.sessionId;
   owner.select({root,sessionId:"",expectedRevision:0});
   const a=createHeadSession({root,purpose:"A"}).sessionId,b=createHeadSession({root,purpose:"B"}).sessionId;
@@ -296,7 +296,7 @@ test("A failure followed by B failure restores the actual prior choice, not an u
   owner.settleSelection({ticket:first.ticket,outcome:"not-started"});
   owner.settleSelection({ticket:second.ticket,outcome:"not-started"});
   assert.equal(owner.read({root}).sessionId,defaultId);
-  assert.equal(owner.enter({root}).workContext.sessionId,defaultId);
+  assert.equal((await owner.enter({root})).workContext.sessionId,defaultId);
 });
 
 test("transport composition is opt-in by actual initialize clientInfo; arguments cannot activate native mode", async t => {
@@ -323,16 +323,16 @@ test("success of a worker/checkpoint/result operation cannot become an unrelated
   assert.deepEqual(snapshot(operational),before);
 });
 
-test("three owned proven failures can restore exact initial default, but no uncertain ancestor is guessed", t => {
+test("three owned proven failures can restore exact initial default, but no uncertain ancestor is guessed", async t => {
   const {root,storage,host}=fixture(t),owner=host("three-failures"),defaultId=inspectProject(root).state.sessionId;
   const ids=["A","B","C"].map(purpose=>createHeadSession({root,purpose}).sessionId);
   const tickets=ids.map(sessionId=>owner.prepareSelection({root,sessionId}).ticket);
   for(const ticket of tickets)owner.settleSelection({ticket,outcome:"not-started"});
-  assert.equal(owner.enter({root}).workContext.sessionId,defaultId);
+  assert.equal((await owner.enter({root})).workContext.sessionId,defaultId);
   const first=owner.prepareSelection({root,sessionId:ids[0]}),second=owner.prepareSelection({root,sessionId:ids[1]});
   owner.settleSelection({ticket:first.ticket,outcome:"uncertain"});
   owner.settleSelection({ticket:second.ticket,outcome:"not-started"});
-  assert.equal(host("three-failures").enter({root}).status,"session_selection_unresolved");
+  assert.equal((await host("three-failures").enter({root})).status,"session_selection_unresolved");
 });
 
 test("C1-F1 failed first P5 mkdir is process-known loss, not absent default; explicit repair needs no new tool", async t => {
@@ -642,11 +642,11 @@ test("P3 unresolved entry has owner-verified lazy discovery; startup enumerates 
       assert(text.length <= MAX_CONTEXT_CHARACTERS[runtime]);
       assert.deepEqual(view.sessionDiscovery, value.sessionDiscovery);
       assert.equal(view.logicalSessionId, null); assert.equal(view.route, null);
-      assert.match(view.coreGuidance, /Continue the current user task/u);
+      assert.match(view.coreGuidance, /current user task/u);
       assert.equal(view.expansion, "", "No duplicate discovery prose in the protected envelope.");
     }
-    const hook = sessionStartContext({ runtime: "claude", environment,
-      event: { hook_event_name: "SessionStart", source: "clear", cwd: root, session_id: "new-no-clear-witness" } });
+    const hook = (await sessionStartContext({ runtime: "claude", environment,
+      event: { hook_event_name: "SessionStart", source: "clear", cwd: root, session_id: "new-no-clear-witness" } }));
     assert.equal(JSON.parse(hook.hookSpecificOutput.additionalContext).sessionDiscovery.status, "not_queried");
     assert.equal(enumeration, 0, "Returning a 16-row list would still enumerate all names; do not call it here.");
   } finally { fs.readdirSync = original; }

@@ -88,7 +88,7 @@ export function deliveryObservationDescriptor(storage = null) {
   }, storage);
 }
 
-function normalizeRevisionReference(root, value, revisionDigest) {
+async function normalizeRevisionReference(root, value, revisionDigest) {
   if (value == null) return { revision_binding: "declared" };
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("revisionReference must be an object.", "INVALID_DELIVERY_REVISION_REFERENCE");
   const expected = ["worldModelId", "revisionId", "sourcePath", "digest"].sort();
@@ -98,7 +98,7 @@ function normalizeRevisionReference(root, value, revisionDigest) {
   const sourcePath = requiredText(value.sourcePath, "revisionReference.sourcePath", 4096).replaceAll("\\", "/");
   const digest = digestValue(value.digest, "revisionReference.digest");
   if (digest !== revisionDigest) fail("Declared revision digest does not match the exact source revision reference.", "DELIVERY_REVISION_REFERENCE_INVALID");
-  const snapshot = readWorldModelSnapshot({ root, worldModelId }).snapshot;
+  const snapshot = (await readWorldModelSnapshot({ root, worldModelId })).snapshot;
   const revision = snapshot.temporalProvenanceGraph?.nodes.find((node) => node.nodeId === revisionId);
   if (!revision || revision.kind !== "FileRevision" || revision.path !== sourcePath || revision.digest !== digest) {
     fail("Exact source revision reference is absent from the verified World Model snapshot.", "DELIVERY_REVISION_REFERENCE_INVALID");
@@ -145,7 +145,7 @@ export async function recordDeliveryObservation({ root = ".", ...input } = {}) {
   const observedAt = input.observedAt == null
     ? replay?.temporalScope.observedAt || new Date().toISOString()
     : timestamp(input.observedAt, "Delivery observedAt");
-  const revisionReference = normalizeRevisionReference(inspected.project.projectRoot, input.revisionReference, revisionDigest);
+  const revisionReference = (await normalizeRevisionReference(inspected.project.projectRoot, input.revisionReference, revisionDigest));
   const payload = {
     environment_key: environmentKey,
     target_key: targetKey,
@@ -210,9 +210,9 @@ export async function recordDeliveryObservation({ root = ".", ...input } = {}) {
   };
 }
 
-function retainedWorldSnapshot(root, worldModelId, cache) {
+async function retainedWorldSnapshot(root, worldModelId, cache) {
   if (!cache.has(worldModelId)) {
-    try { cache.set(worldModelId, { snapshot: readWorldModelSnapshot({ root, worldModelId }).snapshot, errorCode: null }); }
+    try { cache.set(worldModelId, { snapshot: (await readWorldModelSnapshot({ root, worldModelId })).snapshot, errorCode: null }); }
     catch (error) { cache.set(worldModelId, { snapshot: null, errorCode: String(error?.code || "invalid").toLowerCase() }); }
   }
   const cached = cache.get(worldModelId);
@@ -220,7 +220,7 @@ function retainedWorldSnapshot(root, worldModelId, cache) {
   return cached.snapshot;
 }
 
-function revisionReferenceStatus(root, payload, snapshotCache) {
+async function revisionReferenceStatus(root, payload, snapshotCache) {
   const boundFields = ["bound_world_model_id", "bound_revision_id", "bound_logical_entity_id", "bound_source_path"];
   if (payload.revision_binding === "declared") {
     const invalid = boundFields.some((field) => Object.hasOwn(payload, field));
@@ -247,7 +247,7 @@ function revisionReferenceStatus(root, payload, snapshotCache) {
     };
   }
   try {
-    const snapshot = retainedWorldSnapshot(root, payload.bound_world_model_id, snapshotCache);
+    const snapshot = (await retainedWorldSnapshot(root, payload.bound_world_model_id, snapshotCache));
     const revision = snapshot.temporalProvenanceGraph?.nodes.find((node) => node.nodeId === payload.bound_revision_id);
     if (!revision || revision.kind !== "FileRevision"
       || revision.logicalEntityId !== payload.bound_logical_entity_id
@@ -274,7 +274,7 @@ function revisionReferenceStatus(root, payload, snapshotCache) {
   }
 }
 
-function historyEntry(record, root, snapshotCache) {
+async function historyEntry(record, root, snapshotCache) {
   const payload = record.payload;
   return {
     observationId: record.observationId,
@@ -287,13 +287,13 @@ function historyEntry(record, root, snapshotCache) {
     artifactKey: payload.artifact_key,
     revisionKey: payload.revision_key,
     revisionDigest: payload.revision_digest,
-    revisionReference: revisionReferenceStatus(root, payload, snapshotCache),
+    revisionReference: (await revisionReferenceStatus(root, payload, snapshotCache)),
   };
 }
 
-function groupProjection(records, root, snapshotCache) {
+async function groupProjection(records, root, snapshotCache) {
   const byId = new Map(records.map((record) => [record.observationId, record]));
-  const entriesById = new Map(records.map((record) => [record.observationId, historyEntry(record, root, snapshotCache)]));
+  const entriesById = new Map((await Promise.all(records.map(async (record) => [record.observationId, (await historyEntry(record, root, snapshotCache))]))));
   const issues = [];
   const issue = (code, observationId = null, relatedObservationId = null) => issues.push({ code, observationId, relatedObservationId });
   const sequenceOwners = new Map();
@@ -357,7 +357,7 @@ function projectionIdentity(payload) {
   return { ...payload, projectionId: `delivery-state-projection-${projectionHash.slice(0, 24)}`, projectionHash };
 }
 
-export function inspectDeliveryState({ root = ".", environmentKey = "", targetKey = "", historyLimit = 100 } = {}) {
+export async function inspectDeliveryState({ root = ".", environmentKey = "", targetKey = "", historyLimit = 100 } = {}) {
   const inspected = assertObservationProjectReady(root);
   const normalizedEnvironment = environmentKey ? stableKey(environmentKey, "Delivery environment filter", 128) : "";
   const normalizedTarget = targetKey ? stableKey(targetKey, "Delivery target filter", 128) : "";
@@ -376,8 +376,8 @@ export function inspectDeliveryState({ root = ".", environmentKey = "", targetKe
     current.push(record);
     grouped.set(key, current);
   }
-  const completeTargets = [...grouped.values()].map((items) => {
-    const derived = groupProjection(items, inspected.project.projectRoot, snapshotCache);
+  const completeTargets = (await Promise.all([...grouped.values()].map(async (items) => {
+    const derived = (await groupProjection(items, inspected.project.projectRoot, snapshotCache));
     return {
       environmentKey: items[0].payload.environment_key,
       targetKey: items[0].payload.target_key,
@@ -388,7 +388,7 @@ export function inspectDeliveryState({ root = ".", environmentKey = "", targetKe
       lastAttempt: derived.lastAttempt,
       history: derived.orderedHistory,
     };
-  }).sort((left, right) => left.environmentKey.localeCompare(right.environmentKey)
+  }))).sort((left, right) => left.environmentKey.localeCompare(right.environmentKey)
     || left.targetKey.localeCompare(right.targetKey)
     || left.artifactKey.localeCompare(right.artifactKey));
   const environmentKeys = [...new Set(completeTargets.map((target) => target.environmentKey))].sort();

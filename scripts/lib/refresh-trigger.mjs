@@ -444,7 +444,7 @@ export function readRefreshTriggerBatch({ root = ".", triggerBatchId } = {}) {
   return { status: "verified", file, batch };
 }
 
-export function readRefreshTriggerDelivery({ root = ".", triggerDeliveryId, storeAdapter = null, documentProjectionAdapter = null } = {}) {
+export async function readRefreshTriggerDelivery({ root = ".", triggerDeliveryId, storeAdapter = null, documentProjectionAdapter = null } = {}) {
   const inspected = readyProject(root);
   const file = deliveryFile(inspected.project.projectRoot, triggerDeliveryId, inspected.storage);
   if (!fs.existsSync(file)) fail(`Refresh trigger delivery is missing: ${triggerDeliveryId}`, "REFRESH_TRIGGER_DELIVERY_NOT_FOUND");
@@ -460,11 +460,11 @@ export function readRefreshTriggerDelivery({ root = ".", triggerDeliveryId, stor
   let refreshEntry = null;
   let postRefreshProjection = null;
   if (delivery.status !== "ignored") {
-    refreshEntry = readIncrementalRefreshReceipt({
+    refreshEntry = (await readIncrementalRefreshReceipt({
       root: inspected.project.projectRoot,
       refreshReceiptId: delivery.incrementalRefresh.refreshReceiptId,
       storeAdapter,
-    });
+    }));
     if (refreshEntry.receipt.refreshRequestId !== delivery.incrementalRefresh.refreshRequestId
       || refreshEntry.request.trigger.kind !== delivery.sourceKind
       || canonicalJson(refreshEntry.request.trigger.evidenceIds) !== canonicalJson([delivery.triggerBatchId])
@@ -476,12 +476,12 @@ export function readRefreshTriggerDelivery({ root = ".", triggerDeliveryId, stor
       fail("Refresh trigger delivery does not match its incremental refresh receipt.", "REFRESH_TRIGGER_DELIVERY_REFRESH_MISMATCH");
     }
     if (delivery.protocol.version === REFRESH_TRIGGER_VERSION) {
-      postRefreshProjection = readPostRefreshProjectionReceipt({
+      postRefreshProjection = (await readPostRefreshProjectionReceipt({
         root: inspected.project.projectRoot,
         postRefreshProjectionReceiptId: delivery.projectionDisposition.documents.postRefreshProjectionReceiptId,
         storeAdapter,
         documentProjectionAdapter,
-      });
+      }));
       if (postRefreshProjection.receipt.refresh.refreshRequestId !== refreshEntry.request.refreshRequestId
         || postRefreshProjection.receipt.refresh.refreshReceiptId !== refreshEntry.receipt.refreshReceiptId
         || postRefreshProjection.receipt.outcome.status !== delivery.projectionDisposition.documents.status
@@ -490,16 +490,16 @@ export function readRefreshTriggerDelivery({ root = ".", triggerDeliveryId, stor
       }
     }
   } else {
-    const snapshot = readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: delivery.base.worldModelId, storeAdapter }).snapshot;
+    const snapshot = (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: delivery.base.worldModelId, storeAdapter })).snapshot;
     if (canonicalJson(snapshotBinding(snapshot)) !== canonicalJson(delivery.base)) fail("Ignored refresh trigger delivery snapshot is missing or inconsistent.", "REFRESH_TRIGGER_DELIVERY_SNAPSHOT_MISMATCH");
   }
   return { status: "verified", file, delivery, batchFile: batchEntry.file, batch: batchEntry.batch, refresh: refreshEntry, postRefreshProjection };
 }
 
-export function inspectRefreshTriggers({ root = ".", storeAdapter = null, documentProjectionAdapter = null } = {}) {
+export async function inspectRefreshTriggers({ root = ".", storeAdapter = null, documentProjectionAdapter = null } = {}) {
   const inspected = readyProject(root);
   const file = currentFile(inspected.project.projectRoot, inspected.storage);
-  const world = readWorldModel({ root: inspected.project.projectRoot, storeAdapter });
+  const world = (await readWorldModel({ root: inspected.project.projectRoot, storeAdapter }));
   const writer = inspectRefreshWriterLease({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, storage: inspected.storage });
   if (!fs.existsSync(file)) return {
     status: "not-triggered",
@@ -509,10 +509,10 @@ export function inspectRefreshTriggers({ root = ".", storeAdapter = null, docume
   };
   const pointer = verifyPointer(readJson(file, "Refresh trigger pointer"), inspected.storage);
   if (pointer.projectId !== inspected.project.projectId) fail("Refresh trigger pointer belongs to another project.", "REFRESH_TRIGGER_PROJECT_MISMATCH");
-  const deliveryEntry = readRefreshTriggerDelivery({ root: inspected.project.projectRoot, triggerDeliveryId: pointer.triggerDeliveryId, storeAdapter, documentProjectionAdapter });
+  const deliveryEntry = (await readRefreshTriggerDelivery({ root: inspected.project.projectRoot, triggerDeliveryId: pointer.triggerDeliveryId, storeAdapter, documentProjectionAdapter }));
   if (deliveryEntry.delivery.triggerBatchId !== pointer.triggerBatchId || deliveryEntry.delivery.next.worldModelId !== pointer.worldModelId
     || deliveryEntry.delivery.next.sourceSnapshotId !== pointer.sourceSnapshotId) fail("Refresh trigger pointer and delivery disagree.", "REFRESH_TRIGGER_POINTER_MISMATCH");
-  const freshness = inspectWorldModel({ root: inspected.project.projectRoot, storeAdapter });
+  const freshness = (await inspectWorldModel({ root: inspected.project.projectRoot, storeAdapter }));
   return {
     status: world.snapshot.worldModelId === pointer.worldModelId && freshness.status === "current" ? "current" : "stale",
     pointerFile: file,
@@ -551,8 +551,8 @@ async function processRefreshTriggerBatchInternal({
     overflowRescanRequired,
   }, inspected.storage);
   const batchEntry = persistImmutable(batchFile(projectRoot, batch.triggerBatchId, inspected.storage), batch, (record) => verifyRefreshTriggerBatch(record, inspected.storage), "Refresh trigger batch");
-  return withRefreshWriterLease({ projectRoot, projectId: inspected.project.projectId, storage: inspected.storage }, async (writerLease) => {
-    const before = readWorldModel({ root: projectRoot, storeAdapter }).snapshot;
+  return (await withRefreshWriterLease({ projectRoot, projectId: inspected.project.projectId, storage: inspected.storage }, async (writerLease) => {
+    const before = (await readWorldModel({ root: projectRoot, storeAdapter })).snapshot;
     let refresh = null;
     if (batch.requiresRescan) {
       refresh = await refreshWorldModel({
@@ -567,7 +567,7 @@ async function processRefreshTriggerBatchInternal({
         writerLease,
       });
     }
-    const after = refresh ? readWorldModel({ root: projectRoot, storeAdapter }).snapshot : before;
+    const after = refresh ? (await readWorldModel({ root: projectRoot, storeAdapter })).snapshot : before;
     const delivery = buildDelivery({
       batch,
       status: refresh?.status || "ignored",
@@ -596,12 +596,12 @@ async function processRefreshTriggerBatchInternal({
       pointer,
       refresh,
     };
-  });
+  }));
 }
 
 export async function processRefreshTriggerBatch(options = {}) {
   assertFields(options, ["root", "sourceKind", "events", "maxEvents", "overflowEventCount", "overflowRescanRequired", "storeAdapter", "graphProjectionAdapter", "documentProjectionAdapter", "gitHistoryAdapter", "runtimeStateAdapter"], "Refresh trigger ingestion options");
-  return processRefreshTriggerBatchInternal(options);
+  return (await processRefreshTriggerBatchInternal(options));
 }
 
 export class DebouncedRefreshTriggerQueue {
@@ -765,11 +765,11 @@ export function createFileSystemRefreshWatcher({
   };
   let watcher;
   try {
-    watcher = fs.watch(queue.root, { recursive: true, encoding: "utf8" }, (eventType, filename) => {
+    watcher = fs.watch(queue.root, { recursive: true, encoding: "utf8" }, async (eventType, filename) => {
       try {
-        queue.enqueue(filename == null
+        (await queue.enqueue(filename == null
           ? { kind: "project-signal", operation: "unknown", path: null, evidenceId: null }
-          : { kind: "path-hint", operation: eventType === "rename" ? "rename" : "change", path: String(filename), evidenceId: null });
+          : { kind: "path-hint", operation: eventType === "rename" ? "rename" : "change", path: String(filename), evidenceId: null }));
       } catch (error) {
         reportError(error);
       }
@@ -840,8 +840,8 @@ export async function runFileSystemRefreshWatcher(options = {}) {
         reject(error);
       }
     };
-    const onSigint = () => { void finish("SIGINT"); };
-    const onSigterm = () => { void finish("SIGTERM"); };
+    const onSigint = async () => { void (await finish("SIGINT")); };
+    const onSigterm = async () => { void (await finish("SIGTERM")); };
     finishWatcher = finish;
     process.once("SIGINT", onSigint);
     process.once("SIGTERM", onSigterm);

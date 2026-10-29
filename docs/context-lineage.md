@@ -95,3 +95,13 @@ event-management system is required.
 
 See [graph discovery](graph-discovery.md), [Graph Explorer](graph-explorer.md) and
 [temporal provenance](temporal-provenance.md).
+
+### Exact retained source addresses
+
+A recorded bundle key, source path and digest can be read directly through the original bundle verifier without enumerating unrelated bundles. An exact bundle request preserves that physical source: a missing, mismatched or unreadable bundle remains unavailable even when current bytes match. Ordinary source-by-digest lookup may still use matching current bytes, recorded bundle hints, bounded retained lookup and local Git history. Readers do not collect new source or write records.
+
+## Exact path-scoped historical diff
+
+`head_graph_lineage_diff` optionally accepts `scope_paths` and an opaque `cursor`; CLI `graph-lineage-diff --from <id> --to <id> --path <exact-relative-path>` exposes a single-path selection. Omit scope/cursor for the unchanged version0.2 whole-endpoint projection. Scoped/page projections use version0.3, keep exact from/to hashes and query/order in their cursor, and never follow a moving current pointer. Resend the same endpoints and scope on each page.
+
+Every endpoint is still fully read and verified. Node changes select exact paths, including removed files. Edge changes include edges incident to a selected node in either endpoint or bearing that exact evidence path, including cross-path edges. Possible moves require both old and new paths in scope and remain evidence rather than identity proof. Root source context changes remain disclosed independently of selected records. Counts are exact within this scope; global counts are marked not-computed rather than zero. OmittedCount counts all items outside this page, while page.remaining counts only undisplayed subsequent items. No chunk-only verification or false unchanged/deletion claim is made. Locale-equivalent move keys preserve original removed-major/added-minor order; digest grouping and k-way merge avoid materializing or iterating all matching pairs for a bounded page.

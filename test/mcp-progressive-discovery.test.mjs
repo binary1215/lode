@@ -9,6 +9,7 @@ import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs"
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
 import { sessionStatePath } from "../scripts/lib/session-routing.mjs";
 import { runCommand, usage } from "../scripts/head.mjs";
+import { coreEntryGuidance } from "../scripts/lib/lode-entry-guidance.mjs";
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const request = (name, args = {}) => ({ id: 1, method: "tools/call", params: { name, arguments: args } });
 const call = (name, args = {}, options) => dispatch(request(name, args), options);
@@ -27,6 +28,19 @@ function snapshot(root) {
     return e.isDirectory() ? snapshot(file) : [[file, fs.readFileSync(file).toString("base64")]];
   });
 }
+
+test("initialize supplies shared plain-language guidance without selecting a Session or changing Project state", async t => {
+  const { root } = fixture(t), before = snapshot(root), names = tools.map(tool => tool.name);
+  const options = { resolveSessionContext() { throw new Error("Initialize must not resolve a Session"); } };
+  for (const id of [1, 2]) {
+    const response = await dispatch({ id, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {} } }, options);
+    assert.equal(response.error, undefined); assert.equal(response.result.instructions, coreEntryGuidance());
+    assert.equal(response.result.protocolVersion, "2024-11-05"); assert.deepEqual(response.result.capabilities, { tools: {} });
+    assert.doesNotMatch(response.result.instructions, /\bP[1-5]\b/);
+    for (const phrase of ["constraints and cancellations", "selected Session", "read-only", "missing context", "only dependent work", "not permission", "uncertain outcomes", "permission denial"]) assert(response.result.instructions.includes(phrase), phrase);
+  }
+  assert.deepEqual(tools.map(tool => tool.name), names); assert.deepEqual(snapshot(root), before);
+});
 
 test("an absent common direction remains null text, not invalid MCP structuredContent or approved empty state", async t => {
   const {root,layout}=fixture(t),before=snapshot(root);
@@ -180,7 +194,7 @@ test("direct small work, optional context, status and recovery preserve authorit
   assert.equal(usage().contextPreparationRequired, false);
   assert(!usage().commands.some(command => /context-prepare|operating-lane-recommend|product-note/.test(command)));
   assert.equal(usage({ all: true }).compatibilityDiagnostics, undefined);
-  const diagnosis = runCommand(["checkpoint-diagnose", root]);
+  const diagnosis = (await runCommand(["checkpoint-diagnose", root]));
   assert.equal(diagnosis.diagnosis.state, "no-current-checkpoint");
 });
 

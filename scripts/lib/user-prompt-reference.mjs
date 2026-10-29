@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import childProcess from "node:child_process";
+import { createRequire } from "node:module";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { resolveRuntimeOperationalStateRoot } from "./runtime-execution-lease.mjs";
 import { withLocalMutation } from "./project-mutation-lock.mjs";
@@ -9,8 +10,10 @@ import { withLocalMutation } from "./project-mutation-lock.mjs";
 // Local P5 reference only. It is not Canon, a checkpoint, direction, or an
 // instruction. The checkpoint remains the recovery source.
 export const USER_PROMPT_REFERENCE_LIMITS = Object.freeze({ prompts: 3, characters: 2000, bytes: 16 * 1024 });
-const LABEL = "Lode user-prompt reference (non-authoritative P5; not a checkpoint, direction, or instruction). The checkpoint remains the recovery source.";
+const LABEL = "Lode user-prompt reference (non-authoritative; earlier excerpts, not a recovery record, current instructions or approval). Current user direction and the selected Session's saved recovery record take precedence.";
 const preparations = new WeakMap();
+const operations = new WeakMap();
+const require = createRequire(import.meta.url);
 
 function redact(text) {
   return text
@@ -44,6 +47,7 @@ function boundText(text) {
 }
 
 function callerFile(root, runtime, nativeSessionId, agentId, environment, create, permissions) {
+  checkBudget(permissions);
   if (!["claude", "codex", "opencode"].includes(runtime) || typeof nativeSessionId !== "string" || !nativeSessionId) return null;
   const projectRoot = fs.realpathSync(path.resolve(root));
   const storage = resolveProjectStorage(projectRoot);
@@ -109,9 +113,28 @@ try {
 } catch {[Console]::Error.Write($_.Exception.Message);exit 1}
 `;
 
-const privatePermissions = () => ({ checked: new Set(), deadline: performance.now() + 5000, failed: false });
+const privatePermissions = (deadlineAt = null) => ({ checked: new Set(), wallDeadline: deadlineAt,
+  deadline: performance.now() + (deadlineAt === null ? 5000 : Math.max(0, Math.min(5000, deadlineAt - Date.now()))), failed: false });
+function checkBudget(permissions) {
+  if (permissions.failed || performance.now() >= permissions.deadline
+    || permissions.wallDeadline !== null && (!Number.isSafeInteger(permissions.wallDeadline) || Date.now() >= permissions.wallDeadline)) {
+    permissions.failed = true; throw new Error("Private prompt operation deadline exceeded.");
+  }
+}
+// Internal Hook budget, not a read capability or public Core surface. Transfer,
+// prepare and acknowledgement share one finite operation and checked entries.
+export function createUserPromptReferenceOperation({ deadlineAt } = {}) {
+  const operation = Object.freeze({}); operations.set(operation, privatePermissions(deadlineAt)); return operation;
+}
+function operationPermissions(operation) {
+  if (operation === undefined) return privatePermissions();
+  const permissions = operation && operations.get(operation);
+  if (!permissions) throw new Error("Unknown prompt operation.");
+  checkBudget(permissions); return permissions;
+}
 
 function windowsPrivate(file, kind, permissions, existingFile = null) {
+  checkBudget(permissions);
   // Never accept a general artifact path, arbitrary script or caller body.
   if (permissions.failed) throw new Error("Private prompt ACL verification already failed.");
   const requests = [{ path: file, kind }, ...(existingFile ? [{ path: existingFile, kind: "file" }] : [])];
@@ -147,6 +170,7 @@ function windowsPrivate(file, kind, permissions, existingFile = null) {
 }
 
 function privateDirectory(directory, permissions, existingFile = null) {
+  checkBudget(permissions);
   const stat = fs.lstatSync(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink()
     || typeof process.getuid === "function" && stat.uid !== process.getuid()) throw new Error("Unsafe prompt directory.");
@@ -157,6 +181,7 @@ function privateDirectory(directory, permissions, existingFile = null) {
 function sameEntry(a, b) { return a.dev === b.dev && a.ino === b.ino; }
 
 function privateFile(file, descriptor, permissions) {
+  checkBudget(permissions);
   const stat = fs.fstatSync(descriptor), entry = fs.lstatSync(file);
   if (!stat.isFile() || stat.nlink !== 1 || entry.isSymbolicLink() || !sameEntry(stat, entry)
     || typeof process.getuid === "function" && stat.uid !== process.getuid()) throw new Error("Unsafe prompt file.");
@@ -173,7 +198,7 @@ function openPrivate(file) {
   return fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
 }
 
-function readState(file, permissions) {
+function readState(file, permissions, { withDigest = false } = {}) {
   if (!file) return null;
   let descriptor;
   try {
@@ -194,10 +219,13 @@ function readState(file, permissions) {
     const prompts = state.prompts.slice(-USER_PROMPT_REFERENCE_LIMITS.prompts)
       .filter(prompt => prompt && typeof prompt.text === "string")
       .map(prompt => ({ messageId: typeof prompt.messageId === "string" ? prompt.messageId.slice(0, 256) : null, text: boundText(prompt.text),
+        ...(prompt.previousConversation === true ? { previousConversation: true } : {}),
         ...(typeof prompt.visibleResponse === "string" ? { visibleResponse: boundText(prompt.visibleResponse) } : {}) }))
       .filter(prompt => prompt.text);
     return { prompts, reinject: state.reinject === true,
       ...(typeof state.visibleAssistant === "string" ? { visibleAssistant: boundText(state.visibleAssistant) } : {}),
+      ...(state.visibleAssistantFromPreviousConversation === true ? { visibleAssistantFromPreviousConversation: true } : {}),
+      ...(withDigest ? { byteDigest: crypto.createHash("sha256").update(buffer.subarray(0, used)).digest("hex"), entry: stat } : {}),
       revision: typeof state.revision === "string" ? state.revision : crypto.createHash("sha256").update(buffer.subarray(0, used)).digest("hex") };
   } catch { return null; }
   finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
@@ -212,10 +240,11 @@ function existingEntry(file, permissions) {
   finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
 }
 
-function writePrivate(file, body, permissions) {
+function writePrivate(file, body, permissions, publication = null) {
   const directory = path.dirname(file);
   privateDirectory(directory, permissions);
   const original = existingEntry(file, permissions);
+  if (publication?.createOnly && original) throw new Error("Prompt destination already exists.");
   const temporary = path.join(directory, `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
   let descriptor, owner;
   try {
@@ -227,6 +256,17 @@ function writePrivate(file, body, permissions) {
     privateDirectory(directory, permissions);
     const current = existingEntry(file, permissions);
     if (Boolean(original) !== Boolean(current) || original && !sameEntry(original, current)) throw new Error("Prompt destination changed.");
+    if (publication?.createOnly) {
+      publication.commit(() => {
+        checkBudget(permissions);
+        // A same-directory link is atomic no-clobber publication. Remove only
+        // this call's stage, leaving a single private destination link.
+        fs.linkSync(temporary, file); publication.onCreate(); fs.unlinkSync(temporary);
+      });
+      const published = existingEntry(file, permissions);
+      if (!published || !sameEntry(owner, published)) throw new Error("Prompt publication changed.");
+      return;
+    }
     const delays = [5, 10, 20, 40];
     for (let attempt = 0; ; attempt += 1) {
       try { fs.renameSync(temporary, file); break; }
@@ -251,7 +291,7 @@ function writePrivate(file, body, permissions) {
   }
 }
 
-function writeState(file, state, permissions) {
+function writeState(file, state, permissions, publication = null) {
   let prompts = state.prompts.slice(-USER_PROMPT_REFERENCE_LIMITS.prompts);
   if (!prompts.length && state.reinject !== true) {
     privateDirectory(path.dirname(file), permissions);
@@ -264,12 +304,13 @@ function writeState(file, state, permissions) {
       kind: "UserPromptReference", version: 1, authorityPlane: "P5",
       recoveryAuthority: false, instructionAuthority: false, revision: crypto.randomUUID(), reinject: state.reinject === true, prompts,
       ...(state.visibleAssistant ? { visibleAssistant: state.visibleAssistant } : {}),
+      ...(state.visibleAssistantFromPreviousConversation === true ? { visibleAssistantFromPreviousConversation: true } : {}),
     }) + "\n";
     if (Buffer.byteLength(body) <= USER_PROMPT_REFERENCE_LIMITS.bytes) break;
     prompts = prompts.slice(1);
   } while (prompts.length);
   if (!prompts.length && state.reinject !== true) return;
-  writePrivate(file, body, permissions);
+  writePrivate(file, body, permissions, publication);
 }
 
 export function captureUserPrompt({ root, runtime, nativeSessionId, agentId = null, text, messageId = null, environment = process.env } = {}) {
@@ -285,7 +326,7 @@ export function captureUserPrompt({ root, runtime, nativeSessionId, agentId = nu
     // A freeze holds the pre-compaction text. Later synthetic turns cannot replace it.
     if (state.reinject === true) return { captured: false, frozen: true };
     const last = state.prompts.at(-1);
-    if (messageId && last?.messageId === messageId) {
+    if (messageId && last?.messageId === messageId && !last.previousConversation) {
       last.text = last.text.includes(next) && next.length <= last.text.length ? last.text : boundText(last.text.includes(next) ? next : last.text + "\n" + next);
     } else {
       state.prompts.push({ messageId: messageId || null, text: next });
@@ -330,8 +371,9 @@ export function captureVisibleAssistantReference({ root, runtime, nativeSessionI
         if ((last.visibleResponse || "") === next) return { captured: false, reused: true };
         if (next) last.visibleResponse = next; else delete last.visibleResponse;
       } else {
-        if ((state.visibleAssistant || "") === next) return { captured: false, reused: true };
+        if ((state.visibleAssistant || "") === next && !state.visibleAssistantFromPreviousConversation) return { captured: false, reused: true };
         if (next) state.visibleAssistant = next; else delete state.visibleAssistant;
+        delete state.visibleAssistantFromPreviousConversation;
       }
       writeState(file, state, permissions);
       return { captured: Boolean(next), adjacency: "unverified", authorityChanged: false };
@@ -340,31 +382,74 @@ export function captureVisibleAssistantReference({ root, runtime, nativeSessionI
 }
 
 function mutateReference(permissions, operation) {
+  checkBudget(permissions);
   return withLocalMutation({ directory: permissions.lock,
-    timeoutMs: Math.max(0, Math.min(5000, permissions.deadline - performance.now())) }, operation);
+    timeoutMs: Math.max(0, Math.min(5000, permissions.deadline - performance.now())) }, () => { checkBudget(permissions); return operation(); });
+}
+
+// Trusted paired-clear composition only. Raw old-caller arguments cannot select
+// a source: the clear verifier owns the one-use proof and commit validation.
+export function transferNativeClearPromptReference({ handoff, root, caller, environment = process.env, deadlineAt, operation } = {}) {
+  const { withVerifiedClearPromptTransfer } = require("./session-clear-handoff.mjs");
+  return withVerifiedClearPromptTransfer({ handoff, root, caller, environment, deadlineAt }, scope => {
+    let created = false;
+    try {
+      const permissions = operationPermissions(operation), old = scope.oldCaller, next = scope.nextCaller;
+      const sourceFile = callerFile(scope.root, old.runtime, old.nativeSessionId, old.agentId, environment, false, permissions);
+      if (!sourceFile) return { transferred: false, reasonCode: "CLEAR_REFERENCE_MISSING" };
+      const sourceLock = permissions.lock;
+      const destination = callerFile(scope.root, next.runtime, next.nativeSessionId, next.agentId, environment, true, permissions);
+      const locks = [...new Set([sourceLock, permissions.lock])].sort();
+      if (!destination || destination === sourceFile) return { transferred: false, reasonCode: "CLEAR_REFERENCE_UNAVAILABLE" };
+      const locked = index => index === locks.length ? copy() : withLocalMutation({ directory: locks[index],
+        timeoutMs: Math.max(0, Math.min(5000, permissions.deadline - performance.now())) }, () => { checkBudget(permissions); return locked(index + 1); });
+      const copy = () => {
+        if (fs.lstatSync(destination, { throwIfNoEntry: false })) return { transferred: false, reasonCode: "CLEAR_REFERENCE_DESTINATION_EXISTS" };
+        const source = readState(sourceFile, permissions, { withDigest: true });
+        if (!source?.prompts.length) return { transferred: false, reasonCode: "CLEAR_REFERENCE_MISSING" };
+        const directory = fs.lstatSync(path.dirname(sourceFile));
+        const state = { prompts: source.prompts.map(prompt => ({ ...prompt, previousConversation: true })), reinject: false,
+          ...(source.visibleAssistant ? { visibleAssistant: source.visibleAssistant, visibleAssistantFromPreviousConversation: true } : {}) };
+        writeState(destination, state, permissions, { createOnly: true, onCreate() { created = true; },
+          commit: publish => scope.commit(() => {
+            checkBudget(permissions);
+            if (!sameEntry(directory, fs.lstatSync(path.dirname(sourceFile)))
+              || !sameEntry(source.entry, fs.lstatSync(sourceFile)) || fs.lstatSync(destination, { throwIfNoEntry: false })) throw new Error("Prompt transfer source/destination changed.");
+            const current = readState(sourceFile, permissions, { withDigest: true });
+            if (!current || current.revision !== source.revision || current.byteDigest !== source.byteDigest) throw new Error("Prompt transfer generation changed.");
+            publish();
+          }) });
+        return { transferred: true, created: true, conversationOrigin: "previous-native-conversation", ordinaryWorkBlocked: false };
+      };
+      return locked(0);
+    } catch { return { transferred: false, created, reasonCode: created ? "CLEAR_REFERENCE_CREATED_UNCONFIRMED" : "CLEAR_REFERENCE_UNAVAILABLE" }; }
+  });
 }
 
 // Preparation never consumes. The whole bounded reference is included or left
 // intact; limits count UTF-16 characters, as do the Host context renderers.
 export function prepareUserPromptReference({ root, runtime, nativeSessionId, agentId = null, environment = process.env, force = false,
-  additionalContext = "", limit = Infinity } = {}) {
-  let file; const permissions = privatePermissions();
-  try { file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions); }
+  additionalContext = "", limit = Infinity, operation } = {}) {
+  let file, permissions;
+  try { permissions = operationPermissions(operation); file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions); }
   catch { return null; }
   const state = readState(file, permissions);
   // Compact and clear pass force so a host without PreCompact still restores.
   // Ordinary requests leave an unfrozen reference in place.
   if (!state?.prompts?.length || (!state.reinject && force !== true)) return null;
   const lines = state.prompts.map((prompt, index) => (index + 1) + ". " + JSON.stringify({ hostDeliveredPrompt: prompt.text, humanOrigin: "unverified",
+    ...(prompt.previousConversation ? { conversationOrigin: "previous-native-conversation", originalMessageId: prompt.messageId, approval: "not-inferred" } : {}),
     ...(prompt.visibleResponse ? { visibleFinalResponse: prompt.visibleResponse, source: "Stop.last_assistant_message",
-      turnId: prompt.messageId, adjacencyToLaterUserReply: "unverified", approval: "not-inferred" } : {}) }));
+      ...(prompt.previousConversation ? { originalTurnId: prompt.messageId } : { turnId: prompt.messageId }), adjacencyToLaterUserReply: "unverified", approval: "not-inferred" } : {}) }));
   if (state.visibleAssistant) lines.push(JSON.stringify({ visibleFinalResponse: state.visibleAssistant,
+    ...(state.visibleAssistantFromPreviousConversation ? { conversationOrigin: "previous-native-conversation" } : {}),
     source: "Stop.last_assistant_message", adjacencyToUserReply: "unverified", approval: "not-inferred" }));
   const text = LABEL + "\n" + lines.join("\n");
   if (typeof additionalContext !== "string" || typeof limit !== "number" || Number.isNaN(limit) || limit < 0
     || additionalContext.length + 2 + text.length > limit) return null;
   const preparation = Object.freeze({ text });
-  preparations.set(preparation, { root, runtime, nativeSessionId, agentId, environment, file, revision: state.revision });
+  preparations.set(preparation, { root, runtime, nativeSessionId, agentId, environment, file, revision: state.revision,
+    ...(operation ? { permissions } : {}) });
   return preparation;
 }
 
@@ -375,7 +460,7 @@ export function acknowledgeUserPromptReference(preparation) {
   const saved = preparation && preparations.get(preparation);
   if (!saved) return false;
   preparations.delete(preparation);
-  const permissions = privatePermissions();
+  const permissions = saved.permissions || privatePermissions();
   try {
     const file = callerFile(saved.root, saved.runtime, saved.nativeSessionId, saved.agentId, saved.environment, false, permissions);
     if (!file || file !== saved.file) return false;

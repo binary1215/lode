@@ -1,3 +1,6 @@
+import { DOMAIN_BUNDLE_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
+import { GitSnapshotStore } from "./git-snapshot-store.mjs";
+import { storedSnapshotLocation, readSnapshotFile, writeStoredSnapshot, listStoredSnapshotIds } from "./snapshot-storage-codec.mjs";
 import crypto from "node:crypto";
 import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact } from "./project-storage-format.mjs";
 import { requiredIndexDdl, inspectRequiredIndex } from "./arcadedb-schema-contract.mjs";
@@ -145,8 +148,12 @@ function graphSnapshotId(value) {
 }
 
 function parseDocument(file, label) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`${label} is invalid JSON: ${error.message}`, "INVALID_GRAPH_PROJECTION_DOCUMENT"); }
+  try { return file.endsWith(".json.gz") ? readSnapshotFile(file).document : JSON.parse(fs.readFileSync(file, "utf8")); }
+  catch (error) {
+    // Corrupt encoding is a document error; operational failures keep their code.
+    if (file.endsWith(".json.gz") && error.code && error.code !== "INVALID_SNAPSHOT_ENCODING") throw error;
+    fail(`${label} is invalid JSON: ${error.message}`, "INVALID_GRAPH_PROJECTION_DOCUMENT");
+  }
 }
 
 function atomicWrite(file, content) {
@@ -906,7 +913,7 @@ export class ArcadeDbHttpTransport {
     return assembled;
   }
 
-  writeSnapshot(projectId, id, documentJson, metadata) {
+  async writeSnapshot(projectId, id, documentJson, metadata) {
     try {
       let storedDocumentJson = documentJson;
       if (metadata?.topologyBacked === true) {
@@ -982,7 +989,7 @@ export class ArcadeDbHttpTransport {
       } catch (error) { fail("ArcadeDB snapshot manifest write failed.", `ARCADEDB_SNAPSHOT_MANIFEST_WRITE_FAILED:${error.code || "UNKNOWN"}`); }
       return true;
     } catch (error) {
-      if (error.code === "ARCADEDB_REQUEST_REJECTED" && this.readSnapshot(projectId, id) != null) return false;
+      if (error.code === "ARCADEDB_REQUEST_REJECTED" && (await this.readSnapshot(projectId, id)) != null) return false;
       throw error;
     }
   }
@@ -1000,7 +1007,7 @@ export class ArcadeDbHttpTransport {
     });
   }
 
-  writePointerCompareAndSwap(projectId, expectedPointerJson, pointerJson) {
+  async writePointerCompareAndSwap(projectId, expectedPointerJson, pointerJson) {
     if (expectedPointerJson == null) {
       try {
         this.invoke("command", {
@@ -1008,12 +1015,12 @@ export class ArcadeDbHttpTransport {
           params: { projectId, pointerJson },
         });
       } catch (error) {
-        const currentPointerJson = this.readPointer(projectId);
+        const currentPointerJson = (await this.readPointer(projectId));
         if (currentPointerJson === pointerJson) return true;
         if (currentPointerJson != null) return false;
         throw error;
       }
-      return this.readPointer(projectId) === pointerJson;
+      return (await this.readPointer(projectId)) === pointerJson;
     }
     try {
       this.invoke("command", {
@@ -1021,10 +1028,10 @@ export class ArcadeDbHttpTransport {
         params: { projectId, expectedPointerJson, pointerJson },
       });
     } catch (error) {
-      if (this.readPointer(projectId) === pointerJson) return true;
+      if ((await this.readPointer(projectId)) === pointerJson) return true;
       throw error;
     }
-    return this.readPointer(projectId) === pointerJson;
+    return (await this.readPointer(projectId)) === pointerJson;
   }
 
   listSnapshotIds(projectId) {
@@ -1799,37 +1806,37 @@ export class ArcadeDbGraphProjectionAdapter {
     }
   }
 
-  readPointer() {
+  async readPointer() {
     if (this.stagedPointer) return { location: `${this.locationBase}/staged-current`, document: clone(this.stagedPointer) };
-    const value = this.transport.readPointer(this.projectId);
+    const value = (await this.transport.readPointer(this.projectId));
     return value == null ? null : { location: `${this.locationBase}/current`, document: parseRemoteJson(value, "ArcadeDB graph projection pointer") };
   }
 
-  readPointerForPreparedQuery() {
-    return bindPreparedPointerRead(this, this.readPointer());
+  async readPointerForPreparedQuery() {
+    return bindPreparedPointerRead(this, (await this.readPointer()));
   }
 
-  readSnapshot(id) {
+  async readSnapshot(id) {
     graphSnapshotId(id);
-    const value = this.transport.readSnapshot(this.projectId, id);
+    const value = (await this.transport.readSnapshot(this.projectId, id));
     if (value == null) return null;
     const document = parseRemoteJson(value, "ArcadeDB graph projection snapshot");
     if (this.topologyRequired) this.readTopology(document);
     return { location: `${this.locationBase}/snapshots/${id}`, document };
   }
 
-  writeSnapshot(id, document) {
+  async writeSnapshot(id, document) {
     graphSnapshotId(id);
     this.ensureSchema();
     if (this.incrementalSyncRequired) {
       verifyTemporalProvenanceGraph(document);
       this.ensureTopologySchema();
       const transport = assertArcadeDbIncrementalSyncTransport(this.transport);
-      const pointerJson = transport.readPointer(this.projectId);
+      const pointerJson = (await transport.readPointer(this.projectId));
       const pointer = pointerJson == null ? null : verifyGraphProjectionPointer(parseRemoteJson(pointerJson, "ArcadeDB graph projection pointer"), null, this.storage);
       let baseGraph = pointer ? this.baseGraph : null;
       if (pointer && (!baseGraph || baseGraph.graphSnapshotId !== pointer.graphSnapshotId || baseGraph.graphSnapshotHash !== pointer.graphSnapshotHash)) {
-        const baseJson = transport.readSnapshot(this.projectId, pointer.graphSnapshotId);
+        const baseJson = (await transport.readSnapshot(this.projectId, pointer.graphSnapshotId));
         if (baseJson == null) fail("ArcadeDB incremental sync pointer references a missing base GraphSnapshot.", "ARCADEDB_INCREMENTAL_SYNC_BASE_MISSING");
         baseGraph = parseRemoteJson(baseJson, "ArcadeDB incremental sync base GraphSnapshot");
         verifyTemporalProvenanceGraph(baseGraph);
@@ -1843,12 +1850,12 @@ export class ArcadeDbGraphProjectionAdapter {
       const topology = buildArcadeDbGraphTopology(document, this.storage);
       transport.writeTopology(this.projectId, document.graphSnapshotId, clone(document), clone(topology));
       const verifiedTopology = this.readTopology(document).topology;
-      const created = transport.writeSnapshot(this.projectId, id, graphProjectionCanonicalJson(document), {
+      const created = (await transport.writeSnapshot(this.projectId, id, graphProjectionCanonicalJson(document), {
         graphSnapshotHash: document.graphSnapshotHash,
         sourceSnapshotId: document.sourceSnapshotId,
         topologyBacked: true,
-      });
-      const value = transport.readSnapshot(this.projectId, id);
+      }));
+      const value = (await transport.readSnapshot(this.projectId, id));
       if (value == null) fail("ArcadeDB did not return the synchronized GraphSnapshot.", "GRAPH_PROJECTION_WRITE_MISMATCH");
       const verifiedDocument = parseRemoteJson(value, "ArcadeDB synchronized GraphSnapshot");
       verifyTemporalProvenanceGraph(verifiedDocument);
@@ -1860,16 +1867,16 @@ export class ArcadeDbGraphProjectionAdapter {
       return { location: `${this.locationBase}/snapshots/${id}`, document: verifiedDocument, created, incrementalSync: syncState };
     }
     if (this.topologyRequired) this.materializeTopology(document);
-    const created = this.transport.writeSnapshot(this.projectId, id, graphProjectionCanonicalJson(document), {
+    const created = (await this.transport.writeSnapshot(this.projectId, id, graphProjectionCanonicalJson(document), {
       graphSnapshotHash: document.graphSnapshotHash,
       sourceSnapshotId: document.sourceSnapshotId,
-    });
-    const entry = this.readSnapshot(id);
+    }));
+    const entry = (await this.readSnapshot(id));
     if (!entry) fail("ArcadeDB did not return the written GraphSnapshot.", "GRAPH_PROJECTION_WRITE_MISMATCH");
     return { ...entry, created };
   }
 
-  writePointer(document) {
+  async writePointer(document) {
     if (this.stagedPointer) {
       this.stagedPointer = clone(verifyGraphProjectionPointer(document, null, this.storage));
       return { location: `${this.locationBase}/staged-current`, document: clone(this.stagedPointer) };
@@ -1881,7 +1888,7 @@ export class ArcadeDbGraphProjectionAdapter {
       const applied = assertArcadeDbIncrementalSyncTransport(this.transport)
         .writePointerCompareAndSwap(this.projectId, expectedJson, pointerJson);
       if (!applied) fail("ArcadeDB graph pointer changed during incremental sync.", "ARCADEDB_INCREMENTAL_SYNC_POINTER_CONFLICT");
-      const entry = this.readPointer();
+      const entry = (await this.readPointer());
       if (!entry || graphProjectionCanonicalJson(entry.document) !== pointerJson) {
         fail("ArcadeDB incremental sync pointer verification failed.", "GRAPH_PROJECTION_WRITE_MISMATCH");
       }
@@ -1896,12 +1903,12 @@ export class ArcadeDbGraphProjectionAdapter {
       return entry;
     }
     if (this.incrementalSyncRequired) {
-      const entry = this.readPointer();
+      const entry = (await this.readPointer());
       if (entry && graphProjectionCanonicalJson(entry.document) === graphProjectionCanonicalJson(document)) return entry;
       fail("ArcadeDB pointer advancement requires a verified incremental sync.", "ARCADEDB_INCREMENTAL_SYNC_REQUIRED");
     }
     this.transport.writePointer(this.projectId, graphProjectionCanonicalJson(document));
-    const entry = this.readPointer();
+    const entry = (await this.readPointer());
     if (!entry) fail("ArcadeDB did not return the written graph pointer.", "GRAPH_PROJECTION_WRITE_MISMATCH");
     return entry;
   }
@@ -1912,8 +1919,8 @@ export class ArcadeDbGraphProjectionAdapter {
     return completed == null ? null : clone(completed);
   }
 
-  listSnapshotIds() {
-    return this.transport.listSnapshotIds(this.projectId).map(graphSnapshotId).sort();
+  async listSnapshotIds() {
+    return (await this.transport.listSnapshotIds(this.projectId)).map(graphSnapshotId).sort();
   }
 
   materializeTopology(graph) {
@@ -1955,8 +1962,8 @@ export class ArcadeDbGraphProjectionAdapter {
     return { topology, nodes, edges, location: `${this.locationBase}/topologies/${graph.graphSnapshotId}` };
   }
 
-  query(id, options) {
-    const entry = this.readSnapshot(id);
+  async query(id, options) {
+    const entry = (await this.readSnapshot(id));
     if (!entry) fail(`Graph projection snapshot is missing: ${id}`, "GRAPH_PROJECTION_SNAPSHOT_MISSING");
     const reference = queryTemporalProvenanceGraph(entry.document, options);
     if (!this.serverTraversalRequired || reference.traversalQuery.anchorIds.length === 0) return reference;
@@ -1981,7 +1988,7 @@ export class ArcadeDbGraphProjectionAdapter {
     return reference;
   }
 
-  queryPrepared(request, { pointerReadToken = null } = {}) {
+  async queryPrepared(request, { pointerReadToken = null } = {}) {
     if (!this.preparedTraversalRequired) {
       fail("ArcadeDB prepared traversal is not active for this adapter.", "PREPARED_TRAVERSAL_NOT_ACTIVE");
     }
@@ -1992,7 +1999,7 @@ export class ArcadeDbGraphProjectionAdapter {
     if (prepared.expansion.recordCount > ARCADEDB_SERVER_TRAVERSAL_MAX_RECORDS) {
       fail("ArcadeDB prepared traversal expansion exceeds the record budget.", "ARCADEDB_SERVER_TRAVERSAL_RECORD_LIMIT");
     }
-    const pointerEntry = consumePreparedPointerRead(this, pointerReadToken) || this.readPointer();
+    const pointerEntry = consumePreparedPointerRead(this, pointerReadToken) || (await this.readPointer());
     if (!pointerEntry) fail("ArcadeDB graph projection pointer is missing.", "GRAPH_PROJECTION_SNAPSHOT_MISSING");
     verifyGraphProjectionPointer(pointerEntry.document, prepared, this.storage);
     const transport = assertArcadeDbPreparedTraversalTransport(this.transport);
@@ -2077,9 +2084,9 @@ export class ActivatedArcadeDbGraphProjectionAdapter {
     };
   }
 
-  callRemote(operation, fallback) {
+  async callRemote(operation, fallback) {
     if (this.fallbackUsed) return fallback();
-    try { return operation(); }
+    try { return await operation(); }
     catch (error) {
       if (!FALLBACK_CODES.has(error.code) || this.remoteObserved || this.remoteMutated) throw error;
       this.fallbackUsed = true;
@@ -2088,18 +2095,18 @@ export class ActivatedArcadeDbGraphProjectionAdapter {
     }
   }
 
-  readVerifiedLocalPointer() {
-    const entry = this.local.readPointer();
+  async readVerifiedLocalPointer() {
+    const entry = (await this.local.readPointer());
     if (!entry) return null;
-    const snapshot = this.readVerifiedLocalSnapshot(entry.document.graphSnapshotId);
+    const snapshot = (await this.readVerifiedLocalSnapshot(entry.document.graphSnapshotId));
     if (!snapshot) fail("Local mirror pointer references missing evidence.", "GRAPH_PROJECTION_SNAPSHOT_MISSING");
     verifyGraphProjectionPointer(entry.document, snapshot.document, this.storage);
     this.localBasis = entry.document;
     return entry;
   }
 
-  readVerifiedLocalSnapshot(id) {
-    const entry = this.local.readSnapshot(id);
+  async readVerifiedLocalSnapshot(id) {
+    const entry = (await this.local.readSnapshot(id));
     if (!entry) return null;
     verifyTemporalProvenanceGraph(entry.document);
     if (entry.document.projectId !== this.projectId || entry.document.graphSnapshotId !== id
@@ -2109,34 +2116,34 @@ export class ActivatedArcadeDbGraphProjectionAdapter {
     return entry;
   }
 
-  readPointer() {
-    const entry = this.callRemote(() => this.remote.readPointer(), () => this.readVerifiedLocalPointer());
+  async readPointer() {
+    const entry = (await this.callRemote(async () => (await this.remote.readPointer()), async () => (await this.readVerifiedLocalPointer())));
     if (!this.fallbackUsed) this.remoteObserved = true;
     return entry;
   }
 
-  readPointerForPreparedQuery() {
-    const entry = this.callRemote(
-      () => typeof this.remote.readPointerForPreparedQuery === "function"
-        ? this.remote.readPointerForPreparedQuery()
-        : this.remote.readPointer(),
-      () => this.readVerifiedLocalPointer(),
-    );
+  async readPointerForPreparedQuery() {
+    const entry = (await this.callRemote(
+      async () => typeof this.remote.readPointerForPreparedQuery === "function"
+        ? (await this.remote.readPointerForPreparedQuery())
+        : (await this.remote.readPointer()),
+      async () => (await this.readVerifiedLocalPointer()),
+    ));
     if (!this.fallbackUsed) this.remoteObserved = true;
     return entry;
   }
 
-  readSnapshot(id) {
-    const entry = this.callRemote(() => this.remote.readSnapshot(id), () => this.readVerifiedLocalSnapshot(id));
+  async readSnapshot(id) {
+    const entry = (await this.callRemote(async () => (await this.remote.readSnapshot(id)), async () => (await this.readVerifiedLocalSnapshot(id))));
     if (!this.fallbackUsed) this.remoteObserved = true;
     return entry;
   }
 
-  writeSnapshot(id, document) {
-    const entry = this.callRemote(() => {
+  async writeSnapshot(id, document) {
+    const entry = (await this.callRemote(async () => {
       this.remoteMutated = true;
-      const remoteEntry = this.remote.writeSnapshot(id, document);
-      const localEntry = this.local.writeSnapshot(id, document);
+      const remoteEntry = (await this.remote.writeSnapshot(id, document));
+      const localEntry = (await this.local.writeSnapshot(id, document));
       if (graphProjectionCanonicalJson(localEntry.document) !== graphProjectionCanonicalJson(remoteEntry.document)) {
         fail("ArcadeDB and local mirror snapshots differ.", "GRAPH_PROJECTION_SNAPSHOT_CONFLICT");
       }
@@ -2149,17 +2156,28 @@ export class ActivatedArcadeDbGraphProjectionAdapter {
         });
       }
       return remoteEntry;
-    }, () => this.local.writeSnapshot(id, document));
+    }, async () => (await this.local.writeSnapshot(id, document))));
     return entry;
   }
 
-  writePointer(document) {
-    return this.callRemote(() => {
+  async publishRemotePointer(document) {
+    const localEntry = (await this.local.readPointer());
+    if (!localEntry || graphProjectionCanonicalJson(localEntry.document) !== graphProjectionCanonicalJson(document)) {
+      fail("Local mirror no longer names the prepared pointer; remote publication was not attempted.", "GRAPH_PROJECTION_WRITE_MISMATCH");
+    }
+    return (await this.callRemote(async () => {
       this.remoteMutated = true;
-      const remoteEntry = this.remote.writePointer(document);
-      const localEntry = this.local.writePointer(document);
+      const remoteEntry = await this.remote.writePointer(document);
       if (graphProjectionCanonicalJson(localEntry.document) !== graphProjectionCanonicalJson(remoteEntry.document)) {
         fail("ArcadeDB and local mirror pointers differ.", "GRAPH_PROJECTION_WRITE_MISMATCH");
+      }
+      // Awaited remote work cannot use the pre-await mirror object as proof.
+      // A concurrent public materialization may already have advanced it.
+      const currentLocal = this.local.readPointer();
+      if (!currentLocal || graphProjectionCanonicalJson(currentLocal.document) !== graphProjectionCanonicalJson(document)) {
+        const error = Object.assign(new Error("Remote Graph pointer was published, but the local mirror changed while awaiting it; preserve the newer local pointer."), { code: "GRAPH_PROJECTION_PUBLICATION_CONFLICT" });
+        error.graphPublication = { local: "superseded", remote: "published-at-prior-basis", graphSnapshotId: document.graphSnapshotId };
+        throw error;
       }
       const completedSync = typeof this.remote.takeCompletedIncrementalSync === "function"
         ? this.remote.takeCompletedIncrementalSync()
@@ -2188,44 +2206,55 @@ export class ActivatedArcadeDbGraphProjectionAdapter {
         this.pendingTopologyActivation = null;
       }
       return remoteEntry;
-    }, () => this.local.writePointer(document));
+    }, () => localEntry));
   }
 
-  listSnapshotIds() {
-    return this.callRemote(() => {
-      const remoteIds = this.remote.listSnapshotIds();
+  async writePointer(document) {
+    this.local.writePointer(document);
+    return this.publishRemotePointer(document);
+  }
+
+  async listSnapshotIds() {
+    return (await this.callRemote(async () => {
+      const remoteIds = (await this.remote.listSnapshotIds());
       if (remoteIds.length) this.remoteObserved = true;
-      return [...new Set([...remoteIds, ...this.local.listSnapshotIds()])].sort();
-    }, () => this.local.listSnapshotIds());
+      return [...new Set([...remoteIds, ...(await this.local.listSnapshotIds())])].sort();
+    }, async () => (await this.local.listSnapshotIds())));
   }
 
-  query(id, options) {
-    const result = this.callRemote(() => this.remote.query(id, options), () => this.local.query(id, options));
+  async query(id, options) {
+    const result = (await this.callRemote(async () => (await this.remote.query(id, options)), async () => (await this.local.query(id, options))));
     if (!this.fallbackUsed) this.remoteObserved = true;
     return result;
   }
 
-  queryPrepared(request, context = {}) {
-    const verification = this.callRemote(
-      () => this.remote.queryPrepared(request, context),
-      () => this.local.queryPrepared(request, context),
-    );
+  async queryPrepared(request, context = {}) {
+    const verification = (await this.callRemote(
+      async () => (await this.remote.queryPrepared(request, context)),
+      async () => (await this.local.queryPrepared(request, context)),
+    ));
     if (!this.fallbackUsed) this.remoteObserved = true;
     return verification;
   }
 }
 
 export class LocalJsonGraphProjectionAdapter {
-  constructor({ projectRoot, storage = null }) {
+  constructor({ projectRoot, storage = null, snapshotEncoding = "gzip", snapshotLayout = "whole", bundleEncoding = "gzip", gitOptions = {} }) {
     if (typeof projectRoot !== "string" || !projectRoot.trim()) fail("Local graph projection requires projectRoot.", "GRAPH_PROJECTION_ROOT_REQUIRED");
     this.storage = storage;
+    if (!["whole", DOMAIN_BUNDLE_LAYOUT].includes(snapshotLayout)) fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
+    this.snapshotLayout = snapshotLayout; this.bundleEncoding = bundleEncoding;
+    this.snapshotEncoding = snapshotEncoding;
+    this.gitOptions = gitOptions;
+    this.gitStore = () => new GitSnapshotStore({ projectRoot: this.projectRoot, storage: this.storage, ...this.gitOptions });
     this.projectRoot = path.resolve(projectRoot);
     this.adapterVersion = GRAPH_PROJECTION_ADAPTER_VERSION;
   }
 
   describe() {
     return {
-      ...descriptor("local-json", { remote: false, durable: true }),
+      ...descriptor(this.snapshotEncoding === "git" ? "local-git-snapshot-candidate" : "local-json", { remote: false, durable: true }),
+      ...(this.snapshotLayout !== "whole" ? { snapshotLayout: this.snapshotLayout } : {}),
       preparedTraversalProtocolVersion: PREPARED_TRAVERSAL_VERSION,
       preparedTraversalMode: "local-snapshot-reference",
     };
@@ -2236,7 +2265,7 @@ export class LocalJsonGraphProjectionAdapter {
   }
 
   snapshotLocation(id) {
-    return path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "graph-projection", "snapshots", `${graphSnapshotId(id)}.json`);
+    return storedSnapshotLocation(this.projectRoot, path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "graph-projection", "snapshots", `${graphSnapshotId(id)}.json`), this.snapshotEncoding === "git" ? "gzip" : this.snapshotEncoding);
   }
 
   readPointer() {
@@ -2244,16 +2273,22 @@ export class LocalJsonGraphProjectionAdapter {
     return fs.existsSync(location) ? { location, document: parseDocument(location, "Graph projection pointer") } : null;
   }
 
-  readSnapshot(id) {
+  async readSnapshot(id) {
     const location = this.snapshotLocation(id);
-    return fs.existsSync(location) ? { location, document: parseDocument(location, "Graph projection snapshot") } : null;
+    const entry = fs.existsSync(location) ? { location, document: parseDocument(location, "Graph projection snapshot") }
+      : this.storage?.projectFile ? await this.gitStore().read(id) : null;
+    return hydrateSnapshotEntry({ root: this.projectRoot, storage: this.storage, entry });
   }
 
-  writeSnapshot(id, document) {
-    const location = this.snapshotLocation(id);
-    if (fs.existsSync(location)) return { location, created: false, document: parseDocument(location, "Graph projection snapshot") };
-    atomicWrite(location, json(document));
-    return { location, created: true, document };
+  async writeSnapshot(id, document) {
+    const existing = await this.readSnapshot(id);
+    if (existing) return { ...existing, created: false };
+    if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT) document = createSnapshotComposition({ root: this.projectRoot, storage: this.storage, document, encoding: this.bundleEncoding }).document;
+    if (this.snapshotEncoding === "git") {
+      return hydrateSnapshotEntry({ root: this.projectRoot, storage: this.storage, entry: await this.gitStore().write(id, document) });
+    }
+    const written = writeStoredSnapshot({ root: this.projectRoot, jsonFile: path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "graph-projection", "snapshots", `${graphSnapshotId(id)}.json`), document, encoding: this.snapshotEncoding, readDocument: file => parseDocument(file, "Graph projection snapshot") });
+    return hydrateSnapshotEntry({ root: this.projectRoot, storage: this.storage, entry: written });
   }
 
   writePointer(document) {
@@ -2262,23 +2297,20 @@ export class LocalJsonGraphProjectionAdapter {
     return { location, document };
   }
 
-  listSnapshotIds() {
+  async listSnapshotIds() {
     const directory = path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "graph-projection", "snapshots");
-    if (!fs.existsSync(directory)) return [];
-    return fs.readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /^graph-snapshot-[a-f0-9]{24}\.json$/.test(entry.name))
-      .map((entry) => entry.name.slice(0, -5)).sort();
+    return [...new Set([...listStoredSnapshotIds(this.projectRoot, directory, "graph-snapshot"), ...(this.storage?.projectFile ? await this.gitStore().list("graph-snapshot") : [])])].sort();
   }
 
-  query(id, options) {
-    const entry = this.readSnapshot(id);
+  async query(id, options) {
+    const entry = (await this.readSnapshot(id));
     if (!entry) fail(`Graph projection snapshot is missing: ${id}`, "GRAPH_PROJECTION_SNAPSHOT_MISSING");
     return queryTemporalProvenanceGraph(entry.document, options);
   }
 
-  queryPrepared(request) {
+  async queryPrepared(request) {
     const prepared = verifyPreparedTraversalRequest(request, { storage: this.storage });
-    const entry = this.readSnapshot(prepared.graphSnapshotId);
+    const entry = (await this.readSnapshot(prepared.graphSnapshotId));
     if (!entry) fail(`Graph projection snapshot is missing: ${prepared.graphSnapshotId}`, "GRAPH_PROJECTION_SNAPSHOT_MISSING");
     const result = queryTemporalProvenanceGraph(entry.document, traversalOptionsFromQuery(prepared.traversalQuery,
       familyFormatForOriginal("head-agent-core-prepared-traversal", prepared, this.storage)));
@@ -2329,15 +2361,15 @@ export class InMemoryGraphProjectionAdapter {
     return [...this.snapshots.keys()].sort();
   }
 
-  query(id, options) {
-    const entry = this.readSnapshot(id);
+  async query(id, options) {
+    const entry = (await this.readSnapshot(id));
     if (!entry) fail(`Graph projection snapshot is missing: ${id}`, "GRAPH_PROJECTION_SNAPSHOT_MISSING");
     return queryTemporalProvenanceGraph(entry.document, options);
   }
 
-  queryPrepared(request) {
+  async queryPrepared(request) {
     const prepared = verifyPreparedTraversalRequest(request);
-    const entry = this.readSnapshot(prepared.graphSnapshotId);
+    const entry = (await this.readSnapshot(prepared.graphSnapshotId));
     if (!entry) fail(`Graph projection snapshot is missing: ${prepared.graphSnapshotId}`, "GRAPH_PROJECTION_SNAPSHOT_MISSING");
     const result = queryTemporalProvenanceGraph(entry.document, traversalOptionsFromQuery(prepared.traversalQuery,
       familyFormatForOriginal("head-agent-core-prepared-traversal", prepared)));
@@ -2834,10 +2866,10 @@ function adapterReport(adapter) {
   return { ...adapter.describe(), ...(typeof adapter.diagnostics === "function" ? adapter.diagnostics() : {}) };
 }
 
-export function materializeGraphProjection({ projectRoot, storage = null, graph, adapter = null } = {}) {
+export async function prepareGraphProjection({ projectRoot, storage = null, graph, adapter = null } = {}) {
   verifyTemporalProvenanceGraph(graph);
   const selected = createGraphProjectionAdapter({ projectRoot, adapter, storage });
-  const existing = selected.readSnapshot(graph.graphSnapshotId);
+  const existing = (await selected.readSnapshot(graph.graphSnapshotId));
   let snapshotEntry;
   if (existing) {
     verifyTemporalProvenanceGraph(existing.document);
@@ -2846,14 +2878,38 @@ export function materializeGraphProjection({ projectRoot, storage = null, graph,
     }
     snapshotEntry = existing;
   } else {
-    snapshotEntry = selected.writeSnapshot(graph.graphSnapshotId, clone(graph));
+    snapshotEntry = (await selected.writeSnapshot(graph.graphSnapshotId, clone(graph)));
     verifyTemporalProvenanceGraph(snapshotEntry.document);
     if (graphProjectionCanonicalJson(snapshotEntry.document) !== graphProjectionCanonicalJson(graph)) {
       fail("Graph projection adapter changed the GraphSnapshot during materialization.", "GRAPH_PROJECTION_WRITE_MISMATCH");
     }
   }
-  const pointer = pointerFor(graph, storage);
-  const pointerEntry = selected.writePointer(clone(pointer));
+  // Built-in remote transports and their child/network work never run in the
+  // World Canon commit scope. Prepare the real local mirror here instead.
+  let publicationAdapter = selected;
+  let remotePublication = null;
+  if (selected instanceof ActivatedArcadeDbGraphProjectionAdapter) {
+    publicationAdapter = selected.local;
+    remotePublication = pointer => selected.publishRemotePointer(pointer);
+  } else if (selected.describe().remote === true) {
+    publicationAdapter = new LocalJsonGraphProjectionAdapter({ projectRoot, storage });
+    remotePublication = pointer => selected.writePointer(pointer);
+  }
+  let localSnapshotEntry = snapshotEntry;
+  if (publicationAdapter !== selected) {
+    localSnapshotEntry = await publicationAdapter.readSnapshot(graph.graphSnapshotId) || await publicationAdapter.writeSnapshot(graph.graphSnapshotId, clone(graph));
+    verifyTemporalProvenanceGraph(localSnapshotEntry.document);
+    if (graphProjectionCanonicalJson(localSnapshotEntry.document) !== graphProjectionCanonicalJson(graph)) fail("Local publication mirror differs from prepared graph.", "GRAPH_PROJECTION_SNAPSHOT_CONFLICT");
+  }
+  return { selected, publicationAdapter, remotePublication, graph, storage, snapshotEntry, localSnapshotEntry, existing: Boolean(existing), pointer: pointerFor(graph, storage) };
+}
+
+export function publishPreparedGraphProjection(prepared) {
+  const { selected, publicationAdapter, graph, storage, snapshotEntry, localSnapshotEntry, existing, pointer } = prepared;
+  verifyTemporalProvenanceGraph(graph);
+  verifyGraphProjectionPointer(pointer, graph, storage);
+  const pointerEntry = publicationAdapter.writePointer(clone(pointer));
+  if (pointerEntry && typeof pointerEntry.then === "function") fail("Local graph pointer publication returned an asynchronous result.", "GRAPH_PROJECTION_WRITE_MISMATCH");
   verifyGraphProjectionPointer(pointerEntry.document, graph, storage);
   if (graphProjectionCanonicalJson(pointerEntry.document) !== graphProjectionCanonicalJson(pointer)) {
     fail("Graph projection adapter changed the pointer during materialization.", "GRAPH_PROJECTION_WRITE_MISMATCH");
@@ -2862,15 +2918,41 @@ export function materializeGraphProjection({ projectRoot, storage = null, graph,
     status: existing ? "unchanged" : "projected",
     pointer,
     pointerLocation: pointerEntry.location,
-    snapshotLocation: snapshotEntry.location,
+    snapshotLocation: localSnapshotEntry.location,
+    ...(localSnapshotEntry.snapshotStorage ? { snapshotStorage: localSnapshotEntry.snapshotStorage } : {}),
+    remotePublication: prepared.remotePublication ? "pending" : "not-required",
     adapter: adapterReport(selected),
   };
 }
 
-export function inspectGraphProjection({ projectRoot, storage = null, graph, adapter = null } = {}) {
+export async function completePreparedGraphProjection(prepared, localResult) {
+  if (!prepared.remotePublication) return localResult;
+  try {
+    const remote = await prepared.remotePublication(clone(prepared.pointer));
+    verifyGraphProjectionPointer(remote.document, prepared.graph, prepared.storage);
+    if (graphProjectionCanonicalJson(remote.document) !== graphProjectionCanonicalJson(prepared.pointer)) fail("Remote graph pointer differs from prepared pointer.", "GRAPH_PROJECTION_WRITE_MISMATCH");
+    const currentLocal = await prepared.publicationAdapter.readPointer();
+    if (!currentLocal || graphProjectionCanonicalJson(currentLocal.document) !== graphProjectionCanonicalJson(prepared.pointer)) {
+      const error = Object.assign(new Error("Local Graph current changed during external publication; preserve the newer pointer."), { code: "GRAPH_PROJECTION_PUBLICATION_CONFLICT" });
+      error.graphPublication = { local: "superseded", remote: "published-at-prior-basis", graphSnapshotId: prepared.graph.graphSnapshotId };
+      throw error;
+    }
+    return { ...localResult, remotePublication: prepared.selected.fallbackUsed ? "unavailable-local-fallback" : "published", remotePointerLocation: remote.location };
+  } catch (error) {
+    error.graphPublication ??= { local: "published", remote: "failed-or-uncertain", graphSnapshotId: prepared.graph.graphSnapshotId };
+    throw error;
+  }
+}
+
+export async function materializeGraphProjection(options = {}) {
+  const prepared = await prepareGraphProjection(options);
+  return (await completePreparedGraphProjection(prepared, publishPreparedGraphProjection(prepared)));
+}
+
+export async function inspectGraphProjection({ projectRoot, storage = null, graph, adapter = null } = {}) {
   verifyTemporalProvenanceGraph(graph);
   const selected = createGraphProjectionAdapter({ projectRoot, adapter, storage });
-  const pointerEntry = selected.readPointer();
+  const pointerEntry = (await selected.readPointer());
   if (!pointerEntry) return {
     status: "not-materialized",
     graphSnapshotId: graph.graphSnapshotId,
@@ -2889,7 +2971,7 @@ export function inspectGraphProjection({ projectRoot, storage = null, graph, ada
       adapter: adapterReport(selected),
     };
   }
-  const snapshotEntry = selected.readSnapshot(pointer.graphSnapshotId);
+  const snapshotEntry = (await selected.readSnapshot(pointer.graphSnapshotId));
   if (!snapshotEntry) fail("Graph projection pointer references a missing snapshot.", "GRAPH_PROJECTION_SNAPSHOT_MISSING");
   verifyTemporalProvenanceGraph(snapshotEntry.document);
   if (graphProjectionCanonicalJson(snapshotEntry.document) !== graphProjectionCanonicalJson(graph)) {
@@ -2906,12 +2988,12 @@ export function inspectGraphProjection({ projectRoot, storage = null, graph, ada
   };
 }
 
-function inspectPreparedGraphProjection({ projectRoot, graph, adapter, storage = null }) {
+async function inspectPreparedGraphProjection({ projectRoot, graph, adapter, storage = null }) {
   verifyTemporalProvenanceGraph(graph);
   const selected = createGraphProjectionAdapter({ projectRoot, adapter, storage });
   const pointerEntry = typeof selected.readPointerForPreparedQuery === "function"
-    ? selected.readPointerForPreparedQuery()
-    : selected.readPointer();
+    ? (await selected.readPointerForPreparedQuery())
+    : (await selected.readPointer());
   if (!pointerEntry) return {
     status: "not-materialized",
     graphSnapshotId: graph.graphSnapshotId,
@@ -2942,7 +3024,7 @@ function inspectPreparedGraphProjection({ projectRoot, graph, adapter, storage =
   };
 }
 
-export function queryGraphProjection({ projectRoot, storage = null, graph, adapter = null, query = {} } = {}) {
+export async function queryGraphProjection({ projectRoot, storage = null, graph, adapter = null, query = {} } = {}) {
   const expected = queryTemporalProvenanceGraph(graph, query);
   // Existing remote/prepared traversal contracts cannot prove a domain mask.
   // Keep the original verified graph/hash and use deterministic local expansion;
@@ -2956,8 +3038,8 @@ export function queryGraphProjection({ projectRoot, storage = null, graph, adapt
   const selected = createGraphProjectionAdapter({ projectRoot, adapter, storage });
   const prepared = supportsPreparedTraversal(selected);
   const inspected = prepared
-    ? inspectPreparedGraphProjection({ projectRoot, graph, adapter: selected, storage })
-    : inspectGraphProjection({ projectRoot, graph, adapter: selected, storage });
+    ? (await inspectPreparedGraphProjection({ projectRoot, graph, adapter: selected, storage }))
+    : (await inspectGraphProjection({ projectRoot, graph, adapter: selected, storage }));
   if (inspected.status === "not-materialized") return {
     result: expected,
     diagnostics: {
@@ -2972,9 +3054,9 @@ export function queryGraphProjection({ projectRoot, storage = null, graph, adapt
   }
   if (prepared) {
     const request = buildPreparedTraversalRequest({ graph, result: expected, storage });
-    const verification = verifyPreparedTraversalVerificationAgainstLocallyBuiltRequest(selected.queryPrepared(clone(request), {
+    const verification = verifyPreparedTraversalVerificationAgainstLocallyBuiltRequest((await selected.queryPrepared(clone(request), {
       pointerReadToken: inspected.pointerReadToken,
-    }), request);
+    })), request);
     const selectedDiagnostics = typeof selected.diagnostics === "function" ? selected.diagnostics() : {};
     return {
       result: expected,
@@ -2997,7 +3079,7 @@ export function queryGraphProjection({ projectRoot, storage = null, graph, adapt
       },
     };
   }
-  const candidate = selected.query(graph.graphSnapshotId, clone(query));
+  const candidate = (await selected.query(graph.graphSnapshotId, clone(query)));
   if (graphProjectionCanonicalJson(candidate) !== graphProjectionCanonicalJson(expected)) {
     fail("Graph projection adapter query result differs from the deterministic reference result.", "GRAPH_PROJECTION_QUERY_MISMATCH");
   }
@@ -3012,7 +3094,7 @@ export function queryGraphProjection({ projectRoot, storage = null, graph, adapt
   };
 }
 
-export function verifyGraphProjectionAdapterConformance({
+export async function verifyGraphProjectionAdapterConformance({
   projectRoot,
   graph,
   referenceAdapter,
@@ -3037,13 +3119,13 @@ export function verifyGraphProjectionAdapterConformance({
     return { name, query: fixture.query };
   }).sort((left, right) => left.name.localeCompare(right.name));
 
-  materializeGraphProjection({ projectRoot, graph, storage, adapter: reference });
-  try { materializeGraphProjection({ projectRoot, graph, storage, adapter: candidate }); }
+  (await materializeGraphProjection({ projectRoot, graph, storage, adapter: reference }));
+  try { (await materializeGraphProjection({ projectRoot, graph, storage, adapter: candidate })); }
   catch (error) { fail("Candidate graph projection materialization failed during conformance.", `GRAPH_PROJECTION_CANDIDATE_MATERIALIZATION_FAILED:${error.code || "UNKNOWN"}`); }
-  const cases = normalized.map((fixture) => {
-    const referenceResult = queryGraphProjection({ projectRoot, graph, storage, adapter: reference, query: fixture.query }).result;
+  const cases = (await Promise.all(normalized.map(async (fixture) => {
+    const referenceResult = (await queryGraphProjection({ projectRoot, graph, storage, adapter: reference, query: fixture.query })).result;
     let candidateResult;
-    try { candidateResult = queryGraphProjection({ projectRoot, graph, storage, adapter: candidate, query: fixture.query }).result; }
+    try { candidateResult = (await queryGraphProjection({ projectRoot, graph, storage, adapter: candidate, query: fixture.query })).result; }
     catch (error) { fail(`Candidate graph projection query failed: ${fixture.name}.`, `GRAPH_PROJECTION_CANDIDATE_QUERY_FAILED:${error.code || "UNKNOWN"}`); }
     if (graphProjectionCanonicalJson(referenceResult) !== graphProjectionCanonicalJson(candidateResult)) {
       fail(`Graph projection adapters diverged for fixture: ${fixture.name}`, "GRAPH_PROJECTION_CONFORMANCE_MISMATCH");
@@ -3055,7 +3137,7 @@ export function verifyGraphProjectionAdapterConformance({
       resultId: referenceResult.resultId,
       resultHash: referenceResult.resultHash,
     };
-  });
+  })));
   const payload = {
     schemaVersion: 1,
     kind: "GraphProjectionConformanceReport",

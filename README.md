@@ -15,8 +15,14 @@ Lode works with Codex, Claude Code and OpenCode. It restores saved work after co
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![Runtime](https://img.shields.io/badge/runtime-Node.js%20%2B%20Go-00ADD8)
 
+Current beta: **0.3.0-beta.66** — revision-anchored graph history, bounded lineage
+queries and accurate recorded-task counts. See the [changelog](CHANGELOG.md).
+Local `.lode` records stay outside plugin packages.
+
+[First request](#first-request) · [Install](#install) · [Daily use](#how-to-use-it) · [Recovery](#recovery)
+
 <details>
-<summary>On this page</summary>
+<summary>All sections</summary>
 
 [Why use it](#why-use-it) ·
 [Who it is for](#who-it-is-for) ·
@@ -40,6 +46,18 @@ Use your coding agent in Codex, Claude Code or a configured OpenCode workspace. 
 
 ## Your first request
 
+After [installing and loading the plugin](#install), open your project and include the real task in your first request. There is no separate setup conversation.
+
+```text
+Use Lode Agent Core for this project. Resume its existing state if one exists;
+otherwise initialize the Core. Then find the cause of this login failure and fix it.
+```
+
+Replace the login failure with your own task. Lode continues it after initialization and verified recovery; you can keep asking for work in the same conversation.
+
+<details>
+<summary>Not installed? Ask your agent to help</summary>
+
 Not installed yet? Give your coding agent this README and ask:
 
 ```text
@@ -55,14 +73,7 @@ steps it can, checks the results, and continues your task. You may still need
 to approve Host access, log in or restart the app yourself. The agent does not
 restart it for you.
 
-After [installing and loading the plugin](#install), open your project and include the real task in your first request. There is no separate setup conversation.
-
-```text
-Use Lode Agent Core for this project. Resume its existing state if one exists;
-otherwise initialize the Core. Then find the cause of this login failure and fix it.
-```
-
-Replace the login failure with your own task. Lode continues it after initialization and verified recovery; you can keep asking for work in the same conversation.
+</details>
 
 ## How to use it
 
@@ -84,15 +95,15 @@ Independent tasks can keep separate work Sessions while sharing the project goal
 
 After compaction or provider replacement, conversation entry checks the available saved work direction. You do not need to request recovery or supply a checkpoint ID.
 
-The Claude Code and Codex packages include SessionStart context delivery, including compact. The OpenCode V1 plugin supplies context on each model request, including summary and subsequent ordinary requests; it is not a post-compaction event.
-
-These paths read saved records. They do not capture unsaved conversation or perform managed one-shot continuation. Installed Host and live-model verification remain separate. See [the support limits](#capability-status).
+Recovery uses saved records. It does not capture unsaved conversation. Host delivery and managed continuation have different support limits; see [Session work context and Host support](docs/session-work-context.md) and [capability status](#capability-status).
 
 You do not write JSON, operate GraphDB, choose a token tier or decide which MCP call to make. Lode asks when a decision belongs to you: for example, approving product meaning, resolving an ambiguous scope, or allowing a consequential external change. Ordinary investigation and small authorized fixes stay ordinary work.
 
 ## Why use it
 
 It is most useful when the project lasts longer than one conversation.
+
+<a id="recovery"></a>
 
 ### Continue after compaction or session loss
 
@@ -344,6 +355,13 @@ verification rather than inferring capability from this summary.
 </details>
 
 ## Documentation
+
+| When you need to… | Read |
+| --- | --- |
+| Start work or install | [First request](#first-request), [Install](#install) |
+| Continue saved work | [Recovery](#recovery), [Host support](docs/session-work-context.md) |
+| Inspect context or recorded reasons | [Context Compiler](docs/context-compiler.md), [Graph Explorer](docs/graph-explorer.md) |
+| Automate or integrate | [CLI](#cli-automation-and-advanced-setup), [Runtime adapters](docs/runtime-adapters.md) |
 
 For changes and sensitive findings, see [Contributing](CONTRIBUTING.md) and
 [Security](SECURITY.md). Neither document grants deployment or publishing permission.

@@ -75,10 +75,7 @@ not acquire an additional approval step.
 
 Authority may not move upward merely because one plane points at another. A
 P3 candidate may affect P1 only through an explicit, verified ReviewDecision and
-the exact reviewed mutation operation. A P4 graph write is fenced by exact Product
-Canon bytes; if an adapter changes or deletes those bytes, Core restores them and
-fails with `GRAPH_PROJECTION_AUTHORITY_AMPLIFICATION` before advancing the World
-Model pointer.
+the exact reviewed mutation operation. World/Graph preparation captures the exact Product Canon bytes consumed by the snapshot. Immutable preparation runs outside the short `session-recovery` commit scope. Before current pointers are published, that scope rechecks Project/storage identity, Canon basis, and the expected current World pointer. A basis change fails with `WORLD_MODEL_CANON_BASIS_CONFLICT` and preserves the current Canon; a byte difference alone does not identify its writer. Core never restores earlier Canon bytes over another write. Permission, identity, and I/O failures retain their original code. Explicit forbidden authority APIs still reject amplification. This is cooperative Core serialization, not an OS sandbox or a claim of crash-atomic publication across pointers.
 
 Candidate and reviewed product concepts have distinct names and planes. A generic
 or unreviewed Feature/Policy is never classified as P1 merely because a graph node
@@ -232,8 +229,7 @@ parent, and includes the receipt. Same-snapshot inclusion fails with
 - every current lineage, checkpoint, GraphSnapshot, and application-receipt
   builder emits its exact plane boundary and current readers verify it;
 - P4-to-P1 promotion without an explicit ReviewDecision fails;
-- a graph adapter that changes Product Canon bytes fails and Canon bytes are
-  restored exactly;
+- Canon basis changes refuse derived pointer publication and preserve the changed Canon bytes;
 - deleting ResultPacket evidence after checkpoint creation does not alter or
   prevent recovery of `nextExpectedResult`;
 - the receipt is absent from its named graph and present only in a later child;
@@ -267,3 +263,11 @@ Valid layers remain usable without full World currentness, Product review,
 Run/Capsule or DB; damaged layers are excluded independently. Empty/partial
 coverage is not absence and returns original-source fallback. Same-basis results
 and failures may be reused. Reading creates neither approval nor checkpoint.
+
+## Canon publication coordination
+
+Onboarding promotion and Product Policy acceptance already publish Canon inside the short `session-recovery` scope; document-review Canon application now joins that same scope and revalidates its reviewed preimage. None holds that scope across awaited projection work. World refresh may hold its existing writer lease before entering this scope; Canon publishers release the scope before requesting a derived refresh, avoiding the reverse lock order. Fresh initialization creates an unpublished Project with collision checks and is not a replacement Canon publisher. Immutable snapshot preparation may remain after a conflict; it grants no authority and does not advance current pointers.
+
+Built-in Activated ArcadeDB materialization also separates the real local mirror pointer from remote publication. Only local Graph and World current-pointer writes occur in the short Canon commit scope. Remote pointer, topology activation and sync-receipt work run after that scope is released, preserving the existing unavailable-before-remote-observation-only fallback. A remote integrity, permission or uncertain write failure remains an error; it cannot create a successful receipt or roll back a newer Canon/current pointer. Errors disclose which local publication was confirmed and which external work did not complete. This separation does not claim an atomic transaction across local and remote stores.
+
+After awaited remote publication, the actual current local mirror is read again before topology/sync receipts can claim `localMirrorVerified`. Direct materialization also rechecks the real local current before returning success. World completion revalidates its consumed Canon bytes and expected current World pointer. A superseding local/current value is preserved and reported as conflict with the confirmed prior remote effect; no automatic replay or rollback is introduced.

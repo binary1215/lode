@@ -58,8 +58,8 @@ function fixture(t, purpose, { records = 40, checkpoint = false } = {}) {
     const nativeSessionId = "current-priority-" + runtime;
     const host = createSessionHostAdapter({ runtime, nativeSessionId, environment });
     assert.equal(host.select({ root, sessionId: session.sessionId, expectedRevision: 0 }).retained, true);
-    return { runtime, host, read() {
-      const text = sessionStartContext({ runtime, environment, event: { hook_event_name: "SessionStart", source: "startup", cwd: root, session_id: nativeSessionId } }).hookSpecificOutput.additionalContext;
+    return { runtime, host, async read() {
+      const text = (await sessionStartContext({ runtime, environment, event: { hook_event_name: "SessionStart", source: "startup", cwd: root, session_id: nativeSessionId } })).hookSpecificOutput.additionalContext;
       assert.ok(text.length <= (runtime === "codex" ? 32768 : 10000), `Final context ${text.length}`);
       const value = JSON.parse(text);
       assert.deepEqual(value.route, { session_id: session.sessionId });
@@ -141,13 +141,13 @@ function assertOptionalWorkExpansion(f, raw, value, runtime, mode) {
   assert.equal(exact.records[0].evidenceDigest, target.evidenceDigest); assert.deepEqual(exact.records[0].content, target.content);
 }
 
-test("public Hook: current common cancellation and 4200-character selected purpose precede P3/metadata in both runtimes", (t) => {
+test("public Hook: current common cancellation and 4200-character selected purpose precede P3/metadata in both runtimes", async (t) => {
   const f = fixture(t, "Current selected purpose: " + "p".repeat(4200));
   for (const variant of navigationCases(f)) {
   variant.prepare();
   const before = snapshot(f.base);
   for (const caller of f.callers) {
-    const raw = caller.host.enter({ root: f.root }), { text, value } = caller.read();
+    const raw = (await caller.host.enter({ root: f.root })), { text, value } = (await caller.read());
     assert.equal(raw.workContext.omissions.byBudget, 0);
     assert.equal(raw.workContext.omissions.uninspected, variant.mode === "hinted" ? 32 : 0);
     assert.equal(raw.workContext.coverage.valid, variant.mode === "hinted" ? 8 : 40);
@@ -166,14 +166,14 @@ test("public Hook: current common cancellation and 4200-character selected purpo
   }
 });
 
-test("public Hook: all four latest selected checkpoint direction fields survive alongside current common and Session purpose", (t) => {
+test("public Hook: all four latest selected checkpoint direction fields survive alongside current common and Session purpose", async (t) => {
   const f = fixture(t, "Current Session local scope: no external effects. " + "p".repeat(2300), { checkpoint: true });
   const variants = navigationCases(f);
   for (const variant of variants) {
   variant.prepare();
   let before = snapshot(f.base);
   for (const caller of f.callers) {
-    const raw = caller.host.enter({ root: f.root }), { value, text } = caller.read();
+    const raw = (await caller.host.enter({ root: f.root })), { value, text } = (await caller.read());
     assert.deepEqual(value.currentProjectDirection, directionView(f.direction));
     assert.equal(value.sessionPurpose, raw.workContext.sessionPurpose);
     assert.deepEqual(value.sessionRecovery, checkpointView(raw));
@@ -187,7 +187,7 @@ test("public Hook: all four latest selected checkpoint direction fields survive 
   for (const variant of variants) {
   variant.prepare();const before = snapshot(f.base);
   for (const caller of f.callers) {
-    const raw = caller.host.enter({ root: f.root }), { value } = caller.read();
+    const raw = (await caller.host.enter({ root: f.root })), { value } = (await caller.read());
     assert.equal(value.currentProjectDirection, null);
     assert.deepEqual(value.currentProjectDirectionAvailability, unavailable);
     assert.equal(value.sessionPurpose, raw.workContext.sessionPurpose);
@@ -198,11 +198,11 @@ test("public Hook: all four latest selected checkpoint direction fields survive 
   }
 });
 
-test("public Hook: normal complete context adds no omission-specific query instruction", (t) => {
+test("public Hook: normal complete context adds no omission-specific query instruction", async (t) => {
   const f = fixture(t, "Inspect this source and finish the requested explanation", { records: 0 });
   const before = snapshot(f.base);
   for (const caller of f.callers) {
-    const { value } = caller.read();
+    const { value } = (await caller.read());
     assert.equal(value.omittedEvidenceCount, 0);
     assert.equal(Object.hasOwn(value, "requiredSourceExpansion"), false);
     assert.equal(value.expansion.includes("lode_session_work_read"), false);

@@ -84,3 +84,13 @@ Git이나 Run이 없고, World가 없거나 오래됐거나, 과거 소스가 �
 
 [그래프 탐색](graph-discovery.md), [Graph Explorer](graph-explorer.md),
 [시간 출처](temporal-provenance.md)도 참고하세요.
+
+### 정확한 보존 원문 주소
+
+기록된 bundle key·소스 경로·digest가 있으면 관련 없는 bundle 목록을 열거하지 않고 기존 원문 검증기로 직접 읽습니다. 특정 bundle을 요청한 경우에는 현재 파일의 바이트가 같더라도 누락·불일치·읽기 실패를 그 원문으로 대체하지 않습니다. 일반 source-by-digest 조회는 일치하는 현재 바이트, 기록된 bundle hint, 제한된 보존 자료와 로컬 Git 이력을 계속 사용할 수 있습니다. reader는 새 소스를 수집하거나 기록을 쓰지 않습니다.
+
+## 정확한 경로 범위의 과거 diff
+
+`head_graph_lineage_diff`는 선택적으로 `scope_paths`와 opaque `cursor`를 받습니다. CLI는 `graph-lineage-diff --from <id> --to <id> --path <exact-relative-path>`로 단일 경로를 선택합니다. scope/cursor를 생략하면 기존 version0.2 전체 endpoint 투영 그대로이며, 선택/페이지 결과는version0.3입니다. cursor는 from/to hash·범위·정렬에 묶이며 current pointer가 움직여도 바뀌지 않습니다. 다음 페이지에도 같은 endpoint와 범위를 전달합니다.
+
+각 endpoint는 전체를 읽고 검증합니다. 노드 변경은 제거된 파일을 포함해 정확한 경로를 선택합니다. 관계 변경은 전후 어느 쪽이든 선택된 노드에 닿거나 정확한 evidence path를 가진 관계를 포함하므로 cross-path edge도 보존합니다. 이동 후보는 전후 경로 모두 범위 안에 있어야 하며 신원 증명이 아닙니다. root source 문맥 변화는 선택 레코드와 별도로 표시합니다. count는 선택 범위 내 정확한 값이고 전체 count는0 대신 not-computed로 표시합니다. omittedCount는 이번 페이지 밖 전체 항목, page.remaining은 뒤에 남은 항목입니다. chunk만 읽고 전체 검증했다고 하거나 허위 무변경/삭제를 선언하지 않습니다. locale상 같은 이동 키는 원래 removed-major/added-minor 순서를 보존하며 digest 그룹과 k-way merge로 bounded page를 만들 때 모든 일치 쌍을 만들거나 순회하지 않습니다.

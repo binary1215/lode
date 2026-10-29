@@ -38,8 +38,8 @@ function initialize(root) {
   return { root, storage, directory: formatForVerifiedOwner(storage).directory };
 }
 
-function startFixtureRun(root, suffix = "artifact-only recovery") {
-  const capsule = compileContext({ root, task: `Verify ${suffix}`, budget: 32_768, persist: true }).capsule;
+async function startFixtureRun(root, suffix = "artifact-only recovery") {
+  const capsule = (await compileContext({ root, task: `Verify ${suffix}`, budget: 32_768, persist: true })).capsule;
   const plan = createWholePlanSnapshot({
     root,
     objective: `Complete ${suffix}`,
@@ -112,19 +112,19 @@ function canonical(value) {
 
 const canonicalJson = (value) => JSON.stringify(canonical(value));
 
-test("the public checkpoint surface creates one content-addressed P2 canon and restores identically across fresh provider processes", (t) => {
+test("the public checkpoint surface creates one content-addressed P2 canon and restores identically across fresh provider processes", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const beforeCheckpoint = inspectProjectExperience({ root });
+  const beforeCheckpoint = (await inspectProjectExperience({ root }));
   assert.equal(beforeCheckpoint.readiness.recovery.state, "no-current-checkpoint");
   assert.equal(beforeCheckpoint.readiness.recovery.userDecisionRequired, false);
   assert.throws(() => createCheckpoint({ root, summary: "legacy", next: "legacy" }), { code: "LEGACY_CHECKPOINT_API_RETIRED" });
 
-  const checkpointed = runCommand([
+  const checkpointed = (await runCommand([
     "checkpoint", root,
     "--summary", "Preserve the exact provider-neutral Session direction",
     "--next", "Continue from the verified artifact projection",
-  ]);
+  ]));
   assert.match(checkpointed.checkpoint.checkpointId, /^checkpoint-[a-f0-9]{24}$/u);
   assert.equal(checkpointed.checkpoint.kind, "SessionRunCheckpoint");
   assert.equal(checkpointed.checkpoint.authorityBoundary.planeId, "P2");
@@ -134,7 +134,7 @@ test("the public checkpoint surface creates one content-addressed P2 canon and r
   const checkpointFile = path.join(root, directory, "sessions", "ledger", `${checkpointed.checkpoint.checkpointId}.json`);
   const stateBeforeReadiness = fs.readFileSync(stateFile, "utf8");
   const checkpointBeforeReadiness = fs.readFileSync(checkpointFile, "utf8");
-  const afterCheckpoint = inspectProjectExperience({ root });
+  const afterCheckpoint = (await inspectProjectExperience({ root }));
   assert.equal(afterCheckpoint.readiness.recovery.state, "verified-current-checkpoint");
   assert.equal(afterCheckpoint.readiness.recovery.restorable, true);
   assert.equal(afterCheckpoint.readiness.recovery.authority.writesRecoveryDirection, false);
@@ -154,10 +154,10 @@ test("the public checkpoint surface creates one content-addressed P2 canon and r
   assert.equal(JSON.stringify(opencode).includes("provider-secret-opencode-session"), false);
 });
 
-test("artifact-only restore revalidates the exact active Run lineage and rejects pointer drift", (t) => {
+test("artifact-only restore revalidates the exact active Run lineage and rejects pointer drift", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const fixture = startFixtureRun(root, "active Run restore");
+  const fixture = (await startFixtureRun(root, "active Run restore"));
   const checkpoint = createRecoveryCheckpoint({
     root,
     purpose: "Recover the active Run without a provider session",
@@ -180,7 +180,7 @@ test("artifact-only restore revalidates the exact active Run lineage and rejects
   state.activeExecutionContractId = "execution-contract-000000000000000000000000";
   fs.writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`);
   assert.equal(restoreSessionFromArtifacts({ root }).projection.currentExecution.status, "conflict");
-  const attention = inspectProjectExperience({ root });
+  const attention = (await inspectProjectExperience({ root }));
   assert.equal(attention.readiness.recovery.state, "verified-current-checkpoint");
   assert.equal(attention.readiness.recovery.userDecisionRequired, false);
   assert.equal(attention.readiness.recovery.headActionRequired, true);
@@ -219,10 +219,10 @@ test("legacy content-addressed checkpoints stay readable but cannot drive curren
   assert.throws(() => restoreSessionFromArtifacts({ root }), { code: "SESSION_RESTORE_CURRENT_CHECKPOINT_REQUIRED" });
 });
 
-test("checkpoint direction survives deletion of pending ResultPacket evidence without inventing a Fresh HEAD review", (t) => {
+test("checkpoint direction survives deletion of pending ResultPacket evidence without inventing a Fresh HEAD review", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  startFixtureRun(root, "pending review recovery");
+  (await startFixtureRun(root, "pending review recovery"));
   const finished = finishFixtureRun(root);
   const nextExpectedResult = "Recover the exact pending position and request missing evidence instead of guessing";
   createRecoveryCheckpoint({
@@ -243,10 +243,10 @@ test("checkpoint direction survives deletion of pending ResultPacket evidence wi
   assert.equal(restored.projection.recoveryAuthority, false);
 });
 
-test("accepted worker evidence integrates once through Fresh HEAD into an explicit P2 checkpoint", (t) => {
+test("accepted worker evidence integrates once through Fresh HEAD into an explicit P2 checkpoint", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const fixture = startFixtureRun(root, "bounded worker integration");
+  const fixture = (await startFixtureRun(root, "bounded worker integration"));
   const finished = finishFixtureRun(root);
   const reviewed = reviewFixtureRun(root, "accept");
   const input = integrationInput(fixture.run, reviewed.reviewDecision);
@@ -305,10 +305,10 @@ test("accepted worker evidence integrates once through Fresh HEAD into an explic
   assert.equal(fs.existsSync(requestFile), false);
 });
 
-test("non-accept review cannot be mislabeled as worker-result integration", (t) => {
+test("non-accept review cannot be mislabeled as worker-result integration", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const fixture = startFixtureRun(root, "rejected worker integration");
+  const fixture = (await startFixtureRun(root, "rejected worker integration"));
   finishFixtureRun(root);
   const reviewed = reviewFixtureRun(root, "revise");
   assert.throws(() => integrateReviewedRunCheckpoint({ root, ...integrationInput(fixture.run, reviewed.reviewDecision) }), {
@@ -321,16 +321,16 @@ test("non-accept review cannot be mislabeled as worker-result integration", (t) 
 test("CLI help and MCP expose artifact restore plus explicit integration without provider resume", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const fixture = startFixtureRun(root, "MCP integration surface");
+  const fixture = (await startFixtureRun(root, "MCP integration surface"));
   finishFixtureRun(root);
   const reviewed = reviewFixtureRun(root, "accept");
   const input = integrationInput(fixture.run, reviewed.reviewDecision);
 
-  assert.equal(runCommand(["help"]).commands.some((command) => command.includes("session-restore")), false);
-  assert.equal(runCommand(["help-all"]).commands.some((command) => command.includes("session-restore")), true);
-  assert.equal(runCommand(["help-all"]).commands.some((command) => command.includes("session-continue")), true);
-  assert.equal(runCommand(["help-all"]).commands.some((command) => command.includes("worker-dispatch")), false);
-  assert.equal(runCommand(["managed-maintenance", "help-all"]).commands.some((command) => command.includes("worker-wave-create")), true);
+  assert.equal((await runCommand(["help"])).commands.some((command) => command.includes("session-restore")), false);
+  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("session-restore")), true);
+  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("session-continue")), true);
+  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("worker-dispatch")), false);
+  assert.equal((await runCommand(["managed-maintenance", "help-all"])).commands.some((command) => command.includes("worker-wave-create")), true);
   assert.equal(mcpTools.some((tool) => tool.name === "lode_session_restore"), true);
   assert.equal(mcpTools.some((tool) => tool.name === "lode_session_continue"), true);
   assert.equal(mcpTools.some((tool) => tool.name === "lode_bounded_worker_dispatch"), true);

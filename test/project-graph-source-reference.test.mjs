@@ -132,7 +132,7 @@ function withoutWrites(action) {
   finish(); return result;
 }
 async function readOnly(f, options) {
-  const before = snapshot(f.base), result = await withoutWrites(() => queryProjectGraph(options));
+  const before = snapshot(f.base), result = await withoutWrites(async () => (await queryProjectGraph(options)));
   assert.deepEqual(snapshot(f.base), before, "A query must not persist, repair index or change P2/Session selection");
   return result;
 }
@@ -216,7 +216,7 @@ for (const code of ["EACCES", "EPERM", "EIO", null]) test(`C1 injected ${code ||
     if (path.resolve(String(file)) === source.file) { attempts++; throw Object.assign(new Error("Synthetic unavailable reference"), code ? { code } : {}); }
     return read.call(this, file, ...args);
   };
-  try { result = await withoutWrites(() => queryProjectGraph(request(f, { previousResult: { resultId: "not-a-retained-fault-result" } }))); }
+  try { result = await withoutWrites(async () => (await queryProjectGraph(request(f, { previousResult: { resultId: "not-a-retained-fault-result" } })))); }
   finally { fs.readFileSync = read; }
   assert.ok(attempts > 0, "Fault must reach the existing target reader");
   const node = original(result, f, saved);

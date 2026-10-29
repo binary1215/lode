@@ -386,7 +386,7 @@ kernel access, encrypt records, or reverse any prior exposure.
 Existing directory/file checks share one fixed helper request; a new stage is
 checked separately before plaintext. Helpers share one five-second monotonic
 budget per public operation, and a failed check is not retried within that call.
-Hooks still wait synchronously for this optional work; it is not a no-overhead or
+Hooks still await completion of this optional work; it is not a no-overhead or
 nonblocking performance guarantee.
 Unavailable optional storage suppresses that hint, not ordinary direct work.
 
@@ -481,5 +481,15 @@ proof of an empty list or completion. No read repairs the index, refreshes World
 or blocks independent work. Expand with `lode_session_work_read` using `todo_id`,
 `after_todo_id`, or bounded `scan_todos` original pages and `after_evidence_id`.
 CLI `session-work-read --input` accepts their camelCase Core equivalents.
+
+`knownItemCount` counts distinct verified Todo items in the selected query scope;
+`knownOpenCount` counts only non-terminal items there, including unresolved
+branches. Exact `todo_id` detail can show a completed/cancelled item while its
+open count is zero. Counts precede display limits, character budgets and the
+`after_todo_id` cursor. A `scan_todos` count covers only its inspected original
+page, not all history or the union of separate pages. Partial/indexed coverage
+remains partial: known zero is not proof that unseen work is absent; null means
+there is no verified item basis and coverage is incomplete.
+
 Omitted IDs, counts and continuation remain visible. These P4 views do not grant
 effects or author P2, and records without `todos` keep their existing bytes/IDs.

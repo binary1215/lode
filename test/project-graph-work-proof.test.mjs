@@ -116,11 +116,11 @@ test("capacity-inventory: cursor owner/query/scope/path validation and changed f
   for (let i = 0; i < 520; i++) fs.writeFileSync(path.join(directory, `${String(i).padStart(4, "0")}.json`), "{}");
   const first = await queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [".lode/observations"] }); const args = inventoryArgs(first.inventoryPage.next.arguments);
   for (const change of [{ root: g.root }, { query: "different" }, { inventoryPaths: [".lode/lineage"] }, { worldModelId: "different" }, { inventoryCursor: "x".repeat(4097) }])
-    await assert.rejects(queryProjectGraph({ ...args, ...change }), /INVALID_PROJECT_GRAPH_INVENTORY_CURSOR/);
+    await assert.rejects(((queryProjectGraph({ ...args, ...change }))), /INVALID_PROJECT_GRAPH_INVENTORY_CURSOR/);
   const bad = JSON.parse(Buffer.from(args.inventoryCursor, "base64url")); bad.frontier.path = ".lode/observations/../../project.json";
-  await assert.rejects(queryProjectGraph({ ...args, inventoryCursor: Buffer.from(JSON.stringify(bad)).toString("base64url") }), /INVALID_PROJECT_GRAPH_INVENTORY_CURSOR/);
+  await assert.rejects(((queryProjectGraph({ ...args, inventoryCursor: Buffer.from(JSON.stringify(bad)).toString("base64url") }))), /INVALID_PROJECT_GRAPH_INVENTORY_CURSOR/);
   for (const invalid of ["../escape", ".head/observations", ".lode/host-private", ".lode/observations/../project.json", ".lode/observations:C"]) {
-    await assert.rejects(queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [invalid] }), /INVALID_PROJECT_GRAPH_INVENTORY_SCOPE/);
+    await assert.rejects(((queryProjectGraph({ root: f.root, inventoryPage: true, inventoryPaths: [invalid] }))), /INVALID_PROJECT_GRAPH_INVENTORY_SCOPE/);
   }
   const removed = path.join(f.root, ...first.inventoryPage.coverage.examinedThrough.path.split("/")); fs.unlinkSync(removed);
   const before = snapshot(f.base), changed = await queryProjectGraph(args); inventoryBounds(changed);
@@ -267,7 +267,7 @@ test("capacity-stage2: exact lineage retains managed reader dependencies and cal
   } return value; };
   fs.readdirSync = file => { throw new Error("Exact lineage must not enumerate unrelated inventory: " + file); };
   let result;
-  try { result = await f.route(() => queryProjectGraph({ root: f.root, paths: [relative(f, plan.file)], details: false })); }
+  try { result = await f.route(async () => (await queryProjectGraph({ root: f.root, paths: [relative(f, plan.file)], details: false }))); }
   finally { fs.readFileSync = read; fs.readdirSync = readdir; }
   const node = result.nodes.find(row => row.nodeId === plan.artifact.wholePlanId); assert(node); noAuthority(result);
   assert(reads.has(key(manifestPath))); assert(reads.has(key(selectedState)));
@@ -279,7 +279,7 @@ test("capacity-stage2: exact lineage retains managed reader dependencies and cal
   assert.equal(response.error, undefined); assert.equal(response.result?.isError, undefined);
   assert.equal(response.result.structuredContent.artifact.wholePlanId, plan.artifact.wholePlanId);
   fs.writeFileSync(manifestPath, "{"); const before = snapshot(f.base);
-  const unavailable = await f.route(() => queryProjectGraph({ root: f.root, paths: [relative(f, plan.file)] }));
+  const unavailable = await f.route(async () => (await queryProjectGraph({ root: f.root, paths: [relative(f, plan.file)] })));
   assert.equal(unavailable.nodes.some(row => row.nodeId === plan.artifact.wholePlanId), false);
   assert(unavailable.integrity.excluded.some(row => row.layer === "lineage"));
   assertWork(await queryProjectGraph({ ...q(f, work), paths: [relative(f, work.file)] }), work);

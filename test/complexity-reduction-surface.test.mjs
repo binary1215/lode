@@ -52,7 +52,7 @@ test('removed role-mail APIs have no discovery, CLI or hidden dispatch route', a
     assert(response.error, name);
   }
   for (const suffix of ['open', 'rotate', 'bind', 'status', 'send', 'inbox', 'wait-reply', 'reply']) {
-    assert.throws(() => runCommand([`coordination-${suffix}`, root]), /Unknown command/);
+    (await assert.rejects(async () => (await runCommand([`coordination-${suffix}`, root])), /Unknown command/));
   }
   assert(!usage({ all: true }).commands.some(command => /coordination-/.test(command)));
   assert.deepEqual(originals(root, layout), before);
