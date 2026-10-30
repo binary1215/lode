@@ -251,13 +251,20 @@ export class SnapshotBackendReclamation {
     return new Promise((resolve,reject)=>{
       const fd=file?fs.openSync(file,"wx"):null;let supervised;const chunks=[],errors=[];let providerExitCode=null;
       try {supervised=spawnSupervisedProcess({selection,executablePath:executable,args,cwd:this.root,providerEnvironment:env,input,controlFile,terminationGraceMs:250,onControlEvent:event=>{if(event.type==="provider.exited")providerExitCode=event.exitCode;try{this.onProcess?.({event:"supervisor-control",...event,parentPid:supervised?.child.pid||null,command:executable,args,cwd:this.root,ports:[],observedAt:new Date().toISOString()});}catch{}}});}catch(error){if(fd!==null)fs.closeSync(fd);reject(error);return;}
-      const child=supervised.child;actualEvidence.pid=child.pid||null;let bytes=0,failure=null,stderrBytes=0,escalate;
-      const stop=code=>{failure??=Object.assign(new Error(code),{code});supervised.terminate(false);escalate??=setTimeout(()=>supervised.terminate(true),250);};
+      const child=supervised.child;actualEvidence.pid=child.pid||null;let bytes=0,failure=null,stderrBytes=0,terminationRequested=false,forced=false;
+      // Native owns its bounded child termination and cleanup proof. Killing
+      // the supervisor at the same grace boundary can discard that proof.
+      // The original GC deadline remains the hard stop; never extend it.
+      const stop=code=>{
+        failure??=Object.assign(new Error(code),{code});
+        if(!terminationRequested){terminationRequested=true;supervised.terminate(false);}
+        if(Date.now()>=this.deadline&&!forced){forced=true;supervised.terminate(true);}
+      };
       const timer=setInterval(()=>{try{this.check();}catch(error){stop(error.code);}},20);
       child.stdout.on("data",chunk=>{child.stdout.pause();try{if(bytes+chunk.length>maxBytes)stop("GC_STAGING_BYTE_LIMIT");else if(!failure){if(consume){bytes+=chunk.length;consume(chunk);}else if(fd===null){chunks.push(chunk);bytes+=chunk.length;}else{let offset=0;while(offset<chunk.length){const n=fs.writeSync(fd,chunk,offset,chunk.length-offset);if(n<=0)fail("GC_STAGING_WRITE_FAILED");offset+=n;bytes+=n;}}}}catch(error){failure??=error;stop(error.code||"GC_STAGING_WRITE_FAILED");}finally{child.stdout.resume();}});
       child.stderr.on("data",chunk=>{stderrBytes+=chunk.length;if(stderrBytes<=8192)errors.push(chunk);});child.stdin.on("error",error=>{if(error.code!=="EPIPE")failure??=error;});
       child.on("error",error=>{failure??=error;});
-      child.once("close",(code,signal)=>{clearInterval(timer);clearTimeout(escalate);if(fd!==null){try{fs.fsyncSync(fd);}catch(error){failure??=error;}fs.closeSync(fd);}
+      child.once("close",(code,signal)=>{clearInterval(timer);if(fd!==null){try{fs.fsyncSync(fd);}catch(error){failure??=error;}fs.closeSync(fd);}
         const supervision=supervised.finalize({exactSupervisorExitObserved:child.exitCode!==null||child.signalCode!==null,terminationRequested:failure!==null});
         if(!supervision.ownershipEstablished||!supervision.providerChildStarted||!supervision.treeCleanupVerified||supervision.controlInvalid){failure??=Object.assign(new Error("GC native process tree cleanup was not verified"),{code:"GC_PROCESS_TREE_CLEANUP_UNVERIFIED"});failure.nativeProcessCleanup={supervisorPid:actualEvidence.pid,providerPid:supervision.providerPid,...supervision};}
         try{this.onProcess?.({event:"closed",...actualEvidence,exitCode:code,signal,outputBytes:bytes,stderrBytes,supervision,failureCode:failure?.code||null});}catch{}

@@ -11,6 +11,17 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.72 — publication tracked separately
+
+- Let native GC termination finish and record its cleanup proof within the
+  original collection deadline. Request graceful termination once; the existing
+  deadline remains the hard-stop boundary for a stuck supervisor.
+- Preserve byte caps, the first failure, post-stop write suppression, and explicit
+  cleanup uncertainty. A stalled native process can use the remaining operation
+  deadline; missing POSIX cleanup evidence still fails closed.
+- Add controlled delayed-proof, stuck-process and ordinary-cancellation regression
+  cases, while retaining the strict real native cleanup checks.
+
 ## 0.3.0-beta.71 — publication tracked separately
 
 - Reuse exact selected-fragment field/index buckets when calculating partial

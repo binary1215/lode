@@ -592,7 +592,26 @@ test("bounded native pack stream stops before disk cap and verifies tree cleanup
  const f=await objectFixture(t),events=[];f.mixed.onProcess=e=>events.push(e);
  const file=path.join(f.root,"bounded-stage.pack");
  await assert.rejects(f.mixed.packStream([...f.mixed.objects.keys()],file,1),{code:"GC_STAGING_BYTE_LIMIT"});
- assert.equal(fs.statSync(file).size,0);const closed=events.find(e=>e.event==="closed");assert.equal(closed.supervision.treeCleanupVerified,true);
+ assert.equal(fs.statSync(file).size,0);const closed=events.find(e=>e.event==="closed");
+ if(!closed.supervision.treeCleanupVerified)t.diagnostic(JSON.stringify({closed,controls:events.filter(e=>e.event==="supervisor-control")}));
+ assert.equal(closed.supervision.treeCleanupVerified,true);
+});
+
+test("GC stop preserves native proof time, original deadline and cancellation without later writes",{timeout:8000},async t=>{
+ const {controlledGcStop}=await import("./helpers/gc-supervision-control.mjs");
+ for(const options of [{},{stuck:true,deadlineMs:300},{deadlineMs:150},{cancel:true},{cancel:true,stuck:true,deadlineMs:300}])await t.test(JSON.stringify(options),async()=>{
+  const value=await controlledGcStop(options),expectedProof=!options.stuck&&(options.deadlineMs??1000)>=400;
+  assert.equal(value.deadlineAfter,value.deadline);
+  assert.equal(value.error.code,options.cancel?"SNAPSHOT_GC_CANCELLED":"GC_STAGING_BYTE_LIMIT");
+  assert.equal(value.stagedBytes,options.cancel?1:0);assert.equal(value.closed.outputBytes,value.stagedBytes);
+  assert.equal(value.timeline.filter(e=>e.event==="graceful-termination-request").length,1);
+  assert.equal(value.closed.supervision.treeCleanupVerified,expectedProof);
+  const forced=value.timeline.filter(e=>e.event==="force-supervisor-and-provider");assert.equal(forced.length,expectedProof?0:1);
+  if(!expectedProof){assert.equal(value.error.nativeProcessCleanup.treeCleanupVerified,false);assert(forced[0].at>=value.deadline);}
+  const controls=value.timeline.filter(e=>e.event==="raw-control").map(e=>e.type);
+  assert.equal(controls.includes("supervisor.cleanup"),expectedProof);
+  t.diagnostic(JSON.stringify({options,closed:value.closed,timeline:value.timeline,stagedBytes:value.stagedBytes,scope:value.scope}));
+ });
 });
 
 test("ordinary work after new pair publication cancels all old object retirement",async t=>{
