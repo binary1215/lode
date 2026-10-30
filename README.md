@@ -15,8 +15,7 @@ Lode works with Codex, Claude Code and OpenCode. It restores saved work after co
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![Runtime](https://img.shields.io/badge/runtime-Node.js%20%2B%20Go-00ADD8)
 
-Current beta: **0.3.0-beta.66** — revision-anchored graph history, bounded lineage
-queries and accurate recorded-task counts. See the [changelog](CHANGELOG.md).
+Beta. See the [changelog](CHANGELOG.md) and [installation guide](#install).
 Local `.lode` records stay outside plugin packages.
 
 [First request](#first-request) · [Install](#install) · [Daily use](#how-to-use-it) · [Recovery](#recovery)
@@ -42,63 +41,6 @@ Lode records the agreed goal, the evidence behind changes and what remains to do
 
 Use your coding agent in Codex, Claude Code or a configured OpenCode workspace. There is no separate application to operate.
 
-<a id="first-request"></a>
-
-## Your first request
-
-After [installing and loading the plugin](#install), open your project and include the real task in your first request. There is no separate setup conversation.
-
-```text
-Use Lode Agent Core for this project. Resume its existing state if one exists;
-otherwise initialize the Core. Then find the cause of this login failure and fix it.
-```
-
-Replace the login failure with your own task. Lode continues it after initialization and verified recovery; you can keep asking for work in the same conversation.
-
-<details>
-<summary>Not installed? Ask your agent to help</summary>
-
-Not installed yet? Give your coding agent this README and ask:
-
-```text
-Install Lode for Codex using its existing official installation path. Reuse a
-valid installation and preserve my project instructions and current connections.
-Do the steps you are allowed to perform; tell me only what needs my action.
-Then use it in this project to investigate the login failure.
-```
-
-Replace Codex and the task with your client and goal. This starts from the
-README even without an installed Skill. The agent performs the authorized
-steps it can, checks the results, and continues your task. You may still need
-to approve Host access, log in or restart the app yourself. The agent does not
-restart it for you.
-
-</details>
-
-## How to use it
-
-Start with [the first-request example](#first-request). Describe the outcome you want, then work in ordinary language.
-
-```text
-Prepare only the code and decision evidence needed for this change, then proceed.
-```
-
-```text
-Keep one overall plan and use parallel workers only for the independent parts.
-```
-
-Lode normally works directly. When delegation helps, it gives the current tool's workers a clear scope, checks their results and combines them. If the tool cannot delegate, Lode continues directly or sequentially. Ordinary delegation does not require a managed Run, worker registry or extra approval.
-
-### Separate conversations, shared direction
-
-Independent tasks can keep separate work Sessions while sharing the project goal and current constraints. Starting a new conversation preserves other tasks' progress. You do not maintain Session IDs or routing forms. See [Graph discovery and independent Sessions](docs/graph-discovery.md).
-
-After compaction or provider replacement, conversation entry checks the available saved work direction. You do not need to request recovery or supply a checkpoint ID.
-
-Recovery uses saved records. It does not capture unsaved conversation. Host delivery and managed continuation have different support limits; see [Session work context and Host support](docs/session-work-context.md) and [capability status](#capability-status).
-
-You do not write JSON, operate GraphDB, choose a token tier or decide which MCP call to make. Lode asks when a decision belongs to you: for example, approving product meaning, resolving an ambiguous scope, or allowing a consequential external change. Ordinary investigation and small authorized fixes stay ordinary work.
-
 ## Why use it
 
 It is most useful when the project lasts longer than one conversation.
@@ -109,7 +51,9 @@ It is most useful when the project lasts longer than one conversation.
 
 Continue from the saved purpose, decisions, progress and next step. Recovery checks current constraints, and a newer user request wins over an older continuation. Lode saves checkpoints at meaningful changes or handoffs. Short investigations can retain selected reasons and uncertainty without a Run or checkpoint; neither needs a record on every turn.
 
-Recovery covers recorded work direction, so unsaved conversation may be lost. Host support differs; see [Compaction recovery](docs/compaction-recovery.md), [Session recovery](docs/session-recovery.md) and [Session work context and Host support](docs/session-work-context.md).
+Recovery covers recorded work direction, so unsaved conversation may be lost.
+Supported Hooks can supply bounded prompt/final-response references as quoted
+P5 context. They are neither a full transcript nor proof of current approval. Host support differs; see [Compaction recovery](docs/compaction-recovery.md), [Session recovery](docs/session-recovery.md) and [Session work context and Host support](docs/session-work-context.md).
 
 ### Give each task bounded, reviewable context
 
@@ -141,6 +85,8 @@ Optional workflows record Git and deployment evidence, product-specific observat
 For a one-off script or a short experiment where chat history is enough, you may not need it. Lode does not make model output automatically trustworthy, and a graph or database is not the authority for what the product should mean.
 
 ## Install
+
+Requires Node.js 24 or newer. Use the commands for the client you already use.
 
 Choose the path for your tool. The Codex and Claude Code packages include the conversation Skill, MCP server and verified native bundle for supported hosts. Only the matching host binary runs. OpenCode uses the project setup below; the CLI is optional for ordinary conversation.
 
@@ -208,8 +154,11 @@ When using the user-scoped installation below, initialize the project with
 `--runtime codex` for Codex; combine these only if you want multiple integrations.
 Marketplace-installed Claude Code users can
 request the same initialization through the bundled Skill. Lode creates
-`CLAUDE.md` plus `.mcp.json` for Claude Code, `AGENTS.md` for Codex, and
-`opencode.json` for OpenCode only when those project files are absent. Existing
+`CLAUDE.md` for Claude Code, `AGENTS.md` for Codex, and `opencode.json` for
+OpenCode only when those project files are absent. A verified plugin MCP
+connection avoids creating a duplicate project `.mcp.json`; standalone Claude
+initialization can create a missing file with a verified local launcher or exact
+absolute package entry. Existing
 files are preserved and generated manual-integration projections remain under
 the selected root's `.lode/generated/` or existing `.head/generated/` directory.
 
@@ -223,7 +172,8 @@ identity match; it does not take over a user-owned or edited configuration. If t
 installation path changes, install Lode on that PC and ask the agent to resume
 the existing Project. At the same canonical Project path, this preserves Project
 and Session IDs and the selected runtimes while updating the host installation
-identity. The shared launch files stay portable.
+identity. Packaged launch paths use client placeholders; standalone Claude
+launch paths can be machine-local.
 A project-owned `opencode.json` or `opencode.jsonc` stays unchanged; the generated
 copy remains available as a connection reference. Init, resume and status report
 instructions and MCP separately: configured locally, missing, disabled,
@@ -250,8 +200,9 @@ project instructions. Declining leaves the file unchanged and does not block
 your task or trigger another setup offer. See the installation guidance for
 your Host; generated instructions alone do not prove that a running Host read them.
 
-After initialization, start `claude` or `opencode` in the project. Claude Code
-asks for project MCP approval before using the shared `lode` server. The
+After initialization, start `claude` or `opencode` in the project. Follow the
+Host’s approval policy for the selected MCP connection. An existing verified
+plugin connection does not require a duplicate project server. The
 runtime-native instruction/config files are projections; the selected `.lode/`
 or existing `.head/` remains the single canonical Project root.
 
@@ -315,9 +266,76 @@ Existing `.head/` records, IDs and selected Session stay intact; new projects us
 
 </details>
 
+<a id="first-request"></a>
+
+## Your first request
+
+After [installing and loading the plugin](#install), open your project and include the real task in your first request. There is no separate setup conversation.
+
+```text
+Use Lode Agent Core for this project. Resume its existing state if one exists;
+otherwise initialize the Core. Then find the cause of this login failure and fix it.
+```
+
+Replace the login failure with your own task. Lode continues it after initialization and verified recovery; you can keep asking for work in the same conversation.
+
+<details>
+<summary>Not installed? Ask your agent to help</summary>
+
+Not installed yet? Give your coding agent this README and ask:
+
+```text
+Install Lode for Codex using its existing official installation path. Reuse a
+valid installation and preserve my project instructions and current connections.
+Do the steps you are allowed to perform; tell me only what needs my action.
+Then use it in this project to investigate the login failure.
+```
+
+Replace Codex and the task with your client and goal. This starts from the
+README even without an installed Skill. The agent performs the authorized
+steps it can, checks the results, and continues your task. You may still need
+to approve Host access, log in or restart the app yourself. The agent does not
+restart it for you.
+
+</details>
+
+## How to use it
+
+Start with [the first-request example](#first-request). Describe the outcome you want, then work in ordinary language.
+
+```text
+Prepare only the code and decision evidence needed for this change, then proceed.
+```
+
+```text
+Keep one overall plan and use parallel workers only for the independent parts.
+```
+
+Lode normally works directly. When delegation helps, it gives the current tool's workers a clear scope, checks their results and combines them. If the tool cannot delegate, Lode continues directly or sequentially. Ordinary delegation does not require a managed Run, worker registry or extra approval.
+
+You can also ask:
+
+| Need | Example request |
+| --- | --- |
+| Resume remaining work | “Continue from the saved Todo and tell me what is still open.” |
+| Keep the plan current | “Combine the implementation and review results, then adjust the next step for what we learned.” |
+| Understand a change | “Show the recorded reason and the before/after source for this change.” |
+
+These are ordinary requests. They add no save form, required review ceremony or new approval step.
+
+### Separate conversations, shared direction
+
+Independent tasks can keep separate work Sessions while sharing the project goal and current constraints. Starting a new conversation preserves other tasks' progress. You do not maintain Session IDs or routing forms. See [Graph discovery and independent Sessions](docs/graph-discovery.md).
+
+After compaction or provider replacement, conversation entry checks the available saved work direction. You do not need to request recovery or supply a checkpoint ID.
+
+Recovery uses saved records and does not guarantee preservation of the full unsaved conversation. Supported Hooks may supply bounded prompt/final-response references as quoted context. Host delivery and managed continuation have different support limits; see [Session work context and Host support](docs/session-work-context.md) and [capability status](#capability-status).
+
+You do not write JSON, operate GraphDB, choose a token tier or decide which MCP call to make. Lode asks when a decision belongs to you: for example, approving product meaning, resolving an ambiguous scope, or allowing a consequential external change. Ordinary investigation and small authorized fixes stay ordinary work.
+
 ## Capability status
 
-These labels describe the source distribution. They do not certify that a particular installed Host or live model has been tested. Saved-context delivery does not include unsaved conversation capture or managed automatic continuation.
+These labels describe the source distribution. They do not certify that a particular installed Host or live model has been tested. Saved-context delivery does not guarantee full unsaved-conversation preservation or managed automatic continuation; bounded references from supported Hooks remain quoted context.
 
 <details>
 <summary>Implemented, experimental and unshipped capabilities</summary>
@@ -425,511 +443,45 @@ for a project using it.
 
 ## CLI, automation, and advanced setup
 
-<details>
-<summary>CLI commands and context preparation</summary>
+<a id="conversational-context-preparation-and-preview"></a>
+<a id="conversation-first-path"></a>
+<a id="optional-product-profile-cli-path"></a>
+<a id="source-scope"></a>
 
-The normal path is the conversation-first flow above. Use the following CLI
-surface when a script, CI job, offline recovery procedure, or host integration
-needs the same deterministic Core behavior without a guided conversation.
+Use the [Core command reference](docs/README.md#command-reference).
 
-The default path initializes only the provider-neutral Lode constitution and its
-fixed Project/Session recovery anchors:
-
-```powershell
-lode-agent init C:\path\to\project --runtime claude,codex,opencode
-```
-
-It returns `core_ready`, preserving identities and updating the lightweight
-existing-observation index where available. Product inference, governed World
-construction and document governance remain optional. The same bounded status is available
-at any time:
-
-```powershell
-lode-agent status C:\path\to\project
-```
-
-Successful human-readable status is intentionally one line. Exceptions name
-the owner, reason, affected operation, and next action; `doctor` or `--json`
-shows Core, optional Product governance, Context readiness, executing CLI/library
-and configured package versions, and technical details. Host tool loading is not
-observed by that package inspection. The structured projection separates
-`readiness.core`, `readiness.product`, and `readiness.context`, names one
-`nextAction`, and lists optional capabilities with their real prerequisites.
-For example, Product appears as `available-not-activated`, while bounded workers
-appear as `requires-session-or-run-authorization` for retained managed work.
-Ordinary second opinions use available Host delegation; worker count alone does
-not require a Run. This is a non-persisted advisory
-projection: reading it never activates Product, creates a Run, grants authority,
-or repairs drift. `profile` remains a choice for one initialize/resume operation,
-not a hidden project mode.
-
-Top-level status is one of `core_ready`,
-`product_evidence_required`, `product_review_required`, `product_ready`,
-`product_refresh_required`, or `core_drifted`. The exact lower-level onboarding
-state remains visible under `readiness.product.onboardingStatus`.
-
-### Conversational Context preparation and preview
-
-In conversation, describe the task once. Ordinary reading and editing use the
-needed files directly. Only when reproducible selected-context handoff, a durable
-Run or recovery actually needs a Capsule does the Lode Skill call
-`lode_context_prepare`, perform semantic repository inspection, author any
-task-required `EvidenceNeed[]`, and call `lode_context_preview` without asking
-the user to operate those steps. Missing or stale optional World evidence does
-not block direct work, and justified budget expansion is automatic.
-The final preview includes one explanation card with included evidence by kind,
-intentional omissions by reason, and remaining uncertainty. It does not add a
-new gate: mechanical coverage still belongs to Core and semantic sufficiency
-still belongs to Lode.
-
-The default MCP list stays focused on Core work, recovery and retained-work
-status/cancellation. Lode can find optional Product, Graph, Observation or Context
-schemas with `lode_tools_discover`, then use the returned read-only or effectful
-route. You do not need to unlock capabilities, select a profile on every request
-or type JSON. Discovery adds no authority; existing operation checks still apply.
-
-The same Core operations remain available from the CLI for automation and
-diagnosis:
-
-```powershell
-lode-agent context-prepare C:\path\to\project --task "<task>"
-```
-
-This task-only, non-persisted P4 projection returns the current Project,
-World Model, and GraphSnapshot binding plus bounded lexical discovery material
-and exact node identities. The user does not write `EvidenceNeed[]`. Lode uses
-ordinary semantic reasoning and repository inspection to author the structured
-proposal, then gives that proposal to the existing preview verifier. Core does
-not select evidence kinds or anchors, and absence from the lexical candidate
-view never means irrelevance.
-
-If Product/World has not been activated, preparation still returns
-`ready_for_head_semantic_assessment`, discloses missing repository metadata and
-provides available curated context. Lode may inspect current source directly.
-Preparation never activates Product, indexes the repository or creates recovery
-records. Optional Product/World work is chosen only when the task needs it.
-
-Advanced automation may call the preview directly with Lode-authored structured
-input:
-
-```powershell
-lode-agent context-preview C:\path\to\project `
-  --task "Keep this exact task text across retries" `
-  --budget 32768 `
-  --evidence-needs .\evidence-needs.json
-```
-
-CLI output is concise by default. Add `--json` for selected context, sources,
-omissions and uncertainty. One preparation or preview call is enough when its
-evidence is useful; a separate preview is optional, not a setup ritual.
-
-`ready_for_head_semantic_assessment` means Lode should assess the selected
-context, not that the tool has proved completeness. Lode reads original bodies
-when needed and can expand a returned graph anchor with `details: true`.
-Missing/stale World is disclosed; direct current source remains available.
-No fixed budget tiers, inclusion certificate or extra user approval is required.
-
-### Conversation-first path
-
-The bundled `lode-agent-onboarding` Skill is the interactive entry for optional Product onboarding.
-It inspects the current state, asks only for material choices such as repository
-scope or storage mode, semantically analyzes bounded current evidence, submits a
-typed proposal for Core verification, presents the resulting evidence-linked
-candidates, and uses explicit review before Product Canon changes. It selects
-the `product` profile explicitly. The provider proposal remains P3 evidence.
-
-### Optional Product profile CLI path
-
-Initialize or resume the same project and Lode Session identities:
-
-```powershell
-lode-agent init C:\path\to\project --runtime claude,codex,opencode --profile product
-lode-agent onboarding-status C:\path\to\project
-```
-
-Without a structured user brief, first use intentionally returns
-`awaiting-evidence`; Core does not invent product concepts from symbols. The
-conversation Skill normally supplies the fresh semantic proposal. CLI users may
-pass the same `semanticProposal` inside `--input`; after Core verifies the exact
-SourceSnapshot, paths, lines, optional symbols, and Product Model references, an
-immutable candidate-set ID is returned. Inspect it before review:
-
-```powershell
-$onboarding = lode-agent onboarding-status C:\path\to\project | ConvertFrom-Json
-lode-agent onboarding-candidates C:\path\to\project `
-  --candidate-set $onboarding.state.candidateSetId
-```
-
-Create `onboarding-review.json` only after reviewing the evidence. This compact
-example accepts the complete bootstrap batch; selection or revision is safer
-when any candidate should be renamed, split, merged, or excluded.
-
-```json
-{
-  "candidateSetId": "onboarding-candidates-<id>",
-  "disposition": "accept-all",
-  "rationale": "I reviewed every evidence-linked candidate and adopt this bootstrap batch."
-}
-```
-
-Apply the decision and verify the resulting views:
-
-```powershell
-lode-agent onboarding-review C:\path\to\project --input .\onboarding-review.json
-lode-agent graph-query C:\path\to\project --query "<task>"
-lode-agent world-status C:\path\to\project
-lode-agent context-preview C:\path\to\project `
-  --task "Find implementation evidence for one reviewed Feature" --budget 32768
-lode-agent world-docs-build C:\path\to\project
-lode-agent resume C:\path\to\project --runtime claude,codex,opencode --profile product
-```
-
-`accept-all` is supported for a fully inspected batch, but it is not the default
-recommendation. Review can instead accept a dependency-complete selection,
-revise or reject the batch, request more evidence, or retain explicit Unknowns.
-See [Onboarding](docs/onboarding.md) for the complete contract.
-
-### Source scope
-
-For repositories with generated output, vendored dependencies, copied projects,
-large fixtures, or model bundles, define a project-relative observation boundary
-before the first index:
-
-```json
-{
-  "mode": "existing",
-  "sourceScope": {
-    "includeRoots": ["src", "packages"],
-    "excludeRoots": ["dist", "vendor", "generated", "fixtures"]
-  }
-}
-```
-
-Pass it with `lode-agent init ... --profile product --input .\onboarding.json`. Source Scope
-controls observation only; it cannot define Product Canon, approve a candidate,
-or grant execution authority.
-
-</details>
+For task-context examples, see [Context preparation](docs/context-compiler.md#context-examples). Optional Product setup is in [onboarding examples](docs/onboarding.md#product-cli-examples).
 
 ## Core model
 
-<details>
-<summary>Authority, context and recovery contracts</summary>
+<a id="architecture-at-a-glance"></a>
+<a id="lode-judgment-with-reproducible-selected-context"></a>
+<a id="execution-and-recovery"></a>
+<a id="product-learning"></a>
 
-Lode separates meaning, recovery, evidence, views, and effects so that one
-representation cannot inherit another's authority.
-
-| Plane | Owns | Examples | Does not authorize |
-| --- | --- | --- | --- |
-| P1 Normative authority | approved meaning and explicit decisions | Product Canon, ReviewDecision | inference from a graph, result, or message |
-| P2 Recovery and lineage | provider-independent project direction | Session, Run, plan, Capsule, contract, checkpoint | rewriting direction from a summary or result |
-| P3 Evidence | reviewable observations and results | candidates, ResultPacket, ChangeSet, receipts | self-promotion or checkpoint authorship |
-| P4 Derived views | reproducible retrieval and human views | GraphSnapshot, traversal, Markdown, continuity | Canon mutation or unique recovery |
-| P5 Operational effects | host-local execution and delivery | PID, lease, endpoint, inbox, delivery receipt | execution, review, promotion, or recovery authority |
-
-Distribution and host integrations package or execute these contracts; neither
-becomes a sixth source of product meaning. The complete executable boundary is
-documented in [Authority planes](docs/authority-plane-contract.md).
-
-The smaller normative root and the formal Record/Graph boundary are documented
-in [Provider-neutral Lode constitution](docs/lode-constitution.md).
-
-### Architecture at a glance
-
-```mermaid
-flowchart LR
-    U[User objective] --> H[Whole-plan Lode]
-    PC[Product Canon] --> WM[World Model + GraphSnapshot]
-    RE[Repository evidence] --> WM
-    H --> CC[Context Compiler]
-    WM -->|bounded evidence| CC
-    CC --> RA[Runtime adapter]
-    RA --> RP[ResultPacket]
-    RP --> FR[Fresh Lode review]
-    WM --> PX[Local / ArcadeDB / Markdown projections]
-```
-
-The feedback path is explicit: an accepted result may become reviewed lineage,
-the repository can be re-indexed, and a later graph may project that evidence.
-No result, projection, or runtime effect accepts itself.
-
-### Lode judgment with reproducible selected context
-
-The Context Compiler packs evidence selected for the task under an explicit budget.
-It records what was included, excluded, stale, missing, truncated, or unknown.
-The same canonical inputs, compiler version, traversal policy, and budget
-reproduce the same Context Capsule.
-
-The default budget is `32768` approximate tokens, and Lode may use any positive
-safe integer. There is no five-tier ladder or 512K policy ceiling. Actual provider
-context fit and output reserve still apply; the estimate is not a tokenizer proof.
-
-Lode may guide selection with exact repository paths, Product Canon keys,
-Observation IDs or bounded current graph anchors. The compiler supplies
-`evidenceGaps`, `omissions` and `uncertainty`, not an inclusion-proof gate.
-Lode decides whether more source evidence is needed. A persisted ExecutionContract
-records that separate judgment; it does not manufacture semantic acceptance.
-
-A Capsule is a derived execution input, not a second Canon. Digest or Canon drift
-fails closed; simple read/reason work does not create a Capsule by default.
-
-### Execution and recovery
-
-Managed execution follows this durable, reviewable sequence:
-
-```text
-WholePlanSnapshot
-  → ExecutionContract + ContextCapsule
-  → runtime or bounded worker
-  → ResultPacket
-  → Fresh Lode ReviewDecision
-  → accepted lineage or a revised plan
-```
-
-Provider loss does not require importing a transcript. `session-restore`
-reconstructs the current input from the exact P2 checkpoint and verified lineage.
-After an accepted result, `run-integrate-checkpoint` can bind that review to a new
-checkpoint only when Lode or the user explicitly supplies its recovery fields.
-
-With a trusted Host adapter, managed intentional compaction uses this contract.
-Packaged read-only context delivery does not perform this whole lifecycle:
-
-1. provider Lode writes or reuses the exact P2 direction before compaction;
-2. a provider-neutral Host adapter retains the one-time transport token outside
-   project Canon and performs the provider-owned compaction;
-3. Core restores P2 first, then verifies trusted real-user-turn evidence and
-   rejects drift, uncertain replay, or summary-derived recovery;
-4. the Host submits the checkpoint-bound continuation at most once, or Lode
-   continues as a disclosed fresh logical Lode from the verified artifacts.
-
-The normal UX is simply to continue the task. `lode_conversation_enter` is the
-automatic read-only entry projection used by the Skill, while the `compact-*`
-and `lode_compaction_lifecycle_step` surfaces are advanced adapter and diagnostic
-operations. Missing Host hooks do not create a setup gate and never block
-ordinary work.
-
-For a durable direction update, the Skill internally uses the read-only
-`lode_checkpoint_basis` and idempotent `lode_checkpoint_sync` surfaces. Core
-returns `created`, `reused`, `deferred`, or `conflict`; only the affected recovery
-path pauses, and none of these outcomes asks the user for checkpoint JSON.
-
-When recovery needs explanation, `lode_checkpoint_diagnose` gives one bounded,
-read-only answer: the current pointer, artifact-restore result, mechanical update
-availability, and the next Lode action. It writes no lock or cache and never calls
-another model merely to read status. Matching IDs and hashes prove artifact
-consistency, not that checkpoint prose still matches the latest user intent.
-Changed sequential reads require a retry; the result explicitly does not claim an
-atomic filesystem snapshot or ABA detection. Ordinary independent work remains
-available while only checkpoint-dependent work pauses on a real recovery fault.
-
-A newer real user turn wins over a pending continuation. See
-[Compaction recovery](docs/compaction-recovery.md) and
-[Session recovery](docs/session-recovery.md).
-
-### Product learning
-
-Everyday observations can remain non-persisted notes. Durable artifacts are
-created only when another Run, audit, product-state transition, or handoff needs
-them:
-
-```text
-Signal → Hypothesis → Initiative candidate → user ReviewDecision
-       → reviewed Initiative → accepted execution → OutcomeObservation
-```
-
-This is not one automatic promotion chain. Evidence remains evidence,
-hypotheses remain hypotheses, and a reviewed Initiative remains distinct from
-Product Canon. Lode judges risk and persistence directly, without a recommendation
-API or a note-formatting call:
-
-- Observe for read and reasoning work;
-- Session for one bounded, reversible result;
-- Run for dependent or recovery-sensitive work;
-- Explicit authority for Canon, initiative decisions or effects outside the current
-  approved scope. Updating a useful checkpoint within already approved direction
-  is not a new user decision.
-
-See [Product Operating Loop](docs/product-operating-loop.md).
-Git ref and deployment plumbing is documented in
-[Release observation](docs/release-observation.md).
-Per-environment and per-target application, failure, and rollback history is
-documented in [Delivery state observation](docs/delivery-observation.md).
-
-</details>
+Read about [authority, context and recovery](docs/architecture.md#detailed-core-model).
 
 ## Graph and records
 
-<details>
-<summary>Snapshots, history and graph queries</summary>
+<a id="graph-versus-record"></a>
+<a id="query-the-graph"></a>
 
-Graph Explorer's `graph-explorer <project-directory>` CLI creates a read-only
-HTML snapshot of the target project's evidence, not the plugin installation.
-Ask the agent to run that existing CLI; there is no dedicated HTML-export MCP
-tool. It is not a live view. See [Graph Explorer](docs/graph-explorer.md) for
-search, explicit history and sharing options.
-
-For new project information, Lode uses bounded `lode_project_graph` discovery
-first, or reuses sufficient results from the same basis. Work and Product views
-reference the same original records. The result keeps revision, provenance,
-coverage and candidate/rejection state, including intact history. Missing or
-failed layers lead to original-source inspection without requiring whole-World
-currentness, Product approval, Run/Capsule or ArcadeDB. Empty partial results do
-not prove absence; effects separately recheck current sources and authority.
-The query does not generate a new artifact per read. See
-[Graph discovery and independent Sessions](docs/graph-discovery.md).
-
-
-A `GraphSnapshot` is the immutable, content-addressed evidence graph embedded in
-one verified Repository World Model. It is not a graph UI screenshot, database
-backup, or mutable latest-node collection. The same verified inputs produce the
-same `graphSnapshotId`; semantic changes create a new snapshot with explicit
-ancestry.
-
-`lode_world_model` verifies that complete model and current repository, then
-returns a bounded status projection instead of transporting the full snapshot.
-Counts, IDs, digests, samples, and omission metadata stay available; deeper
-inspection uses the bounded graph, history, runtime, and semantic query tools.
-This keeps MCP responses small without skipping any freshness or digest check.
-
-```mermaid
-flowchart LR
-    C[Product Canon] <-->|reviewed meaning| F[Features]
-    F <-->|implements / verifies| S[Code and tests]
-    S <-->|revisions| CH[ChangeSets]
-    CH <-->|results / review| E[Execution lineage]
-```
-
-Raw prompts stay outside this graph. Product meaning enters only through
-reviewed Canon. General discovery may show labelled candidates/rejected records
-without promoting them; they remain excluded from Canon Context compilation.
-
-Common Observations keep their exact descriptor, receipt, and derivation
-lineage in the same temporal graph. A ProductHypothesis may point to an exact
-Observation, but that edge remains evidence for a hypothesis rather than a
-promotion of measured data into product truth. If Observation storage is
-damaged, only that graph layer is reported unavailable; unrelated product work
-continues.
-
-Delivery observations add practical operational genealogy without turning the
-graph into a deployment controller. Each Host event names an environment,
-target, artifact revision, explicit sequence, and predecessor. The read-only
-current-state card shows uniform, mixed, or unknown observed state; failed
-attempts do not erase the last applied revision, rollback remains in history,
-and unobserved targets are never guessed successful. Exact retained source
-revisions receive verified `AT_REVISION` links; declared strings stay visibly
-unverified.
-
-Policy genealogy stays equally explicit. A proposed create, revision, or
-retirement is P3 evidence until the user accepts that exact candidate. The
-accepted decision points to the resulting Product Model revision and to the
-matching current Policy revision, even after an unrelated Policy is added.
-General graph discovery retains an unreviewed Policy candidate's original state;
-legacy governed traversal can exclude it and Canon compilation does not promote it.
-
-Source relations are structural evidence, not product meaning. The default
-heuristic import/call graph remains available, while an optional provider-neutral
-language-AST adapter may add separately labeled, exact-file-bound evidence. One
-source never silently overwrites the other, and neither can approve a decision.
-
-### Graph versus record
-
-Records feed the graph and its projections in this direction:
-
-```text
-P1 Product Canon + observed source + verified P2/P3 records
-  → P4 Repository World Model containing a recoverable GraphSnapshot
-      → replaceable graph materialization: local JSON / optional ArcadeDB
-      → replaceable human projection: Markdown
-```
-
-The graph owns navigation, not meaning or recovery direction. Deleting GraphDB
-or generated Markdown must leave Product Canon, Session/Run recovery, and review
-lineage intact. A stale, tampered, or semantically divergent projection fails
-closed instead of redefining the graph.
-
-### Query the graph
-
-```powershell
-lode-agent world-status C:\path\to\project
-lode-agent world-temporal C:\path\to\project `
-  --query "<Feature, symbol, path, ChangeSet, or ReviewDecision>" `
-  --depth 3 --limit 100 --edge-limit 200
-lode-agent graph-lineage-status C:\path\to\project
-lode-agent graph-lineage-trace C:\path\to\project --anchor <exact-node-id>
-lode-agent graph-lineage-diff C:\path\to\project `
-  --from <older-world-model-id> --to <newer-world-model-id>
-lode-agent context-preview C:\path\to\project --task "<task>" --budget 32768
-```
-
-Traversal returns snapshot, query, and result identities plus inclusion,
-exclusion, and truncation reasons. Embedded, local JSON, and activated ArcadeDB
-backends must preserve the same semantic result.
-
-The lineage commands reuse retained content-addressed World snapshots and do
-not create another history stream. Their Hot/Warm/Cold status, trace, execution
-overlay, and diff are non-persisted P4 views. An exact-content file move is only
-reported as a possible move; semantic identity is never asserted automatically.
-
-</details>
+Explore [recorded context, snapshots and graph queries](docs/context-lineage.md#graph-and-record-examples).
 
 ## Runtime and coordination
 
-<details>
-<summary>Workers, adapters and attachment</summary>
-
-Claude Code, Codex, and OpenCode are projections over one `.lode/` authority. Runtime adapters
-observe capability, consume one exact authorization at most once, supervise the
-owned process tree, validate structured output, and keep operational state
-outside the project.
-
-Ordinary delegation uses the current Host's tasks, messages and progress.
-Lode provides context and ownership, combines successful contributions, inspects
-unknown effects, and handles only the unfinished part. There is no Lode role-token,
-generation, inbox or target-chain setup. Worker success cannot approve Canon or
-write recovery direction.
-
-Optional endpoint attachment first restores P2 direction, then attaches only if
-the exact live endpoint can be verified. If the endpoint is gone, Lode reports
-a fresh-logical-Lode fallback from the verified records. The portable export
-bridge is attachment-only; it retains one
-current snapshot, not a durable delivery mail service. Host-specific pane/socket/UI
-behavior stays outside Core. See [Runtime adapters](docs/runtime-adapters.md)
-and [Host delegation and attachment](docs/role-coordination.md).
-
-</details>
+See [workers, adapters and runtime attachment](docs/architecture.md#runtime-coordination-reference).
 
 ## Optional GraphDB
 
-<details>
-<summary>ArcadeDB configuration and native query paths</summary>
-
-Local storage is the default. GraphDB is not required for onboarding,
-context compilation, execution lineage, or recovery.
-
-ArcadeDB can be explicitly activated as a derived graph projection. Credentials
-are resolved only through environment-variable references and never enter
-project artifacts, graph identities, generated documents, or receipts. Remote
-activation must prove semantic conformance with the recoverable embedded graph.
-
-The JavaScript bridge is the semantic reference. When a verified native package
-is present, read-only prepared queries may use a content-addressed Go query-batch
-bridge; JavaScript still verifies the pointer, topology, traversal, request
-binding, and receipt. Set `LODE_AGENT_ARCADEDB_NATIVE_MODE` to:
-
-- `auto`: use the verified native bridge when available, otherwise disclose and
-  use the JavaScript reference path;
-- `off`: always use the JavaScript path;
-- `required`: fail when the verified native path is unavailable.
-
-Manifest, binary, and post-selection digest mismatches always fail closed.
-Exact children receive only configured credential-reference variables and a
-bounded OS, TLS, locale, and proxy allowlist. The compute worker itself remains
-network-free and authority-free. See
-[Graph projection adapter](docs/graph-projection-adapter.md).
-
-</details>
+See [optional ArcadeDB configuration](docs/architecture.md#optional-graphdb-reference).
 
 ## Installation lifecycle
+
+Before a shared Project writes physical schema-2 snapshots, update every reader
+that will use them. Beta.69 and earlier reject these roots without rewriting them;
+new readers still read retained older formats in place. Updating plugin files
+does not reload an existing Host or MCP connection. See [storage compatibility](docs/snapshot-storage.md).
 
 <details>
 <summary>Native delivery, upgrade and removal</summary>
@@ -977,61 +529,11 @@ copy credentials, or rewrite endpoints.
 
 ## Design principles
 
-<details>
-<summary>Design background and principles</summary>
-
-Lode Agent Core Plugin is inspired by
-[Won6314/head-agent-core](https://github.com/Won6314/head-agent-core) and
-independently reworked as a provider-neutral plugin. It is not an official
-upstream release or a drop-in replacement. See the
-[source-grounded comparison](docs/original-head-core-comparison.md).
-
-The implementation uses these principles across providers:
-
-- Lode owns the connected whole outcome;
-- the user retains consequential authority;
-- semantic sufficiency belongs to Lode; bounded verified context beats maximum context;
-- durable Canon survives temporary model sessions;
-- delegation stays bounded and non-authoritative;
-- completion requires connected primary evidence;
-- graphs are retrieval indexes, not unquestioned authority;
-- project meaning remains separate from runtime mechanisms.
-
-Read the upstream
-[Foundations](https://github.com/Won6314/head-agent-core/blob/ba220c55c14b8af947bf6d1fb9d27a620a2cf2aa/packages/core/docs/FOUNDATIONS.md)
-and
-[Technical Architecture](https://github.com/Won6314/head-agent-core/blob/ba220c55c14b8af947bf6d1fb9d27a620a2cf2aa/packages/core/docs/TECHNICAL_ARCHITECTURE.md)
-for the original design context.
-
-</details>
+Read the [design principles](docs/architecture.md#design-principles-reference).
 
 ## Verify from source
 
-<details>
-<summary>Test commands and verification limits</summary>
-
-Core verifies the exact target and permitted transition of a decision supplied
-by a trusted local caller. The Host and Lode must convey the user's actual
-approval; digests and confirmation flags do not authenticate a human.
-
-Fixture tests establish reproducibility and transition behavior. They do not
-establish Lode's evidence-discovery rate or end-to-end coding accuracy.
-See [verification evidence and local diagnostics](docs/verification-evidence.md).
-
-```powershell
-npm test
-npm run verify:newcomer
-npm run verify:distribution
-npm run verify:codex-marketplace
-npm run verify:claude-marketplace
-```
-
-Native sources additionally support `go test ./...` and `go vet ./...` from the
-corresponding module directories. JavaScript remains the semantic reference;
-native backends are advertised only after fixture-driven conformance and
-integrity verification.
-
-</details>
+See [source verification and evidence limits](docs/verification-evidence.md#source-verification).
 
 ## Status and licensing
 

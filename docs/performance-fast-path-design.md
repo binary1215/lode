@@ -1,7 +1,7 @@
 # Philosophy-preserving fast path
 
-Status: the query-only read batch is implemented; remaining components are
-implementation design. No fast path is authoritative merely because it is
+Status: the query-only read batch and the scoped storage/coverage optimizations
+listed below are implemented. Other sections remain implementation design. No fast path is authoritative merely because it is
 available or faster.
 
 This design reduces duplicate transport, I/O, parsing, and canonicalization
@@ -239,3 +239,9 @@ outlive provider sessions; derived graphs and caches are replaceable; bounded
 workers and adapters cannot acquire authority; and evidence must remain connected
 to the consumer that decides. The fast path changes physical work, not who may
 decide, what is true, how recovery works, or what constitutes completion.
+
+## Adopted scope and measurement limits
+
+Selected-owner flat shared parts, separate snapshot membership, bounded private-Git batches and request-owned verification reuse are implemented. Snapshot membership can still scale with the whole graph. Earlier synthetic storage timings preceded final corrections and are not a remeasurement of the final release. Some small or repeated operations were slower. P2b and the Rust prototype were not adopted. Explicit GC predates the coverage-index change.
+
+The coverage index preserves output and callback order; it does not improve semantic retrieval by itself. See [verification evidence](verification-evidence.md#coverage-computation-comparison) and [storage compatibility](snapshot-storage.md).

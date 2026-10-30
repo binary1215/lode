@@ -177,7 +177,7 @@ See [runtime adapters](runtime-adapters.md).
 
 ## File ownership
 
-`.lode/` is plugin-managed canon. Root `CLAUDE.md`, `.mcp.json`, `AGENTS.md`, and `opencode.json` are created only when the corresponding runtime projection has no collision. Existing files remain project-owned; generated alternatives are written under `.lode/generated/` and reported as manual integration work. Claude Code, Codex, and OpenCode launch projections use `node` with a project-relative `scripts/mcp-server.mjs` or a client placeholder (`${CLAUDE_PLUGIN_ROOT}`, `${PLUGIN_ROOT}`, `{env:LODE_PLUGIN_ROOT}`). They do not embed an absolute Node binary or install path.
+`.lode/` is plugin-managed canon. Root `CLAUDE.md`, `.mcp.json`, `AGENTS.md`, and `opencode.json` remain independently owned projections: absent files may be generated, existing project-owned files stay intact and alternatives remain under `.lode/generated/`. A verified Claude plugin MCP connection avoids a duplicate project configuration. Packaged clients use `node`, project-relative `scripts/mcp-server.mjs` or placeholders (`${CLAUDE_PLUGIN_ROOT}`, `${PLUGIN_ROOT}`, `{env:LODE_PLUGIN_ROOT}`). Standalone Claude initialization can use a verified local launcher or exact absolute package entry. These paths are machine-local; they do not embed an absolute Node binary. See [runtime launch paths](runtime-adapters.md#startup-guidance-and-claude-file-ownership).
 
 The managed manifest records SHA-256 digests. Canonical mutation stops when managed drift is detected.
 
@@ -313,3 +313,224 @@ Non-blocking Conformance reconciliation lets provider Lode compare exact approve
 `GitHistoryAdapter` separately supplies rebuildable, content-addressed commit evidence. The default asynchronous Git CLI adapter may fail open with explicit coverage when process launch is unavailable; a byte-preserving host-export adapter provides the same semantic input in constrained runtimes. Current refs validate reachability, and commit messages remain evidence rather than instructions or promoted decisions.
 
 `RuntimeStateAdapter` supplies strict point-in-time external runtime observations. Its source descriptor is pointer metadata rather than semantic identity; normalized observations are content-addressed and freshness-gated. The adapter is read-only and grants neither instruction nor runtime control authority. Separate `PlatformAdapter`, `AgentRuntimeAdapter`, and `WorkspaceHostAdapter` references make provider/platform/host composition explicit. Current-host discovery, bounded fixed version/help evidence, and `RuntimeProjectBinding` establish capability without authorization. The invocation-authorization layer then derives a non-executing single-call boundary from the exact active Lode lineage; a durable at-most-once lease consumes it before the supervisor starts and keeps it non-replayable after completion, timeout, cancellation, or caller failure. Event/receipt/draft schemas, native Job Object/process-group fixtures, and live Codex/OpenCode Session/Run evidence prove the control-plane and tree-cleanup shape. Optional exact-endpoint attachment is a non-authoritative Host capability; ordinary tasks use Host-native coordination. P2-first exact optional attachment and exact-owned one-shot interrupt/close are active. Provider hydration, general resume/stream, and broader process control remain deferred. AST-accurate graphs and structured Git decision inference also remain deferred. See [`runtime-state.md`](runtime-state.md) and [`runtime-adapters.md`](runtime-adapters.md).
+
+<a id="detailed-core-model"></a>
+
+## Core model
+
+Lode separates meaning, recovery, evidence, views, and effects so that one
+representation cannot inherit another's authority.
+
+| Plane | Owns | Examples | Does not authorize |
+| --- | --- | --- | --- |
+| P1 Normative authority | approved meaning and explicit decisions | Product Canon, ReviewDecision | inference from a graph, result, or message |
+| P2 Recovery and lineage | provider-independent project direction | Session, Run, plan, Capsule, contract, checkpoint | rewriting direction from a summary or result |
+| P3 Evidence | reviewable observations and results | candidates, ResultPacket, ChangeSet, receipts | self-promotion or checkpoint authorship |
+| P4 Derived views | reproducible retrieval and human views | GraphSnapshot, traversal, Markdown, continuity | Canon mutation or unique recovery |
+| P5 Operational effects | host-local execution and delivery | PID, lease, endpoint, inbox, delivery receipt | execution, review, promotion, or recovery authority |
+
+Distribution and host integrations package or execute these contracts; neither
+becomes a sixth source of product meaning. The complete executable boundary is
+documented in [Authority planes](authority-plane-contract.md).
+
+The smaller normative root and the formal Record/Graph boundary are documented
+in [Provider-neutral Lode constitution](lode-constitution.md).
+
+### Architecture at a glance
+
+```mermaid
+flowchart LR
+    U[User objective] --> H[Whole-plan Lode]
+    PC[Product Canon] --> WM[World Model + GraphSnapshot]
+    RE[Repository evidence] --> WM
+    H --> CC[Context Compiler]
+    WM -->|bounded evidence| CC
+    CC --> RA[Runtime adapter]
+    RA --> RP[ResultPacket]
+    RP --> FR[Fresh Lode review]
+    WM --> PX[Local / ArcadeDB / Markdown projections]
+```
+
+The feedback path is explicit: an accepted result may become reviewed lineage,
+the repository can be re-indexed, and a later graph may project that evidence.
+No result, projection, or runtime effect accepts itself.
+
+### Lode judgment with reproducible selected context
+
+The Context Compiler packs evidence selected for the task under an explicit budget.
+It records what was included, excluded, stale, missing, truncated, or unknown.
+The same canonical inputs, compiler version, traversal policy, and budget
+reproduce the same Context Capsule.
+
+The default budget is `32768` approximate tokens, and Lode may use any positive
+safe integer. There is no five-tier ladder or 512K policy ceiling. Actual provider
+context fit and output reserve still apply; the estimate is not a tokenizer proof.
+
+Lode may guide selection with exact repository paths, Product Canon keys,
+Observation IDs or bounded current graph anchors. The compiler supplies
+`evidenceGaps`, `omissions` and `uncertainty`, not an inclusion-proof gate.
+Lode decides whether more source evidence is needed. A persisted ExecutionContract
+records that separate judgment; it does not manufacture semantic acceptance.
+
+A Capsule is a derived execution input, not a second Canon. Digest or Canon drift
+fails closed; simple read/reason work does not create a Capsule by default.
+
+### Execution and recovery
+
+Managed execution follows this durable, reviewable sequence:
+
+```text
+WholePlanSnapshot
+  → ExecutionContract + ContextCapsule
+  → runtime or bounded worker
+  → ResultPacket
+  → Fresh Lode ReviewDecision
+  → accepted lineage or a revised plan
+```
+
+Provider loss does not require importing a transcript. `session-restore`
+reconstructs the current input from the exact P2 checkpoint and verified lineage.
+After an accepted result, `run-integrate-checkpoint` can bind that review to a new
+checkpoint only when Lode or the user explicitly supplies its recovery fields.
+
+With a trusted Host adapter, managed intentional compaction uses this contract.
+Packaged read-only context delivery does not perform this whole lifecycle:
+
+1. provider Lode writes or reuses the exact P2 direction before compaction;
+2. a provider-neutral Host adapter retains the one-time transport token outside
+   project Canon and performs the provider-owned compaction;
+3. Core restores P2 first, then verifies trusted real-user-turn evidence and
+   rejects drift, uncertain replay, or summary-derived recovery;
+4. the Host submits the checkpoint-bound continuation at most once, or Lode
+   continues as a disclosed fresh logical Lode from the verified artifacts.
+
+The normal UX is simply to continue the task. `lode_conversation_enter` is the
+automatic read-only entry projection used by the Skill, while the `compact-*`
+and `lode_compaction_lifecycle_step` surfaces are advanced adapter and diagnostic
+operations. Missing Host hooks do not create a setup gate and never block
+ordinary work.
+
+For a durable direction update, the Skill internally uses the read-only
+`lode_checkpoint_basis` and idempotent `lode_checkpoint_sync` surfaces. Core
+returns `created`, `reused`, `deferred`, or `conflict`; only the affected recovery
+path pauses, and none of these outcomes asks the user for checkpoint JSON.
+
+When recovery needs explanation, `lode_checkpoint_diagnose` gives one bounded,
+read-only answer: the current pointer, artifact-restore result, mechanical update
+availability, and the next Lode action. It writes no lock or cache and never calls
+another model merely to read status. Matching IDs and hashes prove artifact
+consistency, not that checkpoint prose still matches the latest user intent.
+Changed sequential reads require a retry; the result explicitly does not claim an
+atomic filesystem snapshot or ABA detection. Ordinary independent work remains
+available while only checkpoint-dependent work pauses on a real recovery fault.
+
+A newer real user turn wins over a pending continuation. See
+[Compaction recovery](compaction-recovery.md) and
+[Session recovery](session-recovery.md).
+
+### Product learning
+
+Everyday observations can remain non-persisted notes. Durable artifacts are
+created only when another Run, audit, product-state transition, or handoff needs
+them:
+
+```text
+Signal → Hypothesis → Initiative candidate → user ReviewDecision
+       → reviewed Initiative → accepted execution → OutcomeObservation
+```
+
+This is not one automatic promotion chain. Evidence remains evidence,
+hypotheses remain hypotheses, and a reviewed Initiative remains distinct from
+Product Canon. Lode judges risk and persistence directly, without a recommendation
+API or a note-formatting call:
+
+- Observe for read and reasoning work;
+- Session for one bounded, reversible result;
+- Run for dependent or recovery-sensitive work;
+- Explicit authority for Canon, initiative decisions or effects outside the current
+  approved scope. Updating a useful checkpoint within already approved direction
+  is not a new user decision.
+
+See [Product Operating Loop](product-operating-loop.md).
+Git ref and deployment plumbing is documented in
+[Release observation](release-observation.md).
+Per-environment and per-target application, failure, and rollback history is
+documented in [Delivery state observation](delivery-observation.md).
+
+<a id="runtime-coordination-reference"></a>
+
+## Runtime and coordination
+
+Claude Code, Codex, and OpenCode are projections over one `.lode/` authority. Runtime adapters
+observe capability, consume one exact authorization at most once, supervise the
+owned process tree, validate structured output, and keep operational state
+outside the project.
+
+Ordinary delegation uses the current Host's tasks, messages and progress.
+Lode provides context and ownership, combines successful contributions, inspects
+unknown effects, and handles only the unfinished part. There is no Lode role-token,
+generation, inbox or target-chain setup. Worker success cannot approve Canon or
+write recovery direction.
+
+Optional endpoint attachment first restores P2 direction, then attaches only if
+the exact live endpoint can be verified. If the endpoint is gone, Lode reports
+a fresh-logical-Lode fallback from the verified records. The portable export
+bridge is attachment-only; it retains one
+current snapshot, not a durable delivery mail service. Host-specific pane/socket/UI
+behavior stays outside Core. See [Runtime adapters](runtime-adapters.md)
+and [Host delegation and attachment](role-coordination.md).
+
+<a id="optional-graphdb-reference"></a>
+
+## Optional GraphDB
+
+Local storage is the default. GraphDB is not required for onboarding,
+context compilation, execution lineage, or recovery.
+
+ArcadeDB can be explicitly activated as a derived graph projection. Credentials
+are resolved only through environment-variable references and never enter
+project artifacts, graph identities, generated documents, or receipts. Remote
+activation must prove semantic conformance with the recoverable embedded graph.
+
+The JavaScript bridge is the semantic reference. When a verified native package
+is present, read-only prepared queries may use a content-addressed Go query-batch
+bridge; JavaScript still verifies the pointer, topology, traversal, request
+binding, and receipt. Set `LODE_AGENT_ARCADEDB_NATIVE_MODE` to:
+
+- `auto`: use the verified native bridge when available, otherwise disclose and
+  use the JavaScript reference path;
+- `off`: always use the JavaScript path;
+- `required`: fail when the verified native path is unavailable.
+
+Manifest, binary, and post-selection digest mismatches always fail closed.
+Exact children receive only configured credential-reference variables and a
+bounded OS, TLS, locale, and proxy allowlist. The compute worker itself remains
+network-free and authority-free. See
+[Graph projection adapter](graph-projection-adapter.md).
+
+<a id="design-principles-reference"></a>
+
+## Design principles
+
+Lode Agent Core Plugin is inspired by
+[Won6314/head-agent-core](https://github.com/Won6314/head-agent-core) and
+independently reworked as a provider-neutral plugin. It is not an official
+upstream release or a drop-in replacement. See the
+[source-grounded comparison](original-head-core-comparison.md).
+
+The implementation uses these principles across providers:
+
+- Lode owns the connected whole outcome;
+- the user retains consequential authority;
+- semantic sufficiency belongs to Lode; bounded verified context beats maximum context;
+- durable Canon survives temporary model sessions;
+- delegation stays bounded and non-authoritative;
+- completion requires connected primary evidence;
+- graphs are retrieval indexes, not unquestioned authority;
+- project meaning remains separate from runtime mechanisms.
+
+Read the upstream
+[Foundations](https://github.com/Won6314/head-agent-core/blob/ba220c55c14b8af947bf6d1fb9d27a620a2cf2aa/packages/core/docs/FOUNDATIONS.md)
+and
+[Technical Architecture](https://github.com/Won6314/head-agent-core/blob/ba220c55c14b8af947bf6d1fb9d27a620a2cf2aa/packages/core/docs/TECHNICAL_ARCHITECTURE.md)
+for the original design context.

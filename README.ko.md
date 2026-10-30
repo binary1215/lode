@@ -15,8 +15,7 @@ Codex, Claude Code, OpenCode에서 사용할 수 있습니다. 대화 압축 뒤
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![Runtime](https://img.shields.io/badge/runtime-Node.js%20%2B%20Go-00ADD8)
 
-현재 베타: **0.3.0-beta.66** — revision에 고정한 그래프 이력, 범위를 정한 계보
-조회와 정확한 기록 작업 집계를 제공합니다. [변경 이력](CHANGELOG.ko.md)을 확인하세요.
+베타 버전입니다. [변경 이력](CHANGELOG.ko.md)과 [설치 안내](#설치)를 확인하세요.
 로컬 `.lode` 기록은 플러그인 패키지에 포함하지 않습니다.
 
 [첫 요청](#first-request) · [설치](#설치) · [일상적인 사용](#일반-사용자는-어떻게-사용하나요) · [복구](#recovery)
@@ -42,61 +41,6 @@ Lode는 합의한 목표와 변경의 근거, 남은 할 일을 프로젝트 기
 
 Codex, Claude Code 또는 연동한 OpenCode에서 평소처럼 코딩 에이전트와 대화하면 됩니다. 별도 프로그램을 조작할 필요는 없습니다.
 
-<a id="first-request"></a>
-
-## 첫 요청은 이렇게 해보세요
-
-[플러그인을 설치하고 불러온 뒤](#설치) 프로젝트를 열고, 첫 요청에 실제 작업까지 함께 말하세요. 설정만 위한 별도 대화는 필요하지 않습니다.
-
-```text
-이 프로젝트에 Lode Agent Core를 사용해줘. 기존 상태가 있으면 이어서 재개하고,
-없으면 Core를 초기화한 뒤 이 로그인 오류의 원인을 찾아서 수정해줘.
-```
-
-로그인 오류 대신 원하는 작업을 넣으면 됩니다. Lode는 초기화와 검증된 복구 뒤에도 그 작업을 이어가므로 같은 대화에서 계속 요청할 수 있습니다.
-
-<details>
-<summary>아직 설치하지 않았다면 에이전트에게 요청하세요</summary>
-
-아직 설치하지 않았다면 코딩 에이전트에게 이 README와 함께 요청하세요.
-
-```text
-Codex에 Lode를 기존 공식 설치 경로로 설치해줘. 유효한 설치가 있으면 재사용하고,
-프로젝트 지침과 현재 연결은 보존해줘. 직접 할 수 있는 절차는 수행하고,
-내가 해야 할 부분만 알려줘. 그다음 이 프로젝트의 로그인 오류를 조사해줘.
-```
-
-Codex와 작업 내용을 사용하는 클라이언트와 목표로 바꾸면 됩니다. 이미 설치된
-Skill 없이도 이 README에서 시작할 수 있습니다. 에이전트는 현재 권한으로 가능한
-절차를 수행하고 결과를 확인한 뒤 원래 작업을 이어갑니다. Host 승인·로그인·수동
-재시작은 사용자가 해야 할 수 있으며 앱을 임의로 재시작하지 않습니다.
-
-</details>
-
-## 일반 사용자는 어떻게 사용하나요?
-
-[첫 요청 예시](#first-request)처럼 원하는 결과를 말하고, 이후에도 자연어로 작업을 요청하세요.
-
-```text
-이 변경에 필요한 코드와 결정 근거만 준비한 뒤 진행해줘.
-```
-
-```text
-전체 계획은 하나로 유지하고, 서로 독립적인 부분만 워커로 나눠 병렬로 진행해줘.
-```
-
-Lode는 보통 직접 작업합니다. 위임이 도움이 되면 현재 도구의 워커에게 명확한 범위를 주고 결과를 확인해 통합합니다. 도구가 위임을 지원하지 않으면 직접 또는 순차로 진행합니다. 일반 위임에 관리형 Run, 워커 원장이나 추가 승인은 필요하지 않습니다.
-
-### 대화는 독립적으로, 방향은 함께 유지합니다
-
-독립 작업은 각자의 작업 세션에서 진행하면서 프로젝트의 공통 목표와 현재 제약을 공유할 수 있습니다. 새 대화를 시작해도 다른 작업의 진행 상황은 유지됩니다. 사용자가 세션 ID를 관리하거나 경로 양식을 채울 필요는 없습니다. [그래프 탐색과 독립 Session](docs/ko/graph-discovery.md)을 참고하세요.
-
-대화 압축이나 공급자 교체 뒤에는 대화 진입 시 저장된 작업 방향을 확인합니다. 사용자가 복구를 요청하거나 체크포인트 ID를 줄 필요는 없습니다.
-
-복구는 저장된 기록을 사용하며, 저장하지 않은 대화를 수집하지 않습니다. Host의 맥락 전달과 관리형 작업 재개는 지원 범위가 다릅니다. [작업 맥락과 Host 지원](docs/ko/session-work-context.md), [기능 현황](#기능-현황)을 확인하세요.
-
-JSON을 쓰거나 GraphDB를 조작하거나 토큰 단계를 고르거나 MCP 호출을 결정할 필요는 없습니다. 제품 의미 승인, 모호한 범위 결정, 중요한 외부 변경처럼 실제 결정권이 사용자에게 있는 경우에만 Lode가 확인합니다. 일반 조사와 작은 승인된 수정에 별도 절차를 더하지 않습니다.
-
 ## 왜 사용해야 하는가
 
 프로젝트가 한 번의 대화보다 오래 이어질수록 도움이 됩니다.
@@ -107,7 +51,9 @@ JSON을 쓰거나 GraphDB를 조작하거나 토큰 단계를 고르거나 MCP �
 
 저장한 목표, 결정, 진행 상황과 다음 단계에서 작업을 이어갑니다. 복구할 때는 현재 제약을 확인하며, 오래된 다음 단계보다 사용자의 새 요청이 우선합니다. 체크포인트는 의미 있는 변경이나 인수인계 때 남깁니다. 짧은 조사는 Run이나 체크포인트 없이 필요한 이유와 불확실성만 남길 수 있습니다. 어느 쪽이든 매 턴 기록을 만들 필요는 없습니다.
 
-복구 범위는 기록된 작업 방향이므로 저장하지 않은 대화는 사라질 수 있습니다. Host별 지원은 [대화 압축 복구](docs/ko/compaction-recovery.md), [Session 복구](docs/ko/session-recovery.md), [작업 맥락과 Host 지원](docs/ko/session-work-context.md)을 참고하세요.
+복구 범위는 기록된 작업 방향이므로 저장하지 않은 대화는 사라질 수 있습니다.
+지원 Hook이 제공하는 제한된 prompt/final-response 참조는 인용된 P5 맥락이며,
+전체 대화록이나 현재 사용자 승인의 증거가 아닙니다. Host별 지원은 [대화 압축 복구](docs/ko/compaction-recovery.md), [Session 복구](docs/ko/session-recovery.md), [작업 맥락과 Host 지원](docs/ko/session-work-context.md)을 참고하세요.
 
 ### 범위가 명확하고 검토 가능한 컨텍스트를 전달합니다
 
@@ -139,6 +85,8 @@ Git은 바뀐 내용을 보여줍니다. Lode는 의도한 결과, 허용 범위
 한 번 끝나는 스크립트나 대화 기록만으로 충분한 짧은 실험이라면 필요하지 않을 수 있습니다. Lode가 모델 출력을 자동으로 신뢰하게 해주는 것은 아니며, 그래프나 DB가 제품의 의미를 결정하지도 않습니다.
 
 ## 설치
+
+Node.js 24 이상이 필요합니다. 현재 사용하는 클라이언트의 설치 명령을 선택하세요.
 
 사용하는 도구의 설치 경로 하나를 선택하세요. Codex와 Claude Code 패키지는 대화형 Skill, MCP 서버, 지원 호스트용 검증된 네이티브 번들을 포함합니다. 실행 시에는 현재 호스트와 일치하는 바이너리만 사용합니다. OpenCode는 아래 프로젝트 설정을 따르며, 일반 대화에 CLI 설치가 필요한 것은 아닙니다.
 
@@ -202,8 +150,10 @@ Claude Code는 플러그인을 버전별 캐시에 복사하고 `${CLAUDE_PLUGIN
 `--runtime claude`, Codex는 `--runtime codex`로 선택한 클라이언트만 초기화합니다.
 여러 통합을 원할 때만 쉼표로 조합합니다. 마켓플레이스로 설치한 Claude Code 사용자는 번들 Skill에 같은
 초기화를 요청할 수 있습니다. 프로젝트에 해당 파일이 없을 때만 Claude Code용
-`CLAUDE.md`와 `.mcp.json`, Codex용 `AGENTS.md`, OpenCode용 `opencode.json`을
-만듭니다. 기존 파일은 보존하고 직접 통합할 때 쓸 생성 파일은 선택된 정본 루트의
+`CLAUDE.md`, Codex용 `AGENTS.md`, OpenCode용 `opencode.json`을 만듭니다.
+검증된 플러그인 MCP 연결이 있으면 중복 프로젝트 `.mcp.json`을 만들지 않습니다.
+standalone Claude 초기화는 검증된 로컬 launcher나 정확한 절대 패키지 경로로
+누락된 파일을 만들 수 있습니다. 기존 파일은 보존하고 직접 통합할 때 쓸 생성 파일은 선택된 정본 루트의
 `.lode/generated/` 또는 기존 `.head/generated/`에 둡니다.
 
 OpenCode 로컬 설정은 절대 Node 바이너리나 설치 경로 대신 `node`와
@@ -215,8 +165,9 @@ Codex는 플러그인 상대 `.mcp.json`과 hook의 `${PLUGIN_ROOT}`를 사용�
 수정된 설정을 가로채지는 않습니다.
 설치 경로가 바뀌면 해당 PC에 Lode를 설치한 뒤 에이전트에게 기존 Project 재개를
 요청하세요. 같은 정본 Project 경로에서는 Project·Session ID와 런타임 구성을
-유지하며 호스트 설치 정체성을 갱신합니다. 공유 실행 파일은 이식 가능한 형태로
-남습니다. 사용자 소유 `opencode.json`이나 `opencode.jsonc`는 그대로 두고,
+유지하며 호스트 설치 정체성을 갱신합니다. 패키지 실행 경로는 클라이언트 placeholder를 쓰며,
+standalone Claude 경로는 해당 기기에 종속될 수 있습니다.
+사용자 소유 `opencode.json`이나 `opencode.jsonc`는 그대로 두고,
 필요한 연결을 확인할 생성본을 제공합니다. init·resume·status는 instructions와
 MCP를 각각 로컬 설정됨·누락·비활성·충돌·여러 항목·미확인으로 구분합니다.
 이미 충분한 AGENTS 연결이나 기존 서버 별칭은 중복 추가하지 않습니다.
@@ -238,8 +189,9 @@ Codex에는 프로젝트 지침을 읽도록 안내합니다. 거절하면 파�
 작업을 막거나 설정을 다시 제안하지 않습니다. 사용하는 Host의 설치 안내를
 따르세요. 지침을 생성했다는 사실만으로 실행 중인 Host가 읽었다고 볼 수는 없습니다.
 
-초기화 후 프로젝트에서 `claude`나 `opencode`를 시작하세요. Claude Code는
-공유 `lode` 서버를 처음 사용할 때 프로젝트 MCP 승인을 요청합니다. 런타임별
+초기화 후 프로젝트에서 `claude`나 `opencode`를 시작하세요. 선택한 MCP 연결에 대한
+Host의 승인 정책을 따릅니다. 검증된 플러그인 연결이 있으면 중복 프로젝트 서버를
+추가할 필요가 없습니다. 런타임별
 지시·설정 파일은 프로젝트 기록을 읽어 만든 결과입니다. 프로젝트 정본은 선택된
 `.lode/` 또는 기존 `.head/` 하나로 유지됩니다.
 
@@ -303,9 +255,74 @@ claude plugin update head-agent-core@head-agent-plugin
 
 </details>
 
+<a id="first-request"></a>
+
+## 첫 요청은 이렇게 해보세요
+
+[플러그인을 설치하고 불러온 뒤](#설치) 프로젝트를 열고, 첫 요청에 실제 작업까지 함께 말하세요. 설정만 위한 별도 대화는 필요하지 않습니다.
+
+```text
+이 프로젝트에 Lode Agent Core를 사용해줘. 기존 상태가 있으면 이어서 재개하고,
+없으면 Core를 초기화한 뒤 이 로그인 오류의 원인을 찾아서 수정해줘.
+```
+
+로그인 오류 대신 원하는 작업을 넣으면 됩니다. Lode는 초기화와 검증된 복구 뒤에도 그 작업을 이어가므로 같은 대화에서 계속 요청할 수 있습니다.
+
+<details>
+<summary>아직 설치하지 않았다면 에이전트에게 요청하세요</summary>
+
+아직 설치하지 않았다면 코딩 에이전트에게 이 README와 함께 요청하세요.
+
+```text
+Codex에 Lode를 기존 공식 설치 경로로 설치해줘. 유효한 설치가 있으면 재사용하고,
+프로젝트 지침과 현재 연결은 보존해줘. 직접 할 수 있는 절차는 수행하고,
+내가 해야 할 부분만 알려줘. 그다음 이 프로젝트의 로그인 오류를 조사해줘.
+```
+
+Codex와 작업 내용을 사용하는 클라이언트와 목표로 바꾸면 됩니다. 이미 설치된
+Skill 없이도 이 README에서 시작할 수 있습니다. 에이전트는 현재 권한으로 가능한
+절차를 수행하고 결과를 확인한 뒤 원래 작업을 이어갑니다. Host 승인·로그인·수동
+재시작은 사용자가 해야 할 수 있으며 앱을 임의로 재시작하지 않습니다.
+
+</details>
+
+## 일반 사용자는 어떻게 사용하나요?
+
+[첫 요청 예시](#first-request)처럼 원하는 결과를 말하고, 이후에도 자연어로 작업을 요청하세요.
+
+```text
+이 변경에 필요한 코드와 결정 근거만 준비한 뒤 진행해줘.
+```
+
+```text
+전체 계획은 하나로 유지하고, 서로 독립적인 부분만 워커로 나눠 병렬로 진행해줘.
+```
+
+Lode는 보통 직접 작업합니다. 위임이 도움이 되면 현재 도구의 워커에게 명확한 범위를 주고 결과를 확인해 통합합니다. 도구가 위임을 지원하지 않으면 직접 또는 순차로 진행합니다. 일반 위임에 관리형 Run, 워커 원장이나 추가 승인은 필요하지 않습니다.
+
+이런 요청도 할 수 있습니다.
+
+| 필요한 일 | 요청 예시 |
+| --- | --- |
+| 남은 작업에서 재개 | “저장된 Todo에서 이어서 진행하고, 아직 열린 일을 알려줘.” |
+| 계획 갱신 | “구현과 검수 결과를 합치고, 새로 알게 된 사실에 맞춰 다음 계획을 조정해줘.” |
+| 변경 이유 확인 | “이 변경의 기록된 이유와 당시 소스의 전후 차이를 보여줘.” |
+
+모두 일반적인 요청입니다. 저장 양식이나 매 작업 검수 의식, 새로운 승인 단계를 추가하지 않습니다.
+
+### 대화는 독립적으로, 방향은 함께 유지합니다
+
+독립 작업은 각자의 작업 세션에서 진행하면서 프로젝트의 공통 목표와 현재 제약을 공유할 수 있습니다. 새 대화를 시작해도 다른 작업의 진행 상황은 유지됩니다. 사용자가 세션 ID를 관리하거나 경로 양식을 채울 필요는 없습니다. [그래프 탐색과 독립 Session](docs/ko/graph-discovery.md)을 참고하세요.
+
+대화 압축이나 공급자 교체 뒤에는 대화 진입 시 저장된 작업 방향을 확인합니다. 사용자가 복구를 요청하거나 체크포인트 ID를 줄 필요는 없습니다.
+
+복구는 저장된 기록을 사용하며 미저장 대화 전체의 보존을 보장하지 않습니다. 지원 Hook이 제공하는 제한된 prompt/final-response 참조는 인용된 맥락으로 활용할 수 있습니다. Host의 맥락 전달과 관리형 작업 재개는 지원 범위가 다릅니다. [작업 맥락과 Host 지원](docs/ko/session-work-context.md), [기능 현황](#기능-현황)을 확인하세요.
+
+JSON을 쓰거나 GraphDB를 조작하거나 토큰 단계를 고르거나 MCP 호출을 결정할 필요는 없습니다. 제품 의미 승인, 모호한 범위 결정, 중요한 외부 변경처럼 실제 결정권이 사용자에게 있는 경우에만 Lode가 확인합니다. 일반 조사와 작은 승인된 수정에 별도 절차를 더하지 않습니다.
+
 ## 기능 현황
 
-아래 상태는 소스 배포판의 구현 범위를 나타냅니다. 특정 Host에 설치해 실제 모델까지 검증했다는 뜻은 아닙니다. 저장된 맥락 전달에는 미저장 대화 수집이나 관리형 자동 작업 재개가 포함되지 않습니다.
+아래 상태는 소스 배포판의 구현 범위를 나타냅니다. 특정 Host에 설치해 실제 모델까지 검증했다는 뜻은 아닙니다. 저장된 맥락 전달은 미저장 대화 전체의 보존이나 관리형 자동 작업 재개를 보장하지 않습니다. 지원 Hook의 제한된 참조는 인용된 맥락으로 유지합니다.
 
 <details>
 <summary>구현·실험·미출시 기능</summary>
@@ -409,487 +426,45 @@ claude plugin update head-agent-core@head-agent-plugin
 
 ## CLI, 자동화와 고급 설정
 
-<details>
-<summary>CLI 명령과 컨텍스트 준비</summary>
+<a id="대화형-context-준비와-미리보기"></a>
+<a id="대화-우선-경로"></a>
+<a id="선택적-product-프로필-cli-경로"></a>
+<a id="소스-범위"></a>
 
-일반 사용자는 위의 대화 경로를 쓰면 됩니다. CLI는 스크립트, CI, 오프라인 복구나
-Host 연동에서 안내 대화 없이 같은 결정론적 Core 동작을 실행할 때 사용합니다.
+자동화에는 [Core 명령 참조](docs/ko/README.md#command-reference)를 참고하세요.
 
-기본 경로는 공급자 중립 Lode 헌법과 고정 Project/Session 복구 앵커만
-초기화합니다.
-
-```powershell
-lode-agent init C:\path\to\project --runtime claude,codex,opencode
-```
-
-이 경로는 ID를 보존하고 가능한 기존 관측 자료의 경량 색인을 갱신하면서
-`core_ready`를 반환합니다. 제품 의미 추론, 관리 World 구성과 문서 거버넌스는
-선택 사항으로 남습니다. 같은 범위 제한 상태는 언제든 확인할
-수 있습니다.
-
-```powershell
-lode-agent status C:\path\to\project
-```
-
-정상 상태는 한 줄로 보여줍니다. 예외가 있으면 담당 주체, 이유, 영향을 받는
-작업과 다음 행동을 표시합니다. `doctor` 또는 `--json`에서는 Core, 선택적 Product
-관리, Context 준비도, 실행 중인 CLI·라이브러리와 구성된 패키지의 버전, 기술
-세부 정보를 확인할 수 있습니다. 이 패키지 조회만으로 Host 도구 로딩을 확인하지는
-않습니다. 구조화된 결과는 `readiness.core`, `readiness.product`,
-`readiness.context`를 나누어 보여주고, 지금 수행할 `nextAction` 하나와 선택 기능의
-실제 선행조건을 표시합니다. Product는 `available-not-activated`, 관리형 bounded
-worker는 `requires-session-or-run-authorization`으로 표시됩니다. 일반 독립 검토는
-현재 Host의 위임을 쓰며, 워커 수만으로 Run을 요구하지 않습니다. 이 조회 결과는
-저장하지 않으며 Product 활성화, Run 생성, 권한 부여나 드리프트 복구를 일으키지
-않습니다. `profile`은 한 번의 초기화·재개 범위를 선택하는 값이며 숨은 프로젝트
-모드가 아닙니다.
-
-최상위 상태는 `core_ready`, `product_evidence_required`, `product_review_required`,
-`product_ready`, `product_refresh_required`, `core_drifted` 중 하나입니다. 세부 온보딩
-상태는 `readiness.product.onboardingStatus`에 남습니다.
-
-### 대화형 Context 준비와 미리보기
-
-대화에서는 원하는 작업을 한 번만 설명하면 됩니다. 일반 읽기·수정에는 필요한
-파일을 직접 확인합니다. 선택한 맥락을 재현해 전달하거나 지속 가능한 Run과
-복구에 Capsule이 필요할 때만 Lode Skill이 `lode_context_prepare`를 호출합니다.
-저장소 내용을 읽고 필요한 `EvidenceNeed[]`를 작성한 뒤 `lode_context_preview`로
-이어갑니다. 선택적 World 근거가 없거나 오래됐어도 직접 작업은 계속하며,
-필요성이 확인되면 예산을 자동으로 늘립니다. 최종 미리보기는 포함된 근거의 종류,
-제외 이유와 남은 불확실성을 설명 카드로 보여줍니다. 추가 절차 없이 기계적 확인
-범위는 Core가, 의미적 충분성은 Lode가 담당합니다.
-
-기본 MCP 목록은 Core 작업, 복구, 기존 작업의 상태 조회와 취소에 집중합니다.
-Lode는 선택적 Product·Graph·Observation·Context 스키마를 `lode_tools_discover`로
-찾고, 반환된 읽기 전용 또는 효과 실행 경로를 호출합니다. 사용자가 기능 잠금을
-해제하거나 매번 프로필을 고르거나 JSON을 작성할 필요는 없습니다. 탐색이 권한을
-부여하지는 않으며 기존 작업의 권한·효과 검사는 그대로 적용됩니다.
-
-자동화와 진단을 위해서는 같은 Core 동작을 CLI에서도 사용할 수 있습니다.
-
-```powershell
-lode-agent context-prepare C:\path\to\project --task "<task>"
-```
-
-이 작업 전용 P4 조회는 현재 Project·World Model·GraphSnapshot의 연결, 범위가
-제한된 어휘 기반 탐색 자료와 정확한 노드 식별자를 반환하며 결과를 저장하지
-않습니다. 사용자는 `EvidenceNeed[]`를 작성하지 않습니다. Lode가 저장소를 읽고
-의미를 판단해 구조화된 제안을 만든 뒤 기존 미리보기 검증기에 전달합니다.
-Core는 근거의 종류나 기준 노드를 고르지 않으며, 어휘 기반 후보에 없다는 이유로
-관련 없는 자료로 단정하지 않습니다.
-
-Product/World가 활성화되지 않아도 준비 결과는
-`ready_for_head_semantic_assessment`입니다. 저장소 메타데이터가 없음을 알리고
-사용 가능한 정리된 맥락을 제공합니다. Lode는 현재 원본 소스를 직접 조사할 수
-있습니다. 준비 과정은 Product를 활성화하거나 저장소를 인덱싱하거나 복구 기록을
-만들지 않습니다. Product/World 작업은 해당 작업에 필요할 때만 선택합니다.
-
-고급 자동화에서는 Lode가 작성한 구조화 입력으로 미리보기를 직접 호출할 수 있습니다.
-
-```powershell
-lode-agent context-preview C:\path\to\project `
-  --task "재시도에서도 이 작업 문구를 정확히 유지" `
-  --budget 32768 `
-  --evidence-needs .\evidence-needs.json
-```
-
-CLI는 기본적으로 결과를 짧게 보여줍니다. `--json`을 추가하면 선택 맥락, 출처,
-누락과 불확실성을 확인할 수 있습니다. 결과가 유용하면 준비 또는 미리보기 호출
-하나로 충분하며, 별도 미리보기는 선택 사항입니다.
-
-`ready_for_head_semantic_assessment`는 Lode가 선택한 맥락을 판단하라는 뜻이며,
-도구가 완전성을 증명했다는 뜻은 아닙니다. Lode는 필요한 원본 본문을 읽고
-반환된 그래프 기준 노드를 `details: true`로 확대할 수 있습니다. World가 없거나
-오래됐음을 알리며 현재 소스는 직접 사용할 수 있습니다. 고정 예산 단계, 포함
-증명서나 추가 사용자 승인은 요구하지 않습니다.
-
-### 대화 우선 경로
-
-번들 `lode-agent-onboarding` Skill은 Product 온보딩의 권장 대화형 진입점입니다.
-현재 상태를 검사하고 저장소 범위나 저장 방식처럼 중요한 선택만 질문합니다.
-범위가 정해진 최신 근거를 읽고 Core 검증용 제안을 제출한 뒤, 근거가 연결된
-후보를 보여줍니다. Product Canon을 바꾸기 전에는 명시적 검토를 거칩니다.
-이 Skill은 `product` 프로필을 명시적으로 선택하며 공급자의 제안은 P3 근거로 남습니다.
-
-### 선택적 Product 프로필 CLI 경로
-
-동일한 프로젝트 및 Lode Session 식별자를 초기화하거나 재개합니다.
-
-```powershell
-lode-agent init C:\path\to\project --runtime claude,codex,opencode --profile product
-lode-agent onboarding-status C:\path\to\project
-```
-
-구조화된 사용자 설명이 없으면 처음 실행은 `awaiting-evidence`를 반환합니다.
-Core는 심볼 이름에서 제품 개념을 만들어 내지 않습니다. 대화 Skill은 최신 근거에
-따른 의미 제안을 제출하며, CLI 사용자는 같은 `semanticProposal`을 `--input`에
-넣을 수 있습니다. Core가 정확한 SourceSnapshot, 경로, 줄, 선택적 심볼과 Product
-Model 참조를 검증한 뒤 변경 불가능한 후보 집합 ID를 반환합니다. 검토 전에 내용을 확인하세요.
-
-```powershell
-$onboarding = lode-agent onboarding-status C:\path\to\project | ConvertFrom-Json
-lode-agent onboarding-candidates C:\path\to\project `
-  --candidate-set $onboarding.state.candidateSetId
-```
-
-증거를 검토한 뒤에만 `onboarding-review.json`을 만드세요. 아래의 간단한
-예시는 전체 부트스트랩 후보를 승인합니다. 이름 변경, 분리, 병합 또는 제외할
-후보가 있다면 선택 승인이나 수정이 더 안전합니다.
-
-```json
-{
-  "candidateSetId": "onboarding-candidates-<id>",
-  "disposition": "accept-all",
-  "rationale": "증거가 연결된 모든 후보를 검토했으며 이 부트스트랩 후보 집합을 채택합니다."
-}
-```
-
-결정을 적용하고 생성된 뷰를 검증합니다.
-
-```powershell
-lode-agent onboarding-review C:\path\to\project --input .\onboarding-review.json
-lode-agent graph-query C:\path\to\project --query "<task>"
-lode-agent world-status C:\path\to\project
-lode-agent context-preview C:\path\to\project `
-  --task "검토된 Feature 하나의 구현 증거 찾기" --budget 32768
-lode-agent world-docs-build C:\path\to\project
-lode-agent resume C:\path\to\project --runtime claude,codex,opencode --profile product
-```
-
-`accept-all`은 전체 후보를 직접 확인한 경우 사용할 수 있지만 기본 권장
-방식은 아닙니다. 검토에서는 의존성이 완전한 일부 후보를 승인하거나, 후보
-집합을 수정·거부하거나, 추가 증거를 요청하거나, 미해결 개념을 명시적인
-Unknown으로 남길 수 있습니다. 전체 계약은
-[온보딩 문서](docs/ko/onboarding.md)를 참고하세요.
-
-### 소스 범위
-
-생성 결과물, 벤더 의존성, 복사된 프로젝트, 대형 픽스처 또는 모델 번들이
-포함된 저장소에서는 첫 인덱싱 전에 프로젝트 기준 관찰 경계를 정의하세요.
-
-```json
-{
-  "mode": "existing",
-  "sourceScope": {
-    "includeRoots": ["src", "packages"],
-    "excludeRoots": ["dist", "vendor", "generated", "fixtures"]
-  }
-}
-```
-
-`lode-agent init ... --profile product --input .\onboarding.json`으로 전달합니다. Source Scope는
-관찰 범위만 제어합니다. Product Canon을 정의하거나 후보를 승인하거나 실행
-권한을 부여할 수 없습니다.
-
-</details>
+작업 맥락 예제는 [Context 준비](docs/ko/context-compiler.md#context-examples), 선택적 Product 설정은 [온보딩 예제](docs/ko/onboarding.md#product-cli-examples)를 참고하세요.
 
 ## 핵심 모델
 
-<details>
-<summary>권한, 컨텍스트와 복구 계약</summary>
+<a id="아키텍처-개요"></a>
+<a id="lode가-의미를-판단하고-compiler가-선택-맥락을-제공하는-컨텍스트"></a>
+<a id="실행과-복구"></a>
+<a id="제품-학습"></a>
 
-Lode는 의미, 복구, 증거, 뷰, 효과를 분리하여 하나의 표현이 다른 표현의
-권한을 상속하지 못하게 합니다.
-
-| 평면 | 소유 대상 | 예시 | 부여하지 않는 권한 |
-| --- | --- | --- | --- |
-| P1 규범적 권한 | 승인된 의미와 명시적 결정 | Product Canon, ReviewDecision | 그래프·결과·메시지에서 승인을 추론하는 권한 |
-| P2 복구와 계보 | 공급자와 독립적인 프로젝트 방향 | Session, Run, 계획, Capsule, 계약, 체크포인트 | 요약이나 결과로 방향을 다시 쓰는 권한 |
-| P3 증거 | 검토 가능한 관찰과 결과 | 후보, ResultPacket, ChangeSet, 영수증 | 자기 승격이나 체크포인트 작성 권한 |
-| P4 파생 뷰 | 재현 가능한 검색 및 사람용 뷰 | GraphSnapshot, 탐색 결과, Markdown, 연속성 뷰 | Canon 변경이나 유일한 복구 원천이 될 권한 |
-| P5 운영 효과 | 호스트 로컬 실행과 전달 | PID, 임대, 엔드포인트, 받은 편지함, 전달 영수증 | 실행·검토·승격·복구 권한 |
-
-배포와 호스트 통합은 이 계약을 패키징하거나 실행할 뿐, 제품 의미의 여섯
-번째 원천이 되지 않습니다. 전체 실행 가능 경계는
-[권한 평면 문서](docs/ko/authority-plane-contract.md)에 설명되어 있습니다.
-
-기본 원칙과 Record/Graph의 공식 경계는
-[공급자 중립 Lode 헌법](docs/ko/lode-constitution.md)에 설명되어 있습니다.
-
-### 아키텍처 개요
-
-```mermaid
-flowchart LR
-    U[사용자 목표] --> H[전체 계획을 소유하는 Lode]
-    PC[Product Canon] --> WM[World Model + GraphSnapshot]
-    RE[저장소 증거] --> WM
-    H --> CC[Context Compiler]
-    WM -->|범위가 제한된 증거| CC
-    CC --> RA[Runtime adapter]
-    RA --> RP[ResultPacket]
-    RP --> FR[Fresh Lode 검토]
-    WM --> PX[Local / ArcadeDB / Markdown 프로젝션]
-```
-
-피드백 경로도 명시적입니다. 승인된 결과는 검토된 계보가 될 수 있고,
-저장소를 다시 인덱싱할 수 있으며, 이후 그래프가 그 증거를 투영할 수
-있습니다. 결과, 프로젝션 또는 런타임 효과가 스스로를 승인할 수는 없습니다.
-
-### Lode가 의미를 판단하고 Compiler가 선택 맥락을 제공하는 컨텍스트
-
-Context Compiler는 명시적인 예산 안에서 작업용으로 선택한 증거를 묶습니다.
-포함·제외·오래됨·누락·잘림·미확인 항목을 기록합니다. 동일한 정본 입력,
-컴파일러 버전, 탐색 정책, 예산은 동일한 Context Capsule을 재현합니다.
-
-예산의 기본값은 약 `32768` 토큰이며 Lode가 양의 안전한 정수를 선택할 수 있습니다.
-고정된 다섯 계층이나 512K 정책 상한은 없습니다. 실제 공급자의 컨텍스트 크기와
-출력 예약분은 계속 적용되며, 근사치가 토크나이저 기준의 적합성을 증명하지는 않습니다.
-
-Lode는 정확한 저장소 경로, Product Canon 키, Observation ID나 범위가 정해진
-현재 그래프의 기준 노드로 자료 선택을 안내할 수 있습니다. Compiler는 포함을
-인증하는 대신 `evidenceGaps`, `omissions`, `uncertainty`를 제공합니다. 추가 소스가
-필요한지는 Lode가 판단합니다. 저장된 ExecutionContract는 그 판단을 기록하며
-의미적 수용을 기계적으로 만들어 내지는 않습니다.
-
-Capsule은 파생된 실행 입력이지 두 번째 Canon이 아닙니다. 다이제스트 또는
-Canon 드리프트는 실패 폐쇄되며, 단순한 읽기·추론 작업은 기본적으로
-Capsule을 만들지 않습니다.
-
-### 실행과 복구
-
-관리형 실행은 다음과 같이 기록과 검토가 남는 순서를 따릅니다.
-
-```text
-WholePlanSnapshot
-  → ExecutionContract + ContextCapsule
-  → 런타임 또는 범위가 제한된 워커
-  → ResultPacket
-  → Fresh Lode ReviewDecision
-  → 승인된 계보 또는 수정된 계획
-```
-
-공급자 손실 시 대화 기록을 가져올 필요가 없습니다. `session-restore`는 정확한
-P2 체크포인트와 검증된 계보에서 현재 입력을 재구성합니다. 결과가 승인된
-뒤에도 `run-integrate-checkpoint`는 Lode 또는 사용자가 복구 필드를 명시적으로
-제공한 경우에만 그 검토를 새 체크포인트와 연결할 수 있습니다.
-
-신뢰하는 Host 어댑터가 있을 때 관리형 컨텍스트 압축은 다음 계약을 따릅니다.
-패키지의 읽기 전용 맥락 전달만으로 이 전체 절차를 수행하지는 않습니다.
-
-1. 공급자 측 Lode가 압축 전에 정확한 P2 방향을 작성하거나 재사용합니다.
-2. 공급자 중립 Host 어댑터가 일회용 전달 토큰을 프로젝트 Canon 밖에 보관하고
-   공급자 소유의 압축을 수행합니다.
-3. Core는 P2를 먼저 복원한 뒤 신뢰할 수 있는 실제 사용자 턴 근거를 검사합니다.
-   기준 변경, 불확실한 재실행과 요약 기반 복구는 거부합니다.
-4. Host가 체크포인트에 결속된 작업 재개 요청을 최대 한 번 제출하거나, Lode가
-   검증된 기록에서 새로운 논리적 Lode로 계속함을 명시합니다.
-
-일반 사용자는 작업을 계속 말하면 됩니다. Skill은 읽기 전용
-`lode_conversation_enter`로 자동 진입하고, `compact-*`와
-`lode_compaction_lifecycle_step`은 고급 어댑터와 진단 작업에 사용합니다.
-Host Hook이 없어도 추가 설정을 요구하거나 일반 작업을 막지 않습니다.
-
-방향을 지속 가능한 기록으로 갱신할 때 Skill은 내부적으로 읽기 전용
-`lode_checkpoint_basis`와 멱등적인 `lode_checkpoint_sync`를 사용합니다. Core는
-`created`, `reused`, `deferred`, `conflict` 중 하나를 반환하며, 필요한 경우 해당 복구
-경로만 멈춥니다. 어느 결과도 사용자에게 체크포인트 JSON을 요구하지 않습니다.
-
-복구 상태를 설명해야 할 때 `lode_checkpoint_diagnose`는 현재 포인터, 기록 복원
-결과, 기계적 갱신 가능 여부와 다음 Lode 동작을 범위가 제한된 읽기 전용 응답으로
-보여줍니다. 잠금이나 캐시를 쓰지 않고, 상태를 읽기 위해 다른 모델을 호출하지도
-않습니다. ID와 해시 일치는 기록의 정합성을 증명하며 체크포인트 문장이 최신
-사용자 의도를 반영한다는 뜻은 아닙니다. 순차 읽기 중 상태가 바뀌면 다시 읽어야
-합니다. 원자적 파일시스템 스냅샷이나 ABA 감지는 보장하지 않습니다. 실제 복구
-결함이 있어도 체크포인트 의존 작업만 멈추고 독립 작업은 계속할 수 있습니다.
-
-사용자의 새 요청은 대기 중인 작업 재개보다 우선합니다. 자세한 내용은
-[컨텍스트 압축 복구](docs/ko/compaction-recovery.md)와
-[Session 복구](docs/ko/session-recovery.md)를 참고하세요.
-
-### 제품 학습
-
-일상적인 관찰은 지속하지 않는 메모로 남길 수 있습니다. 다른 Run, 감사,
-제품 상태 전이 또는 인수인계에서 필요한 경우에만 영구 아티팩트를 만듭니다.
-
-```text
-Signal → Hypothesis → Initiative 후보 → 사용자 ReviewDecision
-       → 검토된 Initiative → 승인된 실행 → OutcomeObservation
-```
-
-이 흐름은 하나의 자동 승격 사슬이 아닙니다. 증거는 증거로, 가설은 가설로
-남고, 검토된 Initiative도 Product Canon과 구분됩니다.
-Lode가 추천 API나 메모 형식화 호출 없이 위험과 필요한 지속성을 직접 판단합니다.
-
-- Observe: 읽기와 추론 작업
-- Session: 하나의 범위가 제한된 가역적 결과
-- Run: 서로 의존하거나 복구 민감한 작업
-- 명시적 권한: Canon·Initiative 결정 또는 현재 승인 범위 밖의 효과 실행.
-  기존 승인 방향 안에서 유용한 checkpoint를 갱신하는 것은 새 사용자 결정이 아닙니다.
-
-자세한 내용은 [Product Operating Loop](docs/ko/product-operating-loop.md)를
-참고하세요.
-Git ref와 배포 근거 수집은 [Release observation](docs/ko/release-observation.md)에,
-환경별·대상별 적용, 실패와 롤백 이력은
-[전달 상태 관측](docs/ko/delivery-observation.md)에 설명되어 있습니다.
-
-</details>
+[권한·맥락·복구 계약](docs/ko/architecture.md#detailed-core-model)를 참고하세요.
 
 ## 그래프와 기록
 
-<details>
-<summary>스냅샷, 이력과 그래프 질의</summary>
+<a id="그래프와-기록의-경계"></a>
+<a id="그래프-질의"></a>
 
-Graph Explorer의 `graph-explorer <project-directory>` CLI는 플러그인 설치 폴더가
-아닌 대상 프로젝트의 근거를 읽기 전용 HTML 스냅샷으로 만듭니다. 에이전트에게 기존
-CLI 실행을 요청할 수 있으며, 별도 HTML 내보내기 MCP 도구는 없습니다. 실시간 화면은
-아닙니다. 검색·명시적 과거 기록·공유 옵션은 [Graph Explorer](docs/ko/graph-explorer.md)를 참고하세요.
-
-새 프로젝트 정보는 `lode_project_graph`의 범위가 정해진 관계 조회나 충분한 동일
-기준 결과의 재사용으로 찾습니다. 작업과 Product 관점은 같은 원본을 참조하며,
-온전한 과거 자료의 리비전, 출처, 확인 범위와 후보·거절 상태도 유지합니다.
-없거나 실패한 층은 원본 탐색으로 보완하며 전체 World의 최신성, Product 승인,
-Run/Capsule이나 ArcadeDB를 시작 조건으로 삼지 않습니다. 부분 결과가 비어 있어도
-사실 부재로 단정하지 않습니다. 실제 효과는 현재 원본과 권한을 다시 확인하며
-조회마다 새 기록을 만들지 않습니다.
-[그래프 탐색과 독립 Session](docs/ko/graph-discovery.md)을 참고하세요.
-
-
-`GraphSnapshot`은 검증된 하나의 Repository World Model에 포함된 변경 불가능한
-콘텐츠 주소 기반 증거 그래프입니다. 그래프 UI의 스크린샷, 데이터베이스
-백업, 변경 가능한 최신 노드 집합이 아닙니다. 동일한 검증 입력은 동일한
-`graphSnapshotId`를 생성하고, 의미가 달라지면 명시적인 계보를 가진 새
-스냅샷이 생성됩니다.
-
-`lode_world_model`은 전체 모델과 현재 저장소를 빠짐없이 검증한 뒤, 전체
-스냅샷 대신 크기가 제한된 상태 조회 결과를 반환합니다. 개수, ID, 다이제스트,
-표본과 생략 정보는 유지합니다. 더 자세한 내용은 범위가 제한된 그래프·이력·
-런타임·의미 질의 도구로 확인합니다. 최신성이나 다이제스트 계산을 생략하지 않고
-MCP 응답 크기를 줄입니다.
-
-```mermaid
-flowchart LR
-    C[Product Canon] <-->|검토된 의미| F[Features]
-    F <-->|구현 / 검증| S[코드와 테스트]
-    S <-->|리비전| CH[ChangeSets]
-    CH <-->|결과 / 검토| E[실행 계보]
-```
-
-원시 프롬프트는 이 그래프 밖에 남습니다. 제품 의미는 검토된 Canon
-아티팩트를 통해서만 들어옵니다. 일반 탐색은 후보·거절 기록의 원래 상태를
-표시하면서 읽을 수 있으며 Canon Context 컴파일에서 승격하지 않습니다.
-
-공통 Observation의 정확한 설명자, 수집 영수증과 도출 계보도 같은 시계열 그래프에
-들어갑니다. ProductHypothesis가 정확한 Observation을 가리켜도 그 관계는 가설의
-근거로만 남으며 측정 데이터를 제품의 확정 사실로 승격하지 않습니다.
-Observation 저장소가 손상되면 해당 그래프 층만 사용할 수 없다고 표시하고,
-관련 없는 제품 작업은 계속할 수 있습니다.
-
-Delivery observation은 배포를 제어하지 않고 운영 이력을 기록합니다. 각 Host
-이벤트는 환경, 대상, 산출물 리비전, 명시적 순서와 이전 항목을 지정합니다.
-읽기 전용 상태 카드는 관측된 상태가 동일한지, 섞였는지, 미확인인지를 보여줍니다.
-실패한 시도가 마지막 적용 리비전을 지우지는 않으며 롤백도 이력에 남습니다.
-관측하지 않은 대상은 성공으로 추측하지 않습니다. 보존된 정확한 소스 리비전에는
-검증된 `AT_REVISION` 연결을 만들고 단순 선언 문자열은 미검증 상태로 표시합니다.
-
-Policy의 생성·수정·종료 제안도 사용자가 정확한 후보를 승인하기 전까지 P3 근거로
-남습니다. 승인된 결정은 그 결과로 생긴 Product Model 리비전과 해당 Policy의
-현재 리비전을 가리키며, 이후 다른 Policy가 추가돼도 연결을 유지합니다.
-일반 그래프 탐색은 검토되지 않은 Policy 후보의 원래 상태도 보존합니다.
-이전 관리형 탐색에서는 이를 제외할 수 있고, Canon 컴파일은 후보를 승격하지 않습니다.
-
-소스 관계는 구조를 보여주는 근거이며 제품 의미를 결정하지 않습니다. 기본 휴리스틱
-import/call 그래프를 유지하면서, 선택적인 공급자 중립 언어 AST 어댑터가 현재
-파일 매니페스트에 결속된 근거를 별도 표시로 추가할 수 있습니다. 어느 근거도
-다른 근거를 덮어쓰거나 결정을 승인하지 않습니다.
-
-### 그래프와 기록의 경계
-
-기록에서 그래프와 조회 결과를 만드는 방향은 다음과 같습니다.
-
-```text
-P1 Product Canon + 관찰된 소스 + 검증된 P2/P3 기록
-  → 복구 가능한 GraphSnapshot을 포함한 P4 Repository World Model
-      → 교체 가능한 그래프 구체화: local JSON / 선택적 ArcadeDB
-      → 교체 가능한 사람용 프로젝션: Markdown
-```
-
-그래프는 탐색을 소유하지만 의미나 복구 방향을 소유하지 않습니다. GraphDB나
-생성된 Markdown을 삭제해도 Product Canon, Session/Run 복구, 검토 계보는
-남아야 합니다. 오래되거나 변조되거나 의미적으로 달라진 프로젝션은 그래프를
-재정의하지 않고 실패 폐쇄됩니다.
-
-### 그래프 질의
-
-```powershell
-lode-agent world-status C:\path\to\project
-lode-agent world-temporal C:\path\to\project `
-  --query "<Feature, symbol, path, ChangeSet, or ReviewDecision>" `
-  --depth 3 --limit 100 --edge-limit 200
-lode-agent graph-lineage-status C:\path\to\project
-lode-agent graph-lineage-trace C:\path\to\project --anchor <exact-node-id>
-lode-agent graph-lineage-diff C:\path\to\project `
-  --from <older-world-model-id> --to <newer-world-model-id>
-lode-agent context-preview C:\path\to\project --task "<task>" --budget 32768
-```
-
-탐색 결과는 스냅샷, 질의, 결과 식별자와 포함·제외·잘림 이유를 함께
-반환합니다. 내장 그래프, local JSON, 활성화된 ArcadeDB 백엔드는 동일한
-의미 결과를 보존해야 합니다.
-
-계보 명령은 보존된 콘텐츠 주소 기반 World 스냅샷을 재사용하며 별도 이력을 만들지
-않습니다. Hot/Warm/Cold 상태, 추적, 실행 오버레이와 차이 조회는 저장하지 않는
-P4 뷰입니다. 내용이 정확히 같은 파일 이동도 가능한 이동으로만 보고하며,
-의미적 동일성을 자동으로 단정하지 않습니다.
-
-</details>
+[기록된 맥락·스냅샷·그래프 조회](docs/ko/context-lineage.md#graph-and-record-examples)를 참고하세요.
 
 ## 런타임과 역할 통신
 
-<details>
-<summary>워커, 어댑터와 Host 연결</summary>
-
-Claude Code, Codex, OpenCode는 하나의 `.lode/` 권한을 공유하는 프로젝션입니다. 런타임
-어댑터는 기능을 관찰하고, 정확한 권한을 최대 한 번 소비하며, 소유한 프로세스
-트리를 감독하고, 구조화된 출력을 검증하고, 운영 상태를 프로젝트 밖에
-보관합니다.
-
-일반 위임은 현재 Host의 작업, 메시지와 진행 상태를 사용합니다. Lode가 맥락과
-소유 범위를 전달하고 완료된 기여를 통합합니다. 효과가 불명확한 작업은 확인한 뒤
-미완료 부분만 처리합니다. 별도의 Lode 역할 토큰, 세대, 받은 편지함이나 대상 경로를
-설정하지 않습니다. 워커가 성공해도 Canon 승인이나 복구 방향 작성 권한은 생기지 않습니다.
-
-선택적인 엔드포인트 연결은 P2 방향을 먼저 복구하고, 정확한 live endpoint를 검증할
-수 있을 때만 연결합니다. endpoint가 사라졌다면 검증된 기록을 바탕으로 새로운
-논리 Lode로 이어감을 명시합니다. 이식 가능한 export 브리지는 연결 전용이며 현재 스냅샷 하나만
-보존합니다. 지속적인 메시지 전달 서비스는 아닙니다. Host별 pane/socket/UI 동작은
-Core 밖에 둡니다. [런타임 어댑터](docs/ko/runtime-adapters.md)와
-[Host 위임과 연결](docs/ko/role-coordination.md)을 참고하세요.
-
-</details>
+[워커·어댑터·런타임 연결](docs/ko/architecture.md#runtime-coordination-reference)를 참고하세요.
 
 ## 선택적 GraphDB
 
-<details>
-<summary>ArcadeDB 설정과 네이티브 질의 경로</summary>
-
-기본 저장소는 로컬입니다. 온보딩, 컨텍스트 컴파일, 실행 계보 또는
-복구에 GraphDB가 필요하지 않습니다.
-
-ArcadeDB는 파생 그래프 프로젝션으로 명시적으로 활성화할 수 있습니다. 자격
-증명은 환경 변수 참조를 통해서만 해석되며 프로젝트 아티팩트, 그래프 식별자,
-생성 문서 또는 영수증에 들어가지 않습니다. 원격 활성화는 복구 가능한 내장
-그래프와 의미적으로 동일함을 증명해야 합니다.
-
-JavaScript 브리지가 의미적 기준 구현입니다. 검증된 네이티브 패키지가 있으면
-읽기 전용 준비 질의가 콘텐츠 주소 기반 Go query-batch 브리지를 사용할 수
-있습니다. 이 경우에도 JavaScript가 포인터, 토폴로지, 탐색 결과, 요청 연결,
-영수증을 검증합니다. `LODE_AGENT_ARCADEDB_NATIVE_MODE`는 다음 중 하나로
-설정합니다.
-
-- `auto`: 검증된 네이티브 브리지가 있으면 사용하고, 없으면 이를 알린 뒤
-  JavaScript 기준 경로를 사용합니다.
-- `off`: 항상 JavaScript 경로를 사용합니다.
-- `required`: 검증된 네이티브 경로를 사용할 수 없으면 실패합니다.
-
-매니페스트, 바이너리, 선택 후 다이제스트가 일치하지 않으면 항상 실패
-폐쇄됩니다. 정확한 자식 프로세스에는 설정된 자격 증명 참조 변수와 제한된
-OS, TLS, 로캘, 프록시 허용 목록만 전달됩니다. 계산 워커 자체는 네트워크와
-권한을 갖지 않습니다. 자세한 내용은
-[그래프 프로젝션 어댑터](docs/ko/graph-projection-adapter.md)를 참고하세요.
-
-</details>
+[선택적 ArcadeDB 설정](docs/ko/architecture.md#optional-graphdb-reference)를 참고하세요.
 
 ## 설치 수명주기
+
+공유 Project에서 물리 schema-2 스냅샷을 쓰기 전에 이를 읽을 모든 클라이언트를
+업데이트하세요. Beta.69 이하는 이 형식을 변환하지 않고 거부합니다. 새 reader는
+이전 저장 형식도 그대로 읽습니다. 플러그인 파일 업데이트가 실행 중인 Host나
+MCP의 reload를 뜻하지는 않습니다. [저장 형식 호환성](docs/ko/snapshot-storage.md)을 참고하세요.
 
 <details>
 <summary>네이티브 전달, 업그레이드와 제거</summary>
@@ -937,61 +512,11 @@ Lode는 정확히 승인된 `provider/model`과 일시적인 권한·개인정�
 
 ## 설계 원칙
 
-<details>
-<summary>설계 배경과 원칙</summary>
-
-Lode Agent Core Plugin은
-[Won6314/head-agent-core](https://github.com/Won6314/head-agent-core)에서
-영감을 받아 공급자 중립적인 플러그인으로 독립 재구성한 프로젝트입니다.
-공식 업스트림 릴리스나 드롭인 대체재가 아닙니다. 자세한 내용은
-[소스 기반 비교 문서](docs/ko/original-head-core-comparison.md)를 참고하세요.
-
-이 구현은 Lode의 기반 원칙을 유지하면서 공급자 중립적인 계약으로
-표현합니다.
-
-- Lode는 연결된 전체 결과를 소유합니다.
-- 사용자는 중요한 결정 권한을 유지합니다.
-- 의미적 충분성은 Lode가 판단하며, 최대 컨텍스트보다 범위가 정해지고 검증된 맥락을 우선합니다.
-- 지속 가능한 Canon은 임시 모델 세션보다 오래 유지됩니다.
-- 위임은 범위가 제한되며 권한을 획득하지 않습니다.
-- 완료 판단에는 연결된 1차 증거가 필요합니다.
-- 그래프는 의심하지 않는 권위가 아니라 검색 인덱스입니다.
-- 프로젝트 의미는 런타임 메커니즘과 분리됩니다.
-
-원래 설계 맥락은 업스트림
-[Foundations](https://github.com/Won6314/head-agent-core/blob/ba220c55c14b8af947bf6d1fb9d27a620a2cf2aa/packages/core/docs/FOUNDATIONS.md)와
-[Technical Architecture](https://github.com/Won6314/head-agent-core/blob/ba220c55c14b8af947bf6d1fb9d27a620a2cf2aa/packages/core/docs/TECHNICAL_ARCHITECTURE.md)를
-참고하세요.
-
-</details>
+[설계 원칙](docs/ko/architecture.md#design-principles-reference)를 참고하세요.
 
 ## 소스에서 검증
 
-<details>
-<summary>테스트 명령과 검증 한계</summary>
-
-Core는 신뢰하는 로컬 호출자가 전달한 결정의 정확한 대상과 허용된 전이를
-검증합니다. Host와 Lode는 실제 사용자 승인을 전달해야 하며, digest와
-확인 플래그 자체가 사람의 의사를 인증하지는 않습니다.
-
-Fixture 테스트는 재현성과 상태 전이를 입증합니다. Lode의 증거 발견률이나
-전체 코딩 작업의 정확성을 입증하지는 않습니다.
-[검증 증거와 로컬 진단](docs/ko/verification-evidence.md)을 참고하세요.
-
-```powershell
-npm test
-npm run verify:newcomer
-npm run verify:distribution
-npm run verify:codex-marketplace
-npm run verify:claude-marketplace
-```
-
-네이티브 소스는 해당 모듈 디렉터리에서 `go test ./...`와 `go vet ./...`도
-지원합니다. JavaScript는 의미적 기준 구현으로 유지됩니다. 네이티브
-백엔드는 픽스처 기반 적합성 검사와 무결성 검증을 통과한 뒤에만 사용 가능한
-기능으로 표시됩니다.
-
-</details>
+[소스 검증과 근거의 한계](docs/ko/verification-evidence.md#source-verification)를 참고하세요.
 
 ## 상태와 라이선스
 

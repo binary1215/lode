@@ -105,3 +105,115 @@ A recorded bundle key, source path and digest can be read directly through the o
 `head_graph_lineage_diff` optionally accepts `scope_paths` and an opaque `cursor`; CLI `graph-lineage-diff --from <id> --to <id> --path <exact-relative-path>` exposes a single-path selection. Omit scope/cursor for the unchanged version0.2 whole-endpoint projection. Scoped/page projections use version0.3, keep exact from/to hashes and query/order in their cursor, and never follow a moving current pointer. Resend the same endpoints and scope on each page.
 
 Every endpoint is still fully read and verified. Node changes select exact paths, including removed files. Edge changes include edges incident to a selected node in either endpoint or bearing that exact evidence path, including cross-path edges. Possible moves require both old and new paths in scope and remain evidence rather than identity proof. Root source context changes remain disclosed independently of selected records. Counts are exact within this scope; global counts are marked not-computed rather than zero. OmittedCount counts all items outside this page, while page.remaining counts only undisplayed subsequent items. No chunk-only verification or false unchanged/deletion claim is made. Locale-equivalent move keys preserve original removed-major/added-minor order; digest grouping and k-way merge avoid materializing or iterating all matching pairs for a bounded page.
+
+<a id="graph-and-record-examples"></a>
+
+## Graph and records
+
+Graph Explorer's `graph-explorer <project-directory>` CLI creates a read-only
+HTML snapshot of the target project's evidence, not the plugin installation.
+Ask the agent to run that existing CLI; there is no dedicated HTML-export MCP
+tool. It is not a live view. See [Graph Explorer](graph-explorer.md) for
+search, explicit history and sharing options.
+
+For new project information, Lode uses bounded `lode_project_graph` discovery
+first, or reuses sufficient results from the same basis. Work and Product views
+reference the same original records. The result keeps revision, provenance,
+coverage and candidate/rejection state, including intact history. Missing or
+failed layers lead to original-source inspection without requiring whole-World
+currentness, Product approval, Run/Capsule or ArcadeDB. Empty partial results do
+not prove absence; effects separately recheck current sources and authority.
+The query does not generate a new artifact per read. See
+[Graph discovery and independent Sessions](graph-discovery.md).
+
+
+A `GraphSnapshot` is the immutable, content-addressed evidence graph embedded in
+one verified Repository World Model. It is not a graph UI screenshot, database
+backup, or mutable latest-node collection. The same verified inputs produce the
+same `graphSnapshotId`; semantic changes create a new snapshot with explicit
+ancestry.
+
+`lode_world_model` verifies that complete model and current repository, then
+returns a bounded status projection instead of transporting the full snapshot.
+Counts, IDs, digests, samples, and omission metadata stay available; deeper
+inspection uses the bounded graph, history, runtime, and semantic query tools.
+This keeps MCP responses small without skipping any freshness or digest check.
+
+```mermaid
+flowchart LR
+    C[Product Canon] <-->|reviewed meaning| F[Features]
+    F <-->|implements / verifies| S[Code and tests]
+    S <-->|revisions| CH[ChangeSets]
+    CH <-->|results / review| E[Execution lineage]
+```
+
+Raw prompts stay outside this graph. Product meaning enters only through
+reviewed Canon. General discovery may show labelled candidates/rejected records
+without promoting them; they remain excluded from Canon Context compilation.
+
+Common Observations keep their exact descriptor, receipt, and derivation
+lineage in the same temporal graph. A ProductHypothesis may point to an exact
+Observation, but that edge remains evidence for a hypothesis rather than a
+promotion of measured data into product truth. If Observation storage is
+damaged, only that graph layer is reported unavailable; unrelated product work
+continues.
+
+Delivery observations add practical operational genealogy without turning the
+graph into a deployment controller. Each Host event names an environment,
+target, artifact revision, explicit sequence, and predecessor. The read-only
+current-state card shows uniform, mixed, or unknown observed state; failed
+attempts do not erase the last applied revision, rollback remains in history,
+and unobserved targets are never guessed successful. Exact retained source
+revisions receive verified `AT_REVISION` links; declared strings stay visibly
+unverified.
+
+Policy genealogy stays equally explicit. A proposed create, revision, or
+retirement is P3 evidence until the user accepts that exact candidate. The
+accepted decision points to the resulting Product Model revision and to the
+matching current Policy revision, even after an unrelated Policy is added.
+General graph discovery retains an unreviewed Policy candidate's original state;
+legacy governed traversal can exclude it and Canon compilation does not promote it.
+
+Source relations are structural evidence, not product meaning. The default
+heuristic import/call graph remains available, while an optional provider-neutral
+language-AST adapter may add separately labeled, exact-file-bound evidence. One
+source never silently overwrites the other, and neither can approve a decision.
+
+### Graph versus record
+
+Records feed the graph and its projections in this direction:
+
+```text
+P1 Product Canon + observed source + verified P2/P3 records
+  → P4 Repository World Model containing a recoverable GraphSnapshot
+      → replaceable graph materialization: local JSON / optional ArcadeDB
+      → replaceable human projection: Markdown
+```
+
+The graph owns navigation, not meaning or recovery direction. Deleting GraphDB
+or generated Markdown must leave Product Canon, Session/Run recovery, and review
+lineage intact. A stale, tampered, or semantically divergent projection fails
+closed instead of redefining the graph.
+
+### Query the graph
+
+```powershell
+lode-agent world-status C:\path\to\project
+lode-agent world-temporal C:\path\to\project `
+  --query "<Feature, symbol, path, ChangeSet, or ReviewDecision>" `
+  --depth 3 --limit 100 --edge-limit 200
+lode-agent graph-lineage-status C:\path\to\project
+lode-agent graph-lineage-trace C:\path\to\project --anchor <exact-node-id>
+lode-agent graph-lineage-diff C:\path\to\project `
+  --from <older-world-model-id> --to <newer-world-model-id>
+lode-agent context-preview C:\path\to\project --task "<task>" --budget 32768
+```
+
+Traversal returns snapshot, query, and result identities plus inclusion,
+exclusion, and truncation reasons. Embedded, local JSON, and activated ArcadeDB
+backends must preserve the same semantic result.
+
+The lineage commands reuse retained content-addressed World snapshots and do
+not create another history stream. Their Hot/Warm/Cold status, trace, execution
+overlay, and diff are non-persisted P4 views. An exact-content file move is only
+reported as a possible move; semantic identity is never asserted automatically.

@@ -1,5 +1,7 @@
 # Compaction recovery
 
+Saved P2 direction and selected work/Todo evidence support continuation. Optional bounded prompt/final-response references from supported Hooks are quoted P5 context, not full transcript capture or current approval. Managed automatic continuation still needs a trusted Host adapter; ordinary read-only entry and fork guidance do not implement that lifecycle. See [Host support](session-work-context.md).
+
 Compaction is a lossy provider operation. Recovery authority remains the canonical Session/Run checkpoint; provider transcripts, compaction summaries, provider-session identities, and `LodeContinuitySnapshot` are orientation or derived views only.
 
 Protocol `0.3.0` embeds the P2 recovery/lineage boundary from

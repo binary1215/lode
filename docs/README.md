@@ -8,6 +8,16 @@ work logs are intentionally excluded from the distribution and are not runtime a
 
 ## Start here
 
+| I want to… | Start with |
+| --- | --- |
+| Install for my client | [Install](../README.md#install) |
+| Start my actual task | [First request](../README.md#first-request) |
+| Continue remaining work | [Recovery](../README.md#recovery), [saved work](session-work-context.md) |
+| Review reasons and before/after changes | [Recorded context and diff](context-lineage.md) |
+| Automate a workflow | [Core commands](#command-reference), [Context examples](context-compiler.md#context-examples), [optional Product setup](onboarding.md#product-cli-examples) |
+
+## Architecture and Product reference
+
 - [Architecture decision](architecture.md)
 - [Provider-neutral Lode constitution](lode-constitution.md)
 - [Authority planes and the Graph/record boundary](authority-plane-contract.md)
@@ -74,3 +84,47 @@ current executable contracts above.
 
 - [Original HEAD Core comparison](original-head-core-comparison.md)
 - [Lode-Agent GraphDB Brief v4 summary and design review](Lode_GraphDB_Brief_v4.md)
+
+<a id="command-reference"></a>
+
+## CLI, automation, and advanced setup
+
+The normal path starts with [your task in the README](../README.md#first-request). Use the following CLI
+surface when a script, CI job, offline recovery procedure, or host integration
+needs the same deterministic Core behavior without a guided conversation.
+
+The default path initializes only the provider-neutral Lode constitution and its
+fixed Project/Session recovery anchors:
+
+```powershell
+lode-agent init C:\path\to\project --runtime claude,codex,opencode
+```
+
+It returns `core_ready`, preserving identities and updating the lightweight
+existing-observation index where available. Product inference, governed World
+construction and document governance remain optional. The same bounded status is available
+at any time:
+
+```powershell
+lode-agent status C:\path\to\project
+```
+
+Successful human-readable status is intentionally one line. Exceptions name
+the owner, reason, affected operation, and next action; `doctor` or `--json`
+shows Core, optional Product governance, Context readiness, executing CLI/library
+and configured package versions, and technical details. Host tool loading is not
+observed by that package inspection. The structured projection separates
+`readiness.core`, `readiness.product`, and `readiness.context`, names one
+`nextAction`, and lists optional capabilities with their real prerequisites.
+For example, Product appears as `available-not-activated`, while bounded workers
+appear as `requires-session-or-run-authorization` for retained managed work.
+Ordinary second opinions use available Host delegation; worker count alone does
+not require a Run. This is a non-persisted advisory
+projection: reading it never activates Product, creates a Run, grants authority,
+or repairs drift. `profile` remains a choice for one initialize/resume operation,
+not a hidden project mode.
+
+Top-level status is one of `core_ready`,
+`product_evidence_required`, `product_review_required`, `product_ready`,
+`product_refresh_required`, or `core_drifted`. The exact lower-level onboarding
+state remains visible under `readiness.product.onboardingStatus`.

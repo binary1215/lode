@@ -139,7 +139,7 @@ provider resume/stream과 Host별 pane/socket/TUI 변환은 Core 밖에 둡니�
 
 ## 파일 소유권
 
-`.lode/`는 플러그인이 관리하는 Canon입니다. 루트 `CLAUDE.md`, `.mcp.json`, `AGENTS.md` 및 `opencode.json`은 해당 런타임 프로젝션과 충돌하는 항목이 없을 때만 생성됩니다. 기존 파일은 프로젝트 소유로 유지되며, 생성된 대안은 `.lode/generated/` 아래에 기록되고 수동 통합 작업으로 보고됩니다. Claude Code, Codex, OpenCode 실행 프로젝션은 `node`와 프로젝트 상대 `scripts/mcp-server.mjs` 또는 클라이언트 placeholder(`${CLAUDE_PLUGIN_ROOT}`, `${PLUGIN_ROOT}`, `{env:LODE_PLUGIN_ROOT}`)를 사용합니다. 절대 Node 바이너리나 설치 경로는 넣지 않습니다.
+`.lode/`는 플러그인이 관리하는 Canon입니다. 루트 `CLAUDE.md`, `.mcp.json`, `AGENTS.md`, `opencode.json`은 독립적으로 소유되는 프로젝션입니다. 없는 파일만 생성할 수 있고 기존 프로젝트 소유 파일은 보존하며 대안은 `.lode/generated/`에 둡니다. 검증된 Claude 플러그인 MCP 연결은 중복 프로젝트 설정을 만들지 않습니다. 패키지 클라이언트는 `node`, 프로젝트 상대 `scripts/mcp-server.mjs` 또는 placeholder(`${CLAUDE_PLUGIN_ROOT}`, `${PLUGIN_ROOT}`, `{env:LODE_PLUGIN_ROOT}`)를 사용합니다. standalone Claude 초기화는 검증된 로컬 launcher나 정확한 절대 패키지 경로를 쓸 수 있습니다. 이 경로는 기기에 종속되지만 절대 Node 바이너리를 넣지는 않습니다. [런타임 실행 경로](runtime-adapters.md#시작-안내와-claude-파일-소유권)를 참고하세요.
 
 관리되는 매니페스트는 SHA-256 다이제스트를 기록합니다. 관리 대상의 드리프트가 감지되면 정식 변경이 중단됩니다.
 
@@ -252,3 +252,218 @@ Graph 계보는 두 번째 이력 저장소를 만들지 않고 보존된 conten
 `GitHistoryAdapter`는 재구축 가능하고 콘텐츠 주소가 지정된 commit 증거를 별도로 제공합니다. 기본 비동기 Git CLI 어댑터는 프로세스를 실행할 수 없을 때 명시적인 coverage 정보와 함께 fail-open할 수 있습니다. byte-preserving host-export 어댑터는 제한된 런타임에서 동일한 semantic input을 제공합니다. 현재 refs는 도달 가능성을 검증하며, commit message는 지시나 승격된 결정이 아니라 증거로 남습니다.
 
 `RuntimeStateAdapter`는 엄격한 특정 시점의 외부 런타임 관찰을 제공합니다. source descriptor는 semantic ID가 아니라 pointer metadata이며, 정규화된 관찰은 콘텐츠 주소가 지정되고 최신성 게이트를 거칩니다. 어댑터는 읽기 전용이며 지시 권한이나 런타임 제어 권한을 부여하지 않습니다. 별도의 `PlatformAdapter`, `AgentRuntimeAdapter` 및 `WorkspaceHostAdapter` 참조가 공급자/플랫폼/호스트 구성을 명시적으로 만듭니다. 현재 호스트 탐색, 범위가 한정된 고정 버전/help 증거 및 `RuntimeProjectBinding`은 권한 부여 없이 capability를 확립합니다. 그 다음 호출 권한 부여 계층은 정확한 활성 Lode 리니지에서 실행 기능이 없는 단일 호출 경계를 도출합니다. 영속적인 at-most-once lease는 supervisor 시작 전에 이를 소비하고, 완료, timeout, 취소 또는 호출자 실패 후에도 재실행할 수 없게 유지합니다. event/receipt/draft 스키마, 네이티브 Job Object/process-group 픽스처 및 실제 Codex/OpenCode Session/Run 증거는 제어 영역과 프로세스 트리 정리 형태를 입증합니다. 선택적 exact-endpoint attachment는 비권위적 Host 기능이며 일반 task는 Host-native coordination을 사용합니다. P2-first 방식의 정확한 선택적 연결 및 소유권이 정확한 일회성 interrupt/close가 활성화됩니다. 공급자 hydration, 일반 resume/stream 및 더 광범위한 프로세스 제어는 계속 연기됩니다. AST 수준으로 정확한 그래프와 구조화된 Git 결정 추론도 계속 연기됩니다. [`runtime-state.md`](runtime-state.md)와 [`runtime-adapters.md`](runtime-adapters.md)를 참조하세요.
+
+<a id="detailed-core-model"></a>
+
+## 핵심 모델
+
+Lode는 의미, 복구, 증거, 뷰, 효과를 분리하여 하나의 표현이 다른 표현의
+권한을 상속하지 못하게 합니다.
+
+| 평면 | 소유 대상 | 예시 | 부여하지 않는 권한 |
+| --- | --- | --- | --- |
+| P1 규범적 권한 | 승인된 의미와 명시적 결정 | Product Canon, ReviewDecision | 그래프·결과·메시지에서 승인을 추론하는 권한 |
+| P2 복구와 계보 | 공급자와 독립적인 프로젝트 방향 | Session, Run, 계획, Capsule, 계약, 체크포인트 | 요약이나 결과로 방향을 다시 쓰는 권한 |
+| P3 증거 | 검토 가능한 관찰과 결과 | 후보, ResultPacket, ChangeSet, 영수증 | 자기 승격이나 체크포인트 작성 권한 |
+| P4 파생 뷰 | 재현 가능한 검색 및 사람용 뷰 | GraphSnapshot, 탐색 결과, Markdown, 연속성 뷰 | Canon 변경이나 유일한 복구 원천이 될 권한 |
+| P5 운영 효과 | 호스트 로컬 실행과 전달 | PID, 임대, 엔드포인트, 받은 편지함, 전달 영수증 | 실행·검토·승격·복구 권한 |
+
+배포와 호스트 통합은 이 계약을 패키징하거나 실행할 뿐, 제품 의미의 여섯
+번째 원천이 되지 않습니다. 전체 실행 가능 경계는
+[권한 평면 문서](authority-plane-contract.md)에 설명되어 있습니다.
+
+기본 원칙과 Record/Graph의 공식 경계는
+[공급자 중립 Lode 헌법](lode-constitution.md)에 설명되어 있습니다.
+
+### 아키텍처 개요
+
+```mermaid
+flowchart LR
+    U[User objective] --> H[Whole-plan Lode]
+    PC[Product Canon] --> WM[World Model + GraphSnapshot]
+    RE[Repository evidence] --> WM
+    H --> CC[Context Compiler]
+    WM -->|bounded evidence| CC
+    CC --> RA[Runtime adapter]
+    RA --> RP[ResultPacket]
+    RP --> FR[Fresh Lode review]
+    WM --> PX[Local / ArcadeDB / Markdown projections]
+```
+
+피드백 경로도 명시적입니다. 승인된 결과는 검토된 계보가 될 수 있고,
+저장소를 다시 인덱싱할 수 있으며, 이후 그래프가 그 증거를 투영할 수
+있습니다. 결과, 프로젝션 또는 런타임 효과가 스스로를 승인할 수는 없습니다.
+
+### Lode가 의미를 판단하고 Compiler가 선택 맥락을 제공하는 컨텍스트
+
+Context Compiler는 명시적인 예산 안에서 작업용으로 선택한 증거를 묶습니다.
+포함·제외·오래됨·누락·잘림·미확인 항목을 기록합니다. 동일한 정본 입력,
+컴파일러 버전, 탐색 정책, 예산은 동일한 Context Capsule을 재현합니다.
+
+예산의 기본값은 약 `32768` 토큰이며 Lode가 양의 안전한 정수를 선택할 수 있습니다.
+고정된 다섯 계층이나 512K 정책 상한은 없습니다. 실제 공급자의 컨텍스트 크기와
+출력 예약분은 계속 적용되며, 근사치가 토크나이저 기준의 적합성을 증명하지는 않습니다.
+
+Lode는 정확한 저장소 경로, Product Canon 키, Observation ID나 범위가 정해진
+현재 그래프의 기준 노드로 자료 선택을 안내할 수 있습니다. Compiler는 포함을
+인증하는 대신 `evidenceGaps`, `omissions`, `uncertainty`를 제공합니다. 추가 소스가
+필요한지는 Lode가 판단합니다. 저장된 ExecutionContract는 그 판단을 기록하며
+의미적 수용을 기계적으로 만들어 내지는 않습니다.
+
+Capsule은 파생된 실행 입력이지 두 번째 Canon이 아닙니다. 다이제스트 또는
+Canon 드리프트는 실패 폐쇄되며, 단순한 읽기·추론 작업은 기본적으로
+Capsule을 만들지 않습니다.
+
+### 실행과 복구
+
+관리형 실행은 다음과 같이 기록과 검토가 남는 순서를 따릅니다.
+
+```text
+WholePlanSnapshot
+  → ExecutionContract + ContextCapsule
+  → runtime or bounded worker
+  → ResultPacket
+  → Fresh Lode ReviewDecision
+  → accepted lineage or a revised plan
+```
+
+공급자 손실 시 대화 기록을 가져올 필요가 없습니다. `session-restore`는 정확한
+P2 체크포인트와 검증된 계보에서 현재 입력을 재구성합니다. 결과가 승인된
+뒤에도 `run-integrate-checkpoint`는 Lode 또는 사용자가 복구 필드를 명시적으로
+제공한 경우에만 그 검토를 새 체크포인트와 연결할 수 있습니다.
+
+신뢰하는 Host 어댑터가 있을 때 관리형 컨텍스트 압축은 다음 계약을 따릅니다.
+패키지의 읽기 전용 맥락 전달만으로 이 전체 절차를 수행하지는 않습니다.
+
+1. 공급자 측 Lode가 압축 전에 정확한 P2 방향을 작성하거나 재사용합니다.
+2. 공급자 중립 Host 어댑터가 일회용 전달 토큰을 프로젝트 Canon 밖에 보관하고
+   공급자 소유의 압축을 수행합니다.
+3. Core는 P2를 먼저 복원한 뒤 신뢰할 수 있는 실제 사용자 턴 근거를 검사합니다.
+   기준 변경, 불확실한 재실행과 요약 기반 복구는 거부합니다.
+4. Host가 체크포인트에 결속된 작업 재개 요청을 최대 한 번 제출하거나, Lode가
+   검증된 기록에서 새로운 논리적 Lode로 계속함을 명시합니다.
+
+일반 사용자는 작업을 계속 말하면 됩니다. Skill은 읽기 전용
+`lode_conversation_enter`로 자동 진입하고, `compact-*`와
+`lode_compaction_lifecycle_step`은 고급 어댑터와 진단 작업에 사용합니다.
+Host Hook이 없어도 추가 설정을 요구하거나 일반 작업을 막지 않습니다.
+
+방향을 지속 가능한 기록으로 갱신할 때 Skill은 내부적으로 읽기 전용
+`lode_checkpoint_basis`와 멱등적인 `lode_checkpoint_sync`를 사용합니다. Core는
+`created`, `reused`, `deferred`, `conflict` 중 하나를 반환하며, 필요한 경우 해당 복구
+경로만 멈춥니다. 어느 결과도 사용자에게 체크포인트 JSON을 요구하지 않습니다.
+
+복구 상태를 설명해야 할 때 `lode_checkpoint_diagnose`는 현재 포인터, 기록 복원
+결과, 기계적 갱신 가능 여부와 다음 Lode 동작을 범위가 제한된 읽기 전용 응답으로
+보여줍니다. 잠금이나 캐시를 쓰지 않고, 상태를 읽기 위해 다른 모델을 호출하지도
+않습니다. ID와 해시 일치는 기록의 정합성을 증명하며 체크포인트 문장이 최신
+사용자 의도를 반영한다는 뜻은 아닙니다. 순차 읽기 중 상태가 바뀌면 다시 읽어야
+합니다. 원자적 파일시스템 스냅샷이나 ABA 감지는 보장하지 않습니다. 실제 복구
+결함이 있어도 체크포인트 의존 작업만 멈추고 독립 작업은 계속할 수 있습니다.
+
+사용자의 새 요청은 대기 중인 작업 재개보다 우선합니다. 자세한 내용은
+[컨텍스트 압축 복구](compaction-recovery.md)와
+[Session 복구](session-recovery.md)를 참고하세요.
+
+### 제품 학습
+
+일상적인 관찰은 지속하지 않는 메모로 남길 수 있습니다. 다른 Run, 감사,
+제품 상태 전이 또는 인수인계에서 필요한 경우에만 영구 아티팩트를 만듭니다.
+
+```text
+Signal → Hypothesis → Initiative candidate → user ReviewDecision
+       → reviewed Initiative → accepted execution → OutcomeObservation
+```
+
+이 흐름은 하나의 자동 승격 사슬이 아닙니다. 증거는 증거로, 가설은 가설로
+남고, 검토된 Initiative도 Product Canon과 구분됩니다.
+Lode가 추천 API나 메모 형식화 호출 없이 위험과 필요한 지속성을 직접 판단합니다.
+
+- Observe: 읽기와 추론 작업
+- Session: 하나의 범위가 제한된 가역적 결과
+- Run: 서로 의존하거나 복구 민감한 작업
+- 명시적 권한: Canon·Initiative 결정 또는 현재 승인 범위 밖의 효과 실행.
+  기존 승인 방향 안에서 유용한 checkpoint를 갱신하는 것은 새 사용자 결정이 아닙니다.
+
+자세한 내용은 [Product Operating Loop](product-operating-loop.md)를
+참고하세요.
+Git ref와 배포 근거 수집은 [Release observation](release-observation.md)에,
+환경별·대상별 적용, 실패와 롤백 이력은
+[전달 상태 관측](delivery-observation.md)에 설명되어 있습니다.
+
+<a id="runtime-coordination-reference"></a>
+
+## 런타임과 역할 통신
+
+Claude Code, Codex, OpenCode는 하나의 `.lode/` 권한을 공유하는 프로젝션입니다. 런타임
+어댑터는 기능을 관찰하고, 정확한 권한을 최대 한 번 소비하며, 소유한 프로세스
+트리를 감독하고, 구조화된 출력을 검증하고, 운영 상태를 프로젝트 밖에
+보관합니다.
+
+일반 위임은 현재 Host의 작업, 메시지와 진행 상태를 사용합니다. Lode가 맥락과
+소유 범위를 전달하고 완료된 기여를 통합합니다. 효과가 불명확한 작업은 확인한 뒤
+미완료 부분만 처리합니다. 별도의 Lode 역할 토큰, 세대, 받은 편지함이나 대상 경로를
+설정하지 않습니다. 워커가 성공해도 Canon 승인이나 복구 방향 작성 권한은 생기지 않습니다.
+
+선택적인 엔드포인트 연결은 P2 방향을 먼저 복구하고, 정확한 live endpoint를 검증할
+수 있을 때만 연결합니다. endpoint가 사라졌다면 검증된 기록을 바탕으로 새로운
+논리 Lode로 이어감을 명시합니다. 이식 가능한 export 브리지는 연결 전용이며 현재 스냅샷 하나만
+보존합니다. 지속적인 메시지 전달 서비스는 아닙니다. Host별 pane/socket/UI 동작은
+Core 밖에 둡니다. [런타임 어댑터](runtime-adapters.md)와
+[Host 위임과 연결](role-coordination.md)을 참고하세요.
+
+<a id="optional-graphdb-reference"></a>
+
+## 선택적 GraphDB
+
+기본 저장소는 로컬입니다. 온보딩, 컨텍스트 컴파일, 실행 계보 또는
+복구에 GraphDB가 필요하지 않습니다.
+
+ArcadeDB는 파생 그래프 프로젝션으로 명시적으로 활성화할 수 있습니다. 자격
+증명은 환경 변수 참조를 통해서만 해석되며 프로젝트 아티팩트, 그래프 식별자,
+생성 문서 또는 영수증에 들어가지 않습니다. 원격 활성화는 복구 가능한 내장
+그래프와 의미적으로 동일함을 증명해야 합니다.
+
+JavaScript 브리지가 의미적 기준 구현입니다. 검증된 네이티브 패키지가 있으면
+읽기 전용 준비 질의가 콘텐츠 주소 기반 Go query-batch 브리지를 사용할 수
+있습니다. 이 경우에도 JavaScript가 포인터, 토폴로지, 탐색 결과, 요청 연결,
+영수증을 검증합니다. `LODE_AGENT_ARCADEDB_NATIVE_MODE`는 다음 중 하나로
+설정합니다.
+
+- `auto`: 검증된 네이티브 브리지가 있으면 사용하고, 없으면 이를 알린 뒤
+  JavaScript 기준 경로를 사용합니다.
+- `off`: 항상 JavaScript 경로를 사용합니다.
+- `required`: 검증된 네이티브 경로를 사용할 수 없으면 실패합니다.
+
+매니페스트, 바이너리, 선택 후 다이제스트가 일치하지 않으면 항상 실패
+폐쇄됩니다. 정확한 자식 프로세스에는 설정된 자격 증명 참조 변수와 제한된
+OS, TLS, 로캘, 프록시 허용 목록만 전달됩니다. 계산 워커 자체는 네트워크와
+권한을 갖지 않습니다. 자세한 내용은
+[그래프 프로젝션 어댑터](graph-projection-adapter.md)를 참고하세요.
+
+<a id="design-principles-reference"></a>
+
+## 설계 원칙
+
+Lode Agent Core Plugin은
+[Won6314/head-agent-core](https://github.com/Won6314/head-agent-core)에서
+영감을 받아 공급자 중립적인 플러그인으로 독립 재구성한 프로젝트입니다.
+공식 업스트림 릴리스나 드롭인 대체재가 아닙니다. 자세한 내용은
+[소스 기반 비교 문서](original-head-core-comparison.md)를 참고하세요.
+
+이 구현은 Lode의 기반 원칙을 유지하면서 공급자 중립적인 계약으로
+표현합니다.
+
+- Lode는 연결된 전체 결과를 소유합니다.
+- 사용자는 중요한 결정 권한을 유지합니다.
+- 의미적 충분성은 Lode가 판단하며, 최대 컨텍스트보다 범위가 정해지고 검증된 맥락을 우선합니다.
+- 지속 가능한 Canon은 임시 모델 세션보다 오래 유지됩니다.
+- 위임은 범위가 제한되며 권한을 획득하지 않습니다.
+- 완료 판단에는 연결된 1차 증거가 필요합니다.
+- 그래프는 의심하지 않는 권위가 아니라 검색 인덱스입니다.
+- 프로젝트 의미는 런타임 메커니즘과 분리됩니다.
+
+원래 설계 맥락은 업스트림
+[Foundations](https://github.com/Won6314/head-agent-core/blob/ba220c55c14b8af947bf6d1fb9d27a620a2cf2aa/packages/core/docs/FOUNDATIONS.md)와
+[Technical Architecture](https://github.com/Won6314/head-agent-core/blob/ba220c55c14b8af947bf6d1fb9d27a620a2cf2aa/packages/core/docs/TECHNICAL_ARCHITECTURE.md)를
+참고하세요.

@@ -1,5 +1,11 @@
 > 이 문서는 [product-operating-loop.md](../product-operating-loop.md)의 한국어판입니다. 코드, 명령, 프로토콜 식별자와 필드 이름은 원문 표기를 유지합니다.
 
+# Product Operating Loop
+
+상태: Product Operating Loop 프로토콜 `0.4.0`에 따른 최소 수직 경로가 구현되어 있으며, 다이제스트를 읽을 수 있는 `0.1.0`, `0.2.0` 및 `0.3.0` 호환성을 제공합니다.
+
+Product Operating Loop는 관찰, 모델 추론, GraphDB 또는 연속성 요약을 Lode나 사용자의 권한으로 만들지 않으면서 제품 학습을 검토된 실행과 연결합니다.
+
 ## 중립적인 근거 참조
 
 새 ProductHypothesis 아티팩트만 프로토콜 0.5.0과 필수 referenceSemantics 값
@@ -11,12 +17,6 @@ rationale에 설명하며 별도 근거 역할 입력 양식은 없습니다. �
 옛 의미를 조용히 적용하지 않습니다. 새 아티팩트를 소비하는 작업에서 혼합 버전
 읽기·쓰기는 지원하지 않으며 독립적인 일반 작업에는 영향이 없습니다.
 측정 이력 조회는 두 관계를 모두 따라갑니다.
-
-# Product Operating Loop
-
-상태: Product Operating Loop 프로토콜 `0.4.0`에 따른 최소 수직 경로가 구현되어 있으며, 다이제스트를 읽을 수 있는 `0.1.0`, `0.2.0` 및 `0.3.0` 호환성을 제공합니다.
-
-Product Operating Loop는 관찰, 모델 추론, GraphDB 또는 연속성 요약을 Lode나 사용자의 권한으로 만들지 않으면서 제품 학습을 검토된 실행과 연결합니다.
 
 ## 개발 척추와 운영 흐름
 

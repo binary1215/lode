@@ -1,5 +1,7 @@
 # Project onboarding
 
+Ordinary work starts with Core. This guide configures the optional Product model; its initialization examples select `--profile product`.
+
 Read [`architecture.md`](architecture.md) and
 [`authority-plane-contract.md`](authority-plane-contract.md) before changing
 this contract. Onboarding bootstraps product authority; it does not grant
@@ -65,7 +67,7 @@ historical continuity and grant no instruction, recovery, or promotion authority
 ## Public initialize and resume path
 
 The preferred human-facing path is the bundled `lode-agent-onboarding` Skill
-inside a Codex or OpenCode conversation. It first calls the read-only
+inside a Claude Code, Codex or OpenCode conversation. It first calls the read-only
 `lode_onboarding_guide` tool, asks only for unresolved material choices, and
 then invokes the same Core through typed MCP operations:
 
@@ -85,8 +87,8 @@ The primary public command composes project creation or verification,
 installation-projection convergence, and onboarding start or resume:
 
 ```powershell
-node scripts/lode.mjs init C:\path\to\project --runtime claude,codex,opencode --input .\onboarding.json
-node scripts/lode.mjs resume C:\path\to\project --runtime claude,codex,opencode
+node scripts/lode.mjs init C:\path\to\project --runtime claude,codex,opencode --input .\onboarding.json --profile product
+node scripts/lode.mjs resume C:\path\to\project --runtime claude,codex,opencode --profile product
 ```
 
 The first command creates exactly one project-scoped Lode Session and starts
@@ -99,7 +101,7 @@ verified release path; user-modified or unowned configuration fails closed.
 The same path can be invoked during installation:
 
 ```powershell
-.\scripts\install.ps1 --project C:\path\to\project --runtime claude,codex,opencode --onboarding-input .\onboarding.json
+.\scripts\install.ps1 --project C:\path\to\project --runtime claude,codex,opencode --onboarding-input .\onboarding.json --profile product
 ```
 
 ## Low-level onboarding restart
@@ -175,7 +177,7 @@ A new-project brief uses the Product Model entity schema while remaining a candi
 ```
 
 ```powershell
-node scripts/lode.mjs init C:\path\to\project --input .\onboarding-start.json
+node scripts/lode.mjs init C:\path\to\project --input .\onboarding-start.json --profile product
 ```
 
 A project whose Product Canon already contains approved entities skips candidate bootstrap, still indexes implementation evidence, verifies the Product Model projection, and enters `ready`.
@@ -358,3 +360,87 @@ Known Product/World/Graph integrity errors appear in existing readiness and Atte
 For a damaged or missing candidate with a verified original, use `lode_onboarding_candidate_restore` (CLI `onboarding-candidate-restore`). Lode supplies exact Project/candidate identity, original content and the observed raw digest. The operation preserves damaged bytes in recovery custody, checks concurrent changes and atomically replaces only the exact target. Equal canonical content is not a claim of identical raw bytes. Restoration creates no approval, Canon change or P2 direction.
 
 Without an original, only a damaged unreviewed/unreferenced current candidate can use the existing semantic refresh with `recoveryBasis`. Lode supplies a fresh evidence-linked proposal; Core never invents product meaning or inherits old approval. Canon and lineage preconditions are checked before relocation. Damaged bytes remain in digest-addressed custody; a failed call restores them only if the pointer is unchanged and the original path is absent. After process loss, repeating the same pointer/raw basis recovers that exact custody before resuming. Other files, later pointers and new edits are never rolled back. Reviewed candidates require exact restoration rather than semantic replacement.
+
+<a id="product-cli-examples"></a>
+
+## Product CLI examples
+
+### Conversation-first path
+
+The bundled `lode-agent-onboarding` Skill is the interactive entry for optional Product onboarding.
+It inspects the current state, asks only for material choices such as repository
+scope or storage mode, semantically analyzes bounded current evidence, submits a
+typed proposal for Core verification, presents the resulting evidence-linked
+candidates, and uses explicit review before Product Canon changes. It selects
+the `product` profile explicitly. The provider proposal remains P3 evidence.
+
+### Optional Product profile CLI path
+
+Initialize or resume the same project and Lode Session identities:
+
+```powershell
+lode-agent init C:\path\to\project --runtime claude,codex,opencode --profile product
+lode-agent onboarding-status C:\path\to\project
+```
+
+Without a structured user brief, first use intentionally returns
+`awaiting-evidence`; Core does not invent product concepts from symbols. The
+conversation Skill normally supplies the fresh semantic proposal. CLI users may
+pass the same `semanticProposal` inside `--input`; after Core verifies the exact
+SourceSnapshot, paths, lines, optional symbols, and Product Model references, an
+immutable candidate-set ID is returned. Inspect it before review:
+
+```powershell
+$onboarding = lode-agent onboarding-status C:\path\to\project | ConvertFrom-Json
+lode-agent onboarding-candidates C:\path\to\project `
+  --candidate-set $onboarding.state.candidateSetId
+```
+
+Create `onboarding-review.json` only after reviewing the evidence. This compact
+example accepts the complete bootstrap batch; selection or revision is safer
+when any candidate should be renamed, split, merged, or excluded.
+
+```json
+{
+  "candidateSetId": "onboarding-candidates-<id>",
+  "disposition": "accept-all",
+  "rationale": "I reviewed every evidence-linked candidate and adopt this bootstrap batch."
+}
+```
+
+Apply the decision and verify the resulting views:
+
+```powershell
+lode-agent onboarding-review C:\path\to\project --input .\onboarding-review.json
+lode-agent graph-query C:\path\to\project --query "<task>"
+lode-agent world-status C:\path\to\project
+lode-agent context-preview C:\path\to\project `
+  --task "Find implementation evidence for one reviewed Feature" --budget 32768
+lode-agent world-docs-build C:\path\to\project
+lode-agent resume C:\path\to\project --runtime claude,codex,opencode --profile product
+```
+
+`accept-all` is supported for a fully inspected batch, but it is not the default
+recommendation. Review can instead accept a dependency-complete selection,
+revise or reject the batch, request more evidence, or retain explicit Unknowns.
+See [Onboarding](onboarding.md) for the complete contract.
+
+### Source scope
+
+For repositories with generated output, vendored dependencies, copied projects,
+large fixtures, or model bundles, define a project-relative observation boundary
+before the first index:
+
+```json
+{
+  "mode": "existing",
+  "sourceScope": {
+    "includeRoots": ["src", "packages"],
+    "excludeRoots": ["dist", "vendor", "generated", "fixtures"]
+  }
+}
+```
+
+Pass it with `lode-agent init ... --profile product --input .\onboarding.json`. Source Scope
+controls observation only; it cannot define Product Canon, approve a candidate,
+or grant execution authority.

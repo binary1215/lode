@@ -541,3 +541,7 @@ Markdown의 `relativePath`는 게시 root 기준이고, href는 해당 문서 �
 
 
 읽기 전용 `sessionStartContext`는 선택된 Host 어댑터와 로컬 snapshot 읽기가 끝난 뒤 표시 내용을 만듭니다. Codex·Claude command Hook과 OpenCode context callback은 완료된 값을 사용하며, 아직 끝나지 않은 Promise를 빈 context로 표시하지 않습니다. Session 선택과 P2 권한은 바꾸지 않습니다.
+
+## 출력이 같은 coverage index
+
+선택된 fragment의 coverage 계산은 한 render 안의 필드/index별 묶음을 사용합니다. 조회·저장 아티팩트·사용자 단계를 추가하지 않으며 전체 출력과 presentation callback을 유지합니다. 계산 최적화만 해당합니다. 긴 조건의 누락과 의미적 충분성은 별도 문제입니다. [검증 근거](verification-evidence.md#coverage-계산-비교)를 참고하세요.

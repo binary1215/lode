@@ -57,3 +57,38 @@ CI 결과, 로컬 Windows 결과, cross-build, 실제 marketplace 설치, live p
 동작은 각각 별도의 증거입니다. 작업 구성이 존재한다는 것만으로 통과한 실행이
 되지는 않습니다. 선택적인 native 또는 live-provider 경로에 fixture나 opt-in이
 없으면 이를 공개하고 통과로 집계하지 않습니다.
+
+<a id="source-verification"></a>
+
+## 소스에서 검증
+
+Core는 신뢰하는 로컬 호출자가 전달한 결정의 정확한 대상과 허용된 전이를
+검증합니다. Host와 Lode는 실제 사용자 승인을 전달해야 하며, digest와
+확인 플래그 자체가 사람의 의사를 인증하지는 않습니다.
+
+Fixture 테스트는 재현성과 상태 전이를 입증합니다. Lode의 증거 발견률이나
+전체 코딩 작업의 정확성을 입증하지는 않습니다.
+[검증 증거와 로컬 진단](verification-evidence.md)을 참고하세요.
+
+```powershell
+npm test
+npm run verify:newcomer
+npm run verify:distribution
+npm run verify:codex-marketplace
+npm run verify:claude-marketplace
+```
+
+네이티브 소스는 해당 모듈 디렉터리에서 `go test ./...`와 `go vet ./...`도
+지원합니다. JavaScript는 의미적 기준 구현으로 유지됩니다. 네이티브
+백엔드는 픽스처 기반 적합성 검사와 무결성 검증을 통과한 뒤에만 사용 가능한
+기능으로 표시됩니다.
+
+## Coverage 계산 비교
+
+선택된 fragment의 coverage index는 반복 탐색 대신 한 render 안의 필드·배열 index별 묶음을 사용합니다. 계산 비용만 바꾸며 검색, 선택 내용, 맥락 상한, 권한과 저장 방식은 바꾸지 않습니다. 기존 방식과 후보에는 같은 원문과 예산을 제공했습니다.
+
+서로 겹치는 별도 근거 집단에서 출력이 동일했습니다. 순수 전달 비교 24건, 합성 입력을 사용한 실제 시작 formatter 18건, callback 순서 비교 22건, 독립 fitter 비교 40건입니다. 관련 회귀 검사는 148개 통과, 실패 없음, 로컬 계정 권한 부족으로 합성 symlink 1개를 건너뛰었습니다. 이 수를 서로 다른 종단 간 시나리오처럼 합산하면 안 됩니다.
+
+4,800자 합성 pressure 조건에서 linked-judgment fitter는 기존 784–914 ms, 후보 33–45 ms였고 Todo fitter는 707–792 ms와 26–33 ms였습니다. 같은 프로세스 안에서 순서를 교대로 바꾼 비교의 원시 범위이며 모듈 시작 비용은 제외합니다. p95나 앱 전체 지연, 모든 경우의 속도 향상을 뜻하지 않습니다. 전체 본문과 짧은 입력은 일관되게 빨라지지 않았습니다.
+
+group-first 묶기 실험은 필요한 조건을 누락했고, graph interleaving은 다른 사례의 회수율을 높였지만 필요한 인용을 잃었습니다. 두 안 모두 제외했습니다. 긴 조건의 누락과 기존 검색 품질은 미해결입니다. 설치된 Host, 실제 provider/model, tokenizer나 전체 메모리 개선은 입증하지 않았습니다.

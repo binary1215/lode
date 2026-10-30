@@ -11,6 +11,18 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.73 — publication tracked separately
+
+- Reorganize the English and Korean READMEs around installation, the first task,
+  remaining work, plan updates and recorded before/after evidence. Move advanced
+  commands and contracts to their existing specialist documents, preserving links.
+- Correct Product-profile examples, Node requirements, Claude plugin/standalone
+  launch conditions and current versus historical World/Graph protocol descriptions.
+- Clarify shared schema-2 reader compatibility, explicit GC behavior, bounded Host
+  references and the limits of synthetic performance evidence.
+- Keep runtime behavior and execution fixtures unchanged; verify the relocated
+  documentation contracts and translated README destinations.
+
 ## 0.3.0-beta.72 — publication tracked separately
 
 - Let native GC termination finish and record its cleanup proof within the
