@@ -315,14 +315,24 @@ for (const [action, code] of [["deadline", "CODEX_RPC_DEADLINE"], ["abort", "COD
 test("unguarded queued writes retain drain-before-EOF compatibility", async t => {
   const f = fixture(t); await f.request();
   const wire = observeWire(f.handle);
-  // Unknown response IDs are harmless to this test's purpose: closing stops
-  // response dispatch, while the real native input queue must still drain.
-  const first = f.handle.writeInput(Buffer.from('{"id":"drain-1","method":"account/read","params":{"refreshToken":false}}\n'));
-  const second = f.handle.writeInput(Buffer.from('{"id":"drain-2","method":"account/read","params":{"refreshToken":false}}\n'));
-  const closing = f.transport.close();
-  await Promise.all([first, second, closing]);
-  assert.equal(first.writeAttempted, true); assert.equal(second.writeAttempted, true);
-  assert.deepEqual(wire.writes.map(frame => frame.id), ["drain-1", "drain-2"]);
+  // Verify native queue ordering, not OS delivery of close within the first
+  // 66ms cleanup phase. The existing clock watchdog still bounds stuck fixtures.
+  const restoreClock = controlCleanupClock(t);
+  try {
+    // Unknown response IDs are harmless: closing stops response dispatch,
+    // while the real native input queue must still drain before EOF.
+    const first = f.handle.writeInput(Buffer.from('{"id":"drain-1","method":"account/read","params":{"refreshToken":false}}\n'));
+    const second = f.handle.writeInput(Buffer.from('{"id":"drain-2","method":"account/read","params":{"refreshToken":false}}\n'));
+    const closing = f.transport.close();
+    await Promise.all([first, second, closing]);
+    assert.equal(first.writeAttempted, true); assert.equal(second.writeAttempted, true);
+    assert.deepEqual(wire.writes.map(frame => frame.id), ["drain-1", "drain-2"]);
+    const closed = f.journal.find(event => event.event === "process-closed");
+    assert.equal(closed.forced, false); assert.equal(closed.exactExitObserved, true);
+    assert.equal(closed.exitCode, 0); assert.equal(closed.supervision.treeCleanupVerified, true);
+    assert.ok(Number.isFinite(closed.cleanupTiming.eofFlushedAtMs));
+    assert.equal(closed.cleanupTiming.eofRejected, false);
+  } finally { restoreClock(); }
 });
 
 test("journal-cancelled turn intent is not a model write attempt", async t => {

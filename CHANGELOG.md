@@ -11,6 +11,16 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.74 — publication tracked separately
+
+- Use the existing controlled cleanup clock for the native queued-write/EOF
+  regression. Preserve exact write order, EOF completion, clean native exit and
+  process-tree proof without assuming an OS close event arrives within 66 ms.
+- Keep production transport/native code and configured cleanup budgets unchanged
+  (default 1,000 ms; this fixture uses 200 ms), together with strict forced-exit
+  failure classification. Real escalation and EOF-resistant tests retain their
+  clocks and assertions.
+
 ## 0.3.0-beta.73 — publication tracked separately
 
 - Reorganize the English and Korean READMEs around installation, the first task,
