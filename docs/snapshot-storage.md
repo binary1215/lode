@@ -2,6 +2,34 @@
 
 New local World/Graph snapshots use compact JSON compressed as `.json.gz`. Existing `.json` files keep their original paths and bytes and are reused by ID. Installation, resume and reads do not migrate them.
 
+Ordinary complete writes under a selected Project owner use `shared-domains-v2`: a gzip root with
+the changing composition inline and references to immutable code parts. A World
+uses at most two parts, a Graph at most one. The parts retain the existing domain
+schema 1 / producer 0.1.0; only the root uses schema 2 / producer 0.2.0. There is
+no chain of previous snapshots to reconstruct. Decisions can reuse code parts;
+code changes may replace an entire code part. Snapshot membership metadata still
+scales with the graph. This is neither selective first-read IO nor O(change) work.
+
+Pure lower adapters without a selected Project owner retain whole-document
+storage. They do not require initialization to keep their existing contract.
+Explicit composition choices still require and fully validate the owner.
+
+The minimum reader is a release supporting physical schema 2. **Beta.69 and
+earlier reject new schema-2 roots** with `INVALID_SNAPSHOT_COMPOSITION`; they do
+not downgrade or rewrite them. Update each client sharing the Project before
+reading new World/Graph snapshots. This is format compatibility guidance, not a
+new setup or approval gate. Older whole JSON/gzip, Git and domain-v1 originals
+remain readable by the new reader, in place. Explicit whole/Git/v1 choices remain
+available. Physical layout does not add fields to new semantic World payloads;
+an already recorded v1 analysis field is preserved for unchanged-history identity.
+
+Readers retain the full part/address/Project/type/producer/digest and reconstructed
+World/Graph verification. Parts are dependencies of the existing retention and
+deletion closures and publisher/reader lifetimes. A missing, corrupt or denied
+part fails the dependent read; current data never substitutes for it. Existing
+Graph-first/World pointer publication can still report a partial failure: this
+layout does not create a two-pointer atomic transaction or roll back committed work.
+
 ## Encoding and historical reads
 
 The existing adapters list/read both formats and return the actual physical location. Encoding does not change semantic IDs, hashes, parent provenance or authority. Explicit `snapshotEncoding: "json"` uses compact uncompressed JSON for new writes.
@@ -44,7 +72,7 @@ Structured apply output separates deleted, failed and preserved paths and report
 
 ## Generated Git ignore rules
 
-Initialization and explicit resume create the selected `.lode/.gitignore` or retained `.head/.gitignore` only when it is absent. Every existing file stays untouched, including user-edited generated rules. Atomic no-clobber creation preserves a file created concurrently. An exception with a provably unrelated rooted literal prefix, such as `!docs/keep.md`, permits generation. An exception that may reach the generated paths, or an ambiguous basename/wildcard/escape, preserves the user policy and skips this optional improvement. The helper rechecks observed policy bytes before creation; it does not lock arbitrary external editors. Optional ignore failure does not block project readiness or ordinary work.
+Initialization and explicit resume create the selected `.lode/.gitignore` or retained `.head/.gitignore` only when it is absent. Every existing file stays untouched, including user-edited generated rules. Atomic no-clobber creation preserves a file created concurrently. Each generated rule is checked separately against root exceptions. For example, `!.gitkeep` permits the exact `/graph-discovery/index.json` rule but preserves directory-wide rules that could hide a descendant `.gitkeep`. A provably disjoint rooted exception permits its unrelated rules; overlapping or ambiguous wildcard/escape rules remain skipped. Results identify the included and skipped subset. The helper rechecks observed policy bytes before creation; it does not lock arbitrary external editors or change tracked files. Optional ignore failure does not block project readiness or ordinary work.
 
 | Relative pattern inside storage | Why disposable |
 | --- | --- |
@@ -70,7 +98,7 @@ Default adoption requires measured costs and independent review. A smaller activ
 
 ## Local domain-bundle trial (explicit; not a new default)
 
-The internal local adapters accept `snapshotLayout: "domain-bundles-v1"`. Ordinary adapters still write whole gzip snapshots. Existing IDs, JSON/gzip files, Git objects and historical byte pins are not rewritten. This trial adds no user pin/save/approval step.
+The internal local adapters still accept `snapshotLayout: "domain-bundles-v1"` explicitly. Ordinary complete snapshots use the flat v2 layout above; `snapshotLayout: "whole"` preserves whole-file writes. Existing IDs, JSON/gzip files, Git objects and historical byte pins are not rewritten. This older trial adds no user pin/save/approval step.
 
 The trial emits Graph protocol 0.16 alongside the unchanged 0.15 producer. A relation has a stable `logicalRelationId`, an evidence-sensitive `contentRevisionId`/`edgeId`, and its exact `sourceSnapshotId` observation. Logical identity includes Project, endpoint logical identities and continuity generation/unknown state, type, origin, authority and producer. Content revisions also bind concrete endpoints, evidence, freshness and confidence. Edges targeting a SourceSnapshot bind that exact endpoint. Deletion/recreation, another Session, changed evidence or confidence cannot silently become the same observation or revision. Existing graph protocols retain their original verification and IDs.
 
@@ -94,9 +122,15 @@ An exact source-bundle pin uses the raw digest of the same buffer parsed by the 
 
 ## Adopted incremental-scale scope
 
-Ordinary whole gzip and the existing domain-bundles-v1 contract remain unchanged. Full World/Graph hash, original-byte, Project and authority checks are retained. Changed bytes from one synchronous source observation are consumed by analysis instead of accumulated until the walk ends; ownership validation of reused previous analysis stays intact. There is no new cache/save/pin/approval step or daemon.
+Explicit whole-file gzip and the existing domain-bundles-v1 read/write contracts remain available. Full World/Graph hash, original-byte, Project and authority checks are retained. Changed bytes from one synchronous source observation are consumed by analysis instead of accumulated until the walk ends; ownership validation of reused previous analysis stays intact. There is no new cache/save/pin/approval step or daemon.
 
 File-level relation reuse and two packed-chunk formats were evaluated in separate local frozen trials. Additional validation/copy and full reconstruction/file-check costs increased observed end-to-end latency, so these trials are not adopted into the active product path. The existing domain trial's exact whole codeAnalysisInputBasis reuse is preserved. Full traversal/hash, relationship generation, serialization/verification, snapshot listing and Git namespace checks remain; this patch does not claim an O(change) whole pipeline. No history/original migration, GC or ref deletion occurs.
+
+### Request-local private Git reads
+
+Private Git object reads use a bounded `cat-file --batch` child per selected object group. Exact OID, object type, declared size, raw Git hash, frame terminator and complete EOF are checked. Metadata is validated before it supplies the snapshot body bound; streamed buffers are owned by the decoder. The same operation deadline and cancellation apply, and every child is reaped before return. Isolated cleanup verification consumes the same protocol without reading from the main store as a fallback.
+
+This changes subprocess orchestration only. Full World/Graph and Project checks, exact snapshot addresses, namespace checks and existing publication/cleanup lifetimes remain. There is no daemon, network request, shared authorization or persistent read cache. Explicit whole-gzip storage remains available; fewer children alone do not establish whole-project performance.
 
 ## Mixed-backend physical cleanup
 

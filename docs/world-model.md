@@ -25,7 +25,7 @@ The active dependency-free local JSON adapter stores:
 .lode/world-model/snapshots/world-model-*.json     Retained legacy snapshots
 ```
 
-New local snapshots use `.json.gz`; existing `.json` files remain unchanged and readable. See [Snapshot storage and preservation](snapshot-storage.md) for physical bounds, ignore rules and the read-only GC diagnostic.
+New complete snapshots written with a selected Project owner use a flat `shared-domains-v2` root in `.json.gz` and shared immutable code-domain parts. Pure lower adapters without a selected owner retain whole-document storage. The root reconstructs the complete snapshot; it is not a partial context or a chain of earlier snapshots. Existing whole `.json`/`.json.gz`, Git and domain-bundles-v1 snapshots remain unchanged and readable by the new reader. Older clients that do not support composition schema 2 reject a v2 root; update every client sharing a store before writing it. See [Snapshot storage and preservation](snapshot-storage.md) for reader compatibility, physical bounds, ignore rules and cleanup.
 
 `current.json` points to the Hot snapshot, records the physical adapter descriptor, and records added, changed, and removed paths as the Warm tier. Previous content-addressed snapshots form the Cold tier. The physical adapter descriptor is not part of the semantic snapshot hash, so the same canonical inputs produce the same World Model ID through a conforming local, memory, or future GraphDB adapter.
 
@@ -39,7 +39,7 @@ current file is still read and hashed. The complete semantic graph is reused onl
 when every source fact, scope, rule and verified source-relation input is identical;
 new, removed, renamed or changed sources rebuild the graph, including cross-file
 import resolution. An explicit compute adapter keeps its requested execution path.
-These optimizations apply to the default whole snapshots as well as domain bundles.
+These optimizations apply to explicit whole snapshots as well as the default shared-domain layout.
 
 Omitting ancestry in `world-index` preserves the verified current parent sets.
 Explicit parent inputs, including an empty array or merge parents, remain distinct.

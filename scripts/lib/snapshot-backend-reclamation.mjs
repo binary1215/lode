@@ -144,7 +144,7 @@ export class SnapshotBackendReclamation {
       } finally {fs.closeSync(out);}
       if(digest.digest("hex")!==match[1]||!same(row.identity,identity(fs.fstatSync(fd,{bigint:true}))))fail("UNVERIFIED_GC_PACK_RESIDUE");this.recheck(row);
       const isolated=new GitSnapshotStore({projectRoot:this.root,storage:this.storage,signal:this.signal,onProcess:this.onProcess});isolated.directory=scratch;
-      isolated.invoke=(args,context,options={})=>this.supervisedCommand(args,options.input===undefined?Buffer.alloc(0):Buffer.from(options.input),null,options.maxBytes??SNAPSHOT_STORAGE_LIMITS.decodedBytes,isolated);
+      isolated.invoke=(args,context,options={})=>this.supervisedCommand(args,options.input===undefined?Buffer.alloc(0):Buffer.from(options.input),null,options.maxBytes??SNAPSHOT_STORAGE_LIMITS.decodedBytes,isolated,options.consume);
       await isolated.invoke(["index-pack","--index-version=2","--no-rev-index","--threads=1","-o",idx,pack],this.context,{maxBytes:8192});
       if(fs.statSync(idx).size>reserve||fs.readdirSync(packDir).some(name=>![path.basename(pack),path.basename(idx)].includes(name)))fail("GC_STAGING_BYTE_LIMIT");
       const indexHeader=Buffer.alloc(8),indexFd=fs.openSync(idx,"r");try{fs.readSync(indexFd,indexHeader,0,8,0);}finally{fs.closeSync(indexFd);}if(indexHeader.readUInt32BE(0)!==0xff744f63||indexHeader.readUInt32BE(4)!==2)fail("UNSUPPORTED_GC_INDEX_PROFILE");
@@ -235,7 +235,7 @@ export class SnapshotBackendReclamation {
   async packStream(oids,file,maxBytes) {
     return this.supervisedCommand(["pack-objects","--stdout","--threads=1","--window-memory=64m"],Buffer.from(oids.join("\n")+"\n"),file,maxBytes,this.store);
   }
-  async supervisedCommand(gitArgs,input,file,maxBytes,store) {
+  async supervisedCommand(gitArgs,input,file,maxBytes,store,consume=null) {
     this.check();const nullFile=process.platform==="win32"?"NUL":"/dev/null";
     const env={};for(const key of ["PATH","Path","SystemRoot","WINDIR","TEMP","TMP","COMSPEC","PATHEXT"])if(process.env[key])env[key]=process.env[key];
     Object.assign(env,{GIT_CONFIG_NOSYSTEM:"1",GIT_CONFIG_GLOBAL:nullFile,GIT_TERMINAL_PROMPT:"0",GIT_NO_LAZY_FETCH:"1",GIT_NO_REPLACE_OBJECTS:"1",GIT_OPTIONAL_LOCKS:"0",LC_ALL:"C"});
@@ -254,7 +254,7 @@ export class SnapshotBackendReclamation {
       const child=supervised.child;actualEvidence.pid=child.pid||null;let bytes=0,failure=null,stderrBytes=0,escalate;
       const stop=code=>{failure??=Object.assign(new Error(code),{code});supervised.terminate(false);escalate??=setTimeout(()=>supervised.terminate(true),250);};
       const timer=setInterval(()=>{try{this.check();}catch(error){stop(error.code);}},20);
-      child.stdout.on("data",chunk=>{child.stdout.pause();try{if(bytes+chunk.length>maxBytes)stop("GC_STAGING_BYTE_LIMIT");else if(!failure){if(fd===null){chunks.push(chunk);bytes+=chunk.length;}else{let offset=0;while(offset<chunk.length){const n=fs.writeSync(fd,chunk,offset,chunk.length-offset);if(n<=0)fail("GC_STAGING_WRITE_FAILED");offset+=n;bytes+=n;}}}}catch(error){failure??=error;stop(error.code||"GC_STAGING_WRITE_FAILED");}finally{child.stdout.resume();}});
+      child.stdout.on("data",chunk=>{child.stdout.pause();try{if(bytes+chunk.length>maxBytes)stop("GC_STAGING_BYTE_LIMIT");else if(!failure){if(consume){bytes+=chunk.length;consume(chunk);}else if(fd===null){chunks.push(chunk);bytes+=chunk.length;}else{let offset=0;while(offset<chunk.length){const n=fs.writeSync(fd,chunk,offset,chunk.length-offset);if(n<=0)fail("GC_STAGING_WRITE_FAILED");offset+=n;bytes+=n;}}}}catch(error){failure??=error;stop(error.code||"GC_STAGING_WRITE_FAILED");}finally{child.stdout.resume();}});
       child.stderr.on("data",chunk=>{stderrBytes+=chunk.length;if(stderrBytes<=8192)errors.push(chunk);});child.stdin.on("error",error=>{if(error.code!=="EPIPE")failure??=error;});
       child.on("error",error=>{failure??=error;});
       child.once("close",(code,signal)=>{clearInterval(timer);clearTimeout(escalate);if(fd!==null){try{fs.fsyncSync(fd);}catch(error){failure??=error;}fs.closeSync(fd);}
@@ -306,7 +306,7 @@ export class SnapshotBackendReclamation {
         let written;try{written=await this.packStream(oids,temporary,MAX_STORED-reserve-metadataBytes);}catch(error){result.writtenPackBytes+=error.writtenOutputBytes||0;throw error;}result.writtenPackBytes+=written;
         this.check();const headerFd=fs.openSync(temporary,"r"),head=Buffer.alloc(12);try{fs.readSync(headerFd,head,0,12,0);}finally{fs.closeSync(headerFd);}if(head.toString("ascii",0,4)!=="PACK"||head.readUInt32BE(8)!==oids.length)fail("GC_STAGED_PACK_OBJECT_COUNT");
         const isolated=new GitSnapshotStore({projectRoot:this.root,storage:this.storage,signal:this.signal,onProcess:this.onProcess});isolated.directory=scratch;
-        isolated.invoke=(args,context,options={})=>this.supervisedCommand(args,options.input===undefined?Buffer.alloc(0):Buffer.from(options.input),null,options.maxBytes??SNAPSHOT_STORAGE_LIMITS.decodedBytes,isolated);
+        isolated.invoke=(args,context,options={})=>this.supervisedCommand(args,options.input===undefined?Buffer.alloc(0):Buffer.from(options.input),null,options.maxBytes??SNAPSHOT_STORAGE_LIMITS.decodedBytes,isolated,options.consume);
         await isolated.invoke(["index-pack","--index-version=2","--no-rev-index","--threads=1","-o",path.join(packDir,"new.idx"),temporary],this.context,{maxBytes:8192});
         const idx=path.join(packDir,"new.idx");if(fs.statSync(idx).size>reserve)fail("GC_STAGING_BYTE_LIMIT");
         if(fs.readdirSync(packDir).some(name=>!["new.pack","new.idx"].includes(name)))fail("UNSUPPORTED_GC_STAGED_ENTRY");

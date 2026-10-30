@@ -56,23 +56,26 @@ function snapshotDescriptor(snapshot, currentWorldModelId, currentParentSourceId
     graphSnapshotId: graph.graphSnapshotId,
     graphSnapshotHash: graph.graphSnapshotHash,
     sourceSnapshotId: graph.sourceSnapshotId,
-    parentSourceSnapshotIds: graph.parentSourceSnapshotIds,
+    parentSourceSnapshotIds: [...graph.parentSourceSnapshotIds],
     productModelId: snapshot.productModel?.productModelId || null,
     tier,
   };
 }
 
-export async function inspectGraphLineage({ root = ".", cursor = "", limit = 25, storeAdapter = null } = {}) {
+export async function inspectGraphLineage(options = {}) { return inspectGraphLineageWithReader(options); }
+async function inspectGraphLineageWithReader({ root = ".", cursor = "", limit = 25, storeAdapter = null } = {}, reader = null) {
   const inspected = readyProject(root);
   const selectedLimit = normalizeLimit(limit, 25, PAGE_LIMIT_MAX, "Graph lineage page limit");
   const current = (await readWorldModel({ root: inspected.project.projectRoot, storeAdapter }));
+  reader?.remember(inspected, current.snapshot);
   const adapter = createWorldModelStoreAdapter({ projectRoot: inspected.project.projectRoot, adapter: storeAdapter, storage: inspected.storage });
   const ids = (await adapter.listSnapshotIds());
   const start = cursor ? ids.findIndex((id) => id === cursor) + 1 : 0;
   if (cursor && start === 0) fail("Graph lineage cursor is not a retained World Model snapshot.", "INVALID_GRAPH_LINEAGE_CURSOR");
   const pageIds = ids.slice(start, start + selectedLimit);
   const currentParents = new Set(current.snapshot.temporalProvenanceGraph.parentSourceSnapshotIds);
-  const snapshots = (await Promise.all(pageIds.map(async (worldModelId) => (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId, storeAdapter: adapter })).snapshot)));
+  const snapshots = (await Promise.all(pageIds.map(async (worldModelId) => reader ? reader.read(inspected, worldModelId, adapter)
+    : (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId, storeAdapter: adapter })).snapshot)));
   const entries = snapshots.map((snapshot) => snapshotDescriptor(snapshot, current.snapshot.worldModelId, currentParents));
   const segmentPayload = { projectId: inspected.project.projectId, cursor: cursor || null, entries };
   const segmentHash = digest(canonicalJson(segmentPayload));
@@ -239,6 +242,7 @@ function explainGraphChanges(beforeGraph, afterGraph, beforeNodes, afterNodes, b
   const removed = group(changes.removedEdges, beforeEdges, beforeGraph, beforeEndpoints);
   const added = group(changes.addedEdges, afterEdges, afterGraph, afterEndpoints);
   const observationRelations = [], matchedBefore = new Set(), matchedAfter = new Set();
+  const membershipRelations = [];
   let ambiguousGroups = 0;
   for (const [key, fromIds] of removed) {
     const toIds = added.get(key);
@@ -254,6 +258,44 @@ function explainGraphChanges(beforeGraph, afterGraph, beforeNodes, afterNodes, b
       observationRelations.push({ fromEdgeId: id, toEdgeId: id });
     }
   }
+  // Snapshot membership is a distinct observation: the source endpoint really
+  // changed. Match only unchanged exact FileRevisions and all remaining data,
+  // including unknown extensions. Neither matching text nor a node ID is proof.
+  const membershipKey = (edge, graph, endpoints) => {
+    const source = endpoints.get(edge.from), target = endpoints.get(edge.to);
+    if (edge.type !== "CONTAINS" || source?.kind !== "SourceSnapshot" || edge.from !== graph.sourceSnapshotId
+      || target?.kind !== "FileRevision" || target.sourceSnapshotId !== graph.sourceSnapshotId
+      || edge.sourceSnapshotId !== graph.sourceSnapshotId || endpointContinuity(target, graph).unknown) return null;
+    const { edgeId, logicalRelationId, contentRevisionId, sourceSnapshotId, from, ...record } = edge;
+    const { nodeId, parentSnapshotIds, fileRevisionIds, symbolRevisionIds, testRevisionIds, productRevisionIds,
+      productModelId, stateDigest, evidenceIds, ...sourceMetadata } = source;
+    return canonicalJson({ record, target: nodeContent(target, graph), sourceMetadata,
+      projectId: graph.projectId, protocol: graph.protocol, relationAnalysisBasis: graph.relationAnalysisBasis ?? null });
+  };
+  const memberships = (ids, edges, graph, endpoints, matched) => {
+    const groups = new Map();
+    for (const id of ids) {
+      if (matched.has(id)) continue;
+      const key = membershipKey(edges.get(id), graph, endpoints);
+      if (key === null) continue;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(id);
+    }
+    return groups;
+  };
+  const oldMembership = memberships(changes.removedEdges, beforeEdges, beforeGraph, beforeEndpoints, matchedBefore);
+  const newMembership = memberships(changes.addedEdges, afterEdges, afterGraph, afterEndpoints, matchedAfter);
+  for (const [key, ids] of oldMembership) {
+    const next = newMembership.get(key);
+    if (!next) continue;
+    if (ids.length !== 1 || next.length !== 1) { ambiguousGroups++; continue; }
+    const before = beforeEdges.get(ids[0]), after = afterEdges.get(next[0]);
+    matchedBefore.add(before.edgeId); matchedAfter.add(after.edgeId);
+    membershipRelations.push({ fromEdgeId: before.edgeId, toEdgeId: after.edgeId,
+      fromSourceSnapshotId: before.from, toSourceSnapshotId: after.from, fileRevisionId: after.to,
+      path: afterEndpoints.get(after.to).path });
+  }
+  membershipRelations.sort((a,b) => a.fromEdgeId < b.fromEdgeId ? -1 : a.fromEdgeId > b.fromEdgeId ? 1 : 0);
   observationRelations.sort((a, b) => a.fromEdgeId < b.fromEdgeId ? -1 : a.fromEdgeId > b.fromEdgeId ? 1
     : a.toEdgeId < b.toEdgeId ? -1 : a.toEdgeId > b.toEdgeId ? 1 : 0);
   const producer = graph => ({ protocol: graph.protocol,
@@ -267,6 +309,11 @@ function explainGraphChanges(beforeGraph, afterGraph, beforeNodes, afterNodes, b
       contentAdded: boundedChanges(changes.addedEdges.filter(id => !matchedAfter.has(id)), limit),
       contentRemoved: boundedChanges(changes.removedEdges.filter(id => !matchedBefore.has(id)), limit),
       observationOnly: boundedChanges(observationRelations, limit), ambiguousGroups,
+      snapshotMembership: boundedChanges(membershipRelations, limit),
+    },
+    contextObservations: {
+      addedSourceSnapshots: boundedChanges(changes.addedNodes.filter(id => afterEndpoints.get(id)?.kind === "SourceSnapshot"), limit),
+      removedSourceSnapshots: boundedChanges(changes.removedNodes.filter(id => beforeEndpoints.get(id)?.kind === "SourceSnapshot"), limit),
     },
     producerTransition: { changed: canonicalJson(fromProducer) !== canonicalJson(toProducer), from: fromProducer, to: toProducer },
     rawChangesPreserved: true,
@@ -275,7 +322,8 @@ function explainGraphChanges(beforeGraph, afterGraph, beforeNodes, afterNodes, b
   };
 }
 
-export async function diffGraphLineage({ root = ".", fromWorldModelId, toWorldModelId, limit = 100, storeAdapter = null, scopePaths = null, cursor = "" } = {}) {
+export async function diffGraphLineage(options = {}) { return diffGraphLineageWithReader(options); }
+async function diffGraphLineageWithReader({ root = ".", fromWorldModelId, toWorldModelId, limit = 100, storeAdapter = null, scopePaths = null, cursor = "" } = {}, reader = null) {
   const inspected = readyProject(root);
   const selectedLimit = normalizeLimit(limit, 100, 500, "Graph lineage diff limit");
   if (fromWorldModelId === toWorldModelId) fail("Graph lineage diff requires two different snapshots.", "GRAPH_LINEAGE_DIFF_IDENTICAL");
@@ -285,8 +333,10 @@ export async function diffGraphLineage({ root = ".", fromWorldModelId, toWorldMo
     if (!Array.isArray(scopePaths) || !scopePaths.length || scopePaths.length > 500 || scopePaths.some(p => typeof p !== "string" || !p || p.includes(String.fromCharCode(92)) || p.includes(String.fromCharCode(0)) || p.startsWith("/") || /^[A-Za-z]:/.test(p) || p.split("/").some(s => !s || s === "." || s === ".."))) fail("Diff scope requires normalized exact repository paths.", "INVALID_GRAPH_LINEAGE_SCOPE");
     selectedPaths = [...new Set(scopePaths)].sort();
   }
-  const fromSnapshot = (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: fromWorldModelId, storeAdapter })).snapshot;
-  const toSnapshot = (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: toWorldModelId, storeAdapter })).snapshot;
+  const fromSnapshot = reader ? await reader.read(inspected, fromWorldModelId, storeAdapter)
+    : (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: fromWorldModelId, storeAdapter })).snapshot;
+  const toSnapshot = reader ? await reader.read(inspected, toWorldModelId, storeAdapter)
+    : (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: toWorldModelId, storeAdapter })).snapshot;
   const pageBasis = { projectId: inspected.project.projectId, from: fromSnapshot.worldModelId, fromHash: fromSnapshot.worldModelHash,
     to: toSnapshot.worldModelId, toHash: toSnapshot.worldModelHash, paths: selectedPaths, order: "lineage-diff-v1" };
   let previousEnds = {};
@@ -340,7 +390,7 @@ export async function diffGraphLineage({ root = ".", fromWorldModelId, toWorldMo
     to: { worldModelId: toSnapshot.worldModelId, graphSnapshotId: toSnapshot.temporalProvenanceGraph.graphSnapshotId, sourceSnapshotId: toSnapshot.temporalProvenanceGraph.sourceSnapshotId },
     changes,
     changeExplanation: explainGraphChanges(fromSnapshot.temporalProvenanceGraph, toSnapshot.temporalProvenanceGraph,
-      beforeNodes, afterNodes, beforeEdges, afterEdges, { changedNodes, addedEdges, removedEdges }, selectedLimit),
+      beforeNodes, afterNodes, beforeEdges, afterEdges, { addedNodes, removedNodes, changedNodes, addedEdges, removedEdges }, selectedLimit),
     ...(scoped ? { scope: { paths: selectedPaths, verification: "full-endpoint-snapshots", counts: "exact-within-selected-path-scope",
       edges: "incident-to-scoped-nodes-or-exact-evidence-path", possibleMoves: "both-paths-within-scope",
       globalChangeCounts: selectedPaths ? "not-computed" : "exact", rootContextChanged: fromSnapshot.sourceDigest !== toSnapshot.sourceDigest },
@@ -352,4 +402,67 @@ export async function diffGraphLineage({ root = ".", fromWorldModelId, toWorldMo
     },
     authority: authority(),
   };
+}
+
+// Actual Explorer history -> selected diff flow. Only this closure can seed its
+// request-local cache, after the existing full Core verifier succeeds. Callers
+// cannot inject snapshots; public single operations keep their original reads.
+export async function inspectGraphLineageComparison({ root = ".", limit = 3, diffLimit = 40, storeAdapter = null } = {}) {
+  const snapshots = new Map(), owned = new WeakSet(); let basis = null;
+  const owner = readyProject(root);
+  const physical = createWorldModelStoreAdapter({ projectRoot: owner.project.projectRoot, storage: owner.storage, adapter: storeAdapter });
+  const detach = entry => {
+    if (!entry) return entry;
+    let document;
+    try { document = structuredClone(entry.document); }
+    catch (error) {
+      // Accepted custom adapters may carry unused non-cloneable extensions.
+      // They retain full reads and validation, without gaining a cache entry.
+      if (error.name === "DataCloneError") return entry;
+      throw error;
+    }
+    if (document && typeof document === "object") owned.add(document);
+    return { ...entry, document };
+  };
+  const readOwned = id => {
+    const pending = physical.readSnapshot(id);
+    // Detach synchronous aliases before yielding; resolved async bytes are
+    // detached immediately, before the existing Core verifier observes them.
+    return pending && typeof pending.then === "function" ? Promise.resolve(pending).then(detach) : detach(pending);
+  };
+  // Forward the existing interface without wrapping the caller object in a
+  // Proxy: fixed own methods and frozen adapters retain their normal contract.
+  // Method calls keep the physical adapter as this, including private fields.
+  const ownedAdapter = { adapterVersion: physical.adapterVersion, readSnapshot: readOwned };
+  for (const method of ["describe", "readPointer", "writePointer", "writeSnapshot", "listSnapshotIds"]) {
+    ownedAdapter[method] = (...args) => physical[method](...args);
+  }
+  const bind = inspected => {
+    const identity = JSON.stringify([inspected.project.projectId, inspected.project.projectRoot, inspected.storage.directory]);
+    if (basis !== null && basis !== identity) fail("Graph history Project changed during inspection.", "WORLD_MODEL_IDENTITY_MISMATCH");
+    basis = identity;
+  };
+  const remember = (inspected, snapshot) => {
+    bind(inspected);
+    // Only fully verified detached documents are memoed. Caller-owned adapter
+    // bodies remain mutable; output projections keep their ordinary semantics.
+    if (owned.has(snapshot)) snapshots.set(snapshot.worldModelId, snapshot);
+    return snapshot;
+  };
+  const reader = { remember, async read(inspected, worldModelId, adapter) {
+    bind(inspected);
+    if (snapshots.has(worldModelId)) return snapshots.get(worldModelId);
+    const entry = await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId, storeAdapter: adapter });
+    return remember(inspected, entry.snapshot);
+  } };
+  try {
+    const lineage = await inspectGraphLineageWithReader({ root, limit, storeAdapter: ownedAdapter }, reader), entries = lineage.segment.entries;
+    const current = entries.find(entry => entry.worldModelId === lineage.currentWorldModelId);
+    const parent = entries.find(entry => current?.parentSourceSnapshotIds.includes(entry.sourceSnapshotId));
+    const pair = current && parent ? [parent, current] : entries.slice(0, 2);
+    for (const id of snapshots.keys()) if (!pair.some(entry => entry.worldModelId === id)) snapshots.delete(id);
+    const diff = pair.length === 2 ? await diffGraphLineageWithReader({ root, fromWorldModelId: pair[0].worldModelId,
+      toWorldModelId: pair[1].worldModelId, limit: diffLimit, storeAdapter: ownedAdapter }, reader) : null;
+    return { lineage, entries, diff, comparison: parent ? "retained-parent-to-current" : "exact-retained-pair-not-chronological-inference" };
+  } finally { snapshots.clear(); }
 }

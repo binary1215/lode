@@ -1418,6 +1418,7 @@
     if (explanation) {
       body.append(text("p", `Changed node content: ${explanation.changedNodes.content.count} · snapshot membership only: ${explanation.changedNodes.observationOnly.count}.`),
         text("p", `Relation content: ${explanation.relations.contentAdded.count} added, ${explanation.relations.contentRemoved.count} removed · snapshot membership only: ${explanation.relations.observationOnly.count}.`));
+      if (explanation.relations.snapshotMembership) body.append(text("p", `Snapshot/context observations: ${explanation.relations.snapshotMembership.count} memberships to unchanged exact file revisions${explanation.relations.snapshotMembership.omittedCount ? ` (${explanation.relations.snapshotMembership.omittedCount} examples omitted)` : ""}. Original source endpoints remain distinct.`, "hint"));
       if (explanation.producerTransition.changed) body.append(text("p", "Producer or analysis basis changed; this transition is included in the exact comparison.", "hint"));
       if (explanation.relations.ambiguousGroups) body.append(text("p", "Ambiguous relation matches remain separate in raw changes.", "hint"));
       body.append(text("p", "Record comparison preserves historical identities; it does not establish semantic continuity or approval.", "hint"));

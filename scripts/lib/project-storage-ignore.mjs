@@ -19,10 +19,17 @@ const BEGIN = "# BEGIN Lode generated disposable storage rules", END = "# END Lo
 // This is a conservative disjointness proof, not a second Git pattern engine.
 // Only a rooted literal prefix can prove an exception unrelated. Basename,
 // escaped and wildcard prefixes remain unknown and preserve the user's policy.
-function exceptionMayReach(pattern, targets) {
+function exceptionMayReach(pattern, targets, exactFile = false) {
   const body = pattern.replace(/ +$/, "").replace(/\/$/, ""), marker = body.search(/[*?\[\]\\]/);
   const literal = marker < 0 ? body : body.slice(0, marker);
-  if (!body.startsWith("/") && !literal.includes("/")) return true;
+  if (!body.startsWith("/") && !literal.includes("/")) {
+    // An exact basename cannot match a differently named exact file or any
+    // of its known parents. Directory rules also affect unknown descendants.
+    if (exactFile && marker < 0 && !pattern.endsWith("/")) {
+      return targets.some(target => target.toLowerCase().split("/").includes(body.toLowerCase()));
+    }
+    return true;
+  }
   const prefix = literal.replace(/^\//, "").toLowerCase();
   return targets.some(target => {
     const common = Math.min(prefix.length, target.length);
@@ -30,10 +37,10 @@ function exceptionMayReach(pattern, targets) {
   });
 }
 
-function readIgnorePolicy(root, file, targets) {
+function readIgnorePolicy(root, file, targets, collectExceptions = false) {
   safeSnapshotPath(root, file);
   const before = fs.lstatSync(file, { throwIfNoEntry: false });
-  if (!before) return { file, bytes: null };
+  if (!before) return { file, bytes: null, exceptions: [] };
   if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1 || before.size > 1024 * 1024) {
     throw Object.assign(new Error("User ignore cannot be safely inspected."), { code: "USER_IGNORE_UNAVAILABLE" });
   }
@@ -42,14 +49,16 @@ function readIgnorePolicy(root, file, targets) {
     || bytes.length !== before.size) throw Object.assign(new Error("User ignore changed during inspection."), { code: "USER_IGNORE_CHANGED_CONCURRENTLY" });
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   if (text.includes("\0")) throw Object.assign(new Error("User ignore contains NUL."), { code: "USER_IGNORE_UNAVAILABLE" });
+  const exceptions = [];
   for (const line of text.split(/\r?\n/)) {
     // Git recognizes ! only in column zero. Escaped ! and indented text are
     // literal patterns, not exceptions. Retaining spaces is conservative.
-    if (line.startsWith("!") && exceptionMayReach(line.slice(1), targets)) {
+    if (line.startsWith("!")) exceptions.push(line.slice(1));
+    if (!collectExceptions && line.startsWith("!") && exceptionMayReach(line.slice(1), targets)) {
       throw Object.assign(new Error("User exception may reach generated paths."), { code: "USER_IGNORE_RULES_TAKE_PRECEDENCE" });
     }
   }
-  return { file, bytes, dev: after.dev, ino: after.ino };
+  return { file, bytes, dev: after.dev, ino: after.ino, exceptions };
 }
 
 function assertIgnorePoliciesUnchanged(policies) {
@@ -71,17 +80,25 @@ export function ensureProjectStorageIgnore({ root, storage }) {
     return withProjectMutation({ root, storage, scope: "storage-ignore", timeoutMs: 0 }, () => {
       safeSnapshotPath(root, file);
       const directory = formatForVerifiedOwner(storage).directory;
-      const targets = GENERATED_STORAGE_IGNORE_RULES.map(rule => directory + rule.pattern.split(/[*?\[]/, 1)[0]);
-      const policy = readIgnorePolicy(root, path.join(root, ".gitignore"), targets);
+      const policy = readIgnorePolicy(root, path.join(root, ".gitignore"), [], true);
       // An existing file belongs to its editor, including generated files edited
       // later. Never append: a concurrent user exception must keep its ordering.
       if (fs.lstatSync(file, { throwIfNoEntry: false })) return { status: "preserved", reasonCode: "EXISTING_STORAGE_IGNORE", ordinaryWorkBlocked: false };
-      const block = [BEGIN, ...GENERATED_STORAGE_IGNORE_RULES.map(rule => rule.pattern), END, ""].join("\n");
+      const included = [], skipped = [];
+      for (const rule of GENERATED_STORAGE_IGNORE_RULES) {
+        const target = directory + rule.pattern.split(/[*?\[]/, 1)[0];
+        const exactFile = !rule.pattern.endsWith("/") && !/[*?\[\]\\]/.test(rule.pattern);
+        if (policy.exceptions.some(pattern => exceptionMayReach(pattern, [target], exactFile))) {
+          skipped.push({ pattern: rule.pattern, reasonCode: "USER_IGNORE_RULES_TAKE_PRECEDENCE" });
+        } else included.push(rule.pattern);
+      }
+      if (!included.length) return { status: "preserved", reasonCode: "USER_IGNORE_RULES_TAKE_PRECEDENCE", rules: { included, skipped }, ordinaryWorkBlocked: false };
+      const block = [BEGIN, ...included, END, ""].join("\n");
       assertProjectStorageUnchanged(storage);
       assertIgnorePoliciesUnchanged([policy]);
       try { atomicCreateArtifact(file, block); }
       catch (error) { if (error.code === "EEXIST") return { status: "preserved", reasonCode: "USER_IGNORE_CREATED_CONCURRENTLY", ordinaryWorkBlocked: false }; throw error; }
-      return { status: "created", path: path.relative(root, file).replaceAll("\\", "/"), ordinaryWorkBlocked: false };
+      return { status: "created", path: path.relative(root, file).replaceAll("\\", "/"), rules: { included, skipped }, ordinaryWorkBlocked: false };
     });
   } catch (error) { return { status: "preserved", reasonCode: error.code || "USER_IGNORE_UNAVAILABLE", ordinaryWorkBlocked: false }; }
 }

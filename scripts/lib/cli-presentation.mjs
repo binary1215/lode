@@ -1272,6 +1272,7 @@ function formatGraphLineageDiff(value) {
     `Graph comparison: ${changes.addedNodes.count} added nodes; ${changes.removedNodes.count} removed nodes.`,
     `Changed node content: ${explanation.changedNodes.content.count}; snapshot membership only: ${explanation.changedNodes.observationOnly.count}.`,
     `Relation content: ${explanation.relations.contentAdded.count} added, ${explanation.relations.contentRemoved.count} removed; snapshot membership only: ${explanation.relations.observationOnly.count}.`,
+    explanation.relations.snapshotMembership ? `Snapshot/context observations: ${explanation.relations.snapshotMembership.count} memberships to unchanged exact file revisions${explanation.relations.snapshotMembership.omittedCount ? ` (${explanation.relations.snapshotMembership.omittedCount} examples omitted)` : ""}; original source endpoints remain distinct.` : null,
     explanation.producerTransition.changed ? "Producer or analysis basis changed; this transition remains visible." : null,
     explanation.relations.ambiguousGroups ? "Ambiguous relation matches remain separate in raw changes." : null,
     value.scope ? "Counts cover the selected paths and incident relations; omitted scope remains unknown." : null,

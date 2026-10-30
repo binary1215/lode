@@ -11,6 +11,27 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.70 — publication tracked separately
+
+- Use flat shared code-domain parts for new complete World/Graph snapshots under
+  selected Project ownership, preserving semantic IDs and existing whole/Git/v1
+  history. Pure lower adapters retain whole-document storage without new setup.
+- Report malformed optional World/Graph data as Product integrity attention while
+  keeping Core ready. Explicit Product operations retain exact errors and leave
+  damaged originals unchanged.
+- Separate unchanged file membership from content changes in CLI/MCP/Explorer,
+  retaining raw endpoints, counts/pages and visible omitted-example counts.
+- Generate only ignore rules disjoint from existing exceptions, preserving user
+  files and tracked policy. Batch private Git reads and reuse verified
+  request-owned endpoints without a persistent cache or weaker owner checks.
+- Balanced local synthetic measurements show smaller decision-only growth and
+  faster first queries, with some repeated and small operations remaining slower.
+  This is not a universal speedup; P2b and Rust prototypes are not adopted.
+
+Composition schema 2 needs a supporting reader: beta.69 and earlier reject it.
+Update every client sharing a store before writing v2. Publication, installation
+and active Host/MCP loading remain separate.
+
 ## 0.3.0-beta.69 — publication tracked separately
 
 - Explain new World/Graph lineage as content changes and snapshot membership while

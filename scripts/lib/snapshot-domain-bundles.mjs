@@ -8,9 +8,23 @@ import { formatForVerifiedOwner, assertProjectStorageUnchanged } from "./project
 import { safeSnapshotPath, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 const producer = Object.freeze({ name: "lode-domain-bundle", version: "0.1.0" });
 export const DOMAIN_BUNDLE_LAYOUT = "domain-bundles-v1";
+const flatProducer = Object.freeze({ name: "lode-domain-bundle", version: "0.2.0" });
+export const SHARED_DOMAIN_LAYOUT = "shared-domains-v2";
 const hash = b => crypto.createHash("sha256").update(b).digest("hex");
 const bytes = value => Buffer.from(JSON.stringify(value) + "\n");
-const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    const result = {};
+    for (const key of Object.keys(value).sort()) {
+      const child = canonical(value[key]);
+      if (Object.hasOwn(Object.prototype, key)) Object.defineProperty(result, key, { value: child, writable: true, enumerable: true, configurable: true });
+      else result[key] = child;
+    }
+    return result;
+  }
+  return value;
+}
 const fail = (code, message = code) => { throw Object.assign(new Error(message), { code }); };
 const codeKinds = new Set(["File", "FileRevision", "Symbol", "SymbolRevision", "Test", "TestRevision"]);
 const equal = (a,b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
@@ -76,8 +90,11 @@ function readBundle(context, ref, depth) {
   } catch (error) { if (error.code === "SNAPSHOT_BUNDLE_CODEC_UNAVAILABLE") throw error; fail("INVALID_SNAPSHOT_BUNDLE_ENCODING"); }
   context.metrics.hashCount++; context.metrics.hashedBytes += raw.length;
   if (raw.length !== ref.byteLength || hash(raw) !== ref.sha256) fail("SNAPSHOT_BUNDLE_DIGEST_MISMATCH");
-  const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw));
-  if (value.kind !== ref.kind || value.schemaVersion !== ref.schemaVersion || value.projectId !== ref.projectId
+  let value;
+  try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw)); }
+  catch { fail("INVALID_SNAPSHOT_BUNDLE_ENCODING"); }
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || value.kind !== ref.kind || value.schemaVersion !== ref.schemaVersion || value.projectId !== ref.projectId
     || value.domain !== ref.domain || !equal(value.producer, ref.producer)) fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
   context.cache.set(key, value.payload);
   return value.payload;
@@ -87,7 +104,7 @@ function contextFor(root, storage, encoding = "gzip") {
   assertProjectStorageUnchanged(storage);
   return { root, storage, encoding, cache: new Map(), active: new Set(), metrics: { createdBytes: 0, createdBundles: 0, bundleReferences: 0, verifiedBundles: 0, decodedBytes: 0, serializationCount: 0, serializedBytes: 0, hashCount: 0, hashedBytes: 0 } };
 }
-function splitGraph(context, graph) {
+function splitGraphParts(context, graph) {
   const codeIds = new Set(graph.nodes.filter(node => codeKinds.has(node.kind)).map(node => node.nodeId));
   const normalize = record => {
     const body = { ...record }, sourceBound = body.sourceSnapshotId === graph.sourceSnapshotId;
@@ -98,17 +115,29 @@ function splitGraph(context, graph) {
   for (const node of graph.nodes) { const code = codeIds.has(node.nodeId); nodeOrder.push(code); (code ? codeNodes : otherNodes).push(code ? normalize(node) : node); }
   for (const edge of graph.edges) { const code = codeIds.has(edge.from) && codeIds.has(edge.to); edgeOrder.push(code); (code ? codeEdges : otherEdges).push(code ? normalize(edge) : edge); }
   const code = put(context, "graph-code", { nodes: codeNodes, edges: codeEdges });
-  return put(context, "graph-composition", { body: { ...graph, nodes: null, edges: null }, code, otherNodes, otherEdges, nodeOrder, edgeOrder });
+  return { body: { ...graph, nodes: null, edges: null }, code, otherNodes, otherEdges, nodeOrder, edgeOrder };
 }
 function joinGraph(context, ref, depth) {
-  if (ref.domain !== "graph-composition") fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
+  if (ref?.domain !== "graph-composition") fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
   const composition = readBundle(context, ref, depth);
   context.active.add(ref.sha256);
   try {
+    return joinGraphParts(context, composition, depth + 1);
+  } finally { context.active.delete(ref.sha256); }
+}
+function joinGraphParts(context, composition, depth, strict = false) {
+    if (!composition || typeof composition !== "object" || Array.isArray(composition)
+      || strict && !equal(Object.keys(composition).sort(), ["body", "code", "otherNodes", "otherEdges", "nodeOrder", "edgeOrder"].sort())
+      || !composition.body || typeof composition.body !== "object" || Array.isArray(composition.body)
+      || ![composition.otherNodes, composition.otherEdges].every(Array.isArray)) fail("INVALID_SNAPSHOT_BUNDLE_SHAPE");
     const codeRef = composition.code;
-    if (codeRef.domain !== "graph-code") fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
-    const code = readBundle(context, codeRef, depth + 1);
-    const restore = record => record.sourceBound ? { ...record.body, sourceSnapshotId: composition.body.sourceSnapshotId } : record.body;
+    if (codeRef?.domain !== "graph-code") fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
+    const code = readBundle(context, codeRef, depth);
+    if (!code || typeof code !== "object" || ![code.nodes, code.edges].every(Array.isArray)) fail("INVALID_SNAPSHOT_BUNDLE_SHAPE");
+    const restore = record => {
+      if (!record || typeof record !== "object" || !record.body || typeof record.body !== "object" || Array.isArray(record.body)) fail("INVALID_SNAPSHOT_BUNDLE_SHAPE");
+      return record.sourceBound ? { ...record.body, sourceSnapshotId: composition.body.sourceSnapshotId } : record.body;
+    };
     function merge(order, originals, codeRecords) {
       if (!Array.isArray(order) || order.some(flag => typeof flag !== "boolean")) fail("INVALID_SNAPSHOT_BUNDLE_SHAPE");
       let i=0,j=0; const result=order.map(flag => flag ? restore(codeRecords[i++]) : originals[j++]);
@@ -116,14 +145,15 @@ function joinGraph(context, ref, depth) {
       return result;
     }
     return { ...composition.body, nodes: merge(composition.nodeOrder, composition.otherNodes, code.nodes), edges: merge(composition.edgeOrder, composition.otherEdges, code.edges) };
-  } finally { context.active.delete(ref.sha256); }
 }
-function createSnapshotCompositionUncoordinated({ root, storage, document, encoding = "gzip" }) {
-  const context = contextFor(root, storage, encoding), world = document.kind === "RepositoryWorldModel" || Boolean(document.worldModelId);
+function createSnapshotCompositionUncoordinated({ root, storage, document, encoding = "gzip", layout = DOMAIN_BUNDLE_LAYOUT }) {
+  if (![DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT].includes(layout)) fail("INVALID_SNAPSHOT_LAYOUT");
+  const context = contextFor(root, storage, encoding), world = document.kind !== "GraphSnapshot" && (document.kind === "RepositoryWorldModel" || Boolean(document.worldModelId));
   const body = { ...document };
   const graph = world ? document.temporalProvenanceGraph : document;
   if (!graph || graph.kind !== "GraphSnapshot" || graph.projectId !== storage.projectId || document.projectId !== storage.projectId) fail("INVALID_SNAPSHOT_BUNDLE_INPUT");
-  const graphRef = splitGraph(context, graph);
+  const graphParts = splitGraphParts(context, graph);
+  const graphRef = layout === SHARED_DOMAIN_LAYOUT ? graphParts : put(context, "graph-composition", graphParts);
   let code = null;
   if (world) {
     code = put(context, "world-code", { files: document.files, semanticGraph: document.semanticGraph,
@@ -131,11 +161,12 @@ function createSnapshotCompositionUncoordinated({ root, storage, document, encod
       sourceScope: document.repositoryScan?.sourceScope });
     body.files = null; body.semanticGraph = null; body.temporalProvenanceGraph = null;
   }
-  const snapshotId = document.worldModelId || document.graphSnapshotId;
+  const snapshotId = world ? document.worldModelId : document.graphSnapshotId;
   const reconstructed = bytes(canonical(document));
   context.metrics.serializationCount++; context.metrics.serializedBytes += reconstructed.length;
   context.metrics.hashCount++; context.metrics.hashedBytes += reconstructed.length;
-  return { document: { kind: "SnapshotComposition", schemaVersion: 1, producer, projectId: storage.projectId,
+  return { document: { kind: "SnapshotComposition", schemaVersion: layout === SHARED_DOMAIN_LAYOUT ? 2 : 1,
+    producer: layout === SHARED_DOMAIN_LAYOUT ? flatProducer : producer, projectId: storage.projectId,
     [world ? "worldModelId" : "graphSnapshotId"]: snapshotId, snapshotKind: world ? "world-model" : "graph-snapshot",
     reconstructedByteLength: reconstructed.length, reconstructedSha256: hash(reconstructed),
     body: world ? body : null, code, graph: graphRef }, metrics: context.metrics };
@@ -143,20 +174,26 @@ function createSnapshotCompositionUncoordinated({ root, storage, document, encod
 export function hydrateSnapshotComposition({ root, storage, document }) {
   if (document?.kind !== "SnapshotComposition") return { document, dependencies: [], metrics: null };
   const context = contextFor(root, storage);
-  if (document.schemaVersion !== 1 || document.projectId !== storage.projectId || !equal(document.producer, producer)
+  const flat = document.schemaVersion === 2;
+  if (![1, 2].includes(document.schemaVersion) || document.projectId !== storage.projectId || !equal(document.producer, flat ? flatProducer : producer)
     || !["world-model", "graph-snapshot"].includes(document.snapshotKind)
     || !Number.isSafeInteger(document.reconstructedByteLength) || document.reconstructedByteLength < 1
     || document.reconstructedByteLength > SNAPSHOT_STORAGE_LIMITS.decodedBytes
     || !/^[a-f0-9]{64}$/.test(document.reconstructedSha256 || "")) fail("INVALID_SNAPSHOT_COMPOSITION");
+  if (flat && !equal(Object.keys(document).sort(), ["kind", "schemaVersion", "producer", "projectId",
+    document.snapshotKind === "world-model" ? "worldModelId" : "graphSnapshotId", "snapshotKind",
+    "reconstructedByteLength", "reconstructedSha256", "body", "code", "graph"].sort())) fail("INVALID_SNAPSHOT_COMPOSITION");
+  if (document.snapshotKind === "world-model" && (!document.body || typeof document.body !== "object" || Array.isArray(document.body))) fail("INVALID_SNAPSHOT_COMPOSITION");
   const representationBytes = Buffer.byteLength(JSON.stringify(document), "utf8") + 1;
   context.metrics.serializationCount++; context.metrics.serializedBytes += representationBytes;
   context.metrics.decodedBytes += representationBytes;
   if (context.metrics.decodedBytes > SNAPSHOT_STORAGE_LIMITS.decodedBytes) fail("SNAPSHOT_STORAGE_LIMIT");
-  const graph = joinGraph(context, document.graph, 1);
+  const graph = flat ? joinGraphParts(context, document.graph, 1, true) : joinGraph(context, document.graph, 1);
   let result = graph;
   if (document.snapshotKind === "world-model") {
     if (document.code?.domain !== "world-code") fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
     const code = readBundle(context, document.code, 1);
+    if (!code || typeof code !== "object" || Array.isArray(code)) fail("INVALID_SNAPSHOT_BUNDLE_SHAPE");
     if (!equal(code.analysisBasis, document.body.analysisBasis) || code.domainBasis !== document.body.domainBases?.code
       || !equal(code.rules, document.body.rules) || !equal(code.sourceScope, document.body.repositoryScan?.sourceScope)) fail("SNAPSHOT_BUNDLE_BASIS_MISMATCH");
     result = { ...document.body, files: code.files, semanticGraph: code.semanticGraph, temporalProvenanceGraph: graph };
@@ -165,7 +202,7 @@ export function hydrateSnapshotComposition({ root, storage, document }) {
   context.metrics.serializationCount++; context.metrics.serializedBytes += raw.length;
   context.metrics.hashCount++; context.metrics.hashedBytes += raw.length;
   if (raw.length !== document.reconstructedByteLength || hash(raw) !== document.reconstructedSha256
-    || result.projectId !== document.projectId || (result.worldModelId || result.graphSnapshotId) !== (document.worldModelId || document.graphSnapshotId)) fail("SNAPSHOT_COMPOSITION_DIGEST_MISMATCH");
+    || result.projectId !== document.projectId || (document.snapshotKind === "world-model" ? result.worldModelId !== document.worldModelId : result.graphSnapshotId !== document.graphSnapshotId)) fail("SNAPSHOT_COMPOSITION_DIGEST_MISMATCH");
   assertProjectStorageUnchanged(storage);
   return { document: result, dependencies: [...context.cache.keys()].map(key => JSON.parse(key)), metrics: context.metrics };
 }
@@ -173,7 +210,8 @@ export function hydrateSnapshotEntry({ root, storage, entry }) {
   if (!entry || entry.document?.kind !== "SnapshotComposition") return entry;
   const hydrated = hydrateSnapshotComposition({ root, storage, document: entry.document });
   return { ...entry, document: hydrated.document, snapshotStorage: { ...(entry.snapshotStorage || { kind: "local-file" }),
-    layout: DOMAIN_BUNDLE_LAYOUT, reconstructedSha256: entry.document.reconstructedSha256, dependencies: hydrated.dependencies } };
+    layout: entry.document.schemaVersion === 2 ? SHARED_DOMAIN_LAYOUT : DOMAIN_BUNDLE_LAYOUT,
+    reconstructedSha256: entry.document.reconstructedSha256, dependencies: hydrated.dependencies } };
 }
 
 export function createSnapshotComposition(options = {}, ...rest) {

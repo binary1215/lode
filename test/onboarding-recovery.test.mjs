@@ -1,6 +1,8 @@
 import { worldSnapshotFile, graphSnapshotFile, readFixtureSnapshot, writeFixtureSnapshot } from "./helpers/snapshot-storage-fixture.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import zlib from "node:zlib";
+import { readSnapshotFile } from "../scripts/lib/snapshot-storage-codec.mjs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -639,4 +641,75 @@ test("optional World availability does not conceal snapshot tampering", async ()
     (await assert.rejects(async () => (await inspectOnboarding({ root })), { code: "WORLD_MODEL_POINTER_MISMATCH" }));
     await assert.rejects(async () => (await initializeOrResumeProject({ root, pluginRoot, profile: "product" })), { code: "WORLD_MODEL_POINTER_MISMATCH" });
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("physical composition and part damage remain strict Product errors without blocking Core", async t => {
+  const { root, canonPath, request } = await fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const accepted = await reviewOnboarding(request);
+  const file = worldSnapshotFile(root, accepted.worldModel.worldModelId);
+  const canonFile = path.resolve(root, canonPath);
+  const original = fs.readFileSync(file), canon = fs.readFileSync(canonFile);
+  const physical = readSnapshotFile(file).document;
+  assert.equal(physical.kind, "SnapshotComposition");
+  assert.equal(physical.schemaVersion, 2);
+  const partFile = path.join(root, physical.code.address), originalPart = fs.readFileSync(partFile);
+  const forgedPart = (value, raw, graph = false) => {
+    const ref = graph ? value.graph.code : value.code;
+    ref.sha256 = crypto.createHash("sha256").update(raw).digest("hex"); ref.byteLength = raw.length;
+    ref.address = path.posix.join(path.posix.dirname(ref.address), `${ref.sha256}.json.gz`);
+    const target = path.join(root, ref.address);
+    fs.writeFileSync(target, zlib.gzipSync(raw), { flag: "wx" });
+    writeFixtureSnapshot(file, value);
+    return target;
+  };
+  const changedPayload = (change, graph = false) => {
+    const value = structuredClone(physical), ref = graph ? value.graph.code : value.code;
+    const part = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root, ref.address)))); change(part);
+    return forgedPart(value, Buffer.from(JSON.stringify(part) + "\n"), graph);
+  };
+  const cases = [
+    ["root encoding", "INVALID_WORLD_MODEL_STORE_DOCUMENT", () => fs.writeFileSync(file, "invalid gzip")],
+    ["root shape", "INVALID_SNAPSHOT_COMPOSITION", () => {
+      const value = structuredClone(physical); value.unrecorded = true; writeFixtureSnapshot(file, value);
+    }],
+    ["reconstructed digest", "SNAPSHOT_COMPOSITION_DIGEST_MISMATCH", () => {
+      const value = structuredClone(physical); value.reconstructedSha256 = "0".repeat(64); writeFixtureSnapshot(file, value);
+    }],
+    ["part encoding", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => fs.writeFileSync(partFile, "invalid gzip")],
+    ["part digest", "SNAPSHOT_BUNDLE_DIGEST_MISMATCH", () => {
+      const value = JSON.parse(zlib.gunzipSync(originalPart)); value.projectId = "x" + value.projectId.slice(1);
+      fs.writeFileSync(partFile, zlib.gzipSync(JSON.stringify(value) + "\n"));
+    }],
+    ["root null body", "INVALID_SNAPSHOT_COMPOSITION", () => {
+      const value = structuredClone(physical); value.body = null; writeFixtureSnapshot(file, value);
+    }],
+    ["legacy null graph reference", "SNAPSHOT_BUNDLE_TYPE_MISMATCH", () => {
+      const value = structuredClone(physical); value.schemaVersion = 1; value.producer.version = "0.1.0"; value.graph = null; writeFixtureSnapshot(file, value);
+    }],
+    ["rehashed invalid UTF8", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => forgedPart(structuredClone(physical), Buffer.from([0xff, 0x0a]))],
+    ["rehashed non JSON", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => forgedPart(structuredClone(physical), Buffer.from("{invalid}\n"))],
+    ["rehashed null bundle", "SNAPSHOT_BUNDLE_TYPE_MISMATCH", () => forgedPart(structuredClone(physical), Buffer.from("null\n"))],
+    ["rehashed null world payload", "INVALID_SNAPSHOT_BUNDLE_SHAPE", () => changedPayload(part => { part.payload = null; })],
+    ["rehashed null graph payload", "INVALID_SNAPSHOT_BUNDLE_SHAPE", () => changedPayload(part => { part.payload = null; }, true)],
+    ["rehashed invalid graph arrays", "INVALID_SNAPSHOT_BUNDLE_SHAPE", () => changedPayload(part => { part.payload.nodes = null; part.payload.edges = {}; }, true)],
+    ["graph order exceeds code records", "INVALID_SNAPSHOT_BUNDLE_SHAPE", () => {
+      const value = structuredClone(physical); value.graph.nodeOrder.push(true); writeFixtureSnapshot(file, value);
+    }],
+  ];
+  for (const [name, code, corrupt] of cases) await t.test(name, async () => {
+    try {
+      const observedPart = corrupt() || partFile;
+      const badRoot = fs.readFileSync(file), badPart = fs.readFileSync(observedPart);
+      await assert.rejects(() => inspectOnboarding({ root }), { code });
+      await assert.rejects(() => initializeOrResumeProject({ root, pluginRoot, profile: "product" }), { code });
+      const core = await initializeOrResumeProject({ root, pluginRoot, profile: "core" });
+      assert.equal(core.readiness.core.state, "ready");
+      assert.equal(core.readiness.product.state, "integrity_attention");
+      assert.deepEqual(fs.readFileSync(file), badRoot);
+      assert.deepEqual(fs.readFileSync(observedPart), badPart);
+      assert.deepEqual(fs.readFileSync(canonFile), canon);
+    } finally { fs.writeFileSync(file, original); fs.writeFileSync(partFile, originalPart); }
+  });
+  await inspectOnboarding({ root });
 });

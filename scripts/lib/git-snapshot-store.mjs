@@ -9,6 +9,7 @@ import { assertProjectStorageUnchanged } from "./project-storage-format.mjs";
 import { safeSnapshotPath, decodeSnapshotBytes, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
 import { withProjectMutationAsync } from "./project-mutation-lock.mjs";
+import { createSnapshotBatchDecoder } from "./git-snapshot-batch.mjs";
 
 // Git uses NUL on Windows and /dev/null elsewhere.
 const gitNull = process.platform === "win32" ? "NUL" : "/dev/null";
@@ -22,7 +23,7 @@ export function snapshotGitProcessStatus() { return [...localProcesses.values()]
 
 // Every invocation is an owned, bounded, shell-free local Git child. No filters,
 // hooks, lazy fetch, inherited Git configuration or user repository are used.
-async function command(store, args, { input = null, maxBytes = MAX, deadline, signal } = {}) {
+async function command(store, args, { input = null, maxBytes = MAX, deadline, signal, consume = null } = {}) {
   if (signal?.aborted) fail("SNAPSHOT_GIT_CANCELLED");
   const remaining = deadline - Date.now();
   if (remaining <= 0) fail("SNAPSHOT_GIT_TIMEOUT");
@@ -43,7 +44,11 @@ async function command(store, args, { input = null, maxBytes = MAX, deadline, si
     const stop = code => { if (!failure) failure = Object.assign(new Error(code), { code }); child.kill("SIGTERM"); escalation ??= setTimeout(() => child.kill("SIGKILL"), 250); };
     const timer = setTimeout(() => stop("SNAPSHOT_GIT_TIMEOUT"), remaining);
     const cancelled = () => stop("SNAPSHOT_GIT_CANCELLED"); signal?.addEventListener("abort", cancelled, { once: true });
-    child.stdout.on("data", bytes => { size += bytes.length; if (size > maxBytes) stop("SNAPSHOT_GIT_OUTPUT_LIMIT"); else chunks.push(bytes); });
+    child.stdout.on("data", bytes => {
+      size += bytes.length; if (failure) return;
+      if (consume) { try { consume(bytes); } catch (error) { failure = error; stop(error.code || "SNAPSHOT_GIT_BATCH_INVALID"); return; } }
+      if (size > maxBytes) stop("SNAPSHOT_GIT_OUTPUT_LIMIT"); else if (!consume) chunks.push(bytes);
+    });
     child.stderr.on("data", bytes => { stderrBytes += bytes.length; if (stderrBytes <= 8192) errors.push(bytes); });
     child.on("error", error => { failure ??= error.code === "ENOENT" ? Object.assign(new Error("The selected local Git executable is unavailable."), { code: "SNAPSHOT_GIT_EXECUTABLE_UNAVAILABLE", cause: error }) : error; });
     child.stdin.on("error", error => { if (error.code !== "EPIPE") failure ??= error; });
@@ -121,14 +126,13 @@ export class GitSnapshotStore {
     const oid = result.stdout.toString("ascii").trim(); if (!OID.test(oid)) fail("SNAPSHOT_GIT_OBJECT_ID_INVALID"); return oid;
   }
   async object(oid, type, maximum, context) {
-    if (!OID.test(oid)) fail("SNAPSHOT_GIT_OBJECT_ID_INVALID");
-    const actualType = (await this.invoke(["cat-file", "-t", oid], context, { maxBytes: 64 })).toString("ascii").trim();
-    if (actualType !== type) fail("SNAPSHOT_GIT_OBJECT_TYPE_MISMATCH");
-    const size = Number((await this.invoke(["cat-file", "-s", oid], context, { maxBytes: 64 })).toString("ascii").trim());
-    if (!Number.isSafeInteger(size) || size < 0 || size > maximum) fail("SNAPSHOT_STORAGE_LIMIT");
-    const bytes = await this.invoke(["cat-file", type, oid], context, { maxBytes: maximum });
-    if (bytes.length !== size || hash(Buffer.concat([Buffer.from(type + " " + size + "\0"), bytes])) !== oid) fail("SNAPSHOT_GIT_OBJECT_DIGEST_MISMATCH");
-    return bytes;
+    return (await this.#objects([{ oid, type, maximum }], context, maximum))[0];
+  }
+  async #objects(requests, context, maximum) {
+    const decoder = createSnapshotBatchDecoder(requests);
+    await this.invoke(["cat-file", "--batch"], context, { input: requests.map(item => item.oid).join("\n") + "\n",
+      maxBytes: maximum + 256 * requests.length, consume: decoder.push });
+    return decoder.finish();
   }
   async read(id, context = this.context()) {
     this.ref(id); if (!this.checkOwner(context.deadline)) return null;
@@ -143,7 +147,7 @@ export class GitSnapshotStore {
       // Read-only, bounded reacquisition of the original chosen address. Never
       // select current again, retry effects, or hide permission/digest failure.
       const text=error.gitStderr||"";
-      if(error.code!=="SNAPSHOT_GIT_COMMAND_FAILED"||context.signal?.aborted||Date.now()>=context.deadline||/permission|access is denied|not permitted|corrupt|mismatch/i.test(text)||!/could not get object info|could not read|cannot be accessed|no such file|not a valid object name/i.test(text)||before===packBasis())throw error;
+      if(error.code!=="SNAPSHOT_GIT_COMMAND_FAILED"||context.signal?.aborted||Date.now()>=context.deadline||/permission|access is denied|not permitted|corrupt|mismatch/i.test(text)||(!error.gitMissingObject&&!/could not get object info|could not read|cannot be accessed|no such file|not a valid object name/i.test(text))||before===packBasis())throw error;
       this.checkOwner(context.deadline);
       try {return await this.readExactTree(id,treeOid,context);}catch(next){next.initialReadFailure={code:error.code,action:error.gitAction};throw next;}
     }
@@ -154,9 +158,15 @@ export class GitSnapshotStore {
     const entries = listing.map(line => /^(100644) blob ([a-f0-9]{64})\t(metadata.json|snapshot.json)$/.exec(line));
     if (entries.length !== 2 || entries.some(entry => !entry) || new Set(entries.map(entry => entry[3])).size !== 2) fail("SNAPSHOT_GIT_TREE_INVALID");
     const byName = Object.fromEntries(entries.map(entry => [entry[3], entry[2]]));
-    const metadata = decodeSnapshotBytes(await this.object(byName["metadata.json"], "blob", 4096, context), { decodedBytes: 4096 });
-    if (metadata.schemaVersion !== 1 || metadata.storeId !== this.storeId || metadata.projectId !== this.storage.projectId || metadata.snapshotId !== id || metadata.encoding !== "utf8-json" || metadata.objectFormat !== "sha256" || metadata.objectId !== byName["snapshot.json"] || !/^[a-f0-9]{64}$/.test(metadata.rawSha256 || "") || !Number.isSafeInteger(metadata.byteLength) || metadata.byteLength < 1 || metadata.byteLength > MAX) fail("SNAPSHOT_GIT_METADATA_MISMATCH");
-    const bytes = await this.object(metadata.objectId, "blob", metadata.byteLength, context);
+    let metadata;
+    const objects = await this.#objects([
+      { oid: byName["metadata.json"], type: "blob", maximum: 4096, onObject: raw => {
+        metadata = decodeSnapshotBytes(raw, { decodedBytes: 4096 });
+        if (metadata.schemaVersion !== 1 || metadata.storeId !== this.storeId || metadata.projectId !== this.storage.projectId || metadata.snapshotId !== id || metadata.encoding !== "utf8-json" || metadata.objectFormat !== "sha256" || metadata.objectId !== byName["snapshot.json"] || !/^[a-f0-9]{64}$/.test(metadata.rawSha256 || "") || !Number.isSafeInteger(metadata.byteLength) || metadata.byteLength < 1 || metadata.byteLength > MAX) fail("SNAPSHOT_GIT_METADATA_MISMATCH");
+      } },
+      { oid: byName["snapshot.json"], type: "blob", maximum: () => metadata.byteLength },
+    ], context, 4096 + MAX);
+    const bytes = objects[1];
     if (bytes.length !== metadata.byteLength || hash(bytes) !== metadata.rawSha256) fail("SNAPSHOT_GIT_RAW_DIGEST_MISMATCH");
     const document = decodeSnapshotBytes(bytes);
     if (document.projectId !== this.storage.projectId || (document.worldModelId || document.graphSnapshotId) !== id) fail("SNAPSHOT_GIT_IDENTITY_MISMATCH");

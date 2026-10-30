@@ -6,7 +6,7 @@ import { readGraphProject, safeGraphFile } from "./discovery-index.mjs";
 import { relativeProjectArtifact } from "./project-storage-format.mjs";
 import { collectGraphExplorerInventory } from "./project-graph.mjs";
 import { LocalJsonWorldModelStoreAdapter, createLocalReadOnlyWorldModelStoreAdapter } from "./world-model-store.mjs";
-import { inspectGraphLineage, diffGraphLineage } from "./graph-lineage.mjs";
+import { inspectGraphLineageComparison } from "./graph-lineage.mjs";
 import { renderGraphExplorer } from "./graph-explorer-html.mjs";
 
 const MAX_ORIGINAL = 64 * 1024, MAX_ORIGINAL_TOTAL = 256 * 1024;
@@ -134,16 +134,9 @@ export async function buildGraphExplorerSnapshot({ root = ".", query = "", ancho
   let retainedHistory = { status: "not-requested", entries: [], diff: null };
   if (history && owner.project) {
     try {
-      const lineage = (await inspectGraphLineage({ root: projectRoot, limit: 3, storeAdapter: worldAdapter }));
-      if (lineage.projectId !== owner.project.projectId) fail("GRAPH_EXPLORER_PROJECT_MISMATCH");
-      const entries = lineage.segment.entries;
-      const current = entries.find(entry => entry.worldModelId === lineage.currentWorldModelId);
-      const parent = entries.find(entry => current?.parentSourceSnapshotIds.includes(entry.sourceSnapshotId));
-      const pair = current && parent ? [parent, current] : entries.slice(0, 2);
-      const diff = pair.length === 2 ? (await diffGraphLineage({ root: projectRoot,
-        fromWorldModelId: pair[0].worldModelId, toWorldModelId: pair[1].worldModelId, limit: 40, storeAdapter: worldAdapter })) : null;
-      retainedHistory = { status: "retained", lineage, entries, diff,
-        comparison: parent ? "retained-parent-to-current" : "exact-retained-pair-not-chronological-inference" };
+      const comparison = await inspectGraphLineageComparison({ root: projectRoot, limit: 3, diffLimit: 40, storeAdapter: worldAdapter });
+      if (comparison.lineage.projectId !== owner.project.projectId) fail("GRAPH_EXPLORER_PROJECT_MISMATCH");
+      retainedHistory = { status: "retained", ...comparison };
     } catch (error) { retainedHistory = { status: "unavailable", entries: [], diff: null, reasonCode: reason(error) }; }
   }
   if (!owner.project) unavailable.push("PROJECT_GRAPH_NOT_INITIALIZED");
