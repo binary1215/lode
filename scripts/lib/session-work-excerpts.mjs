@@ -78,13 +78,28 @@ function fromExcerpt(excerpt, owner, order) {
 }
 
 function excerptOf(entry, fields) {
+  // Per-render path buckets only: reuse the exact already-selected fragments
+  // while counting each source item. No new evidence, selection or verdict.
+  const byField = new Map();
+  for (const fragment of fields) {
+    if (fragment.path[0] !== "content" || fragment.path.length < 2) continue;
+    const name = fragment.path[1];
+    if (!byField.has(name)) byField.set(name, { all: [], items: new Map() });
+    const bucket = byField.get(name); bucket.all.push(fragment);
+    if (fragment.path.length >= 3) {
+      const index = fragment.path[2];
+      if (!bucket.items.has(index)) bucket.items.set(index, []);
+      bucket.items.get(index).push(fragment);
+    }
+  }
   const coverage = entry.shape.map(shape => {
     let completeItems = 0, partialItems = 0;
     const count = shape.kind === "array" ? shape.sourceItems : 1;
     if (Object.hasOwn(entry.emptyValues, shape.field)) completeItems = count;
     else for (let index = 0; index < count; index++) {
       const path = ["content", shape.field, ...(shape.kind === "array" ? [index] : [])];
-      const selected = fields.filter(field => samePath(field.path, path) || below(field.path, path));
+      const bucket = byField.get(shape.field);
+      const selected = (shape.kind === "array" ? bucket?.items.get(index) : bucket?.all) || [];
       if (selected.some(field => samePath(field.path, path) && field.complete === true && !field.range)) completeItems++;
       else if (selected.length) partialItems++;
     }
