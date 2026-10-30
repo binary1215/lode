@@ -26,7 +26,7 @@ Repository World Model은 재구축 가능한 구체화 뷰입니다. Context Co
 .lode/world-model/snapshots/world-model-*.json     Retained legacy snapshots
 ```
 
-새 로컬 스냅샷은 `.json.gz`를 사용하며 기존 `.json`은 원본을 유지하고 계속 읽을 수 있습니다. 물리 한도·ignore 규칙·읽기 전용 GC 진단은 [스냅샷 저장과 보존](snapshot-storage.md)을 참고하세요.
+선택된 Project 소유 근거로 저장하는 새로운 완전한 스냅샷은 `.json.gz`의 flat `shared-domains-v2` 루트와 공유 불변 code-domain part를 사용합니다. 선택된 소유 근거가 없는 순수 하위 adapter는 whole 문서 저장을 유지합니다. 루트는 완전한 스냅샷을 복원하며 부분 컨텍스트나 이전 스냅샷의 연결 목록이 아닙니다. 기존 whole `.json`/`.json.gz`·Git·domain-bundles-v1 스냅샷은 변경하지 않으며 새 reader에서 계속 읽습니다. composition schema 2를 지원하지 않는 구 클라이언트는 v2 루트를 거부하므로 공유 저장소에 쓰기 전 모든 클라이언트를 업데이트하세요. reader 호환성·물리 한도·ignore 규칙·정리는 [스냅샷 저장과 보존](snapshot-storage.md)을 참고하세요.
 
 `current.json`은 Hot 스냅샷을 가리키고 물리 어댑터 설명자를 기록하며 추가·변경·삭제된 경로를 Warm 티어로 기록합니다. 이전 콘텐츠 주소형 스냅샷이 Cold 티어를 이룹니다. 물리 어댑터 설명자는 시맨틱 스냅샷 해시에 포함되지 않으므로, 동일한 정규 입력은 규격을 준수하는 로컬, 메모리 또는 향후 GraphDB 어댑터에서 동일한 World Model ID를 생성합니다.
 
@@ -39,7 +39,7 @@ GraphDB는 필수가 아니며 원격 데이터베이스를 조회하거나 변�
 모든 소스 사실·범위·규칙·검증된 source-relation 입력이 같을 때만 전체 의미 그래프를
 재사용합니다. 파일 추가·삭제·이름 변경·내용 변경이 있으면 파일 간 import 해석을 포함해
 그래프를 다시 계산합니다. 명시한 compute adapter의 실행 선택은 유지합니다.
-기본 whole 스냅샷과 domain bundle 모두에 적용되는 최적화입니다.
+명시적 whole 스냅샷과 기본 공유 도메인 레이아웃 모두에 적용되는 최적화입니다.
 
 `world-index`에서 부모 입력을 생략하면 검증된 현재 부모 집합을 유지합니다.
 빈 배열이나 병합 부모를 명시한 경우는 생략과 구분합니다. 따라서 전체 근거가 같으면

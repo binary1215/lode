@@ -1,10 +1,10 @@
 import { verifyLooseSnapshotAddress } from "./snapshot-backend-reclamation.mjs";
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
-import { DOMAIN_BUNDLE_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
+import { DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
 import { GitSnapshotStore } from "./git-snapshot-store.mjs";
 import { storedSnapshotLocation, readSnapshotFile, writeStoredSnapshot, listStoredSnapshotIds } from "./snapshot-storage-codec.mjs";
 import crypto from "node:crypto";
-import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact } from "./project-storage-format.mjs";
+import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact, projectOwnsRecordedRoot } from "./project-storage-format.mjs";
 import { requiredIndexDdl, inspectRequiredIndex } from "./arcadedb-schema-contract.mjs";
 import childProcess from "node:child_process";
 import fs from "node:fs";
@@ -12,7 +12,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { ONBOARDING_STORAGE_DIRECTORY, verifyOnboardingState, verifyStorageSelection } from "./onboarding-contract.mjs";
-import { queryTemporalProvenanceGraph, verifyTemporalProvenanceGraph } from "./temporal-provenance.mjs";
+import { queryTemporalProvenanceGraph, verifyTemporalProvenanceGraph, createTemporalVerificationScope, ownWorldSnapshotForTemporalScope } from "./temporal-provenance.mjs";
 import { resolveVerifiedArcadeDbNativeBridge } from "./arcadedb-native-bridge.mjs";
 import {
   ARCADEDB_INCREMENTAL_SYNC_VERSION,
@@ -129,7 +129,13 @@ function consumePreparedPointerRead(adapter, token) {
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    const result = {};
+    for (const key of Object.keys(value).sort()) {
+      const child = canonical(value[key]);
+      if (Object.hasOwn(Object.prototype, key)) Object.defineProperty(result, key, { value: child, writable: true, enumerable: true, configurable: true });
+      else result[key] = child;
+    }
+    return result;
   }
   return value;
 }
@@ -2241,15 +2247,18 @@ export class ActivatedArcadeDbGraphProjectionAdapter {
 }
 
 export class LocalJsonGraphProjectionAdapter {
-  constructor({ projectRoot, storage = null, snapshotEncoding = "gzip", snapshotLayout = "whole", bundleEncoding = "gzip", gitOptions = {} }) {
+  constructor({ projectRoot, storage = null, snapshotEncoding = "gzip", snapshotLayout, bundleEncoding = "gzip", gitOptions = {} }) {
     if (typeof projectRoot !== "string" || !projectRoot.trim()) fail("Local graph projection requires projectRoot.", "GRAPH_PROJECTION_ROOT_REQUIRED");
     this.storage = storage;
-    if (!["whole", DOMAIN_BUNDLE_LAYOUT].includes(snapshotLayout)) fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
+    this.projectRoot = path.resolve(projectRoot);
+    // Pure lower contracts do not acquire a Project-init prerequisite.
+    // Selecting the default never replaces composition's full owner checks.
+    if (snapshotLayout === undefined) snapshotLayout = snapshotEncoding === "git" || !projectOwnsRecordedRoot(storage, this.projectRoot) ? "whole" : SHARED_DOMAIN_LAYOUT;
+    if (!["whole", DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT].includes(snapshotLayout)) fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
     this.snapshotLayout = snapshotLayout; this.bundleEncoding = bundleEncoding;
     this.snapshotEncoding = snapshotEncoding;
     this.gitOptions = gitOptions;
     this.gitStore = () => new GitSnapshotStore({ projectRoot: this.projectRoot, storage: this.storage, ...this.gitOptions });
-    this.projectRoot = path.resolve(projectRoot);
     this.adapterVersion = GRAPH_PROJECTION_ADAPTER_VERSION;
   }
 
@@ -2289,7 +2298,9 @@ export class LocalJsonGraphProjectionAdapter {
   async #writeSnapshotUnderLifetime(id, document) {
     const existing = await this.readSnapshot(id);
     if (existing) return { ...existing, created: false };
-    if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT) document = createSnapshotComposition({ root: this.projectRoot, storage: this.storage, document, encoding: this.bundleEncoding }).document;
+    if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT || this.snapshotLayout === SHARED_DOMAIN_LAYOUT && document.kind === "GraphSnapshot") {
+      document = createSnapshotComposition({ root: this.projectRoot, storage: this.storage, document, encoding: this.bundleEncoding, layout: this.snapshotLayout }).document;
+    }
     if (this.snapshotEncoding === "git") {
       return hydrateSnapshotEntry({ root: this.projectRoot, storage: this.storage, entry: await this.gitStore().write(id, document) });
     }
@@ -2333,13 +2344,17 @@ export class LocalJsonGraphProjectionAdapter {
   }
 
   async queryPrepared(request) {
-    const prepared = verifyPreparedTraversalRequest(request, { storage: this.storage });
-    const entry = (await this.readSnapshot(prepared.graphSnapshotId));
-    if (!entry) fail(`Graph projection snapshot is missing: ${prepared.graphSnapshotId}`, "GRAPH_PROJECTION_SNAPSHOT_MISSING");
-    const result = queryTemporalProvenanceGraph(entry.document, traversalOptionsFromQuery(prepared.traversalQuery,
-      familyFormatForOriginal("head-agent-core-prepared-traversal", prepared, this.storage)));
-    verifyPreparedTraversalRequest(prepared, { graph: entry.document, result, storage: this.storage });
-    return buildPreparedTraversalVerification(prepared, "local-snapshot-reference");
+    const scope = createTemporalVerificationScope();
+    try {
+      const prepared = verifyPreparedTraversalRequest(request, { storage: this.storage });
+      const entry = (await this.readSnapshot(prepared.graphSnapshotId));
+      if (!entry) fail(`Graph projection snapshot is missing: ${prepared.graphSnapshotId}`, "GRAPH_PROJECTION_SNAPSHOT_MISSING");
+      const graph = ownWorldSnapshotForTemporalScope(scope, { temporalProvenanceGraph: entry.document }).temporalProvenanceGraph;
+      const result = queryTemporalProvenanceGraph(graph, traversalOptionsFromQuery(prepared.traversalQuery,
+        familyFormatForOriginal("head-agent-core-prepared-traversal", prepared, this.storage)));
+      verifyPreparedTraversalRequest(prepared, { graph, result, storage: this.storage });
+      return buildPreparedTraversalVerification(prepared, "local-snapshot-reference");
+    } finally { scope.close(); }
   }
 }
 

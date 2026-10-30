@@ -1787,7 +1787,12 @@ async function inspectOptionalOnboardingRecords(root, inspectWorld) {
     const unrelatedDefaultFailure = error.headSessionRecordPath === defaultSessionStatePath(root, inspected.storage)
       && sessionStatePath(root, inspected.storage) !== defaultSessionStatePath(root, inspected.storage);
     if (!/^(?:INVALID_)?(?:ONBOARDING|WORLD_MODEL|GRAPH_|TEMPORAL_|PRODUCT_MODEL|PRODUCT_CANON|DOCUMENT_|ARCADEDB|HISTORICAL_|STORAGE_SELECTION|SESSION_RECORD)/.test(error.code || "")
-      && !new Set(["ENOENT", "EACCES", "EPERM", "EISDIR"]).has(error.code)
+      && !new Set(["ENOENT", "EACCES", "EPERM", "EISDIR",
+        "INVALID_SNAPSHOT_COMPOSITION", "SNAPSHOT_COMPOSITION_DIGEST_MISMATCH",
+        "INVALID_SNAPSHOT_BUNDLE_ADDRESS", "INVALID_SNAPSHOT_BUNDLE_ENCODING", "INVALID_SNAPSHOT_BUNDLE_REFERENCE", "INVALID_SNAPSHOT_BUNDLE_SHAPE",
+        "SNAPSHOT_BUNDLE_BASIS_MISMATCH", "SNAPSHOT_BUNDLE_CODEC_UNAVAILABLE", "SNAPSHOT_BUNDLE_COUNT_LIMIT", "SNAPSHOT_BUNDLE_CYCLE",
+        "SNAPSHOT_BUNDLE_DIGEST_MISMATCH", "SNAPSHOT_BUNDLE_TYPE_MISMATCH", "SNAPSHOT_STORAGE_LIMIT", "SNAPSHOT_STORAGE_DRIFT", "UNSAFE_SNAPSHOT_PATH",
+      ]).has(error.code)
       && !unrelatedDefaultFailure) throw error;
     return {
       status: "integrity_attention",

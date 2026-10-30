@@ -112,7 +112,13 @@ const digest = (value) => crypto.createHash("sha256").update(value).digest("hex"
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    const result = {};
+    for (const key of Object.keys(value).sort()) {
+      const child = canonical(value[key]);
+      if (Object.hasOwn(Object.prototype, key)) Object.defineProperty(result, key, { value: child, writable: true, enumerable: true, configurable: true });
+      else result[key] = child;
+    }
+    return result;
   }
   return value;
 }
@@ -1630,7 +1636,9 @@ async function buildWorldModelLocked({
       runtimeObservationCount: externalRuntimeState.summary.observationCount,
     },
   };
-  if (domainBundleCandidate) payload.codeAnalysisInputBasis = codeAnalysisInputBasis;
+  // Preserve an already recorded v1 field without adding layout-only data to
+  // a whole/v2 history. A storage upgrade alone must not churn an unchanged ID.
+  if (domainBundleCandidate || previousWorldSnapshot?.codeAnalysisInputBasis !== undefined) payload.codeAnalysisInputBasis = codeAnalysisInputBasis;
   payload.analysisBasis = codeAnalysisBasis(semanticGraph);
   payload.domainBases = domainBasesFor(payload);
   const worldModelHash = digest(canonicalJson(payload));

@@ -4,6 +4,31 @@
 
 새 로컬 World·Graph 스냅샷은 공백을 줄인 JSON을 gzip으로 압축해 `.json.gz`로 저장합니다. 기존 `.json`은 원래 경로와 바이트를 유지하며 같은 ID로 재사용합니다. 설치·재개·조회는 원본을 이관하지 않습니다.
 
+선택된 Project 소유 근거가 있는 일반적인 완전한 World·Graph 저장은 `shared-domains-v2`를 사용합니다. 바뀌는
+구성은 gzip 루트에 넣고, World는 최대 두 개·Graph는 최대 한 개의 불변 코드 묶음을
+참조합니다. 묶음은 기존 schema 1 / producer 0.1.0 그대로이며 루트만 schema 2 /
+producer 0.2.0입니다. 이전 스냅샷을 연쇄 재생하지 않습니다. 결정 변경은 코드 묶음을
+재사용할 수 있지만 코드 변경은 묶음 전체를 새로 저장할 수 있고, 소속 메타데이터도
+그래프 크기에 따라 늘어납니다. 첫 조회의 부분 IO나 O(change) 처리를 뜻하지 않습니다.
+
+선택된 Project 소유 근거가 없는 순수 하위 adapter는 기존 whole 문서 저장을
+유지하며 초기화를 요구하지 않습니다. 명시적 composition 선택은 소유 근거를
+요구하고 전체 검증을 그대로 수행합니다.
+
+최소 reader는 물리 schema 2를 지원하는 릴리스입니다. **Beta.69 이하는 새 루트를
+`INVALID_SNAPSHOT_COMPOSITION`으로 거부**하며 구형으로 다시 쓰지 않습니다.
+같은 Project를 공유하는 각 클라이언트를 업데이트한 뒤 새 World·Graph를 읽으세요.
+이는 형식 호환 안내이며 새로운 설정·승인 게이트가 아닙니다. 새 reader는 기존 whole
+JSON/gzip·Git·domain-v1 원본을 제자리에서 읽습니다. 명시적 whole/Git/v1 선택도
+유지합니다. 물리 형식 때문에 새 의미 payload에 필드를 넣지 않으며, v1에 이미 기록된
+분석 필드는 변경 없는 이력의 신원을 유지하도록 승계합니다.
+
+묶음 주소·Project·타입·producer·digest와 재구성한 전체 World·Graph 검증은
+유지합니다. 기존 보존·삭제 closure와 reader·publisher 수명이 참조 묶음을 포함합니다.
+누락·손상·권한 거부는 해당 읽기의 오류이며 현재 데이터로 대체하지 않습니다.
+Graph 포인터 다음 World 포인터를 게시하는 기존 부분 실패 보고도 유지합니다.
+새 형식이 두 포인터의 원자적 트랜잭션이나 이미 완료된 효과의 롤백을 만들지는 않습니다.
+
 ## 인코딩과 역사 조회
 
 기존 어댑터가 두 형식을 모두 나열하고 읽으며 실제 물리 경로를 반환합니다. 인코딩은 의미 ID·해시·부모 계보·권한을 바꾸지 않습니다. `snapshotEncoding: "json"`을 명시하면 새 파일에 공백을 줄인 비압축 JSON을 사용합니다.
@@ -46,7 +71,7 @@ GC만 OS 파일시스템을 확인합니다. Windows는 숨김·기한 제한 Dr
 
 ## 생성하는 Git ignore 규칙
 
-초기화와 명시적 재개는 선택된 `.lode/.gitignore` 또는 기존 `.head/.gitignore`가 없을 때만 새로 생성합니다. 사용자가 생성 규칙을 편집한 경우를 포함해 모든 기존 파일은 수정하지 않습니다. 덮어쓰지 않는 원자적 생성으로 동시에 생긴 파일도 보존합니다. `!docs/keep.md`처럼 고정된 루트 상대 접두어가 생성 경로와 확실히 무관하면 생성을 허용합니다. 생성 경로에 영향을 줄 수 있는 예외나 해석이 모호한 basename·와일드카드·escape는 사용자 정책을 보존하고 이 선택적 개선만 건너뜁니다. 생성 직전에 관측한 정책 바이트를 다시 확인하되 임의의 외부 편집기를 잠그지는 않습니다. 선택적 ignore 생성 실패는 Project 준비도나 일반 작업을 막지 않습니다.
+초기화와 명시적 재개는 선택된 `.lode/.gitignore` 또는 기존 `.head/.gitignore`가 없을 때만 새로 생성합니다. 사용자가 편집한 파일을 포함해 모든 기존 파일은 수정하지 않으며, 덮어쓰지 않는 원자적 생성으로 동시에 생긴 파일도 보존합니다. 생성 규칙마다 루트 예외와의 충돌을 따로 확인합니다. 예를 들어 `!.gitkeep`가 있어도 정확한 `/graph-discovery/index.json`은 생성하고, 하위 `.gitkeep`를 가릴 수 있는 디렉터리 규칙은 보존합니다. 확실히 무관한 루트 예외는 해당 규칙을 허용하고, 겹치거나 모호한 와일드카드·escape는 건너뜁니다. 결과에 포함·제외된 규칙을 구분합니다. 생성 직전에 정책 바이트를 다시 확인하되 외부 편집기를 잠그거나 추적 중인 파일을 바꾸지는 않습니다. 선택적 생성 실패는 Project 준비도나 일반 작업을 막지 않습니다.
 
 | 저장 루트 내부 상대 패턴 | 재생성·폐기 가능한 이유 |
 | --- | --- |
@@ -72,7 +97,7 @@ Git 원문에는 실제 파일 경로가 없으므로 필요한 World/Graph 반�
 
 ## 로컬 domain bundle 시험 후보 — 기본값 변경 아님
 
-내부 로컬 어댑터에 `snapshotLayout: "domain-bundles-v1"`를 명시한 경우에만 새 구성을 시험합니다. 일반 저장은 전체 snapshot gzip 그대로입니다. 기존 ID·JSON/gzip 원문·Git 객체·과거 byte pin을 다시 쓰지 않으며 사용자 pin/save/승인 절차를 추가하지 않습니다.
+내부 로컬 어댑터의 명시적 `snapshotLayout: "domain-bundles-v1"` 시험은 유지합니다. 일반적인 완전한 스냅샷은 위의 flat v2를 쓰며, `snapshotLayout: "whole"`은 전체 파일 저장을 유지합니다. 기존 ID·JSON/gzip 원문·Git 객체·과거 byte pin을 다시 쓰지 않으며 사용자 pin/save/승인 절차를 추가하지 않습니다.
 
 후보 Graph protocol 0.16은 관계의 `logicalRelationId`, 근거에 민감한 `contentRevisionId`/`edgeId`, 정확한 `sourceSnapshotId` 관측을 분리합니다. 논리 신원에는 Project, 양 끝의 논리 신원과 연속성 세대/불확실성, 관계 종류·출처·권한·producer가 포함됩니다. 내용 revision은 실제 endpoint·근거·freshness·confidence도 보존합니다. snapshot을 직접 가리키는 관계는 그 정확한 endpoint를 따릅니다. 삭제 후 재생성, 다른 Session, 근거·confidence 변경을 같은 revision으로 합치지 않습니다. 기존 0.15 및 이전 형식의 원래 ID와 검증은 유지합니다.
 
@@ -96,9 +121,15 @@ private Git 저장은 자기 소유 store/staging 내부에서만 ignore를 새�
 
 ## 증분 규모 개선의 적용 범위
 
-일반 whole gzip과 기존 domain-bundles-v1 계약은 유지합니다. 전체 World/Graph hash·원문·Project·권한 검증은 줄이지 않습니다. 같은 관측의 변경 원문은 분석 후 누적하지 않으며, 재사용하는 이전 분석의 소유 검증은 유지합니다. 사용자 cache/save/pin/승인 절차나 daemon은 추가하지 않습니다.
+명시적 whole-file gzip과 기존 domain-bundles-v1 읽기·쓰기 계약은 유지합니다. 전체 World/Graph hash·원문·Project·권한 검증은 줄이지 않습니다. 같은 관측의 변경 원문은 분석 후 누적하지 않으며, 재사용하는 이전 분석의 소유 검증은 유지합니다. 사용자 cache/save/pin/승인 절차나 daemon은 추가하지 않습니다.
 
 파일별 관계 재사용과 두 packed-chunk 형식은 별도 로컬 고정 후보에서 시험했습니다. 관계 재사용의 검증/복사 비용과 chunk의 전체 복원·파일 검사 비용 때문에 해당 측정에서 전체 지연이 증가해 활성 제품 경로에는 채택하지 않았습니다. 기존 domain 시험의 정확한 전체 codeAnalysisInputBasis 재사용은 유지합니다. 전체 탐색/해시·관계 생성·직렬화/검증·스냅샷 목록 및 Git namespace 검사 비용은 남아 있으며, 이 수정만으로 전체 파이프라인이 변경량에 비례한다고 하지 않습니다. 증분 분석 개선이 자동으로 이력·원문 이관이나 GC·ref 삭제를 실행하지 않으며, 명시적 storage-gc는 위의 별도 계약을 따릅니다.
+
+### 요청 안에서의 private Git 읽기
+
+Private Git 객체는 선택한 객체 묶음마다 제한된 `cat-file --batch` 자식으로 읽습니다. 정확한 OID·객체 type·선언 크기·Git 원문 hash·frame 종결자·완전한 EOF를 확인합니다. metadata를 먼저 검증한 뒤 snapshot 본문 한도를 정하고, decoder가 stream buffer를 소유합니다. 같은 작업 deadline·취소를 적용하며 모든 자식의 종료를 확인한 뒤 반환합니다. 격리된 정리 검증도 main store로 우회하지 않고 같은 프로토콜을 소비합니다.
+
+바뀌는 것은 하위 프로세스 조정입니다. 전체 World/Graph·Project 검증과 정확한 snapshot 주소·namespace 검사·기존 게시/정리 수명은 유지합니다. daemon·네트워크·공유 권한·영구 읽기 cache를 추가하지 않습니다. 명시적 whole gzip도 계속 사용할 수 있으며 자식 수 감소만으로 프로젝트 전체 성능 향상을 주장하지 않습니다.
 
 ## 혼합 저장소의 실제 물리 회수
 

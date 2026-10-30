@@ -242,7 +242,13 @@ function compareText(left, right) {
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    const result = {};
+    for (const key of Object.keys(value).sort()) {
+      const child = canonical(value[key]);
+      if (Object.hasOwn(Object.prototype, key)) Object.defineProperty(result, key, { value: child, writable: true, enumerable: true, configurable: true });
+      else result[key] = child;
+    }
+    return result;
   }
   return value;
 }

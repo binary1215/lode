@@ -24,6 +24,7 @@ import { compileContext } from "../scripts/lib/context-compiler.mjs";
 import { diffGraphLineage } from "../scripts/lib/graph-lineage.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { spawn } from "node:child_process";
+import { createSnapshotBatchDecoder } from "../scripts/lib/git-snapshot-batch.mjs";
 const pluginRoot=path.resolve(import.meta.dirname,"..");
 const digest=bytes=>crypto.createHash("sha256").update(bytes).digest("hex");
 function fixture(t,legacy=false){const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),"lode-snapshot-storage-")));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
@@ -32,6 +33,21 @@ function fixture(t,legacy=false){const root=fs.realpathSync(fs.mkdtempSync(path.
 const product={schemaVersion:1,featureGroups:[{key:"editing",name:"Editing",description:"Edit a document."}],capabilities:[],features:[],requirements:[],constraints:[],decisions:[]};
 function source(f,text="def compute_value():\n    return 1\n"){fs.writeFileSync(path.join(f.root,"module.py"),text);fs.writeFileSync(path.join(f.root,f.storage.directory,"context/product-model.json"),JSON.stringify(product)+"\n");}
 const wid=n=>"world-model-"+String(n).padStart(24,"0");
+test("local prepared traversal detaches aliases and revalidates each request without a new gate",async t=>{
+ const f=fixture(t);source(f);const built=await buildWorldModel({root:f.root});
+ const {queryTemporalProvenanceGraph}=await import('../scripts/lib/temporal-provenance.mjs');
+ const {buildPreparedTraversalRequest}=await import('../scripts/lib/graph-projection-adapter.mjs');
+ const graph=built.snapshot.temporalProvenanceGraph,result=queryTemporalProvenanceGraph(graph,{query:'compute_value',depth:1});
+ const request=buildPreparedTraversalRequest({graph,result,storage:f.storage}),external=structuredClone(graph);
+ t.mock.method(f.graph,'readSnapshot',async()=>({document:external}));
+ const first=await f.graph.queryPrepared(request);assert(first.verificationId);assert(!Object.isFrozen(external));assert(!Object.isFrozen(external.nodes));
+ external.unusedFunction=()=>{};assert.equal((await f.graph.queryPrepared(request)).verificationId,first.verificationId);
+ delete external.unusedFunction;external.nodes[0].unknownExtension='mutated after prior request';
+ await assert.rejects(f.graph.queryPrepared(request),{code:'TEMPORAL_GRAPH_DIGEST_MISMATCH'});
+ t.mock.method(f.graph,'readSnapshot',async()=>{throw Object.assign(new Error('synthetic denied'),{code:'EACCES'})});
+ await assert.rejects(f.graph.queryPrepared(request),{code:'EACCES'});
+ await assert.rejects(f.graph.queryPrepared({...request,verified:true}),{code:'INVALID_PREPARED_TRAVERSAL_REQUEST'});
+});
 test("new compact gzip and untouched legacy JSON share existing World/Graph adapters in both storage families",async t=>{
  for(const legacy of [false,true])await t.test(legacy?"head":"lode",async t=>{const f=fixture(t,legacy);source(f);
  const built=await buildWorldModel({root:f.root}),id=built.snapshot.worldModelId,graphId=built.snapshot.temporalProvenanceGraph.graphSnapshotId;
@@ -162,15 +178,26 @@ test("scoped ignore exceptions match Git's oracle and preserve tracking, private
  fs.mkdirSync(path.join(f.root,"docs"));fs.writeFileSync(path.join(f.root,docs),"user document");
  const cases=[
   ["*.tmp\n!/docs/keep.tmp\n",true], ["!docs/keep.tmp\n",true], ["\\!literal\n",true], ["  !literal\n",true],
-  ["\ufeff!docs/keep.tmp\r\n",true], ["!/.lode/graph-discovery/index.json\n",false], ["!**/graph-discovery/index.json\n",false],
-  ["!/.lode/graph-discovery   \n",false], ["!/docs/keep.tmp   \n",true],
-  ["!keep-this.txt\n",false], ["!docs/\n",false], ["/.lode/\n!/docs/keep.tmp\n",true],
+  ["\ufeff!docs/keep.tmp\r\n",true], ["!/.lode/graph-discovery/index.json\n",true,false], ["!**/graph-discovery/index.json\n",false],
+  ["!/.lode/graph-discovery   \n",true,false], ["!/docs/keep.tmp   \n",true],
+  ["!keep-this.txt\n",true], ["!docs/\n",false], ["/.lode/\n!/docs/keep.tmp\n",true],
  ];
- for(const [text,created] of cases){fs.unlinkSync(file);fs.writeFileSync(rootIgnore,text);const before=await git(["check-ignore","--no-index","-v",docs]);
+ for(const [text,created,indexIncluded=true] of cases){fs.unlinkSync(file);fs.writeFileSync(rootIgnore,text);const before=await git(["check-ignore","--no-index","-v",docs]),beforeIndex=await git(["check-ignore","--no-index","-v",transient]);
   const result=ensureProjectStorageIgnore({root:f.root,storage:f.storage});assert.equal(result.status,created?"created":"preserved",text);assert.equal(fs.readFileSync(rootIgnore,"utf8"),text);
   const after=await git(["check-ignore","--no-index","-v",docs]);assert.deepEqual(after,before,text);
-  const transientResult=await git(["check-ignore","--no-index","-v",transient]);if(created)assert.match(transientResult.stdout,/graph-discovery\/index.json|\.lode\//);
+  const transientResult=await git(["check-ignore","--no-index","-v",transient]);if(created&&indexIncluded)assert.match(transientResult.stdout,/graph-discovery\/index.json|\.lode\//);else assert.deepEqual(transientResult,beforeIndex,text);
   if(!fs.existsSync(file))fs.writeFileSync(file,"# synthetic reset only\n");
+ }
+ for(const policy of ["!.gitkeep\n","!keep-this.txt\n"]){
+  fs.unlinkSync(file);fs.writeFileSync(rootIgnore,policy);
+  const keep=f.storage.directory+"/.operations/.gitkeep";fs.mkdirSync(path.dirname(path.join(f.root,keep)),{recursive:true});fs.writeFileSync(path.join(f.root,keep),"user keep\n");
+  const before=await git(["check-ignore","--no-index","-v",keep]);
+  const partial=ensureProjectStorageIgnore({root:f.root,storage:f.storage});
+  assert.equal(partial.status,"created");assert.deepEqual(partial.rules.included,["/graph-discovery/index.json"]);
+  assert.equal(partial.rules.skipped.length,GENERATED_STORAGE_IGNORE_RULES.length-1);
+  assert.deepEqual(await git(["check-ignore","--no-index","-v",keep]),before);
+  assert.equal(fs.readFileSync(rootIgnore,"utf8"),policy);
+  assert.equal((await git(["check-ignore","--no-index",transient])).code,0);
  }
  fs.unlinkSync(file);fs.writeFileSync(rootIgnore,"!/docs/keep.tmp\n");assert.equal(ensureProjectStorageIgnore({root:f.root,storage:f.storage}).status,"created");
  const tracked=path.join(f.root,transient);fs.mkdirSync(path.dirname(tracked),{recursive:true});fs.writeFileSync(tracked,"retained tracked bytes\n");
@@ -285,4 +312,52 @@ test("private Git store rejects forged identity, corrupt object and cancelled wo
  assert.equal(cancelEvents.filter(e=>e.event==="started").length,1);assert.equal(cancelEvents.filter(e=>e.event==="closed").length,1);
  assert.deepEqual(snapshotGitProcessStatus(),[]);assert.equal(events.filter(e=>e.event==="started").length,events.filter(e=>e.event==="closed").length);
  assert.deepEqual(await store.list("world-model"),[world.worldModelId]);
+});
+
+
+test("private Git batch framing checks exact OID, type, size, binary bytes, EOF and metadata-dependent bounds", () => {
+ const blob = Buffer.from([0,10,255,4]), meta = Buffer.from('{"bytes":4}');
+ const oid = (type, bytes) => digest(Buffer.concat([Buffer.from(type + ' ' + bytes.length + '\0'), bytes]));
+ const frame = (type, bytes) => Buffer.concat([Buffer.from(oid(type,bytes)+' '+type+' '+bytes.length+'\n'), bytes, Buffer.from('\n')]);
+ const first = frame('blob',meta), second = frame('blob',blob), all = Buffer.concat([first,second]);
+ for(const step of [1,7,64,all.length]){
+  let bound=null;const decoder=createSnapshotBatchDecoder([{oid:oid('blob',meta),type:'blob',maximum:64,onObject:bytes=>{bound=JSON.parse(bytes).bytes}}, {oid:oid('blob',blob),type:'blob',maximum:()=>bound}]);
+  for(let i=0;i<all.length;i+=step)decoder.push(all.subarray(i,i+step));assert.deepEqual(decoder.finish(),[meta,blob]);
+  assert.throws(()=>decoder.push(Buffer.from('x')),{code:'SNAPSHOT_GIT_BATCH_INVALID'});
+ }
+ const request={oid:oid('blob',blob),type:'blob',maximum:blob.length};
+ // The digest must describe returned bytes even if a stream producer reuses
+ // its input buffer between body delivery and the terminating newline.
+ const borrowed=Buffer.from(second.subarray(0,-1)), owned=createSnapshotBatchDecoder([request]);
+ owned.push(borrowed);borrowed[borrowed.length-1]^=1;owned.push(Buffer.from('\n'));
+ assert.deepEqual(owned.finish(),[blob]);
+ for(const [bytes,code] of [
+  [Buffer.from(request.oid+' tree '+blob.length+'\n'),'SNAPSHOT_GIT_OBJECT_TYPE_MISMATCH'],
+  [Buffer.from(request.oid+' blob 999999\n'),'SNAPSHOT_STORAGE_LIMIT'],
+  [Buffer.from(request.oid+' missing\n'),'SNAPSHOT_GIT_COMMAND_FAILED'],
+  [Buffer.from('e'.repeat(64)+' blob 4\n'),'SNAPSHOT_GIT_BATCH_INVALID'],
+  [Buffer.concat([Buffer.from(request.oid+' blob 4\n'),Buffer.from([0,10,255,5]),Buffer.from('\n')]),'SNAPSHOT_GIT_OBJECT_DIGEST_MISMATCH'],
+  [Buffer.concat([second.subarray(0,-1),Buffer.from('x')]),'SNAPSHOT_GIT_BATCH_INVALID'],
+  [Buffer.concat([second,Buffer.from('extra')]),'SNAPSHOT_GIT_BATCH_INVALID'],
+ ]){const decoder=createSnapshotBatchDecoder([request]);assert.throws(()=>decoder.push(bytes),{code});}
+ const high=Buffer.from(second);high[0]|=128;assert.throws(()=>createSnapshotBatchDecoder([request]).push(high),{code:'SNAPSHOT_GIT_BATCH_INVALID'});
+ for(const cut of [0,10,second.length-1]){const decoder=createSnapshotBatchDecoder([request]);decoder.push(second.subarray(0,cut));assert.throws(()=>decoder.finish(),{code:'SNAPSHOT_GIT_BATCH_TRUNCATED'});}
+});
+
+test("private Git batch reads use four reaped children and preserve raw bytes, failure and cancellation boundaries",async t=>{
+ const f=fixture(t),events=[],store=new GitSnapshotStore({projectRoot:f.root,storage:f.storage,onProcess:event=>events.push(event)});
+ const id=wid(42),document={worldModelId:id,projectId:f.storage.projectId,body:'synthetic binary protocol source '.repeat(120)};
+ const written=await store.write(id,document);events.length=0;
+ const read=await store.read(id);assert.deepEqual(read.document,document);assert.equal(read.snapshotStorage.rawSha256,written.snapshotStorage.rawSha256);
+ assert.equal(events.filter(e=>e.event==='started').length,4);assert.equal(events.filter(e=>e.event==='closed').length,4);
+ await assert.rejects(store.object(read.snapshotStorage.objectId,'tree',4096,store.context()),{code:'SNAPSHOT_GIT_OBJECT_TYPE_MISMATCH'});
+ await assert.rejects(store.object(read.snapshotStorage.objectId,'blob',1,store.context()),{code:'SNAPSHOT_STORAGE_LIMIT'});
+ await assert.rejects(store.object('f'.repeat(64),'blob',4096,store.context()),error=>error.code==='SNAPSHOT_GIT_COMMAND_FAILED'&&error.gitMissingObject===true);
+ const controller=new AbortController(),cancelEvents=[];
+ const cancelled=new GitSnapshotStore({projectRoot:f.root,storage:f.storage,signal:controller.signal,onProcess:e=>{cancelEvents.push(e);if(e.event==='started')controller.abort()}});
+ await assert.rejects(cancelled.read(id),{code:'SNAPSHOT_GIT_CANCELLED'});
+ assert.equal(cancelEvents.filter(e=>e.event==='started').length,1);assert.equal(cancelEvents.filter(e=>e.event==='closed').length,1);
+ await assert.rejects(store.object(read.snapshotStorage.objectId,'blob',4096,{deadline:Date.now()-1}),{code:'SNAPSHOT_GIT_TIMEOUT'});
+ assert.deepEqual(snapshotGitProcessStatus(),[]);assert.equal(events.filter(e=>e.event==='started').length,events.filter(e=>e.event==='closed').length);
+ assert.deepEqual((await store.read(id)).document,document);
 });

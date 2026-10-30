@@ -1,12 +1,12 @@
 import { verifyLooseSnapshotAddress } from "./snapshot-backend-reclamation.mjs";
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
-import { DOMAIN_BUNDLE_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
+import { DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
 import { GitSnapshotStore } from "./git-snapshot-store.mjs";
 import { storedSnapshotLocation, readSnapshotFile, writeStoredSnapshot, listStoredSnapshotIds } from "./snapshot-storage-codec.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { formatForVerifiedOwner } from "./project-storage-format.mjs";
+import { formatForVerifiedOwner, projectOwnsRecordedRoot } from "./project-storage-format.mjs";
 
 export const WORLD_MODEL_STORE_ADAPTER_VERSION = "0.1.0";
 export const WORLD_MODEL_STORAGE_CONTRACT = "replaceable-rebuildable-materialized-view";
@@ -77,11 +77,14 @@ export function assertWorldModelStoreAdapter(adapter) {
 }
 
 export class LocalJsonWorldModelStoreAdapter {
-  constructor({ projectRoot, storage = null, snapshotEncoding = "gzip", snapshotLayout = "whole", bundleEncoding = "gzip", gitOptions = {} }) {
+  constructor({ projectRoot, storage = null, snapshotEncoding = "gzip", snapshotLayout, bundleEncoding = "gzip", gitOptions = {} }) {
     if (typeof projectRoot !== "string" || !projectRoot.trim()) fail("Local JSON adapter requires projectRoot.", "WORLD_MODEL_STORE_ROOT_REQUIRED");
     this.projectRoot = path.resolve(projectRoot);
     this.storage = storage;
-    if (!["whole", DOMAIN_BUNDLE_LAYOUT].includes(snapshotLayout)) fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
+    // Layout selection is not ownership verification. Unowned lower adapters
+    // retain their whole-document contract; compositions still recheck owner.
+    if (snapshotLayout === undefined) snapshotLayout = snapshotEncoding === "git" || !projectOwnsRecordedRoot(storage, this.projectRoot) ? "whole" : SHARED_DOMAIN_LAYOUT;
+    if (!["whole", DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT].includes(snapshotLayout)) fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
     this.snapshotLayout = snapshotLayout; this.bundleEncoding = bundleEncoding;
     this.snapshotEncoding = snapshotEncoding;
     this.gitOptions = gitOptions;
@@ -131,7 +134,11 @@ export class LocalJsonWorldModelStoreAdapter {
   async #writeSnapshotUnderLifetime(worldModelId, document) {
     const existing = await this.readSnapshot(worldModelId);
     if (existing) return { ...existing, created: false };
-    if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT) document = createSnapshotComposition({ root: this.projectRoot, storage: this.storage, document, encoding: this.bundleEncoding }).document;
+    // The storage adapter also accepts opaque documents; only complete typed
+    // snapshots use the default composition. Their Core verifier is unchanged.
+    if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT || this.snapshotLayout === SHARED_DOMAIN_LAYOUT && document.temporalProvenanceGraph?.kind === "GraphSnapshot") {
+      document = createSnapshotComposition({ root: this.projectRoot, storage: this.storage, document, encoding: this.bundleEncoding, layout: this.snapshotLayout }).document;
+    }
     if (this.snapshotEncoding === "git") {
       return hydrateSnapshotEntry({ root: this.projectRoot, storage: this.storage, entry: await this.gitStore().write(worldModelId, document) });
     }

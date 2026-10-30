@@ -73,8 +73,10 @@ async function orphan(f, encoding = "gzip") {
   const source = path.join(f.root, "example.py"), before = fs.readFileSync(source);
   fs.writeFileSync(source, "def multiply(a,b):\n    return a*b\n");
   const built = await buildWorldModel({ root: f.root, persist: false });
-  const world = new LocalJsonWorldModelStoreAdapter({ projectRoot: f.root, storage: f.storage, snapshotEncoding: encoding });
-  const graph = new LocalJsonGraphProjectionAdapter({ projectRoot: f.root, storage: f.storage, snapshotEncoding: encoding });
+  // This fixture specifically exercises whole JSON/gzip retirement. Rooted
+  // default v2 parts and the separate mixed-domain tests remain active.
+  const world = new LocalJsonWorldModelStoreAdapter({ projectRoot: f.root, storage: f.storage, snapshotEncoding: encoding, snapshotLayout: "whole" });
+  const graph = new LocalJsonGraphProjectionAdapter({ projectRoot: f.root, storage: f.storage, snapshotEncoding: encoding, snapshotLayout: "whole" });
   const w = await world.writeSnapshot(built.snapshot.worldModelId, built.snapshot);
   const g = await graph.writeSnapshot(built.snapshot.temporalProvenanceGraph.graphSnapshotId, built.snapshot.temporalProvenanceGraph);
   fs.writeFileSync(source, before);
@@ -631,7 +633,7 @@ test("loose ref CAS preserves packed shadows, external locks and changed file id
 test("rooted read reacquires the same chosen OID across a real pack replacement",async t=>{
  const f=await objectFixture(t,true),invoke=f.store.invoke.bind(f.store);let replaced=false;
  t.mock.method(f.store,"invoke",async function(args,...rest){
-  if(!replaced&&args[0]==="cat-file"&&args[1]==="tree"){
+   if(!replaced&&args[0]==="cat-file"&&args[1]==="--batch"&&rest[1]?.input===f.entry.snapshotStorage.treeObjectId+"\n"){
    replaced=true;await f.mixed.reclaimObjects({attempt:f.attempt,result:f.result,keepObjects:new Set(f.refs[0].objectIds),pinnedPaths:new Set()});
    throw Object.assign(new Error("Synthetic delayed old-pack open"),{code:"SNAPSHOT_GIT_COMMAND_FAILED",gitStderr:"fatal: could not get object info",gitAction:"cat-file"});
   }

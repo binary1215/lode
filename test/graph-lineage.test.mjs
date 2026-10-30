@@ -7,7 +7,9 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { compileContext } from "../scripts/lib/context-compiler.mjs";
 import { createExecutionContract, createResultPacket, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
-import { diffGraphLineage, inspectGraphLineage, projectExecutionLineageOverlay, traceGraphLineage } from "../scripts/lib/graph-lineage.mjs";
+import { diffGraphLineage, inspectGraphLineage, inspectGraphLineageComparison, projectExecutionLineageOverlay, traceGraphLineage } from "../scripts/lib/graph-lineage.mjs";
+import { buildGraphExplorerSnapshot, exportGraphExplorer } from "../scripts/lib/graph-explorer.mjs";
+import { explorerCodec } from "../scripts/graph-explorer/codec.js";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 import { normalizeProductModelDocument } from "../scripts/lib/product-model.mjs";
 import { buildTemporalProvenanceGraph, verifyTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
@@ -15,7 +17,7 @@ import { buildWorldModel } from "../scripts/lib/world-model.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch as dispatchMcp, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
-import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world-model-store.mjs";
+import { LocalJsonWorldModelStoreAdapter, assertWorldModelStoreAdapter } from "../scripts/lib/world-model-store.mjs";
 import { readWorldModelSnapshot } from "../scripts/lib/world-model.mjs";
 import { temporalRelationIdentity } from "../scripts/lib/temporal-relation-identity.mjs";
 
@@ -163,6 +165,11 @@ test("default whole snapshots distinguish decision changes from unchanged code m
   assert(codeEdges(first.snapshot.temporalProvenanceGraph).length);
   assert.deepEqual(codeEdges(first.snapshot.temporalProvenanceGraph), codeEdges(second.snapshot.temporalProvenanceGraph));
   assert(diff.changeExplanation.relations.observationOnly.count > 0);
+  assert.equal(diff.changeExplanation.relations.snapshotMembership.count, 1);
+  const membership=diff.changeExplanation.relations.snapshotMembership.items[0];
+  assert.equal(membership.fromSourceSnapshotId,first.snapshot.temporalProvenanceGraph.sourceSnapshotId);
+  assert.equal(membership.toSourceSnapshotId,second.snapshot.temporalProvenanceGraph.sourceSnapshotId);
+  assert.equal(membership.path,"src/stable.mjs");
   assert(diff.changeExplanation.relations.contentAdded.count > 0, "Different snapshot/decision endpoints stay distinct");
   assert(diff.changes.addedNodes.items.some(id => second.snapshot.temporalProvenanceGraph.nodes.some(n => n.nodeId === id && n.kind === "DecisionRevision")));
   assert.equal(diff.changeExplanation.semanticContinuityClaimed, false);
@@ -172,11 +179,23 @@ test("default whole snapshots distinguish decision changes from unchanged code m
   const cli = formatCliResult("graph-lineage-diff", diff);
   assert.match(cli, /Changed node content:.*snapshot membership only:/);
   assert.match(cli, /Exact raw changes and historical identities are preserved/);
+  assert.match(cli, /Snapshot\/context observations: 1 memberships/);
+  const rpc=await dispatchMcp({method:"tools/call",params:{name:"head_graph_lineage_diff",arguments:{project_root:root,from_world_model_id:first.snapshot.worldModelId,to_world_model_id:second.snapshot.worldModelId}}});
+  assert.equal(rpc.error,undefined);const wire=JSON.parse(rpc.result.content[0].text);
+  assert.equal(wire.changeExplanation.relations.snapshotMembership.count,1);assert.deepEqual(wire.changes,diff.changes);
+  const output=path.join(os.tmpdir(),"lode-membership-"+crypto.randomUUID()+".html");t.after(()=>fs.rmSync(output,{force:true}));
+  const exported=await exportGraphExplorer({root,query:"stable",history:true,output});
+  const encoded=/<script[^>]*id="snapshot"[^>]*>([\s\S]*?)<\/script>/.exec(fs.readFileSync(exported.file,"utf8"));assert(encoded);
+  const htmlSnapshot=explorerCodec.decode(JSON.parse(encoded[1]));
+  assert.equal(htmlSnapshot.history.diff.changeExplanation.relations.snapshotMembership.count,1);
+  const selected=await diffGraphLineage({root,fromWorldModelId:htmlSnapshot.history.diff.from.worldModelId,
+    toWorldModelId:htmlSnapshot.history.diff.to.worldModelId,limit:40});
+  assert.deepEqual(htmlSnapshot.history.diff.changes,selected.changes);
 });
 
 // Reproduce the former 0.15 writer contract, retaining the original graph body.
 // The ordinary exact readers must verify these historical bytes before diffing.
-function legacyWholeSnapshot(snapshot) {
+function legacyWholeSnapshot(snapshot, { verify = true } = {}) {
   const document = structuredClone(snapshot), graph = document.temporalProvenanceGraph;
   graph.protocol.version = "0.15.0";
   delete graph.relationAnalysisBasis;
@@ -189,7 +208,7 @@ function legacyWholeSnapshot(snapshot) {
   delete graph.graphSnapshotId; delete graph.graphSnapshotHash;
   graph.graphSnapshotHash = graphDigest(graph);
   graph.graphSnapshotId = `graph-snapshot-${graph.graphSnapshotHash.slice(0, 24)}`;
-  verifyTemporalProvenanceGraph(graph);
+  if (verify) verifyTemporalProvenanceGraph(graph);
   delete document.worldModelId; delete document.worldModelHash;
   document.worldModelHash = graphDigest(document);
   document.worldModelId = `world-model-${document.worldModelHash.slice(0, 24)}`;
@@ -218,7 +237,38 @@ test("legacy raw edge changes remain exact and the first producer transition is 
   assert.equal(transition.changeExplanation.producerTransition.from.protocol.version, "0.15.0");
   assert.equal(transition.changeExplanation.producerTransition.to.protocol.version, "0.16.0");
   assert.equal(transition.changeExplanation.relations.observationOnly.count, 0);
+  assert.equal(transition.changeExplanation.relations.snapshotMembership.count, 0);
   assert.deepEqual(fs.readFileSync(oldEntry.location), oldBytes);
+});
+
+test("same FileRevision ID cannot hide changed digest, status or unknown metadata as membership", async t => {
+  const {root,layout}=fixture();t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(root,"src/stable.mjs"),"export const stable = true;\n");
+  writeFixtureDecision(root,layout,"First decision");const first=await buildWorldModel({root});
+  writeFixtureDecision(root,layout,"Second decision");const second=await buildWorldModel({root});
+  const before=legacyWholeSnapshot(first.snapshot),store=new LocalJsonWorldModelStoreAdapter({projectRoot:root,storage:layout});
+  await store.writeSnapshot(before.worldModelId,before);
+  for(const patch of [{digest:"f".repeat(64)},{status:"cancelled"},{unknownExtension:{status:"not-established"}}]){
+    const candidate=structuredClone(second.snapshot),node=candidate.temporalProvenanceGraph.nodes.find(n=>n.kind==="FileRevision");
+    Object.assign(node,patch);const after=legacyWholeSnapshot(candidate,{verify:false});
+    await store.writeSnapshot(after.worldModelId,after);
+    const input={root,fromWorldModelId:before.worldModelId,toWorldModelId:after.worldModelId,limit:500};
+    if(Object.hasOwn(patch,"digest"))await assert.rejects(diffGraphLineage(input),{code:"TEMPORAL_NODE_IDENTITY_MISMATCH"});
+    else {
+      const diff=await diffGraphLineage(input);
+      assert.equal(diff.changeExplanation.relations.snapshotMembership.count,0);
+      assert(diff.changeExplanation.changedNodes.content.items.includes(node.nodeId));
+    }
+  }
+  for(const patch of [{status:"cancelled"},{unknownExtension:{status:"not-established"}},{producer:"another-producer"}]){
+    const candidate=structuredClone(second.snapshot),target=candidate.temporalProvenanceGraph.nodes.find(n=>n.kind==="FileRevision"),edge=candidate.temporalProvenanceGraph.edges.find(e=>e.type==="CONTAINS"&&e.to===target.nodeId);
+    Object.assign(edge,patch);const after=legacyWholeSnapshot(candidate,{verify:false});await store.writeSnapshot(after.worldModelId,after);
+    const input={root,fromWorldModelId:before.worldModelId,toWorldModelId:after.worldModelId,limit:500};
+    if(Object.hasOwn(patch,"producer")){await assert.rejects(diffGraphLineage(input),{code:"INVALID_TEMPORAL_PROVENANCE_GRAPH"});continue;}
+    const diff=await diffGraphLineage(input);
+    assert.equal(diff.changeExplanation.relations.snapshotMembership.count,0);
+    assert(diff.changeExplanation.relations.contentAdded.items.includes(after.temporalProvenanceGraph.edges.find(e=>e.type==="CONTAINS"&&e.to===target.nodeId).edgeId));
+  }
 });
 
 test("real code and line changes stay visible while unrelated exact code relations remain stable", async t => {
@@ -255,4 +305,130 @@ test("stable relation identity never merges evidence, authority, producer, exact
   assert.notEqual(temporalRelationIdentity(edge, { ...basis, projectId: "project-two" }).edgeId, identity.edgeId);
   assert.notEqual(temporalRelationIdentity(edge, { ...basis, logicalLineageState: { continuityGenerationByLogicalEntityId: { "file-one": 1 } } }).edgeId, identity.edgeId);
   assert.notEqual(temporalRelationIdentity(edge, { ...basis, relationAnalysisBasis: { analyzer: "another" } }).edgeId, identity.edgeId);
+});
+
+
+async function comparisonFixture(t) {
+  const f = fixture(); t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(f.root, 'src/change.mjs'), 'export const value = 1;\n');
+  const first = (await buildWorldModel({ root: f.root })).snapshot;
+  fs.writeFileSync(path.join(f.root, 'src/change.mjs'), 'export const value = 2;\n');
+  const second = (await buildWorldModel({ root: f.root })).snapshot;
+  return { ...f, first, second };
+}
+function comparisonBytes(root) {
+  const result = {};
+  const visit = directory => { for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name); if (entry.isDirectory()) visit(file);
+    else result[path.relative(root, file)] = graphDigest(fs.readFileSync(file).toString('base64'));
+  } };
+  visit(root); return result;
+}
+async function separateComparison(root, storeAdapter = null) {
+  const lineage = await inspectGraphLineage({ root, limit: 3, storeAdapter }), entries = lineage.segment.entries;
+  const current = entries.find(entry => entry.worldModelId === lineage.currentWorldModelId);
+  const parent = entries.find(entry => current?.parentSourceSnapshotIds.includes(entry.sourceSnapshotId));
+  const pair = current && parent ? [parent, current] : entries.slice(0, 2);
+  const diff = pair.length === 2 ? await diffGraphLineage({ root, fromWorldModelId: pair[0].worldModelId,
+    toWorldModelId: pair[1].worldModelId, limit: 40, storeAdapter }) : null;
+  return { lineage, entries, diff, comparison: parent ? 'retained-parent-to-current' : 'exact-retained-pair-not-chronological-inference' };
+}
+
+test('P2a actual Explorer history reuses verified endpoints with exact output and no new records', async t => {
+  const f = await comparisonFixture(t), before = comparisonBytes(f.root);
+  const original = LocalJsonWorldModelStoreAdapter.prototype.readSnapshot;
+  let reads = 0;
+  t.mock.method(LocalJsonWorldModelStoreAdapter.prototype, 'readSnapshot', function(...args) { reads++; return original.apply(this, args); });
+  const expected = await separateComparison(f.root); assert.equal(reads, 5);
+  reads = 0; const actual = await inspectGraphLineageComparison({ root: f.root });
+  assert.equal(reads, 2); assert.deepEqual(actual, expected);
+  reads = 0; await diffGraphLineage({ root: f.root, fromWorldModelId: f.first.worldModelId, toWorldModelId: f.second.worldModelId });
+  assert.equal(reads, 2, 'the first distinct pair still reads both full endpoints');
+  reads = 0; await buildGraphExplorerSnapshot({ root: f.root, query: 'change.mjs', history: false }); const inventoryReads = reads;
+  reads = 0; const explorer = await buildGraphExplorerSnapshot({ root: f.root, query: 'change.mjs', history: true });
+  assert.equal(explorer.history.status, 'retained');
+  assert.equal(reads - inventoryReads, 2, 'the actual Explorer consumes the composite reader');
+  assert.deepEqual(explorer.history, { status: 'retained', ...expected });
+  assert.deepEqual(comparisonBytes(f.root), before);
+  t.diagnostic(JSON.stringify({ separateHistoryAndDiffReads: 5, compositeHistoryAndDiffReads: 2, explorerHistoryExtraReads: 2,
+    firstDistinctPairFullReads: 2, originalFilesUnchanged: true, persistence: 'none' }));
+});
+
+test('P2a request-owned reads detach retained aliases and revalidate every new request', async t => {
+  const f = await comparisonFixture(t), before = comparisonBytes(f.root), expected = await separateComparison(f.root);
+  const docs = new Map([[f.first.worldModelId, structuredClone(f.first)], [f.second.worldModelId, structuredClone(f.second)]]);
+  const store = new LocalJsonWorldModelStoreAdapter({ projectRoot: f.root, storage: f.layout });
+  let reads = 0;
+  store.readSnapshot = id => {
+    reads++; const document = docs.get(id);
+    if (reads === 1) queueMicrotask(() => { document.sourceDigest = 'f'.repeat(64); });
+    return { document, location: 'synthetic-retained:' + id };
+  };
+  const actual = await inspectGraphLineageComparison({ root: f.root, storeAdapter: store });
+  assert.equal(reads, 2); assert.deepEqual(actual, expected);
+  assert.equal(Object.isFrozen(docs.get(f.first.worldModelId)), false);
+  assert.equal(Object.isFrozen(docs.get(f.second.worldModelId)), false);
+  assert.equal(docs.get(f.second.worldModelId).sourceDigest, 'f'.repeat(64));
+  actual.diff.changeExplanation.producerTransition.from.protocol.version = 'caller-local-output';
+  assert.equal(docs.get(f.first.worldModelId).temporalProvenanceGraph.protocol.version, '0.16.0');
+  await assert.rejects(() => inspectGraphLineageComparison({ root: f.root, storeAdapter: store }), { code: 'WORLD_MODEL_DIGEST_MISMATCH' });
+  await assert.rejects(() => diffGraphLineage({ root: f.root, storeAdapter: store,
+    fromWorldModelId: f.first.worldModelId, toWorldModelId: f.second.worldModelId,
+    verifiedSnapshots: [f.first, f.second], snapshot: f.second }), { code: 'WORLD_MODEL_DIGEST_MISMATCH' });
+  assert.deepEqual(comparisonBytes(f.root), before);
+});
+
+test('P2a preserves custom thenables and non-cloneable extensions without treating them as a cache capability', async t => {
+  const f = await comparisonFixture(t), before = comparisonBytes(f.root), expected = await separateComparison(f.root);
+  const docs = new Map([[f.first.worldModelId, f.first], [f.second.worldModelId, f.second]]);
+  const store = new LocalJsonWorldModelStoreAdapter({ projectRoot: f.root, storage: f.layout });
+  let reads = 0;
+  store.readSnapshot = id => { reads++; return { then(resolve) { resolve({ document: docs.get(id), location: 'synthetic-thenable' }); } }; };
+  assert.deepEqual(await inspectGraphLineageComparison({ root: f.root, storeAdapter: store }), expected);
+  assert.equal(reads, 2);
+  reads = 0; store.readSnapshot = id => { reads++; return { document: { ...docs.get(id), unusedExtension() {} }, location: 'synthetic-extension' }; };
+  assert.deepEqual(await inspectGraphLineageComparison({ root: f.root, storeAdapter: store }), expected);
+  assert.equal(reads, 5, 'non-cloneable custom bodies keep the original full-read behavior');
+  store.readSnapshot = () => { throw Object.assign(new Error('synthetic permission denial'), { code: 'EACCES' }); };
+  await assert.rejects(() => inspectGraphLineageComparison({ root: f.root, storeAdapter: store }), { code: 'EACCES' });
+  assert.deepEqual(comparisonBytes(f.root), before);
+});
+
+
+test('P2a preserves bounded page choices and rejects a valid foreign Project snapshot before memoing', async t => {
+  const f = await comparisonFixture(t), foreign = await comparisonFixture(t), before = comparisonBytes(f.root);
+  for (const limit of [1, 2, 3]) {
+    const actual = await inspectGraphLineageComparison({ root: f.root, limit });
+    const lineage = await inspectGraphLineage({ root: f.root, limit }), entries = lineage.segment.entries;
+    const current = entries.find(entry => entry.worldModelId === lineage.currentWorldModelId);
+    const parent = entries.find(entry => current?.parentSourceSnapshotIds.includes(entry.sourceSnapshotId));
+    const pair = current && parent ? [parent, current] : entries.slice(0, 2);
+    const diff = pair.length === 2 ? await diffGraphLineage({ root: f.root, fromWorldModelId: pair[0].worldModelId,
+      toWorldModelId: pair[1].worldModelId, limit: 40 }) : null;
+    assert.deepEqual(actual, { lineage, entries, diff, comparison: parent ? 'retained-parent-to-current' : 'exact-retained-pair-not-chronological-inference' });
+  }
+  const store = new LocalJsonWorldModelStoreAdapter({ projectRoot: f.root, storage: f.layout });
+  store.readPointer = () => ({ document: { schemaVersion: 1, kind: 'WorldModelPointer', projectId: f.first.projectId,
+    worldModelId: foreign.second.worldModelId, worldModelHash: foreign.second.worldModelHash } });
+  store.readSnapshot = () => ({ document: foreign.second, location: 'synthetic-foreign-original' });
+  await assert.rejects(() => inspectGraphLineageComparison({ root: f.root, storeAdapter: store }), { code: 'WORLD_MODEL_IDENTITY_MISMATCH' });
+  assert.deepEqual(comparisonBytes(f.root), before);
+});
+
+
+for (const mode of ['fixed-read-method', 'frozen-interface']) test('P2a readonly adapter compatibility: ' + mode, async t => {
+  const f = await comparisonFixture(t), before = comparisonBytes(f.root);
+  const physical = new LocalJsonWorldModelStoreAdapter({ projectRoot: f.root, storage: f.layout });
+  const original = physical.readSnapshot.bind(physical); let reads = 0;
+  const read = id => { reads++; return original(id); }; let adapter = physical;
+  if (mode === 'fixed-read-method') Object.defineProperty(physical, 'readSnapshot', { value: read, writable: false, configurable: false });
+  else {
+    adapter = { adapterVersion: physical.adapterVersion, readSnapshot: read };
+    for (const method of ['describe', 'readPointer', 'writePointer', 'writeSnapshot', 'listSnapshotIds']) adapter[method] = physical[method].bind(physical);
+    Object.freeze(adapter);
+  }
+  assert.equal(assertWorldModelStoreAdapter(adapter), adapter);
+  const expected = await separateComparison(f.root, adapter); assert.equal(reads, 5); reads = 0;
+  assert.deepEqual(await inspectGraphLineageComparison({ root: f.root, storeAdapter: adapter }), expected);
+  assert.equal(reads, 2); assert.deepEqual(comparisonBytes(f.root), before);
 });

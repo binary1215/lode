@@ -28,6 +28,14 @@ the explanation neither rewrites historical evidence nor establishes semantic
 continuity. The read-only `graph-lineage-diff` CLI shows the same counts, with the
 original structured result available through `--json`.
 
+History shows actual content changes first and a separate **Snapshot/context
+observations** count. A membership pair requires the same exact FileRevision,
+unchanged metadata and continuity, and unique matching relations. Changed status,
+unknown JSON extensions, digest/producer differences and ambiguity are not hidden
+as unchanged content. Both source endpoints and raw edge IDs remain available in
+**Exact graph comparison**. The selected retained pair is not a chronological or
+causal inference; omission and producer transitions remain visible before expansion.
+
 The executable belongs to the plugin, but `<project-directory>` is the project
 you are working on. Always pass it explicitly. Missing Project, World or source
 evidence is disclosed; the exporter does not substitute Lode's code or a demo.
@@ -452,3 +460,10 @@ or canonical write is performed, and unrelated work stays available.
 Cards start with the recorded title. A preview identical to that title is omitted; ordinary current-snapshot labels do not consume a status badge. Necessary historical, partial, unknown and non-current conditions remain visible before opening the body. Expanded empty cards explain the export's missing display text once without claiming the original does not exist.
 
 Select several records to read their cards together. Full bodies and exact comparison pairs are independently collapsed by default; opening one does not close another. Partial-excerpt omissions stay outside the collapsed diff. Changed-region navigation opens the containing comparison before moving focus. Selection, expanded-card state and exact comparison reading state remain display-only and scoped to the same exported identities. This works with file/gzip input independently of the optional Git storage candidate.
+
+The history page and its selected diff reuse only fully verified, request-owned
+endpoint copies inside this export. A first distinct pair still reads both whole
+snapshots. There is no cross-request cache, caller-supplied verification bypass,
+new state artifact or freshness/approval gate. Ordinary separate history/diff
+operations keep full verification; unsupported copy extensions use that existing
+path. This does not establish physical selective IO or an atomic live view.
