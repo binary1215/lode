@@ -1,0 +1,41 @@
+{
+  "name": "@local/head-agent-core-plugin",
+  "version": "0.3.0-beta.74",
+  "private": true,
+  "type": "module",
+  "description": "Lode Agent Core plugin distribution",
+  "homepage": "https://github.com/binary1215/lode",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test --test-isolation=none --test-concurrency=1 test/*.test.mjs",
+    "check": "npm test && npm run benchmark:prepared-traversal -- --iterations 3",
+    "measure:context-diagnostics": "node scripts/measure-context-diagnostics.mjs",
+    "verify:native-host-smoke": "node scripts/verify-native-host-smoke.mjs",
+    "benchmark:repository-scan": "node scripts/benchmark-repository-scan.mjs",
+    "benchmark:prepared-traversal": "node scripts/benchmark-prepared-traversal.mjs",
+    "benchmark:arcadedb-query-batch": "node scripts/benchmark-arcadedb-query-batch.mjs",
+    "verify:runtime-adapters": "node scripts/verify-runtime-adapters.mjs",
+    "verify:runtime-lifecycle": "node scripts/verify-runtime-invocation-lifecycle.mjs",
+    "verify:provider-replacement": "node scripts/verify-provider-replacement-recovery.mjs",
+    "verify:hostless-session-recovery": "node scripts/verify-hostless-session-recovery.mjs",
+    "verify:workspace-host-coordination": "node --test --test-isolation=none --test-concurrency=1 test/workspace-host-coordination.test.mjs",
+    "verify:workspace-host-export": "node --test --test-isolation=none --test-concurrency=1 test/workspace-host-coordination.test.mjs",
+    "verify:live-runtime": "node scripts/verify-live-codex-runtime.mjs",
+    "verify:live-codex": "node scripts/verify-live-codex-runtime.mjs",
+    "verify:onboarding": "node scripts/verify-onboarding.mjs",
+    "verify:distribution": "node scripts/verify-distribution-lifecycle.mjs",
+    "verify:native-delivery": "node scripts/verify-native-artifact-delivery.mjs",
+    "verify:newcomer": "node scripts/verify-newcomer-readme.mjs",
+    "verify:docs": "node test/verify-documentation-localization.mjs",
+    "verify:conversational-onboarding": "node scripts/verify-conversational-onboarding.mjs",
+    "verify:graphdb-sync": "node scripts/verify-arcadedb-incremental-sync.mjs",
+    "build:codex-marketplace": "node scripts/build-codex-marketplace.mjs",
+    "verify:codex-marketplace": "node scripts/verify-codex-marketplace.mjs",
+    "build:claude-marketplace": "node scripts/build-claude-marketplace.mjs",
+    "verify:claude-marketplace": "node scripts/verify-claude-marketplace.mjs",
+    "distribution:status": "node scripts/distribution.mjs status"
+  }
+}
