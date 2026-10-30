@@ -135,6 +135,19 @@ returns the exact P2 direction and marks the evidence `missing-evidence`; it doe
 not manufacture a Fresh Lode review context. The caller must recover or reproduce
 the required evidence before review.
 
+## Preserved judgment and evolving stages
+
+Artifact recovery reconstructs current direction and useful evidence; it does not
+prove that an earlier native judgment context was preserved. Keep current user
+conditions and the whole goal, then form each next plan from integrated results,
+learned facts, changed assumptions, reasons, unresolved dependencies and next
+actions. Do not replay the initial plan or automatically inherit a detailed
+reviewer's working context as the next planner. Exact original checks remain
+available when findings leave a material contradiction or gap. No new checkpoint,
+plan save or fork is required for small direct work. For an actual prospective
+source fork, use the existing [Host flow](runtime-adapters.md#ordinary-preserved-plan-connection);
+its history observation is separate from P2 recovery and effect authority.
+
 ## Read-only checkpoint diagnosis
 
 `lode_checkpoint_diagnose` is the common read-only P4 diagnosis used by project

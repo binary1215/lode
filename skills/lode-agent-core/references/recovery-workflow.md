@@ -7,6 +7,13 @@ possession evidence is absent. Factoring identical fields within one emitted
 view does not authorize skipping recovery, current constraints/cancellation or
 Todo context. No additional receipt, handshake or save is required.
 
+Recovery from records is not proof that an earlier judgment context was
+preserved. Apply current conditions to the integrated results, learned facts,
+changed assumptions and remaining dependencies when choosing the next stage.
+Do not reset to a historical plan or let a detailed inspection become the next
+planning basis by default. Reuse sufficient originals; missing native history
+limits the preservation claim, not independent authorized work.
+
 Read supplied full work bodies and separate `recordExcerpts` under current P2.
 An excerpt's source owner/digest, original field/index, range unit and coverage
 describe exactly what was delivered. Related judgment/task fields and omitted

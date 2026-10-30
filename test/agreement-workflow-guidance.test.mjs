@@ -27,6 +27,14 @@ function assertConditionalEntryGuidance(instructions){
  assert.match(instructions,/new information through bounded project graph discovery or sufficient same-basis reuse/);
  assert.match(instructions,/Recheck affected current sources and effect authority before acting/);
  assert.doesNotMatch(entry,/use the read-only conversation-entry projection automatically/);
+ // Exercise the generated consumer, including preserved manual-integration paths.
+ // These assertions prove delivered guidance, not model behavior or Host inheritance.
+ assert.match(instructions,/keep a completed plan source idle or obtain a supported preservation fork/);
+ assert.match(instructions,/detailed inspection is not automatically the next planning context/);
+ assert.match(instructions,/Integration may inspect material originals/);
+ assert.match(instructions,/Form the next plan from integrated results, new facts, changed assumptions, reasons, remaining dependencies and next actions/);
+ assert.match(instructions,/under current user conditions\/cancellations/);
+ assert.match(instructions,/Small direct work needs no extra fork, save, ID or approval/);
 }
 // These are source/consumer contracts, not a natural-language decision engine
 // or evidence that a live model follows the guidance or avoids duplicate calls.
