@@ -2,6 +2,8 @@
 
 # Compaction 복구
 
+저장된 P2 방향과 선택된 작업·Todo 근거에서 이어갑니다. 지원 Hook의 제한된 prompt/final-response 참조는 인용된 P5 맥락이며 전체 대화 저장이나 현재 승인이 아닙니다. 관리형 자동 continuation에는 검증된 Host adapter가 필요합니다. 일반 읽기 전용 진입과 fork 안내가 이 lifecycle을 구현하지는 않습니다. [Host 지원](session-work-context.md)을 참고하세요.
+
 Compaction은 손실을 수반하는 provider 작업입니다. 복구 권한은 canonical Session/Run checkpoint에 그대로 남으며, provider transcript, compaction summary, provider-session identity와 `LodeContinuitySnapshot`은 방향 파악용 또는 파생 view일 뿐입니다.
 
 Protocol `0.3.0`은 [`authority-plane-contract.md`](authority-plane-contract.md)의 P2 recovery/lineage boundary를 내장합니다. ResultPacket이나 Worker Report는 P3 증거이며 checkpoint의 purpose, approved decision, current position 또는 정확한 next expected result를 읽기 위한 선행 조건이 아닙니다. checkpoint 생성 후 ResultPacket 증거를 삭제하는 상황은 실행 가능한 복구 test로 다룹니다. 그렇다고 summary, graph, inbox 또는 provider session이 복구 권한으로 바뀔 수는 없습니다.

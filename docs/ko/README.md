@@ -8,6 +8,16 @@
 
 ## 먼저 읽을 문서
 
+| 하려는 일 | 먼저 볼 곳 |
+| --- | --- |
+| 내 클라이언트에 설치 | [설치](../../README.ko.md#설치) |
+| 실제 작업 시작 | [첫 요청](../../README.ko.md#first-request) |
+| 남은 작업에서 재개 | [복구](../../README.ko.md#recovery), [저장된 작업](session-work-context.md) |
+| 이유와 변경 전후 확인 | [기록된 맥락과 diff](context-lineage.md) |
+| 작업 흐름 자동화 | [Core 명령](#command-reference), [Context 예제](context-compiler.md#context-examples), [선택적 Product 설정](onboarding.md#product-cli-examples) |
+
+## 아키텍처와 Product 참조
+
 - [아키텍처 결정](architecture.md)
 - [공급자 중립 Lode 헌법](lode-constitution.md)
 - [권한 평면과 Graph/기록 경계](authority-plane-contract.md)
@@ -73,3 +83,43 @@
 
 - [원본 HEAD Core 비교](original-head-core-comparison.md)
 - [Lode-Agent GraphDB Brief v4 요약 및 설계 검토](Lode_GraphDB_Brief_v4.md)
+
+<a id="command-reference"></a>
+
+## CLI, 자동화와 고급 설정
+
+일반 사용자는 [README의 첫 요청](../../README.ko.md#first-request)처럼 자기 작업을 말하면 됩니다. CLI는 스크립트, CI, 오프라인 복구나
+Host 연동에서 안내 대화 없이 같은 결정론적 Core 동작을 실행할 때 사용합니다.
+
+기본 경로는 공급자 중립 Lode 헌법과 고정 Project/Session 복구 앵커만
+초기화합니다.
+
+```powershell
+lode-agent init C:\path\to\project --runtime claude,codex,opencode
+```
+
+이 경로는 ID를 보존하고 가능한 기존 관측 자료의 경량 색인을 갱신하면서
+`core_ready`를 반환합니다. 제품 의미 추론, 관리 World 구성과 문서 거버넌스는
+선택 사항으로 남습니다. 같은 범위 제한 상태는 언제든 확인할
+수 있습니다.
+
+```powershell
+lode-agent status C:\path\to\project
+```
+
+정상 상태는 한 줄로 보여줍니다. 예외가 있으면 담당 주체, 이유, 영향을 받는
+작업과 다음 행동을 표시합니다. `doctor` 또는 `--json`에서는 Core, 선택적 Product
+관리, Context 준비도, 실행 중인 CLI·라이브러리와 구성된 패키지의 버전, 기술
+세부 정보를 확인할 수 있습니다. 이 패키지 조회만으로 Host 도구 로딩을 확인하지는
+않습니다. 구조화된 결과는 `readiness.core`, `readiness.product`,
+`readiness.context`를 나누어 보여주고, 지금 수행할 `nextAction` 하나와 선택 기능의
+실제 선행조건을 표시합니다. Product는 `available-not-activated`, 관리형 bounded
+worker는 `requires-session-or-run-authorization`으로 표시됩니다. 일반 독립 검토는
+현재 Host의 위임을 쓰며, 워커 수만으로 Run을 요구하지 않습니다. 이 조회 결과는
+저장하지 않으며 Product 활성화, Run 생성, 권한 부여나 드리프트 복구를 일으키지
+않습니다. `profile`은 한 번의 초기화·재개 범위를 선택하는 값이며 숨은 프로젝트
+모드가 아닙니다.
+
+최상위 상태는 `core_ready`, `product_evidence_required`, `product_review_required`,
+`product_ready`, `product_refresh_required`, `core_drifted` 중 하나입니다. 세부 온보딩
+상태는 `readiness.product.onboardingStatus`에 남습니다.

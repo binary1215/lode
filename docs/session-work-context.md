@@ -614,3 +614,7 @@ These are existing path contracts, not workspace relocation or automatic repair.
 
 
 The read-only `sessionStartContext` renderer awaits the selected Host adapter and local snapshot reads before formatting. Codex/Claude command Hooks and the OpenCode context callback consume the completed value; an unresolved Promise is never presented as empty context. This changes no Session selection or P2 authority.
+
+## Exact-output coverage index
+
+The selected-fragment coverage calculation uses per-render field/index buckets. It adds no reads, stored artifacts or user steps, and preserves whole output and presentation callbacks. This is a computation optimization only. Missing long conditions and semantic sufficiency remain separate concerns; see [verification evidence](verification-evidence.md#coverage-computation-comparison).

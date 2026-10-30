@@ -88,3 +88,68 @@ parser failures and original-source retention, see
 The implementation and local fixtures establish packaging, identity, omission
 and read-only behavior. They do not establish model quality, provider-token
 savings, live database behavior or real-provider speed.
+
+<a id="context-examples"></a>
+
+## Context examples
+
+### Conversational Context preparation and preview
+
+In conversation, describe the task once. Ordinary reading and editing use the
+needed files directly. Only when reproducible selected-context handoff, a durable
+Run or recovery actually needs a Capsule does the Lode Skill call
+`lode_context_prepare`, perform semantic repository inspection, author any
+task-required `EvidenceNeed[]`, and call `lode_context_preview` without asking
+the user to operate those steps. Missing or stale optional World evidence does
+not block direct work, and justified budget expansion is automatic.
+The final preview includes one explanation card with included evidence by kind,
+intentional omissions by reason, and remaining uncertainty. It does not add a
+new gate: mechanical coverage still belongs to Core and semantic sufficiency
+still belongs to Lode.
+
+The default MCP list stays focused on Core work, recovery and retained-work
+status/cancellation. Lode can find optional Product, Graph, Observation or Context
+schemas with `lode_tools_discover`, then use the returned read-only or effectful
+route. You do not need to unlock capabilities, select a profile on every request
+or type JSON. Discovery adds no authority; existing operation checks still apply.
+
+The same Core operations remain available from the CLI for automation and
+diagnosis:
+
+```powershell
+lode-agent context-prepare C:\path\to\project --task "<task>"
+```
+
+This task-only, non-persisted P4 projection returns the current Project,
+World Model, and GraphSnapshot binding plus bounded lexical discovery material
+and exact node identities. The user does not write `EvidenceNeed[]`. Lode uses
+ordinary semantic reasoning and repository inspection to author the structured
+proposal, then gives that proposal to the existing preview verifier. Core does
+not select evidence kinds or anchors, and absence from the lexical candidate
+view never means irrelevance.
+
+If Product/World has not been activated, preparation still returns
+`ready_for_head_semantic_assessment`, discloses missing repository metadata and
+provides available curated context. Lode may inspect current source directly.
+Preparation never activates Product, indexes the repository or creates recovery
+records. Optional Product/World work is chosen only when the task needs it.
+
+Advanced automation may call the preview directly with Lode-authored structured
+input:
+
+```powershell
+lode-agent context-preview C:\path\to\project `
+  --task "Keep this exact task text across retries" `
+  --budget 32768 `
+  --evidence-needs .\evidence-needs.json
+```
+
+CLI output is concise by default. Add `--json` for selected context, sources,
+omissions and uncertainty. One preparation or preview call is enough when its
+evidence is useful; a separate preview is optional, not a setup ritual.
+
+`ready_for_head_semantic_assessment` means Lode should assess the selected
+context, not that the tool has proved completeness. Lode reads original bodies
+when needed and can expand a returned graph anchor with `details: true`.
+Missing/stale World is disclosed; direct current source remains available.
+No fixed budget tiers, inclusion certificate or extra user approval is required.

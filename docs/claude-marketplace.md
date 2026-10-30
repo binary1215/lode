@@ -56,7 +56,7 @@ escape, source-file drift, projection drift, and identity mismatch.
 
 ## Installation
 
-Requirements: Claude Code and a current Node.js LTS release.
+Requirements: Claude Code and Node.js 24 or newer.
 
 ```powershell
 claude plugin marketplace add binary1215/lode@lode-claude-marketplace

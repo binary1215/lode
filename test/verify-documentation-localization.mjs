@@ -117,6 +117,9 @@ function expectedKoreanTarget(sourcePath, target) {
   if (isExternal(target) || !withoutFragment(target)) return target;
   const suffix = target.slice(withoutFragment(target).length);
   const sourceResolved = path.resolve(path.dirname(sourcePath), withoutFragment(target));
+  if (sourceResolved === path.join(root, "README.md")) {
+    return path.join(root, "README.ko.md") + suffix;
+  }
   const relativeToDocs = path.relative(docsDir, sourceResolved);
   const staysInDocs = relativeToDocs !== ".." && !relativeToDocs.startsWith(`..${path.sep}`);
   if (staysInDocs && fs.existsSync(path.join(koDir, relativeToDocs))) {

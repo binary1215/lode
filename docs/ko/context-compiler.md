@@ -85,3 +85,62 @@ Product 개념이 아닙니다. collector 범위, 미확정 call, parser 실패�
 
 구현과 로컬 fixture는 packaging, identity, 누락 및 읽기 전용 동작의 근거입니다.
 모델 품질, provider-token 절감, 실제 DB 동작이나 실제 provider 속도를 입증하지는 않습니다.
+
+<a id="context-examples"></a>
+
+## Context 예제
+
+### 대화형 Context 준비와 미리보기
+
+대화에서는 원하는 작업을 한 번만 설명하면 됩니다. 일반 읽기·수정에는 필요한
+파일을 직접 확인합니다. 선택한 맥락을 재현해 전달하거나 지속 가능한 Run과
+복구에 Capsule이 필요할 때만 Lode Skill이 `lode_context_prepare`를 호출합니다.
+저장소 내용을 읽고 필요한 `EvidenceNeed[]`를 작성한 뒤 `lode_context_preview`로
+이어갑니다. 선택적 World 근거가 없거나 오래됐어도 직접 작업은 계속하며,
+필요성이 확인되면 예산을 자동으로 늘립니다. 최종 미리보기는 포함된 근거의 종류,
+제외 이유와 남은 불확실성을 설명 카드로 보여줍니다. 추가 절차 없이 기계적 확인
+범위는 Core가, 의미적 충분성은 Lode가 담당합니다.
+
+기본 MCP 목록은 Core 작업, 복구, 기존 작업의 상태 조회와 취소에 집중합니다.
+Lode는 선택적 Product·Graph·Observation·Context 스키마를 `lode_tools_discover`로
+찾고, 반환된 읽기 전용 또는 효과 실행 경로를 호출합니다. 사용자가 기능 잠금을
+해제하거나 매번 프로필을 고르거나 JSON을 작성할 필요는 없습니다. 탐색이 권한을
+부여하지는 않으며 기존 작업의 권한·효과 검사는 그대로 적용됩니다.
+
+자동화와 진단을 위해서는 같은 Core 동작을 CLI에서도 사용할 수 있습니다.
+
+```powershell
+lode-agent context-prepare C:\path\to\project --task "<task>"
+```
+
+이 작업 전용 P4 조회는 현재 Project·World Model·GraphSnapshot의 연결, 범위가
+제한된 어휘 기반 탐색 자료와 정확한 노드 식별자를 반환하며 결과를 저장하지
+않습니다. 사용자는 `EvidenceNeed[]`를 작성하지 않습니다. Lode가 저장소를 읽고
+의미를 판단해 구조화된 제안을 만든 뒤 기존 미리보기 검증기에 전달합니다.
+Core는 근거의 종류나 기준 노드를 고르지 않으며, 어휘 기반 후보에 없다는 이유로
+관련 없는 자료로 단정하지 않습니다.
+
+Product/World가 활성화되지 않아도 준비 결과는
+`ready_for_head_semantic_assessment`입니다. 저장소 메타데이터가 없음을 알리고
+사용 가능한 정리된 맥락을 제공합니다. Lode는 현재 원본 소스를 직접 조사할 수
+있습니다. 준비 과정은 Product를 활성화하거나 저장소를 인덱싱하거나 복구 기록을
+만들지 않습니다. Product/World 작업은 해당 작업에 필요할 때만 선택합니다.
+
+고급 자동화에서는 Lode가 작성한 구조화 입력으로 미리보기를 직접 호출할 수 있습니다.
+
+```powershell
+lode-agent context-preview C:\path\to\project `
+  --task "Keep this exact task text across retries" `
+  --budget 32768 `
+  --evidence-needs .\evidence-needs.json
+```
+
+CLI는 기본적으로 결과를 짧게 보여줍니다. `--json`을 추가하면 선택 맥락, 출처,
+누락과 불확실성을 확인할 수 있습니다. 결과가 유용하면 준비 또는 미리보기 호출
+하나로 충분하며, 별도 미리보기는 선택 사항입니다.
+
+`ready_for_head_semantic_assessment`는 Lode가 선택한 맥락을 판단하라는 뜻이며,
+도구가 완전성을 증명했다는 뜻은 아닙니다. Lode는 필요한 원본 본문을 읽고
+반환된 그래프 기준 노드를 `details: true`로 확대할 수 있습니다. World가 없거나
+오래됐음을 알리며 현재 소스는 직접 사용할 수 있습니다. 고정 예산 단계, 포함
+증명서나 추가 사용자 승인은 요구하지 않습니다.

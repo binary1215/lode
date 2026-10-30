@@ -17,7 +17,7 @@ Explicit composition choices still require and fully validate the owner.
 The minimum reader is a release supporting physical schema 2. **Beta.69 and
 earlier reject new schema-2 roots** with `INVALID_SNAPSHOT_COMPOSITION`; they do
 not downgrade or rewrite them. Update each client sharing the Project before
-reading new World/Graph snapshots. This is format compatibility guidance, not a
+writing or reading new World/Graph snapshots. This is format compatibility guidance, not a
 new setup or approval gate. Older whole JSON/gzip, Git and domain-v1 originals
 remain readable by the new reader, in place. Explicit whole/Git/v1 choices remain
 available. Physical layout does not add fields to new semantic World payloads;
@@ -30,11 +30,23 @@ part fails the dependent read; current data never substitutes for it. Existing
 Graph-first/World pointer publication can still report a partial failure: this
 layout does not create a two-pointer atomic transaction or roll back committed work.
 
+
+## Storage choices at a glance
+
+| Choice | Use |
+| --- | --- |
+| `shared-domains-v2` with gzip | Default complete writes with a verified selected owner. |
+| Whole JSON/gzip | Retained historical files and lower adapters without a selected owner. |
+| Private Git | Explicit selection, with the same original verification. |
+| Domain-v1 or zstd | Explicit trials, with disclosed runtime support. |
+| GC inspection | Read-only; ordinary startup never requires cleanup. |
+| Explicit GC application | Deletes only supported, verified unreferenced storage under the existing safety contract. |
+
 ## Encoding and historical reads
 
 The existing adapters list/read both formats and return the actual physical location. Encoding does not change semantic IDs, hashes, parent provenance or authority. Explicit `snapshotEncoding: "json"` uses compact uncompressed JSON for new writes.
 
-New files use atomic no-clobber publication. Invalid, truncated or conflicting representations fail; readers never substitute another snapshot to hide corruption. Publication failure leaves the prior pointer intact. Existing source fallback remains available.
+New files use atomic no-clobber publication. Invalid, truncated or conflicting representations fail; readers never substitute another snapshot to hide corruption. A failed single-file publication leaves that file’s prior pointer intact; Graph and World pointers are still separate publications and can report partial success. Existing source fallback remains available.
 
 Compressed input is bounded at 256 MiB and decoded JSON at 512 MiB to bound decompression allocation. These storage limits do not change Context token tiers, child stdout or MCP limits. Existing raw JSON keeps its prior caller-specific bounds. Original typed readers still verify decoded identity, digest and structure.
 
@@ -92,7 +104,7 @@ A Git original has no physical JSON path. Where a location is already part of th
 
 World, freshness, Compiler, lineage, Explorer and dependent workflows await storage I/O completion. Factories, hashes, verifiers and diff computation remain synchronous. CLI and typed MCP consume the same completed values and errors. Discovery does not collect new snapshots or select a configured external adapter; legacy historical inventory 0.1 file pins are unchanged.
 
-Each private Git operation shares a deadline and cancellation signal; children are hidden, shell-free and reaped before completion. No filter, textconv or lazy fetch runs. Immutable refs are create-only; concurrent writes converge only for the exact same original. Project/store/raw/object mismatches, linked paths, external alternates and unapproved private configuration fail the affected operation. No ref deletion, GC, automatic pack or source-specific Git writer is introduced. Physical managed-store changes are excluded from code-source freshness; actual source, Canon and P3 changes remain observable.
+Each private Git operation shares a deadline and cancellation signal; children are hidden, shell-free and reaped before completion. No filter, textconv or lazy fetch runs. Immutable refs are create-only; concurrent writes converge only for the exact same original. Project/store/raw/object mismatches, linked paths, external alternates and unapproved private configuration fail the affected operation. Ordinary reads and writes do not delete refs, run GC or pack automatically. The separate explicit cleanup above can reclaim verified orphan storage; no source-specific Git writer is introduced. Physical managed-store changes are excluded from code-source freshness; actual source, Canon and P3 changes remain observable.
 
 Default adoption requires measured costs and independent review. A smaller active pack is not proof of lower total disk use when loose originals are retained, or of faster reads.
 
@@ -143,3 +155,5 @@ The synchronous zero-write inspection skips binary Git/domain internals and repo
 A later explicit cleanup can reinventory an unindexed, correctly named private pack after verifying owner/config, exact physical identity, PACK checksum and snapshot metadata in bounded isolated scratch. Recovery scratch directories are sequential, removed before the next pack or producer, and share the same aggregate disk cap and whole-operation deadline. Pure inspection remains zero-write. Unknown/corrupt/foreign content, or an incomplete retained dependency proof, preserves every remaining candidate. If the full closure is proven but an exact retained object is unavailable to the main producer, only physical packing is deferred. Scratch indexes never repair the main store. Only a fresh, fully verified replacement producer may reuse an unchanged identical unindexed pack and publish its own index last; this is a new explicit collection, not replay of an earlier effect.
 
 Transient participant/attempt ownership and both create-only ref locks bind Project, nonce, host, PID and a fixed Node runtime time origin. The verified attempt owner is passed through the short effect boundary; a different runtime origin cannot perform or clean up that owner’s effect even if the PID matches. This explicitly labelled runtime origin is not an independently queried OS process CreationDate or permission to reclaim unknown/old owners. Ordinary work gains no OS process probe.
+
+GC cancellation asks the native supervisor to stop once and waits for its cleanup proof within the operation’s original absolute deadline. Only reaching that deadline forces termination; it does not extend the deadline or infer successful cleanup. A stuck supervisor can use the remaining operation deadline (up to the existing default 30 seconds). Byte-cap and original errors remain failures, including when cleanup cannot be verified.

@@ -1,5 +1,7 @@
 # 프로젝트 온보딩
 
+일반 작업은 Core로 시작합니다. 이 문서는 선택적 Product 모델 설정을 다루며, 초기화 예제는 `--profile product`를 선택합니다.
+
 [영어 원문](../onboarding.md)
 
 이 계약을 변경하기 전에 [`architecture.md`](architecture.md)와
@@ -78,7 +80,7 @@ semantic proposal을 작성하고, 사용자는 일반 ReviewDecision 경로에�
 
 ## 공개 initialize 및 resume 경로
 
-권장되는 사용자 대면 경로는 Codex 또는 OpenCode 대화 안에 번들된
+권장되는 사용자 대면 경로는 Claude Code, Codex 또는 OpenCode 대화 안에 번들된
 `lode-agent-onboarding` Skill입니다. 먼저 읽기 전용 `lode_onboarding_guide`
 tool을 호출하고, 해결되지 않은 중요한 선택지만 질문한 다음, typed MCP operation을
 통해 동일한 Core를 호출합니다.
@@ -97,8 +99,8 @@ source scope를 넓히거나, GraphDB credential을 저장할 수 없습니다. 
 온보딩 시작 또는 재개를 구성합니다.
 
 ```powershell
-node scripts/lode.mjs init C:\path\to\project --runtime claude,codex,opencode --input .\onboarding.json
-node scripts/lode.mjs resume C:\path\to\project --runtime claude,codex,opencode
+node scripts/lode.mjs init C:\path\to\project --runtime claude,codex,opencode --input .\onboarding.json --profile product
+node scripts/lode.mjs resume C:\path\to\project --runtime claude,codex,opencode --profile product
 ```
 
 첫 번째 명령은 프로젝트 범위 Lode Session을 정확히 하나 생성하고 온보딩을
@@ -111,7 +113,7 @@ authority artifact를 만들지 않고 반환됩니다. plugin upgrade 후에는
 설치 중에도 같은 경로를 호출할 수 있습니다.
 
 ```powershell
-.\scripts\install.ps1 --project C:\path\to\project --runtime claude,codex,opencode --onboarding-input .\onboarding.json
+.\scripts\install.ps1 --project C:\path\to\project --runtime claude,codex,opencode --onboarding-input .\onboarding.json --profile product
 ```
 
 ## 저수준 온보딩 재시작
@@ -196,7 +198,7 @@ Root는 glob이 아니라 정규화된 path이며, 선택은 instruction 또는 
 ```
 
 ```powershell
-node scripts/lode.mjs init C:\path\to\project --input .\onboarding-start.json
+node scripts/lode.mjs init C:\path\to\project --input .\onboarding-start.json --profile product
 ```
 
 Product Canon에 이미 승인된 entity가 있는 프로젝트는 candidate bootstrap을 건너뛰지만,
@@ -425,3 +427,85 @@ legacy migration, 읽기 전용 status MCP, 그리고 Git, GraphDB 또는 Go bin
 손상되거나 누락된 후보의 검증된 원본이 있으면 `lode_onboarding_candidate_restore`(CLI `onboarding-candidate-restore`)를 사용합니다. Lode가 정확한 Project/후보 식별자·원본 내용·관찰한 raw digest를 전달합니다. 작업은 손상 바이트를 recovery custody에 보존하고 동시 변경을 검사한 뒤 정확한 대상만 원자적으로 교체합니다. canonical content가 같아도 raw bytes가 동일하다는 뜻은 아닙니다. 복원은 승인·Canon 변경·P2 방향을 만들지 않습니다.
 
 원본이 없으면 손상된 현재 후보 중 미승인·다른 후보의 참조 대상이 아닌 경우에만 기존 semantic refresh의 `recoveryBasis`를 사용합니다. Lode가 새로운 근거 연결 제안을 작성하며 Core는 의미를 추론하거나 과거 승인을 승계하지 않습니다. 보존 위치로 옮기기 전에 Canon과 계보 사전조건을 검사합니다. 손상 바이트는 digest 주소의 custody에 남고, 실패 시 포인터가 그대로이며 원래 경로가 비어 있을 때만 복원합니다. 프로세스 중단 후에는 같은 pointer/raw basis를 다시 전달해 해당 custody를 정확히 복구하고 재개합니다. 다른 파일·후속 포인터·새 편집은 롤백하지 않습니다. 검토된 후보는 의미 대체가 아니라 정확한 원본 복원이 필요합니다.
+
+<a id="product-cli-examples"></a>
+
+## Product CLI 예제
+
+### 대화 우선 경로
+
+번들 `lode-agent-onboarding` Skill은 Product 온보딩의 권장 대화형 진입점입니다.
+현재 상태를 검사하고 저장소 범위나 저장 방식처럼 중요한 선택만 질문합니다.
+범위가 정해진 최신 근거를 읽고 Core 검증용 제안을 제출한 뒤, 근거가 연결된
+후보를 보여줍니다. Product Canon을 바꾸기 전에는 명시적 검토를 거칩니다.
+이 Skill은 `product` 프로필을 명시적으로 선택하며 공급자의 제안은 P3 근거로 남습니다.
+
+### 선택적 Product 프로필 CLI 경로
+
+동일한 프로젝트 및 Lode Session 식별자를 초기화하거나 재개합니다.
+
+```powershell
+lode-agent init C:\path\to\project --runtime claude,codex,opencode --profile product
+lode-agent onboarding-status C:\path\to\project
+```
+
+구조화된 사용자 설명이 없으면 처음 실행은 `awaiting-evidence`를 반환합니다.
+Core는 심볼 이름에서 제품 개념을 만들어 내지 않습니다. 대화 Skill은 최신 근거에
+따른 의미 제안을 제출하며, CLI 사용자는 같은 `semanticProposal`을 `--input`에
+넣을 수 있습니다. Core가 정확한 SourceSnapshot, 경로, 줄, 선택적 심볼과 Product
+Model 참조를 검증한 뒤 변경 불가능한 후보 집합 ID를 반환합니다. 검토 전에 내용을 확인하세요.
+
+```powershell
+$onboarding = lode-agent onboarding-status C:\path\to\project | ConvertFrom-Json
+lode-agent onboarding-candidates C:\path\to\project `
+  --candidate-set $onboarding.state.candidateSetId
+```
+
+증거를 검토한 뒤에만 `onboarding-review.json`을 만드세요. 아래의 간단한
+예시는 전체 부트스트랩 후보를 승인합니다. 이름 변경, 분리, 병합 또는 제외할
+후보가 있다면 선택 승인이나 수정이 더 안전합니다.
+
+```json
+{
+  "candidateSetId": "onboarding-candidates-<id>",
+  "disposition": "accept-all",
+  "rationale": "I reviewed every evidence-linked candidate and adopt this bootstrap batch."
+}
+```
+
+결정을 적용하고 생성된 뷰를 검증합니다.
+
+```powershell
+lode-agent onboarding-review C:\path\to\project --input .\onboarding-review.json
+lode-agent graph-query C:\path\to\project --query "<task>"
+lode-agent world-status C:\path\to\project
+lode-agent context-preview C:\path\to\project `
+  --task "Find implementation evidence for one reviewed Feature" --budget 32768
+lode-agent world-docs-build C:\path\to\project
+lode-agent resume C:\path\to\project --runtime claude,codex,opencode --profile product
+```
+
+`accept-all`은 전체 후보를 직접 확인한 경우 사용할 수 있지만 기본 권장
+방식은 아닙니다. 검토에서는 의존성이 완전한 일부 후보를 승인하거나, 후보
+집합을 수정·거부하거나, 추가 증거를 요청하거나, 미해결 개념을 명시적인
+Unknown으로 남길 수 있습니다. 전체 계약은
+[온보딩 문서](onboarding.md)를 참고하세요.
+
+### 소스 범위
+
+생성 결과물, 벤더 의존성, 복사된 프로젝트, 대형 픽스처 또는 모델 번들이
+포함된 저장소에서는 첫 인덱싱 전에 프로젝트 기준 관찰 경계를 정의하세요.
+
+```json
+{
+  "mode": "existing",
+  "sourceScope": {
+    "includeRoots": ["src", "packages"],
+    "excludeRoots": ["dist", "vendor", "generated", "fixtures"]
+  }
+}
+```
+
+`lode-agent init ... --profile product --input .\onboarding.json`으로 전달합니다. Source Scope는
+관찰 범위만 제어합니다. Product Canon을 정의하거나 후보를 승인하거나 실행
+권한을 부여할 수 없습니다.

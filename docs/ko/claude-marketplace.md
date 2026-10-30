@@ -57,7 +57,7 @@ Claude Code는 설치된 플러그인을 버전이 지정된 캐시에 복사하
 
 ## 설치
 
-요구 사항: Claude Code와 최신 Node.js LTS 릴리스.
+요구 사항: Claude Code와 Node.js 24 이상.
 
 ```powershell
 claude plugin marketplace add binary1215/lode@lode-claude-marketplace

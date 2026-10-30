@@ -92,33 +92,39 @@ function assertReadmeContract() {
   const koreanReadme = fs.readFileSync(path.join(sourceRoot, "README.ko.md"), "utf8");
   const sharedRequired = [
     "--native auto",
-    "lode-agent onboarding-status",
-    '"disposition": "accept-all"',
-    "lode-agent onboarding-review",
-    "lode-agent world-status",
-    "lode-agent context-prepare",
-    "lode-agent context-preview",
-    "lode-agent world-docs-build",
-    "lode-agent resume",
-    "--profile product",
-    "core_ready",
-    "readiness.product",
-    "requires-session-or-run-authorization",
-    "ready_for_head_semantic_assessment",
-    "evidenceGaps",
     "distribution.mjs uninstall",
     "head-agent-core@head-agent-plugin",
     "lode-agent-core@lode-agent-plugin",
     "codex plugin marketplace add binary1215/lode --ref lode-codex-marketplace",
     "codex plugin add lode-agent-core@lode-agent-plugin",
     "claude plugin install lode-agent-core@lode-agent-plugin",
-    "verify:claude-marketplace",
     "status-beta-blue",
     "[MIT License](LICENSE)",
   ];
   for (const required of sharedRequired) {
     assert(readme.includes(required), `README newcomer contract is missing: ${required}`);
     assert(koreanReadme.includes(required), `Korean README newcomer contract is missing: ${required}`);
+  }
+  // Advanced examples moved out of the newcomer page, retaining exact commands
+  // and runtime fixtures. Check their linked destinations rather than duplicate prose.
+  const advancedContracts = [
+    ["README.md", "command-reference", ["core_ready", "readiness.product", "requires-session-or-run-authorization"]],
+    ["context-compiler.md", "context-examples", ["lode-agent context-prepare", "lode-agent context-preview", "ready_for_head_semantic_assessment"]],
+    ["onboarding.md", "product-cli-examples", [
+      "lode-agent onboarding-status", '"disposition": "accept-all"',
+      "lode-agent onboarding-review", "lode-agent world-status",
+      "lode-agent world-docs-build", "lode-agent resume", "--profile product",
+    ]],
+    ["architecture.md", "detailed-core-model", ["evidenceGaps"]],
+    ["verification-evidence.md", "source-verification", ["verify:claude-marketplace"]],
+  ];
+  for (const [file, anchor, required] of advancedContracts) {
+    for (const [entry, directory] of [[readme, "docs"], [koreanReadme, "docs/ko"]]) {
+      assert(entry.includes(`(${directory}/${file}#${anchor})`), `README must link the advanced contract: ${directory}/${file}#${anchor}`);
+      const content = fs.readFileSync(path.join(sourceRoot, directory, file), "utf8");
+      assert(content.includes(`id="${anchor}"`), `Advanced contract anchor is missing: ${anchor}`);
+      for (const token of required) assert(content.includes(token), `Advanced contract is missing: ${file}: ${token}`);
+    }
   }
   for (const required of ["[한국어](README.ko.md)", "## Who it is for", "## Why use it"]) {
     assert(readme.includes(required), `README audience contract is missing: ${required}`);
