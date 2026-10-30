@@ -34,6 +34,19 @@ GraphDB는 필수가 아니며 원격 데이터베이스를 조회하거나 변�
 
 ## 명령
 
+일반 인덱싱과 도메인 투영 재구축도 스캔 설정과 producer가 같으면 기존의 검증된
+증분 소스 스캔을 재사용합니다. 현재 대상 파일은 여전히 모두 읽고 해시합니다.
+모든 소스 사실·범위·규칙·검증된 source-relation 입력이 같을 때만 전체 의미 그래프를
+재사용합니다. 파일 추가·삭제·이름 변경·내용 변경이 있으면 파일 간 import 해석을 포함해
+그래프를 다시 계산합니다. 명시한 compute adapter의 실행 선택은 유지합니다.
+기본 whole 스냅샷과 domain bundle 모두에 적용되는 최적화입니다.
+
+`world-index`에서 부모 입력을 생략하면 검증된 현재 부모 집합을 유지합니다.
+빈 배열이나 병합 부모를 명시한 경우는 생략과 구분합니다. 따라서 전체 근거가 같으면
+index와 refresh를 오가도 World·Graph 식별자를 유지합니다. 필요한 포인터·투영 복구와
+변경 없는 refresh 영수증은 계속 처리합니다. 새 불변 스냅샷이 없다는 사실을 파일 쓰기
+전체가 없다는 뜻으로 확대하지 않습니다. Canon·포인터·digest·권한 오류도 그대로 유지합니다.
+
 ```text
 node scripts/lode.mjs world-index <project>
 node scripts/lode.mjs source-scope-set <project> --input <source-scope.json>
@@ -140,7 +153,7 @@ node scripts/lode.mjs world-index <project> --git-log <host-exported-log-file>
 - 동일한 GraphSnapshot 및 순회 식별자, 검증된 포인터/스냅샷 구체화, 임베디드 그래프 폴백 공개 및 오래됨/변조/권한 거부를 갖는 로컬 JSON 및 인메모리 그래프 프로젝션 어댑터;
 - 스냅샷 범위의 시맨틱 버텍스와 엣지, 콘텐츠에서 파생된 노드/엣지 집합 영수증, 정확한 부분 쓰기 재개, 상태 확인 시 완전한 원격 재검증 및 전체 원격 스냅샷/토폴로지를 다시 로드하지 않고 정확한 쿼리 반경을 검증하는 준비된 제한형 서버 확장을 갖는 활성화된 ArcadeDB 프로젝션;
 - 파일 다이제스트 및 줄 출처, 휴리스틱 신뢰도, 미해소 개수 및 제한된 순회;
-- 외부 gitdir 포인터를 따르지 않는 로컬 `.git/HEAD` 및 저장소 내부 ref 해소;
+- gitfile·관리 디렉터리·commondir의 양방향 연결이 확인된 정상 linked worktree를 포함한 로컬 HEAD·제품 ref 해소. 임의의 외부 gitdir 포인터는 계속 미지원;
 - 교체 가능한 CLI 및 호스트 내보내기 어댑터를 통한 콘텐츠 주소형 전체 도달 가능 Git 커밋 메시지 증거;
 - create-only `BranchStateObservation`, `DeploymentResultObservation`, `ReleaseObservation` P3 evidence와 `AT_REVISION`, `OBSERVED_ON`, `EVIDENCED_BY`, 선택적 `DEPLOYS` P4 relation;
 - 교체 가능한 읽기 전용 호스트 내보내기 어댑터를 통한 콘텐츠 주소형 특정 시점 외부 런타임 관찰;

@@ -40,11 +40,11 @@ Supported mixed backends are verified together; their presence no longer exclude
 
 This is a cooperative local filesystem protocol, not universal exclusion of old/raw writers or shared hosts. Known foreign/unknown ownership and unsupported storage are preserved; absence of new lock files is not proof that every old process has stopped. No age/PID guess reclaims snapshot lifetime records. Participant/attempt records are transient operations, not P2 direction, review or retention plans.
 
-Structured apply output separates deleted, failed and preserved paths and reports actual completed count/bytes after cancellation, drift or a later unlink failure. Successful `gc_applied` exits 0; preserved/yielded/partial results exit 1 and retain their useful structured result. No effect is automatically replayed. Git ref retirement and physical file reclamation are separate results. Output reports actual unlinked bytes, new pack bytes and net managed-file bytes; file length is not allocated disk blocks. Migration and installation are separate.
+Structured apply output separates deleted, failed and preserved paths and reports actual completed count/bytes after cancellation, drift or a later unlink failure. Successful `gc_applied` exits 0; preserved/yielded/partial results exit 1 and retain their useful structured result. Human output explains zero-removal success, yielding, unsupported apply, incomplete preservation and partial effects separately; error codes remain visible. No effect is automatically replayed. Git ref retirement and physical file reclamation are separate results. Output reports actual unlinked bytes, new pack bytes and net managed-file bytes; file length is not allocated disk blocks. Migration and installation are separate.
 
 ## Generated Git ignore rules
 
-Initialization and explicit resume create the selected `.lode/.gitignore` or retained `.head/.gitignore` only when it is absent. Every existing file stays untouched, including user-edited generated rules. Atomic no-clobber creation preserves a file created concurrently. Explicit Project negations skip optional generation. Optional ignore failure does not block project readiness or ordinary work.
+Initialization and explicit resume create the selected `.lode/.gitignore` or retained `.head/.gitignore` only when it is absent. Every existing file stays untouched, including user-edited generated rules. Atomic no-clobber creation preserves a file created concurrently. An exception with a provably unrelated rooted literal prefix, such as `!docs/keep.md`, permits generation. An exception that may reach the generated paths, or an ambiguous basename/wildcard/escape, preserves the user policy and skips this optional improvement. The helper rechecks observed policy bytes before creation; it does not lock arbitrary external editors. Optional ignore failure does not block project readiness or ordinary work.
 
 | Relative pattern inside storage | Why disposable |
 | --- | --- |
@@ -88,7 +88,7 @@ Structured `storage-gc` inspection now includes `typedClosure` over actual verif
 
 This projection is an observed read sequence, not a deletion certificate. Explicit apply uses the separate typed deletion closure and transient publisher lifetimes described above. This observation alone never authorizes deletion; Git refs and original bundles remain retained. Do not use a successful inspection to claim cleanup is safe.
 
-The private Git store creates an ignore file only inside its own newly owned store/staging area and only when parent user policies have no explicit negation. It preserves existing ignore files and tracking; it neither stages nor untracks anything. These retained objects have recovery value and are not disposable cache.
+The private Git store creates an ignore file only inside its own newly owned store/staging area and only when parent user exceptions are provably unrelated to that area. Potentially overlapping or ambiguous exceptions preserve the user policy. It preserves existing ignore files and tracking; it neither stages nor untracks anything. These retained objects have recovery value and are not disposable cache.
 
 An exact source-bundle pin uses the raw digest of the same buffer parsed by the existing bundleKey/Project/schema/observation verifier. Observed physical bytes must match that digest; a mismatch remains retained, unverified and partial. Repeated before/after path reads alone do not prove this binding or prevent ABA substitution. This still does not certify a future reader/writer lifetime.
 

@@ -18,6 +18,25 @@ test("narrow controls preserve selection and card rectangles replace compressed 
   assert.doesNotMatch(source, /textLength|spacingAndGlyphs|svg\("circle"/);
 });
 
+test("history explains content versus snapshot membership and keeps the exact raw comparison", () => {
+  const snapshot = fixture(3);
+  const bounded = count => ({ count, items: [], omittedCount: count });
+  snapshot.history = { status: "retained", entries: [], comparison: "exact-retained-pair-not-chronological-inference", diff: {
+    changes: { changedNodes: bounded(7) }, changeExplanation: {
+      changedNodes: { content: bounded(2), observationOnly: bounded(5) },
+      relations: { contentAdded: bounded(1), contentRemoved: bounded(3), observationOnly: bounded(11), ambiguousGroups: 0 },
+      producerTransition: { changed: true }, rawChangesPreserved: true,
+    },
+  } };
+  const original = JSON.stringify(snapshot), ui = explorerDom(snapshot), body = ui.ids.get("history-body");
+  assert.match(body.textContent, /Changed node content: 2.*snapshot membership only: 5/);
+  assert.match(body.textContent, /Relation content: 1 added, 3 removed.*snapshot membership only: 11/);
+  assert.match(body.textContent, /Producer or analysis basis changed/);
+  assert.match(body.textContent, /Exact graph comparison/);
+  assert.match(body.textContent, /"changedNodes"/);
+  assert.equal(JSON.stringify(snapshot), original);
+});
+
 test("explicit direct-neighbor map navigation keeps narrow cards readable, selection, pins and one-step camera history", async () => {
   const snapshot = fixture(3), original = JSON.stringify(snapshot), ui = explorerDom(snapshot, { narrow: true, cardMeasure: () => 100 });
   await ui.settle();

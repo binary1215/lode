@@ -1031,6 +1031,22 @@
     $("file-prev").disabled = fileCursor <= 0; $("file-next").disabled = fileCursor >= comparisonFiles.length - 1;
     $("change-prev").disabled = changeCursor <= 0; $("change-next").disabled = changeCursor >= changeHunks.length - 1;
   }
+  function appendAssetObservation(body, asset, label) {
+    if (!asset) return;
+    body.append(text("h4", label));
+    body.append(text("p", asset.kind === "git-lfs-pointer"
+      ? `LFS pointer format · ${asset.rawByteLength} pointer bytes · tracking not inspected`
+      : `Opaque or byte-bounded file · ${asset.rawByteLength} bytes · ${asset.rawDigestVerified ? "exact read-byte digest verified" : "metadata only; digest not verified"}`));
+    const cacheLabels = { "present-unverified": "present, hash not checked", "absent-at-default-path": "not found at the default cache path",
+      "size-mismatch": "size differs from the pointer", unknown: "not inspected", unavailable: "unavailable" };
+    if (asset.declaration) body.append(text("p", `Declared payload: ${asset.declaration.declaredByteLength} bytes. Local cache: ${cacheLabels[asset.localPayload?.status] || "not inspected"}${asset.localPayload?.reasonCode ? " · " + asset.localPayload.reasonCode : ""}.`, "hint"));
+    if (asset.currentWorkingPayload) body.append(text("p", `Current requested working payload: ${asset.currentWorkingPayload.status}. This is not a historical after-version or cache proof.`, "hint"));
+    body.append(text("p", "Remote: not checked · payload comparison: not performed", "hint"));
+    const identities = text("details", "");
+    identities.append(text("summary", "Exact asset identities and observation limits"), text("pre", JSON.stringify(asset, null, 2)));
+    body.append(identities);
+  }
+
   function renderContextLineage() {
     const context = activeGraph.contextLineage, panel = $("context-lineage"), body = $("context-lineage-body"); panel.hidden = !context;
     if (comparisonsCache?.model === model && comparisonsCache.version === model.selectionVersion && comparisonsCache.edgeVersion === edgeVersion) return;
@@ -1124,22 +1140,26 @@
         body.append(text("p", `Document navigation is bounded: ${navigation.coverage.omittedLinks} links omitted, ${navigation.coverage.pendingFileCount} files deferred; depth-limited: ${navigation.coverage.depthLimited}. Missing results do not establish absence.`, "hint"));
       }
     }
-    const candidates = (context.files || []).filter(file => values.some(value => fileMatches(value, file))), relatedIds = new Set(selectedIds);
-    for (const value of values) if (!candidates.some(file => fileMatches(value, file))) body.append(text("p", `${value.nodeId ? label(value) : relation(value)}: No exact code comparison included. This does not mean unchanged.`, "hint"));
+    const requestedPaths = new Set(data.graph.detailSelection?.paths || data.graph.query?.paths || []);
+    const candidates = (context.files || []).filter(file => requestedPaths.has(file.path) || values.some(value => fileMatches(value, file))), relatedIds = new Set(selectedIds);
+    if (candidates.some(file => requestedPaths.has(file.path) && !values.some(value => fileMatches(value, file)))) panel.open = true;
+    for (const value of values) if (!candidates.some(file => fileMatches(value, file)) && (!requestedPaths.size || value.path || value.referenceEvidence?.some(ref => ref.kind === "source"))) body.append(text("p", `${value.nodeId ? label(value) : relation(value)}: No exact code comparison included. This does not mean unchanged.`, "hint"));
     const outerBody = body;
     for (const file of candidates) {
       const body = text("section", "", "file-comparison"); body.dataset.sourcePath = file.path; body.comparisonFile = file; outerBody.append(body); comparisonFiles.push(body); body.tabIndex = -1;
       const fileIndex = comparisonFiles.length - 1, entry = text("li", "");
       entry.append(button(file.path, () => { panel.open = true; fileCursor = fileIndex; body.scrollIntoView({ block: "nearest" }); body.focus(); comparisonPosition("file"); })); $("comparison-files").append(entry);
       const owners = values.filter(value => fileMatches(value, file));
-      body.append(text("h3", file.path));
-      body.append(text("p", `Selected references: ${owners.map(value => value.nodeId ? label(value) : relation(value)).join(" · ")}`, "hint"));
-      if (file.currentObservation) body.append(text("p", [file.currentObservation.reasonCode, file.currentObservation.explanation].filter(Boolean).join(" · "), "hint"));
+      body.append(text("h3", `${requestedPaths.has(file.path) ? "Requested source · " : ""}${file.path}`));
+      body.append(text("p", owners.length ? `Selected references: ${owners.map(value => value.nodeId ? label(value) : relation(value)).join(" · ")}`
+        : "Exact requested path exported without a graph node or an assumed relationship.", "hint"));
+      appendAssetObservation(body, file.current?.asset, "Current asset observation");
+      if (file.currentObservation && !file.current?.asset) body.append(text("p", [file.currentObservation.reasonCode, file.currentObservation.explanation].filter(Boolean).join(" · "), "hint"));
       for (const candidate of file.renameEvidence?.candidates || []) body.append(text("p", `Historical rename candidate — not confirmed continuity: ${candidate.path}. Current identity and cause remain unverified.`, "hint"));
       if (file.renameEvidence) body.append(text("p", file.renameEvidence.status === "observed-most-recent-path-change-only"
         ? "Move lookup checked only the most recent recorded path change; other moves remain unknown."
         : "Move lookup is partial, unavailable or lacks an exact historical source basis; no absence or continuity established.", "hint"));
-      const pairs = (file.comparisons || []).filter(pair => values.some(value => pairMatches(value, file, pair)));
+      const pairs = (file.comparisons || []).filter(pair => requestedPaths.has(file.path) || values.some(value => pairMatches(value, file, pair)));
       const endpoints = pairs.flatMap(pair => Object.values(pair.snapshotLookup || {}).map(side => side.requested).filter(Boolean));
       const linkedIds = new Set([...owners.map(value => value.nodeId), ...pairs.flatMap(pair => [pair.changeSet?.nodeId, pair.leftRecord?.nodeId, pair.rightRecord?.nodeId])].filter(Boolean));
       // Reader lookups are keyed by the complete recorded endpoint, not World
@@ -1155,8 +1175,9 @@
           ? ` · ${gap.inspectedSnapshotCount} inspected / ${gap.retainedSnapshotCount} retained${Number.isInteger(gap.uninspectedSnapshotCount) ? ` · ${gap.uninspectedSnapshotCount} uninspected` : ""}` : "";
         body.append(text("p", `Source lookup: ${gap.reasonCode || "CONTEXT_SOURCE_UNAVAILABLE"} · ${identity}${budget}${gap.absenceEstablished === false ? " · absence not established" : ""}`, "comparison-gap"));
       }
-      if (!pairs.length) body.append(text("p", "No exact source comparison for these selected references. Same path alone does not establish a revision pair; unavailable data is not an empty diff.", "hint"));
-      body.append(text("p", "File-level context; not automatically the reason for each symbol."));
+      if (!pairs.length) body.append(text("p", file.current?.asset ? "Export-time asset observation; no recorded before/after payload pair."
+        : "No exact source comparison for these selected references. Same path alone does not establish a revision pair; unavailable data is not an empty diff.", "hint"));
+      if (!file.current?.asset) body.append(text("p", "File-level context; not automatically the reason for each symbol."));
       for (const association of file.associations || []) if (selectedIds.has(association.nodeId)) relatedIds.add(association.nodeId);
       for (const pair of pairs) {
         // The decoded exact pair object is immutable snapshot identity. A path,
@@ -1192,6 +1213,8 @@
           if (original.omittedLines || original.textTruncated) body.append(text("p", `Partial historical excerpt: ${original.omittedLines} omitted lines; text truncated ${Boolean(original.textTruncated)}.`, "hint"));
         }
         body.append(text("p", `${pair.status} · file bytes ${pair.fileBytes || "unknown"} · ${pair.scope}`));
+        appendAssetObservation(body, pair.before?.asset, "Recorded/cited asset A");
+        appendAssetObservation(body, pair.after?.asset, "Compared asset B — scope shown below");
         const scopeLabel = pair.scope === "recorded-changeset-snapshot-pair" ? "Recorded snapshot before / after — not request fulfillment"
           : pair.scope === "explicit-work-chain-citation-pair-not-request-boundary" ? "Cited version A / B — not a request boundary"
             : "Cited revision / export-observed current — not live";
@@ -1236,7 +1259,7 @@
         entries.set(file.path, { body, linked, notices: partialNotices, hunks: changeHunks.slice(firstHunk).map(item => item.element) });
         }
       }
-      body.append(text("p", file.unrecordedIntervals, "hint"));
+      if (!file.current?.asset || pairs.length) body.append(text("p", file.unrecordedIntervals, "hint"));
     }
     for (const reason of context.recordedReasons || []) if (relatedIds.has(reason.nodeId)) {
       body.append(text("h3", "Recorded reason (not proven cause)"));
@@ -1390,7 +1413,19 @@
     unavailable: data.unavailable, bounds: data.bounds, metrics: data.metrics, interpretation: data.interpretation }, null, 2);
   $("history-body").append(text("p", data.history.status === "not-requested" ? "No history included. Optional --history includes a bounded retained comparison." : `Retained history: ${data.history.status}${data.history.reasonCode ? ` · ${data.history.reasonCode}` : ""}`, "hint"));
   for (const entry of data.history.entries) $("history-body").append(text("div", `${entry.tier} · ${entry.worldModelId}`, "history-entry"));
-  if (data.history.diff) { const pre = text("pre", JSON.stringify({ comparison: data.history.comparison, ...data.history.diff }, null, 2)); $("history-body").append(pre); }
+  if (data.history.diff) {
+    const explanation = data.history.diff.changeExplanation, body = $("history-body");
+    if (explanation) {
+      body.append(text("p", `Changed node content: ${explanation.changedNodes.content.count} · snapshot membership only: ${explanation.changedNodes.observationOnly.count}.`),
+        text("p", `Relation content: ${explanation.relations.contentAdded.count} added, ${explanation.relations.contentRemoved.count} removed · snapshot membership only: ${explanation.relations.observationOnly.count}.`));
+      if (explanation.producerTransition.changed) body.append(text("p", "Producer or analysis basis changed; this transition is included in the exact comparison.", "hint"));
+      if (explanation.relations.ambiguousGroups) body.append(text("p", "Ambiguous relation matches remain separate in raw changes.", "hint"));
+      body.append(text("p", "Record comparison preserves historical identities; it does not establish semantic continuity or approval.", "hint"));
+    }
+    const details = document.createElement("details");
+    details.append(text("summary", "Exact graph comparison"), text("pre", JSON.stringify({ comparison: data.history.comparison, ...data.history.diff }, null, 2)));
+    body.append(details);
+  }
   function populateRelationships() {
     const target = $("relation-filter"); target.replaceChildren();
     const option = (value, title) => { const entry = text("option", title); entry.value = value; target.append(entry); };

@@ -3,6 +3,26 @@ import test from "node:test";
 import { publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
 import { inertTerminalText } from "../scripts/lib/terminal-graph.mjs";
 
+test("cleanup presentation separates zero success, yield, unsupported, preserved and partial without changing raw outcomes", () => {
+  const cases = [
+    ["gc_applied", 0, null, /completed successfully; zero files or refs/],
+    ["gc_applied", 2, null, /Cleanup completed; retained history/],
+    ["gc_yielded", 0, "SNAPSHOT_COLLECTION_INVALIDATED", /yielded to other Project work/],
+    ["gc_preserved", 0, "UNSUPPORTED_GC_PLATFORM", /unsupported on this platform/],
+    ["gc_preserved", 0, "SNAPSHOT_GC_REFERENCE_COVERAGE_INCOMPLETE", /did not complete/],
+    ["gc_preserved", 0, "EACCES", /did not complete/],
+    ["gc_partial", 1, "EIO", /partial; reported effects already occurred/],
+  ];
+  for (const [status, deletedCount, code, explanation] of cases) {
+    const value = { requestedApply: true, status, deletedCount, reclaimedBytes: deletedCount * 10, ...(code ? { code } : {}) };
+    const original = JSON.stringify(value), output = formatCliResult("storage-gc", value);
+    assert.match(output, explanation); assert.match(output, new RegExp(status));
+    if (code) assert(output.includes(code));
+    assert.equal(JSON.stringify(value), original);
+    if (status !== "gc_applied") assert(!output.includes("completed successfully"));
+  }
+});
+
 test("Session list presents existing purpose and stored pointers without live-state inference", () => {
   const value = { projectId: "project-A", defaultSessionId: "session-A", sessions: [
     { sessionId: "session-A", purpose: "Investigate reservation expiry; local only", default: true,

@@ -28,6 +28,8 @@ import { explorerDom } from "./helpers/graph-explorer-dom-fixture.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { startOnboarding } from "../scripts/lib/onboarding.mjs";
 import { explorerCodec } from "../scripts/graph-explorer/codec.js";
+import { GitCliHistoryAdapter } from "../scripts/lib/git-history.mjs";
+import { resolveLocalGitRepository } from "../scripts/lib/local-git-repository.mjs";
 
 const oldSource = "export function f() { return 'allow'; }\nexport function g() { return 2; }\n";
 const newSource = oldSource.replace("'allow'", "'block'");
@@ -463,7 +465,7 @@ test("context consumers share readable agent provenance and heading while raw ro
     assert(!text.includes(role)); assert(text.includes("Outcome unknown"));
   }
   assert(browserText().includes("Agent-authored work evidence; not a captured user transcript"));
-  assert(fs.readFileSync(path.join(pluginRoot, "scripts/lib/graph-explorer-html.mjs"), "utf8").includes("<summary>Recorded code context</summary>"));
+  assert(fs.readFileSync(path.join(pluginRoot, "scripts/lib/graph-explorer-html.mjs"), "utf8").includes("<summary>Source context</summary>"));
   assert(formatCliResult("graph-query", value, { diagnostics: true, columns: 240 }).includes(role));
   assert.equal(JSON.stringify(value), original);
   context.events[0].sourceRole = "Unknown role must remain unknown";
@@ -572,7 +574,7 @@ test("local exact Git bytes connect writer, query, typed MCP, CLI and Explorer w
   const explorer = await buildGraphExplorerSnapshot({ root: f.root, query: "src/action.mjs" });
   assert(explorer.graph.contextLineage.files.some(file => file.path === "src/action.mjs"));
   const exported = await exportGraphExplorer({ root: f.root, query: "src/action.mjs", output: path.join(f.base, "context.html") });
-  const html = fs.readFileSync(exported.file, "utf8"); assert(html.includes("Recorded code context")); assert(html.includes("Recorded/cited source")); assert(html.includes("declaration-bytes-changed"));
+  const html = fs.readFileSync(exported.file, "utf8"); assert(html.includes("Source context")); assert(html.includes("Recorded/cited source")); assert(html.includes("declaration-bytes-changed"));
   const after = snapshot(f.base); delete after["context.html"]; assert.deepEqual(after, before);
 });
 
@@ -670,8 +672,9 @@ test("source reader refuses traversal, links, invalid UTF8 and absent old bytes 
   assert.equal((await denied.read("denied.mjs", sha(oldSource))).reasonCode, "EACCES"); assert.equal(denied.diagnostics().localGitCommands, 0);
   fs.writeFileSync(path.join(f.root, ".git"), `gitdir: ${path.join(f.base, "missing-git-metadata")}\n`);
   const damaged = createContextSourceReader(f.root, f.owner.project.projectId);
-  assert.equal((await damaged.read("missing.mjs", "a".repeat(64))).reasonCode, "LOCAL_GIT_COMMAND_FAILED");
-  assert.equal(damaged.diagnostics().localGitCommands, 1);
+  assert.equal((await damaged.read("missing.mjs", "a".repeat(64))).reasonCode, "LOCAL_GIT_METADATA_UNAVAILABLE");
+  assert.equal(damaged.diagnostics().gitMetadataFailureCause, "ENOENT");
+  assert.equal(damaged.diagnostics().localGitCommands, 0, "Invalid mapping is rejected before following it with Git.");
 });
 
 test("missing-path historical excerpts retain exact digest and report the actually included line range", async t => {
@@ -755,4 +758,74 @@ test("exact bundle failure preserves error identity and never substitutes curren
   const changed=JSON.parse(bytes);changed.evidence.sources[0].base64=Buffer.from(newSource).toString("base64");fs.writeFileSync(file,JSON.stringify(changed));
   const tampered=await read();assert.equal(tampered.status,"unavailable");assert.notEqual(tampered.reasonCode,"ENOENT");assert.equal(tampered.text,undefined);
   fs.writeFileSync(file,bytes);assert.equal((await read()).text,oldSource);
+});
+
+
+test("exact requested LFS and opaque assets stay visible without graph nodes and separate pointer, payload and remote evidence", async t => {
+  const f = fixture(t), git = await localGit(t, f), assetPath = "assets/model.bin";
+  fs.mkdirSync(path.join(f.root, "assets"));
+  const payload = Buffer.from([0, 1, 255, 3, 4]), pointer = `version https://git-lfs.github.com/spec/v1\noid sha256:${sha(payload)}\nsize ${payload.length}\n`;
+  fs.writeFileSync(path.join(f.root, assetPath), pointer); await git(["add", "--", assetPath]); await git(["commit", "--quiet", "-m", "Synthetic exact LFS pointer; no LFS client"]);
+  const read = () => createContextSourceReader(f.root, f.owner.project.projectId, { storage: f.storage });
+  const initial = await read().read(assetPath), asset = initial.asset;
+  assert.equal(initial.digest, sha(pointer)); assert.equal(asset.kind, "git-lfs-pointer"); assert.equal(asset.declaration.oid, sha(payload));
+  assert.equal(asset.rawDigest, sha(pointer)); assert.notEqual(asset.rawDigest, asset.declaration.oid);
+  assert.equal(asset.localPayload.status, "absent-at-default-path"); assert.equal(asset.remote.verified, false);
+  assert.equal(asset.gitBlob.oid, (await git(["rev-parse", "HEAD:" + assetPath])).trim());
+  const report = await buildGraphExplorerSnapshot({ root: f.root, paths: [assetPath] });
+  assert(!report.graph.nodes.some(n => n.path === assetPath));
+  assert(report.graph.contextLineage.files.some(file => file.path === assetPath && file.requested && file.current.asset));
+  const dom = explorerDom(report), original = JSON.stringify(report);
+  assert.equal(dom.ids.get("context-lineage").open, true);
+  assert.match(dom.ids.get("context-lineage-body").textContent, /Requested source.*assets\/model.bin/);
+  assert.match(dom.ids.get("context-lineage-body").textContent, /without a graph node/);
+  assert.match(dom.ids.get("context-lineage-body").textContent, /absent-at-default-path/);
+  assert.equal(dom.ids.get("show-code-diff").hidden, true); assert.equal(JSON.stringify(report), original);
+  const queried = await queryProjectGraph({ root: f.root, paths: [assetPath], details: true });
+  const formatted = formatCliResult("graph-query", queried); assert.match(formatted, /Requested source/); assert.match(formatted, /LFS pointer format/); assert.match(formatted, /Remote retention not checked/);
+  const cache = path.join(f.root, ".git/lfs/objects", sha(payload).slice(0, 2), sha(payload).slice(2, 4), sha(payload));
+  fs.mkdirSync(path.dirname(cache), { recursive: true }); fs.writeFileSync(cache, payload);
+  assert.equal((await read().read(assetPath)).asset.localPayload.status, "present-unverified");
+  fs.writeFileSync(cache, payload.subarray(0, 2)); assert.equal((await read().read(assetPath)).asset.localPayload.status, "size-mismatch");
+  const lstat = fs.lstatSync; t.mock.method(fs, "lstatSync", function(file, ...args) { if (String(file) === cache) throw Object.assign(new Error("Synthetic denied cache"), { code: "EACCES" }); return lstat.call(this, file, ...args); });
+  assert.equal((await read().read(assetPath)).asset.localPayload.reasonCode, "EACCES"); t.mock.restoreAll();
+  fs.writeFileSync(path.join(f.root, assetPath), payload);
+  const historical = await read().read(assetPath, sha(pointer));
+  assert.equal(historical.digest, sha(pointer)); assert.equal(historical.asset.currentWorkingPayload.status, "verified-exact-current-bytes");
+  const current = await read().read(assetPath), compared = compareExactSourceVersions(historical, current, f.owner.project.projectId);
+  assert.equal(compared.status, "asset-metadata-only"); assert.equal(compared.diff, undefined); assert.equal(compared.payloadComparison, "not-performed");
+  assert.equal(compareExactSourceVersions({ ...historical, asset: { ...historical.asset, rawDigest: "a".repeat(64) } }, current, f.owner.project.projectId).reasonCode, "SOURCE_PAIR_DIGEST_MISMATCH");
+  fs.writeFileSync(path.join(f.root, "assets/example.md"), "\`\`\`text\n" + pointer + "\`\`\`\n");
+  assert.equal((await read().read("assets/example.md")).asset, undefined);
+  const large = path.join(f.root, "assets/large.bin"), fd = fs.openSync(large, "wx"); try { fs.ftruncateSync(fd, 16 * 1024 * 1024 + 1); } finally { fs.closeSync(fd); }
+  const bounded = await read().read("assets/large.bin"); assert.equal(bounded.asset.rawDigestVerified, false); assert.equal(bounded.digest, null); assert.equal(bounded.text, undefined);
+});
+
+test("normal external linked worktrees retain exact source and World history without a prior binding or network", async t => {
+  const f = fixture(t), git = await localGit(t, f), commit = (await git(["rev-parse", "HEAD"])).trim();
+  const linked = path.join(f.base, "연결 작업 공간"); await git(["worktree", "add", "--quiet", "--detach", linked, "HEAD"]);
+  const { initializeProject } = await import("../scripts/lib/lode-core.mjs");
+  initializeProject({ root: linked, pluginRoot, runtimes: ["codex"] });
+  const resolved = resolveLocalGitRepository(linked); assert.equal(resolved.kind, "verified-linked-worktree"); assert.equal(resolved.commonDir, fs.realpathSync(path.join(f.root, ".git")));
+  assert.equal(fs.readFileSync(path.join(resolved.gitDir, "commondir"), "utf8").trim(), "../..");
+  const { inspectProject } = await import("../scripts/lib/lode-core.mjs"), owner = inspectProject(linked);
+  fs.writeFileSync(path.join(linked, "src/action.mjs"), newSource);
+  const beforeCanon = fs.readFileSync(owner.storage.projectFile), beforeIndex = fs.readFileSync(path.join(resolved.gitDir, "index"));
+  const reader = createContextSourceReader(linked, owner.project.projectId, { storage: owner.storage });
+  assert.equal((await reader.read("src/action.mjs", sha(oldSource))).text, oldSource);
+  const history = await new GitCliHistoryAdapter().readHistory({ projectRoot: linked, referenceCommits: [commit] });
+  assert.equal(history.status, "available", JSON.stringify(history)); assert(history.commits.some(row => row.commit === commit));
+  const world = await buildWorldModel({ root: linked }); assert(world.snapshot.gitDecisionHistory.commits.some(row => row.commit === commit));
+  assert(fs.readFileSync(owner.storage.projectFile).equals(beforeCanon)); assert(fs.readFileSync(path.join(resolved.gitDir, "index")).equals(beforeIndex));
+  const metadata = path.join(resolved.gitDir, "commondir"), original = fs.readFileSync(metadata); fs.writeFileSync(metadata, "../../missing-common\n");
+  assert.throws(() => resolved.assertCurrent(), { code: "LOCAL_GIT_MAPPING_DRIFT" });
+  const denied = await new GitCliHistoryAdapter().readHistory({ projectRoot: linked, referenceCommits: [commit] }); assert.equal(denied.status, "unavailable");
+  fs.writeFileSync(metadata, original); assert.equal(resolveLocalGitRepository(linked).status, "available");
+  const backpointer = path.join(resolved.gitDir, "gitdir"), originalBackpointer = fs.readFileSync(backpointer);
+  fs.writeFileSync(backpointer, path.join(f.root, ".git") + "\n");
+  assert.throws(() => resolveLocalGitRepository(linked), { code: "LOCAL_GIT_MAPPING_NOT_LINKED_WORKTREE" });
+  fs.writeFileSync(backpointer, originalBackpointer);
+  const nested = path.join(linked, "src"); initializeProject({ root: nested, pluginRoot, runtimes: ["codex"] });
+  const nestedOwner = inspectProject(nested), nestedReader = createContextSourceReader(nested, nestedOwner.project.projectId, { storage: nestedOwner.storage });
+  assert.equal((await nestedReader.read("action.mjs", sha(oldSource))).text, oldSource, "Existing subdirectory reads retain the exact Git prefix.");
 });

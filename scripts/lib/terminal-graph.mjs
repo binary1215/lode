@@ -182,10 +182,20 @@ export function formatTerminalGraph(value, { columns, diagnostics = false } = {}
       if (event.contentPartial || event.titlePartial) row("  Partial context excerpt; inspect the original for more.");
     }
     for (const file of context.files || []) {
-      row(""); block("Recorded code context", file.path);
-      if (file.currentObservation) {
+      row(""); block(file.requested && !file.associations?.length ? "Requested source" : file.current?.asset ? "Recorded asset context" : "Recorded code context", file.path);
+      const asset = (item, label) => {
+        if (!item) return;
+        block(label, item.kind === "git-lfs-pointer" ? `LFS pointer format: ${item.rawByteLength} pointer bytes; tracking not inspected.` : `Opaque or byte-bounded file: ${item.rawByteLength} bytes; digest ${item.rawDigestVerified ? "verified for the read bytes" : "not verified"}.`);
+        const cacheLabels = { "present-unverified": "present, hash not checked", "absent-at-default-path": "not found at the default cache path",
+          "size-mismatch": "size differs from the pointer", unknown: "not inspected", unavailable: "unavailable" };
+        if (item.declaration) block("Declared payload", `${item.declaration.declaredByteLength} bytes; local cache: ${cacheLabels[item.localPayload?.status] || "not inspected"}${item.localPayload?.reasonCode ? " (" + item.localPayload.reasonCode + ")" : ""}.`);
+        if (item.currentWorkingPayload) block("Current requested working payload", item.currentWorkingPayload.status + "; not a historical after-version or cache proof.");
+        row("  Remote retention not checked; no payload text diff. Exact digests and Git object identity: --json.");
+      };
+      asset(file.current?.asset, "Current asset observation");
+      if (file.currentObservation && !file.current?.asset) {
         block("Current source observation", file.currentObservation.explanation);
-        gap({ path: file.path, reasonCode: file.currentObservation.reasonCode });
+        if (file.currentObservation.reasonCode) gap({ path: file.path, reasonCode: file.currentObservation.reasonCode });
       }
       for (const candidate of file.renameEvidence?.candidates || []) block("Historical rename candidate (not confirmed continuity)",
         `${candidate.path}; current path, logical identity and cause remain unverified.`);
@@ -194,6 +204,7 @@ export function formatTerminalGraph(value, { columns, diagnostics = false } = {}
         : "Lookup is partial, unavailable or lacks an exact historical source basis; no absence or continuity established.");
       for (const pair of file.comparisons || []) {
         row(`  ${inline(pair.status)}; file bytes ${inline(pair.fileBytes || "unknown")}; ${inline(pair.scope)}`);
+        asset(pair.before?.asset, "Recorded/cited asset A"); asset(pair.after?.asset, "Compared asset B (scope above)");
         if (pair.currentMatchesRecordedAfter === false) block("Version gap", `${pair.labels?.after || (pair.scope === "recorded-changeset-snapshot-pair" ? "Recorded after" : "Compared version")} differs from current; later changes remain separate.`);
         if (pair.retainedOriginal) {
           const original = pair.retainedOriginal;
@@ -216,7 +227,8 @@ export function formatTerminalGraph(value, { columns, diagnostics = false } = {}
         const pairGaps = [pair.reasonCode ? { reasonCode: pair.reasonCode } : null, pair.gap, ...(pair.gaps || [])].filter(Boolean);
         for (const item of [...new Map(pairGaps.map(item => [JSON.stringify([item.reasonCode, item.path, item.expectedDigest]), item])).values()]) gap(item);
       }
-      block("Unrecorded intervals", file.unrecordedIntervals);
+      if (!file.current?.asset || file.comparisons?.length) block("Unrecorded intervals", file.unrecordedIntervals);
+      else row("  Export-time asset observation; no recorded before/after payload pair.");
     }
     for (const reason of context.recordedReasons || []) block("Recorded reason (not proven change cause)", reason.reason || reason.rationale || reason.assessment);
     for (const delta of context.canonChanges || []) {

@@ -224,8 +224,17 @@ installation path changes, install Lode on that PC and ask the agent to resume
 the existing Project. At the same canonical Project path, this preserves Project
 and Session IDs and the selected runtimes while updating the host installation
 identity. The shared launch files stay portable.
-A project-owned `opencode.json` stays unchanged; the generated copy remains
-available for manual integration.
+A project-owned `opencode.json` or `opencode.jsonc` stays unchanged; the generated
+copy remains available as a connection reference. Init, resume and status report
+instructions and MCP separately: configured locally, missing, disabled,
+conflicting, multiple entries or unknown. They reuse an existing sufficient
+AGENTS connection or legacy server alias instead of asking for duplicates.
+Ask the agent to connect only the missing items within your setup request,
+preserving model, permissions, other servers and instruction order. A disabled
+entry or conflicting launch needs its specific choice resolved only if you want
+to change it. JSONC, unresolved Host variables and uninspectable files remain
+unknown; Lode does not parse-and-rewrite them or block ordinary work. These are
+local file observations, not proof that the running OpenCode Host loaded them.
 
 If you move or copy the complete Project folder, explicitly resume it at the new
 path. Lode verifies the retained owner and preserves Project/Session IDs and

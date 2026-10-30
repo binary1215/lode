@@ -44,8 +44,16 @@ function formatBudget(value) {
 function integrationNotices(value) {
   const lines = [], integrations = value.project?.integrations || value.integrations || value.hostIntegration || {};
   const display = text => compactText(inertTerminalText(text), 240);
-  const manual = Object.entries(integrations).filter(([, item]) => item?.status === "manual");
+  const manual = Object.entries(integrations).filter(([client, item]) => item?.status === "manual" && !(client === "opencode" && value.opencodeConnection));
   if (manual.length) lines.push(`Host configuration: ${manual.map(([client, item]) => `${display(client)} existing files preserved; generated projection ${[item.projection, item.instructionProjection, item.mcpProjection].filter(Boolean).map(display).join(", ") || "not recorded"}`).join("; ")}. Automatic connection was not verified; ordinary work continues.`);
+  const opencode = value.opencodeConnection;
+  if (opencode) {
+    lines.push(`OpenCode local configuration: instructions ${display(opencode.instructions.status)}; MCP ${display(opencode.mcp.status)}. Actual Host loading was not verified; ordinary work continues.`);
+    for (const [part, item] of [["Instructions", opencode.instructions], ["MCP", opencode.mcp]]) {
+      if (item.status !== "configured") lines.push(`${part}: ${display(item.nextAction)}`);
+    }
+    if (opencode.reasonCode) lines.push(`Configuration observation: ${display(opencode.reasonCode)}; original files preserved.`);
+  }
   if (value.drift?.length) lines.push(`Managed configuration differs: ${value.drift.slice(0, 8).map(item => `${display(item.path || item.kind || "managed artifact")} (${display(item.reason || "changed")})`).join("; ")}${value.drift.length > 8 ? `; ${value.drift.length - 8} more in --json` : ""}. Originals remain untouched; only affected managed operations need follow-up.`);
   return lines;
 }
@@ -1139,6 +1147,7 @@ export function formatCliResult(command, value, presentation = {}) {
   if (["worker-integration-status", "worker-integrate", "worker-wave-status", "worker-wave-wait"].includes(command)) return formatWorkerGuidance(value);
   if (command === "source-context") return formatSourceContext(value);
   if (command === "graph-query") return formatGraphInventory(value) ?? formatTerminalGraph(value, presentation) ?? terminalBlock("Unrecognized graph result", JSON.stringify(value, null, 2));
+  if (command === "graph-lineage-diff") return formatGraphLineageDiff(value);
   if (["help", "--help", "-h", "help-all"].includes(command)) return formatHelp(value);
   if (command === "status" || command === "doctor") return formatProjectStatus(value, { doctor: command === "doctor" });
   if (command === "init" || command === "resume") return formatProjectBootstrap(value);
@@ -1255,9 +1264,30 @@ function formatSourceContext(value) {
   return `${lines.join("\n")}\n`;
 }
 
+function formatGraphLineageDiff(value) {
+  const explanation = value.changeExplanation;
+  if (!explanation) return `${JSON.stringify(value, null, 2)}\n`;
+  const changes = value.changes;
+  return [
+    `Graph comparison: ${changes.addedNodes.count} added nodes; ${changes.removedNodes.count} removed nodes.`,
+    `Changed node content: ${explanation.changedNodes.content.count}; snapshot membership only: ${explanation.changedNodes.observationOnly.count}.`,
+    `Relation content: ${explanation.relations.contentAdded.count} added, ${explanation.relations.contentRemoved.count} removed; snapshot membership only: ${explanation.relations.observationOnly.count}.`,
+    explanation.producerTransition.changed ? "Producer or analysis basis changed; this transition remains visible." : null,
+    explanation.relations.ambiguousGroups ? "Ambiguous relation matches remain separate in raw changes." : null,
+    value.scope ? "Counts cover the selected paths and incident relations; omitted scope remains unknown." : null,
+    "Exact raw changes and historical identities are preserved. Record comparison does not establish semantic continuity or approval.",
+    "Full original result: add --json to the same read-only command.", "",
+  ].filter(line => line !== null).join("\n");
+}
+
 function formatSnapshotStorage(value) {
   if (value.requestedApply) return [
     "Snapshot cleanup: " + value.status + ". Deleted: " + value.deletedCount + (value.retiredRefCount||value.writtenPackBytes||value.deletedDomainBundles ? "; unlinked file bytes: " : "; reclaimed bytes: ") + value.reclaimedBytes + ".",
+    value.status === "gc_applied" ? value.deletedCount === 0 ? "Cleanup completed successfully; zero files or refs were removed." : "Cleanup completed; retained history and exact references were preserved."
+      : value.status === "gc_yielded" ? "Cleanup yielded to other Project work; the remaining items were preserved. Ordinary work continues."
+      : value.status === "gc_partial" ? "Cleanup was partial; reported effects already occurred. Inspect the remaining reason before another explicit cleanup."
+      : value.code === "UNSUPPORTED_GC_PLATFORM" ? "Physical cleanup is unsupported on this platform; the reported state was preserved. Ordinary work continues."
+      : "Cleanup did not complete; the reported reason and any effects remain visible. Ordinary work continues.",
     value.nativeProcessCleanup ? "Native cleanup was not verified; process details: --json." : null,
     value.retiredRefCount ? "Retired refs: "+value.retiredRefCount+"; other files unlinked: "+(value.deletedCount-value.retiredRefCount)+"." : null,
     value.writtenPackBytes||value.publishedPackBytes ? "Published pack/index bytes: "+value.publishedPackBytes+"; net file bytes removed: "+value.netStorageBytes+"." : null,

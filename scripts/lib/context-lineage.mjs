@@ -9,6 +9,7 @@ import { readContextDocumentLinks } from "./context-document-links.mjs";
 
 const repositoryPath = value => typeof value === "string" && value && !/^(?:\.head|\.lode|\.git)(?:\/|$)/i.test(value);
 const validDigest = value => /^[a-f0-9]{64}$/.test(value || "");
+const hasSource = version => version?.text !== undefined || Boolean(version?.asset);
 const reference = node => ({ nodeId: node.nodeId, kind: node.kind, sessionId: node.sessionId || null, reference: node.sourceReference, reviewState: node.reviewState, freshness: node.freshness });
 
 // A private, non-persisted explanation over the existing query selection. It
@@ -124,10 +125,10 @@ export async function explainContextLineage({ root, project, storage, selection 
         const revision = snapshot.temporalProvenanceGraph.nodes.find(item => item.kind === "FileRevision" && item.path === file.path && item.digest === file.digest);
         // Same bytes may occur under different parent-bound canonical IDs.
         // Keep this exact snapshot's ID on a copy, never in the byte cache.
-        return bytes.text !== undefined ? { ...bytes, revisionId: revision?.nodeId || null } : bytes;
+        return hasSource(bytes) ? { ...bytes, revisionId: revision?.nodeId || null } : bytes;
       };
       const a = await bindVersion(before, oldFile), b = await bindVersion(after, newFile);
-      const comparison = compareExactSourceVersions(a?.text !== undefined ? a : null, b?.text !== undefined ? b : null, project.projectId);
+      const comparison = compareExactSourceVersions(hasSource(a) ? a : null, hasSource(b) ? b : null, project.projectId);
       comparisons.push({ ...comparison, scope: "recorded-changeset-snapshot-pair", changeSet: reference(node), recordedRevisionChanges: recorded,
         snapshotLookup: Object.fromEntries([["before", document.before, before], ["after", document.after, after]].map(([side, endpoint, resolved]) => [side, {
           requested: endpoint, resolvedWorldModelId: resolved?.worldModelId || null,
@@ -140,17 +141,17 @@ export async function explainContextLineage({ root, project, storage, selection 
       if (a?.digest && b?.digest) compared.add(JSON.stringify([a.digest, b.digest]));
     }
     for (const { ref } of [...citations, ...references]) {
-      if (!validDigest(ref.digest) || current.text === undefined && current.reasonCode !== "ENOENT"
+      if (!validDigest(ref.digest) || !hasSource(current) && current.reasonCode !== "ENOENT"
         || compared.has(JSON.stringify([ref.digest, current.digest]))) continue;
       const previous = await sources.read(relative, ref.digest), pair = JSON.stringify([ref.digest, current.digest]); compared.add(pair);
-      const retainedOriginal = current.text === undefined && previous.text !== undefined ? (() => {
+      const retainedOriginal = !hasSource(current) && previous.text !== undefined && !previous.asset ? (() => {
         const lines = previous.text.split("\n"), selected = lines.slice(0, 160).join("\n"), text = selected.slice(0, 32 * 1024);
         const includedLines = text.split("\n").length;
         return { path: relative, digest: previous.digest, basis: previous.basis, startLine: 1, endLine: includedLines,
           text, omittedLines: Math.max(0, lines.length - includedLines), textTruncated: selected.length > 32 * 1024,
           interpretation: "Exact cited historical bytes; no current after-version, deletion cause or rename continuity established." };
       })() : null;
-      comparisons.push({ ...compareExactSourceVersions(previous.text !== undefined ? previous : null, current.text !== undefined ? current : null, project.projectId), scope: "cited-revision-versus-observed-current-bytes",
+      comparisons.push({ ...compareExactSourceVersions(hasSource(previous) ? previous : null, hasSource(current) ? current : null, project.projectId), scope: "cited-revision-versus-observed-current-bytes",
         ...(retainedOriginal ? { retainedOriginal } : {}),
         citedReference: ref, gaps: [previous, current].filter(version => version.status === "unavailable"), ...(previous.status === "unavailable" ? { gap: previous } : {}) });
     }
@@ -162,14 +163,15 @@ export async function explainContextLineage({ root, project, storage, selection 
         if (left.ref.digest === right.ref.digest) continue;
         const key = "work-chain:" + JSON.stringify([left.ref.digest, right.ref.digest]); if (compared.has(key)) continue; compared.add(key);
         const a = await sources.read(relative, left.ref.digest), b = await sources.read(relative, right.ref.digest);
-        comparisons.push({ ...compareExactSourceVersions(a.text !== undefined ? a : null, b.text !== undefined ? b : null, project.projectId),
+        comparisons.push({ ...compareExactSourceVersions(hasSource(a) ? a : null, hasSource(b) ? b : null, project.projectId),
           scope: "explicit-work-chain-citation-pair-not-request-boundary", leftRecord: reference(left.node), rightRecord: reference(right.node),
           labels: { before: "Cited version A", after: "Cited version B — not necessarily current" }, timeOrder: "request-specific-source-boundaries-not-established",
           currentMatchesRecordedAfter: b.digest && current.digest ? current.digest === b.digest : null, gaps: [a, b].filter(version => version.status === "unavailable") });
       }
     }
-    files.push({ path: relative, current: current.text !== undefined ? { digest: current.digest, basis: current.basis } : current,
-      ...(current.text === undefined ? { currentObservation: {
+    files.push({ path: relative, requested: selection.query.paths.includes(relative),
+      current: hasSource(current) ? { digest: current.digest, basis: current.basis, ...(current.asset ? { asset: current.asset } : {}) } : current,
+      ...(current.asset ? { currentObservation: { status: "current-asset-observation", explanation: "Current requested asset metadata; payload availability, historical byte pairs and remote retention are separate evidence. No binary text diff or semantic equivalence is inferred." } } : !hasSource(current) ? { currentObservation: {
         status: current.reasonCode === "ENOENT" ? "current-path-not-found" : "current-source-unavailable",
         reasonCode: current.reasonCode,
         explanation: current.reasonCode === "ENOENT"

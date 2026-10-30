@@ -23,6 +23,17 @@ not prove loading. Check an already available tool when useful; unknown loading
 does not block independent work or require another setup/doctor ritual. Users
 without this Skill can follow the README directly.
 
+For selected OpenCode projects, init/resume/status return `opencodeConnection`
+with separate local instructions and MCP observations plus the next useful
+action. Reuse configured entries, sufficient AGENTS links and legacy aliases;
+never add duplicates just because the Project records a manual integration.
+Within an already authorized setup request, inspect the exact current file and
+apply only the missing diff, preserving model/permissions/other servers/order.
+Resolve a material disabled/conflicting-entry choice only when needed; do not
+repeat existing consent or add a setup gate. JSONC, concurrent edits, unresolved
+Host variables and uninspectable components stay unknown. The observer never
+merges or repairs user config; local configured state is not actual Host loading.
+
 ## Existing work and recorded conclusions
 
 Reuse sufficient supplied context. When missing, `lode_session_list` reads a

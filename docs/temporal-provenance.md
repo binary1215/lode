@@ -21,7 +21,7 @@ Git commits, branches, tags, GraphDB record IDs, provider session IDs, document-
 
 ## Logical entities and immutable revisions
 
-Temporal provenance protocol `0.15.0` materializes a P4 rebuildable relation and retrieval index under the [`AuthorityPlaneContract`](authority-plane-contract.md). Digest-valid protocols from `0.2.0` through `0.14.0` remain readable. New graphs add bounded opaque historical onboarding references while preserving older identities and the existing Policy and Observation projections:
+Temporal provenance vocabulary `0.15.0` materializes a P4 rebuildable relation and retrieval index under the [`AuthorityPlaneContract`](authority-plane-contract.md). New World Model graphs use the existing `0.16.0` stable relation producer in every storage layout. Digest-valid historical protocols from `0.2.0` through `0.15.0` remain readable without rewriting their bytes, identities or pins. The vocabulary includes bounded opaque historical onboarding references and the existing Policy and Observation projections:
 
 - stable product logical entities: `FeatureGroup`, `Capability`, `Feature`, `Requirement`, `Constraint`, `Decision`, and schema-v2 `Policy`;
 - immutable product states: the corresponding `*Revision` kinds;
@@ -46,6 +46,21 @@ Product logical identity derives from project identity, entity kind, and stable 
 The `SourceSnapshot` identity includes the project, complete sorted current Revision sets, an ancestry-independent state digest, the producer version, and sorted zero-or-more parent SourceSnapshots. Multiple parents are supported from the first schema version. This records a DAG shape only; automatic merge, conflict detection, conflict resolution, and ancestry fetching remain deferred.
 
 ## Provenance-complete projection
+
+New relation identity separates logical relationship and content revision from global
+snapshot membership. Exact endpoints, Project, endpoint continuity generation,
+evidence, authority, confidence and producer/analysis basis remain inputs. A relation
+to a different SourceSnapshot still has a different exact endpoint. This producer
+does not require the experimental domain-bundle layout.
+
+The read-only lineage diff keeps its original `changes` and pagination. Its separate
+`changeExplanation` distinguishes changed record content from records differing
+only in global `sourceSnapshotId` membership. All other fields remain compared;
+ambiguous relation matches stay separate. Producer/analysis transitions are explicit,
+including the first comparison across the old and new writers. This is mechanical
+record comparison, not a judgment of semantic continuity, approval or sufficiency.
+Explanation examples are bounded within the same selected scope; raw diff pages
+and exact historical snapshot reads remain available.
 
 Every projected node records `nodeId`, `kind`, `authorityClass`, `origin`, sorted `evidenceIds`, `freshness`, producer identity and version, and boolean instruction/promotion authority flags. Snapshot-scoped nodes also record `sourceSnapshotId`; Revision nodes record their logical entity and sorted parent identities.
 

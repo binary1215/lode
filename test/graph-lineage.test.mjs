@@ -14,6 +14,10 @@ import { buildTemporalProvenanceGraph, verifyTemporalProvenanceGraph } from "../
 import { buildWorldModel } from "../scripts/lib/world-model.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch as dispatchMcp, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
+import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
+import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world-model-store.mjs";
+import { readWorldModelSnapshot } from "../scripts/lib/world-model.mjs";
+import { temporalRelationIdentity } from "../scripts/lib/temporal-relation-identity.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -132,4 +136,123 @@ test("the current reader preserves digest-valid temporal 0.12 vocabulary compati
   legacy.graphSnapshotHash = graphDigest(legacy);
   legacy.graphSnapshotId = `graph-snapshot-${legacy.graphSnapshotHash.slice(0, 24)}`;
   assert.equal(verifyTemporalProvenanceGraph(legacy).graphSnapshotId, legacy.graphSnapshotId);
+});
+
+function writeFixtureDecision(root, layout, statement) {
+  const file = path.join(root, layout.directory, "context/product-model.json");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, featureGroups: [], capabilities: [], features: [],
+    requirements: [], constraints: [], decisions: [{ key: "D1", statement, status: "active" }] }));
+}
+
+test("default whole snapshots distinguish decision changes from unchanged code membership and preserve exact history", async t => {
+  const { root, layout } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "src/stable.mjs"), "export function stable() { return 1; }\n");
+  writeFixtureDecision(root, layout, "Keep the original output");
+  const first = await buildWorldModel({ root }), original = fs.readFileSync(first.file);
+  writeFixtureDecision(root, layout, "Use the reviewed output");
+  const second = await buildWorldModel({ root });
+  assert.equal(second.snapshot.temporalProvenanceGraph.protocol.version, "0.16.0");
+  const diff = await diffGraphLineage({ root, fromWorldModelId: first.snapshot.worldModelId, toWorldModelId: second.snapshot.worldModelId });
+  const codeIds = new Set(first.snapshot.temporalProvenanceGraph.nodes.filter(n => n.path === "src/stable.mjs").map(n => n.nodeId));
+  assert(diff.changes.changedNodes.items.some(id => codeIds.has(id)), "Raw changedNodes keeps membership changes");
+  assert(diff.changeExplanation.changedNodes.observationOnly.items.some(id => codeIds.has(id)));
+  assert(!diff.changeExplanation.changedNodes.content.items.some(id => codeIds.has(id)));
+  const codeEdges = graph => graph.edges.filter(e => codeIds.has(e.from) && codeIds.has(e.to)).map(e => e.edgeId).sort();
+  assert(codeEdges(first.snapshot.temporalProvenanceGraph).length);
+  assert.deepEqual(codeEdges(first.snapshot.temporalProvenanceGraph), codeEdges(second.snapshot.temporalProvenanceGraph));
+  assert(diff.changeExplanation.relations.observationOnly.count > 0);
+  assert(diff.changeExplanation.relations.contentAdded.count > 0, "Different snapshot/decision endpoints stay distinct");
+  assert(diff.changes.addedNodes.items.some(id => second.snapshot.temporalProvenanceGraph.nodes.some(n => n.nodeId === id && n.kind === "DecisionRevision")));
+  assert.equal(diff.changeExplanation.semanticContinuityClaimed, false);
+  assert.equal(diff.changeExplanation.rawChangesPreserved, true);
+  assert.deepEqual(fs.readFileSync(first.file), original);
+  assert.deepEqual((await readWorldModelSnapshot({ root, worldModelId: first.snapshot.worldModelId })).snapshot, first.snapshot);
+  const cli = formatCliResult("graph-lineage-diff", diff);
+  assert.match(cli, /Changed node content:.*snapshot membership only:/);
+  assert.match(cli, /Exact raw changes and historical identities are preserved/);
+});
+
+// Reproduce the former 0.15 writer contract, retaining the original graph body.
+// The ordinary exact readers must verify these historical bytes before diffing.
+function legacyWholeSnapshot(snapshot) {
+  const document = structuredClone(snapshot), graph = document.temporalProvenanceGraph;
+  graph.protocol.version = "0.15.0";
+  delete graph.relationAnalysisBasis;
+  for (const edge of graph.edges) {
+    delete edge.edgeId; delete edge.logicalRelationId; delete edge.contentRevisionId;
+    edge.producerVersion = "0.15.0";
+    edge.edgeId = `temporal-edge-${graphDigest(edge).slice(0, 24)}`;
+  }
+  graph.edges.sort((a, b) => a.edgeId.localeCompare(b.edgeId));
+  delete graph.graphSnapshotId; delete graph.graphSnapshotHash;
+  graph.graphSnapshotHash = graphDigest(graph);
+  graph.graphSnapshotId = `graph-snapshot-${graph.graphSnapshotHash.slice(0, 24)}`;
+  verifyTemporalProvenanceGraph(graph);
+  delete document.worldModelId; delete document.worldModelHash;
+  document.worldModelHash = graphDigest(document);
+  document.worldModelId = `world-model-${document.worldModelHash.slice(0, 24)}`;
+  return document;
+}
+
+test("legacy raw edge changes remain exact and the first producer transition is explicit", async t => {
+  const { root, layout } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "src/stable.mjs"), "export const stable = true;\n");
+  writeFixtureDecision(root, layout, "First decision");
+  const first = await buildWorldModel({ root });
+  writeFixtureDecision(root, layout, "Second decision");
+  const second = await buildWorldModel({ root });
+  const before = legacyWholeSnapshot(first.snapshot), after = legacyWholeSnapshot(second.snapshot);
+  const store = new LocalJsonWorldModelStoreAdapter({ projectRoot: root, storage: layout });
+  const oldEntry = await store.writeSnapshot(before.worldModelId, before), oldBytes = fs.readFileSync(oldEntry.location);
+  await store.writeSnapshot(after.worldModelId, after);
+  const diff = await diffGraphLineage({ root, fromWorldModelId: before.worldModelId, toWorldModelId: after.worldModelId, limit: 500 });
+  const oldIds = new Set(before.temporalProvenanceGraph.edges.map(e => e.edgeId));
+  assert.deepEqual(diff.changes.addedEdges.items, after.temporalProvenanceGraph.edges.map(e => e.edgeId).filter(id => !oldIds.has(id)).sort());
+  assert(diff.changeExplanation.relations.observationOnly.count > 0);
+  assert(diff.changeExplanation.relations.contentAdded.count < diff.changes.addedEdges.count);
+  const transition = await diffGraphLineage({ root, fromWorldModelId: before.worldModelId, toWorldModelId: second.snapshot.worldModelId });
+  assert.equal(transition.changeExplanation.producerTransition.changed, true);
+  assert.equal(transition.changeExplanation.producerTransition.from.protocol.version, "0.15.0");
+  assert.equal(transition.changeExplanation.producerTransition.to.protocol.version, "0.16.0");
+  assert.equal(transition.changeExplanation.relations.observationOnly.count, 0);
+  assert.deepEqual(fs.readFileSync(oldEntry.location), oldBytes);
+});
+
+test("real code and line changes stay visible while unrelated exact code relations remain stable", async t => {
+  const { root } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "src/change.mjs"), "export function value() { return 1; }\n");
+  fs.writeFileSync(path.join(root, "src/untouched.mjs"), "export function untouched() { return 7; }\n");
+  const first = await buildWorldModel({ root });
+  fs.writeFileSync(path.join(root, "src/change.mjs"), "\nexport function value() { return 2; }\n");
+  const second = await buildWorldModel({ root });
+  const diff = await diffGraphLineage({ root, fromWorldModelId: first.snapshot.worldModelId, toWorldModelId: second.snapshot.worldModelId, limit: 500 });
+  const a = first.snapshot.temporalProvenanceGraph, b = second.snapshot.temporalProvenanceGraph;
+  const stableIds = new Set(a.nodes.filter(n => n.path === "src/untouched.mjs").map(n => n.nodeId));
+  const edges = graph => graph.edges.filter(e => stableIds.has(e.from) && stableIds.has(e.to)).map(e => e.edgeId).sort();
+  assert.deepEqual(edges(a), edges(b));
+  assert(diff.changeExplanation.changedNodes.content.items.some(id => b.nodes.some(n => n.nodeId === id && n.path === "src/change.mjs")));
+  assert(diff.changes.addedNodes.items.some(id => b.nodes.some(n => n.nodeId === id && n.kind === "FileRevision" && n.path === "src/change.mjs")));
+  const scoped = await diffGraphLineage({ root, fromWorldModelId: first.snapshot.worldModelId, toWorldModelId: second.snapshot.worldModelId, scopePaths: ["src/untouched.mjs"], limit: 1 });
+  assert.equal(scoped.changeExplanation.changedNodes.content.count, 0);
+  assert.equal(scoped.scope.globalChangeCounts, "not-computed");
+});
+
+test("stable relation identity never merges evidence, authority, producer, exact endpoints or continuity", () => {
+  const nodes = new Map([["one", { kind: "FileRevision", logicalEntityId: "file-one" }], ["two", { kind: "SymbolRevision", logicalEntityId: "symbol-two" }]]);
+  const basis = { projectId: "project-one", nodes, relationAnalysisBasis: { analyzer: "fixture" } };
+  const edge = { type: "DECLARES", from: "one", to: "two", sourceSnapshotId: "source-a", authorityClass: "heuristic", origin: "fixture",
+    evidenceIds: ["digest-a"], confidence: 0.6, producer: "fixture", producerVersion: "0.16.0" };
+  const identity = temporalRelationIdentity(edge, basis);
+  assert.deepEqual(temporalRelationIdentity({ ...edge, sourceSnapshotId: "source-b" }, basis), identity);
+  for (const patch of [{ evidenceIds: ["digest-b"] }, { confidence: 0.8 }, { authorityClass: "reviewed" }, { producerVersion: "another" },
+    { origin: "another" }, { freshness: "stale" }, { status: "cancelled" }, { layer: "other" }, { to: "another-exact-revision" }]) {
+    assert.notEqual(temporalRelationIdentity({ ...edge, ...patch }, basis).edgeId, identity.edgeId);
+  }
+  assert.notEqual(temporalRelationIdentity(edge, { ...basis, projectId: "project-two" }).edgeId, identity.edgeId);
+  assert.notEqual(temporalRelationIdentity(edge, { ...basis, logicalLineageState: { continuityGenerationByLogicalEntityId: { "file-one": 1 } } }).edgeId, identity.edgeId);
+  assert.notEqual(temporalRelationIdentity(edge, { ...basis, relationAnalysisBasis: { analyzer: "another" } }).edgeId, identity.edgeId);
 });
