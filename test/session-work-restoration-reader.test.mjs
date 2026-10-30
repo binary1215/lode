@@ -9,6 +9,47 @@ import { recordSessionWorkEvidence, readSessionWorkContext, readSessionWorkEvide
 import { createSessionWorkReadContext, inspectSessionWorkReference, readSessionWorkFileObservation } from "../scripts/lib/session-work-evidence-original.mjs";
 import { refreshProjectGraphIndex } from "../scripts/lib/discovery-index.mjs";
 import { fixture, exact, link, citation, snapshot, sha, encoded } from "./helpers/session-work-linkage-fixture.mjs";
+import { fitSessionWorkDelivery, workDeliveryCharacters } from "../scripts/lib/session-work-excerpts.mjs";
+
+test("delivery coverage preserves exact sparse item counts and previously supplied excerpts", t => {
+  const f = fixture(t);
+  const saved = f.save({ summary: "한😀e\u0301".repeat(800),
+    observedWork: Array.from({ length: 48 }, (_, i) => `Original observation ${i}`),
+    judgments: [{ assessment: "First assessment", reason: "R".repeat(4000), alternatives: ["Alternative one", "Alternative two"] },
+      { assessment: "Second assessment", reason: "Keep current cancellation", alternatives: [] }],
+    pending: ["Local review only; do not publish."], unknowns: ["External result is unknown."] });
+  const original = saved.evidence;
+  const assertCoverage = excerpt => {
+    for (const shape of excerpt.coverage.fields) {
+      const value = original.content[shape.field], count = Array.isArray(value) ? value.length : 1;
+      let complete = 0, partial = 0;
+      if (Object.hasOwn(excerpt.emptyValues || {}, shape.field)) complete = count;
+      else for (let index = 0; index < count; index++) {
+        const prefix = ["content", shape.field, ...(Array.isArray(value) ? [index] : [])];
+        // Original scan oracle, deliberately independent of indexed coverage.
+        const matching = excerpt.fields.filter(field => JSON.stringify(field.path) === JSON.stringify(prefix)
+          || field.path.length > prefix.length && prefix.every((part, i) => field.path[i] === part));
+        if (matching.some(field => JSON.stringify(field.path) === JSON.stringify(prefix) && field.complete === true && !field.range)) complete++;
+        else if (matching.length) partial++;
+      }
+      assert.equal(shape.completeItems, complete); assert.equal(shape.partialItems, partial);
+      assert.equal(shape.omittedItems, Math.max(0, count - complete - partial));
+    }
+  };
+  const before = snapshot(f.base);
+  for (const maxCharacters of [2, 2400, 5000, 9000]) {
+    const input = { projectId: original.projectId, sessionId: original.sessionId, records: [original] };
+    const fitted = fitSessionWorkDelivery(input, { maxCharacters });
+    assert(workDeliveryCharacters(fitted.payload) <= maxCharacters);
+    for (const excerpt of fitted.payload.recordExcerpts || []) {
+      assertCoverage(excerpt);
+      const again = fitSessionWorkDelivery({ ...input, records: [], recordExcerpts: [excerpt] }, { maxCharacters });
+      assert(workDeliveryCharacters(again.payload) <= maxCharacters);
+      for (const partial of again.payload.recordExcerpts || []) assertCoverage(partial);
+    }
+  }
+  assert.deepEqual(snapshot(f.base), before);
+});
 
 // Independent public-reader synthetic regressions. No legacy all-history
 // accounting helper, subprocess, installed Host, provider or model fixture.

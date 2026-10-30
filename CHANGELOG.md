@@ -11,6 +11,17 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.71 — publication tracked separately
+
+- Reuse exact selected-fragment field/index buckets when calculating partial
+  work-context coverage, reducing repeated scans within each render.
+- Preserve original content, selected IDs and order, partial ranges, omission
+  warnings, and existing presentation/fit callback behavior without new reads,
+  persistent caches, runtime artifacts or user workflow gates.
+- Focused synthetic comparisons retain identical complete startup output and
+  reduce partial-render computation cost. This does not establish improved
+  retrieval quality, semantic sufficiency or actual Host/model utilization.
+
 ## 0.3.0-beta.70 — publication tracked separately
 
 - Use flat shared code-domain parts for new complete World/Graph snapshots under
