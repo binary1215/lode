@@ -18,6 +18,37 @@ results are evidence, not Canon approval or P2 recovery direction. Ordinary
 results need no additional review click; protected transitions and active Run
 contracts keep their existing rules.
 
+## Ordinary preserved-plan connection
+
+For substantial staged work, keep a completed plan source idle, or obtain a
+separate supported Host fork before advancing its original. Only then obtain
+useful implementation, inspection and integration contributions from that basis.
+Preserved sources receive no ordinary work, acknowledgement or probe messages.
+The coordinating context owns progress and current user conditions. Following
+actual results, integrate new facts, changed assumptions, reasons, dependencies
+and next actions into the next plan rather than resetting to the initial plan.
+Targeted original checks remain available to integration; detailed inspection
+history is not automatically the next planning context.
+
+Use the actual exposed Host read/wait/fork/send contract and response. A completed
+plan turn differs from visible text, a pending client ID from a ready child, and
+an inherited interrupted turn from completed history. Source checks are not an
+atomic cutoff; confirm the needed plan basis without claiming an identical hidden
+model state. A child may already be running. Unknown fork/effect outcomes require
+inspection, not automatic replay. Normal history evidence or a bounded work-child
+probe can establish limited inheritance; repeating an answer supplied in its brief
+cannot. Current cancellation and effect scope must still be supplied.
+
+The app fork wrappers may expose no historical cutoff even when an underlying
+provider API documents one. This ordinary route does not enable or bypass the
+managed native-fork backend described below. Where the source already advanced,
+use fresh or record-reconstructed context and disclose the limitation; prospectively
+preserve a later completed plan when useful. No mandatory chat count, new API,
+registry, daemon, plan save or user identity form is required. See the Skill's
+[preserved-plan flow](../skills/lode-agent-core/references/runtime-composition.md#preserved-plan-sources-and-next-stages).
+Guidance consumption, an actual supported Host flow and model-quality comparison
+are distinct evidence; a documentation or fixture pass proves neither of the latter.
+
 ## Optional native observations
 
 Codex/Claude packaged lifecycle Hooks now write a bounded Host-local P5

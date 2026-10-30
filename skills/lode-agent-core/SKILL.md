@@ -225,6 +225,20 @@ prior design reasons; selected fresh context can support narrow work or independ
 review. Neither grants approval, Canon/P2 authority, file isolation, cache reuse
 or lower cost. Preserve semantically sufficient context.
 
+For substantial staged work, keep the accepted goal, conditions, reasons and
+completion criteria available before detailed work. Keep a completed plan source
+idle or obtain a supported preservation fork before advancing its original. Start
+only useful implementation, inspection and integration contributions from that
+basis. A detailed reviewer is not automatically the next planning context.
+Integration may inspect material originals and contradictions directly.
+
+After a meaningful stage, integrate the actual result, new facts, changed
+assumptions, reasons, remaining dependencies and next action under current user
+conditions. Form the next plan from that updated understanding, rather than
+resetting each stage to the initial plan. Preserve completed contributions.
+Use the existing [preserved-plan flow](references/runtime-composition.md#preserved-plan-sources-and-next-stages)
+when useful; small direct work needs no fork, new record or additional approval.
+
 Lode checks objective achievement, new facts, uncertainty and supporting evidence.
 Keep completed contributions and continue independent unfinished work. Before
 replacing unknown work, inspect its exact effects. A cancel request does not

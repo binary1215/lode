@@ -11,6 +11,17 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.68 — publication tracked separately
+
+- Connect substantial staged work to a completed preserved plan source, useful
+  implementation/review contributions, and judgment integration through existing
+  ordinary Host tools. Keep small direct work and current authority unchanged.
+- Evolve the next plan from integrated results and learned facts instead of
+  resetting to the initial plan or inheriting detailed review as the next planner.
+- Keep native history observations, reconstructed context, actual Host behavior
+  and model-quality evidence distinct. Preserve existing recovery and managed
+  execution contracts without new APIs, records or user approval rituals.
+
 ## 0.3.0-beta.67 — publication tracked separately
 
 - Add explicit, reference-verified local cleanup for orphan World/Graph files,

@@ -60,6 +60,68 @@ An update failure leaves a scoped evidence gap, not a new user approval, worker
 authorization or barrier to independent work. These handoff facts can use the
 existing report/ordinary brief; no new mandatory artifact or field schema is added.
 
+## Preserved plan sources and next stages
+
+For substantial work, retain the goal, agreed conditions, reasons, alternatives
+and completion meaning before detailed production or inspection. An accepted
+review can already contain detailed investigation; acceptance alone does not
+make its conversation a preserved judgment context. Reuse an actually preserved
+planning source, or identify reconstruction from current direction and records.
+A sibling fork shares assumptions: review the goal and plausible counterexamples,
+not only whether implementation follows the plan.
+
+With the current user scope and available Host tools, use either existing path:
+
+- Keep the completed plan conversation idle. An already authorized coordinating
+  context obtains useful implementation/review contributions from that source.
+- Obtain a separate preservation fork from the completed source. Once its ready
+  identity and needed plan basis are observed, the original may progress. Keep
+  the preserved source idle; do not send it ordinary work, receipts or probes.
+
+Use the exact available Host read/wait/fork/send surfaces. A visible plan message
+is not a completed turn. Check the reported source turn/activity and the returned
+child's usable identity and plan basis; pending client IDs are not ready thread
+IDs. Worktree setup requires its actual ready result, not an invented mapping.
+Read-before-fork is not an atomic freeze. Tool contracts differ on active or
+interrupted history; identify the actual surface and restrict preservation claims
+to its observed inheritance. A ready child may already be running: inspect unknown
+effects before sending more work. An uncertain fork is not permission to repeat it.
+Do not build a registry, lock, private-history hash or mandatory acknowledgement.
+
+When normal Host history observations are insufficient, a bounded check in an
+actual work child may help establish available context. Supplying the expected
+plan answer again and receiving it back is not inheritance evidence. Always
+supply current cancellation, role and effect authority separately. Do not probe
+the preserved source or claim hidden model-state equivalence. Supported source
+history can make another model check unnecessary.
+
+Give implementation owned files/effects and useful completion evidence. Give
+independent inspection the same valid criteria and the exact resulting candidate,
+not the implementation conversation as its starting context. Integration receives
+findings, counterexamples, exact results and uncertainty. It can inspect specific
+originals or contradictions; broad detailed investigation belongs to a useful
+separate contribution. No read-count, length threshold or one-read disqualification
+separates these roles. Conversation forks do not isolate shared files or grant
+permission. Reconcile the combined result and preserve user edits.
+
+At meaningful stages, integrate completed results, new facts, changed assumptions,
+reasons, remaining dependencies and next actions. Keep the whole goal and current
+conditions while evolving the next plan from this integrated judgment. Do not
+reset each stage to the initial plan or automatically promote detailed review
+history into the next planning context. Preserve a newly accepted plan source
+when its actual turn completes; use only the roles and branches that help.
+A changed candidate needs review of its affected claims; unchanged clarification
+can reuse the existing inspection. Material user-owned changes follow the usual
+agreement boundary, not a new approval ritual.
+
+If a source already advanced and the exposed Host has no historical cutoff, use
+fresh work or current records honestly; that is reconstruction, not a preserved
+past fork. Apply prospective preservation at a later useful completed plan.
+Missing capability limits that claim or contribution, not independent direct
+work. Do not invent a later controller or bypass a refusal through another tool.
+Keep existing P2 recovery and managed-result contracts; ordinary work needs no
+new Session, Run, Capsule, plan file, save, IDs or fixed number of chats.
+
 ## Native observations and current Host activity
 
 Packaged Codex/Claude lifecycle Hooks keep small optional Host-local P5

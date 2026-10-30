@@ -23,6 +23,11 @@ Coder implements a fully decided bounded scope: one Session request or a Run con
 
 Reviewer provides an independent evaluation when useful, including a bounded second opinion. Reviewer tests options and assumptions against evidence appropriate to the user's question but does not implement or choose the final direction.
 
+Detailed inspection returns facts, counterexamples and exact candidate evidence.
+Lode integrates them against the preserved criteria and current user conditions;
+inspection history is not automatically the next planning context. Integration
+may inspect material originals directly and update the plan from learned facts.
+
 Completing a review completes that contribution, not the reviewed implementation.
 A favorable verdict remains evidence; it does not create a ReviewDecision or
 authorize a new scope. Lode integrates findings under the existing user request
