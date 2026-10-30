@@ -1,0 +1,123 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime claude --observe-only",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime claude --observe-only",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime claude --observe-only",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime claude --observe-only",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime claude --observe-only",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime claude --observe-only",
+            "timeout": 1
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^mcp__lode__(head_bounded_worker_apply_result|head_bounded_worker_cancel|head_bounded_worker_dispatch|head_bounded_worker_job_patch|head_bounded_worker_job_reconcile|head_bounded_worker_job_status|head_bounded_worker_prepare|head_bounded_worker_reconcile|head_bounded_worker_start|head_bounded_worker_status|head_bounded_worker_wait|head_bounded_worker_wave_abandon|head_bounded_worker_wave_create|head_bounded_worker_wave_read|head_bounded_worker_wave_results|head_bounded_worker_wave_seal|head_bounded_worker_wave_status|head_bounded_worker_wave_wait|head_checkpoint_basis|head_checkpoint_diagnose|head_checkpoint_sync|head_compact_abort|head_compact_continue|head_compact_prepare|head_compact_status|head_compact_verify|head_compaction_lifecycle_step|head_conformance_disposition|head_conformance_propose|head_conformance_resolution_propose|head_conformance_trigger_prepare|head_context_prepare|head_context_preview|head_continuity_snapshot|head_conversation_enter|head_delivery_observe|head_feature_mapping_propose|head_feature_mapping_review|head_graphdb_database_initialize|head_graphdb_projection_activate|head_markdown_projection_build|head_metric_assess|head_metric_compare|head_metric_define|head_metric_observe|head_observation_collect_source|head_observation_derive|head_observation_ingest|head_onboarding_candidate_restore|head_onboarding_review|head_onboarding_semantic_refresh|head_pending_review|head_product_hypothesis_record|head_product_initiative_propose|head_product_initiative_review|head_product_operating_status|head_product_outcome_observe|head_product_policy_propose|head_product_policy_review|head_product_signal_record|head_project_direction_update|head_project_graph_index|head_project_initialize_or_resume|head_project_status|head_release_observe|head_run_integrate_checkpoint|head_run_integration|head_run_start|head_runtime_adapters|head_runtime_invocation_authorization|head_runtime_invocation_lease_status|head_runtime_invocation_result|head_runtime_state|head_session_continue|head_session_create|head_session_restore|head_session_work_read|head_session_work_record|head_source_context|head_worker_integration|head_worker_integration_status|head_world_model|head_bounded_worker_apply_result|head_bounded_worker_cancel|head_bounded_worker_dispatch|head_bounded_worker_job_patch|head_bounded_worker_job_reconcile|head_bounded_worker_job_status|head_bounded_worker_prepare|head_bounded_worker_reconcile|head_bounded_worker_start|head_bounded_worker_status|head_bounded_worker_wait|head_bounded_worker_wave_abandon|head_bounded_worker_wave_create|head_bounded_worker_wave_read|head_bounded_worker_wave_results|head_bounded_worker_wave_seal|head_bounded_worker_wave_status|head_bounded_worker_wave_wait|head_checkpoint_basis|head_checkpoint_diagnose|head_checkpoint_sync|head_compact_abort|head_compact_continue|head_compact_prepare|head_compact_status|head_compact_verify|head_compaction_lifecycle_step|head_conformance_disposition|head_conformance_propose|head_conformance_resolution_propose|head_conformance_trigger_prepare|head_context_prepare|head_context_preview|head_continuity_snapshot|head_conversation_enter|head_delivery_observe|head_feature_mapping_propose|head_feature_mapping_review|head_graphdb_database_initialize|head_graphdb_projection_activate|head_markdown_projection_build|head_metric_assess|head_metric_compare|head_metric_define|head_metric_observe|head_observation_collect_source|head_observation_derive|head_observation_ingest|head_onboarding_candidate_restore|head_onboarding_review|head_onboarding_semantic_refresh|head_pending_review|head_product_hypothesis_record|head_product_initiative_propose|head_product_initiative_review|head_product_operating_status|head_product_outcome_observe|head_product_policy_propose|head_product_policy_review|head_product_signal_record|head_project_direction_update|head_project_graph_index|head_project_initialize_or_resume|head_project_status|head_release_observe|head_run_integrate_checkpoint|head_run_integration|head_run_start|head_runtime_adapters|head_runtime_invocation_authorization|head_runtime_invocation_lease_status|head_runtime_invocation_result|head_runtime_state|head_session_continue|head_session_create|head_session_restore|head_session_work_read|head_session_work_record|head_source_context|head_worker_integration|head_worker_integration_status|head_world_model)$",
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "lode",
+            "tool": "head_session_host_request_prepare",
+            "timeout": 5,
+            "input": {
+              "native_session_id": "${session_id}",
+              "native_agent_id": "${agent_id}",
+              "tool_use_id": "${tool_use_id}",
+              "outer_tool_name": "${tool_name}",
+              "original_arguments": "${tool_input}",
+              "native_project_root": "${cwd}"
+            }
+          }
+        ]
+      },
+      {
+        "matcher": "^mcp__plugin_head-agent-core_lode__(head_bounded_worker_apply_result|head_bounded_worker_cancel|head_bounded_worker_dispatch|head_bounded_worker_job_patch|head_bounded_worker_job_reconcile|head_bounded_worker_job_status|head_bounded_worker_prepare|head_bounded_worker_reconcile|head_bounded_worker_start|head_bounded_worker_status|head_bounded_worker_wait|head_bounded_worker_wave_abandon|head_bounded_worker_wave_create|head_bounded_worker_wave_read|head_bounded_worker_wave_results|head_bounded_worker_wave_seal|head_bounded_worker_wave_status|head_bounded_worker_wave_wait|head_checkpoint_basis|head_checkpoint_diagnose|head_checkpoint_sync|head_compact_abort|head_compact_continue|head_compact_prepare|head_compact_status|head_compact_verify|head_compaction_lifecycle_step|head_conformance_disposition|head_conformance_propose|head_conformance_resolution_propose|head_conformance_trigger_prepare|head_context_prepare|head_context_preview|head_continuity_snapshot|head_conversation_enter|head_delivery_observe|head_feature_mapping_propose|head_feature_mapping_review|head_graphdb_database_initialize|head_graphdb_projection_activate|head_markdown_projection_build|head_metric_assess|head_metric_compare|head_metric_define|head_metric_observe|head_observation_collect_source|head_observation_derive|head_observation_ingest|head_onboarding_candidate_restore|head_onboarding_review|head_onboarding_semantic_refresh|head_pending_review|head_product_hypothesis_record|head_product_initiative_propose|head_product_initiative_review|head_product_operating_status|head_product_outcome_observe|head_product_policy_propose|head_product_policy_review|head_product_signal_record|head_project_direction_update|head_project_graph_index|head_project_initialize_or_resume|head_project_status|head_release_observe|head_run_integrate_checkpoint|head_run_integration|head_run_start|head_runtime_adapters|head_runtime_invocation_authorization|head_runtime_invocation_lease_status|head_runtime_invocation_result|head_runtime_state|head_session_continue|head_session_create|head_session_restore|head_session_work_read|head_session_work_record|head_source_context|head_worker_integration|head_worker_integration_status|head_world_model|head_bounded_worker_apply_result|head_bounded_worker_cancel|head_bounded_worker_dispatch|head_bounded_worker_job_patch|head_bounded_worker_job_reconcile|head_bounded_worker_job_status|head_bounded_worker_prepare|head_bounded_worker_reconcile|head_bounded_worker_start|head_bounded_worker_status|head_bounded_worker_wait|head_bounded_worker_wave_abandon|head_bounded_worker_wave_create|head_bounded_worker_wave_read|head_bounded_worker_wave_results|head_bounded_worker_wave_seal|head_bounded_worker_wave_status|head_bounded_worker_wave_wait|head_checkpoint_basis|head_checkpoint_diagnose|head_checkpoint_sync|head_compact_abort|head_compact_continue|head_compact_prepare|head_compact_status|head_compact_verify|head_compaction_lifecycle_step|head_conformance_disposition|head_conformance_propose|head_conformance_resolution_propose|head_conformance_trigger_prepare|head_context_prepare|head_context_preview|head_continuity_snapshot|head_conversation_enter|head_delivery_observe|head_feature_mapping_propose|head_feature_mapping_review|head_graphdb_database_initialize|head_graphdb_projection_activate|head_markdown_projection_build|head_metric_assess|head_metric_compare|head_metric_define|head_metric_observe|head_observation_collect_source|head_observation_derive|head_observation_ingest|head_onboarding_candidate_restore|head_onboarding_review|head_onboarding_semantic_refresh|head_pending_review|head_product_hypothesis_record|head_product_initiative_propose|head_product_initiative_review|head_product_operating_status|head_product_outcome_observe|head_product_policy_propose|head_product_policy_review|head_product_signal_record|head_project_direction_update|head_project_graph_index|head_project_initialize_or_resume|head_project_status|head_release_observe|head_run_integrate_checkpoint|head_run_integration|head_run_start|head_runtime_adapters|head_runtime_invocation_authorization|head_runtime_invocation_lease_status|head_runtime_invocation_result|head_runtime_state|head_session_continue|head_session_create|head_session_restore|head_session_work_read|head_session_work_record|head_source_context|head_worker_integration|head_worker_integration_status|head_world_model)$",
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:head-agent-core:lode",
+            "tool": "head_session_host_request_prepare",
+            "timeout": 5,
+            "input": {
+              "native_session_id": "${session_id}",
+              "native_agent_id": "${agent_id}",
+              "tool_use_id": "${tool_use_id}",
+              "outer_tool_name": "${tool_name}",
+              "original_arguments": "${tool_input}",
+              "native_project_root": "${cwd}"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

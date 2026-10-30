@@ -1,0 +1,59 @@
+{
+  "name": "head-agent-core",
+  "version": "0.3.0-beta.74",
+  "description": "Provider-neutral Lode continuity with a small constitutional core and optional review-gated Product, Graph, and execution governance.",
+  "author": {
+    "name": "ccolt"
+  },
+  "license": "MIT",
+  "keywords": [
+    "lode-agent",
+    "claude-code",
+    "codex",
+    "opencode",
+    "coordination",
+    "continuity"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/codex.json",
+  "interface": {
+    "displayName": "Lode Agent Core",
+    "shortDescription": "Lode-owned coordination and continuity",
+    "longDescription": "A provider-neutral Lode core with one Project, a common user-directed goal, and independently routed logical Lode Sessions. Ordinary work uses bounded graph-first discovery with source fallback; review-gated Product governance, durable Runs, compaction recovery, bounded workers, and host coordination activate only when their protected outcome requires them.",
+    "developerName": "ccolt",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Small Provider-neutral Lode Constitution",
+      "Core-first Project and Session Continuity",
+      "Independent Logical Sessions with Common User Direction",
+      "Bounded Graph-first Discovery with Source Fallback",
+      "Read-only Readiness and Next-action Guidance",
+      "Task-only Conversational Context Preparation",
+      "Source-linked Selected Context with Omissions and Uncertainty",
+      "Explicit Product Canon Review",
+      "Compaction and Provider-independent Recovery",
+      "Automatic Conversation-entry Recovery",
+      "Single-entry Project Status and Attention",
+      "Quiet Success and Actionable Exception Presentation",
+      "Loaded-versus-configured Package Version Visibility",
+      "Provider-neutral Host Compaction Lifecycle",
+      "Durable Runs with Fresh Lode Review",
+      "Provider-neutral Bounded Worker Waves",
+      "Provider-neutral Common Observation Evidence",
+      "Per-target Delivery State and Rollback Genealogy",
+      "Reuse-first Observation Preparation and Project-bound Host Source Collection",
+      "Non-blocking Provider-Lode Conformance Reconciliation",
+      "Rebuildable World Graph and Markdown Projections",
+      "Bounded Non-persisted Graph Lineage Trace and Diff",
+      "Claude Code, Codex, and OpenCode Runtime Adapters",
+      "Integrity-verified Native Distribution"
+    ],
+    "defaultPrompt": [
+      "Initialize or resume the small provider-neutral Lode Core and report readiness.",
+      "Inspect readiness and show the next safe action without activating optional governance.",
+      "Discover evidence for my exact task through bounded graph views or original sources, without requiring World activation."
+    ],
+    "brandColor": "#234E70"
+  }
+}
