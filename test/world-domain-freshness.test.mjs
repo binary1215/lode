@@ -276,7 +276,16 @@ test("SourceScope and recorded analyzer basis are genuine invalidators, not runt
   tampered.analysisBasis.sourceAnalysisVersion = "unproved-parser";
   delete tampered.worldModelId; delete tampered.worldModelHash;
   tampered.worldModelHash = hash(tampered); tampered.worldModelId = `world-model-${tampered.worldModelHash.slice(0, 24)}`;
-  (await assert.rejects(async () => (await readWorldModelForDiscovery({ root, storeAdapter: retainedStore(tampered) })), { code: "WORLD_DOMAIN_BASIS_MISMATCH" }));
+  // Stable relations bind their own analysis basis, checked before domain bases.
+  await assert.rejects(() => readWorldModelForDiscovery({ root, storeAdapter: retainedStore(tampered) }),
+    { code: "WORLD_MODEL_ANALYSIS_BASIS_MISMATCH" });
+  const wrongDomain = structuredClone(snapshot);
+  wrongDomain.domainBases.code = "f".repeat(64);
+  delete wrongDomain.worldModelId; delete wrongDomain.worldModelHash;
+  wrongDomain.worldModelHash = hash(wrongDomain); wrongDomain.worldModelId = `world-model-${wrongDomain.worldModelHash.slice(0, 24)}`;
+  await assert.rejects(() => readWorldModelForDiscovery({ root, storeAdapter: retainedStore(wrongDomain) }),
+    { code: "WORLD_DOMAIN_BASIS_MISMATCH" });
+  assert.deepEqual(bytes(root), before);
 });
 
 test("an unchanged importer's newly resolved target needs the existing refresh, not guessed traversal", async t => {
@@ -333,11 +342,36 @@ test("legacy 0.18 snapshots remain verified historical evidence without invented
   const { root, storage } = await fixture(t, { legacy: true }), original = (await readWorldModelForDiscovery({ root })).snapshot;
   assert.equal(storage.directory, ".head");
   assert.equal(original.protocol.name, "head-agent-core-world-model");
+  const hybrid = structuredClone(original);
+  delete hybrid.analysisBasis; delete hybrid.domainBases; delete hybrid.worldModelId; delete hybrid.worldModelHash;
+  hybrid.protocol.version = "0.18.0";
+  hybrid.worldModelHash = hash(hybrid); hybrid.worldModelId = `world-model-${hybrid.worldModelHash.slice(0, 24)}`;
+  await assert.rejects(() => readWorldModelForDiscovery({ root, storeAdapter: retainedStore(hybrid) }),
+    { code: "WORLD_MODEL_ANALYSIS_BASIS_MISMATCH" });
   const legacy = structuredClone(original);
+  // Build historical relation identities with the existing 0.15 producer. Merely
+  // relabelling a new 0.16 graph leaves an incoherent retained analysis basis.
+  const projectionArgs = { storage, projectRoot: root, projectId: original.projectId,
+    currentProductModelId: original.productModel.productModelId };
+  const projections = {};
+  for (const [key, module, loader] of [
+    ["onboardingProjection", "onboarding-projection", "loadOnboardingGraphProjection"],
+    ["productPolicyProjection", "product-policy-projection", "loadProductPolicyGraphProjection"],
+    ["featureMappingProjection", "feature-mapping-projection", "loadFeatureMappingProjection"],
+    ["changeSetProjection", "change-set-projection", "loadChangeSetProjection"],
+    ["documentChangeProjection", "document-change-projection", "loadDocumentChangeProjection"],
+    ["observationProjection", "observation-projection", "loadObservationProjection"],
+    ["productOperatingProjection", "product-operating-projection", "loadProductOperatingProjection"],
+    ["releaseObservationProjection", "release-observation-projection", "loadReleaseObservationProjection"],
+  ]) projections[key] = (await import(`../scripts/lib/${module}.mjs`))[loader](projectionArgs);
+  legacy.temporalProvenanceGraph = buildTemporalProvenanceGraph({ ...original, ...projections, storage });
+  assert.equal(legacy.temporalProvenanceGraph.protocol.version, "0.15.0");
+  assert.equal(Object.hasOwn(legacy.temporalProvenanceGraph, "relationAnalysisBasis"), false);
   delete legacy.analysisBasis; delete legacy.domainBases; delete legacy.worldModelId; delete legacy.worldModelHash;
   legacy.protocol.version = "0.18.0";
   legacy.worldModelHash = hash(legacy); legacy.worldModelId = `world-model-${legacy.worldModelHash.slice(0, 24)}`;
   const storeAdapter = retainedStore(legacy);
+  const before = bytes(root), retained = JSON.stringify(legacy);
   assert.equal((await readWorldModelForDiscovery({ root, storeAdapter })).snapshot.worldModelId, legacy.worldModelId);
   const scoped = (await inspectWorldDomainFreshness({ root, storeAdapter, domains: ["code"] }));
   assert.equal(scoped.freshness.domains.code.status, "unknown");
@@ -346,6 +380,8 @@ test("legacy 0.18 snapshots remain verified historical evidence without invented
   delete tampered.worldModelId; delete tampered.worldModelHash;
   tampered.worldModelHash = hash(tampered); tampered.worldModelId = `world-model-${tampered.worldModelHash.slice(0, 24)}`;
   (await assert.rejects(async () => (await readWorldModelForDiscovery({ root, storeAdapter: retainedStore(tampered) })), { code: "PRODUCT_POLICY_TEMPORAL_IDENTITY_MISMATCH" }));
+  assert.equal(JSON.stringify(legacy), retained);
+  assert.deepEqual(bytes(root), before);
 });
 
 test("mixed traversal filters stale bridge BEFORE expansion, retains exact identity, and avoids unsupported remote adapter", async t => {

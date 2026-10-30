@@ -171,7 +171,9 @@ test("missing current citation is currently absent, not an inferred deletion, re
   assert.equal(comparison.diff, undefined); assert.equal(comparison.retainedOriginal, undefined);
   assert.deepEqual(comparison.symbols, []); assert.equal(comparison.citedReference.digest, sha(source));
   assert.equal(comparison.gap.reasonCode, "LOCAL_GIT_NOT_A_REPOSITORY");
-  assert.equal(graph.contextLineage.sourceReads.localGitCommands, 1);
+  // Metadata discovery now establishes the non-Git gap before launching Git.
+  // Keep the unknown/no-diff assertions above and the zero-write check below.
+  assert.equal(graph.contextLineage.sourceReads.localGitCommands, 0);
   assert.equal(graph.contextLineage.sourceReads.writes, false);
   assert.match(formatCliResult("graph-query", graph).replace(/\s*\|\s*/g, " ").replace(/\s+/g, " "), /does not establish deletion, rename/);
   const snapshotView = await buildGraphExplorerSnapshot({ root: f.root, query: "src/action.mjs" });
