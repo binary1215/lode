@@ -1,0 +1,20 @@
+{
+  "name": "lode-agent-core",
+  "version": "0.3.0-beta.74",
+  "description": "Provider-neutral Lode continuity with a small constitutional core and optional review-gated Product, Graph, and execution governance.",
+  "author": {
+    "name": "ccolt"
+  },
+  "license": "MIT",
+  "keywords": [
+    "lode-agent",
+    "claude-code",
+    "codex",
+    "opencode",
+    "coordination",
+    "continuity"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/claude.json"
+}

@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [{
+      "matcher": "startup|resume|clear|compact|fork",
+      "hooks": [{
+        "type": "command",
+        "command": "node \"${PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime codex",
+        "timeout": 10,
+        "additionalContextLimit": 0
+      }]
+    }],
+    "UserPromptSubmit": [{"hooks":[{"type":"command","command":"node \"${PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime codex --observe-only","timeout":3}]}],
+    "PreCompact": [{"matcher":"manual|auto","hooks":[{"type":"command","command":"node \"${PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime codex --observe-only","timeout":3}]}],
+    "Stop": [{"hooks":[{"type":"command","command":"node \"${PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime codex --observe-only","timeout":3}]}],
+    "SubagentStart": [{"hooks":[{"type":"command","command":"node \"${PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime codex --observe-only","timeout":3}]}],
+    "SubagentStop": [{"hooks":[{"type":"command","command":"node \"${PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime codex --observe-only","timeout":3}]}],
+    "SessionEnd": [{"hooks":[{"type":"command","command":"node \"${PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime codex --observe-only","timeout":1}]}]
+  }
+}

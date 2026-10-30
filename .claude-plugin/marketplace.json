@@ -1,0 +1,21 @@
+{
+  "name": "lode-agent-plugin",
+  "owner": {
+    "name": "ccolt"
+  },
+  "description": "Verified Claude Code distribution of the provider-neutral Lode Agent Core.",
+  "metadata": {
+    "description": "Verified Claude Code distribution of the provider-neutral Lode Agent Core."
+  },
+  "plugins": [
+    {
+      "name": "lode-agent-core",
+      "source": "./plugins/lode-agent-core",
+      "description": "Provider-neutral Lode continuity with a small constitutional core and optional review-gated Product, Graph, and execution governance.",
+      "version": "0.3.0-beta.74",
+      "author": {
+        "name": "ccolt"
+      }
+    }
+  ]
+}
