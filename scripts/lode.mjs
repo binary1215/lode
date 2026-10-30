@@ -661,8 +661,8 @@ async function runRoutedCommand(argv, { observationRegistry = null, compactionLi
     persist: true,
     gitHistoryAdapter: options["git-log"] ? new GitLogFileHistoryAdapter({ file: options["git-log"] }) : null,
     runtimeStateAdapter: options["runtime-state"] ? new RuntimeStateFileAdapter({ file: options["runtime-state"] }) : null,
-    parentSourceSnapshotIds: options["parent-snapshot"] ? options["parent-snapshot"].split(",").map((item) => item.trim()).filter(Boolean) : [],
-    revisionParentIds: options["revision-parents"] ? readJsonFile(options["revision-parents"], "Revision parent map") : {},
+    parentSourceSnapshotIds: Object.hasOwn(options, "parent-snapshot") ? options["parent-snapshot"].split(",").map((item) => item.trim()).filter(Boolean) : undefined,
+    revisionParentIds: Object.hasOwn(options, "revision-parents") ? readJsonFile(options["revision-parents"], "Revision parent map") : undefined,
   }));
   if (command === "storage-gc") {
     if (options.apply === true || options.apply === "true") return await applySnapshotGarbageCollection({ root, signal, onProcess });

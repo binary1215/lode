@@ -21,6 +21,13 @@ temporary directory. An optional `--output` selects a new report file; existing
 files and canonical/runtime directories cannot be overwritten. Each explicit
 generation makes one report, not an automatic stream of artifacts.
 
+With `--history`, the retained comparison separates changed record content from
+snapshot membership changes. Producer or analysis-basis transitions remain visible.
+Open **Exact graph comparison** for the original ID diff and its bounded examples;
+the explanation neither rewrites historical evidence nor establishes semantic
+continuity. The read-only `graph-lineage-diff` CLI shows the same counts, with the
+original structured result available through `--json`.
+
 The executable belongs to the plugin, but `<project-directory>` is the project
 you are working on. Always pass it explicitly. Missing Project, World or source
 evidence is disclosed; the exporter does not substitute Lode's code or a demo.
@@ -315,7 +322,7 @@ rendering costs are separate measurements.
 The Source layer shares already exported exact comparisons from the same Project.
 A code record reaches a comparison only with matching source path and digest,
 not a same-path guess or coincident IDs from another graph layer. When included,
-Recorded code context in the expanded reading card opens its file context; Show
+Source context in the expanded reading card opens its file context; Show
 recorded code changes opens the shared comparison panel. Selection alone leaves
 it folded; an intentionally opened panel stays open. File/hunk navigation opens
 the requested comparison explicitly. Missing bounded detail remains unavailable
@@ -385,9 +392,28 @@ which relationships exist. Source/model tests are not a 60fps or memory claim.
 When the current path is not found, an exact cited digest can still locate
 bounded historical raw Git bytes locally. The excerpt is separate from an
 after-version: it does not manufacture an empty diff or establish a deletion.
-Permission, path, encoding and byte-limit failures do not trigger this fallback.
+Permission and unsafe-path failures never trigger a different read path. Opaque
+or byte-bounded current files can still resolve an explicitly cited historical
+version within the existing independent byte bound; unavailable bytes are not text.
 Existing source and Git-command bounds still apply; missing local objects do not
 cause a network fetch.
+
+An exact asset path supplied through existing `--paths` appears as a **Requested
+source** card even without a graph node. No node or relationship is invented.
+Source context separates complete LFS pointer-format bytes, their raw digest and
+computed Git blob identity from the declared payload hash/size. A default local
+LFS cache path is checked for presence and size only; present is **unverified**.
+Only exact working-file bytes already read for the request can verify a matching
+declared payload, separately from cache or historical evidence. Large files stay
+metadata-only at the existing byte bound. Payloads are not downloaded, remote
+retention remains unchecked, and binary comparisons never become empty text diffs.
+The cited digest always identifies the supplied source bytes, not the declared
+payload. This is exact-path/citation support, not automatic asset inventory.
+
+Normal linked worktrees, including external common directories and `../..`, use
+reciprocal gitfile/admin/backpointer checks plus local Git discovery. Their shared
+refs and per-worktree HEAD remain distinct. No prior binding, new setup approval,
+Git/LFS installation, filter execution or submodule recursion is required.
 
 An optional rename candidate uses the most recent recorded path change, Git's
 exact-byte move observation and the cited digest. It is historical evidence, not

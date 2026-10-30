@@ -160,11 +160,18 @@ function declarations(version) {
 
 // UI/query-private observation. A comparison key is NOT a canonical Symbol ID.
 export function compareExactSourceVersions(before, after, projectId) {
-  const descriptor = version => version ? { path: version.path, digest: version.digest, basis: version.basis, revisionId: version.revisionId || null } : null;
+  const descriptor = version => version ? { path: version.path, digest: version.digest, basis: version.basis, revisionId: version.revisionId || null,
+    ...(version.asset ? { asset: version.asset } : {}) } : null;
   const result = { before: descriptor(before), after: descriptor(after), identity: "exact-file-bytes-not-decision-causality", symbols: [] };
   if (!before || !after) return { ...result, status: "unknown", reasonCode: "EXACT_SOURCE_PAIR_UNAVAILABLE" };
   if (before.projectId !== projectId || after.projectId !== projectId || before.path !== after.path) return { ...result, status: "unknown", reasonCode: "SOURCE_PAIR_IDENTITY_MISMATCH" };
-  for (const version of [before, after]) if (typeof version.text !== "string" || sha(version.text) !== version.digest) return { ...result, status: "unknown", reasonCode: "SOURCE_PAIR_DIGEST_MISMATCH" };
+  for (const version of [before, after]) if (typeof version.text === "string" ? sha(version.text) !== version.digest
+    : !version.asset || (version.digest ? !version.asset.rawDigestVerified || version.asset.rawDigest !== version.digest : version.asset.rawDigestVerified !== false)) {
+    return { ...result, status: "unknown", reasonCode: "SOURCE_PAIR_DIGEST_MISMATCH" };
+  }
+  if ([before, after].some(version => version.asset?.rawDigestVerified && version.asset.rawDigest !== version.digest)) return { ...result, status: "unknown", reasonCode: "SOURCE_PAIR_DIGEST_MISMATCH" };
+  if (before.asset || after.asset) return { ...result, status: "asset-metadata-only", fileBytes: before.digest && after.digest ? before.digest === after.digest ? "unchanged" : "changed" : "unknown",
+    payloadComparison: "not-performed", semanticEquivalence: "not-determined", reasonCode: "ASSET_BYTES_ARE_NOT_A_CODE_TEXT_DIFF" };
   const previous = declarations(before), current = declarations(after);
   result.fileBytes = before.digest === after.digest ? "unchanged" : "changed";
   result.diff = lineComparison(before.text, after.text);

@@ -195,6 +195,86 @@ function boundedChanges(values, limit) {
   return { count: values.length, items: values.slice(0, limit), omittedCount: Math.max(0, values.length - limit) };
 }
 
+function endpointContinuity(node, graph) {
+  const logicalEntityId = node?.logicalEntityId || node?.nodeId || null;
+  return {
+    logicalEntityId,
+    kind: node?.kind || null,
+    generation: graph.logicalLineageState?.continuityGenerationByLogicalEntityId?.[logicalEntityId] || 0,
+    unknown: Boolean(graph.logicalLineageState?.continuityUnknownLogicalEntityIds?.includes(logicalEntityId)),
+  };
+}
+
+// This is an explanation of verified records, not a semantic-continuity judgment.
+// Only global snapshot membership is discounted. All other fields, exact
+// endpoints, producer changes and endpoint continuity remain comparison inputs.
+function explainGraphChanges(beforeGraph, afterGraph, beforeNodes, afterNodes, beforeEdges, afterEdges, changes, limit) {
+  const nodeContent = (node, graph) => {
+    const { sourceSnapshotId, ...record } = node;
+    return canonicalJson({ record, continuity: endpointContinuity(node, graph) });
+  };
+  const observationNodes = [], contentNodes = [];
+  for (const id of changes.changedNodes) {
+    (nodeContent(beforeNodes.get(id), beforeGraph) === nodeContent(afterNodes.get(id), afterGraph)
+      ? observationNodes : contentNodes).push(id);
+  }
+  const beforeEndpoints = new Map(beforeGraph.nodes.map(node => [node.nodeId, node]));
+  const afterEndpoints = new Map(afterGraph.nodes.map(node => [node.nodeId, node]));
+  const relationContent = (edge, graph, endpoints) => {
+    const { edgeId, sourceSnapshotId, ...record } = edge;
+    return canonicalJson({ record, projectId: graph.projectId, protocol: graph.protocol,
+      relationAnalysisBasis: graph.relationAnalysisBasis ?? null,
+      from: endpointContinuity(endpoints.get(edge.from), graph),
+      to: endpointContinuity(endpoints.get(edge.to), graph) });
+  };
+  const group = (ids, edges, graph, endpoints) => {
+    const groups = new Map();
+    for (const id of ids) {
+      const key = relationContent(edges.get(id), graph, endpoints);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(id);
+    }
+    return groups;
+  };
+  const removed = group(changes.removedEdges, beforeEdges, beforeGraph, beforeEndpoints);
+  const added = group(changes.addedEdges, afterEdges, afterGraph, afterEndpoints);
+  const observationRelations = [], matchedBefore = new Set(), matchedAfter = new Set();
+  let ambiguousGroups = 0;
+  for (const [key, fromIds] of removed) {
+    const toIds = added.get(key);
+    if (!toIds) continue;
+    if (fromIds.length !== 1 || toIds.length !== 1) { ambiguousGroups++; continue; }
+    matchedBefore.add(fromIds[0]); matchedAfter.add(toIds[0]);
+    observationRelations.push({ fromEdgeId: fromIds[0], toEdgeId: toIds[0] });
+  }
+  for (const [id, before] of beforeEdges) {
+    const after = afterEdges.get(id);
+    if (after && before.sourceSnapshotId !== after.sourceSnapshotId
+      && relationContent(before, beforeGraph, beforeEndpoints) === relationContent(after, afterGraph, afterEndpoints)) {
+      observationRelations.push({ fromEdgeId: id, toEdgeId: id });
+    }
+  }
+  observationRelations.sort((a, b) => a.fromEdgeId < b.fromEdgeId ? -1 : a.fromEdgeId > b.fromEdgeId ? 1
+    : a.toEdgeId < b.toEdgeId ? -1 : a.toEdgeId > b.toEdgeId ? 1 : 0);
+  const producer = graph => ({ protocol: graph.protocol,
+    relationAnalysisBasis: graph.relationAnalysisBasis ?? null,
+    edgeProducers: [...new Set(graph.edges.map(edge => canonicalJson([edge.producer, edge.producerVersion])))].sort() });
+  const fromProducer = producer(beforeGraph), toProducer = producer(afterGraph);
+  return {
+    comparison: "exact-record-fields-except-global-snapshot-membership",
+    changedNodes: { content: boundedChanges(contentNodes, limit), observationOnly: boundedChanges(observationNodes, limit) },
+    relations: {
+      contentAdded: boundedChanges(changes.addedEdges.filter(id => !matchedAfter.has(id)), limit),
+      contentRemoved: boundedChanges(changes.removedEdges.filter(id => !matchedBefore.has(id)), limit),
+      observationOnly: boundedChanges(observationRelations, limit), ambiguousGroups,
+    },
+    producerTransition: { changed: canonicalJson(fromProducer) !== canonicalJson(toProducer), from: fromProducer, to: toProducer },
+    rawChangesPreserved: true,
+    examples: "bounded-first-examples-within-the-same-scope; raw-changes-retain-their-existing-pagination",
+    semanticContinuityClaimed: false,
+  };
+}
+
 export async function diffGraphLineage({ root = ".", fromWorldModelId, toWorldModelId, limit = 100, storeAdapter = null, scopePaths = null, cursor = "" } = {}) {
   const inspected = readyProject(root);
   const selectedLimit = normalizeLimit(limit, 100, 500, "Graph lineage diff limit");
@@ -259,6 +339,8 @@ export async function diffGraphLineage({ root = ".", fromWorldModelId, toWorldMo
     from: { worldModelId: fromSnapshot.worldModelId, graphSnapshotId: fromSnapshot.temporalProvenanceGraph.graphSnapshotId, sourceSnapshotId: fromSnapshot.temporalProvenanceGraph.sourceSnapshotId },
     to: { worldModelId: toSnapshot.worldModelId, graphSnapshotId: toSnapshot.temporalProvenanceGraph.graphSnapshotId, sourceSnapshotId: toSnapshot.temporalProvenanceGraph.sourceSnapshotId },
     changes,
+    changeExplanation: explainGraphChanges(fromSnapshot.temporalProvenanceGraph, toSnapshot.temporalProvenanceGraph,
+      beforeNodes, afterNodes, beforeEdges, afterEdges, { changedNodes, addedEdges, removedEdges }, selectedLimit),
     ...(scoped ? { scope: { paths: selectedPaths, verification: "full-endpoint-snapshots", counts: "exact-within-selected-path-scope",
       edges: "incident-to-scoped-nodes-or-exact-evidence-path", possibleMoves: "both-paths-within-scope",
       globalChangeCounts: selectedPaths ? "not-computed" : "exact", rootContextChanged: fromSnapshot.sourceDigest !== toSnapshot.sourceDigest },

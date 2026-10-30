@@ -14,6 +14,7 @@ import { linkProjectInstructions, validateInstructionIntegration } from "./proje
 import { resumeProjectLocation } from "./project-relocation.mjs";
 import { withSessionCallContext, validateRelocationSessionSelection, sessionSelectionUnresolved } from "./session-routing.mjs";
 import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
+import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
 
 export const PROJECT_BOOTSTRAP_PROTOCOL_VERSION = "0.6.0";
 
@@ -424,6 +425,103 @@ function capabilityGuide({ coreState, productState, contextState, runtimes = [] 
   ];
 }
 
+// Local configuration evidence only. Do not attach it to Project canon or infer
+// the effective merged Host config, plugin loading, or a live MCP connection.
+function opencodeConnection(projectInspection) {
+  if (!projectInspection.project?.runtimes?.includes("opencode")) return null;
+  const root = projectInspection.project.projectRoot, storage = projectInspection.storage;
+  const expected = ["generated/" + formatForVerifiedOwner(storage).dialect + "-instructions.md", "instructions/project.md"]
+    .map(relative => storage.directory + "/" + relative);
+  const projection = storage.directory + "/generated/opencode.json";
+  const observation = { configPath: "opencode.json", projection, scope: "bounded-local-files-only; merged Host configuration not inspected",
+    hostLoaded: "unknown", ordinaryWorkBlocked: false, persisted: false, instructions: {}, mcp: {} };
+  function readText(relative) {
+    const file = safeSnapshotPath(root, path.join(root, relative));
+    let descriptor;
+    try {
+      descriptor = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+      const before = fs.fstatSync(descriptor);
+      if (!before.isFile() || before.nlink !== 1 || before.size > 1024 * 1024) throw Object.assign(new Error("Uninspectable configuration"), { code: "CONFIG_UNAVAILABLE" });
+      const buffer = Buffer.alloc(before.size + 1), count = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
+      const after = fs.fstatSync(descriptor), named = fs.lstatSync(file);
+      if (count !== before.size || before.size !== after.size || before.mtimeMs !== after.mtimeMs || named.isSymbolicLink()
+        || named.dev !== before.dev || named.ino !== before.ino || named.size !== after.size || named.mtimeMs !== after.mtimeMs) {
+        throw Object.assign(new Error("Configuration changed during inspection"), { code: "CONFIG_CHANGED_CONCURRENTLY" });
+      }
+      const bytes = buffer.subarray(0, count), text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      if (text.includes("\0")) throw Object.assign(new Error("Unsupported configuration encoding"), { code: "CONFIG_UNAVAILABLE" });
+      return { bytes, text };
+    } catch (error) { if (error.code === "ENOENT") return null; throw error; }
+    finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
+  }
+  const unknown = reason => ({ ...observation, configStatus: "unknown", reasonCode: reason,
+    instructions: { status: "unknown", nextAction: "Inspect the existing instructions and AGENTS.md in place; reuse sufficient links instead of adding duplicates." },
+    mcp: { status: "unknown", nextAction: `Inspect the existing MCP entry against ${projection}; preserve disabled entries and user overrides.` } });
+  try {
+    // OpenCode supports JSONC and layered configs. This observer deliberately
+    // does not strip comments or pretend to implement the Host's merge parser.
+    if (fs.lstatSync(path.join(root, "opencode.jsonc"), { throwIfNoEntry: false })) return unknown("JSONC_CONFIG_NOT_INTERPRETED");
+    const original = readText("opencode.json");
+    const config = original ? JSON.parse(original.text) : {};
+    if (!config || typeof config !== "object" || Array.isArray(config)) return unknown("CONFIG_SHAPE_UNKNOWN");
+    observation.configStatus = original ? "observed" : "missing";
+    const list = config.instructions;
+    const invalidInstructions = list !== undefined && (!Array.isArray(list) || list.some(item => typeof item !== "string"));
+    const normalized = (invalidInstructions ? [] : list || []).map(item => /[*?{}]/.test(item) ? item
+      : path.relative(root, path.resolve(root, item)).replaceAll("\\", "/"));
+    let missing = expected.filter(item => !normalized.includes(item));
+    let agents, agentsError;
+    try { agents = readText("AGENTS.md"); } catch (error) { agentsError = error.code || "INSTRUCTIONS_UNAVAILABLE"; }
+    const managedAgents = projectInspection.project.integrations?.codex?.status === "managed"
+      && !projectInspection.drift.some(item => item.path === "AGENTS.md") && agents;
+    const explicitLink = agents?.text.includes(`For Lode work, read \`${expected[0]}\` and \`${expected[1]}\`.`);
+    const referenced = agents && expected.some(item => agents.text.includes(item));
+    if (managedAgents || explicitLink) missing = [];
+    observation.instructions = { status: missing.length ? referenced || normalized.some(item => /[*?{]/.test(item)) ? "unknown" : "missing" : "configured",
+      via: managedAgents ? "managed-AGENTS.md" : explicitLink ? "explicit-AGENTS.md-link" : "instructions-array", missing,
+      duplicateCount: normalized.length - new Set(normalized).size,
+      nextAction: !missing.length ? "Reuse the existing instruction connection; do not add duplicates. Host consumption remains unverified."
+        : referenced ? "Review the existing AGENTS.md reference in place before adding anything; do not duplicate a sufficient connection."
+        : `Use ${projection} for only the missing instructions: ${missing.join(", ")}. Edit within existing setup authority; preserve order and settings.` };
+    if (invalidInstructions || agentsError && missing.length) observation.instructions = { status: "unknown", reasonCode: agentsError || "CONFIG_INSTRUCTIONS_SHAPE_UNKNOWN",
+      nextAction: "Inspect only the existing instruction configuration in place; do not rewrite or duplicate it. The independently observed MCP entry remains available." };
+    const invalidMcp = config.mcp !== undefined && (!config.mcp || typeof config.mcp !== "object" || Array.isArray(config.mcp));
+    const script = path.join(projectInspection.installation.pluginRoot, "scripts/mcp-server.mjs");
+    const entries = [];
+    for (const [key, item] of Object.entries(invalidMcp ? {} : config.mcp || {})) {
+      const conventional = ["lode", "head"].includes(key), command = item?.command;
+      let status = "conflicting", reason = "different-launch";
+      if (item?.type === "local" && Array.isArray(command) && command.length === 2 && typeof command[0] === "string" && typeof command[1] === "string"
+        && /^node(?:\.exe)?$/i.test(path.basename(command[0]))) {
+        if (command[1] === "{env:LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs") { status = "unknown"; reason = "host-plugin-root-substitution-unverified"; }
+        else if (/[{}$]/.test(command[1])) { status = "unknown"; reason = "host-variable-unresolved"; }
+        else {
+          try { if (fs.realpathSync(path.resolve(root, command[1])) === fs.realpathSync(script)) { status = "configured"; reason = "exact-local-script"; } }
+          catch { /* Unresolved files are not evidence of a working launch. */ }
+        }
+      }
+      // A variable-shaped command alone does not identify Lode. Unrelated
+      // servers stay unrelated; a nonconventional alias needs the exact script.
+      if (!conventional && status !== "configured") continue;
+      if (item?.enabled === false) { status = "disabled"; reason = "user-disabled-entry"; }
+      entries.push({ key, status, reason });
+    }
+    const state = entries.length > 1 ? "multiple-entries" : entries[0]?.status || "missing";
+    observation.mcp = { status: state, entries,
+      nextAction: state === "configured" ? "Reuse the existing exact launch; no duplicate server is needed. Actual Host loading remains unverified."
+        : state === "missing" ? `Compare the missing Lode MCP entry with ${projection}; add only that entry within the current authorized setup request, preserving other servers, model and permissions.`
+        : state === "unknown" ? "Verify the launch variable (normally LODE_PLUGIN_ROOT) in the OpenCode Host or its existing managed plugin resolver; do not replace it or infer loading from this process environment."
+        : "Preserve the existing entries and disabled state. Resolve only the specific override or duplicate with the user when that change is needed; ordinary work continues." };
+    if (invalidMcp) observation.mcp = { status: "unknown", reasonCode: "CONFIG_MCP_SHAPE_UNKNOWN",
+      nextAction: `Inspect only the existing MCP shape against ${projection}; preserve the independent instruction connection and user settings.` };
+    // A read observation cannot lock an external editor. Detect an observed
+    // change across this bounded inspection; never write/repair the config.
+    const latest = readText("opencode.json");
+    if (original ? !latest?.bytes.equals(original.bytes) : latest) return unknown("CONFIG_CHANGED_CONCURRENTLY");
+    return observation;
+  } catch (error) { return unknown(error instanceof SyntaxError ? "JSON_OR_JSONC_NOT_INTERPRETED" : error.code || "CONFIG_UNAVAILABLE"); }
+}
+
 function projectExperience(projectInspection, onboardingInspection = null, recoveryOverride = null) {
   if (projectInspection.status === "not_initialized") {
     const action = "initialize_core";
@@ -467,6 +565,7 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
     protocolVersion: PROJECT_BOOTSTRAP_PROTOCOL_VERSION,
     status: coreState === "ready" ? product.status : "core_drifted",
     project: { ...projectInspection.project, sessionId: projectInspection.state.sessionId },
+    ...(projectInspection.project.runtimes.includes("opencode") ? { opencodeConnection: opencodeConnection(projectInspection) } : {}),
     state: projectInspection.state,
     ...readProjectDirectionView({ root: projectInspection.project.projectRoot }),
     drift: projectInspection.drift,

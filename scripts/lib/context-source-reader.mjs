@@ -6,10 +6,34 @@ import { safeGraphFile } from "./discovery-index.mjs";
 import { DEFAULT_SCAN, MAX_REFERENCE_BYTES } from "./session-work-evidence-original.mjs";
 import { relativeProjectArtifact } from "./project-storage-format.mjs";
 import { readSourceObservation } from "./source-observation.mjs";
+import { resolveLocalGitRepository, LOCAL_GIT_DISCOVERY_ARGS, localGitReadEnvironment } from "./local-git-repository.mjs";
 
 const sha = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 // Preserve a valid BOM too: sha(UTF-8 text) must still identify the raw bytes.
 const decode = bytes => new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+
+function pointerDeclaration(bytes, text) {
+  if (bytes.length >= 1024 || !text.endsWith("\n") || text.includes("\r")) return null;
+  const lines = text.slice(0, -1).split("\n"), entries = lines.map(line => /^([a-z0-9.-]+) ([^\r\n]+)$/.exec(line));
+  if (entries.some(entry => !entry) || entries[0]?.[1] !== "version" || !["https://git-lfs.github.com/spec/v1", "https://hawser.github.com/spec/v1"].includes(entries[0][2])) return null;
+  const keys = entries.slice(1).map(entry => entry[1]);
+  if (new Set(entries.map(entry => entry[1])).size !== entries.length || keys.some((key, i) => i && keys[i - 1] >= key)) return null;
+  const values = Object.fromEntries(entries.map(entry => [entry[1], entry[2]]));
+  if (!/^sha256:[a-f0-9]{64}$/.test(values.oid || "") || !/^(?:0|[1-9][0-9]*)$/.test(values.size || "")) return null;
+  return { algorithm: "sha256", oid: values.oid.slice(7), byteLength: Number.isSafeInteger(Number(values.size)) ? Number(values.size) : null,
+    declaredByteLength: values.size, pointerVersion: values.version,
+    extensionKeys: keys.filter(key => !["oid", "size"].includes(key)) };
+}
+
+function sourceVersion(bytes, projectId, relative, basis) {
+  const digest = sha(bytes); let text;
+  try { text = decode(bytes); if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(text)) text = undefined; } catch { /* Opaque bytes remain bytes, not an empty text diff. */ }
+  const declaration = text === undefined ? null : pointerDeclaration(bytes, text);
+  const asset = declaration || text === undefined ? { kind: declaration ? "git-lfs-pointer" : "opaque-file", rawDigest: digest, rawByteLength: bytes.length,
+    rawDigestVerified: true, ...(declaration ? { declaration, tracking: "not-inspected" } : {}), remote: { status: "not-checked", verified: false },
+    payloadComparison: "not-performed; pointer bytes do not prove payload availability or behavior" } : null;
+  return { projectId, path: relative, digest, ...(text !== undefined ? { text } : {}), ...(asset ? { asset } : {}), basis };
+}
 
 function currentBytes(root, relative, maximum = MAX_REFERENCE_BYTES) {
   const file = safeGraphFile(root, relative), fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
@@ -28,8 +52,7 @@ function currentBytes(root, relative, maximum = MAX_REFERENCE_BYTES) {
 function git(root, args, maximum = MAX_REFERENCE_BYTES) {
   return new Promise(resolve => {
     const chunks = [], diagnostics = []; let total = 0, diagnosticBytes = 0, reasonCode = null, child;
-    const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1", GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" };
-    for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"]) delete env[key];
+    const env = localGitReadEnvironment();
     try { child = spawn("git", ["--no-optional-locks", "--literal-pathspecs", ...args], { cwd: root, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env }); }
     catch { resolve({ bytes: null, reasonCode: "LOCAL_GIT_UNAVAILABLE" }); return; }
     const timer = setTimeout(() => { reasonCode ||= "LOCAL_GIT_READ_TIMEOUT"; child.kill(); }, 1500);
@@ -51,7 +74,7 @@ function git(root, args, maximum = MAX_REFERENCE_BYTES) {
 
 // Per-request only. Git is an optional byte supplier, never a work/Run oracle.
 export function createContextSourceReader(root, projectId, { storage = null, bundleHints = [] } = {}) {
-  const retained = new Map(), histories = new Map(); let prefix, gitCalls = 0, lastCommandReason = null, prefixReason = null;
+  const retained = new Map(), histories = new Map(); let prefix, gitCalls = 0, lastCommandReason = null, prefixReason = null, repository, repositoryLookup, objectFormat, metadataFailureCause = null;
   const bundles = new Map(); let bundleKeys, inventoryReason = null, inventoryPartial = false, inspectedEntries = 0, bundleBytes = 0;
   function bundleVersion(key, relative, expectedDigest, maxBytes = MAX_REFERENCE_BYTES, countBudget = false) {
     const file = safeGraphFile(root, `${relativeProjectArtifact(storage, "observations", "source-bundles")}/${key}.json`);
@@ -71,9 +94,9 @@ export function createContextSourceReader(root, projectId, { storage = null, bun
     if (source.path !== relative || source.digest !== expectedDigest) return null;
     const bytes = Buffer.from(source.base64, "base64");
     if (bytes.length > maxBytes) throw Object.assign(new Error("Source byte bound"), { code: "SOURCE_BYTE_BOUND" });
-    return { projectId, path: relative, digest: expectedDigest, text: decode(bytes), basis: {
+    return sourceVersion(bytes, projectId, relative, {
       kind: "retained-source-observation", bundleKey: key, observationId: bundle.observation.observationId,
-      observationHash: bundle.observation.observationHash, commitAttribution: "byte-location-only-not-Run-or-decision-cause" } };
+      observationHash: bundle.observation.observationHash, commitAttribution: "byte-location-only-not-Run-or-decision-cause" });
   }
   function retainedBundleVersion(relative, expectedDigest) {
     const errors = []; let omittedErrors = 0, inspected = 0, byteBound = false;
@@ -135,8 +158,50 @@ export function createContextSourceReader(root, projectId, { storage = null, bun
   }
   const command = async (args, maximum = MAX_REFERENCE_BYTES) => {
     if (gitCalls >= 24) { lastCommandReason = "LOCAL_GIT_READ_BUDGET_REACHED"; return null; }
-    gitCalls++; const result = await git(root, args, maximum); lastCommandReason = result.reasonCode; return result.bytes;
+    try { repository?.assertCurrent(); }
+    catch (error) { lastCommandReason = error.code || "LOCAL_GIT_MAPPING_DRIFT"; return null; }
+    gitCalls++; const result = await git(root, args, maximum); lastCommandReason = result.reasonCode;
+    try { repository?.assertCurrent(); }
+    catch (error) { lastCommandReason = error.code || "LOCAL_GIT_MAPPING_DRIFT"; return null; }
+    return result.bytes;
   };
+  const repositoryForRead = () => repositoryLookup ||= (async () => {
+    try {
+      const resolved = resolveLocalGitRepository(root, { allowParent: true });
+      if (resolved.status !== "available") { prefixReason = resolved.reasonCode; prefix = null; return null; }
+      repository = resolved;
+      const bytes = await command(LOCAL_GIT_DISCOVERY_ARGS, 32 * 1024);
+      if (!bytes) { prefixReason = lastCommandReason; prefix = null; repository = null; return null; }
+      objectFormat = repository.matchesDiscovery(bytes); prefix = repository.prefix;
+      return repository;
+    } catch (error) { metadataFailureCause = error.code || null; prefixReason = error.code === "ENOENT" ? "LOCAL_GIT_METADATA_UNAVAILABLE" : error.code || "LOCAL_GIT_METADATA_UNAVAILABLE"; prefix = null; repository = null; return null; }
+  })();
+  async function describeAsset(version, current = null) {
+    if (!version.asset) return version;
+    const resolved = await repositoryForRead(), asset = version.asset;
+    if (resolved && asset.rawDigestVerified && version.text !== undefined) asset.gitBlob = { oid: crypto.createHash(objectFormat).update(`blob ${asset.rawByteLength}\0`).update(Buffer.from(version.text)).digest("hex"),
+      objectFormat, scope: "computed-for-pointer-bytes; object-presence-not-checked" };
+    // Binary bodies are deliberately not retained to manufacture an OID from
+    // an empty string. Only a complete pointer text can supply the raw bytes.
+    if (version.text === undefined) delete asset.gitBlob;
+    if (asset.declaration) {
+      const declared = asset.declaration;
+      asset.localPayload = { status: "unknown", scope: "current-default-local-lfs-cache-only; custom-storage-not-inspected", verified: false };
+      if (!resolved) asset.localPayload.reasonCode = prefixReason;
+      else try {
+        resolved.assertCurrent();
+        const file = safeGraphFile(resolved.commonDir, `lfs/objects/${declared.oid.slice(0, 2)}/${declared.oid.slice(2, 4)}/${declared.oid}`);
+        const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+        asset.localPayload = { ...asset.localPayload, status: !stat ? "absent-at-default-path" : !stat.isFile() || stat.isSymbolicLink() ? "unavailable" : declared.byteLength !== null && stat.size !== declared.byteLength ? "size-mismatch" : "present-unverified",
+          ...(stat?.isFile() ? { observedBytes: stat.size } : {}) };
+        resolved.assertCurrent();
+      } catch (error) { asset.localPayload.reasonCode = error.code || "LOCAL_LFS_PAYLOAD_UNAVAILABLE"; asset.localPayload.status = "unavailable"; }
+      if (current?.asset?.rawDigestVerified && current.asset.kind === "opaque-file") asset.currentWorkingPayload = {
+        status: declared.byteLength === null ? "declared-size-not-exactly-representable" : current.digest === declared.oid && current.asset.rawByteLength === declared.byteLength ? "verified-exact-current-bytes" : "digest-or-size-mismatch",
+        digest: current.digest, byteLength: current.asset.rawByteLength, scope: "requested-working-file-only; not-historical-cache-or-remote-proof" };
+    }
+    return version;
+  }
   return {
     async read(relative, expectedDigest = null, { maxBytes = MAX_REFERENCE_BYTES, bundleKey = null } = {}) {
       if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_REFERENCE_BYTES) return { status: "unavailable", path: relative, reasonCode: "SOURCE_BYTE_BOUND" };
@@ -151,7 +216,7 @@ export function createContextSourceReader(root, projectId, { storage = null, bun
           if (!/^[a-f0-9]{64}$/.test(expectedDigest || "")) throw Object.assign(new Error("Exact source digest required"), { code: "EXACT_SOURCE_DIGEST_REQUIRED" });
           const version = bundleVersion(bundleKey, relative, expectedDigest, maxBytes);
           if (!version) throw Object.assign(new Error("Bundle source differs from the exact reference"), { code: "SOURCE_BUNDLE_REFERENCE_MISMATCH" });
-          retained.set(cacheKey, version); return version;
+          await describeAsset(version); retained.set(cacheKey, version); return version;
         } catch (error) { return { status: "unavailable", path: relative, expectedDigest, bundleKey, reasonCode: error.code || "RETAINED_SOURCE_BUNDLE_UNAVAILABLE" }; }
       }
       let current = null, currentReason = null;
@@ -159,28 +224,32 @@ export function createContextSourceReader(root, projectId, { storage = null, bun
         if (/^(?:\.git|\.head|\.lode)(?:\/|$)/i.test(relative)) throw Object.assign(new Error("Not repository source"), { code: "SOURCE_PATH_NOT_CODE" });
         safeGraphFile(root, relative);
         const bytes = currentBytes(root, relative, maxBytes), digest = sha(bytes);
-        current = { projectId, path: relative, digest, text: decode(bytes), basis: { kind: "current-disk-bytes", commitAttribution: "not-determined" } };
-        if (!expectedDigest || digest === expectedDigest) { retained.set(cacheKey, current); return current; }
-      } catch (error) { currentReason = error.code || "SOURCE_UNAVAILABLE"; }
+        current = sourceVersion(bytes, projectId, relative, { kind: "current-disk-bytes", commitAttribution: "not-determined" });
+        if (!expectedDigest || digest === expectedDigest) { await describeAsset(current); retained.set(cacheKey, current); return current; }
+      } catch (error) {
+        currentReason = error.code || "SOURCE_UNAVAILABLE";
+        if (currentReason === "SOURCE_BYTE_BOUND") {
+          try {
+            const stat = fs.lstatSync(safeGraphFile(root, relative));
+            if (stat.isFile() && !stat.isSymbolicLink()) current = { projectId, path: relative, digest: null,
+              basis: { kind: "current-file-metadata-only", commitAttribution: "not-determined" },
+              asset: { kind: "opaque-or-large-file", rawByteLength: stat.size, rawDigestVerified: false,
+                reasonCode: "SOURCE_BYTE_BOUND", remote: { status: "not-checked", verified: false }, payloadComparison: "not-performed" } };
+            if (!expectedDigest && current) { retained.set(cacheKey, current); return current; }
+          } catch { /* Preserve the primary read failure, never bypass access. */ }
+        }
+      }
       // A rejected path/encoding is not permission to obtain it via Git.
-      if (currentReason && !["ENOENT", "SOURCE_READ_DRIFT"].includes(currentReason)
-        && !(currentReason === "SOURCE_BYTE_BOUND" && maxBytes < MAX_REFERENCE_BYTES)) return { status: "unavailable", path: relative, expectedDigest, reasonCode: currentReason };
+      if (currentReason && !["ENOENT", "SOURCE_READ_DRIFT", "SOURCE_BYTE_BOUND"].includes(currentReason)) return { status: "unavailable", path: relative, expectedDigest, reasonCode: currentReason };
       if (!expectedDigest || !/^[a-f0-9]{64}$/.test(expectedDigest)) return { status: "unavailable", path: relative, reasonCode: currentReason || "EXACT_SOURCE_DIGEST_REQUIRED" };
       try { safeGraphFile(root, relative); } catch (error) { return { status: "unavailable", path: relative, reasonCode: error.code }; }
       const historical = retainedBundleVersion(relative, expectedDigest);
       if (historical.version) {
-        if (Buffer.byteLength(historical.version.text) > maxBytes) return { status: "unavailable", path: relative, expectedDigest, reasonCode: "SOURCE_BYTE_BOUND" };
-        retained.set(cacheKey, historical.version); return historical.version;
+        if ((historical.version.asset?.rawByteLength ?? Buffer.byteLength(historical.version.text)) > maxBytes) return { status: "unavailable", path: relative, expectedDigest, reasonCode: "SOURCE_BYTE_BOUND" };
+        await describeAsset(historical.version, current); retained.set(cacheKey, historical.version); return historical.version;
       }
       const unavailable = reasonCode => ({ status: "unavailable", path: relative, expectedDigest, reasonCode, retainedSourceLookup: historical.lookup });
-      if (prefix === undefined) {
-        const bytes = await command(["rev-parse", "--show-toplevel", "--show-prefix"]);
-        prefixReason = lastCommandReason;
-        try {
-          const [top, relativeRoot = ""] = bytes ? decode(bytes).split(/\r?\n/) : [];
-          prefix = top && fs.realpathSync(path.resolve(top, relativeRoot)) === fs.realpathSync(root) ? relativeRoot : null;
-        } catch { prefix = null; }
-      }
+      if (prefix === undefined) await repositoryForRead();
       if (prefix === null) return unavailable(prefixReason || "HISTORICAL_BYTES_NOT_AVAILABLE_LOCALLY");
       if (!histories.has(relative)) {
         const history = await command(["log", "-n", "16", "--no-show-signature", "--no-patch", "--no-decorate", "--no-notes", "--format=%H", "--", relative]);
@@ -191,8 +260,9 @@ export function createContextSourceReader(root, projectId, { storage = null, bun
         const bytes = await command(["cat-file", "blob", `${commit}:${prefix}${relative}`], maxBytes);
         if (!bytes) historyReason = lastCommandReason;
         if (!bytes || sha(bytes) !== expectedDigest) continue;
-        const version = { projectId, path: relative, digest: expectedDigest, text: decode(bytes), basis: { kind: "local-git-exact-blob", commit,
-          commitAttribution: "byte-location-only-not-Run-or-decision-cause" } };
+        const version = sourceVersion(bytes, projectId, relative, { kind: "local-git-exact-blob", commit,
+          commitAttribution: "byte-location-only-not-Run-or-decision-cause" });
+        await describeAsset(version, current);
         retained.set(cacheKey, version); return version;
       }
       return unavailable(historyReason || "EXACT_HISTORICAL_BYTES_NOT_RETAINED_IN_BOUNDED_HISTORY");
@@ -223,6 +293,7 @@ export function createContextSourceReader(root, projectId, { storage = null, bun
       return { candidates, status: gitCalls >= 24 ? "partial-local-git-budget" : "observed-most-recent-path-change-only", renameEstablished: false };
     },
     diagnostics() { return { localGitCommands: gitCalls, maxLocalGitCommands: 24, maxPathHistoryCommits: 16, maxSourceBytes: MAX_REFERENCE_BYTES,
+      ...(metadataFailureCause ? { gitMetadataFailureCause: metadataFailureCause } : {}),
       retainedSourceBundles: { inspected: bundles.size, inspectedDirectoryEntries: inspectedEntries, inventoryPartial, preflightBytes: bundleBytes,
         maxDirectoryEntries: DEFAULT_SCAN, maxBundleBytes: MAX_REFERENCE_BYTES, preflightByteBudget: MAX_REFERENCE_BYTES,
         byteBudgetKind: "file-size-preflight-not-atomic-read-limit" },

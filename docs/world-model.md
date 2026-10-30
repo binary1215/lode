@@ -33,6 +33,21 @@ GraphDB is not required and no remote database is queried or mutated. Graph trav
 
 ## Commands
 
+Ordinary indexing and domain-projection rebuilds reuse the existing validated
+incremental source scan when the scan settings and producer match. Every eligible
+current file is still read and hashed. The complete semantic graph is reused only
+when every source fact, scope, rule and verified source-relation input is identical;
+new, removed, renamed or changed sources rebuild the graph, including cross-file
+import resolution. An explicit compute adapter keeps its requested execution path.
+These optimizations apply to the default whole snapshots as well as domain bundles.
+
+Omitting ancestry in `world-index` preserves the verified current parent sets.
+Explicit parent inputs, including an empty array or merge parents, remain distinct.
+Identical complete inputs therefore retain the same World/Graph identities across
+index and refresh. Necessary pointer/projection repair and no-op refresh receipts
+still occur; no new immutable snapshot is not a claim of zero filesystem writes.
+Canon, pointer, digest and permission failures remain errors.
+
 ```text
 node scripts/lode.mjs world-index <project>
 node scripts/lode.mjs source-scope-set <project> --input <source-scope.json>
@@ -140,7 +155,7 @@ The adapter descriptor and physical source path live only in the World Model poi
 - local JSON and in-memory graph projection adapters with identical GraphSnapshot and traversal identities, verified pointer/snapshot materialization, embedded-graph fallback disclosure, and stale/tamper/authority rejection;
 - activated ArcadeDB projection with snapshot-scoped semantic vertices and edges, content-derived node/edge set receipts, exact partial-write resume, complete status-time remote re-verification, and prepared bounded server expansion that verifies the exact query radius without reloading the full remote snapshot/topology;
 - file digest and line provenance, heuristic confidence, unresolved counts, and bounded traversal;
-- local `.git/HEAD` and in-repository ref resolution without following external gitdir pointers;
+- local HEAD and product ref resolution, including normal linked worktrees after reciprocal gitfile/admin/commondir verification; arbitrary external gitdir pointers remain unavailable;
 - content-addressed all-reachable Git commit-message evidence through replaceable CLI and host-export adapters;
 - create-only `BranchStateObservation`, `DeploymentResultObservation`, and `ReleaseObservation` P3 evidence with `AT_REVISION`, `OBSERVED_ON`, `EVIDENCED_BY`, and optional `DEPLOYS` P4 relations;
 - content-addressed point-in-time external runtime observations through a replaceable read-only host-export adapter;

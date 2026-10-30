@@ -177,8 +177,8 @@ function integrationPlan(root, runtimes, storage, installationContext = null) {
   }
   if (runtimes.includes("opencode")) {
     const file = path.join(root, "opencode.json");
-    integrations.opencode = fs.existsSync(file)
-      ? { status: "manual", reason: "Existing project-owned opencode.json was preserved.", projection: relativeProjectArtifact(storage, "generated/opencode.json") }
+    integrations.opencode = fs.existsSync(file) || fs.existsSync(path.join(root, "opencode.jsonc"))
+      ? { status: "manual", reason: "Existing project-owned OpenCode configuration was preserved.", projection: relativeProjectArtifact(storage, "generated/opencode.json") }
       : { status: "managed", path: "opencode.json" };
   }
   return { integrations, pluginMcpProvided };

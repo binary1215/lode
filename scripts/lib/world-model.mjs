@@ -1,6 +1,7 @@
 import { stabilizeTemporalRelationIdentities } from "./temporal-relation-identity.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { resolveLocalGitRepository } from "./local-git-repository.mjs";
 import path from "node:path";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
 import {
@@ -32,6 +33,7 @@ import { OBSERVATION_PROTOCOL_VERSION } from "./observation-contract.mjs";
 import {
   buildRepositoryScanInput,
   createRepositoryScanComputeAdapter,
+  executeIncrementalRepositoryScan,
   executeRepositoryScan,
   inspectRepositoryScanFreshness,
   inspectRepositoryScanForWorld,
@@ -299,19 +301,23 @@ function resolvedReferenceCommit(gitPath, references, packedReferences, ref, vis
 }
 
 function gitHeadState(root) {
-  const gitPath = path.join(root, ".git");
-  if (!fs.existsSync(gitPath)) return { status: "not-a-git-repository", ref: "", commit: "", referencesDigest: "" };
-  if (!fs.statSync(gitPath).isDirectory()) return { status: "external-gitdir-not-followed", ref: "", commit: "", referencesDigest: "" };
+  let repository;
+  try { repository = resolveLocalGitRepository(root); }
+  catch (error) { return { status: "git-metadata-unavailable", reasonCode: error.code || "LOCAL_GIT_METADATA_UNAVAILABLE", ref: "", commit: "", referencesDigest: "" }; }
+  if (repository.status !== "available") return { status: "not-a-git-repository", ref: "", commit: "", referencesDigest: "" };
+  const gitPath = repository.commonDir;
   const referenceState = gitReferenceState(gitPath);
+  repository.assertCurrent();
   const { referencesDigest, references, tagNames, packedReferences } = referenceState;
   const referencesByName = new Map(references.map((item) => [item.ref, item]));
   const referencedCommits = () => [...new Set(references
     .filter((item) => item.kind === "branch" || item.kind === "remote")
     .map((item) => resolvedReferenceCommit(gitPath, referencesByName, packedReferences, item.ref))
     .filter(Boolean))].sort();
-  const headFile = path.join(gitPath, "HEAD");
+  const headFile = path.join(repository.gitDir, "HEAD");
   if (!fs.existsSync(headFile)) return { status: "head-missing", ref: "", commit: "", referencesDigest, references, referenceCommits: referencedCommits(), referenceTags: tagNames };
   const head = fs.readFileSync(headFile, "utf8").trim();
+  repository.assertCurrent();
   if (!head.startsWith("ref: ")) return {
     status: /^[a-f0-9]{40,64}$/i.test(head) ? "detached-head" : "invalid-head",
     ref: "",
@@ -659,6 +665,11 @@ function codeAnalysisBasis(semanticGraph) {
 function relationBasisFor(snapshot) {
   const { sourceRelationEvidenceHash, ...analysisBasis } = snapshot.analysisBasis || {};
   return { analysisBasis, rules: snapshot.rules, sourceScope: snapshot.repositoryScan?.sourceScope || null };
+}
+function codeAnalysisInputBasisFor({ projectId, files, sourceScope, analysisBasis, sourceRelationEvidence, managedRootFiles, dialect }) {
+  return digest(canonicalJson({ projectId, files, sourceScope, analysisBasis, sourceRelationEvidence,
+    rules: { defaults: REPOSITORY_SCAN_DEFAULTS, excludedDirectories: REPOSITORY_SCAN_EXCLUDED_DIRECTORIES,
+      managedRootFiles, dialect } }));
 }
 function domainBasesFor(snapshot, domains = WORLD_DOMAINS) {
   const bases = {
@@ -1198,8 +1209,8 @@ async function buildWorldModelLocked({
   observationProjectionInput = null,
   productOperatingProjectionInput = null,
   releaseObservationProjectionInput = null,
-  parentSourceSnapshotIds = [],
-  revisionParentIds = {},
+  parentSourceSnapshotIds,
+  revisionParentIds,
   logicalLineageState = null,
   filterRevisionParentsToCurrentEntities = false,
   repositoryScanExecution = null,
@@ -1221,15 +1232,6 @@ async function buildWorldModelLocked({
   }
   const managedRootFiles = managedRootFilesForProject(project, storage);
   const sourceScope = readRepositorySourceScope({ storage, projectRoot: project.projectRoot }).sourceScope;
-  const selectedRepositoryScanExecution = repositoryScanExecution
-    ? validateRepositoryScanExecution(repositoryScanExecution, { projectRoot: project.projectRoot, managedRootFiles, sourceScope, storage })
-    : await executeRepositoryScan({ storage,
-      adapter: computeAdapter || createRepositoryScanComputeAdapter({ storage }),
-      projectRoot: project.projectRoot,
-      managedRootFiles,
-      sourceScope,
-    });
-  const scan = validateRepositoryScanResult(selectedRepositoryScanExecution.result, { storage });
   const productCanon = readProductModelCanon({ storage, projectRoot: project.projectRoot });
   const productCanonBasis = canonBytes(project.projectRoot, storage);
   if ((productCanonBasis === null ? null : digest(productCanonBasis)) !== productCanon.sourceDigest) {
@@ -1263,6 +1265,39 @@ async function buildWorldModelLocked({
       }
     }
   }
+  const snapshotRules = {
+    maxFileBytes: REPOSITORY_SCAN_DEFAULTS.maxFileBytes,
+    maxFiles: REPOSITORY_SCAN_DEFAULTS.maxFiles,
+    maxTotalBytes: REPOSITORY_SCAN_DEFAULTS.maxTotalBytes,
+    maxSymbolsPerFile: REPOSITORY_SCAN_DEFAULTS.maxSymbolsPerFile,
+    excludedDirectories: REPOSITORY_SCAN_EXCLUDED_DIRECTORIES,
+    managedRootProjectionsExcluded: managedRootFiles,
+    sourceScope,
+  };
+  // The existing incremental scanner still reads and hashes every current file.
+  // An explicit compute adapter keeps its execution choice. Unknown or changed
+  // scan settings use the existing full path, not mtime/size-based reuse.
+  const reusableScan = !computeAdapter && previousWorldSnapshot?.repositoryScan
+    && canonicalJson(previousWorldSnapshot.rules) === canonicalJson(snapshotRules)
+    && previousWorldSnapshot.repositoryScan.protocol?.version === REPOSITORY_SCAN_VERSION
+    && previousWorldSnapshot.repositoryScan.sourceAnalysisVersion === SOURCE_ANALYSIS_VERSION;
+  const selectedRepositoryScanExecution = repositoryScanExecution
+    ? validateRepositoryScanExecution(repositoryScanExecution, { projectRoot: project.projectRoot, managedRootFiles, sourceScope, storage })
+    : reusableScan
+      ? await executeIncrementalRepositoryScan({ storage, projectRoot: project.projectRoot, managedRootFiles, sourceScope, previousSnapshot: previousWorldSnapshot })
+      : await executeRepositoryScan({ storage,
+        adapter: computeAdapter || createRepositoryScanComputeAdapter({ storage }),
+        projectRoot: project.projectRoot, managedRootFiles, sourceScope,
+      });
+  const scan = validateRepositoryScanResult(selectedRepositoryScanExecution.result, { storage });
+  // Omission preserves verified ancestry. An explicit [] / {} still means exactly
+  // that, including explicit merge inputs. Removed current entities do not inherit
+  // revision-parent entries; their historical originals remain untouched.
+  if (parentSourceSnapshotIds === undefined) parentSourceSnapshotIds = previousTemporalGraph?.parentSourceSnapshotIds || [];
+  if (revisionParentIds === undefined) revisionParentIds = filterRevisionParentsForCurrentTemporalEntities({
+    projectId: project.projectId, files: scan.files, productModel: productCanon.model,
+    revisionParentIds: previousTemporalGraph?.revisionParentIds || {},
+  });
   const onboardingProjection = onboardingProjectionInput || loadOnboardingGraphProjection({ storage,
     projectRoot: project.projectRoot,
     projectId: project.projectId,
@@ -1316,26 +1351,28 @@ async function buildWorldModelLocked({
     files: scan.files.map((file) => ({ path: file.path, digest: file.digest, language: file.language })),
     adapter: sourceRelationEvidenceAdapter,
   });
-  const snapshotRules = {
-      maxFileBytes: REPOSITORY_SCAN_DEFAULTS.maxFileBytes,
-      maxFiles: REPOSITORY_SCAN_DEFAULTS.maxFiles,
-      maxTotalBytes: REPOSITORY_SCAN_DEFAULTS.maxTotalBytes,
-      maxSymbolsPerFile: REPOSITORY_SCAN_DEFAULTS.maxSymbolsPerFile,
-      excludedDirectories: REPOSITORY_SCAN_EXCLUDED_DIRECTORIES,
-      managedRootProjectionsExcluded: managedRootFilesForProject(project, storage),
-      sourceScope,
-    };
   const domainBundleCandidate = worldStoreAdapter.describe().snapshotLayout === "domain-bundles-v1";
   // Include every scanner fact and relation input consumed by semantic analysis,
   // not only mtime/size/digest. A verified previous result is request-local reuse.
-  const codeAnalysisInputBasis = domainBundleCandidate ? digest(canonicalJson({
-    projectId: project.projectId, files: scan.files, sourceScope,
+  const codeAnalysisInputBasis = codeAnalysisInputBasisFor({
+    projectId: project.projectId, files: scan.files, sourceScope, managedRootFiles, dialect: formatForVerifiedOwner(storage).dialect,
     analysisBasis: codeAnalysisBasis({ sourceRelationEvidence: sourceRelationResult.evidence }),
     sourceRelationEvidence: sourceRelationResult.evidence,
-    rules: { defaults: REPOSITORY_SCAN_DEFAULTS, excludedDirectories: REPOSITORY_SCAN_EXCLUDED_DIRECTORIES,
-      managedRootFiles, dialect: formatForVerifiedOwner(storage).dialect },
-  })) : null;
-  const codeAnalysisReused = domainBundleCandidate && previousWorldSnapshot?.codeAnalysisInputBasis === codeAnalysisInputBasis;
+  });
+  // The collector verified the complete current evidence set. It can stand for
+  // the retained set only when both retained metadata and analysis identity match
+  // it exactly; a claimed hash alone never bypasses current evidence validation.
+  const retainedAnalysisMatches = previousWorldSnapshot?.semanticGraph && previousWorldSnapshot.repositoryScan
+    && Array.isArray(previousWorldSnapshot.rules?.managedRootProjectionsExcluded)
+    && canonicalJson(previousWorldSnapshot.analysisBasis) === canonicalJson(codeAnalysisBasis(previousWorldSnapshot.semanticGraph))
+    && canonicalJson(previousWorldSnapshot.analysisBasis) === canonicalJson(codeAnalysisBasis({ sourceRelationEvidence: sourceRelationResult.evidence }));
+  const previousCodeAnalysisInputBasis = retainedAnalysisMatches
+    ? codeAnalysisInputBasisFor({ projectId: previousWorldSnapshot.projectId, files: previousWorldSnapshot.files,
+      sourceScope: previousWorldSnapshot.repositoryScan.sourceScope, managedRootFiles: previousWorldSnapshot.rules.managedRootProjectionsExcluded,
+      dialect: formatForVerifiedOwner(storage).dialect, analysisBasis: previousWorldSnapshot.analysisBasis,
+      sourceRelationEvidence: sourceRelationResult.evidence }) : null;
+  const codeAnalysisReused = previousCodeAnalysisInputBasis === codeAnalysisInputBasis
+    && (previousWorldSnapshot.codeAnalysisInputBasis === undefined || previousWorldSnapshot.codeAnalysisInputBasis === previousCodeAnalysisInputBasis);
   const semanticGraph = codeAnalysisReused ? previousWorldSnapshot.semanticGraph
     : buildSemanticGraph({ storage, files: scan.files, sourceRelationEvidence: sourceRelationResult.evidence });
   const selectedRevisionParentIds = filterRevisionParentsToCurrentEntities
@@ -1377,10 +1414,10 @@ async function buildWorldModelLocked({
     revisionParentIds: selectedRevisionParentIds,
     logicalLineageState: selectedLogicalLineageState,
   });
-  if (worldStoreAdapter.describe().snapshotLayout === "domain-bundles-v1") {
-    temporalProvenanceGraph = stabilizeTemporalRelationIdentities(temporalProvenanceGraph, { relationAnalysisBasis: relationBasisFor({ analysisBasis: codeAnalysisBasis(semanticGraph), rules: snapshotRules, repositoryScan: { sourceScope } }) });
-    verifyTemporalProvenanceGraph(temporalProvenanceGraph);
-  }
+  // New relation identity is a producer contract, independent of physical layout.
+  // Historical snapshots keep their original protocol, IDs, hashes and bytes.
+  temporalProvenanceGraph = stabilizeTemporalRelationIdentities(temporalProvenanceGraph, { relationAnalysisBasis: relationBasisFor({ analysisBasis: codeAnalysisBasis(semanticGraph), rules: snapshotRules, repositoryScan: { sourceScope } }) });
+  verifyTemporalProvenanceGraph(temporalProvenanceGraph);
   const sourceDigest = sourceDigestFor(
     scan.files,
     sourceScope,
@@ -1602,8 +1639,8 @@ async function buildWorldModelLocked({
   if (!persist) return {
     status: "preview",
     snapshot,
-    sourceAdapters: { compute: selectedRepositoryScanExecution.diagnostics, sourceRelationEvidence: sourceRelationResult.diagnostics, ...(domainBundleCandidate ? { codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis } } : {}) },
-    sourceDiagnostics: { compute: selectedRepositoryScanExecution.diagnostics, sourceRelationEvidence: sourceRelationResult.diagnostics, ...(domainBundleCandidate ? { codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis } } : {}) },
+    sourceAdapters: { compute: selectedRepositoryScanExecution.diagnostics, sourceRelationEvidence: sourceRelationResult.diagnostics, codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis } },
+    sourceDiagnostics: { compute: selectedRepositoryScanExecution.diagnostics, sourceRelationEvidence: sourceRelationResult.diagnostics, codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis } },
   };
 
   if (expectedWorldModelId && worldModelId !== expectedWorldModelId) {
@@ -1759,7 +1796,7 @@ async function buildWorldModelLocked({
       gitHistory: gitHistoryResult.diagnostics,
       runtimeState: externalRuntimeResult.diagnostics,
       sourceRelationEvidence: sourceRelationResult.diagnostics,
-      ...(domainBundleCandidate ? { codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis } } : {}),
+      codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis },
     },
   };
 }

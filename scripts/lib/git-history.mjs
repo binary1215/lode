@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "./project-storage-format.mjs";
+import { resolveLocalGitRepository, LOCAL_GIT_DISCOVERY_ARGS, localGitReadEnvironment } from "./local-git-repository.mjs";
 
 export const GIT_HISTORY_ADAPTER_VERSION = "0.2.0";
 export const GIT_DECISION_HISTORY_VERSION = "0.2.0";
@@ -105,7 +106,7 @@ function runProcess(command, args, { cwd, timeoutMs, maxBufferBytes }) {
     try {
       child = spawn(command, args, {
         cwd,
-        env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1", LC_ALL: "C" },
+        env: localGitReadEnvironment(),
         shell: false,
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
@@ -266,22 +267,18 @@ export class GitCliHistoryAdapter {
       rebuildable: true,
       uniqueAuthority: false,
       remote: false,
-      followsExternalGitDir: false,
+      followsExternalGitDir: "verified-linked-worktrees-only",
     };
   }
 
   async readHistory({ projectRoot, referenceCommits = [], referenceTags = [] }) {
-    const gitDirectory = path.join(projectRoot, ".git");
-    if (!fs.existsSync(gitDirectory)) return {
+    let repository;
+    try { repository = resolveLocalGitRepository(projectRoot); }
+    catch (error) { return { status: "unavailable", coverage: "none", reasonCode: error.code || "LOCAL_GIT_METADATA_UNAVAILABLE", commits: [] }; }
+    if (repository.status !== "available") return {
       status: "not-a-git-repository",
       coverage: "none",
       reasonCode: "git-directory-absent",
-      commits: [],
-    };
-    if (!fs.statSync(gitDirectory).isDirectory()) return {
-      status: "unavailable",
-      coverage: "none",
-      reasonCode: "external-gitdir-not-followed",
       commits: [],
     };
     const roots = [...new Set(referenceCommits.map((item) => String(item).toLocaleLowerCase()))].sort();
@@ -292,6 +289,11 @@ export class GitCliHistoryAdapter {
       reasonCode: "",
       commits: [],
     };
+    const processOptions = { cwd: projectRoot, timeoutMs: this.timeoutMs, maxBufferBytes: this.maxBufferBytes };
+    const discovery = await runProcess(this.command, ["--no-optional-locks", ...LOCAL_GIT_DISCOVERY_ARGS], processOptions);
+    if (discovery.error || discovery.status !== 0) return { status: "unavailable", coverage: "none", reasonCode: stableReason(discovery), commits: [] };
+    try { repository.matchesDiscovery(Buffer.from(discovery.stdout)); }
+    catch (error) { return { status: "unavailable", coverage: "none", reasonCode: error.code || "LOCAL_GIT_DISCOVERY_MISMATCH", commits: [] }; }
     const result = await runProcess(this.command, [
       "-C", projectRoot,
       "-c", "i18n.logOutputEncoding=UTF-8",
@@ -301,7 +303,9 @@ export class GitCliHistoryAdapter {
       "--format=%H%x00%P%x00%aI%x00%cI%x00%an%x00%ae%x00%D%x00%B%x00",
       ...roots,
       ...(includeTags ? ["--tags"] : []),
-    ], { cwd: projectRoot, timeoutMs: this.timeoutMs, maxBufferBytes: this.maxBufferBytes });
+    ], processOptions);
+    try { repository.assertCurrent(); }
+    catch (error) { return { status: "unavailable", coverage: "none", reasonCode: error.code || "LOCAL_GIT_MAPPING_DRIFT", commits: [] }; }
     if (result.error || result.status !== 0) return {
       status: "unavailable",
       coverage: "none",

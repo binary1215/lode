@@ -18,7 +18,7 @@ import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
 import { readGraphRecord } from "../scripts/lib/discovery-index.mjs";
 import { verifyHistoricalInventoryEntries } from "../scripts/lib/historical-artifact-boundary-store.mjs";
 import { decodeSnapshotBytes, readSnapshotFile } from "../scripts/lib/snapshot-storage-codec.mjs";
-import { ensureProjectStorageIgnore, GENERATED_STORAGE_IGNORE_RULES } from "../scripts/lib/project-storage-ignore.mjs";
+import { ensureProjectStorageIgnore, ensureOwnedSnapshotStoreIgnore, GENERATED_STORAGE_IGNORE_RULES } from "../scripts/lib/project-storage-ignore.mjs";
 import { inspectSnapshotGarbageCollection } from "../scripts/lib/snapshot-gc.mjs";
 import { compileContext } from "../scripts/lib/context-compiler.mjs";
 import { diffGraphLineage } from "../scripts/lib/graph-lineage.mjs";
@@ -146,6 +146,40 @@ test("generated ignore never overrides explicit user negations in storage or Pro
  for(const where of ["storage","project"]){const f=fixture(t),file=path.join(f.root,f.storage.directory,".gitignore");fs.unlinkSync(file);
  const target=where==="storage"?file:path.join(f.root,".gitignore"),bytes=Buffer.from("!/**/graph-discovery/index.json\n");fs.writeFileSync(target,bytes);
  const result=ensureProjectStorageIgnore({root:f.root,storage:f.storage});assert.equal(result.reasonCode,where==="storage"?"EXISTING_STORAGE_IGNORE":"USER_IGNORE_RULES_TAKE_PRECEDENCE");assert(fs.readFileSync(target).equals(bytes));if(where==="project")assert(!fs.existsSync(file));assert.equal(inspectProject(f.root).status,"ready");}
+});
+
+test("scoped ignore exceptions match Git's oracle and preserve tracking, private stores and policy races",async t=>{
+ const f=fixture(t),rootIgnore=path.join(f.root,".gitignore"),file=path.join(f.root,f.storage.directory,".gitignore");
+ async function git(args){
+  t.diagnostic(JSON.stringify({event:"planned-ignore-oracle",command:"git",args,cwd:f.root,parent:process.pid,ports:[]}));
+  return await new Promise((resolve,reject)=>{const child=spawn("git",args,{cwd:f.root,shell:false,windowsHide:true,stdio:["ignore","pipe","pipe"]});let stdout="",stderr="";
+   const timer=setTimeout(()=>child.kill(),15000);child.once("spawn",()=>t.diagnostic(JSON.stringify({event:"started-ignore-oracle",pid:child.pid,parent:process.pid,ports:[]})));
+   child.stdout.on("data",b=>stdout+=b);child.stderr.on("data",b=>stderr+=b);child.once("error",e=>{clearTimeout(timer);reject(e)});
+   child.once("close",code=>{clearTimeout(timer);t.diagnostic(JSON.stringify({event:"closed-ignore-oracle",pid:child.pid,code,ports:[]}));resolve({code,stdout,stderr})});});
+ }
+ assert.equal((await git(["init","-q"])).code,0);
+ const transient=f.storage.directory+"/graph-discovery/index.json",docs="docs/keep.tmp";
+ fs.mkdirSync(path.join(f.root,"docs"));fs.writeFileSync(path.join(f.root,docs),"user document");
+ const cases=[
+  ["*.tmp\n!/docs/keep.tmp\n",true], ["!docs/keep.tmp\n",true], ["\\!literal\n",true], ["  !literal\n",true],
+  ["\ufeff!docs/keep.tmp\r\n",true], ["!/.lode/graph-discovery/index.json\n",false], ["!**/graph-discovery/index.json\n",false],
+  ["!/.lode/graph-discovery   \n",false], ["!/docs/keep.tmp   \n",true],
+  ["!keep-this.txt\n",false], ["!docs/\n",false], ["/.lode/\n!/docs/keep.tmp\n",true],
+ ];
+ for(const [text,created] of cases){fs.unlinkSync(file);fs.writeFileSync(rootIgnore,text);const before=await git(["check-ignore","--no-index","-v",docs]);
+  const result=ensureProjectStorageIgnore({root:f.root,storage:f.storage});assert.equal(result.status,created?"created":"preserved",text);assert.equal(fs.readFileSync(rootIgnore,"utf8"),text);
+  const after=await git(["check-ignore","--no-index","-v",docs]);assert.deepEqual(after,before,text);
+  const transientResult=await git(["check-ignore","--no-index","-v",transient]);if(created)assert.match(transientResult.stdout,/graph-discovery\/index.json|\.lode\//);
+  if(!fs.existsSync(file))fs.writeFileSync(file,"# synthetic reset only\n");
+ }
+ fs.unlinkSync(file);fs.writeFileSync(rootIgnore,"!/docs/keep.tmp\n");assert.equal(ensureProjectStorageIgnore({root:f.root,storage:f.storage}).status,"created");
+ const tracked=path.join(f.root,transient);fs.mkdirSync(path.dirname(tracked),{recursive:true});fs.writeFileSync(tracked,"retained tracked bytes\n");
+ assert.equal((await git(["add","-f","--",transient])).code,0);assert.equal((await git(["check-ignore","--",transient])).code,1);assert.equal(fs.readFileSync(tracked,"utf8"),"retained tracked bytes\n");
+ const owned=path.join(f.root,f.storage.directory,"snapshot-objects.git");fs.mkdirSync(owned);assert.equal(ensureOwnedSnapshotStoreIgnore({root:f.root,storage:f.storage,directory:owned}).status,"created");
+ assert.match((await git(["check-ignore","--no-index","-v",f.storage.directory+"/snapshot-objects.git/objects/example"])).stdout,/snapshot-objects.git\/\.gitignore/);
+ fs.unlinkSync(file);const original=fs.readFileSync;let reads=0;
+ t.mock.method(fs,"readFileSync",function(target,...args){const bytes=original.call(this,target,...args);if(String(target)===rootIgnore&&++reads===1)fs.writeFileSync(rootIgnore,"!/.lode/graph-discovery/index.json\n");return bytes;});
+ const raced=ensureProjectStorageIgnore({root:f.root,storage:f.storage});assert.equal(raced.status,"preserved");assert.equal(raced.reasonCode,"USER_IGNORE_CHANGED_CONCURRENTLY");assert(!fs.existsSync(file));assert.equal(inspectProject(f.root).status,"ready");
 });
 
 test("CLI distinguishes successful inspection from unavailable requested apply and keeps the useful zero-deletion report",async t=>{

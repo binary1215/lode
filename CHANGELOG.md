@@ -11,6 +11,23 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.69 — publication tracked separately
+
+- Explain new World/Graph lineage as content changes and snapshot membership while
+  retaining exact raw evidence. Reuse analysis only after source and basis validation;
+  unchanged verified World/Graph content can retain its immutable identity.
+- Preserve project ignore exceptions and unrelated OpenCode configuration. Show
+  local connection readiness without claiming the running Host has loaded it;
+  describe existing cleanup outcomes without changing exit codes or policy.
+- Connect exact requested Git/LFS assets to source comparisons, terminal output and
+  Graph Explorer even when no graph node exists. Keep pointer identity, local cache
+  presence and payload verification separate, with no implicit remote fetch.
+- Read verified linked worktrees, including external common directories, through
+  reciprocal metadata checks. Keep private snapshot storage independent.
+- Independent source, synthetic consumer and browser evidence covers this scope.
+  Later batch/scoped performance experiments are excluded. Marketplace publication,
+  installation and Host/MCP loading remain separate checks.
+
 ## 0.3.0-beta.68 — publication tracked separately
 
 - Connect substantial staged work to a completed preserved plan source, useful

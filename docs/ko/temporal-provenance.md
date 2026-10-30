@@ -21,7 +21,7 @@ Evidence로만 사용되는 Git commit, branch, tag, GraphDB record ID, provider
 
 ## Logical entity와 불변 revision
 
-Temporal provenance protocol `0.15.0`은 [`AuthorityPlaneContract`](authority-plane-contract.md) 아래에 P4 재구축 가능 relation 및 retrieval index를 구체화합니다. digest가 유효한 `0.2.0`부터 `0.14.0`까지의 protocol은 계속 읽을 수 있습니다. 새 graph는 기존 identity와 Policy·Observation projection을 보존하면서 범위가 한정된 opaque historical onboarding reference를 추가합니다.
+Temporal provenance 어휘 `0.15.0`은 [`AuthorityPlaneContract`](authority-plane-contract.md) 아래에 P4 재구축 가능 relation 및 retrieval index를 구체화합니다. 새 World Model graph는 저장 형식과 관계없이 기존 `0.16.0` 안정 관계 producer를 사용합니다. digest가 유효한 과거 `0.2.0`부터 `0.15.0`까지의 원본은 바이트·식별자·pin을 다시 쓰지 않고 계속 읽습니다. 어휘에는 범위가 한정된 opaque historical onboarding reference와 기존 Policy·Observation projection이 포함됩니다.
 
 - 안정적인 product logical entity: `FeatureGroup`, `Capability`, `Feature`, `Requirement`, `Constraint`, `Decision`, schema-v2 `Policy`
 - 불변 product state: 이에 대응하는 `*Revision` kind
@@ -46,6 +46,18 @@ Product logical ID는 project ID, entity kind 및 안정적인 user-owned key에
 `SourceSnapshot` ID에는 project, 완전하게 정렬된 현재 Revision set, ancestry-independent state digest, producer version 및 정렬된 0개 이상의 parent SourceSnapshots가 포함됩니다. 첫 번째 schema version부터 multiple parent가 지원됩니다. 이는 DAG shape만 기록하며, automatic merge, conflict detection, conflict resolution 및 ancestry fetching은 계속 유보됩니다.
 
 ## Provenance-complete projection
+
+새 관계 정체성은 논리 관계와 내용 revision을 전역 스냅샷 소속에서 분리합니다.
+정확한 endpoint·Project·endpoint 연속성 세대·근거·권한·confidence·producer와 분석 기준은
+계속 입력에 포함됩니다. 다른 SourceSnapshot을 가리키는 관계는 정확한 endpoint가 다릅니다.
+실험용 domain-bundle 저장 형식을 켤 필요는 없습니다.
+
+읽기 전용 계보 diff는 기존 `changes`와 페이지 동작을 유지합니다. 별도의
+`changeExplanation`이 내용 변경과 전역 `sourceSnapshotId` 소속만 바뀐 기록을 구분합니다.
+나머지 필드는 모두 비교하며, 관계 짝이 모호하면 따로 유지합니다. 옛 writer에서 새 writer로
+처음 넘어가는 경우를 포함해 producer·분석 기준 전환도 표시합니다. 이는 기록 필드의 기계적
+비교이며 의미적 연속성·승인·충분성의 판정이 아닙니다. 설명 예시는 같은 선택 범위 안에서
+제한해 보여주고, 원시 diff 페이지와 정확한 과거 스냅샷 조회는 계속 사용할 수 있습니다.
 
 projection된 모든 node는 `nodeId`, `kind`, `authorityClass`, `origin`, 정렬된 `evidenceIds`, `freshness`, producer ID와 version 및 instruction/promotion authority boolean flag를 기록합니다. Snapshot-scoped node는 `sourceSnapshotId`도 기록하고, Revision node는 logical entity와 정렬된 parent ID를 기록합니다.
 
