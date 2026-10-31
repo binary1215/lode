@@ -90,6 +90,7 @@ GC만 OS 파일시스템을 확인합니다. Windows는 숨김·기한 제한 Dr
 | `/graph-discovery/index.json` | 검증된 원본 기록에서 다시 만드는 색인. |
 | `/.snapshot-gc/` | 일시적 snapshot participant와 GC 시도. |
 | `/.operations/` | 프로세스가 소유하는 일시적 scope 잠금. |
+| `/messaging/` | 같은 프로젝트의 살아있는 대화 우편함. Canon이나 복구 상태가 아니다. |
 | `/refresh/writer.lock/` | 해당 Host의 실행 중 refresh lease. |
 | `/refresh/writer.lock.*.staging/` | 아직 게시되지 않은 lease staging. |
 

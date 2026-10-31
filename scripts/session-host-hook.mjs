@@ -89,7 +89,24 @@ export async function runSessionHostHook({ runtime, event, environment = process
   } catch { /* Preserve primary context and the undelivered reference. */ }
   // Direct callers receive a constructed local object. Command Hooks use the
   // stdout callback instead. Neither boundary proves Host or model reception.
-  if (deliver) await deliver(context);
+  let injection = null;
+  try {
+    const messaging = require("./lib/conversation-messaging.mjs");
+    messaging.registerHookPresence({ runtime, event, environment });
+    if (event?.hook_event_name === "UserPromptSubmit") injection = messaging.prepareHookInjection({ runtime, event, environment });
+  } catch { injection = null; }
+  if (injection?.text) {
+    const previous = context.hookSpecificOutput?.additionalContext || "";
+    context = { ...context, hookSpecificOutput: { hookEventName: event.hook_event_name, ...(context.hookSpecificOutput || {}),
+      additionalContext: previous ? previous + "\n" + injection.text : injection.text } };
+  }
+  try {
+    if (deliver) await deliver(context);
+  } catch (error) {
+    if (injection) injection.release();
+    throw error;
+  }
+  if (injection) injection.commit();
   if (prepared) require("./lib/user-prompt-reference.mjs").acknowledgeUserPromptReference(prepared);
   if (referenceTransfer) Object.defineProperty(context, "referenceTransfer", { value: referenceTransfer });
   return context;

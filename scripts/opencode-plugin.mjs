@@ -11,6 +11,7 @@ import { resolveProjectStorage, assertProjectStorageUnchanged } from "./lib/proj
 import { safeGraphFile } from "./lib/discovery-index.mjs";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 import { appendUserPromptReference, captureUserPrompt, freezeUserPromptReference, prepareUserPromptReference, acknowledgeUserPromptReference } from "./lib/user-prompt-reference.mjs";
+import { deliverQueuedOpenCode, prepareOpenCodeInjection, registerOpenCodePresence, writeOpenCodeCallerTicket } from "./lib/conversation-messaging.mjs";
 
 // Dependency-free OpenCode V1 server entry, source-shaped against v1.19.0.
 // No client creation, daemon, auth/config edits or canonical HEAD mutation.
@@ -89,8 +90,30 @@ export default {
         if (caller) freezeUserPromptReference(caller);
       }
     }
-    let contextSupported = true, deliveries = new WeakMap();
+    let contextSupported = true, deliveries = new WeakMap(), watcher = null;
     const store = createNativeObservationStore({ environment });
+    function watchInbox() {
+      if (watcher || disposed) return;
+      try {
+        const storage = resolveProjectStorage(directory);
+        if (!storage) return;
+        const inbox = path.join(storage.projectRoot, storage.directory, "messaging", "inbox");
+        if (!fs.existsSync(inbox)) return;
+        watcher = fs.watch(inbox, { recursive: true }, () => {
+          deliverQueuedOpenCode({ root: directory, client, directory, environment }).catch(() => {});
+        });
+        watcher.unref?.();
+      } catch { watcher = null; }
+    }
+    async function admitQueued(session) {
+      try {
+        const storage = resolveProjectStorage(directory);
+        if (!storage || !fs.existsSync(path.join(storage.projectRoot, storage.directory, "messaging"))) return;
+        registerOpenCodePresence({ root: directory, session, client, environment });
+        await deliverQueuedOpenCode({ root: directory, client, directory, environment, sessionId: session.id });
+        watchInbox();
+      } catch { /* A live session can still read its inbox on the next prompt. */ }
+    }
     const caller = id => ({ runtime: "opencode", nativeSessionId: id, agentId: null });
     function sessionScope(session, id) {
       try {
@@ -169,6 +192,15 @@ export default {
           }
           if (disposed || !contextSupported || output.system !== system || deliveries.get(system) !== delivery
             || !sessionScope(session, input.sessionID)) return;
+          let pending = null;
+          try {
+            await admitQueued(session);
+            pending = prepareOpenCodeInjection({ root: directory, session });
+            if (pending?.text && Object.isExtensible(system)) Array.prototype.push.call(system, pending.text);
+            else pending?.release();
+            if (pending?.text && system.at(-1) === pending.text) pending.commit();
+            else pending?.release();
+          } catch { pending?.release(); }
           if (delivery.index === null) {
             delivery.index = system.length;
             Array.prototype.push.call(system, text);
@@ -200,7 +232,9 @@ export default {
         // Keep queued input allowlisted, not an entire message/status/error body.
         const status = ["busy", "retry", "idle"].includes(event.properties?.status?.type) ? event.properties.status.type : null;
         return enqueue(async () => {
-          if (eventType === "session.deleted" ? !sessionScope(deletedInfo, id) : !await exactSession(id)) return;
+          const session = eventType === "session.deleted" ? null : await exactSession(id);
+          if (eventType === "session.deleted" ? !sessionScope(deletedInfo, id) : !session) return;
+          if (session) await admitQueued(session);
           const observation = { kind: "event", event: eventType, phase: supportedEvents.get(eventType),
             requestId: null, source: null, reason: null, ...(status ? { nativeStatus: status } : {}) };
           await store.observe({ root: directory, caller: caller(id), observation, eventId });
@@ -223,6 +257,23 @@ export default {
         } catch { /* A missing clear signal does not block the command. */ }
       },
       async "tool.execute.before"(input, output) {
+        try {
+          const aliased = aliases.get(input?.tool);
+          const prefixed = serverPrefixes.find(prefix => typeof input?.tool === "string" && input.tool.startsWith(prefix));
+          const tool = aliased || (prefixed ? input.tool.slice(prefixed.length) : input?.tool);
+          const semantic = resolveOperation(tool)?.semanticName || tool;
+          const routed = ["head_tools_read", "head_tools_call"].includes(semantic);
+          const inner = routed ? resolveOperation(output?.args?.name)?.semanticName : semantic;
+          const targetArgs = routed ? output?.args?.arguments : output?.args;
+          if (["head_conversation_list", "head_conversation_send"].includes(inner) && object(targetArgs) && nativeId(input?.sessionID)) {
+            const session = await exactSession(input.sessionID);
+            const ticket = session && writeOpenCodeCallerTicket({ root: directory, session, args: targetArgs, environment });
+            if (ticket) {
+              const descriptor = Object.getOwnPropertyDescriptor(targetArgs, "host_ticket");
+              if (!descriptor || descriptor.writable !== false) targetArgs.host_ticket = ticket;
+            }
+          }
+        } catch { /* A missing ticket fails closed in the tool instead of guessing a caller. */ }
         let decision;
         try {
           // Apply the shared policy to this actual Host call. No argument-keyed
@@ -285,7 +336,7 @@ export default {
           output.structuredContent = next.structuredContent;
         } catch { /* Unsupported/malformed/optional API errors leave Core untouched. */ }
       },
-      async dispose() { disposed = true; aliases.clear(); serverPrefixes = []; userMessages.clear(); deliveries = new WeakMap(); await queue; },
+      async dispose() { disposed = true; try { watcher?.close(); } catch { /* Closing the inbox watch is optional. */ } aliases.clear(); serverPrefixes = []; userMessages.clear(); deliveries = new WeakMap(); await queue; },
     };
   },
 };
