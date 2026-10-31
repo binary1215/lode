@@ -73,33 +73,26 @@ function assertIgnorePoliciesUnchanged(policies) {
   }
 }
 
-function exceptionUnignoresMessaging(pattern) {
-  const body = String(pattern || "").replace(/\/$/, "");
-  if (body === "*" || body === "**" || body === "/*") return true;
-  return body.toLowerCase().includes("messaging");
-}
+// The tracked storage gitignore is create-only. A mailbox hides its own files
+// with a nested ignore so an existing `.lode/.gitignore` is never rewritten.
+const MESSAGING_IGNORE = "# Live conversation mailbox, not canon.\n*\n!.gitignore\n";
 
-// Existing projects already have a gitignore, and the create-only helper must
-// not rewrite it. Appending one rule keeps every earlier line and skips the
-// append when a user exception would un-ignore the mailbox.
-export function appendMessagingIgnoreIfSafe({ root, directory }) {
-  const file = path.join(root, directory, ".gitignore");
-  const stat = fs.lstatSync(file, { throwIfNoEntry: false });
-  if (!stat) return { status: "absent" };
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 1024 * 1024) return { status: "preserved", reasonCode: "USER_IGNORE_UNAVAILABLE" };
-  const before = fs.readFileSync(file);
-  let text;
-  try { text = new TextDecoder("utf-8", { fatal: true }).decode(before); }
-  catch { return { status: "preserved", reasonCode: "USER_IGNORE_UNAVAILABLE" }; }
-  if (text.includes("\0") || text.split(/\r?\n/).includes("/messaging/")) return { status: "present" };
-  const own = text.split(/\r?\n/).filter(line => line.startsWith("!")).map(line => line.slice(1));
-  let rootExceptions = [];
-  try { rootExceptions = readIgnorePolicy(root, path.join(root, ".gitignore"), [], true).exceptions; }
-  catch { return { status: "preserved", reasonCode: "USER_IGNORE_UNAVAILABLE" }; }
-  if ([...own, ...rootExceptions].some(exceptionUnignoresMessaging)) return { status: "preserved", reasonCode: "USER_IGNORE_RULES_TAKE_PRECEDENCE" };
-  if (!fs.readFileSync(file).equals(before)) return { status: "preserved", reasonCode: "USER_IGNORE_CHANGED_CONCURRENTLY" };
-  fs.appendFileSync(file, `${text.endsWith("\n") ? "" : "\n"}/messaging/\n`);
-  return { status: "appended" };
+export function ensureMessagingDirectoryIgnore({ root, directory }) {
+  const messaging = path.join(root, directory, "messaging");
+  const file = path.join(messaging, ".gitignore");
+  try {
+    const dirStat = fs.lstatSync(messaging);
+    if (!dirStat.isDirectory() || dirStat.isSymbolicLink()) return { status: "preserved", reasonCode: "MESSAGING_DIR_UNAVAILABLE" };
+    const relative = path.relative(fs.realpathSync(root), fs.realpathSync(messaging));
+    if (relative.startsWith("..") || path.isAbsolute(relative)) return { status: "preserved", reasonCode: "CONVERSATION_PATH_ESCAPE" };
+    const existing = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (existing) return { status: "preserved", reasonCode: existing.isSymbolicLink() ? "USER_IGNORE_UNAVAILABLE" : "EXISTING_MESSAGING_IGNORE" };
+    atomicCreateArtifact(file, MESSAGING_IGNORE);
+    return { status: "created", trackingChanged: false };
+  } catch (error) {
+    if (error?.code === "EEXIST") return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
+    return { status: "preserved", reasonCode: error?.code || "USER_IGNORE_UNAVAILABLE" };
+  }
 }
 
 export function ensureProjectStorageIgnore({ root, storage }) {

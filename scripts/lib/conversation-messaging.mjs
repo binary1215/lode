@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { claudeChannel, claudePeerTokenPresent, deliverClaudeInbox, readClaudePeerToken } from "./conversation-messaging-claude.mjs";
-import { appendMessagingIgnoreIfSafe } from "./project-storage-ignore.mjs";
+import { ensureMessagingDirectoryIgnore } from "./project-storage-ignore.mjs";
+import { processExists } from "./process-exists.mjs";
 import { codexChannel, codexControlSocket, collectAncestors, deliverCodexTurn, windowsProcessListCommand } from "./conversation-messaging-codex.mjs";
 import { deliverOpenCodePrompt, opencodeChannel, opencodePromptAvailable } from "./conversation-messaging-opencode.mjs";
 
@@ -11,10 +12,12 @@ const RUNTIMES = new Set(["claude", "codex", "opencode"]);
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$/u;
 const MESSAGE_ID = /^msg-[a-f0-9]{24}$/u;
 const TICKET_ID = /^[a-f0-9]{32}$/u;
-const FRESH_MS = 10 * 60 * 1000;
+const ARCHIVE_TTL_MS = 24 * 60 * 60 * 1000;
+const FRESH_MS = ARCHIVE_TTL_MS;
 const IMMEDIATE_MS = 2 * 60 * 1000;
 const CLAIM_LEASE_MS = 15_000;
-const ARCHIVE_TTL_MS = 24 * 60 * 60 * 1000;
+const CLAIM_HARD_MAX_MS = 10 * 60 * 1000;
+const CLOCK_SKEW_MS = 2 * 60 * 1000;
 const MAX_BODY = 6000;
 const MAX_INJECT = 20;
 const MAX_LIST = 256;
@@ -123,7 +126,11 @@ function names(directory) {
 
 function ageMs(record, now) {
   const parsed = Date.parse(record?.updatedAt || "");
-  return Number.isFinite(parsed) ? Math.max(0, nowMs(now) - parsed) : Infinity;
+  if (!Number.isFinite(parsed)) return Infinity;
+  const delta = nowMs(now) - parsed;
+  // A timestamp far in the future is not fresh. A small skew still counts as current.
+  if (delta < -CLOCK_SKEW_MS) return Infinity;
+  return Math.max(0, delta);
 }
 
 function channelLive(record, environment, now, platform) {
@@ -165,8 +172,8 @@ function listPresence(project) {
 
 function ensureMailbox(project) {
   fs.mkdirSync(project.messaging, { recursive: true });
-  try { appendMessagingIgnoreIfSafe({ root: project.root, directory: project.directory }); }
-  catch { /* A missing ignore rule does not block delivery. */ }
+  try { ensureMessagingDirectoryIgnore({ root: project.root, directory: project.directory }); }
+  catch { /* A missing nested ignore does not block delivery. The tracked gitignore is left alone. */ }
 }
 
 function fileBytes(directory) {
@@ -179,6 +186,68 @@ function fileBytes(directory) {
     else if (stat.isFile()) { total += stat.size; count += 1; }
   }
   return { total, count };
+}
+
+function storedAgeMs(file, iso, now) {
+  const samples = [];
+  const parsed = Date.parse(iso || "");
+  if (Number.isFinite(parsed)) samples.push(nowMs(now) - parsed);
+  try { samples.push(nowMs(now) - fs.statSync(file).mtimeMs); }
+  catch { samples.push(Infinity); }
+  if (!samples.length || samples.some(delta => delta < -CLOCK_SKEW_MS)) return Infinity;
+  return Math.max(0, ...samples.map(delta => Math.max(0, delta)));
+}
+
+function slotUsage(project, slotName) {
+  let total = 0, count = 0;
+  for (const kind of ["inbox", "inflight", "archive"]) {
+    const nested = fileBytes(path.join(project.messaging, kind, slotName));
+    total += nested.total;
+    count += nested.count;
+  }
+  return { total, count };
+}
+
+function jsonFiles(directory) {
+  const files = [];
+  for (const name of names(directory)) {
+    if (!name.endsWith(".json")) continue;
+    const file = path.join(directory, name);
+    try {
+      const stat = fs.statSync(file);
+      if (stat.isFile()) files.push({ file, mtimeMs: stat.mtimeMs, size: stat.size });
+    } catch { /* Skip a file that disappeared. */ }
+  }
+  return files;
+}
+
+function expireStored(project, kind, now) {
+  const rootDir = path.join(project.messaging, kind);
+  for (const slotName of names(rootDir)) {
+    for (const entry of jsonFiles(path.join(rootDir, slotName))) {
+      const message = readJson(entry.file);
+      if (kind === "inflight" && message && claimOwnedByLiveProcess(message)) continue;
+      if (!message || storedAgeMs(entry.file, message.createdAt, now) > ARCHIVE_TTL_MS) {
+        try { fs.rmSync(entry.file, { force: true }); } catch { /* Retention is best-effort. */ }
+      }
+    }
+  }
+}
+
+function trimSlotArchives(project) {
+  const archiveRoot = path.join(project.messaging, "archive");
+  for (const slotName of names(archiveRoot)) {
+    let usage = slotUsage(project, slotName);
+    const archives = jsonFiles(path.join(archiveRoot, slotName)).sort((a, b) => a.mtimeMs - b.mtimeMs);
+    for (const entry of archives) {
+      if (usage.total <= MAX_MAILBOX_BYTES && usage.count <= MAX_STORED_MESSAGES) break;
+      try {
+        fs.rmSync(entry.file, { force: true });
+        usage.total -= entry.size;
+        usage.count -= 1;
+      } catch { /* The next send still enforces the cap. */ }
+    }
+  }
 }
 
 function retainMailbox(project, now) {
@@ -198,30 +267,12 @@ function retainMailbox(project, now) {
       try { fs.rmSync(file, { force: true }); } catch { /* List and send both ignore a stale record. */ }
     }
   }
-  const archiveDir = path.join(project.messaging, "archive");
-  const archives = [];
-  for (const slotName of names(archiveDir)) {
-    for (const name of names(path.join(archiveDir, slotName))) {
-      const file = path.join(archiveDir, slotName, name);
-      try { archives.push({ file, mtimeMs: fs.statSync(file).mtimeMs, size: fs.statSync(file).size }); } catch { /* Skip a file that disappeared. */ }
-    }
-  }
-  archives.sort((a, b) => a.mtimeMs - b.mtimeMs);
-  const cutoff = nowMs(now) - ARCHIVE_TTL_MS;
-  for (const entry of archives) {
-    if (entry.mtimeMs > cutoff) break;
-    try { fs.rmSync(entry.file, { force: true }); } catch { /* Retention is best-effort. */ }
-  }
-  let usage = fileBytes(project.messaging);
-  for (const entry of archives) {
-    if (usage.total <= MAX_MAILBOX_BYTES && usage.count <= MAX_STORED_MESSAGES) break;
-    try { fs.rmSync(entry.file, { force: true }); usage.total -= entry.size; usage.count -= 1; }
-    catch { /* The next send still enforces the cap. */ }
-  }
+  for (const kind of ["inbox", "inflight", "archive"]) expireStored(project, kind, now);
+  trimSlotArchives(project);
 }
 
-function mailboxAccepts(project, extraBytes) {
-  const usage = fileBytes(project.messaging);
+function mailboxAccepts(project, address, extraBytes) {
+  const usage = slotUsage(project, slot(address));
   return usage.count < MAX_STORED_MESSAGES && usage.total + extraBytes <= MAX_MAILBOX_BYTES;
 }
 
@@ -255,34 +306,73 @@ function senderOf({ caller, hostTicket, root, args, environment }) {
   return consumeTicket({ root, hostTicket, args, environment });
 }
 
-function ticketKeyFile(environment) {
-  const operational = environment?.LODE_AGENT_OPERATIONAL_STATE_ROOT || environment?.HEAD_AGENT_OPERATIONAL_STATE_ROOT;
-  if (typeof operational === "string" && path.isAbsolute(operational)) return path.join(operational, "conversation-ticket.key");
-  const home = environment?.HOME || environment?.USERPROFILE;
-  return typeof home === "string" && path.isAbsolute(home) ? path.join(home, ".local", "state", "lode-agent-core", "conversation-ticket.key") : null;
+function validTicketKey(text) {
+  return /^[a-f0-9]{64}$/u.test(String(text || "").trim());
 }
 
-function ticketKey(environment) {
-  const configured = environment?.LODE_CONVERSATION_TICKET_SECRET;
-  if (typeof configured === "string" && /^[a-f0-9]{64}$/u.test(configured)) return configured;
-  const file = ticketKeyFile(environment);
-  if (!file) return null;
-  try { const existing = fs.readFileSync(file, "utf8").trim(); if (/^[a-f0-9]{64}$/u.test(existing)) return existing; }
-  catch { /* Create it below. */ }
-  const key = crypto.randomBytes(32).toString("hex");
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(file, key + "\n", { mode: 0o600, flag: "wx" });
-    return key;
-  } catch {
-    try { const existing = fs.readFileSync(file, "utf8").trim(); if (/^[a-f0-9]{64}$/u.test(existing)) return existing; }
-    catch { return null; }
+// Plugin and MCP both derive this from the home directory and the project root.
+// LODE_AGENT_OPERATIONAL_STATE_ROOT is intentionally not part of the path: the
+// two processes often disagree on it. A same-user reader of the key can still
+// sign a ticket. The file stops a different user, and a committed project file,
+// from forging the caller. HOME is required when it is set; the operational
+// root is only a fallback when no home directory is available.
+function ticketKeyFile(environment, projectRoot) {
+  if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) return null;
+  const digest = crypto.createHash("sha256").update(path.resolve(projectRoot)).digest("hex");
+  const home = environment?.HOME || environment?.USERPROFILE;
+  if (typeof home === "string" && path.isAbsolute(home)) {
+    return path.join(home, ".local", "state", "lode-agent-core", "conversation-tickets", digest, "key");
   }
+  const operational = environment?.LODE_AGENT_OPERATIONAL_STATE_ROOT || environment?.HEAD_AGENT_OPERATIONAL_STATE_ROOT;
+  if (typeof operational === "string" && path.isAbsolute(operational)) return path.join(operational, "conversation-tickets", digest, "key");
   return null;
 }
 
+function tightenPrivate(file, mode) {
+  if (process.platform === "win32") return;
+  try { fs.chmodSync(file, mode); } catch { /* Permission repair is best-effort. */ }
+}
+
+function readTicketKey(file) {
+  try {
+    const text = fs.readFileSync(file, "utf8").trim();
+    return validTicketKey(text) ? text : null;
+  } catch { return null; }
+}
+
+function ticketKey(environment, projectRoot) {
+  const configured = environment?.LODE_CONVERSATION_TICKET_SECRET;
+  if (typeof configured === "string" && validTicketKey(configured)) return configured;
+  const file = ticketKeyFile(environment, projectRoot);
+  if (!file) return null;
+  const directory = path.dirname(file);
+  try { fs.mkdirSync(directory, { recursive: true, mode: 0o700 }); }
+  catch { return null; }
+  tightenPrivate(directory, 0o700);
+  const existing = readTicketKey(file);
+  if (existing) {
+    tightenPrivate(file, 0o600);
+    return existing;
+  }
+  const key = crypto.randomBytes(32).toString("hex");
+  const temporary = file + ".writing";
+  try {
+    let current = null;
+    try { current = fs.readFileSync(file, "utf8").trim(); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (validTicketKey(current)) return current.trim();
+    fs.writeFileSync(temporary, key + "\n", { mode: 0o600 });
+    fs.renameSync(temporary, file);
+    tightenPrivate(file, 0o600);
+    return readTicketKey(file);
+  } catch {
+    try { fs.rmSync(temporary, { force: true }); } catch { /* The replacement did not land. */ }
+    return readTicketKey(file);
+  }
+}
+
 function ticketMac(environment, body) {
-  const key = ticketKey(environment);
+  const key = ticketKey(environment, body?.projectRoot);
   if (!key) return null;
   return crypto.createHmac("sha256", key).update(JSON.stringify(body)).digest("hex");
 }
@@ -336,21 +426,29 @@ function renderInjection(messages, remaining) {
   return blocks.join("\n\n");
 }
 
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return error?.code === "EPERM"; }
-}
-
 function claimStamp(message) {
   return { ...message, claim: { token: crypto.randomBytes(8).toString("hex"), pid: process.pid, at: new Date().toISOString() } };
 }
 
 function claimAge(file, message) {
   const stamped = Date.parse(message?.claim?.at || "");
-  if (Number.isFinite(stamped)) return Date.now() - stamped;
-  try { return Date.now() - fs.statSync(file).mtimeMs; }
-  catch { return 0; }
+  const delta = Number.isFinite(stamped)
+    ? Date.now() - stamped
+    : (() => { try { return Date.now() - fs.statSync(file).mtimeMs; } catch { return 0; } })();
+  if (delta < -CLOCK_SKEW_MS) return Infinity;
+  return Math.max(0, delta);
+}
+
+// A live pid holds the claim only for a bounded time. After that, pid reuse
+// (including pid 1, which never exits) must not keep the message forever.
+function claimOwnedByLiveProcess(message) {
+  const pid = message?.claim?.pid;
+  if (!Number.isSafeInteger(pid) || pid <= 1 || !processExists(pid)) return false;
+  const stamped = Date.parse(message?.claim?.at || "");
+  if (!Number.isFinite(stamped)) return false;
+  const age = Date.now() - stamped;
+  if (age < -CLOCK_SKEW_MS || age >= CLAIM_HARD_MAX_MS) return false;
+  return true;
 }
 
 function recoverInflight(project, address) {
@@ -366,9 +464,9 @@ function recoverInflight(project, address) {
       try { fs.mkdirSync(path.dirname(archive), { recursive: true }); fs.renameSync(inflight, archive); } catch { /* The owner is finishing the handoff. */ }
       continue;
     }
-    // A live pid owns the claim even if delivery takes longer than the lease.
+    // A live pid owns the claim through CLAIM_HARD_MAX_MS, not forever.
     // A missing stamp is fresh only when the rename's mtime was just updated.
-    if (message.claim?.pid && pidAlive(message.claim.pid)) continue;
+    if (claimOwnedByLiveProcess(message)) continue;
     if (claimAge(inflight, message) < CLAIM_LEASE_MS) continue;
     const inbox = messageFile(project, "inbox", address, id);
     const released = { ...message, handedToHost: false };
@@ -496,7 +594,7 @@ export async function sendProjectConversation({ root, caller = null, environment
   const presence = listPresence(project).find(record => record.address === target.address);
   const visible = presence && channelLive(presence, environment, now, platform).delivery !== "unreachable";
   if (!visible) return resultOf({ from, to: target, replyTo: replyTo ?? null }, "unreachable", presence ? "presence-stale" : "no-same-project-conversation");
-  if (!mailboxAccepts(project, Buffer.byteLength(body, "utf8") + 512)) fail("CONVERSATION_MAILBOX_FULL", "The same-project mailbox is at its size limit.");
+  if (!mailboxAccepts(project, target.address, Buffer.byteLength(body, "utf8") + 512)) fail("CONVERSATION_MAILBOX_FULL", "That conversation's mailbox is at its size limit.");
   const message = {
     schemaVersion: 1, id: "msg-" + crypto.randomBytes(12).toString("hex"), projectRoot: project.root,
     from, to: { runtime: target.runtime, nativeSessionId: target.nativeSessionId, agentId: target.agentId, address: target.address },
@@ -549,7 +647,8 @@ export function registerHookPresence({ runtime, event, environment = process.env
   if (!identity) return null;
   // Prompt and clear hooks must not create a mailbox by themselves: those tests
   // and recovery paths treat an untouched project tree as unchanged. list/send
-  // opens the mailbox; the next hook of each client then registers into it.
+  // opens the mailbox. A session that started before that directory existed
+  // stays invisible until its own next SessionStart or UserPromptSubmit.
   try {
     const storage = resolveProjectStorage(event.cwd);
     if (!storage || !fs.existsSync(path.join(storage.projectRoot, storage.directory, "messaging"))) return null;
@@ -579,13 +678,15 @@ export function prepareHookInjection({ runtime, event, environment = process.env
   };
 }
 
-export async function deliverQueuedOpenCode({ root, client, directory, environment = process.env, sessionId = null, skipSessionId = null } = {}) {
+export async function deliverQueuedOpenCode({ root, client, directory, environment = process.env, sessionId = null, skipSessionId = null, skipSessionIds = null } = {}) {
   const project = openProject(directory || root);
+  const skip = new Set(Array.isArray(skipSessionIds) ? skipSessionIds : []);
+  if (skipSessionId) skip.add(skipSessionId);
   const results = [];
   for (const record of listPresence(project)) {
     if (record.runtime !== "opencode") continue;
     if (sessionId && record.nativeSessionId !== sessionId) continue;
-    if (skipSessionId && record.nativeSessionId === skipSessionId) continue;
+    if (skip.has(record.nativeSessionId)) continue;
     const { claimed } = claimAddress(project, record.address);
     for (const message of claimed) {
       const attempt = await deliverOpenCodePrompt({ client, directory: project.root, sessionId: record.nativeSessionId, text: renderInjection([message], 0) });

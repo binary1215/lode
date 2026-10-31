@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -14,7 +15,7 @@ import {
   deliverQueuedOpenCode as pumpOpenCode,
 } from "../scripts/lib/conversation-messaging.mjs";
 import { claudeWireLines, deliverClaudeInbox, readClaudePeerToken, claudeSocketDigest } from "../scripts/lib/conversation-messaging-claude.mjs";
-import { ancestorsFromPsTable, codexControlSocket, codexTransportPlan, collectAncestors, deliverCodexTurn } from "../scripts/lib/conversation-messaging-codex.mjs";
+import { ancestorsFromPsTable, codexControlSocket, codexTransportPlan, collectAncestors, deliverCodexTurn, stopCodexProxy } from "../scripts/lib/conversation-messaging-codex.mjs";
 import { deliverOpenCodePrompt } from "../scripts/lib/conversation-messaging-opencode.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
@@ -236,8 +237,21 @@ test("Windows Claude auth is required and Windows Codex uses the app-server prox
   assert.equal(plan.mode, "proxy");
   assert.equal(plan.command, "cmd.exe");
   assert.equal(plan.shell, false);
-  assert.match(plan.args.at(-1), /codex\.cmd app-server proxy --sock /);
+  assert.equal(plan.windowsVerbatimArguments, true);
+  assert.match(plan.args.at(-1), /""codex\.cmd" "app-server" "proxy" "--sock" "/);
+  assert.equal(plan.args.at(-1).includes('\\"'), false);
   assert.equal(plan.args.includes("codex.cmd"), false);
+  const spaced = codexTransportPlan({ platform: "win32", socketPath: "C:\\Program Files\\codex.sock" });
+  assert.match(spaced.args.at(-1), /"--sock" "C:\\Program Files\\codex\.sock""$/);
+  assert.equal(spaced.args.at(-1).includes('\\"'), false);
+  assert.equal(codexTransportPlan({ platform: "win32", socketPath: "C:\\p\\%COMSPEC%\\x.sock" }).mode, "none");
+  assert.equal(codexTransportPlan({ platform: "win32", socketPath: 'C:\\x" & calc & ".sock' }).evidence, "codex-proxy-socket-rejected");
+  const tree = [];
+  stopCodexProxy({ pid: 4242, kill() { tree.push("kill"); } }, {
+    platform: "win32",
+    spawnSyncImpl(file, args) { tree.push([file, args]); return { status: 0 }; },
+  });
+  assert.deepEqual(tree[0], ["taskkill.exe", ["/PID", "4242", "/T", "/F"]]);
   const table = [{ ProcessId: 10, ParentProcessId: 4, CommandLine: "codex app-server --listen unix://" }, { ProcessId: 4, ParentProcessId: 1, CommandLine: "codex.exe" }];
   const lines = collectAncestors({ platform: "win32", environment, pid: 10, spawnSyncImpl() {
     return { status: 0, stdout: JSON.stringify(table) };
@@ -270,7 +284,7 @@ test("OpenCode prompt delivery is delivered once and a child ticket cannot name 
   const childPresence = registerOpenCodePresence({ root, session: child, client, environment, now: Date.now });
   assert.equal(childPresence?.address, "opencode:ses_child");
   const queued = await sendProjectConversation({
-    root, caller: caller("claude", "claude-to-open"), environment, to: "opencode:ses_parent", body: "ping opencode", now: fixedNow, waitMs: 0,
+    root, caller: caller("claude", "claude-to-open"), environment, to: "opencode:ses_parent", body: "ping opencode", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable", evidence: "opencode-plugin-inbox" }),
   });
   assert.equal(queued.state, "queued");
@@ -320,11 +334,14 @@ test("list and send open the mailbox, then a real hook process joins it", async 
   assert.equal(fs.existsSync(path.join(root, ".lode", "messaging", "presence")), true);
   const ignoreFile = path.join(root, ".lode", ".gitignore");
   const originalIgnore = fs.readFileSync(ignoreFile, "utf8");
-  fs.writeFileSync(ignoreFile, originalIgnore.replaceAll("/messaging/\n", ""));
+  const stripped = originalIgnore.replaceAll("/messaging/\n", "");
+  fs.writeFileSync(ignoreFile, stripped);
+  const nested = path.join(root, ".lode", "messaging", ".gitignore");
+  assert.match(fs.readFileSync(nested, "utf8"), /^\*\r?\n!\.gitignore\r?\n/m);
+  fs.writeFileSync(nested, "user rule\n");
   listProjectConversations({ root, caller: caller("claude", "claude-boot"), environment, now: Date.now });
-  const repaired = fs.readFileSync(ignoreFile, "utf8");
-  assert.match(repaired, /\/messaging\//);
-  assert.equal(repaired.startsWith(originalIgnore.replaceAll("/messaging/\n", "").replace(/\n$/, "")), true);
+  assert.equal(fs.readFileSync(ignoreFile, "utf8"), stripped);
+  assert.equal(fs.readFileSync(nested, "utf8"), "user rule\n");
   const hook = path.join(pluginRoot, "scripts/session-host-hook.mjs");
   const joined = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [hook, "--runtime", "codex"], { cwd: root, env: { ...process.env, ...environment } });
@@ -396,6 +413,20 @@ test("a dead claim is recovered once and a forged OpenCode ticket is rejected", 
   assert.match(again.text, /recover me/);
   again.commit();
   assert.equal(prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-dead" }, environment }), null);
+  const reused = await sendProjectConversation({
+    root, caller: caller("claude", "claude-dead"), environment, to: "codex:codex-dead", body: "pid reused", now: Date.now, waitMs: 0,
+    deliver: async () => ({ outcome: "unavailable" }),
+  });
+  const held = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-dead" }, environment });
+  assert.match(held.text, /pid reused/);
+  const reusedFile = path.join(root, ".lode", "messaging", "inflight", slot, reused.id + ".json");
+  const reusedClaim = JSON.parse(fs.readFileSync(reusedFile, "utf8"));
+  reusedClaim.claim.pid = process.pid;
+  reusedClaim.claim.at = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  fs.writeFileSync(reusedFile, JSON.stringify(reusedClaim));
+  const reclaimed = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-dead" }, environment });
+  assert.match(reclaimed.text, /pid reused/);
+  reclaimed.commit();
   const forgedId = "ab".repeat(16);
   fs.mkdirSync(path.join(root, ".lode", "messaging", "tickets"), { recursive: true });
   fs.writeFileSync(path.join(root, ".lode", "messaging", "tickets", forgedId + ".json"), JSON.stringify({
@@ -409,12 +440,27 @@ test("a dead claim is recovered once and a forged OpenCode ticket is rejected", 
 test("stale conversations are unreachable, the mailbox is bounded, and Codex degrades honestly", async t => {
   const { root, environment, home } = isolated(t);
   register(root, environment, caller("codex", "codex-stale"), { kind: "codex-prompt" });
+  const idle = await sendProjectConversation({
+    root, caller: caller("claude", "claude-stale"), environment, to: "codex:codex-stale", body: "still queued", now: () => fixedNow() + 11 * 60 * 1000, waitMs: 0,
+    deliver: async () => ({ outcome: "unavailable" }),
+  });
+  assert.equal(idle.state, "queued");
+  const idleRow = listProjectConversations({ root, caller: caller("claude", "claude-stale"), environment, now: () => fixedNow() + 11 * 60 * 1000 })
+    .conversations.find(row => row.address === "codex:codex-stale");
+  assert.equal(idleRow?.delivery, "next-prompt");
   const stale = await sendProjectConversation({
-    root, caller: caller("claude", "claude-stale"), environment, to: "codex:codex-stale", body: "too old", now: () => fixedNow() + 11 * 60 * 1000, waitMs: 0,
+    root, caller: caller("claude", "claude-stale"), environment, to: "codex:codex-stale", body: "too old", now: () => fixedNow() + 25 * 60 * 60 * 1000, waitMs: 0,
   });
   assert.equal(stale.state, "unreachable");
   assert.equal(stale.persisted, false);
-  assert.equal(listProjectConversations({ root, caller: caller("claude", "claude-stale"), environment, now: () => fixedNow() + 11 * 60 * 1000 }).conversations.length, 0);
+  assert.equal(listProjectConversations({ root, caller: caller("claude", "claude-stale"), environment, now: () => fixedNow() + 25 * 60 * 60 * 1000 })
+    .conversations.some(row => row.address === "codex:codex-stale"), false);
+  register(root, environment, caller("codex", "codex-future"), { kind: "codex-prompt" }, () => fixedNow() + 365 * 24 * 60 * 60 * 1000);
+  assert.equal(listProjectConversations({ root, caller: caller("claude", "claude-future"), environment, now: () => fixedNow() + 300 * 24 * 60 * 60 * 1000 })
+    .conversations.some(row => row.address === "codex:codex-future"), false);
+  register(root, environment, caller("codex", "codex-skew"), { kind: "codex-prompt" }, () => fixedNow() + 30_000);
+  assert.equal(listProjectConversations({ root, caller: caller("claude", "claude-skew"), environment, now: fixedNow })
+    .conversations.some(row => row.address === "codex:codex-skew"), true);
   register(root, environment, caller("codex", "codex-cap"), { kind: "codex-prompt" }, Date.now);
   let filled = false;
   for (let index = 0; index < 220 && !filled; index += 1) {
@@ -438,6 +484,13 @@ test("stale conversations are unreachable, the mailbox is bounded, and Codex deg
   });
   assert.equal(rejected.outcome, "unavailable");
   assert.equal(rejected.evidence, "codex-proxy-spawn-rejected");
+  let spawned = 0;
+  const blocked = await deliverCodexTurn({
+    socketPath: "C:\\p\\%COMSPEC%\\x.sock", platform: "win32", threadId: "thr", text: "hi",
+    spawnImpl() { spawned += 1; throw new Error("must not spawn"); },
+  });
+  assert.equal(blocked.evidence, "codex-proxy-socket-rejected");
+  assert.equal(spawned, 0);
   const v2 = [];
   const v2Result = await deliverOpenCodePrompt({
     client: { session: { hook() {}, async prompt(input) { v2.push(input); return { id: "msg_v2" }; } } },
@@ -446,4 +499,78 @@ test("stale conversations are unreachable, the mailbox is bounded, and Codex deg
   assert.equal(v2Result.evidence, "opencode-v2-session-prompt");
   assert.equal(v2[0].delivery, "queue");
   assert.equal(v2[0].sessionID, "ses_v2");
+});
+
+test("one full target does not block another and a dead queue expires", async t => {
+  const { root, environment } = isolated(t);
+  register(root, environment, caller("codex", "codex-full"), { kind: "codex-prompt" }, Date.now);
+  register(root, environment, caller("claude", "claude-other"), { kind: "claude-prompt" }, Date.now);
+  let filled = false;
+  for (let index = 0; index < 220 && !filled; index += 1) {
+    try {
+      await sendProjectConversation({
+        root, caller: caller("opencode", "ses-filler"), environment, to: "codex:codex-full", body: "q", now: Date.now, waitMs: 0,
+        deliver: async () => ({ outcome: "unavailable" }),
+      });
+    } catch (error) {
+      assert.equal(error.code, "CONVERSATION_MAILBOX_FULL");
+      filled = true;
+    }
+  }
+  assert.equal(filled, true);
+  const other = await sendProjectConversation({
+    root, caller: caller("opencode", "ses-filler"), environment, to: "claude:claude-other", body: "still open", now: Date.now, waitMs: 0,
+    deliver: async () => ({ outcome: "unavailable" }),
+  });
+  assert.equal(other.state, "queued");
+  assert.equal(other.to, "claude:claude-other");
+  const old = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  const inboxRoot = path.join(root, ".lode", "messaging", "inbox");
+  for (const slotName of fs.readdirSync(inboxRoot)) {
+    for (const name of fs.readdirSync(path.join(inboxRoot, slotName))) {
+      const file = path.join(inboxRoot, slotName, name);
+      const message = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (message.to?.address !== "codex:codex-full") continue;
+      fs.utimesSync(file, old, old);
+    }
+  }
+  const after = await sendProjectConversation({
+    root, caller: caller("opencode", "ses-filler"), environment, to: "claude:claude-other", body: "after expiry", now: Date.now, waitMs: 0,
+    deliver: async () => ({ outcome: "unavailable" }),
+  });
+  assert.equal(after.state, "queued");
+  const remaining = [];
+  for (const slotName of fs.readdirSync(inboxRoot)) {
+    const slotDir = path.join(inboxRoot, slotName);
+    for (const name of fs.readdirSync(slotDir)) {
+      if (!name.endsWith(".json")) continue;
+      const message = JSON.parse(fs.readFileSync(path.join(slotDir, name), "utf8"));
+      if (message.to?.address === "codex:codex-full") remaining.push(message.id);
+    }
+  }
+  assert.deepEqual(remaining, []);
+});
+
+test("OpenCode ticket key is repaired and shared when operational roots differ", async t => {
+  const { root, environment, home } = isolated(t);
+  const digest = crypto.createHash("sha256").update(path.resolve(root)).digest("hex");
+  const dir = path.join(home, ".local", "state", "lode-agent-core", "conversation-tickets", digest);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
+  fs.chmodSync(dir, 0o755);
+  fs.writeFileSync(path.join(dir, "key"), "not-a-key\n", { mode: 0o644 });
+  register(root, environment, caller("claude", "claude-ticket"), { kind: "claude-prompt" }, Date.now);
+  const child = { id: "ses_ticket_child", parentID: "ses_ticket_parent", directory: root };
+  const args = { project_root: root, to: "claude:claude-ticket", body: "from ticket", reply_to: null };
+  const ticket = writeOpenCodeCallerTicket({ root, session: child, args, environment, now: Date.now });
+  assert.equal(typeof ticket, "string");
+  assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
+  const key = fs.readFileSync(path.join(dir, "key"), "utf8").trim();
+  assert.match(key, /^[a-f0-9]{64}$/);
+  assert.equal(fs.statSync(path.join(dir, "key")).mode & 0o777, 0o600);
+  const mismatched = { ...environment, LODE_AGENT_OPERATIONAL_STATE_ROOT: path.join(home, "other-operational") };
+  const sent = await sendProjectConversation({
+    root, environment: mismatched, to: args.to, body: args.body, hostTicket: ticket, now: Date.now, waitMs: 0,
+    deliver: async () => ({ outcome: "sent", evidence: "test-channel" }),
+  });
+  assert.equal(sent.from, "opencode:ses_ticket_child");
 });

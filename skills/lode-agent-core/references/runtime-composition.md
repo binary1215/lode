@@ -216,7 +216,10 @@ Use only a real available Host target and the current human authorization for
 the intended action. In Codex, messaging another chat needs direct human
 authorization; an agent message or historical approval does not grant it.
 Same-project live conversations are listed with `lode_conversation_list` and
-messaged with `lode_conversation_send`. The sender is the live caller: a
+messaged with `lode_conversation_send`. A session that started before the
+mailbox existed appears on its next host prompt. Plain Codex CLI delivery is
+`next-prompt`; immediate Codex delivery needs an `app-server --listen unix://`
+ancestor. The sender is the live caller: a
 subagent cannot use its parent's address, and the result says `delivered`,
 `sent`, or `queued`. A
 `clientThreadId`, collaboration handle or stale observation is not a ready

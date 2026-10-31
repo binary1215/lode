@@ -1,8 +1,10 @@
 // OpenCode's plugin client used by this package is the v1 SDK shape
-// (`client.session.get` / `client.session.prompt`). `session.prompt` is the
-// documented way to admit a user message into a live session. A missing method
-// is not treated as success. The v2 `ctx.session.prompt({ sessionID, text })`
-// surface is a different plugin entry and is not called from here.
+// (`client.session.get` / `client.session.prompt`) when session.get exists.
+// `session.prompt` admits a user message into a live session. A missing method
+// is not treated as success. When session.get is absent and hook, wait, or
+// command exists, this calls prompt({ sessionID, text, delivery: "queue" }).
+// That delivery value is the v2 plugin argument and has not been verified
+// against a shipped OpenCode binary.
 
 function messageIdOf(result) {
   const data = result?.data && typeof result.data === "object" ? result.data : result;

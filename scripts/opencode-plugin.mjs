@@ -90,7 +90,8 @@ export default {
         if (caller) freezeUserPromptReference(caller);
       }
     }
-    let contextSupported = true, deliveries = new WeakMap(), watcher = null, activeSessionId = null;
+    let contextSupported = true, deliveries = new WeakMap(), watcher = null;
+    const activeSessionIds = new Set();
     const store = createNativeObservationStore({ environment });
     function watchInbox() {
       if (watcher || disposed) return;
@@ -100,7 +101,7 @@ export default {
         const inbox = path.join(storage.projectRoot, storage.directory, "messaging", "inbox");
         if (!fs.existsSync(inbox)) return;
         watcher = fs.watch(inbox, { recursive: true }, () => {
-          deliverQueuedOpenCode({ root: directory, client, directory, environment, skipSessionId: activeSessionId }).catch(() => {});
+          deliverQueuedOpenCode({ root: directory, client, directory, environment, skipSessionIds: [...activeSessionIds] }).catch(() => {});
         });
         watcher.unref?.();
       } catch { watcher = null; }
@@ -191,7 +192,7 @@ export default {
             || !sessionScope(session, input.sessionID)) return;
           let pending = null;
           try {
-            activeSessionId = session.id;
+            activeSessionIds.add(session.id);
             registerIfMailbox(session);
             // Never session.prompt the session whose transform is running. That
             // call is the busy session and can hang this hook. Its inbox is
@@ -202,7 +203,7 @@ export default {
             if (pending?.text && system.at(-1) === pending.text) pending.commit();
             else pending?.release();
           } catch { pending?.release(); }
-          finally { if (activeSessionId === session.id) activeSessionId = null; }
+          finally { activeSessionIds.delete(session.id); }
           if (delivery.index === null) {
             delivery.index = system.length;
             Array.prototype.push.call(system, text);

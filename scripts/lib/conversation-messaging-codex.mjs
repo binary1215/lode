@@ -37,28 +37,60 @@ export function codexProxyCommand(platform = process.platform) {
   return platform === "win32" ? "codex.cmd" : "codex";
 }
 
-function quoteWindowsArg(value) {
-  const text = String(value);
-  if (/[\s"&|<>^]/.test(text)) return `"${text.replaceAll('"', '\\"')}"`;
-  return text;
+// cmd.exe expands %VAR% even inside quotes, and it does not treat \" as an
+// escaped quote. Reject those characters instead of trying to quote them.
+// The allowlist is letters, digits, and the path punctuation a socket uses.
+function windowsSocketSafe(socketPath) {
+  return typeof socketPath === "string"
+    && socketPath.length > 0
+    && socketPath.length <= 260
+    && !socketPath.endsWith("\\")
+    && /^[A-Za-z0-9._:\\/ -]+$/.test(socketPath);
+}
+
+// /s strips one leading and one trailing quote. The doubled opening quote
+// leaves the command name quoted after that strip. Each argument is quoted
+// on its own. No backslash-escaped quotes.
+function quoteCmdInvocation(parts) {
+  const [command, ...rest] = parts;
+  return `""${command}" ${rest.map(item => `"${item}"`).join(" ")}"`;
 }
 
 // Node refuses `spawn("codex.cmd", { shell: false })` with EINVAL. Windows goes
 // through cmd.exe /d /s /c so the batch shim can run without shell:true.
 export function codexProxyLaunch({ platform = process.platform, socketPath, comSpec = "cmd.exe" } = {}) {
-  if (typeof socketPath !== "string" || !socketPath || socketPath.includes("\0")) return { mode: "none" };
+  if (typeof socketPath !== "string" || !socketPath || socketPath.includes("\0")) return { mode: "none", evidence: "codex-proxy-socket-rejected" };
   const command = codexProxyCommand(platform);
   const args = ["app-server", "proxy", "--sock", socketPath];
   if (platform === "win32") {
-    return { mode: "proxy", command: comSpec, args: ["/d", "/s", "/c", [command, ...args].map(quoteWindowsArg).join(" ")], shell: false };
+    if (!windowsSocketSafe(socketPath)) return { mode: "none", evidence: "codex-proxy-socket-rejected" };
+    return {
+      mode: "proxy", command: comSpec, args: ["/d", "/s", "/c", quoteCmdInvocation([command, ...args])],
+      shell: false, windowsVerbatimArguments: true,
+    };
   }
   return { mode: "proxy", command, args, shell: false };
 }
 
 export function codexTransportPlan({ platform = process.platform, socketPath } = {}) {
   const launch = codexProxyLaunch({ platform, socketPath });
-  if (launch.mode !== "proxy") return { mode: "none" };
-  return { mode: "proxy", command: launch.command, args: launch.args, shell: launch.shell };
+  if (launch.mode !== "proxy") return { mode: "none", evidence: launch.evidence || "codex-engine-unavailable" };
+  return {
+    mode: "proxy", command: launch.command, args: launch.args, shell: launch.shell,
+    ...(launch.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
+  };
+}
+
+// child.kill on Windows stops cmd.exe and can leave the proxy running.
+// taskkill /T /F stops that process tree. POSIX still signals the direct child.
+export function stopCodexProxy(child, { platform = process.platform, spawnSyncImpl = spawnSync } = {}) {
+  if (!child) return;
+  if (platform === "win32" && Number.isInteger(child.pid) && child.pid > 0) {
+    try {
+      spawnSyncImpl("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore", shell: false });
+    } catch { /* The proxy may already have exited. */ }
+  }
+  try { child.kill?.(); } catch { /* A finished proxy has nothing to kill. */ }
 }
 
 export function ancestorUsesSharedEngine(commandLines) {
@@ -207,12 +239,16 @@ function writeLine(child, line) {
 
 // turn/start is delivered only when the proxy returns a turn id. Anything else
 // leaves the message queued. The call does not override sandbox or approval policy.
-export async function deliverCodexTurn({ socketPath, platform = process.platform, threadId, text, spawnImpl = spawn, timeoutMs = 3000, comSpec = "cmd.exe" } = {}) {
+export async function deliverCodexTurn({ socketPath, platform = process.platform, threadId, text, spawnImpl = spawn, spawnSyncImpl = spawnSync, timeoutMs = 3000, comSpec = "cmd.exe" } = {}) {
   const plan = codexProxyLaunch({ platform, socketPath, comSpec });
-  if (plan.mode !== "proxy" || typeof threadId !== "string" || typeof text !== "string") return { outcome: "unavailable", evidence: "codex-engine-unavailable" };
+  if (plan.mode !== "proxy" || typeof threadId !== "string" || typeof text !== "string") {
+    return { outcome: "unavailable", evidence: plan.evidence || "codex-engine-unavailable" };
+  }
   let child;
   try {
-    child = spawnImpl(plan.command, plan.args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, shell: plan.shell });
+    const options = { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, shell: plan.shell === true };
+    if (plan.windowsVerbatimArguments) options.windowsVerbatimArguments = true;
+    child = spawnImpl(plan.command, plan.args, options);
     const initialize = readResponse(child, 1, timeoutMs);
     await writeLine(child, rpc(1, "initialize", { clientInfo: { name: "lode", version: packageVersion } }));
     const initialized = await initialize;
@@ -232,6 +268,6 @@ export async function deliverCodexTurn({ socketPath, platform = process.platform
     return { outcome: "unavailable", evidence: error?.code === "EINVAL" ? "codex-proxy-spawn-rejected" : "codex-proxy-failed" };
   } finally {
     try { child?.stdin?.end(); } catch { /* The proxy exits with its client. */ }
-    try { child?.kill?.(); } catch { /* A finished proxy has nothing to kill. */ }
+    stopCodexProxy(child, { platform, spawnSyncImpl });
   }
 }
