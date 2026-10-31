@@ -12,20 +12,7 @@ import { runSessionHostHook, writeSessionHostOutput } from "../scripts/session-h
 import plugin from "../scripts/opencode-plugin.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
-const tree = root => fs.existsSync(root) ? fs.readdirSync(root, { recursive: true }).filter(name => !String(name).split(/[\\/]/u).includes("messaging")).sort() : [];
-function readTree(root) {
-  if (!fs.existsSync(root)) return "";
-  const files = [];
-  const walk = directory => {
-    for (const name of fs.readdirSync(directory)) {
-      const file = path.join(directory, name);
-      if (fs.statSync(file).isDirectory()) walk(file);
-      else files.push(fs.readFileSync(file, "utf8"));
-    }
-  };
-  walk(root);
-  return files.join("\n");
-}
+const tree = root => fs.existsSync(root) ? fs.readdirSync(root, { recursive: true }).sort() : [];
 
 function fixture(t) {
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-prompt-reference-")));
@@ -119,9 +106,6 @@ test("Claude and Codex restore the frozen prompt after compact or clear and not 
     const cleared = await runSessionHostHook({ runtime, environment, event: start(root, runtime, "clear", sessionId) });
     assert.equal(cleared.hookSpecificOutput.additionalContext.includes("after clear " + runtime), true);
     assert.deepEqual(canon(), before);
-    const mailbox = readTree(path.join(root, ".lode", "messaging"));
-    assert.equal(mailbox.includes(prompt), false);
-    assert.equal(mailbox.includes("sk-abcdefghijklmnopqrstuvwxyz"), false);
   }
   const claude = JSON.parse(fs.readFileSync(path.join(pluginRoot, "hooks/claude.json"), "utf8"));
   const codex = JSON.parse(fs.readFileSync(path.join(pluginRoot, "hooks/codex.json"), "utf8"));

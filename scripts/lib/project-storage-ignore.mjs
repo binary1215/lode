@@ -73,6 +73,35 @@ function assertIgnorePoliciesUnchanged(policies) {
   }
 }
 
+function exceptionUnignoresMessaging(pattern) {
+  const body = String(pattern || "").replace(/\/$/, "");
+  if (body === "*" || body === "**" || body === "/*") return true;
+  return body.toLowerCase().includes("messaging");
+}
+
+// Existing projects already have a gitignore, and the create-only helper must
+// not rewrite it. Appending one rule keeps every earlier line and skips the
+// append when a user exception would un-ignore the mailbox.
+export function appendMessagingIgnoreIfSafe({ root, directory }) {
+  const file = path.join(root, directory, ".gitignore");
+  const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+  if (!stat) return { status: "absent" };
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 1024 * 1024) return { status: "preserved", reasonCode: "USER_IGNORE_UNAVAILABLE" };
+  const before = fs.readFileSync(file);
+  let text;
+  try { text = new TextDecoder("utf-8", { fatal: true }).decode(before); }
+  catch { return { status: "preserved", reasonCode: "USER_IGNORE_UNAVAILABLE" }; }
+  if (text.includes("\0") || text.split(/\r?\n/).includes("/messaging/")) return { status: "present" };
+  const own = text.split(/\r?\n/).filter(line => line.startsWith("!")).map(line => line.slice(1));
+  let rootExceptions = [];
+  try { rootExceptions = readIgnorePolicy(root, path.join(root, ".gitignore"), [], true).exceptions; }
+  catch { return { status: "preserved", reasonCode: "USER_IGNORE_UNAVAILABLE" }; }
+  if ([...own, ...rootExceptions].some(exceptionUnignoresMessaging)) return { status: "preserved", reasonCode: "USER_IGNORE_RULES_TAKE_PRECEDENCE" };
+  if (!fs.readFileSync(file).equals(before)) return { status: "preserved", reasonCode: "USER_IGNORE_CHANGED_CONCURRENTLY" };
+  fs.appendFileSync(file, `${text.endsWith("\n") ? "" : "\n"}/messaging/\n`);
+  return { status: "appended" };
+}
+
 export function ensureProjectStorageIgnore({ root, storage }) {
   const file = path.join(root, formatForVerifiedOwner(storage).directory, ".gitignore");
   try {

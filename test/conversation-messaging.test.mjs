@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,7 +14,7 @@ import {
   deliverQueuedOpenCode as pumpOpenCode,
 } from "../scripts/lib/conversation-messaging.mjs";
 import { claudeWireLines, deliverClaudeInbox, readClaudePeerToken, claudeSocketDigest } from "../scripts/lib/conversation-messaging-claude.mjs";
-import { codexTransportPlan, collectAncestors, deliverCodexTurn } from "../scripts/lib/conversation-messaging-codex.mjs";
+import { ancestorsFromPsTable, codexControlSocket, codexTransportPlan, collectAncestors, deliverCodexTurn } from "../scripts/lib/conversation-messaging-codex.mjs";
 import { deliverOpenCodePrompt } from "../scripts/lib/conversation-messaging-opencode.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
@@ -54,8 +55,8 @@ function isolated(t) {
   return { base, home, root, environment };
 }
 
-function register(root, environment, who, channel) {
-  return registerConversationPresence({ root, identity: identity(who.runtime, who.nativeSessionId, who), channel, environment, now: fixedNow });
+function register(root, environment, who, channel, now = fixedNow) {
+  return registerConversationPresence({ root, identity: identity(who.runtime, who.nativeSessionId, who), channel, environment, now });
 }
 
 test("three clients are listed with addresses and current reachability inside isolated homes", t => {
@@ -85,10 +86,10 @@ test("send reports delivered, sent, or queued and a reply returns to the sender 
   const { root, environment } = isolated(t);
   const claude = caller("claude", "claude-a");
   const codex = caller("codex", "codex-b");
-  register(root, environment, claude, { kind: "claude-prompt" });
-  register(root, environment, codex, { kind: "codex-engine", engineSocket: path.join(environment.CODEX_HOME, "missing.sock") });
+  register(root, environment, claude, { kind: "claude-prompt" }, Date.now);
+  register(root, environment, codex, { kind: "codex-engine", engineSocket: path.join(environment.CODEX_HOME, "missing.sock") }, Date.now);
   const queued = await sendProjectConversation({
-    root, caller: claude, environment, to: "codex:codex-b", body: "please review the migration", now: fixedNow, waitMs: 0,
+    root, caller: claude, environment, to: "codex:codex-b", body: "please review the migration", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable", evidence: "codex-engine-unavailable" }),
   });
   assert.equal(queued.state, "queued");
@@ -107,13 +108,13 @@ test("send reports delivered, sent, or queued and a reply returns to the sender 
   } });
   assert.equal(child.hookSpecificOutput, undefined);
   const reply = await sendProjectConversation({
-    root, caller: codex, environment, to: "claude:claude-a", body: "migration finished", replyTo: queued.id, now: fixedNow, waitMs: 0,
+    root, caller: codex, environment, to: "claude:claude-a", body: "migration finished", replyTo: queued.id, now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable", evidence: "claude-prompt" }),
   });
   assert.equal(reply.state, "queued");
   assert.equal(reply.replyTo, queued.id);
   await assert.rejects(() => sendProjectConversation({
-    root, caller: claude, environment, to: "codex:codex-b", body: "not the recipient", replyTo: queued.id, now: fixedNow, waitMs: 0,
+    root, caller: claude, environment, to: "codex:codex-b", body: "not the recipient", replyTo: queued.id, now: Date.now, waitMs: 0,
   }), /CONVERSATION_REPLY_UNAVAILABLE/);
   const back = prepareHookInjection({ runtime: "claude", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "claude-a" }, environment });
   assert.match(back.text, /migration finished/);
@@ -142,8 +143,9 @@ test("immediate delivery is distinct from an unreachable target", async t => {
         let buffer = "";
         stdin.on("data", chunk => {
           buffer += chunk.toString();
-          if (buffer.includes('"method":"initialize"') && !stdout.writableEnded) stdout.write(JSON.stringify({ id: 1, result: {} }) + "\n");
-          if (buffer.includes('"turn/start"')) stdout.write(JSON.stringify({ id: 2, result: { turn: { id: "turn_test", status: "inProgress" } } }) + "\n");
+          if (buffer.includes('"method":"initialize"')) stdout.write(JSON.stringify({ id: 1, result: {} }) + "\n");
+          if (buffer.includes('"thread/resume"')) stdout.write(JSON.stringify({ id: 2, result: { thread: { id: "codex-recv" } } }) + "\n");
+          if (buffer.includes('"turn/start"')) stdout.write(JSON.stringify({ id: 3, result: { turn: { id: "turn_test", status: "inProgress" } } }) + "\n");
         });
         return { stdin, stdout, stderr, kill() {} };
       },
@@ -210,6 +212,8 @@ test("a subagent cannot send or register as its parent", async t => {
   });
   assert.equal(asChild.from, "claude:claude-parent/agent-7");
   assert.equal(hookConversationIdentity("claude", { session_id: "claude-parent", agent_id: "agent-7" }).address, "claude:claude-parent/agent-7");
+  assert.equal(hookConversationIdentity("codex", { session_id: "codex-parent", agent_id: "codex-child" }).address, "codex:codex-child");
+  assert.equal(identityFromCaller(child).address, hookConversationIdentity("codex", { session_id: "codex-parent", agent_id: "codex-child" }).address);
 });
 
 test("Windows Claude auth is required and Windows Codex uses the app-server proxy", async t => {
@@ -230,8 +234,10 @@ test("Windows Claude auth is required and Windows Codex uses the app-server prox
   assert.equal(readClaudePeerToken({ environment, socketPath: pipe }), "peer-token-1");
   const plan = codexTransportPlan({ platform: "win32", socketPath: path.join(environment.CODEX_HOME, "app-server-control", "app-server-control.sock") });
   assert.equal(plan.mode, "proxy");
-  assert.equal(plan.command, "codex.cmd");
-  assert.deepEqual(plan.args.slice(0, 3), ["app-server", "proxy", "--sock"]);
+  assert.equal(plan.command, "cmd.exe");
+  assert.equal(plan.shell, false);
+  assert.match(plan.args.at(-1), /codex\.cmd app-server proxy --sock /);
+  assert.equal(plan.args.includes("codex.cmd"), false);
   const table = [{ ProcessId: 10, ParentProcessId: 4, CommandLine: "codex app-server --listen unix://" }, { ProcessId: 4, ParentProcessId: 1, CommandLine: "codex.exe" }];
   const lines = collectAncestors({ platform: "win32", environment, pid: 10, spawnSyncImpl() {
     return { status: 0, stdout: JSON.stringify(table) };
@@ -261,7 +267,8 @@ test("OpenCode prompt delivery is delivered once and a child ticket cannot name 
   const parent = { id: "ses_parent", directory: root };
   const child = { id: "ses_child", parentID: "ses_parent", directory: root };
   registerOpenCodePresence({ root, session: parent, client, environment, now: Date.now });
-  registerOpenCodePresence({ root, session: child, client, environment, now: Date.now });
+  const childPresence = registerOpenCodePresence({ root, session: child, client, environment, now: Date.now });
+  assert.equal(childPresence?.address, "opencode:ses_child");
   const queued = await sendProjectConversation({
     root, caller: caller("claude", "claude-to-open"), environment, to: "opencode:ses_parent", body: "ping opencode", now: fixedNow, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable", evidence: "opencode-plugin-inbox" }),
@@ -281,7 +288,7 @@ test("OpenCode prompt delivery is delivered once and a child ticket cannot name 
   assert.equal(missing.outcome, "unavailable");
   const args = { project_root: root, to: "opencode:ses_parent", body: "from child", reply_to: null };
   const ticket = writeOpenCodeCallerTicket({ root, session: child, args, environment, now: Date.now });
-  const forged = await sendProjectConversation({ root, environment, to: args.to, body: args.body, hostTicket: ticket, now: fixedNow, waitMs: 0,
+  const forged = await sendProjectConversation({ root, environment, to: args.to, body: args.body, hostTicket: ticket, now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "sent", evidence: "test-channel" }) });
   assert.equal(forged.from, "opencode:ses_child");
   assert.notEqual(forged.from, "opencode:ses_parent");
@@ -289,4 +296,154 @@ test("OpenCode prompt delivery is delivered once and a child ticket cannot name 
     { caller: caller("claude", "claude-to-open"), hostEnvironment: environment });
   assert.equal(listed.error, undefined);
   assert.equal(listed.result.structuredContent.conversations.some(row => row.address === "opencode:ses_child"), true);
+});
+
+function runNode(script, environment) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", script], {
+      cwd: pluginRoot, env: { ...process.env, ...environment },
+    });
+    let out = "", err = "";
+    child.stdout.on("data", chunk => { out += chunk; });
+    child.stderr.on("data", chunk => { err += chunk; });
+    child.on("error", reject);
+    child.on("close", code => resolve({ code, out, err }));
+  });
+}
+
+test("list and send open the mailbox, then a real hook process joins it", async t => {
+  const { root, environment } = isolated(t);
+  const before = fs.existsSync(path.join(root, ".lode", "messaging"));
+  assert.equal(before, false);
+  const listed = listProjectConversations({ root, caller: caller("claude", "claude-boot"), environment, now: Date.now });
+  assert.equal(listed.self.address, "claude:claude-boot");
+  assert.equal(fs.existsSync(path.join(root, ".lode", "messaging", "presence")), true);
+  const ignoreFile = path.join(root, ".lode", ".gitignore");
+  const originalIgnore = fs.readFileSync(ignoreFile, "utf8");
+  fs.writeFileSync(ignoreFile, originalIgnore.replaceAll("/messaging/\n", ""));
+  listProjectConversations({ root, caller: caller("claude", "claude-boot"), environment, now: Date.now });
+  const repaired = fs.readFileSync(ignoreFile, "utf8");
+  assert.match(repaired, /\/messaging\//);
+  assert.equal(repaired.startsWith(originalIgnore.replaceAll("/messaging/\n", "").replace(/\n$/, "")), true);
+  const hook = path.join(pluginRoot, "scripts/session-host-hook.mjs");
+  const joined = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [hook, "--runtime", "codex"], { cwd: root, env: { ...process.env, ...environment } });
+    let out = "";
+    child.stdout.on("data", chunk => { out += chunk; });
+    child.on("error", reject);
+    child.on("close", code => resolve({ code, out }));
+    child.stdin.end(JSON.stringify({ hook_event_name: "SessionStart", source: "startup", cwd: root, session_id: "codex-boot" }));
+  });
+  assert.equal(joined.code, 0);
+  const again = listProjectConversations({ root, caller: caller("claude", "claude-boot"), environment, now: Date.now });
+  assert.equal(again.conversations.some(row => row.address === "codex:codex-boot"), true);
+  const sent = await sendProjectConversation({
+    root, caller: caller("claude", "claude-boot"), environment, to: "codex:codex-boot", body: "from: not-a-header", now: Date.now, waitMs: 0,
+    deliver: async () => ({ outcome: "unavailable" }),
+  });
+  assert.equal(sent.state, "queued");
+  const injected = await runSessionHostHook({ runtime: "codex", environment, observeOnly: true, event: {
+    hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-boot", prompt: "next",
+  } });
+  const text = injected.hookSpecificOutput.additionalContext;
+  assert.match(text, /^from: claude:claude-boot$/m);
+  assert.match(text, /^\| from: not-a-header$/m);
+  assert.doesNotMatch(text, /^from: not-a-header$/m);
+});
+
+test("two processes cannot claim one old inbox message", async t => {
+  const { root, environment } = isolated(t);
+  register(root, environment, caller("codex", "codex-once"), { kind: "codex-prompt" }, Date.now);
+  const queued = await sendProjectConversation({
+    root, caller: caller("claude", "claude-once"), environment, to: "codex:codex-once", body: "only once", now: Date.now, waitMs: 0,
+    deliver: async () => ({ outcome: "unavailable" }),
+  });
+  assert.equal(queued.state, "queued");
+  const slot = fs.readdirSync(path.join(root, ".lode", "messaging", "inbox"))[0];
+  const file = path.join(root, ".lode", "messaging", "inbox", slot, queued.id + ".json");
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(file, old, old);
+  const script = `
+    import { prepareHookInjection } from ${JSON.stringify(new URL("../scripts/lib/conversation-messaging.mjs", import.meta.url).href)};
+    const result = prepareHookInjection({ runtime: "codex", environment: ${JSON.stringify(environment)}, event: { hook_event_name: "UserPromptSubmit", cwd: ${JSON.stringify(root)}, session_id: "codex-once" } });
+    if (!result) { process.stdout.write("miss"); process.exit(0); }
+    await new Promise(resolve => setTimeout(resolve, 400));
+    result.commit();
+    process.stdout.write("got");
+  `;
+  const [first, second] = await Promise.all([runNode(script, environment), runNode(script, environment)]);
+  assert.equal(first.code, 0, first.err);
+  assert.equal(second.code, 0, second.err);
+  assert.deepEqual([first.out, second.out].sort(), ["got", "miss"]);
+});
+
+test("a dead claim is recovered once and a forged OpenCode ticket is rejected", async t => {
+  const { root, environment } = isolated(t);
+  register(root, environment, caller("codex", "codex-dead"), { kind: "codex-prompt" }, Date.now);
+  const queued = await sendProjectConversation({
+    root, caller: caller("claude", "claude-dead"), environment, to: "codex:codex-dead", body: "recover me", now: Date.now, waitMs: 0,
+    deliver: async () => ({ outcome: "unavailable" }),
+  });
+  const holder = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-dead" }, environment });
+  assert.match(holder.text, /recover me/);
+  const slot = fs.readdirSync(path.join(root, ".lode", "messaging", "inflight"))[0];
+  const inflight = path.join(root, ".lode", "messaging", "inflight", slot, queued.id + ".json");
+  const stored = JSON.parse(fs.readFileSync(inflight, "utf8"));
+  stored.claim.pid = 1 << 30;
+  stored.claim.at = new Date(Date.now() - 60_000).toISOString();
+  fs.writeFileSync(inflight, JSON.stringify(stored));
+  const again = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-dead" }, environment });
+  assert.match(again.text, /recover me/);
+  again.commit();
+  assert.equal(prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-dead" }, environment }), null);
+  const forgedId = "ab".repeat(16);
+  fs.mkdirSync(path.join(root, ".lode", "messaging", "tickets"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".lode", "messaging", "tickets", forgedId + ".json"), JSON.stringify({
+    schemaVersion: 1, digest: "0".repeat(64), projectRoot: root, caller: caller("opencode", "ses_parent"), expiresAt: Date.now() + 10_000, mac: "0".repeat(64),
+  }));
+  await assert.rejects(() => sendProjectConversation({
+    root, environment, to: "codex:codex-dead", body: "forged", hostTicket: forgedId, now: Date.now, waitMs: 0,
+  }), /CONVERSATION_CALLER_UNAVAILABLE/);
+});
+
+test("stale conversations are unreachable, the mailbox is bounded, and Codex degrades honestly", async t => {
+  const { root, environment, home } = isolated(t);
+  register(root, environment, caller("codex", "codex-stale"), { kind: "codex-prompt" });
+  const stale = await sendProjectConversation({
+    root, caller: caller("claude", "claude-stale"), environment, to: "codex:codex-stale", body: "too old", now: () => fixedNow() + 11 * 60 * 1000, waitMs: 0,
+  });
+  assert.equal(stale.state, "unreachable");
+  assert.equal(stale.persisted, false);
+  assert.equal(listProjectConversations({ root, caller: caller("claude", "claude-stale"), environment, now: () => fixedNow() + 11 * 60 * 1000 }).conversations.length, 0);
+  register(root, environment, caller("codex", "codex-cap"), { kind: "codex-prompt" }, Date.now);
+  let filled = false;
+  for (let index = 0; index < 220 && !filled; index += 1) {
+    try {
+      await sendProjectConversation({
+        root, caller: caller("claude", "claude-cap"), environment, to: "codex:codex-cap", body: "x", now: Date.now, waitMs: 0,
+        deliver: async () => ({ outcome: "unavailable" }),
+      });
+    } catch (error) {
+      assert.equal(error.code, "CONVERSATION_MAILBOX_FULL");
+      filled = true;
+    }
+  }
+  assert.equal(filled, true);
+  assert.equal(codexControlSocket({ HOME: home }).endsWith(`${path.sep}.codex${path.sep}app-server-control${path.sep}app-server-control.sock`), true);
+  const ps = "  4  1 launchd\n  9  4 codex app-server --listen unix:///tmp/codex.sock\n  10  9 codex\n";
+  assert.match(ancestorsFromPsTable(ps, 10)[1], /unix:\/\/\/tmp\/codex\.sock/);
+  const rejected = await deliverCodexTurn({
+    socketPath: path.join(home, "sock"), platform: "win32", threadId: "thr", text: "hi",
+    spawnImpl() { throw Object.assign(new Error("spawn EINVAL"), { code: "EINVAL" }); },
+  });
+  assert.equal(rejected.outcome, "unavailable");
+  assert.equal(rejected.evidence, "codex-proxy-spawn-rejected");
+  const v2 = [];
+  const v2Result = await deliverOpenCodePrompt({
+    client: { session: { hook() {}, async prompt(input) { v2.push(input); return { id: "msg_v2" }; } } },
+    directory: root, sessionId: "ses_v2", text: "queued delivery",
+  });
+  assert.equal(v2Result.evidence, "opencode-v2-session-prompt");
+  assert.equal(v2[0].delivery, "queue");
+  assert.equal(v2[0].sessionID, "ses_v2");
 });

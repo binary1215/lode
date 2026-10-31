@@ -37,6 +37,24 @@ export function claudeConfigDirectory(environment = process.env) {
 // Undocumented: Claude writes <config>/sessions/<pid>.<sha256(socket path)>.key
 // containing {"peerToken":"..."}. We only read it, and only under the caller's
 // CLAUDE_CONFIG_DIR. A missing token refuses the Windows pipe rather than guessing.
+function sessionKeyNames(environment, readDir) {
+  const directory = claudeConfigDirectory(environment);
+  if (!directory) return [];
+  try { return readDir(path.join(directory, "sessions")).filter(name => /^[0-9]+\.[a-f0-9]{64}\.key$/u.test(name)); }
+  catch { return []; }
+}
+
+// Listing only needs to know that a key file exists. The token bytes are read
+// later, and only for the one socket we are about to write.
+export function claudePeerTokenPresent({ environment = process.env, socketPath, readDir = fs.readdirSync } = {}) {
+  const digest = claudeSocketDigest(socketPath);
+  if (!digest) return false;
+  const ownToken = environment?.CLAUDE_CODE_MESSAGING_TOKEN;
+  if (typeof ownToken === "string" && TOKEN.test(ownToken) && normalizeClaudeSocketPath(environment?.CLAUDE_CODE_MESSAGING_SOCKET) === normalizeClaudeSocketPath(socketPath)) return true;
+  const suffix = `.${digest}.key`;
+  return sessionKeyNames(environment, readDir).some(name => name.endsWith(suffix));
+}
+
 export function readClaudePeerToken({ environment = process.env, socketPath, readDir = fs.readdirSync, readFile = fs.readFileSync } = {}) {
   const digest = claudeSocketDigest(socketPath);
   const directory = claudeConfigDirectory(environment);
@@ -44,17 +62,13 @@ export function readClaudePeerToken({ environment = process.env, socketPath, rea
   const ownSocket = environment?.CLAUDE_CODE_MESSAGING_SOCKET;
   const ownToken = environment?.CLAUDE_CODE_MESSAGING_TOKEN;
   if (typeof ownToken === "string" && TOKEN.test(ownToken) && normalizeClaudeSocketPath(ownSocket) === normalizeClaudeSocketPath(socketPath)) return ownToken;
-  let names = [];
-  try { names = readDir(path.join(directory, "sessions")); }
-  catch { return null; }
   const suffix = `.${digest}.key`;
-  for (const name of names) {
-    if (!/^[0-9]+\.[a-f0-9]{64}\.key$/u.test(name) || !name.endsWith(suffix)) continue;
-    try {
-      const parsed = JSON.parse(readFile(path.join(directory, "sessions", name), "utf8"));
-      if (typeof parsed?.peerToken === "string" && TOKEN.test(parsed.peerToken)) return parsed.peerToken;
-    } catch { /* An unreadable key is not a token. */ }
-  }
+  const match = sessionKeyNames(environment, readDir).find(name => name.endsWith(suffix));
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(readFile(path.join(directory, "sessions", match), "utf8"));
+    if (typeof parsed?.peerToken === "string" && TOKEN.test(parsed.peerToken)) return parsed.peerToken;
+  } catch { /* An unreadable key is not a token. */ }
   return null;
 }
 

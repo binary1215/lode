@@ -12,7 +12,7 @@
 
 ## 범위와 신원
 
-등록은 실제로 열린 프로젝트의 호스트 훅 또는 OpenCode 플러그인에서 일어납니다. 다른 프로젝트의 대화는 목록에 없고, 주소를 입력해도 고를 수 없습니다. 보낸 사람은 지금 호출한 대화입니다. 도구 인자로 보낸 사람을 지정할 수 없습니다. 하위 에이전트 주소는 부모와 다르고, 하위 에이전트의 프롬프트는 부모 수신함을 가져가지 않습니다.
+첫 `lode_conversation_list` 또는 `lode_conversation_send`가 `.lode/messaging/`를 엽니다. 그 다음부터 호스트 훅이 그 프로젝트의 다른 살아있는 대화를 등록합니다. 10분 동안 조용한 대화는 목록에 없고, 그 주소로 보내면 `unreachable`입니다. 다른 프로젝트의 대화는 목록에 없고, 주소를 입력해도 고를 수 없습니다. 보낸 사람은 지금 호출한 대화입니다. 도구 인자로 보낸 사람을 지정할 수 없습니다. 하위 에이전트 주소는 부모와 다르고, 하위 에이전트의 프롬프트는 부모 수신함을 가져가지 않습니다. 주입된 본문 줄은 `| `로 시작해 본문이 `from:` 헤더를 위조하지 못합니다.
 
 [세션 작업](session-work-context.md)의 읽기 전용 후보 보기는 그대로입니다. 그 후보는 여전히 연락을 허가하지 않습니다.
 
@@ -20,10 +20,10 @@
 
 Claude Code는 문서화된 inbox 소켓 또는 네이티브 Windows named pipe를 사용합니다. 인증 줄은 문서화된 `{"type":"auth","token":"..."}` 형식입니다. 네이티브 Windows에서는 `CLAUDE_CODE_MESSAGING_TOKEN` 또는 `CLAUDE_CONFIG_DIR` 아래 세션 키 파일에서 토큰을 찾지 못하면 파이프를 열지 않습니다. 쓰기가 끝나도 `delivered`가 아니라 `sent`입니다. 소켓이 없으면 `UserPromptSubmit`이 한 번 넣을 때까지 `queued`로 남습니다.
 
-Codex는 이 대화의 프로세스 조상에 `app-server --listen unix://`가 있을 때만 `CODEX_HOME` 아래 문서화된 제어 소켓에 `codex app-server proxy --sock`로 연결합니다. turn id가 돌아오면 `delivered`입니다. 그렇지 않으면 `UserPromptSubmit`을 위해 `queued`로 남습니다. Node는 Windows를 포함해 Unix 소켓을 직접 열지 않습니다.
+Codex는 이 대화의 프로세스 조상에 `app-server --listen unix://`가 있을 때 `codex app-server proxy --sock`로 연결합니다. Linux는 `/proc`, macOS는 `ps`, Windows는 PowerShell 프로세스 목록을 읽습니다. 소켓은 listen 경로이거나 `CODEX_HOME` 또는 그 변수가 없을 때 `~/.codex`의 제어 소켓입니다. 전달은 `thread/resume` 다음 `turn/start`입니다. turn id가 돌아오면 `delivered`입니다. 홈이 없거나 소켓이 없거나 resume가 거절되거나 Windows spawn이 거절되면 `queued`로 남습니다. Windows에서는 Node가 `codex.cmd`를 직접 띄우면 거절하므로 `cmd.exe`를 거칩니다. Node는 Unix 소켓을 직접 열지 않습니다.
 
-OpenCode는 그 메서드가 있을 때 v1 플러그인 클라이언트 `client.session.prompt`를 사용합니다. 수락된 메시지 id는 `delivered`입니다. 그렇지 않으면 다음 system transform이 수신함을 한 번 넣고 `sent`로 보고합니다.
+OpenCode는 `session.get`이 있으면 v1 `client.session.prompt`를, 아니면 v2 `client.session.prompt`에 `delivery` `queue`를 사용합니다. system transform은 지금 만들고 있는 세션에 prompt하지 않습니다. 수락된 메시지 id는 `delivered`입니다. 그렇지 않으면 다음 system transform이 수신함을 한 번 넣고 `sent`로 보고합니다.
 
 ## Canon이 아닌 것
 
-`.lode/messaging/`는 살아있는 우편함입니다. 생성되는 저장소 규칙에서 무시되며 스냅샷, Session 기록, 이관 입력이 아닙니다. 기존 기록 id와 해시는 바뀌지 않습니다.
+`.lode/messaging/`는 살아있는 우편함입니다. 새 프로젝트는 만들 때 `/messaging/`를 무시합니다. 이미 있는 저장소 gitignore는 우편함이 열릴 때 그 한 줄만 덧붙이며, 사용자가 우편함을 가리키는 예외를 둔 경우가 아니면 앞줄을 고치지 않습니다. 우편함은 메시지 200개, 1 MiB를 넘기지 않고 오래된 archive는 지웁니다. 스냅샷, Session 기록, 이관 입력이 아닙니다. 기존 기록 id와 해시는 바뀌지 않습니다.

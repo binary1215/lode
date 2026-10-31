@@ -104,6 +104,14 @@ export function createNativeSessionHostBridge({ environment = process.env, runti
       const routed = routerName(match.name);
       const name = semanticToolName(routed ? original.name : match.name);
       if (helperName(name)) throw Object.assign(new Error(), { code: "NATIVE_HOOK_RECURSION" });
+      if (name === "head_conversation_list" || name === "head_conversation_send") {
+        requestRegistry.prepare({ key: value.tool_use_id, name: match.name, arguments: original,
+          caller: { runtime: "claude", nativeSessionId: value.native_session_id, agentId: value.native_agent_id || null,
+            outerToolName: value.outer_tool_name,
+            nativeProjectRoot: typeof value.native_project_root === "string" && path.isAbsolute(value.native_project_root)
+              && !value.native_project_root.includes("${") ? value.native_project_root : null } });
+        return reply(request);
+      }
       const dependent = sessionCallRequiresBinding(name);
       let guardOnlyCorrelation = false;
       if (!dependent && value.native_agent_id && subagentWriteGuardEnabled(environment,

@@ -2,24 +2,63 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
+const packageVersion = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
+
 // Codex documents `codex app-server --listen unix://` and `codex app-server proxy --sock`.
 // The control socket speaks WebSocket, so this adapter never opens it with Node.
 // Node cannot open AF_UNIX on Windows; the proxy is the documented stdio bridge
 // there and on every other platform.
 
+export function codexHomeDirectory(environment = process.env) {
+  if (typeof environment?.CODEX_HOME === "string" && path.isAbsolute(environment.CODEX_HOME)) return environment.CODEX_HOME;
+  const home = environment?.HOME || environment?.USERPROFILE;
+  return typeof home === "string" && path.isAbsolute(home) ? path.join(home, ".codex") : null;
+}
+
 export function codexControlSocket(environment = process.env) {
-  const home = environment?.CODEX_HOME;
-  if (typeof home !== "string" || !path.isAbsolute(home)) return null;
-  return path.join(home, "app-server-control", "app-server-control.sock");
+  const home = codexHomeDirectory(environment);
+  return home ? path.join(home, "app-server-control", "app-server-control.sock") : null;
+}
+
+export function socketFromAncestorListen(commandLines) {
+  if (!Array.isArray(commandLines)) return null;
+  for (const line of commandLines) {
+    if (typeof line !== "string") continue;
+    const match = /--listen(?:=|\s+)(unix:\/\/\S*)/u.exec(line);
+    if (!match) continue;
+    const value = match[1];
+    if (value === "unix://" || value === "unix:") return null;
+    if (value.startsWith("unix://")) return value.slice("unix://".length) || null;
+  }
+  return null;
 }
 
 export function codexProxyCommand(platform = process.platform) {
   return platform === "win32" ? "codex.cmd" : "codex";
 }
 
-export function codexTransportPlan({ platform = process.platform, socketPath } = {}) {
+function quoteWindowsArg(value) {
+  const text = String(value);
+  if (/[\s"&|<>^]/.test(text)) return `"${text.replaceAll('"', '\\"')}"`;
+  return text;
+}
+
+// Node refuses `spawn("codex.cmd", { shell: false })` with EINVAL. Windows goes
+// through cmd.exe /d /s /c so the batch shim can run without shell:true.
+export function codexProxyLaunch({ platform = process.platform, socketPath, comSpec = "cmd.exe" } = {}) {
   if (typeof socketPath !== "string" || !socketPath || socketPath.includes("\0")) return { mode: "none" };
-  return { mode: "proxy", command: codexProxyCommand(platform), args: ["app-server", "proxy", "--sock", socketPath] };
+  const command = codexProxyCommand(platform);
+  const args = ["app-server", "proxy", "--sock", socketPath];
+  if (platform === "win32") {
+    return { mode: "proxy", command: comSpec, args: ["/d", "/s", "/c", [command, ...args].map(quoteWindowsArg).join(" ")], shell: false };
+  }
+  return { mode: "proxy", command, args, shell: false };
+}
+
+export function codexTransportPlan({ platform = process.platform, socketPath } = {}) {
+  const launch = codexProxyLaunch({ platform, socketPath });
+  if (launch.mode !== "proxy") return { mode: "none" };
+  return { mode: "proxy", command: launch.command, args: launch.args, shell: launch.shell };
 }
 
 export function ancestorUsesSharedEngine(commandLines) {
@@ -75,8 +114,40 @@ export function linuxAncestors(pid = process.pid, readFile = fs.readFileSync) {
   return lines;
 }
 
+export function darwinProcessListCommand() {
+  return { file: "ps", args: ["-ax", "-o", "pid=,ppid=,command="] };
+}
+
+export function ancestorsFromPsTable(text, pid) {
+  const rows = new Map();
+  for (const line of String(text || "").split(/\n/)) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/u.exec(line);
+    if (!match) continue;
+    rows.set(Number(match[1]), { parent: Number(match[2]), command: match[3].trim() });
+  }
+  const lines = [];
+  let current = Number(pid);
+  const seen = new Set();
+  while (rows.has(current) && !seen.has(current) && lines.length < 32) {
+    seen.add(current);
+    const row = rows.get(current);
+    if (row.command) lines.push(row.command);
+    if (!Number.isInteger(row.parent) || row.parent === current) break;
+    current = row.parent;
+  }
+  return lines;
+}
+
 export function collectAncestors({ platform = process.platform, environment = process.env, pid = process.pid, spawnSyncImpl = spawnSync } = {}) {
   if (typeof environment?.LODE_CONVERSATION_ANCESTORS === "string") return environment.LODE_CONVERSATION_ANCESTORS.split("\n");
+  if (platform === "darwin") {
+    const command = darwinProcessListCommand();
+    let result;
+    try { result = spawnSyncImpl(command.file, command.args, { encoding: "utf8", timeout: 2000, shell: false }); }
+    catch { return []; }
+    if (!result || result.status !== 0 || typeof result.stdout !== "string") return [];
+    return ancestorsFromPsTable(result.stdout, pid);
+  }
   if (platform === "win32") {
     const command = windowsProcessListCommand();
     let result;
@@ -93,9 +164,10 @@ export function collectAncestors({ platform = process.platform, environment = pr
 }
 
 export function codexChannel({ environment = process.env, ancestors = [], socketExists = fs.existsSync } = {}) {
-  const socketPath = codexControlSocket(environment);
-  if (socketPath && ancestorUsesSharedEngine(ancestors) && socketExists(socketPath)) return { kind: "codex-engine", engineSocket: socketPath };
-  return { kind: "codex-prompt" };
+  if (!ancestorUsesSharedEngine(ancestors)) return { kind: "codex-prompt" };
+  const socketPath = socketFromAncestorListen(ancestors) || codexControlSocket(environment);
+  if (socketPath && socketExists(socketPath)) return { kind: "codex-engine", engineSocket: socketPath };
+  return { kind: "codex-prompt", evidence: socketPath ? "codex-engine-socket-missing" : "codex-home-unavailable" };
 }
 
 function rpc(id, method, params) {
@@ -135,25 +207,29 @@ function writeLine(child, line) {
 
 // turn/start is delivered only when the proxy returns a turn id. Anything else
 // leaves the message queued. The call does not override sandbox or approval policy.
-export async function deliverCodexTurn({ socketPath, platform = process.platform, threadId, text, spawnImpl = spawn, timeoutMs = 3000 } = {}) {
-  const plan = codexTransportPlan({ platform, socketPath });
+export async function deliverCodexTurn({ socketPath, platform = process.platform, threadId, text, spawnImpl = spawn, timeoutMs = 3000, comSpec = "cmd.exe" } = {}) {
+  const plan = codexProxyLaunch({ platform, socketPath, comSpec });
   if (plan.mode !== "proxy" || typeof threadId !== "string" || typeof text !== "string") return { outcome: "unavailable", evidence: "codex-engine-unavailable" };
   let child;
   try {
-    child = spawnImpl(plan.command, plan.args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, shell: false });
+    child = spawnImpl(plan.command, plan.args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, shell: plan.shell });
     const initialize = readResponse(child, 1, timeoutMs);
-    await writeLine(child, rpc(1, "initialize", { clientInfo: { name: "lode", version: "0.3.0-beta.74" } }));
+    await writeLine(child, rpc(1, "initialize", { clientInfo: { name: "lode", version: packageVersion } }));
     const initialized = await initialize;
     if (!initialized || initialized.error) return { outcome: "unavailable", evidence: "codex-initialize-rejected" };
     await writeLine(child, JSON.stringify({ method: "initialized", params: {} }) + "\n");
-    const turn = readResponse(child, 2, timeoutMs);
-    await writeLine(child, rpc(2, "turn/start", { threadId, input: [{ type: "text", text }] }));
+    const resume = readResponse(child, 2, timeoutMs);
+    await writeLine(child, rpc(2, "thread/resume", { threadId }));
+    const resumed = await resume;
+    if (!resumed || resumed.error) return { outcome: "unavailable", evidence: "codex-thread-resume-rejected" };
+    const turn = readResponse(child, 3, timeoutMs);
+    await writeLine(child, rpc(3, "turn/start", { threadId, input: [{ type: "text", text }] }));
     const started = await turn;
     const turnId = started?.result?.turn?.id;
     if (typeof turnId === "string" && turnId) return { outcome: "delivered", evidence: "codex-turn-start", receipt: turnId };
     return { outcome: "unavailable", evidence: "codex-turn-start-unconfirmed" };
-  } catch {
-    return { outcome: "unavailable", evidence: "codex-proxy-failed" };
+  } catch (error) {
+    return { outcome: "unavailable", evidence: error?.code === "EINVAL" ? "codex-proxy-spawn-rejected" : "codex-proxy-failed" };
   } finally {
     try { child?.stdin?.end(); } catch { /* The proxy exits with its client. */ }
     try { child?.kill?.(); } catch { /* A finished proxy has nothing to kill. */ }

@@ -90,7 +90,7 @@ export default {
         if (caller) freezeUserPromptReference(caller);
       }
     }
-    let contextSupported = true, deliveries = new WeakMap(), watcher = null;
+    let contextSupported = true, deliveries = new WeakMap(), watcher = null, activeSessionId = null;
     const store = createNativeObservationStore({ environment });
     function watchInbox() {
       if (watcher || disposed) return;
@@ -100,19 +100,16 @@ export default {
         const inbox = path.join(storage.projectRoot, storage.directory, "messaging", "inbox");
         if (!fs.existsSync(inbox)) return;
         watcher = fs.watch(inbox, { recursive: true }, () => {
-          deliverQueuedOpenCode({ root: directory, client, directory, environment }).catch(() => {});
+          deliverQueuedOpenCode({ root: directory, client, directory, environment, skipSessionId: activeSessionId }).catch(() => {});
         });
         watcher.unref?.();
       } catch { watcher = null; }
     }
-    async function admitQueued(session) {
-      try {
-        const storage = resolveProjectStorage(directory);
-        if (!storage || !fs.existsSync(path.join(storage.projectRoot, storage.directory, "messaging"))) return;
-        registerOpenCodePresence({ root: directory, session, client, environment });
-        await deliverQueuedOpenCode({ root: directory, client, directory, environment, sessionId: session.id });
-        watchInbox();
-      } catch { /* A live session can still read its inbox on the next prompt. */ }
+    function registerIfMailbox(session) {
+      const storage = resolveProjectStorage(directory);
+      if (!storage || !fs.existsSync(path.join(storage.projectRoot, storage.directory, "messaging"))) return;
+      registerOpenCodePresence({ root: directory, session, client, environment });
+      watchInbox();
     }
     const caller = id => ({ runtime: "opencode", nativeSessionId: id, agentId: null });
     function sessionScope(session, id) {
@@ -194,13 +191,18 @@ export default {
             || !sessionScope(session, input.sessionID)) return;
           let pending = null;
           try {
-            await admitQueued(session);
+            activeSessionId = session.id;
+            registerIfMailbox(session);
+            // Never session.prompt the session whose transform is running. That
+            // call is the busy session and can hang this hook. Its inbox is
+            // injected below; other sessions are delivered by the inbox watcher.
             pending = prepareOpenCodeInjection({ root: directory, session });
             if (pending?.text && Object.isExtensible(system)) Array.prototype.push.call(system, pending.text);
             else pending?.release();
             if (pending?.text && system.at(-1) === pending.text) pending.commit();
             else pending?.release();
           } catch { pending?.release(); }
+          finally { if (activeSessionId === session.id) activeSessionId = null; }
           if (delivery.index === null) {
             delivery.index = system.length;
             Array.prototype.push.call(system, text);
@@ -234,7 +236,7 @@ export default {
         return enqueue(async () => {
           const session = eventType === "session.deleted" ? null : await exactSession(id);
           if (eventType === "session.deleted" ? !sessionScope(deletedInfo, id) : !session) return;
-          if (session) await admitQueued(session);
+          if (session) registerIfMailbox(session);
           const observation = { kind: "event", event: eventType, phase: supportedEvents.get(eventType),
             requestId: null, source: null, reason: null, ...(status ? { nativeStatus: status } : {}) };
           await store.observe({ root: directory, caller: caller(id), observation, eventId });

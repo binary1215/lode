@@ -14,21 +14,28 @@ export function opencodePromptAvailable(client) {
   return typeof client?.session?.prompt === "function";
 }
 
+function busy(error) {
+  const text = `${error?.name || ""} ${error?.code || ""} ${error?.message || ""}`;
+  return /busy/iu.test(text);
+}
+
 export async function deliverOpenCodePrompt({ client, directory, sessionId, text } = {}) {
-  if (!opencodePromptAvailable(client)) return { outcome: "unavailable", evidence: "opencode-prompt-api-missing" };
   if (typeof directory !== "string" || typeof sessionId !== "string" || typeof text !== "string") return { outcome: "unavailable", evidence: "opencode-prompt-input-invalid" };
+  const session = client?.session;
+  if (typeof session?.prompt !== "function") return { outcome: "unavailable", evidence: "opencode-prompt-api-missing" };
+  // v1 SDK clients expose session.get({ path }). v2's plugin ctx.session.prompt
+  // takes { sessionID, text, delivery } and has no path-style get.
+  const v2 = typeof session.get !== "function" && (typeof session.hook === "function" || typeof session.wait === "function" || typeof session.command === "function");
   try {
-    const result = await client.session.prompt({
-      path: { id: sessionId },
-      query: { directory },
-      body: { parts: [{ type: "text", text }] },
-    });
-    if (result?.error) return { outcome: "unavailable", evidence: "opencode-prompt-rejected" };
+    const result = v2
+      ? await session.prompt({ sessionID: sessionId, text, delivery: "queue" })
+      : await session.prompt({ path: { id: sessionId }, query: { directory }, body: { parts: [{ type: "text", text }] } });
+    if (result?.error) return { outcome: "unavailable", evidence: busy(result.error) ? "opencode-session-busy" : "opencode-prompt-rejected" };
     const receipt = messageIdOf(result);
-    if (!receipt) return { outcome: "sent", evidence: "opencode-prompt-unconfirmed" };
-    return { outcome: "delivered", evidence: "opencode-session-prompt", receipt };
-  } catch {
-    return { outcome: "unavailable", evidence: "opencode-prompt-failed" };
+    if (!receipt) return { outcome: "sent", evidence: v2 ? "opencode-v2-prompt-unconfirmed" : "opencode-prompt-unconfirmed" };
+    return { outcome: "delivered", evidence: v2 ? "opencode-v2-session-prompt" : "opencode-session-prompt", receipt };
+  } catch (error) {
+    return { outcome: "unavailable", evidence: busy(error) ? "opencode-session-busy" : "opencode-prompt-failed" };
   }
 }
 
