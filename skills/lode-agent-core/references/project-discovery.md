@@ -95,7 +95,9 @@ from participation in a particular work root, current ownership, live activity
 and contact readiness; those remain unknown without separate actual evidence.
 Candidates never replace the caller, route, environment or selection and cannot
 authorize a message or assignment. This is an optional lookup, not a required
-list/status/read pipeline or a global conversation directory.
+list/status/read pipeline or a global conversation directory. Live same-project
+peers, their send addresses and current reachability come from
+`lode_conversation_list`; sending uses `lode_conversation_send`.
 
 Search matches bounded display/domain values and ranks lexical evidence; it
 does not infer semantic relevance or sufficient context. Lode can use exact

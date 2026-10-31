@@ -10,6 +10,7 @@ import { withProjectMutation } from "./project-mutation-lock.mjs";
 export const GENERATED_STORAGE_IGNORE_RULES = Object.freeze([
   Object.freeze({ pattern: "/graph-discovery/index.json", reason: "Rebuilt from current verified original records." }),
   Object.freeze({ pattern: "/.operations/", reason: "Transient scoped process locks, not portable Project state." }),
+  Object.freeze({ pattern: "/messaging/", reason: "Live same-project conversation mailbox, not canon or recovery state." }),
   Object.freeze({ pattern: "/.snapshot-gc/", reason: "Transient local snapshot participants and collector attempts, not recovery direction." }),
   Object.freeze({ pattern: "/refresh/writer.lock/", reason: "Active host-local refresh lease, not a retained snapshot." }),
   Object.freeze({ pattern: "/refresh/writer.lock.*.staging/", reason: "Unpublished nonce-owned refresh lease staging." }),
@@ -69,6 +70,28 @@ function assertIgnorePoliciesUnchanged(policies) {
       || !fs.readFileSync(policy.file).equals(policy.bytes)) {
       throw Object.assign(new Error("User ignore changed before publication."), { code: "USER_IGNORE_CHANGED_CONCURRENTLY" });
     }
+  }
+}
+
+// The tracked storage gitignore is create-only. A mailbox hides its own files
+// with a nested ignore so an existing `.lode/.gitignore` is never rewritten.
+const MESSAGING_IGNORE = "# Live conversation mailbox, not canon.\n*\n!.gitignore\n";
+
+export function ensureMessagingDirectoryIgnore({ root, directory }) {
+  const messaging = path.join(root, directory, "messaging");
+  const file = path.join(messaging, ".gitignore");
+  try {
+    const dirStat = fs.lstatSync(messaging);
+    if (!dirStat.isDirectory() || dirStat.isSymbolicLink()) return { status: "preserved", reasonCode: "MESSAGING_DIR_UNAVAILABLE" };
+    const relative = path.relative(fs.realpathSync(root), fs.realpathSync(messaging));
+    if (relative.startsWith("..") || path.isAbsolute(relative)) return { status: "preserved", reasonCode: "CONVERSATION_PATH_ESCAPE" };
+    const existing = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (existing) return { status: "preserved", reasonCode: existing.isSymbolicLink() ? "USER_IGNORE_UNAVAILABLE" : "EXISTING_MESSAGING_IGNORE" };
+    atomicCreateArtifact(file, MESSAGING_IGNORE);
+    return { status: "created", trackingChanged: false };
+  } catch (error) {
+    if (error?.code === "EEXIST") return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
+    return { status: "preserved", reasonCode: error?.code || "USER_IGNORE_UNAVAILABLE" };
   }
 }
 

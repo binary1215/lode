@@ -56,13 +56,13 @@ test("an absent common direction remains null text, not invalid MCP structuredCo
 });
 
 test("small default catalog discovers every ordinary contract without registering, unlocking or initializing", async () => {
-  assert.equal(tools.length, 20);
+  assert.equal(tools.length, 22);
   assert.deepEqual(tools.map(tool => tool.name).sort(), [
     "lode_core_contract", "lode_project_status", "lode_project_initialize_or_resume",
     "lode_runtime_invocation_lease_status", "lode_pending_review", "lode_checkpoint_basis",
     "lode_checkpoint_diagnose", "lode_checkpoint_sync", "lode_session_restore",
     "lode_worker_integration_status", "lode_bounded_worker_job_status", "lode_bounded_worker_cancel",
-    "lode_conversation_enter", "lode_project_graph", "lode_session_host_request_prepare",
+    "lode_conversation_enter", "lode_conversation_list", "lode_conversation_send", "lode_project_graph", "lode_session_host_request_prepare",
     "lode_session_create", "lode_project_direction_update", "lode_tools_discover", "lode_tools_read", "lode_tools_call",
   ].sort());
   for (const name of ["lode_session_create", "lode_project_direction_update", "lode_checkpoint_sync"]) {

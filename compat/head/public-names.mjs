@@ -1354,6 +1354,28 @@ export const OPERATION_NAME_PAIRS = Object.freeze([
     "nativeRole": null
   },
   {
+    "legacyName": "head_conversation_list",
+    "canonicalName": "lode_conversation_list",
+    "semanticName": "head_conversation_list",
+    "suffix": "conversation_list",
+    "router": false,
+    "sessionDependent": false,
+    "managedMutation": false,
+    "kind": "operation",
+    "nativeRole": null
+  },
+  {
+    "legacyName": "head_conversation_send",
+    "canonicalName": "lode_conversation_send",
+    "semanticName": "head_conversation_send",
+    "suffix": "conversation_send",
+    "router": false,
+    "sessionDependent": false,
+    "managedMutation": false,
+    "kind": "operation",
+    "nativeRole": null
+  },
+  {
     "legacyName": "head_project_direction_read",
     "canonicalName": "lode_project_direction_read",
     "semanticName": "head_project_direction_read",

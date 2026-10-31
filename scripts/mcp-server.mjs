@@ -1943,6 +1943,25 @@ allTools.push(
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
+    name: "head_conversation_list", description: "List other live conversations for this same project across Claude Code, Codex, and OpenCode. Each row has a send address and whether it is reachable now.",
+    inputSchema: { type: "object", properties: {
+      project_root: { type: "string", minLength: 1 },
+      host_ticket: { type: "string", minLength: 32, maxLength: 32, description: "Host-written caller ticket. A model-authored value is not a caller." },
+    }, required: ["project_root"], additionalProperties: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "head_conversation_send", description: "Send a same-project conversation message. The sender is the live host caller, never an argument. The result is delivered, sent, or queued.",
+    inputSchema: { type: "object", properties: {
+      project_root: { type: "string", minLength: 1 },
+      to: { type: "string", minLength: 3, maxLength: 420 },
+      body: { type: "string", minLength: 1, maxLength: 6000 },
+      reply_to: { type: "string", pattern: "^msg-[a-f0-9]{24}$" },
+      host_ticket: { type: "string", minLength: 32, maxLength: 32, description: "Host-written caller ticket. A model-authored value is not a caller." },
+    }, required: ["project_root", "to", "body"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
     name: "head_session_list", description: "Read a bounded logical Session page; session_id previews one Session's exact work and Todo without changing any selection. Unread/failed entries remain explicit; recent results are not whole-work completion or ownership. Follow nextAfterSessionId when needed.",
     inputSchema: { type: "object", properties: { project_root: { type: "string", minLength: 1 },
       max_sessions: { type: "integer", minimum: 1, maximum: 64 }, after_session_id: { type: "string", maxLength: 512 },
@@ -1998,7 +2017,7 @@ allTools.push({
 });
 const defaultToolNames = new Set([
   SESSION_HOST_REQUEST_HELPER,
-  "head_core_contract", "head_project_initialize_or_resume", "head_conversation_enter", "head_project_graph",
+  "head_core_contract", "head_project_initialize_or_resume", "head_conversation_enter", "head_conversation_list", "head_conversation_send", "head_project_graph",
   "head_session_create", "head_project_direction_update",
   "head_project_status", "head_checkpoint_diagnose", "head_checkpoint_basis",
   "head_checkpoint_sync", "head_session_restore", "head_pending_review",
@@ -2924,6 +2943,10 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
                             ? (await import("./lib/observation-projection.mjs")).queryObservations({ root: args.project_root, typeKey: args.type_key || "", subjectType: args.subject_type || "", subjectKey: args.subject_key || "", adapterKey: args.adapter_key || "", observedAfter: args.observed_after || "", observedBefore: args.observed_before || "", recordKind: args.record_kind || "all", limit: args.limit ?? 25, projectionId: args.projection_id || "", cursor: args.cursor || "" })
                           : name === "head_continuity_snapshot"
                             ? (await (await import("./lib/product-operating-loop.mjs")).buildHeadContinuitySnapshot({ root: args.project_root, fresh: args.fresh ?? false }))
+                          : name === "head_conversation_list"
+                            ? await (await import("./lib/conversation-messaging.mjs")).listProjectConversations({ root: args.project_root, caller, environment: hostEnvironment, hostTicket: args.host_ticket ?? null })
+                          : name === "head_conversation_send"
+                            ? await (await import("./lib/conversation-messaging.mjs")).sendProjectConversation({ root: args.project_root, caller, environment: hostEnvironment, to: args.to, body: args.body, replyTo: args.reply_to ?? null, hostTicket: args.host_ticket ?? null, waitMs: Number(hostEnvironment?.LODE_CONVERSATION_DELIVERY_WAIT_MS || 0) })
                           : (() => { throw new Error(`Unknown tool: ${name}`); })());
     // MCP structuredContent is an optional object, never null/array/scalar.
     // Keep absent originals as their original text value, not fabricated state.

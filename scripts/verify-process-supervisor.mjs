@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { processExists } from "./lib/process-exists.mjs";
 import {
   resolveVerifiedProcessSupervisor,
   spawnBoundedRuntimeOneShot,
@@ -18,12 +19,6 @@ function option(name, fallback = null) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
-}
-
-function processExists(pid) {
-  if (!Number.isSafeInteger(pid) || pid < 1) return false;
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return error.code === "EPERM"; }
 }
 
 async function waitForExit(pid, timeoutMs = 2_000) {

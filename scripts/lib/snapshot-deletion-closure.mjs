@@ -155,6 +155,7 @@ export async function buildSnapshotDeletionClosure({ root, maxSummaryBytes = SNA
     if (stat.isDirectory()) {
       if (relative === ".snapshot-gc") return;
       if (relative === ".operations") { if (fs.readdirSync(file).length) issue(relative, "ACTIVE_OR_UNKNOWN_WRITER"); return; }
+      if (relative === "messaging") return;
       if (relative === "snapshot-objects.git" || relative === "snapshot-bundles" || relative === "observations/source-bundles") { if(relative!=="observations/source-bundles")return; }
       if (relative && !/^(?:graph-discovery|context(?:\/capsules)?|generated|world-model(?:\/snapshots)?|graph-projection(?:\/snapshots)?|sessions(?:\/(?:records|ledger|work-evidence|runs(?:\/run-[0-9]+-[a-f0-9]{6})?|by-id(?:\/session-[a-f0-9-]{36}(?:\/(?:work-evidence|ledger))?)?))?|onboarding(?:\/storage-selections)?|roles|instructions|lineage(?:\/(?:whole-plans|execution-contracts|result-packets|review-decisions))?|change-sets(?:\/(?:records|vcs-evidence|impact-candidate-sets|impact-review-decisions))?|refresh(?:\/(?:requests|receipts))?|observations(?:\/(?:source-bundles|descriptors|records(?:\/by-source-key)?|derived|receipts))?)$/.test(relative)) { issue(relative, "UNSUPPORTED_GC_STORAGE_DIRECTORY"); return; }
       for (const name of fs.readdirSync(file).sort()) await walk(relative ? relative + "/" + name : name);

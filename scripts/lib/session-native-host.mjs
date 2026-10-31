@@ -36,6 +36,8 @@ export function createNativeSessionHostBridge({ environment = process.env, runti
     if (caller.status === "signal-only") return { runtime: "claude", nativeSessionId: null, agentId: null, subagent: true };
     if (caller.status !== "known") return null;
     return { runtime: caller.runtime, nativeSessionId: caller.nativeSessionId, agentId: caller.agentId ?? null, subagent: caller.subagent === true,
+      ...(caller.messagingAgentId ? { messagingAgentId: caller.messagingAgentId } : {}),
+      ...(caller.rootSessionId ? { rootSessionId: caller.rootSessionId } : {}),
       ...(caller.correlation ? { correlation: caller.correlation, outerToolName: caller.outerToolName } : {}) };
   }
   function callerFor(request) {
@@ -63,7 +65,12 @@ export function createNativeSessionHostBridge({ environment = process.env, runti
       // Do not put a Codex agent id on the Session adapter key. Tool hooks
       // still expose the parent session, so only the write-guard bit changes.
       const hinted = [meta.agentId, meta.agent_id].find(validCaller) || null;
-      return { status: "known", runtime: "codex", nativeSessionId: meta.threadId, subagent: Boolean(hinted) || meta.subagent === true };
+      const rootSessionId = validCaller(meta.sessionId) && meta.sessionId !== meta.threadId ? meta.sessionId : null;
+      const subagent = Boolean(hinted) || meta.subagent === true || Boolean(rootSessionId);
+      // agentId stays off the Session adapter key. messagingAgentId is only a
+      // conversation address, so a child cannot register or send as its parent.
+      return { status: "known", runtime: "codex", nativeSessionId: meta.threadId, subagent,
+        ...(hinted ? { messagingAgentId: hinted } : {}), ...(rootSessionId ? { rootSessionId } : {}) };
     }
     // This remembers only the transport capability, NEVER the last caller.
     return { status: observedNativeMetadata ? "unavailable" : "legacy" };
@@ -97,6 +104,14 @@ export function createNativeSessionHostBridge({ environment = process.env, runti
       const routed = routerName(match.name);
       const name = semanticToolName(routed ? original.name : match.name);
       if (helperName(name)) throw Object.assign(new Error(), { code: "NATIVE_HOOK_RECURSION" });
+      if (name === "head_conversation_list" || name === "head_conversation_send") {
+        requestRegistry.prepare({ key: value.tool_use_id, name: match.name, arguments: original,
+          caller: { runtime: "claude", nativeSessionId: value.native_session_id, agentId: value.native_agent_id || null,
+            outerToolName: value.outer_tool_name,
+            nativeProjectRoot: typeof value.native_project_root === "string" && path.isAbsolute(value.native_project_root)
+              && !value.native_project_root.includes("${") ? value.native_project_root : null } });
+        return reply(request);
+      }
       const dependent = sessionCallRequiresBinding(name);
       let guardOnlyCorrelation = false;
       if (!dependent && value.native_agent_id && subagentWriteGuardEnabled(environment,

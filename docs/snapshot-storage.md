@@ -91,6 +91,7 @@ Initialization and explicit resume create the selected `.lode/.gitignore` or ret
 | `/graph-discovery/index.json` | Rebuilt from verified original records. |
 | `/.snapshot-gc/` | Transient local snapshot participants and GC attempts. |
 | `/.operations/` | Transient process-owned scoped locks. |
+| `/messaging/` | Live same-project conversation mailbox, not canon or recovery state. |
 | `/refresh/writer.lock/` | Host-local active refresh lease. |
 | `/refresh/writer.lock.*.staging/` | Unpublished refresh lease staging. |
 
