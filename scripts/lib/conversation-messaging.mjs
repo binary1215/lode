@@ -13,18 +13,27 @@ const RUNTIMES = new Set(["claude", "codex", "opencode"]);
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$/u;
 const MESSAGE_ID = /^msg-[a-f0-9]{24}$/u;
 const TICKET_ID = /^[a-f0-9]{32}$/u;
-const ARCHIVE_TTL_MS = 24 * 60 * 60 * 1000;
-const FRESH_MS = ARCHIVE_TTL_MS;
-const IMMEDIATE_MS = 2 * 60 * 1000;
-const CLAIM_LEASE_MS = 15_000;
-const CLOCK_SKEW_MS = 2 * 60 * 1000;
-const PRESENCE_FUTURE_LIST_MS = 5 * 60 * 1000;
-const UNVERIFIED_CLAIM_MAX_MS = ARCHIVE_TTL_MS;
-const MAX_BODY = 6000;
-const MAX_INJECT = 20;
-const MAX_LIST = 256;
-const MAX_STORED_MESSAGES = 200;
-const MAX_MAILBOX_BYTES = 1024 * 1024;
+const DAY_MS = 24 * 60 * 60 * 1000;
+// freshMs and unverifiedClaimMaxMs intentionally share archiveTtlMs: a quiet
+// conversation and an unverified live claim both last one archive window.
+export const CONVERSATION_LIMITS = Object.freeze({
+  archiveTtlMs: DAY_MS,
+  freshMs: DAY_MS,
+  unverifiedClaimMaxMs: DAY_MS,
+  immediateMs: 2 * 60 * 1000,
+  claimLeaseMs: 15_000,
+  futureSkewMs: 5 * 60 * 1000,
+  maxBody: 6000,
+  maxInject: 20,
+  maxList: 256,
+  maxStoredMessages: 200,
+  maxMailboxBytes: 1024 * 1024,
+  ticketTtlMs: 30_000,
+  maxJsonBytes: 65536,
+  noticeIdPreview: 40,
+  mailboxSlackBytes: 512,
+  waitPollMs: 20,
+});
 
 const fail = (code, detail) => { throw Object.assign(new Error(code + (detail ? ": " + detail : "")), { code }); };
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -84,7 +93,7 @@ export function argumentDigest(args) {
 }
 
 function validBody(body) {
-  return typeof body === "string" && body.length > 0 && body.length <= MAX_BODY && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(body);
+  return typeof body === "string" && body.length > 0 && body.length <= CONVERSATION_LIMITS.maxBody && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(body);
 }
 
 function openProject(root) {
@@ -108,7 +117,7 @@ function presenceFile(project, address) { return path.join(project.messaging, "p
 function readJson(file) {
   try {
     const text = fs.readFileSync(file, "utf8");
-    if (text.length > 65536) return null;
+    if (text.length > CONVERSATION_LIMITS.maxJsonBytes) return null;
     const parsed = JSON.parse(text);
     return object(parsed) ? parsed : null;
   } catch { return null; }
@@ -124,25 +133,42 @@ function names(directory) {
   } catch { return []; }
 }
 
-function presenceDelta(record, now) {
-  const parsed = Date.parse(record?.updatedAt || "");
+function clockDelta(parsed, now) {
   if (!Number.isFinite(parsed)) return null;
   return nowMs(now) - parsed;
 }
 
+// One classification for every future timestamp. Callers still differ in what
+// they do with "ahead" versus "far-future": presence is hidden but kept,
+// a message expires only when every stamp is far-future, and a claim age
+// becomes infinite once the lead exceeds the skew window.
+function classifyDelta(delta) {
+  if (delta === null || !Number.isFinite(delta)) return "invalid";
+  if (delta < -CONVERSATION_LIMITS.archiveTtlMs) return "far-future";
+  if (delta < -CONVERSATION_LIMITS.futureSkewMs) return "ahead";
+  if (delta < 0) return "skew";
+  return "past";
+}
+
+function ageFromDelta(delta) {
+  const kind = classifyDelta(delta);
+  if (kind === "past") return delta;
+  if (kind === "skew") return 0;
+  return Infinity;
+}
+
+function presenceDelta(record, now) {
+  return clockDelta(Date.parse(record?.updatedAt || ""), now);
+}
+
 function ageMs(record, now) {
-  const delta = presenceDelta(record, now);
-  if (delta === null) return Infinity;
-  // A few minutes ahead is clock skew and stays current. Further ahead is not
-  // listed. Deletion does not use this value, so skew cannot erase the file.
-  if (delta < -PRESENCE_FUTURE_LIST_MS) return Infinity;
-  return Math.max(0, delta);
+  return ageFromDelta(presenceDelta(record, now));
 }
 
 function channelLive(record, environment, now, platform) {
   const channel = object(record?.channel) ? record.channel : { kind: "none" };
-  const fresh = ageMs(record, now) <= FRESH_MS;
-  const recent = ageMs(record, now) <= IMMEDIATE_MS;
+  const fresh = ageMs(record, now) <= CONVERSATION_LIMITS.freshMs;
+  const recent = ageMs(record, now) <= CONVERSATION_LIMITS.immediateMs;
   if (channel.kind === "claude-inbox" && typeof channel.socketPath === "string") {
     const pipe = /^\\\\[.?]\\pipe\\/u.test(channel.socketPath);
     const present = pipe || fs.existsSync(channel.socketPath);
@@ -202,10 +228,8 @@ function storedAgeMs(file, iso, now) {
   try { samples.push(nowMs(now) - fs.statSync(file).mtimeMs); }
   catch { return Infinity; }
   if (!samples.length) return Infinity;
-  // A small lead is skew and counts as age 0. Both stamps more than a day
-  // ahead would otherwise never expire, so that file is not kept.
-  if (samples.every(delta => delta < -ARCHIVE_TTL_MS)) return Infinity;
-  return Math.max(...samples.map(delta => delta > 0 ? delta : 0));
+  if (samples.every(delta => classifyDelta(delta) === "far-future")) return Infinity;
+  return Math.max(...samples.map(delta => classifyDelta(delta) === "past" ? delta : 0));
 }
 
 function isExpiryNotice(file) {
@@ -266,7 +290,7 @@ function publishExpiryNotices(project, messages, now) {
     }
     const prior = Array.isArray(existing?.notice?.expiredIds) ? existing.notice.expiredIds : (existing?.notice?.expiredId ? [existing.notice.expiredId] : []);
     const ids = [...new Set([...prior, ...group.ids])].filter(id => MESSAGE_ID.test(id));
-    const shown = ids.slice(0, 40);
+    const shown = ids.slice(0, CONVERSATION_LIMITS.noticeIdPreview);
     const notice = {
       schemaVersion: 1,
       id: existing?.notice?.id && MESSAGE_ID.test(existing.notice.id) ? existing.notice.id : "msg-" + crypto.randomBytes(12).toString("hex"),
@@ -295,8 +319,8 @@ function expireStored(project, kind, now) {
   for (const slotName of names(rootDir)) {
     for (const entry of jsonFiles(path.join(rootDir, slotName))) {
       const message = readJson(entry.file);
-      if (kind === "inflight" && message && claimOwnedByLiveProcess(message)) continue;
-      if (!message || storedAgeMs(entry.file, message.createdAt, now) > ARCHIVE_TTL_MS) {
+      if (kind === "inflight" && message && claimOwnedByLiveProcess(message, entry.file, now)) continue;
+      if (!message || storedAgeMs(entry.file, message.createdAt, now) > CONVERSATION_LIMITS.archiveTtlMs) {
         if (message && (kind === "inbox" || kind === "inflight") && message.notice !== "expired" && message.handedToHost !== true) expired.push(message);
         try { fs.rmSync(entry.file, { force: true }); } catch { /* Retention is best-effort. */ }
       }
@@ -311,7 +335,7 @@ function trimSlotArchives(project) {
     let usage = slotUsage(project, slotName);
     const archives = jsonFiles(path.join(archiveRoot, slotName)).sort((a, b) => a.mtimeMs - b.mtimeMs);
     for (const entry of archives) {
-      if (usage.total <= MAX_MAILBOX_BYTES && usage.count <= MAX_STORED_MESSAGES) break;
+      if (usage.total <= CONVERSATION_LIMITS.maxMailboxBytes && usage.count <= CONVERSATION_LIMITS.maxStoredMessages) break;
       try {
         fs.rmSync(entry.file, { force: true });
         usage.total -= entry.size;
@@ -337,7 +361,7 @@ function retainMailbox(project, now) {
     const delta = presenceDelta(record, now);
     // Future stamps stay on disk. Only a record that is actually older than the
     // queue window is removed, so one slow clock cannot erase a live peer.
-    if (!record || delta === null || delta > FRESH_MS) {
+    if (!record || delta === null || (classifyDelta(delta) === "past" && delta > CONVERSATION_LIMITS.freshMs)) {
       try { fs.rmSync(file, { force: true }); } catch { /* List and send both ignore a stale record. */ }
     }
   }
@@ -347,7 +371,7 @@ function retainMailbox(project, now) {
 
 function mailboxAccepts(project, address, extraBytes) {
   const usage = slotUsage(project, slot(address), { skipNotices: true });
-  return usage.count < MAX_STORED_MESSAGES && usage.total + extraBytes <= MAX_MAILBOX_BYTES;
+  return usage.count < CONVERSATION_LIMITS.maxStoredMessages && usage.total + extraBytes <= CONVERSATION_LIMITS.maxMailboxBytes;
 }
 
 export function registerConversationPresence({ root, identity, channel, environment = process.env, now = Date.now } = {}) {
@@ -373,11 +397,11 @@ export function registerConversationPresence({ root, identity, channel, environm
   return record;
 }
 
-function senderOf({ caller, hostTicket, root, args, environment }) {
+function senderOf({ caller, hostTicket, root, args, environment, now }) {
   const trusted = identityFromCaller(caller);
   if (caller?.subagent === true && !trusted) fail("CONVERSATION_SUBAGENT_IDENTITY_REQUIRED", "A subagent cannot send as its parent.");
   if (trusted) return trusted;
-  return consumeTicket({ root, hostTicket, args, environment });
+  return consumeTicket({ root, hostTicket, args, environment, now });
 }
 
 function validTicketKey(text) {
@@ -451,7 +475,7 @@ function ticketMac(environment, body) {
   return crypto.createHmac("sha256", key).update(JSON.stringify(body)).digest("hex");
 }
 
-function consumeTicket({ root, hostTicket, args, environment }) {
+function consumeTicket({ root, hostTicket, args, environment, now = Date.now }) {
   if (!TICKET_ID.test(hostTicket || "")) return null;
   const project = openProject(root);
   const file = path.join(project.messaging, "tickets", hostTicket + ".json");
@@ -460,7 +484,7 @@ function consumeTicket({ root, hostTicket, args, environment }) {
   const ticket = readJson(file);
   try { fs.rmSync(file, { force: true }); } catch { /* A spent ticket must not remain reusable. */ }
   if (!ticket || ticket.digest !== argumentDigest(args) || ticket.projectRoot !== project.root) return null;
-  if (!Number.isFinite(ticket.expiresAt) || ticket.expiresAt <= nowMs()) return null;
+  if (!Number.isFinite(ticket.expiresAt) || ticket.expiresAt <= nowMs(now)) return null;
   const macBody = { digest: ticket.digest, projectRoot: ticket.projectRoot, caller: ticket.caller, expiresAt: ticket.expiresAt };
   if (ticket.mac !== ticketMac(environment, macBody)) return null;
   const environmentDirectory = environment?.LODE_CONVERSATION_DIRECTORY;
@@ -477,7 +501,7 @@ export function writeOpenCodeCallerTicket({ root, session, args, environment = p
   ensureMailbox(project);
   if (path.resolve(session.directory || root) !== project.root) return null;
   const id = crypto.randomBytes(16).toString("hex");
-  const body = { digest: argumentDigest(args), projectRoot: project.root, caller, expiresAt: nowMs(now) + 30_000 };
+  const body = { digest: argumentDigest(args), projectRoot: project.root, caller, expiresAt: nowMs(now) + CONVERSATION_LIMITS.ticketTtlMs };
   const mac = ticketMac(environment, body);
   if (!mac) return null;
   writeJson(path.join(project.messaging, "tickets", id + ".json"), { schemaVersion: 1, ...body, mac });
@@ -499,7 +523,7 @@ function renderInjection(messages, remaining) {
         `expired-id: ${message.expiredId}`,
         Array.isArray(message.expiredIds) && message.expiredIds.length > 1 ? `expired-ids: ${message.expiredIds.join(" ")}` : null,
         message.originalTo ? `original-to: ${message.originalTo}` : null,
-        "The queued message was deleted after 24 hours without delivery.",
+        `The queued message was deleted after ${CONVERSATION_LIMITS.archiveTtlMs / 3_600_000} hours without delivery.`,
         frameBody(message.body)].filter(Boolean).join("\n");
     }
     return ["Same-project conversation message.",
@@ -512,23 +536,22 @@ function renderInjection(messages, remaining) {
   return blocks.join("\n\n");
 }
 
-function claimStamp(message) {
+function claimStamp(message, now = Date.now) {
   const start = processStartId(process.pid);
   return { ...message, claim: {
     token: crypto.randomBytes(8).toString("hex"),
     pid: process.pid,
-    at: new Date().toISOString(),
+    at: stamp(now),
     ...(start ? { start } : {}),
   } };
 }
 
-function claimAge(file, message) {
+function claimAge(file, message, now = Date.now) {
   const stamped = Date.parse(message?.claim?.at || "");
   const delta = Number.isFinite(stamped)
-    ? Date.now() - stamped
-    : (() => { try { return Date.now() - fs.statSync(file).mtimeMs; } catch { return 0; } })();
-  if (delta < -PRESENCE_FUTURE_LIST_MS) return Infinity;
-  return Math.max(0, delta);
+    ? clockDelta(stamped, now)
+    : (() => { try { return clockDelta(fs.statSync(file).mtimeMs, now); } catch { return 0; } })();
+  return ageFromDelta(delta);
 }
 
 // verified: start id matches, so age alone must not steal the claim.
@@ -544,10 +567,10 @@ function claimDisposition(message) {
   return "unverified";
 }
 
-function claimOwnedByLiveProcess(message, file) {
+function claimOwnedByLiveProcess(message, file, now = Date.now) {
   const disposition = claimDisposition(message);
   if (disposition === "verified") return true;
-  if (disposition === "unverified") return claimAge(file, message) < UNVERIFIED_CLAIM_MAX_MS;
+  if (disposition === "unverified") return claimAge(file, message, now) < CONVERSATION_LIMITS.unverifiedClaimMaxMs;
   return false;
 }
 
@@ -556,7 +579,7 @@ function ownsClaim(current, message) {
   return Boolean(token && current?.id === message.id && current.claim?.token === token && current.handedToHost !== true);
 }
 
-function recoverInflight(project, address) {
+function recoverInflight(project, address, now = Date.now) {
   const expiredUnverified = [];
   for (const name of names(area(project, "inflight", address))) {
     if (!name.endsWith(".json")) continue;
@@ -575,12 +598,12 @@ function recoverInflight(project, address) {
     // A missing stamp is fresh only when the rename's mtime was just updated.
     const disposition = claimDisposition(message);
     if (disposition === "verified") continue;
-    if (disposition === "unverified" && claimAge(inflight, message) < UNVERIFIED_CLAIM_MAX_MS) continue;
+    if (disposition === "unverified" && claimAge(inflight, message, now) < CONVERSATION_LIMITS.unverifiedClaimMaxMs) continue;
     if (disposition === "unverified") {
       try { fs.rmSync(inflight, { force: true }); expiredUnverified.push(message); } catch { /* The owner may be finishing. */ }
       continue;
     }
-    if (claimAge(inflight, message) < CLAIM_LEASE_MS) continue;
+    if (claimAge(inflight, message, now) < CONVERSATION_LIMITS.claimLeaseMs) continue;
     const inbox = messageFile(project, "inbox", address, id);
     const released = { ...message, handedToHost: false };
     delete released.claim;
@@ -590,10 +613,10 @@ function recoverInflight(project, address) {
       fs.renameSync(inflight, inbox);
     } catch { /* Another process recovered or finished this claim. */ }
   }
-  publishExpiryNotices(project, expiredUnverified, Date.now());
+  publishExpiryNotices(project, expiredUnverified, now);
 }
 
-function takeInboxFile(source, destination) {
+function takeInboxFile(source, destination, now = Date.now) {
   const stamped = new Date();
   try { fs.utimesSync(source, stamped, stamped); } catch { return null; }
   try {
@@ -602,23 +625,23 @@ function takeInboxFile(source, destination) {
   } catch { return null; }
   const message = readJson(destination);
   if (!message?.id) return null;
-  const owned = claimStamp(message);
+  const owned = claimStamp(message, now);
   try { writeJson(destination, owned); fs.utimesSync(destination, stamped, stamped); }
   catch { return owned; }
   return owned;
 }
 
-function claimMessage(project, message) {
-  return takeInboxFile(messageFile(project, "inbox", message.to.address, message.id), messageFile(project, "inflight", message.to.address, message.id));
+function claimMessage(project, message, now = Date.now) {
+  return takeInboxFile(messageFile(project, "inbox", message.to.address, message.id), messageFile(project, "inflight", message.to.address, message.id), now);
 }
 
-function claimAddress(project, address) {
-  recoverInflight(project, address);
+function claimAddress(project, address, now = Date.now) {
+  recoverInflight(project, address, now);
   const claimed = [];
   const waiting = names(area(project, "inbox", address)).filter(name => MESSAGE_ID.test(name.slice(0, -5))).sort();
-  for (const name of waiting.slice(0, MAX_INJECT)) {
+  for (const name of waiting.slice(0, CONVERSATION_LIMITS.maxInject)) {
     const id = name.slice(0, -5);
-    const message = takeInboxFile(messageFile(project, "inbox", address, id), messageFile(project, "inflight", address, id));
+    const message = takeInboxFile(messageFile(project, "inbox", address, id), messageFile(project, "inflight", address, id), now);
     if (message?.id === id) claimed.push(message);
   }
   return { claimed, remaining: Math.max(0, waiting.length - claimed.length) };
@@ -697,10 +720,10 @@ function resultOf(message, state, evidence) {
   };
 }
 
-export async function sendProjectConversation({ root, caller = null, environment = process.env, to, body, replyTo = null, hostTicket = null, now = Date.now, platform = process.platform, deliver = null, waitMs = 0 } = {}) {
+export async function sendProjectConversation({ root, caller = null, environment = process.env, to, body, replyTo = null, hostTicket = null, now = Date.now, waitClock = Date.now, platform = process.platform, deliver = null, waitMs = 0 } = {}) {
   const project = openProject(root);
   const args = { project_root: root, to, body, reply_to: replyTo };
-  const from = senderOf({ caller, hostTicket, root, args, environment });
+  const from = senderOf({ caller, hostTicket, root, args, environment, now });
   if (!from) fail("CONVERSATION_CALLER_UNAVAILABLE", "The live host caller is required. Arguments cannot name the sender.");
   if (!validBody(body)) fail("CONVERSATION_BODY", "The message must be text of at most 6000 characters.");
   const target = parseAddress(to);
@@ -718,14 +741,14 @@ export async function sendProjectConversation({ root, caller = null, environment
   const presence = listPresence(project).find(record => record.address === target.address);
   const visible = presence && channelLive(presence, environment, now, platform).delivery !== "unreachable";
   if (!visible) return resultOf({ from, to: target, replyTo: replyTo ?? null }, "unreachable", presence ? "presence-stale" : "no-same-project-conversation");
-  if (!mailboxAccepts(project, target.address, Buffer.byteLength(body, "utf8") + 512)) fail("CONVERSATION_MAILBOX_FULL", "That conversation's mailbox is at its size limit.");
+  if (!mailboxAccepts(project, target.address, Buffer.byteLength(body, "utf8") + CONVERSATION_LIMITS.mailboxSlackBytes)) fail("CONVERSATION_MAILBOX_FULL", "That conversation's mailbox is at its size limit.");
   const message = {
     schemaVersion: 1, id: "msg-" + crypto.randomBytes(12).toString("hex"), projectRoot: project.root,
     from, to: { runtime: target.runtime, nativeSessionId: target.nativeSessionId, agentId: target.agentId, address: target.address },
     body, replyTo: replyTo ?? null, createdAt: stamp(now), state: "queued", evidence: "inbox", handedToHost: false,
   };
   enqueue(project, message);
-  const owned = claimMessage(project, message);
+  const owned = claimMessage(project, message, now);
   if (!owned?.claim?.token) return resultOf(message, "queued", "inbox");
   try {
     const attempt = await (deliver || defaultDeliver)({ message: owned, presence, environment, platform });
@@ -737,11 +760,11 @@ export async function sendProjectConversation({ root, caller = null, environment
     releaseClaim(project, owned);
   } catch { releaseClaim(project, owned); }
   if (waitMs > 0) {
-    const deadline = Date.now() + waitMs;
-    while (Date.now() < deadline) {
+    const deadline = waitClock() + waitMs;
+    while (waitClock() < deadline) {
       const archived = findMessage(project, message.id);
       if (archived?.handedToHost) return resultOf(archived, archived.state, archived.evidence);
-      await new Promise(resolve => setTimeout(resolve, 20));
+      await new Promise(resolve => setTimeout(resolve, CONVERSATION_LIMITS.waitPollMs));
     }
   }
   return resultOf(message, "queued", "inbox");
@@ -753,7 +776,7 @@ export function listProjectConversations({ root, caller = null, environment = pr
   retainMailbox(project, now);
   const args = { project_root: root, to: null, body: null, reply_to: null };
   if (caller?.subagent === true && !identityFromCaller(caller)) fail("CONVERSATION_SUBAGENT_IDENTITY_REQUIRED", "A subagent cannot list as its parent.");
-  const self = identityFromCaller(caller) || consumeTicket({ root, hostTicket, args, environment });
+  const self = identityFromCaller(caller) || consumeTicket({ root, hostTicket, args, environment, now });
   if (self) {
     try { registerConversationPresence({ root, identity: self, channel: { kind: `${self.runtime}-prompt` }, environment, now }); }
     catch { /* Listing still reports the conversations already registered. */ }
@@ -764,8 +787,8 @@ export function listProjectConversations({ root, caller = null, environment = pr
   return {
     kind: "ProjectConversationList", projectScoped: true, persisted: false,
     self: self ? { address: self.address, runtime: self.runtime, subagent: self.subagent === true } : null,
-    conversations: rows.slice(0, MAX_LIST).map(item => publicConversation(item.record, item.live)),
-    omitted: Math.max(0, rows.length - MAX_LIST),
+    conversations: rows.slice(0, CONVERSATION_LIMITS.maxList).map(item => publicConversation(item.record, item.live)),
+    omitted: Math.max(0, rows.length - CONVERSATION_LIMITS.maxList),
   };
 }
 
@@ -791,14 +814,14 @@ export function registerHookPresence({ runtime, event, environment = process.env
   catch { return null; }
 }
 
-export function prepareHookInjection({ runtime, event, environment = process.env } = {}) {
+export function prepareHookInjection({ runtime, event, environment = process.env, now = Date.now } = {}) {
   if (event?.hook_event_name !== "UserPromptSubmit" || typeof event.cwd !== "string") return null;
   const identity = hookConversationIdentity(runtime, event);
   if (!identity) return null;
   let project;
   try { project = openProject(event.cwd); }
   catch { return null; }
-  const { claimed, remaining } = claimAddress(project, identity.address);
+  const { claimed, remaining } = claimAddress(project, identity.address, now);
   if (!claimed.length) return null;
   return {
     text: renderInjection(claimed, remaining),
@@ -816,7 +839,7 @@ export async function deliverQueuedOpenCode({ root, client, directory, environme
     if (record.runtime !== "opencode") continue;
     if (sessionId && record.nativeSessionId !== sessionId) continue;
     if (skip.has(record.nativeSessionId)) continue;
-    const { claimed } = claimAddress(project, record.address);
+    const { claimed } = claimAddress(project, record.address, Date.now);
     for (const message of claimed) {
       const attempt = await deliverOpenCodePrompt({ client, directory: project.root, sessionId: record.nativeSessionId, text: renderInjection([message], 0) });
       if (attempt.outcome === "delivered" || attempt.outcome === "sent") {
@@ -838,7 +861,7 @@ export function registerOpenCodePresence({ root, session, client, environment = 
   } catch { return null; }
 }
 
-export function prepareOpenCodeInjection({ root, session } = {}) {
+export function prepareOpenCodeInjection({ root, session, now = Date.now } = {}) {
   if (!session || !ID.test(session.id || "")) return null;
   const subagent = typeof session.parentID === "string" && ID.test(session.parentID);
   const identity = { runtime: "opencode", nativeSessionId: session.id, subagent, agentId: null, parentSessionId: subagent ? session.parentID : null, address: formatAddress({ runtime: "opencode", nativeSessionId: session.id, subagent, agentId: null, parentSessionId: subagent ? session.parentID : null }) };
@@ -846,7 +869,7 @@ export function prepareOpenCodeInjection({ root, session } = {}) {
   let project;
   try { project = openProject(root); }
   catch { return null; }
-  const { claimed, remaining } = claimAddress(project, identity.address);
+  const { claimed, remaining } = claimAddress(project, identity.address, now);
   if (!claimed.length) return null;
   return {
     text: renderInjection(claimed, remaining),

@@ -997,6 +997,25 @@ test("a tracked messaging gitignore is not rewritten", t => {
   assert.doesNotMatch(git(["status", "--porcelain"]).stdout, /messaging\/\.gitignore/);
 });
 
+test("a claim stamp uses the injected clock", async t => {
+  const { root, environment } = isolated(t);
+  const at = Date.parse("2026-01-01T00:00:00.000Z");
+  register(root, environment, caller("codex", "codex-clock"), { kind: "codex-prompt" }, () => at);
+  await sendProjectConversation({
+    root, caller: caller("claude", "claude-clock"), environment, to: "codex:codex-clock", body: "stamped", now: () => at, waitMs: 0,
+    deliver: async () => ({ outcome: "unavailable" }),
+  });
+  const claimed = prepareHookInjection({
+    runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-clock" }, environment, now: () => at,
+  });
+  assert.match(claimed.text, /stamped/);
+  const slot = fs.readdirSync(path.join(root, ".lode", "messaging", "inflight"))[0];
+  const messageId = claimed.text.match(/id: (msg-[a-f0-9]{24})/u)[1];
+  const stored = JSON.parse(fs.readFileSync(path.join(root, ".lode", "messaging", "inflight", slot, messageId + ".json"), "utf8"));
+  assert.equal(stored.claim.at, "2026-01-01T00:00:00.000Z");
+  claimed.release();
+});
+
 test("four processes can rewrite one presence without ENOENT or a lost file", async t => {
   const { root, environment } = isolated(t);
   const script = `
