@@ -2,26 +2,17 @@
 
 New local World/Graph snapshots use compact JSON compressed as `.json.gz`. Existing `.json` files keep their original paths and bytes and are reused by ID. Installation, resume and reads do not migrate them.
 
-Ordinary complete writes under a selected Project owner use `shared-domains-v2`: a gzip root with
-the changing composition inline and references to immutable code parts. A World
-uses at most two parts, a Graph at most one. The parts retain the existing domain
-schema 1 / producer 0.1.0; only the root uses schema 2 / producer 0.2.0. There is
-no chain of previous snapshots to reconstruct. Decisions can reuse code parts;
-code changes may replace an entire code part. Snapshot membership metadata still
-scales with the graph. This is neither selective first-read IO nor O(change) work.
+New complete local writes under a verified selected Project owner use `chunked-code-v3`. The gzip root uses physical schema 3 / producer 0.3.0 and references immutable code indexes and leaves. Five original arrays are distributed across 64 stable exact-path buckets; each physical World leaf groups its three array families, and each Graph leaf groups its two. The World and Graph share exact Graph leaves. Indexes restore every original occurrence in its original order, including duplicates and unknown row fields. There is no replay chain through previous snapshots.
+
+This choice prioritizes retained storage over latency. In a paired synthetic case with 48 files and 16 functions per file, one-line refresh stored 410,222 versus 99,716 new bytes (75.7% less), while first generation was about 28% slower. A four-file case used about 28% more bytes on first generation, took 22% longer initially and 23% longer for code refresh. These warm-cache local measurements are not universal speed, Host/model or total-I/O claims. Full reconstruction, original verification and metadata still scale with the graph.
+
+Existing `shared-domains-v2` roots keep physical schema 2 / producer 0.2.0 and whole code parts. They remain readable and selectable through the existing programmatic adapter options, as do whole JSON/gzip, Git and domain-v1. These are not additional public CLI/MCP options. A repeated unchanged ID reuses its exact original representation; installation, resume, reads and repeated indexing never convert it in place. Only a genuinely new snapshot can use the new default.
 
 Pure lower adapters without a selected Project owner retain whole-document
 storage. They do not require initialization to keep their existing contract.
 Explicit composition choices still require and fully validate the owner.
 
-The minimum reader is a release supporting physical schema 2. **Beta.69 and
-earlier reject new schema-2 roots** with `INVALID_SNAPSHOT_COMPOSITION`; they do
-not downgrade or rewrite them. Update each client sharing the Project before
-writing or reading new World/Graph snapshots. This is format compatibility guidance, not a
-new setup or approval gate. Older whole JSON/gzip, Git and domain-v1 originals
-remain readable by the new reader, in place. Explicit whole/Git/v1 choices remain
-available. Physical layout does not add fields to new semantic World payloads;
-an already recorded v1 analysis field is preserved for unchanged-history identity.
+Physical schema 3 needs a reader supporting `chunked-code-v3`, introduced with beta.75. Beta.74 and earlier cannot read these new roots. Beta.69 and earlier also reject schema-2 roots with `INVALID_SNAPSHOT_COMPOSITION`. Update each client sharing the Project before writing new snapshots. This is format compatibility guidance, not a new setup or approval gate. New readers retain old original paths and bytes and never substitute current data for missing historical evidence. Physical layout adds no fields to semantic World payloads.
 
 Readers retain the full part/address/Project/type/producer/digest and reconstructed
 World/Graph verification. Parts are dependencies of the existing retention and
@@ -31,14 +22,22 @@ Graph-first/World pointer publication can still report a partial failure: this
 layout does not create a two-pointer atomic transaction or roll back committed work.
 
 
+
+## Reader compatibility in status
+
+New World/Graph pointer publications record advisory `readerRequirements` from the actual verified stored representation, alongside its exact snapshot ID. The Graph pointer includes the declaration in its existing pointer digest; the World pointer keeps its existing snapshot ID/hash checks. The advisory declaration is not an independent World integrity proof. Status reads only bounded local pointers and separates Core readiness from each projection's declared physical layout/schema/producer support. It does not hydrate the World or certify snapshot integrity, freshness or semantic sufficiency. Existing pointers without requirements display `not-inspected`; they are not silently called compatible. Unsupported or unavailable layers carry specific reasons in CLI and typed MCP output, while ordinary Core work continues. No new setup, refresh or approval step is required.
+
+Actual reads keep full verification. New readers report `UNSUPPORTED_SNAPSHOT_COMPOSITION` for unsupported composition schemas/producers; missing, corrupt, identity/digest and permission failures remain errors. This cannot change behavior in an already deployed beta.69 reader. Storage-format notices and loaded/configured package mismatch describe different facts.
+
 ## Storage choices at a glance
 
 | Choice | Use |
 | --- | --- |
-| `shared-domains-v2` with gzip | Default complete writes with a verified selected owner. |
+| `chunked-code-v3` with gzip | Default complete new writes with a verified selected owner; less retained code duplication, with disclosed latency costs. |
+| `shared-domains-v2` with gzip | Explicit whole-code-part layout and retained schema-2 history. |
 | Whole JSON/gzip | Retained historical files and lower adapters without a selected owner. |
 | Private Git | Explicit selection, with the same original verification. |
-| Domain-v1 or zstd | Explicit trials, with disclosed runtime support. |
+| Domain-v1 or zstd | Existing programmatic adapter options, with disclosed runtime support; no public CLI/MCP selector. |
 | GC inspection | Read-only; ordinary startup never requires cleanup. |
 | Explicit GC application | Deletes only supported, verified unreferenced storage under the existing safety contract. |
 
@@ -62,6 +61,8 @@ lode-agent storage-gc C:\path\to\project --json
 lode-agent storage-gc C:\path\to\project --apply --json
 ```
 
+`storedBytes` retains its legacy snapshot-file scope. The separate `physicalStorage` view reports per-backend and total observed regular-file lengths, including domain bundles, private Git, source bundles and other Project files. It discloses excluded unsafe/transient entries and bounded partial coverage; it is neither allocated disk usage nor safely reclaimable space. Apply reports the typed inventory scope before cleanup without a second filesystem scan. These diagnostic totals never select deletion candidates.
+
 Default inspection is zero-write. Observed unreferenced bytes are a diagnostic, not permission or proof that deletion is safe. No selected Session, new MCP tool, user pin/save form or background collector is required.
 
 Explicit CLI `--apply` awaits a separate typed reachability check and deletes proven orphan World/Graph JSON/gzip representations, supported private Git snapshot addresses/objects, and unreferenced domain fragments. It preserves current/previous pointers, parents and source aliases, Capsules, supported ChangeSet/VCS and execution-lineage roots, verified Session/checkpoint roots, and physical byte references. It never deletes Canon, Session records or valid source bundles: successful and failed source bundles are original P3 evidence and remain roots themselves. There is no age or last-N deletion. When every snapshot is referenced, successful apply deletes zero files.
@@ -84,7 +85,9 @@ Structured apply output separates deleted, failed and preserved paths and report
 
 ## Generated Git ignore rules
 
-Initialization and explicit resume create the selected `.lode/.gitignore` or retained `.head/.gitignore` only when it is absent. Every existing file stays untouched, including user-edited generated rules. Atomic no-clobber creation preserves a file created concurrently. Each generated rule is checked separately against root exceptions. For example, `!.gitkeep` permits the exact `/graph-discovery/index.json` rule but preserves directory-wide rules that could hide a descendant `.gitkeep`. A provably disjoint rooted exception permits its unrelated rules; overlapping or ambiguous wildcard/escape rules remain skipped. Results identify the included and skipped subset. The helper rechecks observed policy bytes before creation; it does not lock arbitrary external editors or change tracked files. Optional ignore failure does not block project readiness or ordinary work.
+Initialization and explicit resume create the selected `.lode/.gitignore` or retained `.head/.gitignore` when absent. They upgrade an older generated file only when its entire contents match the known generated body, using LF or CRLF. Additional comments, reordered rules and user edits stay untouched. This is not marker-based ownership. Linked or changing files are preserved; before publication the helper rechecks the observed policy bytes. It does not provide a filesystem compare-and-swap against uncooperating external editors.
+
+Each rule is checked separately against root exceptions. Unrelated literal `!docs/` and `!.gitkeep` permit the exact index-file rule instead of suppressing the entire file. Their basename can still reach unknown descendants, so affected directory rules stay skipped. A rooted disjoint `!/docs/` permits all unrelated rules. Related exceptions such as `!.lode/**` and ambiguous patterns retain precedence for affected rules. Results name included and skipped rules. Optional ignore failure never blocks readiness or ordinary work.
 
 | Relative pattern inside storage | Why disposable |
 | --- | --- |
@@ -94,7 +97,7 @@ Initialization and explicit resume create the selected `.lode/.gitignore` or ret
 | `/refresh/writer.lock/` | Host-local active refresh lease. |
 | `/refresh/writer.lock.*.staging/` | Unpublished refresh lease staging. |
 
-No snapshots, Canon, Session records, Capsules, historical boundaries, installation manifests or user-edited documents are blanket-ignored. The helper never runs Git, stages/untracks files or changes global configuration. Ignore rules reclaim no disk space.
+A separate retained-history block excludes new accidental tracking only for `/world-model/snapshots/`, `/graph-projection/snapshots/`, `/snapshot-bundles/` and `/snapshot-objects.git/`. These originals have retention and recovery value; they are not disposable cache. Canon, Session records, Capsules, pointers, historical boundaries, installation manifests and user-edited documents are outside this list. The helper never runs Git, stages/untracks files or changes global configuration. Ignore rules reclaim no disk space.
 
 ## Explicit local Git snapshot candidate
 
@@ -110,11 +113,11 @@ Default adoption requires measured costs and independent review. A smaller activ
 
 ## Local domain-bundle trial (explicit; not a new default)
 
-The internal local adapters still accept `snapshotLayout: "domain-bundles-v1"` explicitly. Ordinary complete snapshots use the flat v2 layout above; `snapshotLayout: "whole"` preserves whole-file writes. Existing IDs, JSON/gzip files, Git objects and historical byte pins are not rewritten. This older trial adds no user pin/save/approval step.
+The internal local adapters still accept `snapshotLayout: "domain-bundles-v1"` explicitly. Ordinary complete new snapshots use v3 above; `snapshotLayout: "whole"` preserves whole-file writes. Existing IDs, JSON/gzip files, Git objects and historical byte pins are not rewritten. This older trial adds no user pin/save/approval step.
 
 The trial emits Graph protocol 0.16 alongside the unchanged 0.15 producer. A relation has a stable `logicalRelationId`, an evidence-sensitive `contentRevisionId`/`edgeId`, and its exact `sourceSnapshotId` observation. Logical identity includes Project, endpoint logical identities and continuity generation/unknown state, type, origin, authority and producer. Content revisions also bind concrete endpoints, evidence, freshness and confidence. Edges targeting a SourceSnapshot bind that exact endpoint. Deletion/recreation, another Session, changed evidence or confidence cannot silently become the same observation or revision. Existing graph protocols retain their original verification and IDs.
 
-A compact composition references at most three immutable domain bundles: World code facts/semantic analysis, normalized code graph records, and the remaining graph composition. Repository-wide evidence, Product/decision relations and snapshot membership remain in the changing composition. Unchanged code bundles can be reused across decision-only changes; graph-node/edge observation membership is restored during exact reconstruction. Bundles are not one file per node. Optional native `bundleEncoding: "zstd"` is a local trial; absent runtime support is reported and never triggers installation.
+In the older v1 trial, a compact composition references at most three immutable domain bundles: World code facts/semantic analysis, normalized code graph records, and the remaining graph composition. Repository-wide evidence, Product/decision relations and snapshot membership remain in the changing composition. Unchanged code bundles can be reused across decision-only changes; graph-node/edge observation membership is restored during exact reconstruction. Bundles are not one file per node. Optional native `bundleEncoding: "zstd"` is a local trial; absent runtime support is reported and never triggers installation.
 
 The writer reuses semantic analysis only from a previously verified World with the same complete analysis input basis: Project, all scanner facts, source scope/rules, producer versions, source-relation input and managed-file exclusions. Canon/projection relations and continuity are still rebuilt. The result reports whether this analysis was reused; matching mtime/size or source bytes alone is insufficient.
 
@@ -136,7 +139,7 @@ An exact source-bundle pin uses the raw digest of the same buffer parsed by the 
 
 Explicit whole-file gzip and the existing domain-bundles-v1 read/write contracts remain available. Full World/Graph hash, original-byte, Project and authority checks are retained. Changed bytes from one synchronous source observation are consumed by analysis instead of accumulated until the walk ends; ownership validation of reused previous analysis stays intact. There is no new cache/save/pin/approval step or daemon.
 
-File-level relation reuse and two packed-chunk formats were evaluated in separate local frozen trials. Additional validation/copy and full reconstruction/file-check costs increased observed end-to-end latency, so these trials are not adopted into the active product path. The existing domain trial's exact whole codeAnalysisInputBasis reuse is preserved. Full traversal/hash, relationship generation, serialization/verification, snapshot listing and Git namespace checks remain; this patch does not claim an O(change) whole pipeline. No history/original migration, GC or ref deletion occurs.
+Earlier file-level relation reuse and two different packed-chunk formats were evaluated in separate local frozen trials, before the coalesced v3 implementation described above. Additional validation/copy and full reconstruction/file-check costs increased observed end-to-end latency, so those earlier trials were not adopted into the active product path. That historical result does not describe the current coalesced v3 default. The existing domain trial's exact whole codeAnalysisInputBasis reuse is preserved. Full traversal/hash, relationship generation, serialization/verification, snapshot listing and Git namespace checks remain; this patch does not claim an O(change) whole pipeline. No history/original migration, GC or ref deletion occurs.
 
 ### Request-local private Git reads
 
@@ -157,3 +160,11 @@ A later explicit cleanup can reinventory an unindexed, correctly named private p
 Transient participant/attempt ownership and both create-only ref locks bind Project, nonce, host, PID and a fixed Node runtime time origin. The verified attempt owner is passed through the short effect boundary; a different runtime origin cannot perform or clean up that owner’s effect even if the PID matches. This explicitly labelled runtime origin is not an independently queried OS process CreationDate or permission to reclaim unknown/old owners. Ordinary work gains no OS process probe.
 
 GC cancellation asks the native supervisor to stop once and waits for its cleanup proof within the operation’s original absolute deadline. Only reaching that deadline forces termination; it does not extend the deadline or infer successful cleanup. A stuck supervisor can use the remaining operation deadline (up to the existing default 30 seconds). Byte-cap and original errors remain failures, including when cleanup cannot be verified.
+
+## Chunked code format and verification
+
+The v3 index owns unique bucket descriptors with exact per-family counts and per-list order. Leaves have a strict group/bucket/family shape; another family cannot fill a missing one. Indexes and leaves keep the existing domain envelope schema 1 / producer 0.1.0. At most 128 leaves and two indexes are needed; the request verification allowance is 512 distinct parts, depth three and the existing aggregate decoded-byte bound. Older v1/v2 keep their original eight-part allowance. These are storage-format bounds, not Context budgets or semantic gates.
+
+Every descriptor checks its Project, domain, managed address, encoding, declared bytes and digest. Conflicting descriptors for one address fail. Root and bundle descriptor reads allocate only the observed size and inspect at most one extra sentinel byte, retaining before/after identity checks. Reconstructed whole bytes must still match length/SHA and the original World/Graph verifiers.
+
+Typed GC validates index-to-leaf dependencies with the same per-family grammar and retains only bounded descriptor/count summaries. Current/previous/history roots, exact index/leaf byte pins and remaining roots after failed unlink retain their transitive parts. Unknown, missing, corrupt or foreign parts prevent uncertified deletion. GC remains explicit with its original cancellation and whole-operation deadline; no background migration or cleanup is added.

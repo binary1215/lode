@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { formatForVerifiedOwner, assertProjectStorageUnchanged } from "./project-storage-format.mjs";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
 import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
 
@@ -14,18 +14,26 @@ export const GENERATED_STORAGE_IGNORE_RULES = Object.freeze([
   Object.freeze({ pattern: "/refresh/writer.lock/", reason: "Active host-local refresh lease, not a retained snapshot." }),
   Object.freeze({ pattern: "/refresh/writer.lock.*.staging/", reason: "Unpublished nonce-owned refresh lease staging." }),
 ]);
+// Retained, exact local storage is excluded from new accidental tracking, not
+// discarded. Canonical records and pointers remain outside this list.
+export const RETAINED_STORAGE_IGNORE_RULES = Object.freeze([
+  "/world-model/snapshots/", "/graph-projection/snapshots/",
+  "/snapshot-bundles/", "/snapshot-objects.git/",
+]);
+const HISTORY_BEGIN = "# BEGIN Lode retained local snapshot history rules";
+const HISTORY_END = "# END Lode retained local snapshot history rules";
 const BEGIN = "# BEGIN Lode generated disposable storage rules", END = "# END Lode generated disposable storage rules";
 
 // This is a conservative disjointness proof, not a second Git pattern engine.
-// Only a rooted literal prefix can prove an exception unrelated. Basename,
-// escaped and wildcard prefixes remain unknown and preserve the user's policy.
+// Literal basenames can prove disjointness for an exact file and its parents,
+// including a directory exception. Unknown directory descendants stay unknown.
 function exceptionMayReach(pattern, targets, exactFile = false) {
   const body = pattern.replace(/ +$/, "").replace(/\/$/, ""), marker = body.search(/[*?\[\]\\]/);
   const literal = marker < 0 ? body : body.slice(0, marker);
   if (!body.startsWith("/") && !literal.includes("/")) {
     // An exact basename cannot match a differently named exact file or any
     // of its known parents. Directory rules also affect unknown descendants.
-    if (exactFile && marker < 0 && !pattern.endsWith("/")) {
+    if (exactFile && marker < 0) {
       return targets.some(target => target.toLowerCase().split("/").includes(body.toLowerCase()));
     }
     return true;
@@ -81,11 +89,15 @@ export function ensureProjectStorageIgnore({ root, storage }) {
       safeSnapshotPath(root, file);
       const directory = formatForVerifiedOwner(storage).directory;
       const policy = readIgnorePolicy(root, path.join(root, ".gitignore"), [], true);
-      // An existing file belongs to its editor, including generated files edited
-      // later. Never append: a concurrent user exception must keep its ordering.
-      if (fs.lstatSync(file, { throwIfNoEntry: false })) return { status: "preserved", reasonCode: "EXISTING_STORAGE_IGNORE", ordinaryWorkBlocked: false };
+      const existing = readIgnorePolicy(root, file, [], true);
+      // Only the entire exact legacy-generated body identifies an upgrade. A
+      // marker inside a user file, extra comment or reordered rule grants none.
+      const legacy = [BEGIN, ...GENERATED_STORAGE_IGNORE_RULES.map(rule => rule.pattern), END, ""].join("\n");
+      if (existing.bytes !== null && ![legacy, legacy.replaceAll("\n", "\r\n")].some(text => existing.bytes.equals(Buffer.from(text)))) {
+        return { status: "preserved", reasonCode: "EXISTING_STORAGE_IGNORE", ordinaryWorkBlocked: false };
+      }
       const included = [], skipped = [];
-      for (const rule of GENERATED_STORAGE_IGNORE_RULES) {
+      for (const rule of [...GENERATED_STORAGE_IGNORE_RULES, ...RETAINED_STORAGE_IGNORE_RULES.map(pattern => ({ pattern }))]) {
         const target = directory + rule.pattern.split(/[*?\[]/, 1)[0];
         const exactFile = !rule.pattern.endsWith("/") && !/[*?\[\]\\]/.test(rule.pattern);
         if (policy.exceptions.some(pattern => exceptionMayReach(pattern, [target], exactFile))) {
@@ -93,12 +105,14 @@ export function ensureProjectStorageIgnore({ root, storage }) {
         } else included.push(rule.pattern);
       }
       if (!included.length) return { status: "preserved", reasonCode: "USER_IGNORE_RULES_TAKE_PRECEDENCE", rules: { included, skipped }, ordinaryWorkBlocked: false };
-      const block = [BEGIN, ...included, END, ""].join("\n");
+      const disposable = included.filter(pattern => !RETAINED_STORAGE_IGNORE_RULES.includes(pattern));
+      const retained = included.filter(pattern => RETAINED_STORAGE_IGNORE_RULES.includes(pattern));
+      const block = [BEGIN, ...disposable, END, ...(retained.length ? [HISTORY_BEGIN, "# Retained history, not disposable cache. Existing tracked files are unchanged.", ...retained, HISTORY_END] : []), ""].join("\n");
       assertProjectStorageUnchanged(storage);
-      assertIgnorePoliciesUnchanged([policy]);
-      try { atomicCreateArtifact(file, block); }
+      assertIgnorePoliciesUnchanged([policy, existing]);
+      try { if (existing.bytes !== null) atomicWriteArtifact(file, block, { beforePublish: () => assertIgnorePoliciesUnchanged([policy, existing]) }); else atomicCreateArtifact(file, block); }
       catch (error) { if (error.code === "EEXIST") return { status: "preserved", reasonCode: "USER_IGNORE_CREATED_CONCURRENTLY", ordinaryWorkBlocked: false }; throw error; }
-      return { status: "created", path: path.relative(root, file).replaceAll("\\", "/"), rules: { included, skipped }, ordinaryWorkBlocked: false };
+      return { status: existing.bytes === null ? "created" : "updated", path: path.relative(root, file).replaceAll("\\", "/"), rules: { included, skipped }, ordinaryWorkBlocked: false };
     });
   } catch (error) { return { status: "preserved", reasonCode: error.code || "USER_IGNORE_UNAVAILABLE", ordinaryWorkBlocked: false }; }
 }

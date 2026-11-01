@@ -1,10 +1,11 @@
+import { snapshotCodeChunkDescriptors, snapshotCodeBucketSummary } from "./snapshot-code-chunks.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { resolveVerifiedProcessSupervisor, spawnSupervisedProcess } from "./runtime-process-supervisor.mjs";
 import { GitSnapshotStore } from "./git-snapshot-store.mjs";
-import { safeSnapshotPath, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
+import { safeSnapshotPath, SNAPSHOT_STORAGE_LIMITS, readBoundedSnapshotDescriptor } from "./snapshot-storage-codec.mjs";
 import { hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
 import { withSnapshotCollectionUnlink, snapshotCollectionCancelled } from "./snapshot-reference-lifetime.mjs";
 
@@ -50,7 +51,15 @@ export class SnapshotBackendReclamation {
     const stat = fs.lstatSync(file, { bigint: true });
     if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n || stat.size > BigInt(MAX_STORED)) fail("UNSAFE_GC_STORAGE_ENTRY");
     if (++this.entryCount > 50_000 || (this.storedBytes += Number(stat.size)) > MAX_STORED) fail("GC_INVENTORY_INCOMPLETE");
-    const before = identity(stat); if(capture && stat.size>BigInt(SNAPSHOT_STORAGE_LIMITS.compressedBytes))fail("SNAPSHOT_STORAGE_LIMIT"); const bytes=capture?fs.readFileSync(file):null; const digest=bytes?sha(bytes):fileHash(file);
+    const before = identity(stat); if(capture && stat.size>BigInt(SNAPSHOT_STORAGE_LIMITS.compressedBytes))fail("SNAPSHOT_STORAGE_LIMIT"); let bytes = null;
+    if (capture) {
+      const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+      try { if (!same(before, identity(fs.fstatSync(fd, {bigint:true})))) fail("GC_INVENTORY_DRIFT");
+        bytes = readBoundedSnapshotDescriptor(fd, Number(stat.size), SNAPSHOT_STORAGE_LIMITS.compressedBytes);
+        if (!same(before, identity(fs.fstatSync(fd, {bigint:true})))) fail("GC_INVENTORY_DRIFT");
+      } finally { fs.closeSync(fd); }
+    }
+    const digest=bytes?sha(bytes):fileHash(file);
     if (!same(before, identity(fs.lstatSync(file, { bigint: true })))) fail("GC_INVENTORY_DRIFT");
     const row = { file, path: path.relative(this.root,file).replaceAll("\\", "/"), bytes: Number(stat.size), sha256: digest, identity: before };
     this.files.set(row.path, row); return { row, bytes };
@@ -191,15 +200,23 @@ export class SnapshotBackendReclamation {
       else if(zlib.zstdDecompressSync)raw=zlib.zstdDecompressSync(bytes,{maxOutputLength:SNAPSHOT_STORAGE_LIMITS.decodedBytes});else fail("SNAPSHOT_BUNDLE_CODEC_UNAVAILABLE");
       this.decodedBytes+=raw.length; if(sha(raw)!==match[1])fail("SNAPSHOT_BUNDLE_DIGEST_MISMATCH");
       const doc=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(raw));
-      if(doc.kind!=="SnapshotDomainBundle"||doc.schemaVersion!==1||doc.projectId!==this.storage.projectId||stable(doc.producer)!==stable(producer)||!doc.payload)fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
-      const keys={"graph-code":["nodes","edges"],"world-code":["files","semanticGraph","analysisBasis","domainBasis","rules","sourceScope"],"graph-composition":["body","code","otherNodes","otherEdges","nodeOrder","edgeOrder"]}[doc.domain];
+      if(doc.kind!=="SnapshotDomainBundle"||typeof doc.domain!=="string"||doc.schemaVersion!==1||doc.projectId!==this.storage.projectId||stable(doc.producer)!==stable(producer)||!doc.payload)fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
+      let chunkDescriptors = null;
+      const keys={"code-bucket-chunk":["group","bucket","lists"],"world-code-chunks":["body","lists","chunks"],"graph-code-chunks":["lists","chunks"],"graph-code":["nodes","edges"],"world-code":["files","semanticGraph","analysisBasis","domainBasis","rules","sourceScope"],"graph-composition":["body","code","otherNodes","otherEdges","nodeOrder","edgeOrder"]}[doc.domain];
       if(!keys||JSON.stringify(Object.keys(doc.payload).sort())!==JSON.stringify(keys.sort()))fail("UNSUPPORTED_GC_DOMAIN_SCHEMA");
       if(doc.domain==="graph-code"&&(!Array.isArray(doc.payload.nodes)||!Array.isArray(doc.payload.edges))||doc.domain==="world-code"&&!Array.isArray(doc.payload.files)||doc.domain==="graph-composition"&&(doc.payload.code?.domain!=="graph-code"||![doc.payload.otherNodes,doc.payload.otherEdges,doc.payload.nodeOrder,doc.payload.edgeOrder].every(Array.isArray)||[...doc.payload.nodeOrder,...doc.payload.edgeOrder].some(value=>typeof value!=="boolean")))fail("UNSUPPORTED_GC_DOMAIN_SCHEMA");
-      const dependencies=doc.domain==="graph-composition"?[doc.payload.code]:[];
-      this.domains.set(row.path,{...row,domain:doc.domain,rawSha256:match[1],byteLength:raw.length,encoding:match[2]==="gz"?"gzip":"zstd",dependencies});
+      const bucketSummary = doc.domain === "code-bucket-chunk" ? snapshotCodeBucketSummary(doc.payload) : null;
+      if (["world-code-chunks", "graph-code-chunks"].includes(doc.domain)) chunkDescriptors = snapshotCodeChunkDescriptors(doc.domain, doc.payload);
+      const dependencies=chunkDescriptors ? chunkDescriptors.map(descriptor => descriptor.ref) : doc.domain==="graph-composition"?[doc.payload.code]:[];
+      this.domains.set(row.path,{...row,domain:doc.domain,rawSha256:match[1],byteLength:raw.length,encoding:match[2]==="gz"?"gzip":"zstd",dependencies, ...(chunkDescriptors ? {chunkDescriptors} : {}), ...(bucketSummary ? bucketSummary : {})});
       await new Promise(resolve=>setImmediate(resolve));this.check();
     }
-    for(const row of this.domains.values())for(const ref of row.dependencies)this.verifyDomainRef(ref);
+    for(const row of this.domains.values()) {
+      for(const ref of row.dependencies)this.verifyDomainRef(ref);
+      for(const descriptor of row.chunkDescriptors || []) { const leaf = this.verifyDomainRef(descriptor.ref);
+        if (leaf.domain !== "code-bucket-chunk" || leaf.group !== descriptor.group || leaf.bucket !== descriptor.bucket
+          || stable(leaf.counts) !== stable(descriptor.counts)) fail("INVALID_SNAPSHOT_CODE_CHUNKS"); }
+    }
   }
   verifyDomainRef(ref) {
     const row=this.domains.get(ref?.address); if(!row||ref.kind!=="SnapshotDomainBundle"||ref.schemaVersion!==1||ref.projectId!==this.storage.projectId||ref.domain!==row.domain||ref.sha256!==row.rawSha256||ref.byteLength!==row.byteLength||ref.encoding!==row.encoding||stable(ref.producer)!==stable({name:"lode-domain-bundle",version:"0.1.0"}))fail("INVALID_SNAPSHOT_BUNDLE_REFERENCE"); return row;

@@ -833,3 +833,37 @@ test("missing or foreign process origin never grants a ref effect or owner clean
   finally{fs.writeFileSync(f.attempt.file,original);}
  });
 });
+
+async function v3Orphan(f) {
+ const file=path.join(f.root,"example.py"),original=fs.readFileSync(file);fs.writeFileSync(file,"def orphan_chunk(value):\n    return value * 719\n");const built=await buildWorldModel({root:f.root,persist:false});
+ const world=new LocalJsonWorldModelStoreAdapter({projectRoot:f.root,storage:f.storage,snapshotLayout:"chunked-code-v3"}),graph=new LocalJsonGraphProjectionAdapter({projectRoot:f.root,storage:f.storage,snapshotLayout:"chunked-code-v3"});
+ const w=await world.writeSnapshot(built.snapshot.worldModelId,built.snapshot),g=await graph.writeSnapshot(built.snapshot.temporalProvenanceGraph.graphSnapshotId,built.snapshot.temporalProvenanceGraph);fs.writeFileSync(file,original);
+ return {built,world,files:[w.location,g.location],dependencies:w.snapshotStorage.dependencies};
+}
+test("v3 typed GC reclaims real orphans and preserves exact index or leaf byte pins transitively",async t=>{
+ for(const pin of ["none","index","leaf"])await t.test(pin,async t=>{
+  const f=await fixture(t),protectedWorld=fs.readFileSync(f.built.file),extra=await v3Orphan(f);const ref=pin==="index"?extra.dependencies.find(ref=>ref.domain==="world-code-chunks"):pin==="leaf"?extra.dependencies.find(ref=>ref.domain==="code-bucket-chunk"):null;
+  let retained=[];if(ref){const file=path.join(f.root,ref.address),bytes=fs.readFileSync(file);recordSessionWorkEvidence({root:f.root,input:{summary:"Preserve exact synthetic chunk original",references:[{path:ref.address,digest:sha(bytes),kind:"source"}]}});retained=pin==="index"?extra.dependencies.filter(ref=>ref.domain==="world-code-chunks"||ref.domain==="code-bucket-chunk"&&JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(f.root,ref.address)))).payload.group === "world"): [ref];retained=retained.map(ref=>({file:path.join(f.root,ref.address),bytes:fs.readFileSync(path.join(f.root,ref.address))}));}
+  const result=await applySnapshotGarbageCollection({root:f.root});assert.equal(result.status,"gc_applied",JSON.stringify(result));assert(extra.files.every(file=>!fs.existsSync(file)));assert(result.deletedDomainBundles>0);for(const row of retained)assert(fs.readFileSync(row.file).equals(row.bytes));assert(fs.readFileSync(f.built.file).equals(protectedWorld));assert.equal((await readWorldModel({root:f.root})).snapshot.worldModelId,f.built.snapshot.worldModelId);assert.deepEqual(fs.readdirSync(path.join(f.root,f.storage.directory,".snapshot-gc/participants")),[]);
+ });
+});
+test("failed v3 root unlink preserves remaining roots and all dependent chunk bytes",async t=>{
+ const f=await fixture(t),extra=await v3Orphan(f),rootBytes=fs.readFileSync(extra.files[0]),parts=extra.dependencies.map(ref=>({file:path.join(f.root,ref.address),bytes:fs.readFileSync(path.join(f.root,ref.address))}));const unlink=fs.unlinkSync;fs.unlinkSync=function(file,...args){if(path.resolve(file)===extra.files[0])throw Object.assign(new Error("synthetic unlink denied"),{code:"EACCES"});return unlink.call(this,file,...args);};let result;try{result=await applySnapshotGarbageCollection({root:f.root});}finally{fs.unlinkSync=unlink;}
+ assert.equal(result.code,"EACCES");assert(["gc_partial","gc_preserved"].includes(result.status));assert(fs.readFileSync(extra.files[0]).equals(rootBytes));for(const row of parts)assert(fs.readFileSync(row.file).equals(row.bytes));assert.equal((await extra.world.readSnapshot(extra.built.snapshot.worldModelId)).document.worldModelId,extra.built.snapshot.worldModelId);
+});
+
+test("v3 Capsule checkpoint history and explicit cancellation preserve original recovery direction",async t=>{
+ const f=await fixture(t);fs.writeFileSync(path.join(f.root,"example.py"),"def current_chunk(a,b):\n    return a-b\n");const world=new LocalJsonWorldModelStoreAdapter({projectRoot:f.root,storage:f.storage,snapshotLayout:"chunked-code-v3"}),graph=new LocalJsonGraphProjectionAdapter({projectRoot:f.root,storage:f.storage,snapshotLayout:"chunked-code-v3"});const current=await buildWorldModel({root:f.root,storeAdapter:world,graphProjectionAdapter:graph});
+ const compiled=await compileContext({root:f.root,task:"inspect current_chunk",budget:32768,persist:true});const checkpoint=createRecoveryCheckpoint({root:f.root,purpose:"Synthetic v3 retained direction",currentPosition:"Retain exact historical source",nextExpectedResult:"Continue the original synthetic task"});const stateFile=path.join(f.root,f.storage.directory,"sessions/current.json"),stateBytes=fs.readFileSync(stateFile),checkpointBytes=fs.readFileSync(checkpoint.file);const extra=await v3Orphan(f);
+ const controller=new AbortController();controller.abort();const cancelled=await applySnapshotGarbageCollection({root:f.root,signal:controller.signal});assert.equal(cancelled.code,"SNAPSHOT_GC_CANCELLED");assert(extra.files.every(file=>fs.existsSync(file)));assert(fs.readFileSync(stateFile).equals(stateBytes));
+ const result=await applySnapshotGarbageCollection({root:f.root});assert.equal(result.status,"gc_applied",JSON.stringify(result));assert(extra.files.every(file=>!fs.existsSync(file)));assert.equal(readContextCapsule({root:f.root,capsuleId:compiled.capsule.capsuleId}).capsule.capsuleHash,compiled.capsule.capsuleHash);assert.equal(readRecoveryCheckpoint({root:f.root,checkpointId:checkpoint.checkpoint.checkpointId}).checkpoint.checkpointDigest,checkpoint.checkpoint.checkpointDigest);assert(fs.readFileSync(stateFile).equals(stateBytes));assert(fs.readFileSync(checkpoint.file).equals(checkpointBytes));assert.equal((await readWorldModelSnapshot({root:f.root,worldModelId:current.snapshot.worldModelId})).snapshot.worldModelHash,current.snapshot.worldModelHash);
+});
+
+test("malformed coalesced orphan group or domain types preserve every candidate",async t=>{
+ for(const field of["group","domain"])await t.test(field,async t=>{
+  const f=await fixture(t),extra=await v3Orphan(f),ref=extra.dependencies.find(r=>r.domain==="code-bucket-chunk"),doc=JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(f.root,ref.address))));
+  if(field==="group")doc.payload.group=[doc.payload.group];else doc.domain=[doc.domain];
+  const raw=Buffer.from(JSON.stringify(doc)+"\n"),bad=path.join(f.root,f.storage.directory,"snapshot-bundles",sha(raw)+".json.gz"),encoded=zlib.gzipSync(raw);fs.writeFileSync(bad,encoded,{flag:"wx"});const protectedTree=()=>tree(f.root).filter(([p])=>!p.replaceAll("\\","/").startsWith(f.storage.directory+"/.snapshot-gc/")&&!p.replaceAll("\\","/").startsWith(f.storage.directory+"/.operations/"));const before=protectedTree();
+  const result=await applySnapshotGarbageCollection({root:f.root});assert.equal(result.status,"gc_preserved");assert.equal(result.deletedCount,0);assert.deepEqual(protectedTree(),before);assert(fs.readFileSync(bad).equals(encoded));assert(extra.files.every(file=>fs.existsSync(file)));assert.equal((await readWorldModel({root:f.root})).snapshot.worldModelId,f.built.snapshot.worldModelId);
+ });
+});

@@ -1,3 +1,6 @@
+import { inspectStorageReaderCompatibility } from "./snapshot-storage-compatibility.mjs";
+import { verifyWorldModelPointerOriginal } from "./world-model.mjs";
+import { verifyGraphProjectionPointer } from "./graph-projection-adapter.mjs";
 import fs from "node:fs";
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lode-artifact-composition.mjs";
@@ -579,6 +582,10 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
         ...(onboardingInspection?.reasonCode ? { reasonCode: onboardingInspection.reasonCode } : {}),
       },
       context,
+      storage: inspectStorageReaderCompatibility({ root: projectInspection.project.projectRoot, storage: projectInspection.storage,
+        verifyWorldPointer: pointer => verifyWorldModelPointerOriginal(pointer, projectInspection.project.projectId),
+        verifyGraphPointer: pointer => { verifyGraphProjectionPointer(pointer, null, projectInspection.storage);
+          if (pointer.projectId !== projectInspection.project.projectId) throw Object.assign(new Error("Graph pointer Project mismatch."), { code: "GRAPH_PROJECTION_PROJECT_MISMATCH" }); } }),
       recovery,
     },
     nextAction: {

@@ -4,24 +4,17 @@
 
 새 로컬 World·Graph 스냅샷은 공백을 줄인 JSON을 gzip으로 압축해 `.json.gz`로 저장합니다. 기존 `.json`은 원래 경로와 바이트를 유지하며 같은 ID로 재사용합니다. 설치·재개·조회는 원본을 이관하지 않습니다.
 
-선택된 Project 소유 근거가 있는 일반적인 완전한 World·Graph 저장은 `shared-domains-v2`를 사용합니다. 바뀌는
-구성은 gzip 루트에 넣고, World는 최대 두 개·Graph는 최대 한 개의 불변 코드 묶음을
-참조합니다. 묶음은 기존 schema 1 / producer 0.1.0 그대로이며 루트만 schema 2 /
-producer 0.2.0입니다. 이전 스냅샷을 연쇄 재생하지 않습니다. 결정 변경은 코드 묶음을
-재사용할 수 있지만 코드 변경은 묶음 전체를 새로 저장할 수 있고, 소속 메타데이터도
-그래프 크기에 따라 늘어납니다. 첫 조회의 부분 IO나 O(change) 처리를 뜻하지 않습니다.
+검증된 Project 소유 근거가 있는 신규 완전 로컬 저장의 기본값은 `chunked-code-v3`입니다. gzip 루트는 물리 schema 3 / producer 0.3.0이며 불변 코드 index·leaf를 참조합니다. 원래 다섯 배열은 정확한 경로를 기준으로 고정된 64개 버킷에 나뉩니다. World leaf 하나에 세 배열 family를, Graph leaf 하나에 두 family를 묶고 World와 Graph가 같은 Graph leaf를 공유합니다. index는 중복과 알 수 없는 row 필드를 포함한 모든 원문 항목을 정확한 순서로 복원합니다. 이전 snapshot 연쇄 재생은 없습니다.
+
+저장량을 우선한 선택이며 지연 증가를 감수합니다. 파일 48개·파일당 함수 16개의 동일 조건 합성 비교에서 한 줄 수정의 신규 저장량은 410,222→99,716바이트로 75.7% 줄었지만 첫 생성은 약 28% 느렸습니다. 파일 네 개 사례에서는 첫 저장량이 약 28%, 최초 시간이 22%, 코드 refresh 시간이 23% 늘었습니다. warm-cache 로컬 측정이며 보편적 속도·Host/model·총 I/O 개선을 뜻하지 않습니다. 전체 복원·원본 검증·메타데이터 비용은 그래프 크기에 따라 남습니다.
+
+기존 `shared-domains-v2`는 물리 schema 2 / producer 0.2.0과 전체 코드 묶음을 유지합니다. whole JSON/gzip·Git·domain-v1과 함께 제자리에서 읽고 기존 programmatic adapter 옵션으로 선택할 수 있습니다. 별도 공개 CLI/MCP 선택 옵션을 추가한 것은 아닙니다. 같은 ID를 반복하면 원래 저장 표현과 바이트를 재사용합니다. 설치·재개·조회·같은 입력의 색인은 원본을 변환하지 않으며, 실제 새 snapshot만 신규 기본값을 쓸 수 있습니다.
 
 선택된 Project 소유 근거가 없는 순수 하위 adapter는 기존 whole 문서 저장을
 유지하며 초기화를 요구하지 않습니다. 명시적 composition 선택은 소유 근거를
 요구하고 전체 검증을 그대로 수행합니다.
 
-최소 reader는 물리 schema 2를 지원하는 릴리스입니다. **Beta.69 이하는 새 루트를
-`INVALID_SNAPSHOT_COMPOSITION`으로 거부**하며 구형으로 다시 쓰지 않습니다.
-새 World·Graph를 쓰기 전에 이를 읽을 모든 공유 Project 클라이언트를 업데이트하세요.
-이는 형식 호환 안내이며 새로운 설정·승인 게이트가 아닙니다. 새 reader는 기존 whole
-JSON/gzip·Git·domain-v1 원본을 제자리에서 읽습니다. 명시적 whole/Git/v1 선택도
-유지합니다. 물리 형식 때문에 새 의미 payload에 필드를 넣지 않으며, v1에 이미 기록된
-분석 필드는 변경 없는 이력의 신원을 유지하도록 승계합니다.
+물리 schema 3은 beta.75에 도입된 `chunked-code-v3` 지원 reader가 필요합니다. Beta.74 이하는 새 루트를 읽지 못합니다. Beta.69 이하는 schema-2 루트도 `INVALID_SNAPSHOT_COMPOSITION`으로 거부합니다. 새 snapshot을 쓰기 전에 공유 Project의 각 클라이언트를 업데이트하세요. 이는 형식 호환 안내이며 새 설정·승인 게이트가 아닙니다. 새 reader는 옛 경로·바이트를 그대로 읽으며 과거 원문이 없다고 현재 자료로 바꾸지 않습니다. 물리 layout을 의미 World payload의 새 필드로 넣지 않습니다.
 
 묶음 주소·Project·타입·producer·digest와 재구성한 전체 World·Graph 검증은
 유지합니다. 기존 보존·삭제 closure와 reader·publisher 수명이 참조 묶음을 포함합니다.
@@ -30,14 +23,21 @@ Graph 포인터 다음 World 포인터를 게시하는 기존 부분 실패 보�
 새 형식이 두 포인터의 원자적 트랜잭션이나 이미 완료된 효과의 롤백을 만들지는 않습니다.
 
 
+## status의 reader 호환성
+
+새 World/Graph pointer를 게시할 때 실제 검증한 저장 표현에서 advisory `readerRequirements`를 만들고 정확한 snapshot ID와 함께 기록합니다. Graph pointer는 기존 pointer digest에 선언을 포함하고, World pointer는 기존 snapshot ID/hash 검사를 유지합니다. 이 안내 자체는 World 무결성의 독립 증명이 아닙니다. status는 크기가 제한된 로컬 pointer만 읽어 Core 준비와 각 투영의 물리 layout·schema·producer 지원 선언을 구분합니다. World 전체를 복원하지 않으며 snapshot 무결성·현재성·의미 충분성을 증명하지 않습니다. 요구 정보가 없는 기존 pointer는 `not-inspected`로 표시하고 호환된다고 추정하지 않습니다. 지원하지 않거나 조회할 수 없는 층의 사유는 CLI·typed MCP에서 볼 수 있고 일반 Core 작업은 계속됩니다. 새 setup·refresh·승인 절차는 없습니다.
+
+실제 읽기는 전체 검증을 유지합니다. 새 reader는 지원하지 않는 composition schema·producer를 `UNSUPPORTED_SNAPSHOT_COMPOSITION`으로 알리고, 누락·손상·ID/digest·권한 실패도 오류로 유지합니다. 이미 배포된 beta.69의 동작을 바꾸는 기능은 아닙니다. 저장 형식 안내와 로드된 패키지·설정 패키지의 불일치 안내는 서로 다른 사실입니다.
+
 ## 저장 방식 요약
 
 | 선택 | 용도 |
 | --- | --- |
-| gzip `shared-domains-v2` | 검증된 선택 소유 근거가 있는 완전한 저장의 기본값입니다. |
+| gzip `chunked-code-v3` | 검증된 선택 소유 근거의 신규 완전 저장 기본값입니다. 저장 중복을 줄이며 지연 비용을 공개합니다. |
+| gzip `shared-domains-v2` | 명시적으로 선택하는 전체 코드 묶음 형식과 보존된 schema-2 이력입니다. |
 | Whole JSON/gzip | 보존된 과거 파일과 선택 소유 근거가 없는 하위 adapter입니다. |
 | Private Git | 명시적으로 선택하며 기존 원본 검증을 유지합니다. |
-| Domain-v1 또는 zstd | 명시적 시험이며 런타임 지원 여부를 알립니다. |
+| Domain-v1 또는 zstd | 기존 programmatic adapter 옵션이며 런타임 지원을 공개합니다. 공개 CLI/MCP 선택 옵션은 없습니다. |
 | GC 조회 | 읽기 전용이며 일반 시작에 정리가 필요하지 않습니다. |
 | 명시적 GC 적용 | 기존 안전 계약에 따라 지원되고 검증된 미참조 저장물만 삭제합니다. |
 
@@ -83,7 +83,9 @@ GC만 OS 파일시스템을 확인합니다. Windows는 숨김·기한 제한 Dr
 
 ## 생성하는 Git ignore 규칙
 
-초기화와 명시적 재개는 선택된 `.lode/.gitignore` 또는 기존 `.head/.gitignore`가 없을 때만 새로 생성합니다. 사용자가 편집한 파일을 포함해 모든 기존 파일은 수정하지 않으며, 덮어쓰지 않는 원자적 생성으로 동시에 생긴 파일도 보존합니다. 생성 규칙마다 루트 예외와의 충돌을 따로 확인합니다. 예를 들어 `!.gitkeep`가 있어도 정확한 `/graph-discovery/index.json`은 생성하고, 하위 `.gitkeep`를 가릴 수 있는 디렉터리 규칙은 보존합니다. 확실히 무관한 루트 예외는 해당 규칙을 허용하고, 겹치거나 모호한 와일드카드·escape는 건너뜁니다. 결과에 포함·제외된 규칙을 구분합니다. 생성 직전에 정책 바이트를 다시 확인하되 외부 편집기를 잠그거나 추적 중인 파일을 바꾸지는 않습니다. 선택적 생성 실패는 Project 준비도나 일반 작업을 막지 않습니다.
+초기화와 명시적 재개는 선택된 `.lode/.gitignore` 또는 기존 `.head/.gitignore`가 없으면 새로 생성합니다. 이전 생성 파일은 전체 내용이 알려진 원문과 LF 또는 CRLF까지 정확히 일치할 때만 갱신합니다. 추가 주석·규칙 순서 변경·사용자 편집이 있으면 보존하며, marker만으로 소유권을 판단하지 않습니다. 링크되었거나 변경 중인 파일은 보존하고 게시 직전 관측한 정책 바이트를 다시 확인합니다. 비협조 외부 편집기에 대한 파일시스템 compare-and-swap을 보장하지는 않습니다.
+
+각 규칙을 루트 예외와 따로 비교합니다. `!docs/`·`!.gitkeep`와 무관한 정확한 index 파일 규칙은 생성하므로 전체 파일 생성을 생략하지 않습니다. 다만 이 basename이 알 수 없는 하위 항목에 닿을 수 있는 디렉터리 규칙은 따로 건너뜁니다. 루트가 고정되어 무관함이 입증된 `!/docs/`는 관련 없는 모든 규칙을 허용합니다. `!.lode/**`처럼 관련된 예외와 모호한 패턴은 영향받는 규칙보다 우선합니다. 결과에는 포함·제외된 규칙을 표시합니다. 선택적 ignore 실패는 준비도나 일반 작업을 막지 않습니다.
 
 | 저장 루트 내부 상대 패턴 | 재생성·폐기 가능한 이유 |
 | --- | --- |
@@ -93,7 +95,7 @@ GC만 OS 파일시스템을 확인합니다. Windows는 숨김·기한 제한 Dr
 | `/refresh/writer.lock/` | 해당 Host의 실행 중 refresh lease. |
 | `/refresh/writer.lock.*.staging/` | 아직 게시되지 않은 lease staging. |
 
-스냅샷·Canon·Session 기록·Capsule·역사 boundary·설치 manifest·사용자 편집 문서를 일괄 ignore하지 않습니다. helper는 Git을 실행하거나 기존 추적·staging·전역 설정을 바꾸지 않습니다. ignore로 디스크 공간을 회수하지는 않습니다.
+별도 retained-history 블록은 `/world-model/snapshots/`, `/graph-projection/snapshots/`, `/snapshot-bundles/`, `/snapshot-objects.git/`의 새 파일이 실수로 추적되지 않도록 합니다. 이 원본에는 보존·복구 가치가 있으며 폐기 가능한 cache가 아닙니다. Canon·Session 기록·Capsule·pointer·역사 boundary·설치 manifest·사용자 편집 문서는 이 목록에 포함하지 않습니다. helper는 Git을 실행하거나 기존 추적·staging·전역 설정을 바꾸지 않습니다. ignore로 디스크 공간을 회수하지는 않습니다.
 
 ## 로컬 Git snapshot 실험 후보
 
@@ -135,6 +137,8 @@ private Git 저장은 자기 소유 store/staging 내부에서만 ignore를 새�
 
 명시적 whole-file gzip과 기존 domain-bundles-v1 읽기·쓰기 계약은 유지합니다. 전체 World/Graph hash·원문·Project·권한 검증은 줄이지 않습니다. 같은 관측의 변경 원문은 분석 후 누적하지 않으며, 재사용하는 이전 분석의 소유 검증은 유지합니다. 사용자 cache/save/pin/승인 절차나 daemon은 추가하지 않습니다.
 
+다음은 위 coalesced v3 구현보다 앞선, 서로 다른 별도 실험의 기록이며 현재 기본 v3가 미채택이라는 뜻이 아닙니다.
+
 파일별 관계 재사용과 두 packed-chunk 형식은 별도 로컬 고정 후보에서 시험했습니다. 관계 재사용의 검증/복사 비용과 chunk의 전체 복원·파일 검사 비용 때문에 해당 측정에서 전체 지연이 증가해 활성 제품 경로에는 채택하지 않았습니다. 기존 domain 시험의 정확한 전체 codeAnalysisInputBasis 재사용은 유지합니다. 전체 탐색/해시·관계 생성·직렬화/검증·스냅샷 목록 및 Git namespace 검사 비용은 남아 있으며, 이 수정만으로 전체 파이프라인이 변경량에 비례한다고 하지 않습니다. 증분 분석 개선이 자동으로 이력·원문 이관이나 GC·ref 삭제를 실행하지 않으며, 명시적 storage-gc는 위의 별도 계약을 따릅니다.
 
 ### 요청 안에서의 private Git 읽기
@@ -156,3 +160,15 @@ Pack 생성·index·검증은 기존 검증된 native process supervisor로 자�
 일시 participant/attempt와 두 create-only ref lock은 Project·nonce·host·PID·고정 Node runtime 시작 기준값을 결합합니다. 짧은 효과 경계에서 검증한 attempt 소유 정보를 전달하며 PID가 같아도 runtime 시작 기준값이 다르면 해당 소유자의 효과나 정리를 수행하지 않습니다. 명시된 runtime 기준값은 별도 조회한 OS CreationDate나 불명·과거 소유자를 회수할 근거가 아닙니다. 일반 작업에 OS 프로세스 조회를 추가하지 않습니다.
 
 GC 취소는 native supervisor에 한 번 종료를 요청하고 작업의 원래 절대 deadline 안에서 정리 증명을 기다립니다. 해당 deadline에 도달해야 강제 종료하며 deadline을 늘리거나 정리 성공을 추정하지 않습니다. 멈춘 supervisor는 남은 작업 deadline까지, 기존 기본값 기준 최대 30초를 사용할 수 있습니다. 용량 상한이나 원래 오류는 그대로 실패이며 정리를 검증할 수 없는 경우도 성공으로 처리하지 않습니다.
+
+## 관측 용량의 범위
+
+`storedBytes`는 기존 snapshot 파일 집계 의미를 유지합니다. 별도 `physicalStorage`는 domain bundle·private Git·source bundle·기타 Project 파일을 포함한 backend별·전체 regular-file 길이를 관측합니다. 제외한 위험 경로·일시적 조정 파일과 제한으로 생긴 부분 범위를 공개합니다. 디스크 할당량이나 안전 회수 가능량이 아닙니다. apply는 별도 재탐색 없이 정리 전 typed inventory 범위를 반환합니다. 이 진단 합계는 삭제 후보 선정에 사용하지 않습니다.
+
+## 코드 조각 형식과 검증
+
+v3 index는 중복되지 않는 bucket descriptor, family별 정확한 개수와 list별 원래 순서를 보관합니다. leaf의 group·bucket·family shape가 엄격히 검증되므로 다른 family가 누락을 가리지 못합니다. index·leaf는 기존 domain envelope schema 1 / producer 0.1.0을 유지합니다. 최대 128개 leaf와 두 index가 필요하며 요청별 검증은 최대 512개 part, 깊이 3과 기존 전체 decoded-byte 상한을 유지합니다. 옛 v1/v2는 기존 여덟 part 상한 그대로입니다. 이 제한은 저장 형식의 범위이며 Context 예산이나 의미 판정 게이트가 아닙니다.
+
+각 descriptor의 Project·domain·관리 주소·encoding·선언 byte·digest를 검증하고 같은 주소의 상충 선언은 거부합니다. root·bundle fd 읽기는 관측한 크기만 할당하고 추가 sentinel 한 바이트까지만 확인하며 전후 identity 검사도 유지합니다. 복원한 전체 byte length·SHA와 원래 World/Graph 검증을 모두 통과해야 합니다.
+
+typed GC는 같은 family 문법으로 index→leaf 의존성을 검증하며 제한된 descriptor·개수 요약만 유지합니다. current·previous·history, 정확한 index/leaf byte pin과 삭제 실패 후 남은 root가 하위 조각을 보존합니다. 알 수 없거나 누락·손상·다른 Project의 조각이면 검증되지 않은 삭제를 막습니다. GC는 명시적 실행, 기존 취소와 전체 deadline을 유지하고 자동 이관·백그라운드 정리를 추가하지 않습니다.

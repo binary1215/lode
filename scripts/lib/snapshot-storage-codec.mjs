@@ -43,6 +43,19 @@ export function decodeSnapshotBytes(bytes, { compressed = false, compressedBytes
   try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(decoded)); }
   catch { fail("Snapshot is not valid UTF-8 JSON."); }
 }
+// Read the observed descriptor length, plus at most one sentinel byte. A file
+// growing after lstat/fstat must not control allocation through readFileSync.
+export function readBoundedSnapshotDescriptor(fd, expectedBytes, maximumBytes) {
+  if (!Number.isSafeInteger(expectedBytes) || expectedBytes < 0 || !Number.isSafeInteger(maximumBytes)
+    || maximumBytes < 1 || expectedBytes > maximumBytes) fail("Snapshot exceeds its storage bound.", "SNAPSHOT_STORAGE_LIMIT");
+  const bytes = Buffer.alloc(expectedBytes);
+  let length = 0;
+  while (length < expectedBytes) { const n = fs.readSync(fd, bytes, length, expectedBytes - length, null); if (!n) break; length += n; }
+  const extra = Buffer.alloc(1);
+  if (length !== expectedBytes || fs.readSync(fd, extra, 0, 1, null)) fail("Snapshot changed during bounded read.", "SNAPSHOT_STORAGE_DRIFT");
+  return bytes;
+}
+
 export function readSnapshotFile(file, limits = {}) {
   const stat = fs.lstatSync(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) fail("Snapshot is not a single regular file.", "UNSAFE_SNAPSHOT_PATH");
@@ -53,7 +66,7 @@ export function readSnapshotFile(file, limits = {}) {
   try {
     const opened = fs.fstatSync(fd);
     if (opened.dev !== stat.dev || opened.ino !== stat.ino || opened.size !== stat.size || opened.nlink !== 1) fail("Snapshot changed before read.", "SNAPSHOT_STORAGE_DRIFT");
-    const bytes = fs.readFileSync(fd);
+    const bytes = readBoundedSnapshotDescriptor(fd, stat.size, maximum);
     if (bytes.length !== stat.size || fs.fstatSync(fd).size !== stat.size) fail("Snapshot changed during read.", "SNAPSHOT_STORAGE_DRIFT");
     return { bytes, document: !compressed && limits.decodedBytes === undefined
       ? JSON.parse(bytes.toString("utf8")) : decodeSnapshotBytes(bytes, { ...limits, compressed }) };

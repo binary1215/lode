@@ -1,6 +1,6 @@
 import { verifyLooseSnapshotAddress } from "./snapshot-backend-reclamation.mjs";
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
-import { DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
+import { DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
 import { GitSnapshotStore } from "./git-snapshot-store.mjs";
 import { storedSnapshotLocation, readSnapshotFile, writeStoredSnapshot, listStoredSnapshotIds } from "./snapshot-storage-codec.mjs";
 import crypto from "node:crypto";
@@ -83,8 +83,8 @@ export class LocalJsonWorldModelStoreAdapter {
     this.storage = storage;
     // Layout selection is not ownership verification. Unowned lower adapters
     // retain their whole-document contract; compositions still recheck owner.
-    if (snapshotLayout === undefined) snapshotLayout = snapshotEncoding === "git" || !projectOwnsRecordedRoot(storage, this.projectRoot) ? "whole" : SHARED_DOMAIN_LAYOUT;
-    if (!["whole", DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT].includes(snapshotLayout)) fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
+    if (snapshotLayout === undefined) snapshotLayout = snapshotEncoding === "git" || !projectOwnsRecordedRoot(storage, this.projectRoot) ? "whole" : CHUNKED_CODE_LAYOUT;
+    if (!["whole", DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT].includes(snapshotLayout)) fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
     this.snapshotLayout = snapshotLayout; this.bundleEncoding = bundleEncoding;
     this.snapshotEncoding = snapshotEncoding;
     this.gitOptions = gitOptions;
@@ -136,7 +136,7 @@ export class LocalJsonWorldModelStoreAdapter {
     if (existing) return { ...existing, created: false };
     // The storage adapter also accepts opaque documents; only complete typed
     // snapshots use the default composition. Their Core verifier is unchanged.
-    if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT || this.snapshotLayout === SHARED_DOMAIN_LAYOUT && document.temporalProvenanceGraph?.kind === "GraphSnapshot") {
+    if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT || [SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT].includes(this.snapshotLayout) && document.temporalProvenanceGraph?.kind === "GraphSnapshot") {
       document = createSnapshotComposition({ root: this.projectRoot, storage: this.storage, document, encoding: this.bundleEncoding, layout: this.snapshotLayout }).document;
     }
     if (this.snapshotEncoding === "git") {
