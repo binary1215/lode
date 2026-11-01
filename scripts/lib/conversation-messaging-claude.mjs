@@ -122,8 +122,23 @@ export async function deliverClaudeInbox({ socketPath, platform = process.platfo
 
 export function claudeChannel({ environment = process.env, socketExists = fs.existsSync } = {}) {
   const socketPath = normalizeClaudeSocketPath(environment?.CLAUDE_CODE_MESSAGING_SOCKET);
-  if (!socketPath) return { kind: "claude-prompt" };
-  if (/^\\\\[.?]\\pipe\\/u.test(socketPath)) return { kind: "claude-inbox", socketPath };
-  if (!socketExists(socketPath)) return { kind: "claude-prompt" };
-  return { kind: "claude-inbox", socketPath };
+  if (!socketPath) return { kind: "claude-next-prompt" };
+  if (/^\\\\[.?]\\pipe\\/u.test(socketPath)) return { kind: "claude-immediate", socketPath };
+  if (!socketExists(socketPath)) return { kind: "claude-next-prompt" };
+  return { kind: "claude-immediate", socketPath };
+}
+
+export function claudeLive(record, { environment, platform, fresh, recent }) {
+  const channel = record?.channel;
+  if (channel?.kind !== "claude-immediate" || typeof channel.socketPath !== "string") return null;
+  const pipe = /^\\\\[.?]\\pipe\\/u.test(channel.socketPath);
+  const present = pipe || fs.existsSync(channel.socketPath);
+  if (!(present && recent)) return null;
+  if (platform === "win32" && !claudePeerTokenPresent({ environment, socketPath: channel.socketPath })) return { reachable: fresh, delivery: fresh ? "next-prompt" : "unreachable", evidence: "claude-windows-auth-missing" };
+  return { reachable: true, delivery: "immediate", evidence: pipe ? "claude-inbox-pipe" : "claude-inbox-socket" };
+}
+
+export async function claudeDeliver({ message, presence, environment, platform }) {
+  const token = readClaudePeerToken({ environment, socketPath: presence.channel.socketPath });
+  return deliverClaudeInbox({ socketPath: presence.channel.socketPath, platform, token, message });
 }

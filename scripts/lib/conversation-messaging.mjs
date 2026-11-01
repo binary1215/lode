@@ -3,13 +3,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
-import { claudeChannel, claudePeerTokenPresent, deliverClaudeInbox, readClaudePeerToken } from "./conversation-messaging-claude.mjs";
+import { claudeChannel, claudeDeliver, claudeLive } from "./conversation-messaging-claude.mjs";
 import { ensureMessagingDirectoryIgnore } from "./project-storage-ignore.mjs";
 import { processExists, processStartId } from "./process-exists.mjs";
-import { codexChannel, codexControlSocket, collectAncestors, deliverCodexTurn, windowsProcessListCommand } from "./conversation-messaging-codex.mjs";
-import { deliverOpenCodePrompt, opencodeChannel, opencodePromptAvailable } from "./conversation-messaging-opencode.mjs";
+import { codexChannel, codexControlSocket, codexDeliver, codexLive, collectAncestors, windowsProcessListCommand } from "./conversation-messaging-codex.mjs";
+import { deliverOpenCodePrompt, opencodeChannel, opencodeDeliver, opencodeLive, opencodePromptAvailable } from "./conversation-messaging-opencode.mjs";
 
-const RUNTIMES = new Set(["claude", "codex", "opencode"]);
+const ADAPTERS = Object.freeze([
+  Object.freeze({ runtime: "claude", live: claudeLive, deliver: claudeDeliver }),
+  Object.freeze({ runtime: "codex", live: codexLive, deliver: codexDeliver }),
+  Object.freeze({ runtime: "opencode", live: opencodeLive, deliver: opencodeDeliver }),
+]);
+const RUNTIMES = new Set(ADAPTERS.map(adapter => adapter.runtime));
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$/u;
 const MESSAGE_ID = /^msg-[a-f0-9]{24}$/u;
 const TICKET_ID = /^[a-f0-9]{32}$/u;
@@ -169,19 +174,10 @@ function channelLive(record, environment, now, platform) {
   const channel = object(record?.channel) ? record.channel : { kind: "none" };
   const fresh = ageMs(record, now) <= CONVERSATION_LIMITS.freshMs;
   const recent = ageMs(record, now) <= CONVERSATION_LIMITS.immediateMs;
-  if (channel.kind === "claude-inbox" && typeof channel.socketPath === "string") {
-    const pipe = /^\\\\[.?]\\pipe\\/u.test(channel.socketPath);
-    const present = pipe || fs.existsSync(channel.socketPath);
-    if (present && recent) {
-      if (platform === "win32" && !claudePeerTokenPresent({ environment, socketPath: channel.socketPath })) return { reachable: fresh, delivery: fresh ? "next-prompt" : "unreachable", evidence: "claude-windows-auth-missing" };
-      return { reachable: true, delivery: "immediate", evidence: pipe ? "claude-inbox-pipe" : "claude-inbox-socket" };
-    }
+  for (const adapter of ADAPTERS) {
+    const live = adapter.live(record, { environment, now, platform, fresh, recent });
+    if (live) return live;
   }
-  if (channel.kind === "codex-engine" && typeof channel.engineSocket === "string" && fs.existsSync(channel.engineSocket) && recent) {
-    return { reachable: true, delivery: "immediate", evidence: "codex-shared-engine" };
-  }
-  // The send call has no OpenCode client. The plugin watch prompts later, so this is not immediate.
-  if (channel.kind === "opencode-prompt" && recent) return { reachable: true, delivery: "async", evidence: "opencode-plugin-watch" };
   if (fresh) return { reachable: true, delivery: "next-prompt", evidence: channel.kind || "presence" };
   return { reachable: false, delivery: "unreachable", evidence: "presence-stale" };
 }
@@ -731,12 +727,11 @@ function enqueue(project, message) {
 }
 
 async function defaultDeliver({ message, presence, environment, platform }) {
-  if (presence.channel?.kind === "claude-inbox") {
-    const token = readClaudePeerToken({ environment, socketPath: presence.channel.socketPath });
-    return deliverClaudeInbox({ socketPath: presence.channel.socketPath, platform, token, message: { ...message, text: renderInjection([message], 0) } });
-  }
-  if (presence.channel?.kind === "codex-engine") {
-    return deliverCodexTurn({ socketPath: presence.channel.engineSocket, platform, threadId: presence.nativeSessionId, text: renderInjection([message], 0) });
+  const text = renderInjection([message], 0);
+  for (const adapter of ADAPTERS) {
+    if (presence.channel?.kind?.startsWith(adapter.runtime + "-immediate") || presence.channel?.kind === "opencode-async" && adapter.runtime === "opencode") {
+      return adapter.deliver({ message: { ...message, text }, presence, environment, platform });
+    }
   }
   return { outcome: "unavailable", evidence: presence.channel?.kind || "inbox" };
 }
@@ -764,7 +759,7 @@ export async function sendProjectConversation({ root, caller = null, environment
   }
   ensureMailbox(project);
   retainMailbox(project, now);
-  try { registerConversationPresence({ root, identity: from, channel: { kind: `${from.runtime}-prompt` }, environment, now }); }
+  try { registerConversationPresence({ root, identity: from, channel: { kind: `${from.runtime}-next-prompt` }, environment, now }); }
   catch { /* The sender can still queue for a visible target. */ }
   const presence = listPresence(project).find(record => record.address === target.address);
   const visible = presence && channelLive(presence, environment, now, platform).delivery !== "unreachable";
@@ -806,7 +801,7 @@ export function listProjectConversations({ root, caller = null, environment = pr
   if (caller?.subagent === true && !identityFromCaller(caller)) fail("CONVERSATION_SUBAGENT_IDENTITY_REQUIRED", "A subagent cannot list as its parent.");
   const self = identityFromCaller(caller) || consumeTicket({ root, hostTicket, args, environment, now });
   if (self) {
-    try { registerConversationPresence({ root, identity: self, channel: { kind: `${self.runtime}-prompt` }, environment, now }); }
+    try { registerConversationPresence({ root, identity: self, channel: { kind: `${self.runtime}-next-prompt` }, environment, now }); }
     catch { /* Listing still reports the conversations already registered. */ }
   }
   const rows = listPresence(project).map(record => ({ record, live: channelLive(record, environment, now, platform) }))
@@ -842,6 +837,16 @@ export function registerHookPresence({ runtime, event, environment = process.env
   catch { return null; }
 }
 
+function prepareAddressInjection(project, address, evidence, now) {
+  const { claimed, remaining } = claimAddress(project, address, now);
+  if (!claimed.length) return null;
+  return {
+    text: renderInjection(claimed, remaining),
+    commit() { for (const message of claimed) markHanded(project, message, "sent", evidence); },
+    release() { for (const message of claimed) releaseClaim(project, message); },
+  };
+}
+
 export function prepareHookInjection({ runtime, event, environment = process.env, now = Date.now } = {}) {
   if (event?.hook_event_name !== "UserPromptSubmit" || typeof event.cwd !== "string") return null;
   const identity = hookConversationIdentity(runtime, event);
@@ -849,13 +854,7 @@ export function prepareHookInjection({ runtime, event, environment = process.env
   let project;
   try { project = openProject(event.cwd); }
   catch { return null; }
-  const { claimed, remaining } = claimAddress(project, identity.address, now);
-  if (!claimed.length) return null;
-  return {
-    text: renderInjection(claimed, remaining),
-    commit() { for (const message of claimed) markHanded(project, message, "sent", "prompt-hook"); },
-    release() { for (const message of claimed) releaseClaim(project, message); },
-  };
+  return prepareAddressInjection(project, identity.address, "prompt-hook", now);
 }
 
 export async function deliverQueuedOpenCode({ root, client, directory, environment = process.env, sessionId = null, skipSessionId = null, skipSessionIds = null } = {}) {
@@ -897,13 +896,7 @@ export function prepareOpenCodeInjection({ root, session, now = Date.now } = {})
   let project;
   try { project = openProject(root); }
   catch { return null; }
-  const { claimed, remaining } = claimAddress(project, identity.address, now);
-  if (!claimed.length) return null;
-  return {
-    text: renderInjection(claimed, remaining),
-    commit() { for (const message of claimed) markHanded(project, message, "sent", "opencode-system-transform"); },
-    release() { for (const message of claimed) releaseClaim(project, message); },
-  };
+  return prepareAddressInjection(project, identity.address, "opencode-system-transform", now);
 }
 
 export const conversationWindows = Object.freeze({

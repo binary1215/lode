@@ -231,10 +231,20 @@ export function collectAncestors({ platform = process.platform, environment = pr
 }
 
 export function codexChannel({ environment = process.env, ancestors = [], socketExists = fs.existsSync } = {}) {
-  if (!ancestorUsesSharedEngine(ancestors)) return { kind: "codex-prompt" };
+  if (!ancestorUsesSharedEngine(ancestors)) return { kind: "codex-next-prompt" };
   const socketPath = socketFromAncestorListen(ancestors) || codexControlSocket(environment);
-  if (socketPath && socketExists(socketPath)) return { kind: "codex-engine", engineSocket: socketPath };
-  return { kind: "codex-prompt", evidence: socketPath ? "codex-engine-socket-missing" : "codex-home-unavailable" };
+  if (socketPath && socketExists(socketPath)) return { kind: "codex-immediate", socketPath };
+  return { kind: "codex-next-prompt", evidence: socketPath ? "codex-engine-socket-missing" : "codex-home-unavailable" };
+}
+
+export function codexLive(record, { recent }) {
+  const channel = record?.channel;
+  if (channel?.kind !== "codex-immediate" || typeof channel.socketPath !== "string" || !fs.existsSync(channel.socketPath) || !recent) return null;
+  return { reachable: true, delivery: "immediate", evidence: "codex-shared-engine" };
+}
+
+export function codexDeliver({ message, presence, platform }) {
+  return deliverCodexTurn({ socketPath: presence.channel.socketPath, platform, threadId: presence.nativeSessionId, text: message.text });
 }
 
 function rpc(id, method, params) {

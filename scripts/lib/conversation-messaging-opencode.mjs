@@ -42,5 +42,14 @@ export async function deliverOpenCodePrompt({ client, directory, sessionId, text
 }
 
 export function opencodeChannel({ promptAvailable = false } = {}) {
-  return promptAvailable ? { kind: "opencode-prompt" } : { kind: "opencode-inbox" };
+  return promptAvailable ? { kind: "opencode-async" } : { kind: "opencode-next-prompt" };
+}
+
+export function opencodeLive(record, { recent }) {
+  if (record?.channel?.kind !== "opencode-async" || !recent) return null;
+  return { reachable: true, delivery: "async", evidence: "opencode-plugin-watch" };
+}
+
+export function opencodeDeliver() {
+  return { outcome: "unavailable", evidence: "opencode-plugin-watch" };
 }

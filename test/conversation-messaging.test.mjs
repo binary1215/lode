@@ -67,9 +67,9 @@ test("three clients are listed with addresses and current reachability inside is
   const opencode = caller("opencode", "ses_live");
   const socket = path.join(home, "claude.sock");
   fs.writeFileSync(socket, "");
-  register(root, environment, claude, { kind: "claude-inbox", socketPath: socket });
-  register(root, environment, codex, { kind: "codex-prompt" });
-  register(root, environment, opencode, { kind: "opencode-prompt" });
+  register(root, environment, claude, { kind: "claude-immediate", socketPath: socket });
+  register(root, environment, codex, { kind: "codex-next-prompt" });
+  register(root, environment, opencode, { kind: "opencode-async" });
   const listed = listProjectConversations({ root, caller: claude, environment, now: fixedNow });
   assert.equal(listed.self.address, "claude:claude-live");
   assert.deepEqual(listed.conversations.map(row => [row.address, row.runtime, row.reachable, row.delivery]).sort(), [
@@ -87,11 +87,11 @@ test("send reports delivered, sent, or queued and a reply returns to the sender 
   const { root, environment } = isolated(t);
   const claude = caller("claude", "claude-a");
   const codex = caller("codex", "codex-b");
-  register(root, environment, claude, { kind: "claude-prompt" }, Date.now);
-  register(root, environment, codex, { kind: "codex-engine", engineSocket: path.join(environment.CODEX_HOME, "missing.sock") }, Date.now);
+  register(root, environment, claude, { kind: "claude-next-prompt" }, Date.now);
+  register(root, environment, codex, { kind: "codex-immediate", socketPath: path.join(environment.CODEX_HOME, "missing.sock") }, Date.now);
   const queued = await sendProjectConversation({
     root, caller: claude, environment, to: "codex:codex-b", body: "please review the migration", now: Date.now, waitMs: 0,
-    deliver: async () => ({ outcome: "unavailable", evidence: "codex-engine-unavailable" }),
+    deliver: async () => ({ outcome: "unavailable", evidence: "codex-immediate-unavailable" }),
   });
   assert.equal(queued.state, "queued");
   assert.equal(queued.evidence, "inbox");
@@ -110,7 +110,7 @@ test("send reports delivered, sent, or queued and a reply returns to the sender 
   assert.equal(child.hookSpecificOutput, undefined);
   const reply = await sendProjectConversation({
     root, caller: codex, environment, to: "claude:claude-a", body: "migration finished", replyTo: queued.id, now: Date.now, waitMs: 0,
-    deliver: async () => ({ outcome: "unavailable", evidence: "claude-prompt" }),
+    deliver: async () => ({ outcome: "unavailable", evidence: "claude-next-prompt" }),
   });
   assert.equal(reply.state, "queued");
   assert.equal(reply.replyTo, queued.id);
@@ -131,13 +131,13 @@ test("immediate delivery is distinct from an unreachable target", async t => {
   fs.mkdirSync(socket, { recursive: true });
   const engine = path.join(socket, "app-server-control.sock");
   fs.writeFileSync(engine, "");
-  register(root, environment, claude, { kind: "claude-prompt" });
-  register(root, environment, codex, { kind: "codex-engine", engineSocket: engine });
+  register(root, environment, claude, { kind: "claude-next-prompt" });
+  register(root, environment, codex, { kind: "codex-immediate", socketPath: engine });
   const spawned = [];
   const delivered = await sendProjectConversation({
     root, caller: claude, environment, to: "codex:codex-recv", body: "wake up", now: fixedNow, waitMs: 0, platform: "linux",
     deliver: async ({ presence }) => deliverCodexTurn({
-      socketPath: presence.channel.engineSocket, platform: "linux", threadId: presence.nativeSessionId, text: "wake up",
+      socketPath: presence.channel.socketPath, platform: "linux", threadId: presence.nativeSessionId, text: "wake up",
       spawnImpl(command, args) {
         spawned.push([command, args]);
         const stdin = new PassThrough(), stdout = new PassThrough(), stderr = new PassThrough();
@@ -169,7 +169,7 @@ test("immediate delivery is distinct from an unreachable target", async t => {
 test("a claimed inbox injects once and a failed handoff can be retried once", t => {
   const { root, environment } = isolated(t);
   const codex = caller("codex", "codex-once");
-  register(root, environment, codex, { kind: "codex-prompt" });
+  register(root, environment, codex, { kind: "codex-next-prompt" });
   const queued = sendProjectConversation({
     root, caller: caller("claude", "claude-once"), environment, to: "codex:codex-once", body: "exactly once", now: fixedNow, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -191,7 +191,7 @@ test("a claimed inbox injects once and a failed handoff can be retried once", t 
 test("a subagent cannot send or register as its parent", async t => {
   const { root, environment } = isolated(t);
   const parent = caller("claude", "claude-parent");
-  register(root, environment, parent, { kind: "claude-prompt" });
+  register(root, environment, parent, { kind: "claude-next-prompt" });
   assert.equal(formatAddress({ runtime: "claude", nativeSessionId: "claude-parent", subagent: true, agentId: null, parentSessionId: null }), null);
   await assert.rejects(() => sendProjectConversation({
     root, caller: { runtime: "claude", nativeSessionId: "claude-parent", subagent: true }, environment,
@@ -199,7 +199,7 @@ test("a subagent cannot send or register as its parent", async t => {
   }), /CONVERSATION_SUBAGENT_IDENTITY_REQUIRED/);
   const child = caller("codex", "codex-child", { subagent: true, rootSessionId: "codex-parent" });
   assert.equal(identityFromCaller(child).address, "codex:codex-child");
-  register(root, environment, { runtime: "codex", nativeSessionId: "codex-parent" }, { kind: "codex-prompt" });
+  register(root, environment, { runtime: "codex", nativeSessionId: "codex-parent" }, { kind: "codex-next-prompt" });
   const sent = await sendProjectConversation({
     root, caller: child, environment, to: "codex:codex-parent", body: "from the child thread", now: fixedNow, waitMs: 0,
     deliver: async () => ({ outcome: "sent", evidence: "test-channel" }),
@@ -257,7 +257,7 @@ test("Windows Claude auth is required and Windows Codex uses the app-server prox
     return { status: 0, stdout: JSON.stringify(table) };
   } });
   assert.match(lines[0], /app-server --listen unix:\/\//);
-  register(root, environment, caller("claude", "claude-win"), { kind: "claude-inbox", socketPath: pipe });
+  register(root, environment, caller("claude", "claude-win"), { kind: "claude-immediate", socketPath: pipe });
   const listed = listProjectConversations({ root, caller: caller("codex", "codex-win"), environment, now: fixedNow, platform: "win32" });
   assert.equal(listed.conversations.find(row => row.address === "claude:claude-win").evidence, "claude-inbox-pipe");
   const received = [];
@@ -387,7 +387,7 @@ test("list and send open the mailbox, then a real hook process joins it", async 
 
 test("two processes cannot claim one old inbox message", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("codex", "codex-once"), { kind: "codex-prompt" }, Date.now);
+  register(root, environment, caller("codex", "codex-once"), { kind: "codex-next-prompt" }, Date.now);
   const queued = await sendProjectConversation({
     root, caller: caller("claude", "claude-once"), environment, to: "codex:codex-once", body: "only once", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -413,7 +413,7 @@ test("two processes cannot claim one old inbox message", async t => {
 
 test("a dead claim is recovered once and a forged OpenCode ticket is rejected", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("codex", "codex-dead"), { kind: "codex-prompt" }, Date.now);
+  register(root, environment, caller("codex", "codex-dead"), { kind: "codex-next-prompt" }, Date.now);
   const queued = await sendProjectConversation({
     root, caller: caller("claude", "claude-dead"), environment, to: "codex:codex-dead", body: "recover me", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -455,7 +455,7 @@ test("a dead claim is recovered once and a forged OpenCode ticket is rejected", 
 
 test("stale conversations are unreachable, the mailbox is bounded, and Codex degrades honestly", async t => {
   const { root, environment, home } = isolated(t);
-  register(root, environment, caller("codex", "codex-stale"), { kind: "codex-prompt" });
+  register(root, environment, caller("codex", "codex-stale"), { kind: "codex-next-prompt" });
   const idle = await sendProjectConversation({
     root, caller: caller("claude", "claude-stale"), environment, to: "codex:codex-stale", body: "still queued", now: () => fixedNow() + 11 * 60 * 1000, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -471,13 +471,13 @@ test("stale conversations are unreachable, the mailbox is bounded, and Codex deg
   assert.equal(stale.persisted, false);
   assert.equal(listProjectConversations({ root, caller: caller("claude", "claude-stale"), environment, now: () => fixedNow() + 25 * 60 * 60 * 1000 })
     .conversations.some(row => row.address === "codex:codex-stale"), false);
-  register(root, environment, caller("codex", "codex-future"), { kind: "codex-prompt" }, () => fixedNow() + 365 * 24 * 60 * 60 * 1000);
+  register(root, environment, caller("codex", "codex-future"), { kind: "codex-next-prompt" }, () => fixedNow() + 365 * 24 * 60 * 60 * 1000);
   assert.equal(listProjectConversations({ root, caller: caller("claude", "claude-future"), environment, now: () => fixedNow() + 300 * 24 * 60 * 60 * 1000 })
     .conversations.some(row => row.address === "codex:codex-future"), false);
-  register(root, environment, caller("codex", "codex-skew"), { kind: "codex-prompt" }, () => fixedNow() + 30_000);
+  register(root, environment, caller("codex", "codex-skew"), { kind: "codex-next-prompt" }, () => fixedNow() + 30_000);
   assert.equal(listProjectConversations({ root, caller: caller("claude", "claude-skew"), environment, now: fixedNow })
     .conversations.some(row => row.address === "codex:codex-skew"), true);
-  register(root, environment, caller("codex", "codex-cap"), { kind: "codex-prompt" }, Date.now);
+  register(root, environment, caller("codex", "codex-cap"), { kind: "codex-next-prompt" }, Date.now);
   let filled = false;
   for (let index = 0; index < 220 && !filled; index += 1) {
     try {
@@ -524,8 +524,8 @@ test("stale conversations are unreachable, the mailbox is bounded, and Codex deg
 
 test("one full target does not block another and a dead queue expires", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("codex", "codex-full"), { kind: "codex-prompt" }, Date.now);
-  register(root, environment, caller("claude", "claude-other"), { kind: "claude-prompt" }, Date.now);
+  register(root, environment, caller("codex", "codex-full"), { kind: "codex-next-prompt" }, Date.now);
+  register(root, environment, caller("claude", "claude-other"), { kind: "claude-next-prompt" }, Date.now);
   let filled = false;
   for (let index = 0; index < 220 && !filled; index += 1) {
     try {
@@ -579,7 +579,7 @@ test("OpenCode ticket key is repaired and shared when operational roots differ",
   fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
   fs.chmodSync(dir, 0o755);
   fs.writeFileSync(path.join(dir, "key"), "not-a-key\n", { mode: 0o644 });
-  register(root, environment, caller("claude", "claude-ticket"), { kind: "claude-prompt" }, Date.now);
+  register(root, environment, caller("claude", "claude-ticket"), { kind: "claude-next-prompt" }, Date.now);
   const child = { id: "ses_ticket_child", parentID: "ses_ticket_parent", directory: root };
   const args = { project_root: root, to: "claude:claude-ticket", body: "from ticket", reply_to: null };
   const ticket = writeOpenCodeCallerTicket({ root, session: child, args, environment, now: Date.now });
@@ -603,7 +603,7 @@ test("OpenCode ticket key is repaired and shared when operational roots differ",
 
 test("a live owner keeps an old claim and a mismatched token cannot archive it", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("codex", "codex-owner"), { kind: "codex-prompt" }, Date.now);
+  register(root, environment, caller("codex", "codex-owner"), { kind: "codex-next-prompt" }, Date.now);
   const queued = await sendProjectConversation({
     root, caller: caller("claude", "claude-owner"), environment, to: "codex:codex-owner", body: "still mine", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -626,7 +626,7 @@ test("a live owner keeps an old claim and a mismatched token cannot archive it",
 
 test("a blocked OpenCode prompt does not deliver the same message twice", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("opencode", "ses_hold"), { kind: "opencode-prompt" }, Date.now);
+  register(root, environment, caller("opencode", "ses_hold"), { kind: "opencode-async" }, Date.now);
   await sendProjectConversation({
     root, caller: caller("claude", "claude-hold"), environment, to: "opencode:ses_hold", body: "once only", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -662,8 +662,8 @@ test("a blocked OpenCode prompt does not deliver the same message twice", async 
 
 test("a clock three minutes behind does not delete another conversation", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("codex", "codex-peer"), { kind: "codex-prompt" }, Date.now);
-  register(root, environment, caller("claude", "claude-peer"), { kind: "claude-prompt" }, Date.now);
+  register(root, environment, caller("codex", "codex-peer"), { kind: "codex-next-prompt" }, Date.now);
+  register(root, environment, caller("claude", "claude-peer"), { kind: "claude-next-prompt" }, Date.now);
   const queued = await sendProjectConversation({
     root, caller: caller("claude", "claude-peer"), environment, to: "codex:codex-peer", body: "keep me", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -691,7 +691,7 @@ test("a clock three minutes behind does not delete another conversation", async 
 
 test("an expired queued message leaves the sender a notice", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("codex", "codex-expire"), { kind: "codex-prompt" }, Date.now);
+  register(root, environment, caller("codex", "codex-expire"), { kind: "codex-next-prompt" }, Date.now);
   const queued = await sendProjectConversation({
     root, caller: caller("claude", "claude-expire"), environment, to: "codex:codex-expire", body: "please keep", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -809,8 +809,8 @@ test("an existing project does not gain an untracked messaging gitignore", t => 
 
 test("expiry notices collapse to one per sender and do not block a real message", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("codex", "codex-gone"), { kind: "codex-prompt" }, Date.now);
-  register(root, environment, caller("claude", "claude-amp"), { kind: "claude-prompt" }, Date.now);
+  register(root, environment, caller("codex", "codex-gone"), { kind: "codex-next-prompt" }, Date.now);
+  register(root, environment, caller("claude", "claude-amp"), { kind: "claude-next-prompt" }, Date.now);
   const queued = await sendProjectConversation({
     root, caller: caller("claude", "claude-amp"), environment, to: "codex:codex-gone", body: "one of many", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -856,7 +856,7 @@ test("expiry notices collapse to one per sender and do not block a real message"
 
 test("a presence twenty-three hours ahead is not reachable and is not deleted", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("codex", "codex-ahead"), { kind: "codex-prompt" }, () => Date.now() + 23 * 60 * 60 * 1000);
+  register(root, environment, caller("codex", "codex-ahead"), { kind: "codex-next-prompt" }, () => Date.now() + 23 * 60 * 60 * 1000);
   const presenceDir = path.join(root, ".lode", "messaging", "presence");
   const before = fs.readdirSync(presenceDir).length;
   const listed = listProjectConversations({ root, caller: caller("claude", "claude-now"), environment, now: Date.now });
@@ -874,7 +874,7 @@ test("a presence twenty-three hours ahead is not reachable and is not deleted", 
 
 test("messages stamped far in the future on both clocks expire", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("codex", "codex-future-msg"), { kind: "codex-prompt" }, Date.now);
+  register(root, environment, caller("codex", "codex-future-msg"), { kind: "codex-next-prompt" }, Date.now);
   const queued = await sendProjectConversation({
     root, caller: caller("claude", "claude-future-msg"), environment, to: "codex:codex-future-msg", body: "never ages", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -896,7 +896,7 @@ test("messages stamped far in the future on both clocks expire", async t => {
 
 test("a mismatched Linux start id is reclaimed and an unverified live pid expires after a day", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("codex", "codex-start"), { kind: "codex-prompt" }, Date.now);
+  register(root, environment, caller("codex", "codex-start"), { kind: "codex-next-prompt" }, Date.now);
   const queued = await sendProjectConversation({
     root, caller: caller("claude", "claude-start"), environment, to: "codex:codex-start", body: "start mismatch", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -1000,7 +1000,7 @@ test("a tracked messaging gitignore is not rewritten", t => {
 test("a claim stamp uses the injected clock", async t => {
   const { root, environment } = isolated(t);
   const at = Date.parse("2026-01-01T00:00:00.000Z");
-  register(root, environment, caller("codex", "codex-clock"), { kind: "codex-prompt" }, () => at);
+  register(root, environment, caller("codex", "codex-clock"), { kind: "codex-next-prompt" }, () => at);
   await sendProjectConversation({
     root, caller: caller("claude", "claude-clock"), environment, to: "codex:codex-clock", body: "stamped", now: () => at, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -1018,7 +1018,7 @@ test("a claim stamp uses the injected clock", async t => {
 
 test("an inflight handoff and an owned orphan follow the claim disposition", async t => {
   const { root, environment } = isolated(t);
-  register(root, environment, caller("codex", "codex-state"), { kind: "codex-prompt" }, Date.now);
+  register(root, environment, caller("codex", "codex-state"), { kind: "codex-next-prompt" }, Date.now);
   const queued = await sendProjectConversation({
     root, caller: caller("claude", "claude-state"), environment, to: "codex:codex-state", body: "state machine", now: Date.now, waitMs: 0,
     deliver: async () => ({ outcome: "unavailable" }),
@@ -1051,7 +1051,7 @@ test("four processes can rewrite one presence without ENOENT or a lost file", as
       registerConversationPresence({
         root: ${JSON.stringify(root)},
         identity: { runtime: "claude", nativeSessionId: "claude-race", agentId: null, subagent: false, parentSessionId: null },
-        channel: { kind: "claude-prompt" },
+        channel: { kind: "claude-next-prompt" },
         environment: ${JSON.stringify(environment)},
       });
     }
