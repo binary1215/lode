@@ -74,7 +74,7 @@ test("three clients are listed with addresses and current reachability inside is
   assert.equal(listed.self.address, "claude:claude-live");
   assert.deepEqual(listed.conversations.map(row => [row.address, row.runtime, row.reachable, row.delivery]).sort(), [
     ["codex:codex-live", "codex", true, "next-prompt"],
-    ["opencode:ses_live", "opencode", true, "immediate"],
+    ["opencode:ses_live", "opencode", true, "async"],
   ]);
   assert.equal(listed.conversations.some(row => row.address === listed.self.address), false);
   const outside = path.join(home, "other-project");

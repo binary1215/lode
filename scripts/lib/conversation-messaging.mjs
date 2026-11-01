@@ -154,7 +154,8 @@ function channelLive(record, environment, now, platform) {
   if (channel.kind === "codex-engine" && typeof channel.engineSocket === "string" && fs.existsSync(channel.engineSocket) && recent) {
     return { reachable: true, delivery: "immediate", evidence: "codex-shared-engine" };
   }
-  if (channel.kind === "opencode-prompt" && recent) return { reachable: true, delivery: "immediate", evidence: "opencode-session-prompt-registered" };
+  // The send call has no OpenCode client. The plugin watch prompts later, so this is not immediate.
+  if (channel.kind === "opencode-prompt" && recent) return { reachable: true, delivery: "async", evidence: "opencode-plugin-watch" };
   if (fresh) return { reachable: true, delivery: "next-prompt", evidence: channel.kind || "presence" };
   return { reachable: false, delivery: "unreachable", evidence: "presence-stale" };
 }

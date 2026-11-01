@@ -8,7 +8,7 @@
 
 `lode_conversation_list`는 이 프로젝트의 `.lode/messaging/`에 등록된 다른 살아있는 대화를 보여 줍니다. 각 행에는 보낼 주소와 지금 받을 수 있는지가 있습니다. `lode_conversation_send`는 그 주소로 글을 보냅니다. 답장은 또 하나의 메시지입니다. 받은 쪽은 보낸 주소와 `reply_to`를 사용합니다.
 
-결과는 받는 클라이언트가 주입을 받아들였으면 `delivered`, 모델이 읽었다는 확인 없이 소켓·파이프·프롬프트 훅으로 넘겼으면 `sent`, 그 대화의 수신함에 대기 중이면 `queued`입니다. `unreachable`는 이 프로젝트에 그 주소의 등록이 없다는 뜻이며, 그 경우 아무것도 저장하지 않습니다.
+결과는 받는 클라이언트가 주입을 받아들였으면 `delivered`, 모델이 읽었다는 확인 없이 소켓·파이프·프롬프트 훅으로 넘겼으면 `sent`, 그 대화의 수신함에 대기 중이면 `queued`입니다. `unreachable`는 이 프로젝트에 그 주소의 등록이 없다는 뜻이며, 그 경우 아무것도 저장하지 않습니다. OpenCode는 예외입니다. 플러그인이 나중에 그 세션에 prompt할 수 있으면 `lode_conversation_list`는 `async`로 보고하고, `lode_conversation_send`는 `queued`를 반환합니다. prompt는 플러그인 inbox watch가 합니다. 그 보내기 결과는 `delivered`가 아닙니다.
 
 ## 범위와 신원
 

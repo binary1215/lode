@@ -6,7 +6,7 @@ Status: same-project live conversations can be listed and messaged from Claude C
 
 `lode_conversation_list` shows the other live conversations that have registered in this project's `.lode/messaging/`. Each row has a send address and whether that conversation is reachable now. `lode_conversation_send` delivers text to one of those addresses. A reply is another message: the receiver uses the sender address and `reply_to`.
 
-The result says `delivered` when the receiving client accepted the injection, `sent` when the bytes were handed to a socket, pipe, or prompt hook without confirmation that the model read them, or `queued` when the message is waiting in that conversation's inbox. `unreachable` means this project has no live registration for the address, and nothing is stored for it.
+The result says `delivered` when the receiving client accepted the injection, `sent` when the bytes were handed to a socket, pipe, or prompt hook without confirmation that the model read them, or `queued` when the message is waiting in that conversation's inbox. `unreachable` means this project has no live registration for the address, and nothing is stored for it. OpenCode is the exception: `lode_conversation_list` reports `async` when the plugin can prompt that session later, and `lode_conversation_send` returns `queued`. The plugin inbox watch performs the prompt. That send result is not `delivered`.
 
 ## Scope and identity
 
