@@ -12,11 +12,16 @@ import path from "node:path";
 const TOKEN = /^[A-Za-z0-9._~+/-]{8,256}$/;
 
 export function normalizeClaudeSocketPath(socketPath) {
-  if (typeof socketPath !== "string" || socketPath.length < 1 || socketPath.length > 1024) return null;
-  if (socketPath.includes("\0") || socketPath.split(/[\\/]/u).includes("..")) return null;
-  if (/^\\\\[.?]\\pipe\\/u.test(socketPath)) return socketPath;
-  if (!path.isAbsolute(socketPath)) return null;
-  const resolved = path.resolve(socketPath);
+  if (typeof socketPath !== "string" || socketPath.length < 1 || socketPath.length > 32767) return null;
+  if (socketPath.includes("\0") || /[\r\n"]/u.test(socketPath)) return null;
+  if (socketPath.split(/[\\/]/u).includes("..")) return null;
+  // path.win32.resolve drops the \\?\ prefix. Keep extended and device paths,
+  // including Korean pipe names, as the caller wrote them.
+  if (/^\\\\[.?]\\/u.test(socketPath)) return socketPath;
+  const win = /^[A-Za-z]:[\\/]/u.test(socketPath) || socketPath.startsWith("\\\\");
+  const pathApi = win ? path.win32 : path;
+  if (!pathApi.isAbsolute(socketPath)) return null;
+  const resolved = pathApi.resolve(socketPath);
   if (resolved.split(/[\\/]/u).includes("..")) return null;
   return resolved;
 }

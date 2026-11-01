@@ -37,48 +37,66 @@ export function codexProxyCommand(platform = process.platform) {
   return platform === "win32" ? "codex.cmd" : "codex";
 }
 
-// cmd.exe expands %VAR% even inside quotes, and it does not treat \" as an
-// escaped quote. Reject those characters instead of trying to quote them.
-// The allowlist is letters, digits, and the path punctuation a socket uses.
-function windowsSocketSafe(socketPath) {
-  return typeof socketPath === "string"
-    && socketPath.length > 0
-    && socketPath.length <= 260
-    && !socketPath.endsWith("\\")
-    && /^[A-Za-z0-9._:\\/ -]+$/.test(socketPath);
+// Quotes, newlines, and NUL cannot be a single CreateProcess argument.
+// Unicode, spaces, parentheses, apostrophes, 8.3 names, and \\?\ prefixes can.
+function windowsSocketRejected(socketPath) {
+  return typeof socketPath !== "string"
+    || socketPath.length === 0
+    || socketPath.length > 32767
+    || /[\0\r\n"]/u.test(socketPath);
 }
 
-// /s strips one leading and one trailing quote. The doubled opening quote
-// leaves the command name quoted after that strip. Each argument is quoted
-// on its own. No backslash-escaped quotes.
-function quoteCmdInvocation(parts) {
-  const [command, ...rest] = parts;
-  return `""${command}" ${rest.map(item => `"${item}"`).join(" ")}"`;
-}
-
-// Node refuses `spawn("codex.cmd", { shell: false })` with EINVAL. Windows goes
-// through cmd.exe /d /s /c so the batch shim can run without shell:true.
-export function codexProxyLaunch({ platform = process.platform, socketPath, comSpec = "cmd.exe" } = {}) {
-  if (typeof socketPath !== "string" || !socketPath || socketPath.includes("\0")) return { mode: "none", evidence: "codex-proxy-socket-rejected" };
-  const command = codexProxyCommand(platform);
-  const args = ["app-server", "proxy", "--sock", socketPath];
-  if (platform === "win32") {
-    if (!windowsSocketSafe(socketPath)) return { mode: "none", evidence: "codex-proxy-socket-rejected" };
-    return {
-      mode: "proxy", command: comSpec, args: ["/d", "/s", "/c", quoteCmdInvocation([command, ...args])],
-      shell: false, windowsVerbatimArguments: true,
-    };
+// Node's CreateProcess cannot run a .cmd file with shell:false. Prefer codex.exe.
+// Otherwise read the npm shim and spawn its node entry with an argument array,
+// so cmd.exe never interprets the socket path or the console code page.
+export function resolveCodexWindowsTarget({ env = process.env, exists = fs.existsSync, readFile = fs.readFileSync } = {}) {
+  const pathValue = env?.PATH || env?.Path || "";
+  const dirs = String(pathValue).split(";").filter(Boolean);
+  let cmdFile = null;
+  for (const dir of dirs) {
+    const exe = path.win32.join(dir, "codex.exe");
+    if (exists(exe)) return { command: exe, args: [] };
+    const cmd = path.win32.join(dir, "codex.cmd");
+    if (!cmdFile && exists(cmd)) cmdFile = cmd;
   }
-  return { mode: "proxy", command, args, shell: false };
+  if (cmdFile) {
+    const parsed = readCodexCmdShim(cmdFile, exists, readFile);
+    if (parsed) return parsed;
+  }
+  return { command: "codex.exe", args: [] };
 }
 
-export function codexTransportPlan({ platform = process.platform, socketPath } = {}) {
-  const launch = codexProxyLaunch({ platform, socketPath });
+function readCodexCmdShim(cmdFile, exists, readFile) {
+  let text = "";
+  try {
+    const raw = readFile(cmdFile);
+    text = Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw);
+  } catch { return null; }
+  if (text.length > 65536 || text.includes("\0")) return null;
+  const match = text.match(/"%(?:~dp0|dp0)%\\([^"\r\n]+\.js)"/iu);
+  if (!match || match[1].includes("..")) return null;
+  const script = path.win32.normalize(path.win32.join(path.win32.dirname(cmdFile), match[1]));
+  if (!exists(script)) return null;
+  const nodeExe = path.win32.join(path.win32.dirname(cmdFile), "node.exe");
+  return { command: exists(nodeExe) ? nodeExe : "node.exe", args: [script] };
+}
+
+// The socket path is one argv element. shell stays false so cmd.exe does not
+// expand %VAR% or reinterpret Unicode as the OEM code page.
+export function codexProxyLaunch({ platform = process.platform, socketPath, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync } = {}) {
+  if (windowsSocketRejected(socketPath)) return { mode: "none", evidence: "codex-proxy-socket-rejected" };
+  const proxyArgs = ["app-server", "proxy", "--sock", socketPath];
+  if (platform === "win32") {
+    const target = resolveCodexWindowsTarget({ env, exists, readFile });
+    return { mode: "proxy", command: target.command, args: [...target.args, ...proxyArgs], shell: false };
+  }
+  return { mode: "proxy", command: codexProxyCommand(platform), args: proxyArgs, shell: false };
+}
+
+export function codexTransportPlan({ platform = process.platform, socketPath, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync } = {}) {
+  const launch = codexProxyLaunch({ platform, socketPath, env, exists, readFile });
   if (launch.mode !== "proxy") return { mode: "none", evidence: launch.evidence || "codex-engine-unavailable" };
-  return {
-    mode: "proxy", command: launch.command, args: launch.args, shell: launch.shell,
-    ...(launch.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
-  };
+  return { mode: "proxy", command: launch.command, args: launch.args, shell: false };
 }
 
 // child.kill on Windows stops cmd.exe and can leave the proxy running.
@@ -239,16 +257,14 @@ function writeLine(child, line) {
 
 // turn/start is delivered only when the proxy returns a turn id. Anything else
 // leaves the message queued. The call does not override sandbox or approval policy.
-export async function deliverCodexTurn({ socketPath, platform = process.platform, threadId, text, spawnImpl = spawn, spawnSyncImpl = spawnSync, timeoutMs = 3000, comSpec = "cmd.exe" } = {}) {
-  const plan = codexProxyLaunch({ platform, socketPath, comSpec });
+export async function deliverCodexTurn({ socketPath, platform = process.platform, threadId, text, spawnImpl = spawn, spawnSyncImpl = spawnSync, timeoutMs = 3000, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync } = {}) {
+  const plan = codexProxyLaunch({ platform, socketPath, env, exists, readFile });
   if (plan.mode !== "proxy" || typeof threadId !== "string" || typeof text !== "string") {
     return { outcome: "unavailable", evidence: plan.evidence || "codex-engine-unavailable" };
   }
   let child;
   try {
-    const options = { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, shell: plan.shell === true };
-    if (plan.windowsVerbatimArguments) options.windowsVerbatimArguments = true;
-    child = spawnImpl(plan.command, plan.args, options);
+    child = spawnImpl(plan.command, plan.args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, shell: false });
     const initialize = readResponse(child, 1, timeoutMs);
     await writeLine(child, rpc(1, "initialize", { clientInfo: { name: "lode", version: packageVersion } }));
     const initialized = await initialize;

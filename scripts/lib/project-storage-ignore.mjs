@@ -73,9 +73,10 @@ function assertIgnorePoliciesUnchanged(policies) {
   }
 }
 
-// The tracked storage gitignore is create-only. A mailbox hides its own files
-// with a nested ignore so an existing `.lode/.gitignore` is never rewritten.
-const MESSAGING_IGNORE = "# Live conversation mailbox, not canon.\n*\n!.gitignore\n";
+// The tracked storage gitignore is create-only. A mailbox hides its own files,
+// including this ignore file, so an existing project gains no untracked path.
+const MESSAGING_IGNORE = "# Live conversation mailbox, not canon.\n*\n";
+const PREVIOUS_MESSAGING_IGNORE = "# Live conversation mailbox, not canon.\n*\n!.gitignore\n";
 
 export function ensureMessagingDirectoryIgnore({ root, directory }) {
   const messaging = path.join(root, directory, "messaging");
@@ -86,7 +87,16 @@ export function ensureMessagingDirectoryIgnore({ root, directory }) {
     const relative = path.relative(fs.realpathSync(root), fs.realpathSync(messaging));
     if (relative.startsWith("..") || path.isAbsolute(relative)) return { status: "preserved", reasonCode: "CONVERSATION_PATH_ESCAPE" };
     const existing = fs.lstatSync(file, { throwIfNoEntry: false });
-    if (existing) return { status: "preserved", reasonCode: existing.isSymbolicLink() ? "USER_IGNORE_UNAVAILABLE" : "EXISTING_MESSAGING_IGNORE" };
+    if (existing?.isSymbolicLink()) return { status: "preserved", reasonCode: "USER_IGNORE_UNAVAILABLE" };
+    if (existing?.isFile()) {
+      const current = fs.readFileSync(file, "utf8");
+      if (current === MESSAGING_IGNORE) return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
+      if (current !== PREVIOUS_MESSAGING_IGNORE) return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
+      const temporary = file + ".writing";
+      fs.writeFileSync(temporary, MESSAGING_IGNORE);
+      fs.renameSync(temporary, file);
+      return { status: "updated", trackingChanged: false };
+    }
     atomicCreateArtifact(file, MESSAGING_IGNORE);
     return { status: "created", trackingChanged: false };
   } catch (error) {

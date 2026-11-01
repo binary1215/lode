@@ -4,7 +4,7 @@ import path from "node:path";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { claudeChannel, claudePeerTokenPresent, deliverClaudeInbox, readClaudePeerToken } from "./conversation-messaging-claude.mjs";
 import { ensureMessagingDirectoryIgnore } from "./project-storage-ignore.mjs";
-import { processExists } from "./process-exists.mjs";
+import { processExists, processStartId } from "./process-exists.mjs";
 import { codexChannel, codexControlSocket, collectAncestors, deliverCodexTurn, windowsProcessListCommand } from "./conversation-messaging-codex.mjs";
 import { deliverOpenCodePrompt, opencodeChannel, opencodePromptAvailable } from "./conversation-messaging-opencode.mjs";
 
@@ -16,8 +16,8 @@ const ARCHIVE_TTL_MS = 24 * 60 * 60 * 1000;
 const FRESH_MS = ARCHIVE_TTL_MS;
 const IMMEDIATE_MS = 2 * 60 * 1000;
 const CLAIM_LEASE_MS = 15_000;
-const CLAIM_HARD_MAX_MS = 10 * 60 * 1000;
 const CLOCK_SKEW_MS = 2 * 60 * 1000;
+const PRESENCE_FUTURE_LIST_MS = ARCHIVE_TTL_MS;
 const MAX_BODY = 6000;
 const MAX_INJECT = 20;
 const MAX_LIST = 256;
@@ -124,12 +124,18 @@ function names(directory) {
   catch { return []; }
 }
 
-function ageMs(record, now) {
+function presenceDelta(record, now) {
   const parsed = Date.parse(record?.updatedAt || "");
-  if (!Number.isFinite(parsed)) return Infinity;
-  const delta = nowMs(now) - parsed;
-  // A timestamp far in the future is not fresh. A small skew still counts as current.
-  if (delta < -CLOCK_SKEW_MS) return Infinity;
+  if (!Number.isFinite(parsed)) return null;
+  return nowMs(now) - parsed;
+}
+
+function ageMs(record, now) {
+  const delta = presenceDelta(record, now);
+  if (delta === null) return Infinity;
+  // A day or more ahead is not a live peer. A smaller lead is clock skew and stays current.
+  // Deletion does not use this value: a future stamp must not remove the file.
+  if (delta < -PRESENCE_FUTURE_LIST_MS) return Infinity;
   return Math.max(0, delta);
 }
 
@@ -193,9 +199,10 @@ function storedAgeMs(file, iso, now) {
   const parsed = Date.parse(iso || "");
   if (Number.isFinite(parsed)) samples.push(nowMs(now) - parsed);
   try { samples.push(nowMs(now) - fs.statSync(file).mtimeMs); }
-  catch { samples.push(Infinity); }
-  if (!samples.length || samples.some(delta => delta < -CLOCK_SKEW_MS)) return Infinity;
-  return Math.max(0, ...samples.map(delta => Math.max(0, delta)));
+  catch { return Infinity; }
+  if (!samples.length) return Infinity;
+  // A future clock or mtime is skew, not age. It must not expire the file.
+  return Math.max(...samples.map(delta => delta > 0 ? delta : 0));
 }
 
 function slotUsage(project, slotName) {
@@ -221,17 +228,43 @@ function jsonFiles(directory) {
   return files;
 }
 
+function enqueueExpiryNotice(project, message, now) {
+  const sender = parseAddress(message?.from?.address);
+  const target = message?.to?.address;
+  if (!sender || !target || message.notice === "expired" || !MESSAGE_ID.test(message.id || "")) return;
+  if (!mailboxAccepts(project, sender.address, 1024)) return;
+  const notice = {
+    schemaVersion: 1,
+    id: "msg-" + crypto.randomBytes(12).toString("hex"),
+    projectRoot: project.root,
+    notice: "expired",
+    expiredId: message.id,
+    originalTo: target,
+    from: message.to?.address ? message.to : message.from,
+    to: message.from,
+    body: `Queued message ${message.id} expired before delivery to ${target}.`,
+    createdAt: stamp(now),
+    state: "queued",
+    evidence: "expired",
+    handedToHost: false,
+  };
+  try { enqueue(project, notice); } catch { /* The original is already removed. A full inbox drops only the notice. */ }
+}
+
 function expireStored(project, kind, now) {
   const rootDir = path.join(project.messaging, kind);
+  const expired = [];
   for (const slotName of names(rootDir)) {
     for (const entry of jsonFiles(path.join(rootDir, slotName))) {
       const message = readJson(entry.file);
       if (kind === "inflight" && message && claimOwnedByLiveProcess(message)) continue;
       if (!message || storedAgeMs(entry.file, message.createdAt, now) > ARCHIVE_TTL_MS) {
+        if (message && (kind === "inbox" || kind === "inflight") && message.notice !== "expired" && message.handedToHost !== true) expired.push(message);
         try { fs.rmSync(entry.file, { force: true }); } catch { /* Retention is best-effort. */ }
       }
     }
   }
+  for (const message of expired) enqueueExpiryNotice(project, message, now);
 }
 
 function trimSlotArchives(project) {
@@ -263,7 +296,10 @@ function retainMailbox(project, now) {
   for (const name of names(presenceDir)) {
     const file = path.join(presenceDir, name);
     const record = readJson(file);
-    if (!record || ageMs(record, now) > FRESH_MS) {
+    const delta = presenceDelta(record, now);
+    // Future stamps stay on disk. Only a record that is actually older than the
+    // queue window is removed, so one slow clock cannot erase a live peer.
+    if (!record || delta === null || delta > FRESH_MS) {
       try { fs.rmSync(file, { force: true }); } catch { /* List and send both ignore a stale record. */ }
     }
   }
@@ -417,17 +453,33 @@ function frameBody(body) {
 }
 
 function renderInjection(messages, remaining) {
-  const blocks = messages.map(message => ["Same-project conversation message.",
-    `id: ${message.id}`, `from: ${message.from.address}`, `to: ${message.to.address}`,
-    message.replyTo ? `reply_to: ${message.replyTo}` : null,
-    "A reply is lode_conversation_send to the from address with reply_to set to this id.",
-    frameBody(message.body)].filter(Boolean).join("\n"));
+  const blocks = messages.map(message => {
+    if (message.notice === "expired") {
+      return ["Same-project conversation notice.",
+        "notice: expired",
+        `expired-id: ${message.expiredId}`,
+        message.originalTo ? `original-to: ${message.originalTo}` : null,
+        "The queued message was deleted after 24 hours without delivery.",
+        frameBody(message.body)].filter(Boolean).join("\n");
+    }
+    return ["Same-project conversation message.",
+      `id: ${message.id}`, `from: ${message.from.address}`, `to: ${message.to.address}`,
+      message.replyTo ? `reply_to: ${message.replyTo}` : null,
+      "A reply is lode_conversation_send to the from address with reply_to set to this id.",
+      frameBody(message.body)].filter(Boolean).join("\n");
+  });
   if (remaining > 0) blocks.push(`More same-project messages remain queued: ${remaining}.`);
   return blocks.join("\n\n");
 }
 
 function claimStamp(message) {
-  return { ...message, claim: { token: crypto.randomBytes(8).toString("hex"), pid: process.pid, at: new Date().toISOString() } };
+  const start = processStartId(process.pid);
+  return { ...message, claim: {
+    token: crypto.randomBytes(8).toString("hex"),
+    pid: process.pid,
+    at: new Date().toISOString(),
+    ...(start ? { start } : {}),
+  } };
 }
 
 function claimAge(file, message) {
@@ -439,16 +491,20 @@ function claimAge(file, message) {
   return Math.max(0, delta);
 }
 
-// A live pid holds the claim only for a bounded time. After that, pid reuse
-// (including pid 1, which never exits) must not keep the message forever.
+// A live pid keeps the claim regardless of age. Pid 1 is never an owner.
+// A recorded start id that no longer matches means the pid was reused.
 function claimOwnedByLiveProcess(message) {
   const pid = message?.claim?.pid;
   if (!Number.isSafeInteger(pid) || pid <= 1 || !processExists(pid)) return false;
-  const stamped = Date.parse(message?.claim?.at || "");
-  if (!Number.isFinite(stamped)) return false;
-  const age = Date.now() - stamped;
-  if (age < -CLOCK_SKEW_MS || age >= CLAIM_HARD_MAX_MS) return false;
+  const recorded = message.claim.start;
+  const current = processStartId(pid);
+  if (recorded && current && recorded !== current) return false;
   return true;
+}
+
+function ownsClaim(current, message) {
+  const token = message?.claim?.token;
+  return Boolean(token && current?.id === message.id && current.claim?.token === token && current.handedToHost !== true);
 }
 
 function recoverInflight(project, address) {
@@ -464,7 +520,7 @@ function recoverInflight(project, address) {
       try { fs.mkdirSync(path.dirname(archive), { recursive: true }); fs.renameSync(inflight, archive); } catch { /* The owner is finishing the handoff. */ }
       continue;
     }
-    // A live pid owns the claim through CLAIM_HARD_MAX_MS, not forever.
+    // Age does not take a claim away from the process that still owns the pid.
     // A missing stamp is fresh only when the rename's mtime was just updated.
     if (claimOwnedByLiveProcess(message)) continue;
     if (claimAge(inflight, message) < CLAIM_LEASE_MS) continue;
@@ -495,7 +551,7 @@ function takeInboxFile(source, destination) {
 }
 
 function claimMessage(project, message) {
-  return Boolean(takeInboxFile(messageFile(project, "inbox", message.to.address, message.id), messageFile(project, "inflight", message.to.address, message.id)));
+  return takeInboxFile(messageFile(project, "inbox", message.to.address, message.id), messageFile(project, "inflight", message.to.address, message.id));
 }
 
 function claimAddress(project, address) {
@@ -512,18 +568,37 @@ function claimAddress(project, address) {
 
 function markHanded(project, message, state, evidence, receipt = null) {
   const inflight = messageFile(project, "inflight", message.to.address, message.id);
-  const next = { ...message, state, evidence, handedToHost: true, ...(receipt ? { receipt } : {}) };
-  writeJson(inflight, next);
-  const archive = messageFile(project, "archive", message.to.address, message.id);
-  fs.mkdirSync(path.dirname(archive), { recursive: true });
-  fs.renameSync(inflight, archive);
-  return next;
+  const current = readJson(inflight);
+  if (!ownsClaim(current, message)) return null;
+  const next = { ...current, state, evidence, handedToHost: true, ...(receipt ? { receipt } : {}) };
+  const temporary = inflight + ".writing";
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(next));
+    const again = readJson(inflight);
+    if (!ownsClaim(again, message)) {
+      fs.rmSync(temporary, { force: true });
+      return null;
+    }
+    fs.renameSync(temporary, inflight);
+    const archive = messageFile(project, "archive", message.to.address, message.id);
+    fs.mkdirSync(path.dirname(archive), { recursive: true });
+    fs.renameSync(inflight, archive);
+    return next;
+  } catch {
+    try { fs.rmSync(temporary, { force: true }); } catch { /* The inflight file stays with its owner. */ }
+    return null;
+  }
 }
 
 function releaseClaim(project, message) {
   const inflight = messageFile(project, "inflight", message.to.address, message.id);
+  const current = readJson(inflight);
+  if (!ownsClaim(current, message)) return;
   const inbox = messageFile(project, "inbox", message.to.address, message.id);
+  const released = { ...current, handedToHost: false };
+  delete released.claim;
   try {
+    writeJson(inflight, released);
     fs.mkdirSync(path.dirname(inbox), { recursive: true });
     fs.renameSync(inflight, inbox);
   } catch { /* Already archived or released. */ }
@@ -601,12 +676,17 @@ export async function sendProjectConversation({ root, caller = null, environment
     body, replyTo: replyTo ?? null, createdAt: stamp(now), state: "queued", evidence: "inbox", handedToHost: false,
   };
   enqueue(project, message);
-  if (!claimMessage(project, message)) return resultOf(message, "queued", "inbox");
+  const owned = claimMessage(project, message);
+  if (!owned?.claim?.token) return resultOf(message, "queued", "inbox");
   try {
-    const attempt = await (deliver || defaultDeliver)({ message, presence, environment, platform });
-    if (attempt?.outcome === "delivered" || attempt?.outcome === "sent") return resultOf(markHanded(project, message, attempt.outcome, attempt.evidence, attempt.receipt ?? null), attempt.outcome, attempt.evidence);
-    releaseClaim(project, message);
-  } catch { releaseClaim(project, message); }
+    const attempt = await (deliver || defaultDeliver)({ message: owned, presence, environment, platform });
+    if (attempt?.outcome === "delivered" || attempt?.outcome === "sent") {
+      const handed = markHanded(project, owned, attempt.outcome, attempt.evidence, attempt.receipt ?? null);
+      if (!handed) return resultOf(owned, "queued", "claim-not-owned");
+      return resultOf(handed, attempt.outcome, attempt.evidence);
+    }
+    releaseClaim(project, owned);
+  } catch { releaseClaim(project, owned); }
   if (waitMs > 0) {
     const deadline = Date.now() + waitMs;
     while (Date.now() < deadline) {
@@ -690,8 +770,10 @@ export async function deliverQueuedOpenCode({ root, client, directory, environme
     const { claimed } = claimAddress(project, record.address);
     for (const message of claimed) {
       const attempt = await deliverOpenCodePrompt({ client, directory: project.root, sessionId: record.nativeSessionId, text: renderInjection([message], 0) });
-      if (attempt.outcome === "delivered" || attempt.outcome === "sent") results.push(markHanded(project, message, attempt.outcome, attempt.evidence, attempt.receipt ?? null));
-      else releaseClaim(project, message);
+      if (attempt.outcome === "delivered" || attempt.outcome === "sent") {
+        const handed = markHanded(project, message, attempt.outcome, attempt.evidence, attempt.receipt ?? null);
+        if (handed) results.push(handed);
+      } else releaseClaim(project, message);
     }
   }
   return results;
