@@ -319,8 +319,15 @@ function expireStored(project, kind, now) {
   for (const slotName of names(rootDir)) {
     for (const entry of jsonFiles(path.join(rootDir, slotName))) {
       const message = readJson(entry.file);
-      if (kind === "inflight" && message && claimOwnedByLiveProcess(message, entry.file, now)) continue;
-      if (!message || storedAgeMs(entry.file, message.createdAt, now) > CONVERSATION_LIMITS.archiveTtlMs) {
+      if (kind === "inflight" && message) {
+        const action = disposeClaim(message, entry.file, now);
+        if (action === "keep" || (action === "release" && storedAgeMs(entry.file, message.createdAt, now) <= CONVERSATION_LIMITS.archiveTtlMs)) continue;
+        if (action === "archive") {
+          try { archiveClaimFile(project, message, entry.file); } catch { /* The owner is finishing the handoff. */ }
+          continue;
+        }
+      }
+      if (!message || storedAgeMs(entry.file, message.createdAt, now) > CONVERSATION_LIMITS.archiveTtlMs || kind === "inflight") {
         if (message && (kind === "inbox" || kind === "inflight") && message.notice !== "expired" && message.handedToHost !== true) expired.push(message);
         try { fs.rmSync(entry.file, { force: true }); } catch { /* Retention is best-effort. */ }
       }
@@ -567,53 +574,74 @@ function claimDisposition(message) {
   return "unverified";
 }
 
-function claimOwnedByLiveProcess(message, file, now = Date.now) {
-  const disposition = claimDisposition(message);
-  if (disposition === "verified") return true;
-  if (disposition === "unverified") return claimAge(file, message, now) < CONVERSATION_LIMITS.unverifiedClaimMaxMs;
-  return false;
-}
-
 function ownsClaim(current, message) {
   const token = message?.claim?.token;
   return Boolean(token && current?.id === message.id && current.claim?.token === token && current.handedToHost !== true);
 }
 
+// Invariants: inbox has no live claim; inflight .json is held by claim.token;
+// .owned is that file renamed aside during markHanded; archive has handedToHost.
+// keep leaves the file. archive moves it. expire deletes it and notifies.
+// release returns it to the inbox through releaseClaim.
+function disposeClaim(message, file, now) {
+  if (!message?.id) return "drop";
+  if (message.handedToHost === true) return "archive";
+  const disposition = claimDisposition(message);
+  if (disposition === "verified") return "keep";
+  if (disposition === "unverified" && claimAge(file, message, now) < CONVERSATION_LIMITS.unverifiedClaimMaxMs) return "keep";
+  if (disposition === "unverified") return "expire";
+  if (claimAge(file, message, now) < CONVERSATION_LIMITS.claimLeaseMs) return "keep";
+  return "release";
+}
+
+function archiveClaimFile(project, message, file) {
+  const archive = messageFile(project, "archive", message.to.address, message.id);
+  fs.mkdirSync(path.dirname(archive), { recursive: true });
+  fs.renameSync(file, archive);
+}
+
+function applyClaimDisposition(project, message, file, now, expired) {
+  const action = disposeClaim(message, file, now);
+  if (action === "keep") return action;
+  if (action === "archive") {
+    try { archiveClaimFile(project, message, file); } catch { /* The owner is finishing the handoff. */ }
+    return action;
+  }
+  if (action === "release") {
+    releaseClaim(project, message);
+    return action;
+  }
+  try { fs.rmSync(file, { force: true }); } catch { /* Already gone. */ }
+  if (message && message.notice !== "expired" && message.handedToHost !== true) expired.push(message);
+  return action;
+}
+
 function recoverInflight(project, address, now = Date.now) {
-  const expiredUnverified = [];
-  for (const name of names(area(project, "inflight", address))) {
+  const expired = [];
+  const directory = area(project, "inflight", address);
+  let entries = [];
+  try { entries = fs.readdirSync(directory); } catch { entries = []; }
+  for (const name of entries) {
+    if (name.endsWith(".json.owned")) {
+      const holding = path.join(directory, name);
+      const message = readJson(holding);
+      const inflight = path.join(directory, name.slice(0, -".owned".length));
+      const action = disposeClaim(message, holding, now);
+      if (action === "keep") continue;
+      try { fs.renameSync(holding, action === "archive" ? messageFile(project, "archive", message.to.address, message.id) : inflight); }
+      catch { continue; }
+      if (action !== "archive") applyClaimDisposition(project, message, inflight, now, expired);
+      continue;
+    }
     if (!name.endsWith(".json")) continue;
     const id = name.slice(0, -5);
     if (!MESSAGE_ID.test(id)) continue;
-    const inflight = messageFile(project, "inflight", address, id);
+    const inflight = path.join(directory, name);
     const message = readJson(inflight);
     if (!message) continue;
-    if (message.handedToHost) {
-      const archive = messageFile(project, "archive", address, id);
-      try { fs.mkdirSync(path.dirname(archive), { recursive: true }); fs.renameSync(inflight, archive); } catch { /* The owner is finishing the handoff. */ }
-      continue;
-    }
-    // A verified owner keeps the claim. An unverified live pid is kept for 24h
-    // and then expired with a notice, not queued again, so it is not delivered twice.
-    // A missing stamp is fresh only when the rename's mtime was just updated.
-    const disposition = claimDisposition(message);
-    if (disposition === "verified") continue;
-    if (disposition === "unverified" && claimAge(inflight, message, now) < CONVERSATION_LIMITS.unverifiedClaimMaxMs) continue;
-    if (disposition === "unverified") {
-      try { fs.rmSync(inflight, { force: true }); expiredUnverified.push(message); } catch { /* The owner may be finishing. */ }
-      continue;
-    }
-    if (claimAge(inflight, message, now) < CONVERSATION_LIMITS.claimLeaseMs) continue;
-    const inbox = messageFile(project, "inbox", address, id);
-    const released = { ...message, handedToHost: false };
-    delete released.claim;
-    try {
-      writeJson(inflight, released);
-      fs.mkdirSync(path.dirname(inbox), { recursive: true });
-      fs.renameSync(inflight, inbox);
-    } catch { /* Another process recovered or finished this claim. */ }
+    applyClaimDisposition(project, message, inflight, now, expired);
   }
-  publishExpiryNotices(project, expiredUnverified, now);
+  publishExpiryNotices(project, expired, now);
 }
 
 function takeInboxFile(source, destination, now = Date.now) {

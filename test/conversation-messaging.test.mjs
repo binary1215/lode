@@ -1016,6 +1016,33 @@ test("a claim stamp uses the injected clock", async t => {
   claimed.release();
 });
 
+test("an inflight handoff and an owned orphan follow the claim disposition", async t => {
+  const { root, environment } = isolated(t);
+  register(root, environment, caller("codex", "codex-state"), { kind: "codex-prompt" }, Date.now);
+  const queued = await sendProjectConversation({
+    root, caller: caller("claude", "claude-state"), environment, to: "codex:codex-state", body: "state machine", now: Date.now, waitMs: 0,
+    deliver: async () => ({ outcome: "unavailable" }),
+  });
+  const held = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-state" }, environment });
+  assert.match(held.text, /state machine/);
+  const slot = fs.readdirSync(path.join(root, ".lode", "messaging", "inflight"))[0];
+  const inflight = path.join(root, ".lode", "messaging", "inflight", slot, queued.id + ".json");
+  const stored = JSON.parse(fs.readFileSync(inflight, "utf8"));
+  stored.handedToHost = true;
+  stored.state = "sent";
+  fs.writeFileSync(inflight, JSON.stringify(stored));
+  assert.equal(prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-state" }, environment }), null);
+  assert.equal(fs.existsSync(path.join(root, ".lode", "messaging", "archive", slot, queued.id + ".json")), true);
+  const owned = path.join(root, ".lode", "messaging", "inflight", slot, queued.id + ".json.owned");
+  const orphan = { ...stored, handedToHost: false, claim: { ...stored.claim, pid: 1 << 30, at: new Date(Date.now() - 60_000).toISOString() } };
+  fs.mkdirSync(path.dirname(owned), { recursive: true });
+  fs.writeFileSync(owned, JSON.stringify(orphan));
+  const recovered = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-state" }, environment });
+  assert.match(recovered.text, /state machine/);
+  recovered.commit();
+  assert.equal(fs.existsSync(owned), false);
+});
+
 test("four processes can rewrite one presence without ENOENT or a lost file", async t => {
   const { root, environment } = isolated(t);
   const script = `
