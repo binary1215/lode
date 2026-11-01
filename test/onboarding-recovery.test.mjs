@@ -700,6 +700,12 @@ test("physical composition and part damage remain strict Product errors without 
     };
     const payloadError = chunked ? "INVALID_SNAPSHOT_CODE_CHUNKS" : "INVALID_SNAPSHOT_BUNDLE_SHAPE";
     const cases = [
+      ["duplicate exact representation", "SNAPSHOT_REPRESENTATION_CONFLICT", () => {
+        const duplicate = file.replace(/\.gz$/, "");
+        assert.notEqual(duplicate, file);
+        fs.writeFileSync(duplicate, zlib.gunzipSync(original), { flag: "wx" });
+        return duplicate;
+      }, () => fs.unlinkSync(file.replace(/\.gz$/, ""))],
       ["root encoding", "INVALID_WORLD_MODEL_STORE_DOCUMENT", () => fs.writeFileSync(file, "invalid gzip")],
       ["root shape", "INVALID_SNAPSHOT_COMPOSITION", () => {
         const value = structuredClone(physical); value.unrecorded = true; writeFixtureSnapshot(file, value);
@@ -747,7 +753,7 @@ test("physical composition and part damage remain strict Product errors without 
         ["rehashed leaf list shape", payloadError, () => changedLeaf(part => { part.payload.lists.files = null; })],
       ] : []),
     ];
-    for (const [name, code, corrupt] of cases) await t.test(name, async () => {
+    for (const [name, code, corrupt, cleanup] of cases) await t.test(name, async () => {
       try {
         const result = corrupt();
         const observedParts = Array.isArray(result) ? result : [result || partFile];
@@ -764,7 +770,7 @@ test("physical composition and part damage remain strict Product errors without 
         observedParts.forEach((part, index) => assert.deepEqual(fs.readFileSync(part), badParts[index]));
         assert.deepEqual(fs.readFileSync(canonFile), canon);
         assert.deepEqual(authorityBytes(root, formatForVerifiedOwner(storage)), protectedAuthority);
-      } finally { fs.writeFileSync(file, original); fs.writeFileSync(partFile, originalPart); }
+      } finally { fs.writeFileSync(file, original); fs.writeFileSync(partFile, originalPart); cleanup?.(); }
     });
     await inspectOnboarding({ root });
   });
