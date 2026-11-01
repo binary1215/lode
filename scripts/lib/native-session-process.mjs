@@ -2,12 +2,68 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 // Private same-local-environment witness, not a public PID input or process
 // controller. Never enumerate a process table or Claude sessions directory.
 const hash = x => crypto.createHash("sha256").update(x).digest("hex");
 const pidValue = x => Number.isSafeInteger(x) && x > 0 && x <= 0xffffffff;
+const birthCache = new Map();
+
+export function processExists(pid) {
+  if (!Number.isSafeInteger(pid) || pid < 1) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error?.code === "EPERM"; }
+}
+
+export function absoluteSystemExecutable(name) {
+  if (process.platform === "win32" || name.endsWith(".exe")) {
+    const root = process.env.SystemRoot || "C:\\Windows";
+    if (name === "powershell.exe") return path.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    if (name === "taskkill.exe") return path.join(root, "System32", "taskkill.exe");
+  }
+  const separator = process.platform === "win32" ? ";" : ":";
+  for (const entry of String(process.env.PATH || "").split(separator)) {
+    const directory = entry.trim().replace(/^"(.*)"$/u, "$1");
+    if (!directory || !path.isAbsolute(directory)) continue;
+    const candidate = path.join(directory, name);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function processBirth(pid, { platform = process.platform, spawnSyncImpl = spawnSync, readFile = fs.readFileSync } = {}) {
+  if (!Number.isSafeInteger(pid) || pid <= 1) return null;
+  const key = `${platform}:${pid}`;
+  if (birthCache.has(key)) return birthCache.get(key);
+  let value = null;
+  if (platform === "linux") {
+    try {
+      const raw = readFile(`/proc/${pid}/stat`, "utf8");
+      const text = Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw);
+      const fields = text.slice(text.lastIndexOf(")") + 2).trim().split(/\s+/u);
+      value = /^\d+$/u.test(fields[19] || "") ? fields[19] : null;
+    } catch { value = null; }
+  } else if (platform === "darwin" && spawnSyncImpl) {
+    const result = spawnSyncImpl("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8", timeout: NATIVE_PROCESS_LIMITS.timeoutMs, shell: false,
+      env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
+    });
+    const text = String(result?.stdout || "").trim();
+    const epoch = result?.status === 0 ? Date.parse(text) : NaN;
+    value = Number.isFinite(epoch) ? String(epoch) : null;
+  } else if (platform === "win32" && spawnSyncImpl) {
+    const executable = path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const result = spawnSyncImpl(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+      `(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').CreationDate.ToFileTimeUtc()`], {
+      encoding: "utf8", timeout: NATIVE_PROCESS_LIMITS.timeoutMs, windowsHide: true, shell: false,
+    });
+    const text = String(result?.stdout || "").trim();
+    value = result?.status === 0 && /^\d+$/u.test(text) ? `windows-filetime-${text}` : null;
+  }
+  birthCache.set(key, value);
+  return value;
+}
 export const NATIVE_PROCESS_LIMITS = Object.freeze({ depth: 8, known: 16, timeoutMs: 1500, outputBytes: 64 * 1024 });
 function registry(pid, nativeSessionId, environment) {
   const config = environment.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");

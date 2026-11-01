@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { absoluteSystemExecutable } from "./native-session-process.mjs";
 
 const packageVersion = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
 
@@ -122,7 +123,7 @@ export function stopCodexProxy(child, { platform = process.platform, spawnSyncIm
   if (!child) return;
   if (platform === "win32" && Number.isInteger(child.pid) && child.pid > 0) {
     try {
-      spawnSyncImpl("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore", shell: false });
+      spawnSyncImpl(absoluteSystemExecutable("taskkill.exe"), ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore", shell: false });
     } catch { /* The proxy may already have exited. */ }
   }
   try { child.kill?.(); } catch { /* A finished proxy has nothing to kill. */ }
@@ -133,11 +134,11 @@ export function ancestorUsesSharedEngine(commandLines) {
     && /\bapp-server\b/u.test(line) && /--listen\b/u.test(line) && /unix:\/\//u.test(line));
 }
 
-export function windowsProcessListCommand() {
+export function windowsProcessQuery(pid) {
   return {
-    file: "powershell.exe",
-    args: ["-NoProfile", "-NonInteractive", "-Command",
-      "Get-CimInstance -ClassName Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress"],
+    file: absoluteSystemExecutable("powershell.exe"),
+    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+      `Get-CimInstance Win32_Process -Filter "ProcessId = ${Number(pid)}" | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress`],
   };
 }
 
@@ -205,26 +206,47 @@ export function ancestorsFromPsTable(text, pid) {
   return lines;
 }
 
+function ancestorWalk(pid, readOne) {
+  const lines = [];
+  let current = Number(pid);
+  const seen = new Set();
+  while (current > 1 && !seen.has(current) && lines.length < 8) {
+    seen.add(current);
+    const row = readOne(current);
+    if (!row) break;
+    if (row.command) lines.push(row.command);
+    if (!Number.isInteger(row.parent) || row.parent === current) break;
+    current = row.parent;
+  }
+  return lines;
+}
+
 export function collectAncestors({ platform = process.platform, environment = process.env, pid = process.pid, spawnSyncImpl = spawnSync } = {}) {
   if (typeof environment?.LODE_CONVERSATION_ANCESTORS === "string") return environment.LODE_CONVERSATION_ANCESTORS.split("\n");
   if (platform === "darwin") {
-    const command = darwinProcessListCommand();
-    let result;
-    try { result = spawnSyncImpl(command.file, command.args, { encoding: "utf8", timeout: 2000, shell: false }); }
-    catch { return []; }
-    if (!result || result.status !== 0 || typeof result.stdout !== "string") return [];
-    return ancestorsFromPsTable(result.stdout, pid);
+    return ancestorWalk(pid, current => {
+      let result;
+      try { result = spawnSyncImpl("ps", ["-o", "ppid=,command=", "-p", String(current)], { encoding: "utf8", timeout: 2000, shell: false, env: { ...process.env, LC_ALL: "C", TZ: "UTC" } }); }
+      catch { return null; }
+      const match = /^\s*(\d+)\s+(.*)$/u.exec(String(result?.stdout || ""));
+      if (!match || result.status !== 0) return null;
+      return { parent: Number(match[1]), command: match[2].trim() };
+    });
   }
   if (platform === "win32") {
-    const command = windowsProcessListCommand();
-    let result;
-    try { result = spawnSyncImpl(command.file, command.args, { encoding: "utf8", timeout: 2000, windowsHide: true, shell: false }); }
-    catch { return []; }
-    if (!result || result.status !== 0 || typeof result.stdout !== "string") return [];
-    try {
-      const parsed = JSON.parse(result.stdout);
-      return ancestorsFromProcessTable(Array.isArray(parsed) ? parsed : [parsed], pid);
-    } catch { return []; }
+    return ancestorWalk(pid, current => {
+      const command = windowsProcessQuery(current);
+      let result;
+      try { result = spawnSyncImpl(command.file, command.args, { encoding: "utf8", timeout: 2000, windowsHide: true, shell: false }); }
+      catch { return null; }
+      try {
+        const parsed = JSON.parse(result?.stdout || "null");
+        const rows = Array.isArray(parsed) ? parsed : [parsed];
+        const row = rows.find(item => Number(item?.ProcessId) === current) || null;
+        if (!row) return null;
+        return { parent: Number(row.ParentProcessId), command: typeof row.CommandLine === "string" ? row.CommandLine : "" };
+      } catch { return null; }
+    });
   }
   if (platform === "linux") return linuxAncestors(pid);
   return [];

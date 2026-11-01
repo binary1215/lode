@@ -1,3 +1,4 @@
+import { processExists } from "./process-exists.mjs";
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -69,8 +70,7 @@ function lockEntries(directory, target = directory) {
 }
 
 function absent(pid) {
-  try { process.kill(pid, 0); return false; }
-  catch (error) { return error.code === "ESRCH"; }
+  return !processExists(pid);
 }
 
 function release(owner) {

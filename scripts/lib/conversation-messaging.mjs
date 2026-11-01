@@ -6,7 +6,7 @@ import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { claudeChannel, claudeDeliver, claudeLive } from "./conversation-messaging-claude.mjs";
 import { ensureMessagingDirectoryIgnore } from "./project-storage-ignore.mjs";
 import { processExists, processStartId } from "./process-exists.mjs";
-import { codexChannel, codexControlSocket, codexDeliver, codexLive, collectAncestors, windowsProcessListCommand } from "./conversation-messaging-codex.mjs";
+import { codexChannel, codexControlSocket, codexDeliver, codexLive, collectAncestors, windowsProcessQuery } from "./conversation-messaging-codex.mjs";
 import { deliverOpenCodePrompt, opencodeChannel, opencodeDeliver, opencodeLive, opencodePromptAvailable } from "./conversation-messaging-opencode.mjs";
 
 const ADAPTERS = Object.freeze([
@@ -900,5 +900,5 @@ export function prepareOpenCodeInjection({ root, session, now = Date.now } = {})
 }
 
 export const conversationWindows = Object.freeze({
-  windowsProcessListCommand, collectAncestors, codexControlSocket,
+  windowsProcessQuery, collectAncestors, codexControlSocket,
 });

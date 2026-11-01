@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { absoluteSystemExecutable } from "./native-session-process.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { formatForVerifiedOwner, assertProjectStorageUnchanged } from "./project-storage-format.mjs";
@@ -83,7 +84,9 @@ function gitTracksFile(root, file) {
   try {
     const relative = path.relative(root, file).replaceAll("\\", "/");
     if (!relative || relative.startsWith("..")) return false;
-    const result = spawnSync("git", ["-C", root, "ls-files", "--error-unmatch", "--", relative], {
+    const git = absoluteSystemExecutable("git") || absoluteSystemExecutable("git.exe");
+    if (!git) return false;
+    const result = spawnSync(git, ["-C", root, "ls-files", "--error-unmatch", "--", relative], {
       encoding: "utf8", timeout: 2000, shell: false, stdio: ["ignore", "pipe", "pipe"],
     });
     return result?.status === 0;

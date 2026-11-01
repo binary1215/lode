@@ -17,6 +17,7 @@ import {
 import { claudeWireLines, deliverClaudeInbox, normalizeClaudeSocketPath, readClaudePeerToken, claudeSocketDigest } from "../scripts/lib/conversation-messaging-claude.mjs";
 import { ancestorsFromPsTable, codexControlSocket, codexTransportPlan, collectAncestors, deliverCodexTurn, resolveCodexWindowsTarget, stopCodexProxy } from "../scripts/lib/conversation-messaging-codex.mjs";
 import { deliverOpenCodePrompt } from "../scripts/lib/conversation-messaging-opencode.mjs";
+import { processStartId } from "../scripts/lib/process-exists.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const fixedNow = () => Date.parse("2026-10-31T00:00:00.000Z");
@@ -251,7 +252,8 @@ test("Windows Claude auth is required and Windows Codex uses the app-server prox
     platform: "win32",
     spawnSyncImpl(file, args) { tree.push([file, args]); return { status: 0 }; },
   });
-  assert.deepEqual(tree[0], ["taskkill.exe", ["/PID", "4242", "/T", "/F"]]);
+  assert.equal(String(tree[0][0]).endsWith(`${path.win32.sep}taskkill.exe`) || tree[0][0].endsWith("taskkill.exe"), true);
+  assert.deepEqual(tree[0][1], ["/PID", "4242", "/T", "/F"]);
   const table = [{ ProcessId: 10, ParentProcessId: 4, CommandLine: "codex app-server --listen unix://" }, { ProcessId: 4, ParentProcessId: 1, CommandLine: "codex.exe" }];
   const lines = collectAncestors({ platform: "win32", environment, pid: 10, spawnSyncImpl() {
     return { status: 0, stdout: JSON.stringify(table) };
@@ -995,6 +997,25 @@ test("a tracked messaging gitignore is not rewritten", t => {
   listProjectConversations({ root, caller: caller("claude", "claude-tracked"), environment: { HOME: root, USERPROFILE: root }, now: Date.now });
   assert.equal(fs.readFileSync(ignore, "utf8"), previous);
   assert.doesNotMatch(git(["status", "--porcelain"]).stdout, /messaging\/\.gitignore/);
+});
+
+test("darwin process birth uses UTC and is cached", () => {
+  const calls = [];
+  const first = processStartId(424242, {
+    platform: "darwin",
+    spawnSyncImpl(file, args, options) {
+      calls.push({ file, args, env: options.env });
+      return { status: 0, stdout: "Thu Jan  1 00:00:00 2026\n" };
+    },
+  });
+  const second = processStartId(424242, { platform: "darwin", spawnSyncImpl() { throw new Error("cache miss"); } });
+  assert.equal(first, String(Date.parse("Thu Jan  1 00:00:00 2026")));
+  assert.equal(second, first);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].file, "ps");
+  assert.deepEqual(calls[0].args, ["-o", "lstart=", "-p", "424242"]);
+  assert.equal(calls[0].env.LC_ALL, "C");
+  assert.equal(calls[0].env.TZ, "UTC");
 });
 
 test("a claim stamp uses the injected clock", async t => {
