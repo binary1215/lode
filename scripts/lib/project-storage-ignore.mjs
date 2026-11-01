@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { formatForVerifiedOwner, assertProjectStorageUnchanged } from "./project-storage-format.mjs";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
 import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
 
@@ -105,9 +105,7 @@ export function ensureMessagingDirectoryIgnore({ root, directory }) {
       if (current === MESSAGING_IGNORE) return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
       if (current !== PREVIOUS_MESSAGING_IGNORE) return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
       if (gitTracksFile(root, file)) return { status: "preserved", reasonCode: "TRACKED_MESSAGING_IGNORE" };
-      const temporary = file + ".writing";
-      fs.writeFileSync(temporary, MESSAGING_IGNORE);
-      fs.renameSync(temporary, file);
+      atomicWriteArtifact(file, MESSAGING_IGNORE);
       return { status: "updated", trackingChanged: false };
     }
     atomicCreateArtifact(file, MESSAGING_IGNORE);

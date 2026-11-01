@@ -996,3 +996,29 @@ test("a tracked messaging gitignore is not rewritten", t => {
   assert.equal(fs.readFileSync(ignore, "utf8"), previous);
   assert.doesNotMatch(git(["status", "--porcelain"]).stdout, /messaging\/\.gitignore/);
 });
+
+test("four processes can rewrite one presence without ENOENT or a lost file", async t => {
+  const { root, environment } = isolated(t);
+  const script = `
+    import { registerConversationPresence } from ${JSON.stringify(new URL("../scripts/lib/conversation-messaging.mjs", import.meta.url).href)};
+    for (let index = 0; index < 400; index += 1) {
+      registerConversationPresence({
+        root: ${JSON.stringify(root)},
+        identity: { runtime: "claude", nativeSessionId: "claude-race", agentId: null, subagent: false, parentSessionId: null },
+        channel: { kind: "claude-prompt" },
+        environment: ${JSON.stringify(environment)},
+      });
+    }
+    process.stdout.write("ok");
+  `;
+  const results = await Promise.all([0, 1, 2, 3].map(() => runNode(script, environment)));
+  for (const result of results) {
+    assert.equal(result.code, 0, result.err);
+    assert.equal(result.out, "ok");
+    assert.equal(result.err.includes("ENOENT"), false);
+  }
+  const presence = fs.readdirSync(path.join(root, ".lode", "messaging", "presence")).filter(name => name.endsWith(".json"));
+  assert.equal(presence.length, 1);
+  const record = JSON.parse(fs.readFileSync(path.join(root, ".lode", "messaging", "presence", presence[0]), "utf8"));
+  assert.equal(record.address, "claude:claude-race");
+});

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { claudeChannel, claudePeerTokenPresent, deliverClaudeInbox, readClaudePeerToken } from "./conversation-messaging-claude.mjs";
 import { ensureMessagingDirectoryIgnore } from "./project-storage-ignore.mjs";
@@ -114,15 +115,13 @@ function readJson(file) {
 }
 
 function writeJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = file + ".writing";
-  fs.writeFileSync(temporary, JSON.stringify(value));
-  fs.renameSync(temporary, file);
+  atomicWriteArtifact(file, JSON.stringify(value));
 }
 
 function names(directory) {
-  try { return fs.readdirSync(directory).filter(name => !name.endsWith(".writing")); }
-  catch { return []; }
+  try {
+    return fs.readdirSync(directory).filter(name => !name.startsWith(".") && !name.endsWith(".writing") && !name.endsWith(".owned"));
+  } catch { return []; }
 }
 
 function presenceDelta(record, now) {
@@ -284,10 +283,8 @@ function publishExpiryNotices(project, messages, now) {
       evidence: "expired",
       handedToHost: false,
     };
-    try {
-      if (existing) writeJson(existing.file, notice);
-      else enqueue(project, notice);
-    } catch { /* The originals are already removed. */ }
+    if (existing) writeJson(existing.file, notice);
+    else enqueue(project, notice);
   }
 }
 
@@ -431,20 +428,20 @@ function ticketKey(environment, projectRoot) {
     return existing;
   }
   const key = crypto.randomBytes(32).toString("hex");
-  const temporary = file + ".writing";
-  try {
-    let current = null;
-    try { current = fs.readFileSync(file, "utf8").trim(); }
-    catch (error) { if (error.code !== "ENOENT") throw error; }
-    if (validTicketKey(current)) return current.trim();
-    fs.writeFileSync(temporary, key + "\n", { mode: 0o600 });
-    fs.renameSync(temporary, file);
-    tightenPrivate(file, 0o600);
-    return readTicketKey(file);
-  } catch {
-    try { fs.rmSync(temporary, { force: true }); } catch { /* The replacement did not land. */ }
-    return readTicketKey(file);
+  let current = null;
+  try { current = fs.readFileSync(file, "utf8").trim(); }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
+  if (validTicketKey(current)) return current.trim();
+  try { atomicWriteArtifact(file, key + "\n"); }
+  catch (error) {
+    const raced = readTicketKey(file);
+    if (raced) return raced;
+    throw error;
   }
+  tightenPrivate(file, 0o600);
+  const written = readTicketKey(file);
+  if (!written) throw Object.assign(new Error("CONVERSATION_TICKET_KEY"), { code: "CONVERSATION_TICKET_KEY" });
+  return written;
 }
 
 function ticketMac(environment, body) {
@@ -677,15 +674,7 @@ function findMessage(project, id) {
 }
 
 function enqueue(project, message) {
-  const file = messageFile(project, "inbox", message.to.address, message.id);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = file + ".writing";
-  fs.writeFileSync(temporary, JSON.stringify(message));
-  try { fs.renameSync(temporary, file); }
-  catch (error) {
-    try { fs.rmSync(temporary, { force: true }); } catch { /* The exclusive inbox name is the claim. */ }
-    throw error;
-  }
+  atomicCreateArtifact(messageFile(project, "inbox", message.to.address, message.id), JSON.stringify(message));
   return message;
 }
 
