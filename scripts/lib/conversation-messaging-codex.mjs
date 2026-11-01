@@ -46,55 +46,72 @@ function windowsSocketRejected(socketPath) {
     || /[\0\r\n"]/u.test(socketPath);
 }
 
-// Node's CreateProcess cannot run a .cmd file with shell:false. Prefer codex.exe.
-// Otherwise read the npm shim and spawn its node entry with an argument array,
-// so cmd.exe never interprets the socket path or the console code page.
-export function resolveCodexWindowsTarget({ env = process.env, exists = fs.existsSync, readFile = fs.readFileSync } = {}) {
-  const pathValue = env?.PATH || env?.Path || "";
-  const dirs = String(pathValue).split(";").filter(Boolean);
-  let cmdFile = null;
-  for (const dir of dirs) {
-    const exe = path.win32.join(dir, "codex.exe");
-    if (exists(exe)) return { command: exe, args: [] };
-    const cmd = path.win32.join(dir, "codex.cmd");
-    if (!cmdFile && exists(cmd)) cmdFile = cmd;
-  }
-  if (cmdFile) {
-    const parsed = readCodexCmdShim(cmdFile, exists, readFile);
-    if (parsed) return parsed;
-  }
-  return { command: "codex.exe", args: [] };
+function windowsPathEntries(env) {
+  return String(env?.PATH || env?.Path || "").split(";").map(entry => {
+    const trimmed = entry.trim();
+    if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed.slice(1, -1);
+    return trimmed;
+  }).filter(entry => path.win32.isAbsolute(entry));
 }
 
-function readCodexCmdShim(cmdFile, exists, readFile) {
+function windowsPathExtensions(env) {
+  const raw = env?.PATHEXT || env?.Pathext || ".COM;.EXE;.BAT;.CMD";
+  const extensions = String(raw).split(";").map(item => item.trim()).filter(item => item.startsWith("."));
+  return extensions.length ? extensions : [".COM", ".EXE", ".BAT", ".CMD"];
+}
+
+// Walk PATH in order and PATHEXT inside each directory, the way cmd.exe does.
+// Only absolute paths are returned. A bare node.exe or codex.exe is never used:
+// Windows searches the current directory before PATH for those names.
+export function resolveCodexWindowsTarget({ env = process.env, exists = fs.existsSync, readFile = fs.readFileSync, execPath = process.execPath } = {}) {
+  for (const dir of windowsPathEntries(env)) {
+    for (const extension of windowsPathExtensions(env)) {
+      const names = [`codex${extension}`, `codex${extension.toLowerCase()}`];
+      const candidate = names.map(name => path.win32.join(dir, name)).find(file => path.win32.isAbsolute(file) && exists(file));
+      if (!candidate) continue;
+      if (extension.toLowerCase() === ".cmd" || extension.toLowerCase() === ".bat") {
+        const parsed = readCodexCmdShim(candidate, exists, readFile, execPath);
+        if (parsed && path.win32.isAbsolute(parsed.command)) return parsed;
+        continue;
+      }
+      return { command: candidate, args: [] };
+    }
+  }
+  return null;
+}
+
+function readCodexCmdShim(cmdFile, exists, readFile, execPath) {
   let text = "";
   try {
     const raw = readFile(cmdFile);
     text = Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw);
   } catch { return null; }
   if (text.length > 65536 || text.includes("\0")) return null;
-  const match = text.match(/"%(?:~dp0|dp0)%\\([^"\r\n]+\.js)"/iu);
-  if (!match || match[1].includes("..")) return null;
+  const match = text.match(/%~?dp0%?\\([^"\r\n]+\.js)/iu);
+  if (!match || match[1].includes("\0")) return null;
   const script = path.win32.normalize(path.win32.join(path.win32.dirname(cmdFile), match[1]));
-  if (!exists(script)) return null;
-  const nodeExe = path.win32.join(path.win32.dirname(cmdFile), "node.exe");
-  return { command: exists(nodeExe) ? nodeExe : "node.exe", args: [script] };
+  if (!path.win32.isAbsolute(script) || !script.toLowerCase().endsWith(".js") || !exists(script)) return null;
+  const beside = path.win32.join(path.win32.dirname(cmdFile), "node.exe");
+  const node = exists(beside) && path.win32.isAbsolute(beside) ? beside : (path.win32.isAbsolute(execPath) ? execPath : null);
+  if (!node) return null;
+  return { command: node, args: [script] };
 }
 
 // The socket path is one argv element. shell stays false so cmd.exe does not
 // expand %VAR% or reinterpret Unicode as the OEM code page.
-export function codexProxyLaunch({ platform = process.platform, socketPath, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync } = {}) {
+export function codexProxyLaunch({ platform = process.platform, socketPath, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync, execPath = process.execPath } = {}) {
   if (windowsSocketRejected(socketPath)) return { mode: "none", evidence: "codex-proxy-socket-rejected" };
   const proxyArgs = ["app-server", "proxy", "--sock", socketPath];
   if (platform === "win32") {
-    const target = resolveCodexWindowsTarget({ env, exists, readFile });
+    const target = resolveCodexWindowsTarget({ env, exists, readFile, execPath });
+    if (!target || !path.win32.isAbsolute(target.command)) return { mode: "none", evidence: "codex-proxy-unresolved" };
     return { mode: "proxy", command: target.command, args: [...target.args, ...proxyArgs], shell: false };
   }
   return { mode: "proxy", command: codexProxyCommand(platform), args: proxyArgs, shell: false };
 }
 
-export function codexTransportPlan({ platform = process.platform, socketPath, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync } = {}) {
-  const launch = codexProxyLaunch({ platform, socketPath, env, exists, readFile });
+export function codexTransportPlan({ platform = process.platform, socketPath, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync, execPath = process.execPath } = {}) {
+  const launch = codexProxyLaunch({ platform, socketPath, env, exists, readFile, execPath });
   if (launch.mode !== "proxy") return { mode: "none", evidence: launch.evidence || "codex-engine-unavailable" };
   return { mode: "proxy", command: launch.command, args: launch.args, shell: false };
 }
@@ -257,8 +274,8 @@ function writeLine(child, line) {
 
 // turn/start is delivered only when the proxy returns a turn id. Anything else
 // leaves the message queued. The call does not override sandbox or approval policy.
-export async function deliverCodexTurn({ socketPath, platform = process.platform, threadId, text, spawnImpl = spawn, spawnSyncImpl = spawnSync, timeoutMs = 3000, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync } = {}) {
-  const plan = codexProxyLaunch({ platform, socketPath, env, exists, readFile });
+export async function deliverCodexTurn({ socketPath, platform = process.platform, threadId, text, spawnImpl = spawn, spawnSyncImpl = spawnSync, timeoutMs = 3000, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync, execPath = process.execPath } = {}) {
+  const plan = codexProxyLaunch({ platform, socketPath, env, exists, readFile, execPath });
   if (plan.mode !== "proxy" || typeof threadId !== "string" || typeof text !== "string") {
     return { outcome: "unavailable", evidence: plan.evidence || "codex-engine-unavailable" };
   }

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { formatForVerifiedOwner, assertProjectStorageUnchanged } from "./project-storage-format.mjs";
@@ -78,6 +79,17 @@ function assertIgnorePoliciesUnchanged(policies) {
 const MESSAGING_IGNORE = "# Live conversation mailbox, not canon.\n*\n";
 const PREVIOUS_MESSAGING_IGNORE = "# Live conversation mailbox, not canon.\n*\n!.gitignore\n";
 
+function gitTracksFile(root, file) {
+  try {
+    const relative = path.relative(root, file).replaceAll("\\", "/");
+    if (!relative || relative.startsWith("..")) return false;
+    const result = spawnSync("git", ["-C", root, "ls-files", "--error-unmatch", "--", relative], {
+      encoding: "utf8", timeout: 2000, shell: false, stdio: ["ignore", "pipe", "pipe"],
+    });
+    return result?.status === 0;
+  } catch { return false; }
+}
+
 export function ensureMessagingDirectoryIgnore({ root, directory }) {
   const messaging = path.join(root, directory, "messaging");
   const file = path.join(messaging, ".gitignore");
@@ -92,6 +104,7 @@ export function ensureMessagingDirectoryIgnore({ root, directory }) {
       const current = fs.readFileSync(file, "utf8");
       if (current === MESSAGING_IGNORE) return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
       if (current !== PREVIOUS_MESSAGING_IGNORE) return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
+      if (gitTracksFile(root, file)) return { status: "preserved", reasonCode: "TRACKED_MESSAGING_IGNORE" };
       const temporary = file + ".writing";
       fs.writeFileSync(temporary, MESSAGING_IGNORE);
       fs.renameSync(temporary, file);

@@ -17,7 +17,8 @@ const FRESH_MS = ARCHIVE_TTL_MS;
 const IMMEDIATE_MS = 2 * 60 * 1000;
 const CLAIM_LEASE_MS = 15_000;
 const CLOCK_SKEW_MS = 2 * 60 * 1000;
-const PRESENCE_FUTURE_LIST_MS = ARCHIVE_TTL_MS;
+const PRESENCE_FUTURE_LIST_MS = 5 * 60 * 1000;
+const UNVERIFIED_CLAIM_MAX_MS = ARCHIVE_TTL_MS;
 const MAX_BODY = 6000;
 const MAX_INJECT = 20;
 const MAX_LIST = 256;
@@ -133,8 +134,8 @@ function presenceDelta(record, now) {
 function ageMs(record, now) {
   const delta = presenceDelta(record, now);
   if (delta === null) return Infinity;
-  // A day or more ahead is not a live peer. A smaller lead is clock skew and stays current.
-  // Deletion does not use this value: a future stamp must not remove the file.
+  // A few minutes ahead is clock skew and stays current. Further ahead is not
+  // listed. Deletion does not use this value, so skew cannot erase the file.
   if (delta < -PRESENCE_FUTURE_LIST_MS) return Infinity;
   return Math.max(0, delta);
 }
@@ -201,16 +202,34 @@ function storedAgeMs(file, iso, now) {
   try { samples.push(nowMs(now) - fs.statSync(file).mtimeMs); }
   catch { return Infinity; }
   if (!samples.length) return Infinity;
-  // A future clock or mtime is skew, not age. It must not expire the file.
+  // A small lead is skew and counts as age 0. Both stamps more than a day
+  // ahead would otherwise never expire, so that file is not kept.
+  if (samples.every(delta => delta < -ARCHIVE_TTL_MS)) return Infinity;
   return Math.max(...samples.map(delta => delta > 0 ? delta : 0));
 }
 
-function slotUsage(project, slotName) {
+function isExpiryNotice(file) {
+  return readJson(file)?.notice === "expired";
+}
+
+function slotUsage(project, slotName, { skipNotices = false } = {}) {
   let total = 0, count = 0;
   for (const kind of ["inbox", "inflight", "archive"]) {
-    const nested = fileBytes(path.join(project.messaging, kind, slotName));
-    total += nested.total;
-    count += nested.count;
+    const directory = path.join(project.messaging, kind, slotName);
+    for (const name of names(directory)) {
+      const file = path.join(directory, name);
+      let stat;
+      try { stat = fs.statSync(file); } catch { continue; }
+      if (stat.isDirectory()) {
+        const nested = fileBytes(file);
+        total += nested.total;
+        count += nested.count;
+      } else if (stat.isFile()) {
+        if (skipNotices && name.endsWith(".json") && isExpiryNotice(file)) continue;
+        total += stat.size;
+        count += 1;
+      }
+    }
   }
   return { total, count };
 }
@@ -228,27 +247,48 @@ function jsonFiles(directory) {
   return files;
 }
 
-function enqueueExpiryNotice(project, message, now) {
-  const sender = parseAddress(message?.from?.address);
-  const target = message?.to?.address;
-  if (!sender || !target || message.notice === "expired" || !MESSAGE_ID.test(message.id || "")) return;
-  if (!mailboxAccepts(project, sender.address, 1024)) return;
-  const notice = {
-    schemaVersion: 1,
-    id: "msg-" + crypto.randomBytes(12).toString("hex"),
-    projectRoot: project.root,
-    notice: "expired",
-    expiredId: message.id,
-    originalTo: target,
-    from: message.to?.address ? message.to : message.from,
-    to: message.from,
-    body: `Queued message ${message.id} expired before delivery to ${target}.`,
-    createdAt: stamp(now),
-    state: "queued",
-    evidence: "expired",
-    handedToHost: false,
-  };
-  try { enqueue(project, notice); } catch { /* The original is already removed. A full inbox drops only the notice. */ }
+function publishExpiryNotices(project, messages, now) {
+  const groups = new Map();
+  for (const message of messages) {
+    const sender = parseAddress(message?.from?.address);
+    const target = message?.to?.address;
+    if (!sender || !target || message.notice === "expired" || !MESSAGE_ID.test(message.id || "")) continue;
+    const key = sender.address + "\0" + target;
+    if (!groups.has(key)) groups.set(key, { sender, target, from: message.to?.address ? message.to : message.from, to: message.from, ids: [] });
+    groups.get(key).ids.push(message.id);
+  }
+  for (const group of groups.values()) {
+    const directory = area(project, "inbox", group.sender.address);
+    let existing = null;
+    for (const entry of jsonFiles(directory)) {
+      const notice = readJson(entry.file);
+      if (notice?.notice === "expired" && notice.originalTo === group.target) { existing = { file: entry.file, notice }; break; }
+    }
+    const prior = Array.isArray(existing?.notice?.expiredIds) ? existing.notice.expiredIds : (existing?.notice?.expiredId ? [existing.notice.expiredId] : []);
+    const ids = [...new Set([...prior, ...group.ids])].filter(id => MESSAGE_ID.test(id));
+    const shown = ids.slice(0, 40);
+    const notice = {
+      schemaVersion: 1,
+      id: existing?.notice?.id && MESSAGE_ID.test(existing.notice.id) ? existing.notice.id : "msg-" + crypto.randomBytes(12).toString("hex"),
+      projectRoot: project.root,
+      notice: "expired",
+      expiredCount: ids.length,
+      expiredId: shown[0],
+      expiredIds: shown,
+      originalTo: group.target,
+      from: group.from,
+      to: group.to,
+      body: `${ids.length} queued message${ids.length === 1 ? "" : "s"} expired before delivery to ${group.target}.`,
+      createdAt: existing?.notice?.createdAt || stamp(now),
+      state: "queued",
+      evidence: "expired",
+      handedToHost: false,
+    };
+    try {
+      if (existing) writeJson(existing.file, notice);
+      else enqueue(project, notice);
+    } catch { /* The originals are already removed. */ }
+  }
 }
 
 function expireStored(project, kind, now) {
@@ -264,7 +304,7 @@ function expireStored(project, kind, now) {
       }
     }
   }
-  for (const message of expired) enqueueExpiryNotice(project, message, now);
+  publishExpiryNotices(project, expired, now);
 }
 
 function trimSlotArchives(project) {
@@ -308,7 +348,7 @@ function retainMailbox(project, now) {
 }
 
 function mailboxAccepts(project, address, extraBytes) {
-  const usage = slotUsage(project, slot(address));
+  const usage = slotUsage(project, slot(address), { skipNotices: true });
   return usage.count < MAX_STORED_MESSAGES && usage.total + extraBytes <= MAX_MAILBOX_BYTES;
 }
 
@@ -457,7 +497,9 @@ function renderInjection(messages, remaining) {
     if (message.notice === "expired") {
       return ["Same-project conversation notice.",
         "notice: expired",
+        `expired-count: ${message.expiredCount || 1}`,
         `expired-id: ${message.expiredId}`,
+        Array.isArray(message.expiredIds) && message.expiredIds.length > 1 ? `expired-ids: ${message.expiredIds.join(" ")}` : null,
         message.originalTo ? `original-to: ${message.originalTo}` : null,
         "The queued message was deleted after 24 hours without delivery.",
         frameBody(message.body)].filter(Boolean).join("\n");
@@ -487,19 +529,28 @@ function claimAge(file, message) {
   const delta = Number.isFinite(stamped)
     ? Date.now() - stamped
     : (() => { try { return Date.now() - fs.statSync(file).mtimeMs; } catch { return 0; } })();
-  if (delta < -CLOCK_SKEW_MS) return Infinity;
+  if (delta < -PRESENCE_FUTURE_LIST_MS) return Infinity;
   return Math.max(0, delta);
 }
 
-// A live pid keeps the claim regardless of age. Pid 1 is never an owner.
-// A recorded start id that no longer matches means the pid was reused.
-function claimOwnedByLiveProcess(message) {
+// verified: start id matches, so age alone must not steal the claim.
+// reused: the pid belongs to a different process.
+// unverified: the pid is alive but this OS cannot prove it is the same start.
+// dead: the pid is gone, or it is pid 1.
+function claimDisposition(message) {
   const pid = message?.claim?.pid;
-  if (!Number.isSafeInteger(pid) || pid <= 1 || !processExists(pid)) return false;
-  const recorded = message.claim.start;
+  if (!Number.isSafeInteger(pid) || pid <= 1 || !processExists(pid)) return "dead";
+  const recorded = typeof message.claim?.start === "string" && message.claim.start ? message.claim.start : null;
   const current = processStartId(pid);
-  if (recorded && current && recorded !== current) return false;
-  return true;
+  if (recorded && current) return recorded === current ? "verified" : "reused";
+  return "unverified";
+}
+
+function claimOwnedByLiveProcess(message, file) {
+  const disposition = claimDisposition(message);
+  if (disposition === "verified") return true;
+  if (disposition === "unverified") return claimAge(file, message) < UNVERIFIED_CLAIM_MAX_MS;
+  return false;
 }
 
 function ownsClaim(current, message) {
@@ -508,6 +559,7 @@ function ownsClaim(current, message) {
 }
 
 function recoverInflight(project, address) {
+  const expiredUnverified = [];
   for (const name of names(area(project, "inflight", address))) {
     if (!name.endsWith(".json")) continue;
     const id = name.slice(0, -5);
@@ -520,9 +572,16 @@ function recoverInflight(project, address) {
       try { fs.mkdirSync(path.dirname(archive), { recursive: true }); fs.renameSync(inflight, archive); } catch { /* The owner is finishing the handoff. */ }
       continue;
     }
-    // Age does not take a claim away from the process that still owns the pid.
+    // A verified owner keeps the claim. An unverified live pid is kept for 24h
+    // and then expired with a notice, not queued again, so it is not delivered twice.
     // A missing stamp is fresh only when the rename's mtime was just updated.
-    if (claimOwnedByLiveProcess(message)) continue;
+    const disposition = claimDisposition(message);
+    if (disposition === "verified") continue;
+    if (disposition === "unverified" && claimAge(inflight, message) < UNVERIFIED_CLAIM_MAX_MS) continue;
+    if (disposition === "unverified") {
+      try { fs.rmSync(inflight, { force: true }); expiredUnverified.push(message); } catch { /* The owner may be finishing. */ }
+      continue;
+    }
     if (claimAge(inflight, message) < CLAIM_LEASE_MS) continue;
     const inbox = messageFile(project, "inbox", address, id);
     const released = { ...message, handedToHost: false };
@@ -533,6 +592,7 @@ function recoverInflight(project, address) {
       fs.renameSync(inflight, inbox);
     } catch { /* Another process recovered or finished this claim. */ }
   }
+  publishExpiryNotices(project, expiredUnverified, Date.now());
 }
 
 function takeInboxFile(source, destination) {
@@ -568,24 +628,23 @@ function claimAddress(project, address) {
 
 function markHanded(project, message, state, evidence, receipt = null) {
   const inflight = messageFile(project, "inflight", message.to.address, message.id);
-  const current = readJson(inflight);
-  if (!ownsClaim(current, message)) return null;
+  const holding = inflight + ".owned";
+  try { fs.renameSync(inflight, holding); }
+  catch { return null; }
+  const current = readJson(holding);
+  if (!ownsClaim(current, message)) {
+    try { fs.renameSync(holding, inflight); } catch { /* The moved claim stays beside the inbox until the next pass. */ }
+    return null;
+  }
   const next = { ...current, state, evidence, handedToHost: true, ...(receipt ? { receipt } : {}) };
-  const temporary = inflight + ".writing";
+  const archive = messageFile(project, "archive", message.to.address, message.id);
   try {
-    fs.writeFileSync(temporary, JSON.stringify(next));
-    const again = readJson(inflight);
-    if (!ownsClaim(again, message)) {
-      fs.rmSync(temporary, { force: true });
-      return null;
-    }
-    fs.renameSync(temporary, inflight);
-    const archive = messageFile(project, "archive", message.to.address, message.id);
+    fs.writeFileSync(holding, JSON.stringify(next));
     fs.mkdirSync(path.dirname(archive), { recursive: true });
-    fs.renameSync(inflight, archive);
+    fs.renameSync(holding, archive);
     return next;
   } catch {
-    try { fs.rmSync(temporary, { force: true }); } catch { /* The inflight file stays with its owner. */ }
+    try { fs.renameSync(holding, inflight); } catch { /* The exclusive rename already took the file. */ }
     return null;
   }
 }
