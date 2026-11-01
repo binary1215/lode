@@ -404,7 +404,18 @@ test("defaults to the constitutional core without activating Product or Graph go
   assert.equal(first.profileSemantics, "operation-choice-not-persisted-project-mode");
   assert.equal(first.productGovernanceActivated, false);
   assert.equal(first.onboardingAction, "not-activated");
-  assert.deepEqual(first.readiness, {
+  const { storage: storageReadiness, ...coreReadiness } = first.readiness;
+  assert.deepEqual({
+    kind: storageReadiness.kind, authorityPlane: storageReadiness.authorityPlane,
+    persisted: storageReadiness.persisted, scope: storageReadiness.scope,
+    snapshotIntegrity: storageReadiness.snapshotIntegrity, freshness: storageReadiness.freshness,
+    layers: storageReadiness.layers, ordinaryWorkBlocked: storageReadiness.ordinaryWorkBlocked,
+  }, {
+    kind: "SnapshotReaderCompatibilityProjection", authorityPlane: "P4", persisted: false,
+    scope: "bounded-local-pointer-declarations-only", snapshotIntegrity: "not-inspected", freshness: "not-inspected",
+    layers: [{ layer: "world", state: "absent" }, { layer: "graph", state: "absent" }], ordinaryWorkBlocked: false,
+  });
+  assert.deepEqual(coreReadiness, {
     core: { state: "ready", managedProjectionDriftCount: 0 },
     product: { state: "not_activated", governanceActivated: false, onboardingStatus: "initialized" },
     context: {

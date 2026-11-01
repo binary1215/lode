@@ -57,13 +57,16 @@ function fixtureCanon(f, statement) {
     decisions: [{ key: 'D1', statement, status: 'active' }] }));
 }
 
-test('default flat storage preserves whole semantic identity, ancestry and immutable code parts', async t => {
+test('explicit flat storage preserves whole semantic identity, ancestry and immutable code parts', async t => {
   const f = fixture(t), source = path.join(f.root, 'stable.mjs');
   fs.writeFileSync(source, 'export function stable() { return 1; }\n'); fixtureCanon(f, 'First decision');
   const whole = new LocalJsonWorldModelStoreAdapter({projectRoot:f.root,storage:f.storage,snapshotLayout:'whole'});
   const graph = new LocalJsonGraphProjectionAdapter({projectRoot:f.root,storage:f.storage,snapshotLayout:'whole'});
   const first = await buildWorldModel({root:f.root,storeAdapter:whole,graphProjectionAdapter:graph});
   const original = fs.readFileSync(first.file);
+  const flatWorld = new LocalJsonWorldModelStoreAdapter({projectRoot:f.root,storage:f.storage,snapshotLayout:'shared-domains-v2'});
+  const flatGraph = new LocalJsonGraphProjectionAdapter({projectRoot:f.root,storage:f.storage,snapshotLayout:'shared-domains-v2'});
+  const flatBuild = () => buildWorldModel({root:f.root,storeAdapter:flatWorld,graphProjectionAdapter:flatGraph});
   for (const parents of [{}, {parentSourceSnapshotIds:[],revisionParentIds:{}}]) {
     const a = await buildWorldModel({root:f.root,persist:false,storeAdapter:whole,graphProjectionAdapter:graph,...parents});
     const b = await buildWorldModel({root:f.root,persist:false,...parents});
@@ -72,7 +75,7 @@ test('default flat storage preserves whole semantic identity, ancestry and immut
   assert.equal((await buildWorldModel({root:f.root})).snapshot.worldModelId,first.snapshot.worldModelId);
   assert(fs.readFileSync(first.file).equals(original));
   fixtureCanon(f, 'Second decision');
-  const next = await runCommand(['world-index',f.root]);
+  const next = await flatBuild();
   const root = readSnapshotFile(next.file).document;
   assert.equal(root.schemaVersion,2); assert.equal(root.producer.version,'0.2.0');
   assert.equal(root.code.producer.version,'0.1.0'); assert.equal(root.graph.code.producer.version,'0.1.0');
@@ -82,12 +85,12 @@ test('default flat storage preserves whole semantic identity, ancestry and immut
   assert.equal(entry.snapshotStorage.dependencies.length,2);
   const storedParts = entry.snapshotStorage.dependencies.map(ref=>({ref,bytes:fs.readFileSync(path.join(f.root,ref.address))}));
   fixtureCanon(f, 'Third decision');
-  const third = await runCommand(['world-index',f.root]);
+  const third = await flatBuild();
   const thirdRoot = readSnapshotFile(third.file).document;
   assert.equal(thirdRoot.code.sha256,root.code.sha256); assert.equal(thirdRoot.graph.code.sha256,root.graph.code.sha256);
   for(const part of storedParts)assert(fs.readFileSync(path.join(f.root,part.ref.address)).equals(part.bytes));
   assert(fs.readFileSync(first.file).equals(original));
-  assert.equal((await runCommand(['world-index',f.root])).snapshot.worldModelId,third.snapshot.worldModelId);
+  assert.equal((await flatBuild()).snapshot.worldModelId,third.snapshot.worldModelId);
 });
 
 test('flat composition exactly preserves unknown JSON and rejects malformed bindings and parts', async t => {

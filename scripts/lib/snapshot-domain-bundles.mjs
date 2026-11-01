@@ -1,3 +1,4 @@
+import { splitWorldCodeChunks, joinWorldCodeChunks, splitGraphCodeChunks, joinGraphCodeChunks } from "./snapshot-code-chunks.mjs";
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -5,11 +6,13 @@ import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
 import { formatForVerifiedOwner, assertProjectStorageUnchanged } from "./project-storage-format.mjs";
-import { safeSnapshotPath, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
+import { safeSnapshotPath, SNAPSHOT_STORAGE_LIMITS, readBoundedSnapshotDescriptor } from "./snapshot-storage-codec.mjs";
 const producer = Object.freeze({ name: "lode-domain-bundle", version: "0.1.0" });
 export const DOMAIN_BUNDLE_LAYOUT = "domain-bundles-v1";
 const flatProducer = Object.freeze({ name: "lode-domain-bundle", version: "0.2.0" });
 export const SHARED_DOMAIN_LAYOUT = "shared-domains-v2";
+export const CHUNKED_CODE_LAYOUT = "chunked-code-v3";
+const chunkProducer = Object.freeze({ name: "lode-domain-bundle", version: "0.3.0" });
 const hash = b => crypto.createHash("sha256").update(b).digest("hex");
 const bytes = value => Buffer.from(JSON.stringify(value) + "\n");
 function canonical(value) {
@@ -65,9 +68,12 @@ function readBundle(context, ref, depth) {
   const expected = path.relative(context.root, path.join(bundleDirectory(context.root, context.storage), ref.sha256 + suffix)).replaceAll("\\", "/");
   if (ref.address !== expected) fail("INVALID_SNAPSHOT_BUNDLE_ADDRESS");
   const key = JSON.stringify(ref);
+  const declared = context.addresses.get(ref.address);
+  if (declared && !equal(declared, ref)) fail("CONFLICTING_SNAPSHOT_BUNDLE_DESCRIPTOR");
+  context.addresses.set(ref.address, ref);
   if (context.active.has(ref.sha256)) fail("SNAPSHOT_BUNDLE_CYCLE");
   if (context.cache.has(key)) return context.cache.get(key);
-  if (++context.metrics.verifiedBundles > 8) fail("SNAPSHOT_BUNDLE_COUNT_LIMIT");
+  if (++context.metrics.verifiedBundles > context.maxBundles) fail("SNAPSHOT_BUNDLE_COUNT_LIMIT");
   context.metrics.decodedBytes += ref.byteLength;
   if (context.metrics.decodedBytes > SNAPSHOT_STORAGE_LIMITS.decodedBytes) fail("SNAPSHOT_STORAGE_LIMIT");
   const file = safeSnapshotPath(context.root, path.join(context.root, ref.address));
@@ -78,7 +84,7 @@ function readBundle(context, ref, depth) {
   try {
     const opened = fs.fstatSync(fd);
     if (opened.dev !== stat.dev || opened.ino !== stat.ino || opened.size !== stat.size || opened.nlink !== 1) fail("SNAPSHOT_STORAGE_DRIFT");
-    encoded = fs.readFileSync(fd);
+    encoded = readBoundedSnapshotDescriptor(fd, stat.size, SNAPSHOT_STORAGE_LIMITS.compressedBytes);
     const after = fs.fstatSync(fd);
     if (encoded.length !== stat.size || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs) fail("SNAPSHOT_STORAGE_DRIFT");
   } finally { fs.closeSync(fd); }
@@ -102,7 +108,7 @@ function readBundle(context, ref, depth) {
 function contextFor(root, storage, encoding = "gzip") {
   if (!storage?.projectId || fs.realpathSync(root) !== storage.projectRoot) fail("SNAPSHOT_BUNDLE_OWNER_REQUIRED");
   assertProjectStorageUnchanged(storage);
-  return { root, storage, encoding, cache: new Map(), active: new Set(), metrics: { createdBytes: 0, createdBundles: 0, bundleReferences: 0, verifiedBundles: 0, decodedBytes: 0, serializationCount: 0, serializedBytes: 0, hashCount: 0, hashedBytes: 0 } };
+  return { root, storage, encoding, maxBundles: 8, chunked: false, addresses: new Map(), cache: new Map(), active: new Set(), metrics: { createdBytes: 0, createdBundles: 0, bundleReferences: 0, verifiedBundles: 0, decodedBytes: 0, serializationCount: 0, serializedBytes: 0, hashCount: 0, hashedBytes: 0 } };
 }
 function splitGraphParts(context, graph) {
   const codeIds = new Set(graph.nodes.filter(node => codeKinds.has(node.kind)).map(node => node.nodeId));
@@ -114,7 +120,10 @@ function splitGraphParts(context, graph) {
   const codeNodes = [], codeEdges = [], otherNodes = [], otherEdges = [], nodeOrder = [], edgeOrder = [];
   for (const node of graph.nodes) { const code = codeIds.has(node.nodeId); nodeOrder.push(code); (code ? codeNodes : otherNodes).push(code ? normalize(node) : node); }
   for (const edge of graph.edges) { const code = codeIds.has(edge.from) && codeIds.has(edge.to); edgeOrder.push(code); (code ? codeEdges : otherEdges).push(code ? normalize(edge) : edge); }
-  const code = put(context, "graph-code", { nodes: codeNodes, edges: codeEdges });
+  const codePayload = { nodes: codeNodes, edges: codeEdges };
+  const code = context.chunked
+    ? put(context, "graph-code-chunks", splitGraphCodeChunks(codePayload, (domain, payload) => put(context, domain, payload)))
+    : put(context, "graph-code", codePayload);
   return { body: { ...graph, nodes: null, edges: null }, code, otherNodes, otherEdges, nodeOrder, edgeOrder };
 }
 function joinGraph(context, ref, depth) {
@@ -131,8 +140,9 @@ function joinGraphParts(context, composition, depth, strict = false) {
       || !composition.body || typeof composition.body !== "object" || Array.isArray(composition.body)
       || ![composition.otherNodes, composition.otherEdges].every(Array.isArray)) fail("INVALID_SNAPSHOT_BUNDLE_SHAPE");
     const codeRef = composition.code;
-    if (codeRef?.domain !== "graph-code") fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
-    const code = readBundle(context, codeRef, depth);
+    if (codeRef?.domain !== (context.chunked ? "graph-code-chunks" : "graph-code")) fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
+    const rawCode = readBundle(context, codeRef, depth);
+    const code = context.chunked ? joinGraphCodeChunks(rawCode, ref => readBundle(context, ref, depth + 1)) : rawCode;
     if (!code || typeof code !== "object" || ![code.nodes, code.edges].every(Array.isArray)) fail("INVALID_SNAPSHOT_BUNDLE_SHAPE");
     const restore = record => {
       if (!record || typeof record !== "object" || !record.body || typeof record.body !== "object" || Array.isArray(record.body)) fail("INVALID_SNAPSHOT_BUNDLE_SHAPE");
@@ -147,26 +157,31 @@ function joinGraphParts(context, composition, depth, strict = false) {
     return { ...composition.body, nodes: merge(composition.nodeOrder, composition.otherNodes, code.nodes), edges: merge(composition.edgeOrder, composition.otherEdges, code.edges) };
 }
 function createSnapshotCompositionUncoordinated({ root, storage, document, encoding = "gzip", layout = DOMAIN_BUNDLE_LAYOUT }) {
-  if (![DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT].includes(layout)) fail("INVALID_SNAPSHOT_LAYOUT");
+  if (![DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT].includes(layout)) fail("INVALID_SNAPSHOT_LAYOUT");
   const context = contextFor(root, storage, encoding), world = document.kind !== "GraphSnapshot" && (document.kind === "RepositoryWorldModel" || Boolean(document.worldModelId));
+  context.chunked = layout === CHUNKED_CODE_LAYOUT;
+  if (context.chunked) context.maxBundles = 512;
   const body = { ...document };
   const graph = world ? document.temporalProvenanceGraph : document;
   if (!graph || graph.kind !== "GraphSnapshot" || graph.projectId !== storage.projectId || document.projectId !== storage.projectId) fail("INVALID_SNAPSHOT_BUNDLE_INPUT");
   const graphParts = splitGraphParts(context, graph);
-  const graphRef = layout === SHARED_DOMAIN_LAYOUT ? graphParts : put(context, "graph-composition", graphParts);
+  const graphRef = layout !== DOMAIN_BUNDLE_LAYOUT ? graphParts : put(context, "graph-composition", graphParts);
   let code = null;
   if (world) {
-    code = put(context, "world-code", { files: document.files, semanticGraph: document.semanticGraph,
+    const codePayload = { files: document.files, semanticGraph: document.semanticGraph,
       analysisBasis: document.analysisBasis, domainBasis: document.domainBases?.code, rules: document.rules,
-      sourceScope: document.repositoryScan?.sourceScope });
+      sourceScope: document.repositoryScan?.sourceScope };
+    code = context.chunked
+      ? put(context, "world-code-chunks", splitWorldCodeChunks(codePayload, (domain, payload) => put(context, domain, payload)))
+      : put(context, "world-code", codePayload);
     body.files = null; body.semanticGraph = null; body.temporalProvenanceGraph = null;
   }
   const snapshotId = world ? document.worldModelId : document.graphSnapshotId;
   const reconstructed = bytes(canonical(document));
   context.metrics.serializationCount++; context.metrics.serializedBytes += reconstructed.length;
   context.metrics.hashCount++; context.metrics.hashedBytes += reconstructed.length;
-  return { document: { kind: "SnapshotComposition", schemaVersion: layout === SHARED_DOMAIN_LAYOUT ? 2 : 1,
-    producer: layout === SHARED_DOMAIN_LAYOUT ? flatProducer : producer, projectId: storage.projectId,
+  return { document: { kind: "SnapshotComposition", schemaVersion: context.chunked ? 3 : layout === SHARED_DOMAIN_LAYOUT ? 2 : 1,
+    producer: context.chunked ? chunkProducer : layout === SHARED_DOMAIN_LAYOUT ? flatProducer : producer, projectId: storage.projectId,
     [world ? "worldModelId" : "graphSnapshotId"]: snapshotId, snapshotKind: world ? "world-model" : "graph-snapshot",
     reconstructedByteLength: reconstructed.length, reconstructedSha256: hash(reconstructed),
     body: world ? body : null, code, graph: graphRef }, metrics: context.metrics };
@@ -174,12 +189,21 @@ function createSnapshotCompositionUncoordinated({ root, storage, document, encod
 export function hydrateSnapshotComposition({ root, storage, document }) {
   if (document?.kind !== "SnapshotComposition") return { document, dependencies: [], metrics: null };
   const context = contextFor(root, storage);
-  const flat = document.schemaVersion === 2;
-  if (![1, 2].includes(document.schemaVersion) || document.projectId !== storage.projectId || !equal(document.producer, flat ? flatProducer : producer)
+  const chunked = document.schemaVersion === 3;
+  const flat = document.schemaVersion === 2 || chunked;
+  const expectedProducer = chunked ? chunkProducer : flat ? flatProducer : producer;
+  if (document.projectId === storage.projectId && (Number.isInteger(document.schemaVersion) && document.schemaVersion > 3
+    || [1, 2, 3].includes(document.schemaVersion) && document.producer?.name && document.producer?.version
+      && !equal(document.producer, expectedProducer))) {
+    fail("UNSUPPORTED_SNAPSHOT_COMPOSITION", "Snapshot schema/producer is unsupported by this reader; use a reader supporting the stored format. Ordinary Core work remains available.");
+  }
+  if (![1, 2, 3].includes(document.schemaVersion) || document.projectId !== storage.projectId || !equal(document.producer, expectedProducer)
     || !["world-model", "graph-snapshot"].includes(document.snapshotKind)
     || !Number.isSafeInteger(document.reconstructedByteLength) || document.reconstructedByteLength < 1
     || document.reconstructedByteLength > SNAPSHOT_STORAGE_LIMITS.decodedBytes
     || !/^[a-f0-9]{64}$/.test(document.reconstructedSha256 || "")) fail("INVALID_SNAPSHOT_COMPOSITION");
+  context.chunked = chunked;
+  if (chunked) context.maxBundles = 512;
   if (flat && !equal(Object.keys(document).sort(), ["kind", "schemaVersion", "producer", "projectId",
     document.snapshotKind === "world-model" ? "worldModelId" : "graphSnapshotId", "snapshotKind",
     "reconstructedByteLength", "reconstructedSha256", "body", "code", "graph"].sort())) fail("INVALID_SNAPSHOT_COMPOSITION");
@@ -191,8 +215,9 @@ export function hydrateSnapshotComposition({ root, storage, document }) {
   const graph = flat ? joinGraphParts(context, document.graph, 1, true) : joinGraph(context, document.graph, 1);
   let result = graph;
   if (document.snapshotKind === "world-model") {
-    if (document.code?.domain !== "world-code") fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
-    const code = readBundle(context, document.code, 1);
+    if (document.code?.domain !== (chunked ? "world-code-chunks" : "world-code")) fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
+    const rawCode = readBundle(context, document.code, 1);
+    const code = chunked ? joinWorldCodeChunks(rawCode, ref => readBundle(context, ref, 2)) : rawCode;
     if (!code || typeof code !== "object" || Array.isArray(code)) fail("INVALID_SNAPSHOT_BUNDLE_SHAPE");
     if (!equal(code.analysisBasis, document.body.analysisBasis) || code.domainBasis !== document.body.domainBases?.code
       || !equal(code.rules, document.body.rules) || !equal(code.sourceScope, document.body.repositoryScan?.sourceScope)) fail("SNAPSHOT_BUNDLE_BASIS_MISMATCH");
@@ -210,7 +235,7 @@ export function hydrateSnapshotEntry({ root, storage, entry }) {
   if (!entry || entry.document?.kind !== "SnapshotComposition") return entry;
   const hydrated = hydrateSnapshotComposition({ root, storage, document: entry.document });
   return { ...entry, document: hydrated.document, snapshotStorage: { ...(entry.snapshotStorage || { kind: "local-file" }),
-    layout: entry.document.schemaVersion === 2 ? SHARED_DOMAIN_LAYOUT : DOMAIN_BUNDLE_LAYOUT,
+    layout: entry.document.schemaVersion === 3 ? CHUNKED_CODE_LAYOUT : entry.document.schemaVersion === 2 ? SHARED_DOMAIN_LAYOUT : DOMAIN_BUNDLE_LAYOUT,
     reconstructedSha256: entry.document.reconstructedSha256, dependencies: hydrated.dependencies } };
 }
 

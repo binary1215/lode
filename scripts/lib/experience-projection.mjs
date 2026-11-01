@@ -92,6 +92,15 @@ export function buildAttentionProjection(experience, storage = undefined) {
     blockedOperations: ["new-plugin-capabilities"],
   }));
 
+  for (const layer of experience?.readiness?.storage?.layers || []) {
+    if (["unsupported", "unavailable", "not-inspected"].includes(layer.state)) items.push(item({
+      id: "snapshot-reader-" + layer.layer, owner, severity: layer.state === "unavailable" ? "integrity" : "notice",
+      actionability: "when-world-graph-evidence-is-in-scope",
+      summary: layer.layer + " storage reader: " + layer.state + " (" + layer.reasonCode + "). Core work remains available; inspect only the needed projection with a compatible reader.",
+      blockedOperations: [],
+    }));
+  }
+
   const immediate = items.filter((entry) => entry.actionability === "immediate");
   const userDecisionRequired = immediate.some((entry) => entry.owner === "user");
   const headActionRequired = immediate.some((entry) => entry.owner === owner);

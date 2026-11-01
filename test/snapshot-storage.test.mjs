@@ -18,7 +18,7 @@ import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
 import { readGraphRecord } from "../scripts/lib/discovery-index.mjs";
 import { verifyHistoricalInventoryEntries } from "../scripts/lib/historical-artifact-boundary-store.mjs";
 import { decodeSnapshotBytes, readSnapshotFile } from "../scripts/lib/snapshot-storage-codec.mjs";
-import { ensureProjectStorageIgnore, ensureOwnedSnapshotStoreIgnore, GENERATED_STORAGE_IGNORE_RULES } from "../scripts/lib/project-storage-ignore.mjs";
+import { ensureProjectStorageIgnore, ensureOwnedSnapshotStoreIgnore, GENERATED_STORAGE_IGNORE_RULES, RETAINED_STORAGE_IGNORE_RULES } from "../scripts/lib/project-storage-ignore.mjs";
 import { inspectSnapshotGarbageCollection } from "../scripts/lib/snapshot-gc.mjs";
 import { compileContext } from "../scripts/lib/context-compiler.mjs";
 import { diffGraphLineage } from "../scripts/lib/graph-lineage.mjs";
@@ -180,7 +180,7 @@ test("scoped ignore exceptions match Git's oracle and preserve tracking, private
   ["*.tmp\n!/docs/keep.tmp\n",true], ["!docs/keep.tmp\n",true], ["\\!literal\n",true], ["  !literal\n",true],
   ["\ufeff!docs/keep.tmp\r\n",true], ["!/.lode/graph-discovery/index.json\n",true,false], ["!**/graph-discovery/index.json\n",false],
   ["!/.lode/graph-discovery   \n",true,false], ["!/docs/keep.tmp   \n",true],
-  ["!keep-this.txt\n",true], ["!docs/\n",false], ["/.lode/\n!/docs/keep.tmp\n",true],
+  ["!keep-this.txt\n",true], ["!docs/\n",true], ["/.lode/\n!/docs/keep.tmp\n",true],
  ];
  for(const [text,created,indexIncluded=true] of cases){fs.unlinkSync(file);fs.writeFileSync(rootIgnore,text);const before=await git(["check-ignore","--no-index","-v",docs]),beforeIndex=await git(["check-ignore","--no-index","-v",transient]);
   const result=ensureProjectStorageIgnore({root:f.root,storage:f.storage});assert.equal(result.status,created?"created":"preserved",text);assert.equal(fs.readFileSync(rootIgnore,"utf8"),text);
@@ -194,7 +194,7 @@ test("scoped ignore exceptions match Git's oracle and preserve tracking, private
   const before=await git(["check-ignore","--no-index","-v",keep]);
   const partial=ensureProjectStorageIgnore({root:f.root,storage:f.storage});
   assert.equal(partial.status,"created");assert.deepEqual(partial.rules.included,["/graph-discovery/index.json"]);
-  assert.equal(partial.rules.skipped.length,GENERATED_STORAGE_IGNORE_RULES.length-1);
+  assert.equal(partial.rules.skipped.length,GENERATED_STORAGE_IGNORE_RULES.length+RETAINED_STORAGE_IGNORE_RULES.length-1);
   assert.deepEqual(await git(["check-ignore","--no-index","-v",keep]),before);
   assert.equal(fs.readFileSync(rootIgnore,"utf8"),policy);
   assert.equal((await git(["check-ignore","--no-index",transient])).code,0);
@@ -203,7 +203,7 @@ test("scoped ignore exceptions match Git's oracle and preserve tracking, private
  const tracked=path.join(f.root,transient);fs.mkdirSync(path.dirname(tracked),{recursive:true});fs.writeFileSync(tracked,"retained tracked bytes\n");
  assert.equal((await git(["add","-f","--",transient])).code,0);assert.equal((await git(["check-ignore","--",transient])).code,1);assert.equal(fs.readFileSync(tracked,"utf8"),"retained tracked bytes\n");
  const owned=path.join(f.root,f.storage.directory,"snapshot-objects.git");fs.mkdirSync(owned);assert.equal(ensureOwnedSnapshotStoreIgnore({root:f.root,storage:f.storage,directory:owned}).status,"created");
- assert.match((await git(["check-ignore","--no-index","-v",f.storage.directory+"/snapshot-objects.git/objects/example"])).stdout,/snapshot-objects.git\/\.gitignore/);
+ assert.match((await git(["check-ignore","--no-index","-v",f.storage.directory+"/snapshot-objects.git/objects/example"])).stdout,/snapshot-objects.git(?:\/\.gitignore|\/)/);
  fs.unlinkSync(file);const original=fs.readFileSync;let reads=0;
  t.mock.method(fs,"readFileSync",function(target,...args){const bytes=original.call(this,target,...args);if(String(target)===rootIgnore&&++reads===1)fs.writeFileSync(rootIgnore,"!/.lode/graph-discovery/index.json\n");return bytes;});
  const raced=ensureProjectStorageIgnore({root:f.root,storage:f.storage});assert.equal(raced.status,"preserved");assert.equal(raced.reasonCode,"USER_IGNORE_CHANGED_CONCURRENTLY");assert(!fs.existsSync(file));assert.equal(inspectProject(f.root).status,"ready");

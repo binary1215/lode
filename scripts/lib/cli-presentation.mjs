@@ -46,6 +46,9 @@ function integrationNotices(value) {
   const display = text => compactText(inertTerminalText(text), 240);
   const manual = Object.entries(integrations).filter(([client, item]) => item?.status === "manual" && !(client === "opencode" && value.opencodeConnection));
   if (manual.length) lines.push(`Host configuration: ${manual.map(([client, item]) => `${display(client)} existing files preserved; generated projection ${[item.projection, item.instructionProjection, item.mcpProjection].filter(Boolean).map(display).join(", ") || "not recorded"}`).join("; ")}. Automatic connection was not verified; ordinary work continues.`);
+  for (const layer of value.readiness?.storage?.layers || []) {
+    if (["unsupported", "unavailable", "not-inspected"].includes(layer.state)) lines.push(`World/Graph reader (${display(layer.layer)}): ${display(layer.state)}; ${display(layer.reasonCode)}. Core work continues; inspect only needed projection data with a compatible reader. Details: --json.`);
+  }
   const opencode = value.opencodeConnection;
   if (opencode) {
     lines.push(`OpenCode local configuration: instructions ${display(opencode.instructions.status)}; MCP ${display(opencode.mcp.status)}. Actual Host loading was not verified; ordinary work continues.`);
@@ -1289,6 +1292,7 @@ function formatSnapshotStorage(value) {
       : value.status === "gc_partial" ? "Cleanup was partial; reported effects already occurred. Inspect the remaining reason before another explicit cleanup."
       : value.code === "UNSUPPORTED_GC_PLATFORM" ? "Physical cleanup is unsupported on this platform; the reported state was preserved. Ordinary work continues."
       : "Cleanup did not complete; the reported reason and any effects remain visible. Ordinary work continues.",
+    value.physicalStorage ? `Observed inventoried file bytes before cleanup: ${value.physicalStorage.observedFileBytes}; coverage ${value.physicalStorage.coverage.complete ? "complete" : "partial"}. This is not safe reclaimable space or allocated disk usage.` : null,
     value.nativeProcessCleanup ? "Native cleanup was not verified; process details: --json." : null,
     value.retiredRefCount ? "Retired refs: "+value.retiredRefCount+"; other files unlinked: "+(value.deletedCount-value.retiredRefCount)+"." : null,
     value.writtenPackBytes||value.publishedPackBytes ? "Published pack/index bytes: "+value.publishedPackBytes+"; net file bytes removed: "+value.netStorageBytes+"." : null,
@@ -1296,6 +1300,7 @@ function formatSnapshotStorage(value) {
   ].filter(line=>line!==null).join("\n");
   return [
     "Snapshot storage: " + value.snapshotCount + " snapshot files; " + value.storedBytes + " stored bytes.",
+    value.physicalStorage ? `Observed local regular-file bytes: ${value.physicalStorage.observedFileBytes}; coverage ${value.physicalStorage.coverage.complete ? "complete" : "partial"}. Includes snapshot/domain/private-Git/source bundles and other Project files; excludes reported unsafe or transient entries. Not safe reclaimable bytes or allocated disk usage.` : null,
     value.backendInspection?.deferredBackends?.length ? "Git/domain storage is outside this synchronous count; typed retention details: --json." : null,
     "Observed without a retained reference: " + value.observedUnreferencedCount + "; " + value.observedUnreferencedBytes + " bytes (not certified safe to delete).",
     "Inspection preserved every file. Explicit --apply verifies supported references before cleanup.",

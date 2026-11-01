@@ -1,3 +1,4 @@
+import { inspectPhysicalStorage, summarizeObservedStorageFiles, mergePhysicalStorageObservations } from "./snapshot-storage-accounting.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -19,25 +20,30 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
   const owner = readGraphProject(root), projectRoot = owner.projectRoot, storage = owner.storage;
   if (!owner.project) throw Object.assign(new Error("Project is not initialized."), { code: "NOT_INITIALIZED" });
   const prefix = storage.directory, snapshots = [], roots = [], issues = [], scanned = [], bytePins = [];
+  const physicalRows = [], physicalParts = [], physicalIssues = [];
   let count = 0, bytesRead = 0, stopped = false;const deferredBackends=[];
   const issue = (relative, reasonCode) => issues.push({ path: relative, reasonCode });
   function walk(relative) {
     let file, stat;
     try { file = safeGraphFile(projectRoot, relative); stat = fs.lstatSync(file); }
-    catch (error) { issue(relative, error.code || "STORAGE_PATH_UNAVAILABLE"); return; }
-    if (stat.isSymbolicLink() || !stat.isDirectory() && (!stat.isFile() || stat.nlink !== 1)) { issue(relative, "UNSAFE_STORAGE_ENTRY"); return; }
+    catch (error) { issue(relative, error.code || "STORAGE_PATH_UNAVAILABLE"); physicalIssues.push({path:relative,reasonCode:error.code||"PHYSICAL_ENTRY_UNAVAILABLE"}); return; }
+    if (stat.isSymbolicLink() || !stat.isDirectory() && (!stat.isFile() || stat.nlink !== 1)) { issue(relative, "UNSAFE_STORAGE_ENTRY"); physicalIssues.push({path:relative,reasonCode:"UNSAFE_PHYSICAL_ENTRY_EXCLUDED"}); return; }
     if (stat.isDirectory()) {
-      if(relative===prefix+"/.snapshot-gc")return;
-      if(relative===prefix+"/snapshot-objects.git"||relative===prefix+"/snapshot-bundles"){deferredBackends.push(relative);issue(relative,"TYPED_BACKEND_OBSERVATION_REQUIRED");return;}
+      if(relative===prefix+"/.snapshot-gc"){physicalIssues.push({path:relative,reasonCode:"TRANSIENT_COORDINATION_EXCLUDED"});return;}
+      if(relative===prefix+"/snapshot-objects.git"||relative===prefix+"/snapshot-bundles"){deferredBackends.push(relative);physicalParts.push(inspectPhysicalStorage({root:projectRoot,storage,relativePaths:[relative.slice(prefix.length+1)]}));issue(relative,"TYPED_BACKEND_OBSERVATION_REQUIRED");return;}
       // A live/unknown operation is preservation evidence, never something this
       // diagnostic removes or waits for. No age/PID-based owner reclamation.
       if (relative === prefix + "/.operations" || relative === prefix + "/refresh/writer.lock" || /\/refresh\/writer\.lock\..*\.staging$/.test(relative)) {
-        if (fs.readdirSync(file).length) issue(relative, "ACTIVE_OR_UNKNOWN_WRITER"); return;
+        const directory = fs.opendirSync(file);
+        try { if (directory.readSync()) { issue(relative, "ACTIVE_OR_UNKNOWN_WRITER"); physicalIssues.push({path:relative,reasonCode:"TRANSIENT_COORDINATION_EXCLUDED"}); } }
+        finally { directory.closeSync(); }
+        return;
       }
       for (const name of fs.readdirSync(file).sort()) { if (stopped) break; walk(relative + "/" + name); }
       return;
     }
     if (++count > MAX_FILES || bytesRead + stat.size > MAX_SCAN_BYTES) { stopped = true; issue(relative, "STORAGE_SCAN_INCOMPLETE"); return; }
+    physicalRows.push({relative:relative.slice(prefix.length+1),bytes:stat.size});
     if (relative === prefix + "/graph-discovery/index.json") return; // Rebuildable membership, not a historical root.
     if (relative.endsWith(".tmp")) { issue(relative, "UNPUBLISHED_OR_UNKNOWN_STAGE"); return; }
     let bytes, document, text;
@@ -102,6 +108,8 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     status: apply ? "gc_apply_unavailable_preserved" : "gc_dry_run", requestedApply: apply,
     ...(apply ? { code: "SNAPSHOT_GC_APPLY_UNAVAILABLE" } : {}),
     applyAvailable: false, applyPerformed: false, deletedCount: 0, reclaimedBytes: 0, reclaimableBytes: 0,
+    physicalStorage: mergePhysicalStorageObservations([summarizeObservedStorageFiles(physicalRows,{complete:!stopped&&!physicalIssues.length,issues:physicalIssues}),...physicalParts]),
+    storedBytesScope: "whole-or-composition-snapshot-files-only",
     snapshotCount: rows.length, storedBytes: rows.reduce((n, item) => n + item.bytes, 0), retainedCount: rows.length,
     observedUnreferencedCount: observedUnreferenced.length, observedUnreferencedBytes: observedUnreferenced.reduce((n, item) => n + item.bytes, 0),
     interpretation: "Observed unreferenced IDs are candidates for further verification, not established safe deletions. Current/previous, parents and all observed retained references are preserved. No age or last-N deletion.",
@@ -140,6 +148,8 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
       maxSummaryBytes: closure.maxSummaryBytes, issues: closure.issues.slice(0, 200), omittedIssues: closure.omittedIssues || 0 };
     result.basis = { digest: closure.basisDigest, readConsistency: "cooperative-lifetime-and-exact-file-identity" };
     result.snapshotCount = closure.snapshots.length;
+    result.physicalStorage = summarizeObservedStorageFiles([...closure.entries, ...closure.mixed.files.values()].map(row => ({ relative: row.path.slice(owner.storage.directory.length + 1), bytes: row.bytes })), { complete: false, scope: "typed-closure-inventoried-files-before-cleanup", issues: [{ reasonCode: "COORDINATION_AND_NONINVENTORIED_FILES_EXCLUDED" }] });
+    result.storedBytesScope = "snapshot-files-plus-typed-backend-inventory-before-cleanup";
     result.storedBytes = closure.snapshots.reduce((sum, item) => sum + item.bytes, 0)+closure.mixed.storedBytes;
     if (!closure.certified) {
       result.code = signal?.aborted ? "SNAPSHOT_GC_CANCELLED" : closure.interrupted || snapshotCollectionCancelled(attempt) ? "SNAPSHOT_COLLECTION_INVALIDATED" : "SNAPSHOT_GC_REFERENCE_COVERAGE_INCOMPLETE";

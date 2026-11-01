@@ -478,9 +478,10 @@ See [optional ArcadeDB configuration](docs/architecture.md#optional-graphdb-refe
 
 ## Installation lifecycle
 
-Before a shared Project writes physical schema-2 snapshots, update every reader
-that will use them. Beta.69 and earlier reject these roots without rewriting them;
-new readers still read retained older formats in place. Updating plugin files
+New complete local snapshots use physical schema 3 in beta.75. Update every reader
+sharing the Project before writing them; beta.74 and earlier cannot read v3.
+New readers retain older formats and unchanged IDs in place. This default prioritizes
+storage savings and can increase latency, especially on small projects. Updating plugin files
 does not reload an existing Host or MCP connection. See [storage compatibility](docs/snapshot-storage.md).
 
 <details>

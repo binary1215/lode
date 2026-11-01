@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import zlib from "node:zlib";
 import { readSnapshotFile } from "../scripts/lib/snapshot-storage-codec.mjs";
+import { createSnapshotComposition } from "../scripts/lib/snapshot-domain-bundles.mjs";
+import { snapshotReaderRequirements } from "../scripts/lib/snapshot-storage-compatibility.mjs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -10,7 +12,7 @@ import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
 import { initializeOrResumeProject, inspectProjectExperience } from "../scripts/lib/project-bootstrap.mjs";
-import { inspectOnboarding, recoverOnboardingPromotion, refreshOnboardingCandidates, restoreOnboardingCandidate, reviewOnboarding, startOnboarding } from "../scripts/lib/onboarding.mjs";
+import { inspectOptionalOnboarding, inspectOnboarding, recoverOnboardingPromotion, refreshOnboardingCandidates, restoreOnboardingCandidate, reviewOnboarding, startOnboarding } from "../scripts/lib/onboarding.mjs";
 import crypto from "node:crypto";
 import { inspectConversationalOnboarding } from "../scripts/lib/onboarding-conversation.mjs";
 import { enterConversationRecovery } from "../scripts/lib/compaction-lifecycle.mjs";
@@ -644,72 +646,132 @@ test("optional World availability does not conceal snapshot tampering", async ()
 });
 
 test("physical composition and part damage remain strict Product errors without blocking Core", async t => {
-  const { root, canonPath, request } = await fixture();
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const accepted = await reviewOnboarding(request);
-  const file = worldSnapshotFile(root, accepted.worldModel.worldModelId);
-  const canonFile = path.resolve(root, canonPath);
-  const original = fs.readFileSync(file), canon = fs.readFileSync(canonFile);
-  const physical = readSnapshotFile(file).document;
-  assert.equal(physical.kind, "SnapshotComposition");
-  assert.equal(physical.schemaVersion, 2);
-  const partFile = path.join(root, physical.code.address), originalPart = fs.readFileSync(partFile);
-  const forgedPart = (value, raw, graph = false) => {
-    const ref = graph ? value.graph.code : value.code;
-    ref.sha256 = crypto.createHash("sha256").update(raw).digest("hex"); ref.byteLength = raw.length;
-    ref.address = path.posix.join(path.posix.dirname(ref.address), `${ref.sha256}.json.gz`);
-    const target = path.join(root, ref.address);
-    fs.writeFileSync(target, zlib.gzipSync(raw), { flag: "wx" });
-    writeFixtureSnapshot(file, value);
-    return target;
-  };
-  const changedPayload = (change, graph = false) => {
-    const value = structuredClone(physical), ref = graph ? value.graph.code : value.code;
-    const part = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root, ref.address)))); change(part);
-    return forgedPart(value, Buffer.from(JSON.stringify(part) + "\n"), graph);
-  };
-  const cases = [
-    ["root encoding", "INVALID_WORLD_MODEL_STORE_DOCUMENT", () => fs.writeFileSync(file, "invalid gzip")],
-    ["root shape", "INVALID_SNAPSHOT_COMPOSITION", () => {
-      const value = structuredClone(physical); value.unrecorded = true; writeFixtureSnapshot(file, value);
-    }],
-    ["reconstructed digest", "SNAPSHOT_COMPOSITION_DIGEST_MISMATCH", () => {
-      const value = structuredClone(physical); value.reconstructedSha256 = "0".repeat(64); writeFixtureSnapshot(file, value);
-    }],
-    ["part encoding", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => fs.writeFileSync(partFile, "invalid gzip")],
-    ["part digest", "SNAPSHOT_BUNDLE_DIGEST_MISMATCH", () => {
-      const value = JSON.parse(zlib.gunzipSync(originalPart)); value.projectId = "x" + value.projectId.slice(1);
-      fs.writeFileSync(partFile, zlib.gzipSync(JSON.stringify(value) + "\n"));
-    }],
-    ["root null body", "INVALID_SNAPSHOT_COMPOSITION", () => {
-      const value = structuredClone(physical); value.body = null; writeFixtureSnapshot(file, value);
-    }],
-    ["legacy null graph reference", "SNAPSHOT_BUNDLE_TYPE_MISMATCH", () => {
-      const value = structuredClone(physical); value.schemaVersion = 1; value.producer.version = "0.1.0"; value.graph = null; writeFixtureSnapshot(file, value);
-    }],
-    ["rehashed invalid UTF8", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => forgedPart(structuredClone(physical), Buffer.from([0xff, 0x0a]))],
-    ["rehashed non JSON", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => forgedPart(structuredClone(physical), Buffer.from("{invalid}\n"))],
-    ["rehashed null bundle", "SNAPSHOT_BUNDLE_TYPE_MISMATCH", () => forgedPart(structuredClone(physical), Buffer.from("null\n"))],
-    ["rehashed null world payload", "INVALID_SNAPSHOT_BUNDLE_SHAPE", () => changedPayload(part => { part.payload = null; })],
-    ["rehashed null graph payload", "INVALID_SNAPSHOT_BUNDLE_SHAPE", () => changedPayload(part => { part.payload = null; }, true)],
-    ["rehashed invalid graph arrays", "INVALID_SNAPSHOT_BUNDLE_SHAPE", () => changedPayload(part => { part.payload.nodes = null; part.payload.edges = {}; }, true)],
-    ["graph order exceeds code records", "INVALID_SNAPSHOT_BUNDLE_SHAPE", () => {
-      const value = structuredClone(physical); value.graph.nodeOrder.push(true); writeFixtureSnapshot(file, value);
-    }],
-  ];
-  for (const [name, code, corrupt] of cases) await t.test(name, async () => {
-    try {
-      const observedPart = corrupt() || partFile;
-      const badRoot = fs.readFileSync(file), badPart = fs.readFileSync(observedPart);
-      await assert.rejects(() => inspectOnboarding({ root }), { code });
-      await assert.rejects(() => initializeOrResumeProject({ root, pluginRoot, profile: "product" }), { code });
-      const core = await initializeOrResumeProject({ root, pluginRoot, profile: "core" });
-      assert.equal(core.readiness.core.state, "ready");
-      assert.equal(core.readiness.product.state, "integrity_attention");
-      assert.deepEqual(fs.readFileSync(file), badRoot);
-      assert.deepEqual(fs.readFileSync(observedPart), badPart);
-      assert.deepEqual(fs.readFileSync(canonFile), canon);
-    } finally { fs.writeFileSync(file, original); fs.writeFileSync(partFile, originalPart); }
+  for (const layout of ["shared-domains-v2", "chunked-code-v3"]) await t.test(layout, async t => {
+    const { root, storage, canonPath, request } = await fixture();
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const accepted = await reviewOnboarding(request);
+    const file = worldSnapshotFile(root, accepted.worldModel.worldModelId);
+    const chunked = layout === "chunked-code-v3";
+    if (!chunked) {
+      // An explicit retained v2 fixture supplements, rather than replaces, the
+      // omitted-layout production default exercised by the v3 branch.
+      const document = readFixtureSnapshot(file);
+      const composition = createSnapshotComposition({ root, storage, document, layout }).document;
+      writeFixtureSnapshot(file, composition);
+      const pointerFile = path.join(root, storage.directory, "world-model/current.json");
+      const pointer = JSON.parse(fs.readFileSync(pointerFile, "utf8"));
+      pointer.readerRequirements = snapshotReaderRequirements({ document, snapshotStorage: { layout } });
+      fs.writeFileSync(pointerFile, JSON.stringify(pointer));
+    }
+    await inspectOnboarding({ root });
+    const canonFile = path.resolve(root, canonPath);
+    const original = fs.readFileSync(file), canon = fs.readFileSync(canonFile);
+    const protectedAuthority = authorityBytes(root, formatForVerifiedOwner(storage));
+    const physical = readSnapshotFile(file).document;
+    assert.equal(physical.kind, "SnapshotComposition");
+    assert.equal(physical.schemaVersion, chunked ? 3 : 2);
+    const partFile = path.join(root, physical.code.address), originalPart = fs.readFileSync(partFile);
+    const writePart = (ref, raw) => {
+      ref.sha256 = crypto.createHash("sha256").update(raw).digest("hex"); ref.byteLength = raw.length;
+      ref.address = path.posix.join(path.posix.dirname(ref.address), String(ref.sha256) + ".json.gz");
+      const target = path.join(root, ref.address);
+      fs.writeFileSync(target, zlib.gzipSync(raw), { flag: "wx" });
+      return target;
+    };
+    const forgedPart = (value, raw, graph = false) => {
+      const target = writePart(graph ? value.graph.code : value.code, raw);
+      writeFixtureSnapshot(file, value);
+      return target;
+    };
+    const changedPayload = (change, graph = false) => {
+      const value = structuredClone(physical), ref = graph ? value.graph.code : value.code;
+      const part = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root, ref.address)))); change(part);
+      return forgedPart(value, Buffer.from(JSON.stringify(part) + "\n"), graph);
+    };
+    const changedLeaf = change => {
+      const value = structuredClone(physical);
+      const index = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root, value.code.address))));
+      assert.ok(index.payload.chunks.length > 0);
+      const ref = index.payload.chunks[0].ref;
+      const leaf = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root, ref.address))));
+      change(leaf);
+      const leafFile = writePart(ref, Buffer.from(JSON.stringify(leaf) + "\n"));
+      return [forgedPart(value, Buffer.from(JSON.stringify(index) + "\n")), leafFile];
+    };
+    const payloadError = chunked ? "INVALID_SNAPSHOT_CODE_CHUNKS" : "INVALID_SNAPSHOT_BUNDLE_SHAPE";
+    const cases = [
+      ["duplicate exact representation", "SNAPSHOT_REPRESENTATION_CONFLICT", () => {
+        const duplicate = file.replace(/\.gz$/, "");
+        assert.notEqual(duplicate, file);
+        fs.writeFileSync(duplicate, zlib.gunzipSync(original), { flag: "wx" });
+        return duplicate;
+      }, () => fs.unlinkSync(file.replace(/\.gz$/, ""))],
+      ["root encoding", "INVALID_WORLD_MODEL_STORE_DOCUMENT", () => fs.writeFileSync(file, "invalid gzip")],
+      ["root shape", "INVALID_SNAPSHOT_COMPOSITION", () => {
+        const value = structuredClone(physical); value.unrecorded = true; writeFixtureSnapshot(file, value);
+      }],
+      ["unsupported schema", "UNSUPPORTED_SNAPSHOT_COMPOSITION", () => {
+        const value = structuredClone(physical); value.schemaVersion = 4; writeFixtureSnapshot(file, value);
+      }],
+      ["unsupported producer", "UNSUPPORTED_SNAPSHOT_COMPOSITION", () => {
+        const value = structuredClone(physical); value.producer.version = "9.0.0"; writeFixtureSnapshot(file, value);
+      }],
+      ["same address conflicting descriptor", "CONFLICTING_SNAPSHOT_BUNDLE_DESCRIPTOR", () => {
+        const value = structuredClone(physical);
+        Object.assign(value.code, { address: value.graph.code.address, sha256: value.graph.code.sha256, byteLength: value.graph.code.byteLength });
+        writeFixtureSnapshot(file, value);
+      }],
+      ["reconstructed digest", "SNAPSHOT_COMPOSITION_DIGEST_MISMATCH", () => {
+        const value = structuredClone(physical); value.reconstructedSha256 = "0".repeat(64); writeFixtureSnapshot(file, value);
+      }],
+      ["part encoding", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => fs.writeFileSync(partFile, "invalid gzip")],
+      ["part digest", "SNAPSHOT_BUNDLE_DIGEST_MISMATCH", () => {
+        const value = JSON.parse(zlib.gunzipSync(originalPart)); value.projectId = "x" + value.projectId.slice(1);
+        fs.writeFileSync(partFile, zlib.gzipSync(JSON.stringify(value) + "\n"));
+      }],
+      ["root null body", "INVALID_SNAPSHOT_COMPOSITION", () => {
+        const value = structuredClone(physical); value.body = null; writeFixtureSnapshot(file, value);
+      }],
+      ["legacy null graph reference", "SNAPSHOT_BUNDLE_TYPE_MISMATCH", () => {
+        const value = structuredClone(physical); value.schemaVersion = 1; value.producer.version = "0.1.0"; value.graph = null; writeFixtureSnapshot(file, value);
+      }],
+      ["rehashed invalid UTF8", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => forgedPart(structuredClone(physical), Buffer.from([0xff, 0x0a]))],
+      ["rehashed non JSON", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => forgedPart(structuredClone(physical), Buffer.from("{invalid}\n"))],
+      ["rehashed null bundle", "SNAPSHOT_BUNDLE_TYPE_MISMATCH", () => forgedPart(structuredClone(physical), Buffer.from("null\n"))],
+      ["rehashed null world payload", payloadError, () => changedPayload(part => { part.payload = null; })],
+      ["rehashed null graph payload", payloadError, () => changedPayload(part => { part.payload = null; }, true)],
+      ["rehashed invalid graph arrays", payloadError, () => changedPayload(part => {
+        if (chunked) { part.payload.lists.nodes.order = null; part.payload.lists.edges.order = {}; }
+        else { part.payload.nodes = null; part.payload.edges = {}; }
+      }, true)],
+      ["graph order exceeds code records", "INVALID_SNAPSHOT_BUNDLE_SHAPE", () => {
+        const value = structuredClone(physical); value.graph.nodeOrder.push(true); writeFixtureSnapshot(file, value);
+      }],
+      ...(chunked ? [
+        ["rehashed invalid bucket order", payloadError, () => changedPayload(part => { part.payload.lists.files.order.push(64); })],
+        ["rehashed leaf array group", payloadError, () => changedLeaf(part => { part.payload.group = ["world"]; })],
+        ["rehashed leaf list shape", payloadError, () => changedLeaf(part => { part.payload.lists.files = null; })],
+      ] : []),
+    ];
+    for (const [name, code, corrupt, cleanup] of cases) await t.test(name, async () => {
+      try {
+        const result = corrupt();
+        const observedParts = Array.isArray(result) ? result : [result || partFile];
+        const badRoot = fs.readFileSync(file), badParts = observedParts.map(part => fs.readFileSync(part));
+        await assert.rejects(() => inspectOnboarding({ root }), { code });
+        await assert.rejects(() => initializeOrResumeProject({ root, pluginRoot, profile: "product" }), { code });
+        const diagnostic = await inspectOptionalOnboarding({ root });
+        assert.equal(diagnostic.reasonCode, code);
+        assert.equal(diagnostic.ordinaryWorkBlocked, false);
+        const core = await initializeOrResumeProject({ root, pluginRoot, profile: "core" });
+        assert.equal(core.readiness.core.state, "ready");
+        assert.equal(core.readiness.product.state, "integrity_attention");
+        assert.deepEqual(fs.readFileSync(file), badRoot);
+        observedParts.forEach((part, index) => assert.deepEqual(fs.readFileSync(part), badParts[index]));
+        assert.deepEqual(fs.readFileSync(canonFile), canon);
+        assert.deepEqual(authorityBytes(root, formatForVerifiedOwner(storage)), protectedAuthority);
+      } finally { fs.writeFileSync(file, original); fs.writeFileSync(partFile, originalPart); cleanup?.(); }
+    });
+    await inspectOnboarding({ root });
   });
-  await inspectOnboarding({ root });
 });

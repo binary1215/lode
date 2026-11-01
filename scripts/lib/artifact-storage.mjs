@@ -40,7 +40,7 @@ function staged(file, content, publish) {
   }
 }
 
-export function atomicWriteArtifact(file, content) {
+export function atomicWriteArtifact(file, content, { beforePublish = null } = {}) {
   const fingerprint = (target) => {
     try {
       const stat = fs.lstatSync(target);
@@ -49,7 +49,7 @@ export function atomicWriteArtifact(file, content) {
     } catch (error) { if (error.code === "ENOENT") return "missing"; throw error; }
   };
   return staged(file, content, (temporary) => {
-    if (process.platform !== "win32") return fs.renameSync(temporary, file);
+    if (process.platform !== "win32") { beforePublish?.(); return fs.renameSync(temporary, file); }
     const source = fingerprint(temporary), original = fingerprint(file);
     const delays = [5, 10, 20, 40], pause = new Int32Array(new SharedArrayBuffer(4));
     const unchanged = (failure) => {
@@ -62,7 +62,7 @@ export function atomicWriteArtifact(file, content) {
       }
     };
     for (let attempt = 0; ; attempt += 1) {
-      try { return fs.renameSync(temporary, file); }
+      try { beforePublish?.(); return fs.renameSync(temporary, file); }
       catch (error) {
         if (process.platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(error.code) || attempt >= delays.length) throw error;
         // Retry only an unpublished, unchanged stage against the same target.

@@ -1,3 +1,4 @@
+import { snapshotReaderRequirements } from "./snapshot-storage-compatibility.mjs";
 import { stabilizeTemporalRelationIdentities } from "./temporal-relation-identity.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -1709,6 +1710,7 @@ async function buildWorldModelLocked({
   const pointer = {
     schemaVersion: SCHEMA_VERSION,
     kind: "WorldModelPointer",
+    readerRequirements: snapshotReaderRequirements(snapshotEntry),
     projectId: project.projectId,
     storage: adapter.describe(),
     worldModelId,

@@ -1,6 +1,7 @@
+import { snapshotReaderRequirements } from "./snapshot-storage-compatibility.mjs";
 import { verifyLooseSnapshotAddress } from "./snapshot-backend-reclamation.mjs";
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
-import { DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
+import { DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
 import { GitSnapshotStore } from "./git-snapshot-store.mjs";
 import { storedSnapshotLocation, readSnapshotFile, writeStoredSnapshot, listStoredSnapshotIds } from "./snapshot-storage-codec.mjs";
 import crypto from "node:crypto";
@@ -223,8 +224,8 @@ function pointerPayload(graph, storage = null) {
   };
 }
 
-function pointerFor(graph, storage = null) {
-  const payload = pointerPayload(graph, storage);
+function pointerFor(graph, storage = null, readerRequirements = null) {
+  const payload = { ...pointerPayload(graph, storage), ...(readerRequirements ? { readerRequirements } : {}) };
   const pointerHash = digest(graphProjectionCanonicalJson(payload));
   return { ...payload, pointerId: `graph-projection-pointer-${pointerHash.slice(0, 24)}`, pointerHash };
 }
@@ -2253,8 +2254,8 @@ export class LocalJsonGraphProjectionAdapter {
     this.projectRoot = path.resolve(projectRoot);
     // Pure lower contracts do not acquire a Project-init prerequisite.
     // Selecting the default never replaces composition's full owner checks.
-    if (snapshotLayout === undefined) snapshotLayout = snapshotEncoding === "git" || !projectOwnsRecordedRoot(storage, this.projectRoot) ? "whole" : SHARED_DOMAIN_LAYOUT;
-    if (!["whole", DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT].includes(snapshotLayout)) fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
+    if (snapshotLayout === undefined) snapshotLayout = snapshotEncoding === "git" || !projectOwnsRecordedRoot(storage, this.projectRoot) ? "whole" : CHUNKED_CODE_LAYOUT;
+    if (!["whole", DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT].includes(snapshotLayout)) fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
     this.snapshotLayout = snapshotLayout; this.bundleEncoding = bundleEncoding;
     this.snapshotEncoding = snapshotEncoding;
     this.gitOptions = gitOptions;
@@ -2298,7 +2299,7 @@ export class LocalJsonGraphProjectionAdapter {
   async #writeSnapshotUnderLifetime(id, document) {
     const existing = await this.readSnapshot(id);
     if (existing) return { ...existing, created: false };
-    if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT || this.snapshotLayout === SHARED_DOMAIN_LAYOUT && document.kind === "GraphSnapshot") {
+    if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT || [SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT].includes(this.snapshotLayout) && document.kind === "GraphSnapshot") {
       document = createSnapshotComposition({ root: this.projectRoot, storage: this.storage, document, encoding: this.bundleEncoding, layout: this.snapshotLayout }).document;
     }
     if (this.snapshotEncoding === "git") {
@@ -2940,7 +2941,7 @@ export async function prepareGraphProjection({ projectRoot, storage = null, grap
     verifyTemporalProvenanceGraph(localSnapshotEntry.document);
     if (graphProjectionCanonicalJson(localSnapshotEntry.document) !== graphProjectionCanonicalJson(graph)) fail("Local publication mirror differs from prepared graph.", "GRAPH_PROJECTION_SNAPSHOT_CONFLICT");
   }
-  return { selected, publicationAdapter, remotePublication, graph, storage, snapshotEntry, localSnapshotEntry, existing: Boolean(existing), pointer: pointerFor(graph, storage) };
+  return { selected, publicationAdapter, remotePublication, graph, storage, snapshotEntry, localSnapshotEntry, existing: Boolean(existing), pointer: pointerFor(graph, storage, snapshotReaderRequirements(localSnapshotEntry)) };
 }
 
 export function publishPreparedGraphProjection(prepared) {

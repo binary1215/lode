@@ -11,6 +11,24 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.75 — publication tracked separately
+
+- Default complete new local World/Graph writes to coalesced `chunked-code-v3`
+  (physical schema 3). Retain old whole/v1/v2 originals and reuse unchanged IDs
+  without conversion. Index, history, Compiler, Explorer, CLI/MCP and typed GC
+  reconstruct and verify the same exact semantic evidence.
+- Prioritize storage over latency by explicit user choice: a paired 48-file
+  synthetic case cut one-line new bytes by 75.7%, with first generation 28% slower.
+  A four-file case used 28% more first-write bytes, took 22% longer initially
+  and 23% longer for code refresh. No universal speed or Host/model claim.
+- Separate Core readiness from bounded advisory storage-reader requirements and
+  distinguish observed physical file bytes from snapshot-only or reclaimable bytes.
+  Preserve typed verification, permission failures, cancellation and GC deadlines.
+- Upgrade only exact known generated ignore files, preserve user edits and relevant
+  exceptions, and add separately labelled retained-history rules without untracking.
+  Bound descriptor reads during file growth and reduce temporary relation-hash
+  allocations without changing their canonical output.
+
 ## 0.3.0-beta.74 — publication tracked separately
 
 - Use the existing controlled cleanup clock for the native queued-write/EOF
