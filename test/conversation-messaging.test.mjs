@@ -17,6 +17,7 @@ import {
 import { claudeWireLines, deliverClaudeInbox, normalizeClaudeSocketPath, readClaudePeerToken, claudeSocketDigest } from "../scripts/lib/conversation-messaging-claude.mjs";
 import { ancestorsFromPsTable, codexControlSocket, codexTransportPlan, collectAncestors, deliverCodexTurn, resolveCodexWindowsTarget } from "../scripts/lib/conversation-messaging-codex.mjs";
 import { deliverOpenCodePrompt } from "../scripts/lib/conversation-messaging-opencode.mjs";
+import { conversationHostDirectory } from "../scripts/lib/conversation-mailbox-storage.mjs";
 import { processStartId } from "../scripts/lib/process-exists.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
@@ -336,7 +337,7 @@ function runNode(script, environment) {
   });
 }
 
-test("list stays read-only and a real lifecycle hook opens and joins the mailbox", async t => {
+test("list stays read-only and a real lifecycle hook joins without opening a mailbox", async t => {
   const { root, environment } = isolated(t);
   const before = fs.existsSync(path.join(root, ".lode", "messaging"));
   assert.equal(before, false);
@@ -344,6 +345,8 @@ test("list stays read-only and a real lifecycle hook opens and joins the mailbox
   assert.equal(listed.self.address, "claude:claude-boot");
   assert.equal(fs.existsSync(path.join(root, ".lode", "messaging")), false);
   register(root, environment, caller("claude", "claude-boot"), { kind: "claude-next-prompt" }, Date.now);
+  assert.equal(fs.existsSync(path.join(root, ".lode", "messaging")), false);
+  await sendProjectConversation({ root, environment, caller: caller("claude", "claude-boot"), to: "codex:absent", body: "explicit synthetic send", waitMs: 0 });
   const ignoreFile = path.join(root, ".lode", ".gitignore");
   const originalIgnore = fs.readFileSync(ignoreFile, "utf8");
   const stripped = originalIgnore.replaceAll("/messaging/\n", "");
@@ -676,7 +679,7 @@ test("a clock three minutes behind does not delete another conversation", async 
       if (name.endsWith(".json")) fs.utimesSync(path.join(inboxRoot, slotName, name), ahead, ahead);
     }
   }
-  const presenceDir = path.join(root, ".lode", "messaging", "presence");
+  const presenceDir = path.join(conversationHostDirectory(environment, root), "registry", "presence");
   for (const name of fs.readdirSync(presenceDir)) {
     const file = path.join(presenceDir, name);
     const record = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -709,7 +712,7 @@ test("an expired queued message leaves the sender a notice", async t => {
       fs.utimesSync(file, old, old);
     }
   }
-  register(root, environment, caller("claude", "claude-expire"), { kind: "claude-next-prompt" }, Date.now);
+  await sendProjectConversation({ root, environment, caller: caller("claude", "claude-expire"), to: "codex:absent-retention-target", body: "explicit synthetic retention send", waitMs: 0 });
   const notice = prepareHookInjection({ runtime: "claude", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "claude-expire" }, environment });
   assert.match(notice.text, /notice: expired/);
   assert.match(notice.text, new RegExp(queued.id));
@@ -787,21 +790,21 @@ test("Windows Codex delivers Unicode socket paths without cmd.exe", async t => {
   assert.equal(calls[0].query.directory, koreanDir);
 });
 
-test("an existing project does not gain an untracked messaging gitignore", t => {
-  const { root } = isolated(t);
+test("an existing project does not gain an untracked messaging gitignore", async t => {
+  const { root, environment } = isolated(t);
   const parent = path.join(root, ".lode", ".gitignore");
   const original = fs.readFileSync(parent, "utf8").replaceAll("/messaging/\n", "");
   fs.writeFileSync(parent, original);
   const git = (args) => spawnSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true });
   assert.equal(git(["init"]).status, 0);
   assert.equal(git(["add", ".lode/.gitignore"]).status, 0);
-  register(root, { HOME: root, USERPROFILE: root }, caller("claude", "claude-ignore"), { kind: "claude-next-prompt" }, Date.now);
+  await sendProjectConversation({ root, environment, caller: caller("claude", "claude-ignore"), to: "codex:absent", body: "explicit synthetic send", waitMs: 0 });
   const nested = path.join(root, ".lode", "messaging", ".gitignore");
   assert.equal(fs.readFileSync(parent, "utf8"), original);
   assert.doesNotMatch(fs.readFileSync(nested, "utf8"), /!\.gitignore/);
   assert.doesNotMatch(git(["status", "--porcelain"]).stdout, /messaging/);
   fs.writeFileSync(nested, "# Live conversation mailbox, not canon.\n*\n!.gitignore\n");
-  register(root, { HOME: root, USERPROFILE: root }, caller("claude", "claude-ignore"), { kind: "claude-next-prompt" }, Date.now);
+  await sendProjectConversation({ root, environment, caller: caller("claude", "claude-ignore"), to: "codex:absent", body: "explicit synthetic send", waitMs: 0 });
   assert.equal(fs.readFileSync(nested, "utf8"), "# Live conversation mailbox, not canon.\n*\n");
   assert.equal(fs.readFileSync(parent, "utf8"), original);
   assert.doesNotMatch(git(["status", "--porcelain"]).stdout, /messaging/);
@@ -835,7 +838,7 @@ test("expiry notices collapse to one per sender and do not block a real message"
     fs.writeFileSync(path.join(inboxRoot, slotName, id + ".json"), JSON.stringify(message));
     fs.utimesSync(path.join(inboxRoot, slotName, id + ".json"), old, old);
   }
-  register(root, environment, caller("opencode", "ses-other"), { kind: "opencode-next-prompt" }, Date.now);
+  await sendProjectConversation({ root, environment, caller: caller("opencode", "ses-other"), to: "codex:absent-retention-target", body: "explicit synthetic retention send", waitMs: 0 });
   const senderSlot = fs.readdirSync(inboxRoot).flatMap(name => fs.readdirSync(path.join(inboxRoot, name)).filter(file => file.endsWith(".json")).map(file => path.join(inboxRoot, name, file)));
   const notices = senderSlot.map(file => JSON.parse(fs.readFileSync(file, "utf8"))).filter(message => message.notice === "expired");
   assert.equal(notices.length, 1);
@@ -857,7 +860,7 @@ test("expiry notices collapse to one per sender and do not block a real message"
 test("a presence twenty-three hours ahead is not reachable and is not deleted", async t => {
   const { root, environment } = isolated(t);
   register(root, environment, caller("codex", "codex-ahead"), { kind: "codex-next-prompt" }, () => Date.now() + 23 * 60 * 60 * 1000);
-  const presenceDir = path.join(root, ".lode", "messaging", "presence");
+  const presenceDir = path.join(conversationHostDirectory(environment, root), "registry", "presence");
   const before = fs.readdirSync(presenceDir).length;
   const listed = listProjectConversations({ root, caller: caller("claude", "claude-now"), environment, now: Date.now });
   assert.equal(listed.conversations.some(row => row.address === "codex:codex-ahead"), false);
@@ -889,7 +892,7 @@ test("messages stamped far in the future on both clocks expire", async t => {
     fs.writeFileSync(file, JSON.stringify(message));
     fs.utimesSync(file, ahead, ahead);
   }
-  register(root, environment, caller("claude", "claude-future-msg"), { kind: "claude-next-prompt" }, Date.now);
+  await sendProjectConversation({ root, environment, caller: caller("claude", "claude-future-msg"), to: "codex:absent-retention-target", body: "explicit synthetic retention send", waitMs: 0 });
   const kept = fs.readdirSync(inboxRoot).some(slotName => fs.existsSync(path.join(inboxRoot, slotName, queued.id + ".json")));
   assert.equal(kept, false);
 });
@@ -1083,8 +1086,80 @@ test("four processes can rewrite one presence without ENOENT or a lost file", as
     assert.equal(result.out, "ok");
     assert.equal(result.err.includes("ENOENT"), false);
   }
-  const presence = fs.readdirSync(path.join(root, ".lode", "messaging", "presence")).filter(name => name.endsWith(".json"));
+  const presence = fs.readdirSync(path.join(conversationHostDirectory(environment, root), "registry", "presence")).filter(name => name.endsWith(".json"));
   assert.equal(presence.length, 1);
-  const record = JSON.parse(fs.readFileSync(path.join(root, ".lode", "messaging", "presence", presence[0]), "utf8"));
+  const record = JSON.parse(fs.readFileSync(path.join(conversationHostDirectory(environment, root), "registry", "presence", presence[0]), "utf8"));
   assert.equal(record.address, "claude:claude-race");
+});
+
+test("barrier: stale recovery cannot overwrite another caller's admitted handoff", async t => {
+  for (const phase of ["before-commit", "after-commit"]) await t.test(phase, async t => {
+  const { root, base, environment } = isolated(t);
+  register(root, environment, caller("codex", "barrier"), { kind: "codex-next-prompt" }, Date.now);
+  const queued = await sendProjectConversation({ root, environment, caller: caller("claude", "sender"),
+    to: "codex:barrier", body: "synthetic barrier payload", waitMs: 0, deliver: async () => ({ outcome: "unavailable" }) });
+  const box = path.join(root, ".lode", "messaging"), target = crypto.createHash("sha256").update("codex:barrier").digest("hex");
+  const inbox = path.join(box, "inbox", target, queued.id + ".json"), inflight = path.join(box, "inflight", target, queued.id + ".json");
+  fs.mkdirSync(path.dirname(inflight), { recursive: true });
+  register(root, environment, caller("codex", "independent"), { kind: "codex-next-prompt" }, Date.now);
+  await sendProjectConversation({ root, environment, caller: caller("claude", "sender"), to: "codex:independent",
+    body: "independent recipient", waitMs: 0, deliver: async () => ({ outcome: "unavailable" }) });
+  const old = new Date(Date.now() - 60_000);
+  const original = JSON.parse(fs.readFileSync(inbox, "utf8"));
+  fs.writeFileSync(inbox, JSON.stringify({ ...original, claim: { token: "old-stale-token", pid: 1, at: old.toISOString() } }));
+  fs.renameSync(inbox, inflight); fs.utimesSync(inflight, old, old);
+  const ready = path.join(base, "a-ready"), done = path.join(base, "b-done"), receipts = path.join(base, "handoffs");
+  const beforeDigest = crypto.createHash("sha256").update(fs.readFileSync(inflight)).digest("hex");
+  const common = `
+    import fs from "node:fs";
+    import { prepareHookInjection } from ${JSON.stringify(new URL("../scripts/lib/conversation-messaging.mjs", import.meta.url).href)};
+    const environment = ${JSON.stringify(environment)};
+    const input = { runtime: "codex", environment, event: { hook_event_name: "UserPromptSubmit", cwd: ${JSON.stringify(root)}, session_id: "barrier" } };
+  `;
+  const a = runNode(common + `
+    const open = fs.openSync; let paused = false;
+    fs.openSync = function(file, ...rest) {
+      if (!paused && String(file).endsWith(".writing") && String(file).includes(${JSON.stringify(path.dirname(inflight))})) {
+        paused = true; fs.writeFileSync(${JSON.stringify(ready)}, "ready");
+        const until = Date.now() + 10000, pause = new Int32Array(new SharedArrayBuffer(4));
+        while (!fs.existsSync(${JSON.stringify(done)})) {
+          if (Date.now() >= until) throw Error("fixture barrier timeout");
+          Atomics.wait(pause, 0, 0, 5);
+        }
+      }
+      return open.call(this, file, ...rest);
+    };
+    const prepared = prepareHookInjection(input);
+    if (prepared) { fs.appendFileSync(${JSON.stringify(receipts)}, "A\\n"); prepared.commit(); }
+    process.stdout.write(prepared ? "got" : "miss");
+  `, environment);
+  const deadline = Date.now() + 10000;
+  while (!fs.existsSync(ready) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+  if (!fs.existsSync(ready)) { fs.writeFileSync(done, "release"); const failed = await a; assert.fail("A barrier missing: " + JSON.stringify(failed)); }
+  const inventory = directory => fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory()
+    ? inventory(path.join(directory, entry.name)).map(row => entry.name + "/" + row)
+    : [entry.name + ":" + crypto.createHash("sha256").update(fs.readFileSync(path.join(directory, entry.name))).digest("hex")]).sort();
+  const beforeList = inventory(root);
+  listProjectConversations({ root, environment });
+  assert.deepEqual(inventory(root), beforeList);
+  const independent = prepareHookInjection({ runtime: "codex", environment,
+    event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "independent" } });
+  assert.match(independent.text, /independent recipient/); independent.commit();
+  const b = await runNode(common + `
+    try {
+      const prepared = prepareHookInjection(input);
+      if (prepared) { fs.appendFileSync(${JSON.stringify(receipts)}, "B\\n"); ${phase === "after-commit" ? "prepared.commit();" : ""} }
+      process.stdout.write(prepared ? "got" : "miss");
+    } finally { fs.writeFileSync(${JSON.stringify(done)}, "done"); }
+  `, environment);
+  const first = await a;
+  t.diagnostic(JSON.stringify({ barrier: "old-claim-read-to-publication", phase, beforeDigest, a: first, b, handoffs: fs.existsSync(receipts) ? fs.readFileSync(receipts, "utf8") : "" }));
+  assert.equal(first.code, 0, first.err); assert.equal(b.code, 0, b.err);
+  assert.deepEqual([first.out, b.out].sort(), ["got", "miss"]);
+  assert.equal(fs.readFileSync(receipts, "utf8").trim().split("\n").length, 1);
+  assert.equal(prepareHookInjection({ runtime: "codex", environment, event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "barrier" } }), null);
+  const archived = path.join(box, "archive", target, queued.id + ".json");
+  const afterDigest = crypto.createHash("sha256").update(fs.readFileSync(archived)).digest("hex");
+  t.diagnostic(JSON.stringify({ phase, afterDigest, handedToHost: JSON.parse(fs.readFileSync(archived)).handedToHost }));
+  });
 });

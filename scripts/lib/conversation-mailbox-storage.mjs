@@ -16,21 +16,43 @@ export function assertConversationTarget(check) {
   }
 }
 
-// P5 local mailbox I/O. Check the selected Project and every physical ancestor
+// P5 confined mailbox/Host-registry I/O. Check the selected Project and every physical ancestor
 // at each operation, including after an await. This is not an OS sandbox or an
 // atomicity guarantee against an arbitrary non-cooperating filesystem writer.
+export function conversationHostDirectory(environment, projectRoot) {
+  if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) return null;
+  const digest = crypto.createHash("sha256").update(path.resolve(projectRoot)).digest("hex");
+  const home = environment?.HOME || environment?.USERPROFILE;
+  if (typeof home === "string" && path.isAbsolute(home)) return path.join(home, ".local", "state", "lode-agent-core", "conversation-tickets", digest);
+  const operational = environment?.LODE_AGENT_OPERATIONAL_STATE_ROOT || environment?.HEAD_AGENT_OPERATIONAL_STATE_ROOT;
+  return typeof operational === "string" && path.isAbsolute(operational) ? path.join(operational, "conversation-tickets", digest) : null;
+}
+
+export function conversationPresenceStorage(storage, environment) {
+  const directory = conversationHostDirectory(environment, storage.projectRoot);
+  if (!directory) fail("CONVERSATION_REGISTRATION_KEY_UNAVAILABLE");
+  const base = path.join(directory, "registry");
+  return { directory: base, io: confinedStorage(storage, path.parse(base).root, base) };
+}
+
 export function conversationMailboxStorage(storage) {
-  const root = storage.projectRoot, base = path.join(root, storage.directory, "messaging");
+  return confinedStorage(storage, storage.projectRoot, path.join(storage.projectRoot, storage.directory, "messaging"));
+}
+
+function confinedStorage(storage, root, base) {
   const rootIdentity = fs.lstatSync(root, { bigint: true });
+  const projectIdentity = fs.lstatSync(storage.projectRoot, { bigint: true });
   const markerIdentity = fs.lstatSync(storage.projectFile, { bigint: true });
   const observed = new Map();
-  function check(file, { directory = false } = {}) {
+  function check(file, { directory = false, ancestor = false } = {}) {
     const currentRoot = fs.lstatSync(root, { bigint: true });
     if (!currentRoot.isDirectory() || currentRoot.isSymbolicLink() || !same(rootIdentity, currentRoot)) fail("CONVERSATION_PATH_CHANGED");
+    const currentProject = fs.lstatSync(storage.projectRoot, { bigint: true });
+    if (!currentProject.isDirectory() || currentProject.isSymbolicLink() || !same(projectIdentity, currentProject)) fail("CONVERSATION_PATH_CHANGED");
     const target = path.resolve(file), rel = path.relative(root, target);
     const mailboxRel = path.relative(base, target);
     if (rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)
-      || mailboxRel === ".." || mailboxRel.startsWith(".." + path.sep) || path.isAbsolute(mailboxRel)) fail("CONVERSATION_PATH_ESCAPE");
+      || (!ancestor || !isAncestor(target, base)) && (mailboxRel === ".." || mailboxRel.startsWith(".." + path.sep) || path.isAbsolute(mailboxRel))) fail("CONVERSATION_PATH_ESCAPE");
     let current = root;
     for (const part of rel.split(path.sep)) {
       current = path.join(current, part);
@@ -51,16 +73,18 @@ export function conversationMailboxStorage(storage) {
       || marker.size !== markerIdentity.size || marker.ctimeNs !== markerIdentity.ctimeNs || marker.mtimeNs !== markerIdentity.mtimeNs) fail("PROJECT_IDENTITY_MISMATCH");
     return target;
   }
+  function isAncestor(parent, child) { const relative = path.relative(parent, child); return relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative); }
   function mkdir(directory) {
     check(directory, { directory: true });
     // Never recursively follow a newly inserted intermediate directory.
-    const rel = path.relative(base, directory);
-    let current = base;
+    const anchor = fs.existsSync(base) ? base : root;
+    const rel = path.relative(anchor, directory);
+    let current = anchor;
     for (const part of ["", ...rel.split(path.sep).filter(Boolean)]) {
       if (part) current = path.join(current, part);
-      check(current, { directory: true });
-      try { fs.mkdirSync(current); } catch (e) { if (e.code !== "EEXIST") throw e; }
-      check(current, { directory: true });
+      check(current, { directory: true, ancestor: true });
+      if (!fs.existsSync(current)) { try { fs.mkdirSync(current, { mode: 0o700 }); } catch (e) { if (e.code !== "EEXIST") throw e; } }
+      check(current, { directory: true, ancestor: true });
     }
   }
   function opened(file, flags, use) {

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
-import { conversationMailboxStorage, assertConversationTarget } from "./conversation-mailbox-storage.mjs";
+import { conversationMailboxStorage, conversationPresenceStorage, conversationHostDirectory, assertConversationTarget } from "./conversation-mailbox-storage.mjs";
 import { withLocalMutation } from "./project-mutation-lock.mjs";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { claudeChannel, claudeDeliver, claudeLive } from "./conversation-messaging-claude.mjs";
@@ -114,18 +114,50 @@ function openProject(root) {
 }
 
 function slot(address) { return crypto.createHash("sha256").update(address).digest("hex"); }
+// Reuse the existing P5 nonce-owned local mutation for short, same-recipient
+// filesystem transitions only. No provider await or Host handoff holds this lock.
+function withMailboxSlot(project, slotName, operation) {
+  if (!/^[a-f0-9]{64}$/u.test(slotName)) fail("CONVERSATION_ADDRESS");
+  const directory = path.join(project.messaging, ".delivery-locks");
+  project.io.mkdirSync(directory);
+  try {
+    return withLocalMutation({ directory: path.join(directory, slotName + ".lock"), timeoutMs: 0 }, () => {
+      project.io.assertCurrent();
+      return operation();
+    });
+  } catch (error) { if (error.code === "PROJECT_MUTATION_BUSY") return null; throw error; }
+}
+function hasAddressMessages(project, address) {
+  for (const kind of ["inbox", "inflight"]) {
+    try { if (project.io.readdirSync(area(project, kind, address)).some(name => name.endsWith(".json") || name.endsWith(".json.owned"))) return true; }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
+  return false;
+}
 function area(project, kind, address) { return path.join(project.messaging, kind, slot(address)); }
 function messageFile(project, kind, address, id) {
   if (!MESSAGE_ID.test(id)) fail("CONVERSATION_MESSAGE_ID");
   return path.join(area(project, kind, address), id + ".json");
 }
+const presenceStores = new WeakMap();
+function presenceProject(project, environment) {
+  if (presenceStores.has(project)) return presenceStores.get(project);
+  const registry = conversationPresenceStorage(project.storage, environment);
+  const selected = { ...project, messaging: registry.directory, io: registry.io };
+  presenceStores.set(project, selected);
+  return selected;
+}
+function readPresence(project, address, environment) {
+  const registry = presenceProject(project, environment);
+  return readJson(registry, presenceFile(registry, address));
+}
 function presenceFile(project, address) { return path.join(project.messaging, "presence", slot(address) + ".json"); }
 
 // Host-local tamper evidence only. A process controlling this OS user's key
 // can sign another tuple. Neither the signature nor a message grants authority.
-function presenceMac(project, record, environment, create = false) {
+function presenceMac(project, record, environment, create = false, lockTimeoutMs = 10_000) {
   let key;
-  try { key = ticketKey(environment, project.root, create); } catch (error) { if (create) throw error; return null; }
+  try { key = ticketKey(environment, project.root, create, lockTimeoutMs); } catch (error) { if (create) throw error; return null; }
   if (!key) return null;
   const tuple = ["lode-conversation-registration-v1", project.projectId, project.root, project.directory,
     record.runtime, record.address, record.nativeSessionId, record.agentId ?? null, record.subagent === true,
@@ -217,6 +249,9 @@ function publicConversation(record, live) {
 }
 
 function listPresence(project, environment = process.env, diagnostics = null) {
+  // Old Project-side registrations are evidence only; listing never migrates them.
+  if (diagnostics) diagnostics.unverified += names(project, path.join(project.messaging, "presence")).filter(name => /^[a-f0-9]{64}\.json$/u.test(name)).length;
+  project = presenceProject(project, environment);
   return names(project, path.join(project.messaging, "presence")).flatMap(name => {
     if (!/^[a-f0-9]{64}\.json$/u.test(name)) return [];
     const record = readJson(project, path.join(project.messaging, "presence", name));
@@ -311,34 +346,36 @@ function publishExpiryNotices(project, messages, now) {
     groups.get(key).ids.push(message.id);
   }
   for (const group of groups.values()) {
-    const directory = area(project, "inbox", group.sender.address);
-    let existing = null;
-    for (const entry of jsonFiles(project, directory)) {
-      const notice = readJson(project, entry.file);
-      if (notice?.notice === "expired" && notice.originalTo === group.target) { existing = { file: entry.file, notice }; break; }
-    }
-    const prior = Array.isArray(existing?.notice?.expiredIds) ? existing.notice.expiredIds : (existing?.notice?.expiredId ? [existing.notice.expiredId] : []);
-    const ids = [...new Set([...prior, ...group.ids])].filter(id => MESSAGE_ID.test(id));
-    const shown = ids.slice(0, CONVERSATION_LIMITS.noticeIdPreview);
-    const notice = {
-      schemaVersion: 1,
-      id: existing?.notice?.id && MESSAGE_ID.test(existing.notice.id) ? existing.notice.id : "msg-" + crypto.randomBytes(12).toString("hex"),
-      projectRoot: project.root,
-      notice: "expired",
-      expiredCount: ids.length,
-      expiredId: shown[0],
-      expiredIds: shown,
-      originalTo: group.target,
-      from: group.from,
-      to: group.to,
-      body: `${ids.length} queued message${ids.length === 1 ? "" : "s"} expired before delivery to ${group.target}.`,
-      createdAt: existing?.notice?.createdAt || stamp(now),
-      state: "queued",
-      evidence: "expired",
-      handedToHost: false,
-    };
-    if (existing) writeJson(project, existing.file, notice);
-    else enqueue(project, notice);
+    withMailboxSlot(project, slot(group.sender.address), () => {
+      const directory = area(project, "inbox", group.sender.address);
+      let existing = null;
+      for (const entry of jsonFiles(project, directory)) {
+        const notice = readJson(project, entry.file);
+        if (notice?.notice === "expired" && notice.originalTo === group.target) { existing = { file: entry.file, notice }; break; }
+      }
+      const prior = Array.isArray(existing?.notice?.expiredIds) ? existing.notice.expiredIds : (existing?.notice?.expiredId ? [existing.notice.expiredId] : []);
+      const ids = [...new Set([...prior, ...group.ids])].filter(id => MESSAGE_ID.test(id));
+      const shown = ids.slice(0, CONVERSATION_LIMITS.noticeIdPreview);
+      const notice = {
+        schemaVersion: 1,
+        id: existing?.notice?.id && MESSAGE_ID.test(existing.notice.id) ? existing.notice.id : "msg-" + crypto.randomBytes(12).toString("hex"),
+        projectRoot: project.root,
+        notice: "expired",
+        expiredCount: ids.length,
+        expiredId: shown[0],
+        expiredIds: shown,
+        originalTo: group.target,
+        from: group.from,
+        to: group.to,
+        body: `${ids.length} queued message${ids.length === 1 ? "" : "s"} expired before delivery to ${group.target}.`,
+        createdAt: existing?.notice?.createdAt || stamp(now),
+        state: "queued",
+        evidence: "expired",
+        handedToHost: false,
+      };
+      if (existing) writeJson(project, existing.file, notice);
+      else enqueue(project, notice);
+    });
   }
 }
 
@@ -347,22 +384,25 @@ function expireStored(project, kind, now) {
   const rootDir = path.join(project.messaging, kind);
   const expired = [];
   for (const slotName of names(project, rootDir)) {
-    for (const entry of jsonFiles(project, path.join(rootDir, slotName))) {
-      const message = readJson(project, entry.file);
-      if (kind === "inflight" && message) {
-        const action = disposeClaim(project, message, entry.file, now);
-        if (action === "unknown") { preserveUnknown(project, message, "delivery-owner-lost"); continue; }
-        if (action === "keep" || (action === "release" && storedAgeMs(project, entry.file, message.createdAt, now) <= CONVERSATION_LIMITS.archiveTtlMs)) continue;
-        if (action === "archive") {
-          try { archiveClaimFile(project, message, entry.file); } catch { /* The owner is finishing the handoff. */ }
-          continue;
+    if (!/^[a-f0-9]{64}$/u.test(slotName)) continue;
+    withMailboxSlot(project, slotName, () => {
+      for (const entry of jsonFiles(project, path.join(rootDir, slotName))) {
+        const message = readJson(project, entry.file);
+        if (kind === "inflight" && message) {
+          const action = disposeClaim(project, message, entry.file, now);
+          if (action === "unknown") { preserveUnknown(project, message, "delivery-owner-lost"); continue; }
+          if (action === "keep" || (action === "release" && storedAgeMs(project, entry.file, message.createdAt, now) <= CONVERSATION_LIMITS.archiveTtlMs)) continue;
+          if (action === "archive") {
+            try { archiveClaimFile(project, message, entry.file); } catch { /* The owner is finishing the handoff. */ }
+            continue;
+          }
+        }
+        if (!message || storedAgeMs(project, entry.file, message.createdAt, now) > CONVERSATION_LIMITS.archiveTtlMs || kind === "inflight") {
+          if (message && (kind === "inbox" || kind === "inflight") && message.notice !== "expired" && message.handedToHost !== true && !message.externalAttempt) expired.push(message);
+          try { fs.rmSync(entry.file, { force: true }); } catch { /* Retention is best-effort. */ }
         }
       }
-      if (!message || storedAgeMs(project, entry.file, message.createdAt, now) > CONVERSATION_LIMITS.archiveTtlMs || kind === "inflight") {
-        if (message && (kind === "inbox" || kind === "inflight") && message.notice !== "expired" && message.handedToHost !== true && !message.externalAttempt) expired.push(message);
-        try { fs.rmSync(entry.file, { force: true }); } catch { /* Retention is best-effort. */ }
-      }
-    }
+    });
   }
   publishExpiryNotices(project, expired, now);
 }
@@ -371,16 +411,19 @@ function trimSlotArchives(project) {
   const fs = project.io;
   const archiveRoot = path.join(project.messaging, "archive");
   for (const slotName of names(project, archiveRoot)) {
-    let usage = slotUsage(project, slotName);
-    const archives = jsonFiles(project, path.join(archiveRoot, slotName)).sort((a, b) => a.mtimeMs - b.mtimeMs);
-    for (const entry of archives) {
-      if (usage.total <= CONVERSATION_LIMITS.maxMailboxBytes && usage.count <= CONVERSATION_LIMITS.maxStoredMessages) break;
-      try {
-        fs.rmSync(entry.file, { force: true });
-        usage.total -= entry.size;
-        usage.count -= 1;
-      } catch { /* The next send still enforces the cap. */ }
-    }
+    if (!/^[a-f0-9]{64}$/u.test(slotName)) continue;
+    withMailboxSlot(project, slotName, () => {
+      let usage = slotUsage(project, slotName);
+      const archives = jsonFiles(project, path.join(archiveRoot, slotName)).sort((a, b) => a.mtimeMs - b.mtimeMs);
+      for (const entry of archives) {
+        if (usage.total <= CONVERSATION_LIMITS.maxMailboxBytes && usage.count <= CONVERSATION_LIMITS.maxStoredMessages) break;
+        try {
+          fs.rmSync(entry.file, { force: true });
+          usage.total -= entry.size;
+          usage.count -= 1;
+        } catch { /* The next send still enforces the cap. */ }
+      }
+    });
   }
 }
 
@@ -394,6 +437,17 @@ function retainMailbox(project, now) {
       try { fs.rmSync(file, { force: true }); } catch { /* A consumed ticket is already gone. */ }
     }
   }
+  const spentDir = path.join(project.messaging, "tickets-consumed");
+  for (const name of names(project, spentDir)) {
+    const file = path.join(spentDir, name), record = readJson(project, file);
+    if (Number.isFinite(record?.expiresAt) && record.expiresAt <= nowMs(now)) fs.rmSync(file);
+  }
+  for (const kind of ["inbox", "inflight", "archive"]) expireStored(project, kind, now);
+  trimSlotArchives(project);
+}
+
+function retainPresence(project, now) {
+  const fs = project.io;
   const presenceDir = path.join(project.messaging, "presence");
   for (const name of names(project, presenceDir)) {
     const file = path.join(presenceDir, name);
@@ -405,13 +459,6 @@ function retainMailbox(project, now) {
       try { fs.rmSync(file, { force: true }); } catch { /* List and send both ignore a stale record. */ }
     }
   }
-  const spentDir = path.join(project.messaging, "tickets-consumed");
-  for (const name of names(project, spentDir)) {
-    const file = path.join(spentDir, name), record = readJson(project, file);
-    if (Number.isFinite(record?.expiresAt) && record.expiresAt <= nowMs(now)) fs.rmSync(file);
-  }
-  for (const kind of ["inbox", "inflight", "archive"]) expireStored(project, kind, now);
-  trimSlotArchives(project);
 }
 
 function mailboxAccepts(project, address, extraBytes) {
@@ -419,21 +466,21 @@ function mailboxAccepts(project, address, extraBytes) {
   return usage.count < CONVERSATION_LIMITS.maxStoredMessages && usage.total + extraBytes <= CONVERSATION_LIMITS.maxMailboxBytes;
 }
 
-export function registerConversationPresence({ root, identity, channel, environment = process.env, now = Date.now } = {}) {
+export function registerConversationPresence({ root, identity, channel, environment = process.env, now = Date.now, lockTimeoutMs = 10_000 } = {}) {
   const address = formatAddress(identity);
   if (!address) fail("CONVERSATION_SUBAGENT_IDENTITY_REQUIRED", "A subagent needs its own address and cannot register as its parent.");
-  const project = openProject(root);
-  ensureMailbox(project);
+  const project = presenceProject(openProject(root), environment);
+  project.io.mkdirSync(project.messaging);
   const locks = path.join(project.messaging, ".registration-locks");
   project.io.mkdirSync(locks);
-  return withLocalMutation({ directory: path.join(locks, slot(address) + ".lock") }, () => {
+  return withLocalMutation({ directory: path.join(locks, slot(address) + ".lock"), timeoutMs: lockTimeoutMs }, () => {
     project.io.assertCurrent();
-    return registerPresenceRecord({ project, identity, channel, environment, now, address });
+    return registerPresenceRecord({ project, identity, channel, environment, now, address, lockTimeoutMs });
   });
 }
 
-function registerPresenceRecord({ project, identity, channel, environment, now, address }) {
-  retainMailbox(project, now);
+function registerPresenceRecord({ project, identity, channel, environment, now, address, lockTimeoutMs }) {
+  retainPresence(project, now);
   const file = presenceFile(project, address);
   const existing = readJson(project, file);
   if (existing && existing.projectRoot === project.root && existing.subagent === false && identity.subagent === true) {
@@ -452,7 +499,7 @@ function registerPresenceRecord({ project, identity, channel, environment, now, 
     projectId: project.projectId, storageDirectory: project.directory,
     registrationGeneration: sameRegistration ? existing.registrationGeneration : crypto.randomUUID(),
   };
-  record.registrationMac = presenceMac(project, record, environment, true);
+  record.registrationMac = presenceMac(project, record, environment, true, lockTimeoutMs);
   if (!record.registrationMac) fail("CONVERSATION_REGISTRATION_KEY_UNAVAILABLE");
   try { writeJson(project, file, record); }
   catch (error) {
@@ -489,15 +536,8 @@ function validTicketKey(text) {
 // from forging the caller. HOME is required when it is set; the operational
 // root is only a fallback when no home directory is available.
 function ticketKeyFile(environment, projectRoot) {
-  if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) return null;
-  const digest = crypto.createHash("sha256").update(path.resolve(projectRoot)).digest("hex");
-  const home = environment?.HOME || environment?.USERPROFILE;
-  if (typeof home === "string" && path.isAbsolute(home)) {
-    return path.join(home, ".local", "state", "lode-agent-core", "conversation-tickets", digest, "key");
-  }
-  const operational = environment?.LODE_AGENT_OPERATIONAL_STATE_ROOT || environment?.HEAD_AGENT_OPERATIONAL_STATE_ROOT;
-  if (typeof operational === "string" && path.isAbsolute(operational)) return path.join(operational, "conversation-tickets", digest, "key");
-  return null;
+  const directory = conversationHostDirectory(environment, projectRoot);
+  return directory ? path.join(directory, "key") : null;
 }
 
 function tightenPrivate(file, mode) {
@@ -527,7 +567,7 @@ function readTicketKey(file) {
   } finally { fs.closeSync(fd); }
 }
 
-function ticketKey(environment, projectRoot, create = true) {
+function ticketKey(environment, projectRoot, create = true, lockTimeoutMs = 10_000) {
   const configured = environment?.LODE_CONVERSATION_TICKET_SECRET;
   if (configured !== undefined) {
     if (typeof configured !== "string" || !validTicketKey(configured)) fail("CONVERSATION_TICKET_KEY_INVALID");
@@ -541,7 +581,7 @@ function ticketKey(environment, projectRoot, create = true) {
   const parent = fs.lstatSync(directory);
   if (!parent.isDirectory() || parent.isSymbolicLink()) fail("CONVERSATION_TICKET_KEY_INVALID");
   tightenPrivate(directory, 0o700);
-  return withLocalMutation({ directory: path.join(directory, "key-access.lock") }, () => {
+  return withLocalMutation({ directory: path.join(directory, "key-access.lock"), timeoutMs: lockTimeoutMs }, () => {
     const existing = readTicketKey(file);
     if (existing) return existing;
     const key = crypto.randomBytes(32).toString("hex");
@@ -663,7 +703,8 @@ function claimDisposition(message) {
 
 function ownsClaim(current, message) {
   const token = message?.claim?.token;
-  return Boolean(token && current?.id === message.id && current.claim?.token === token && current.handedToHost !== true);
+  return Boolean(token && current?.id === message.id && current.claim?.token === token && current.handedToHost !== true
+    && JSON.stringify(current.externalAttempt ?? null) === JSON.stringify(message.externalAttempt ?? null));
 }
 
 // Invariants: inbox has no live claim; inflight .json is held by claim.token;
@@ -764,6 +805,10 @@ function claimMessage(project, message, now = Date.now) {
 }
 
 function claimAddress(project, address, now = Date.now) {
+  if (!hasAddressMessages(project, address)) return { claimed: [], remaining: 0 };
+  return withMailboxSlot(project, slot(address), () => claimAddressLocked(project, address, now)) || { claimed: [], remaining: 0 };
+}
+function claimAddressLocked(project, address, now = Date.now) {
   recoverInflight(project, address, now);
   const claimed = [];
   const waiting = names(project, area(project, "inbox", address)).filter(name => MESSAGE_ID.test(name.slice(0, -5))).sort();
@@ -776,6 +821,9 @@ function claimAddress(project, address, now = Date.now) {
 }
 
 function markHanded(project, message, state, evidence, receipt = null) {
+  return withMailboxSlot(project, slot(message.to.address), () => markHandedLocked(project, message, state, evidence, receipt));
+}
+function markHandedLocked(project, message, state, evidence, receipt = null) {
   const fs = project.io;
   const inflight = messageFile(project, "inflight", message.to.address, message.id);
   const holding = inflight + ".owned";
@@ -800,10 +848,13 @@ function markHanded(project, message, state, evidence, receipt = null) {
 }
 
 function releaseClaim(project, message) {
+  return withMailboxSlot(project, slot(message.to.address), () => releaseClaimLocked(project, message));
+}
+function releaseClaimLocked(project, message) {
   const fs = project.io;
   const inflight = messageFile(project, "inflight", message.to.address, message.id);
   const current = readJson(project, inflight);
-  if (!ownsClaim(current, message)) return;
+  if (!ownsClaim(current, message)) return false;
   const inbox = messageFile(project, "inbox", message.to.address, message.id);
   const released = { ...current, handedToHost: false };
   delete released.claim;
@@ -812,10 +863,14 @@ function releaseClaim(project, message) {
     writeJson(project, inflight, released);
     fs.mkdirSync(path.dirname(inbox), { recursive: true });
     fs.renameSync(inflight, inbox);
-  } catch { /* Already archived or released. */ }
+    return true;
+  } catch { return false; /* Already archived or released; never claim queue success. */ }
 }
 
 function beginAttempt(project, message, now = Date.now) {
+  return withMailboxSlot(project, slot(message.to.address), () => beginAttemptLocked(project, message, now));
+}
+function beginAttemptLocked(project, message, now = Date.now) {
   const file = messageFile(project, "inflight", message.to.address, message.id);
   const current = readJson(project, file);
   if (!ownsClaim(current, message) || current.externalAttempt) fail("CONVERSATION_DELIVERY_OUTCOME_UNKNOWN");
@@ -825,6 +880,9 @@ function beginAttempt(project, message, now = Date.now) {
 }
 
 function preserveUnknown(project, message, evidence, state = "unknown") {
+  return withMailboxSlot(project, slot(message.to.address), () => preserveUnknownLocked(project, message, evidence, state));
+}
+function preserveUnknownLocked(project, message, evidence, state = "unknown") {
   const file = messageFile(project, "inflight", message.to.address, message.id);
   const current = readJson(project, file);
   if (!current || !ownsClaim(current, message) || !current.externalAttempt) return null;
@@ -898,19 +956,22 @@ export async function sendProjectConversation({ root, caller = null, environment
     body, replyTo: replyTo ?? null, createdAt: stamp(now), state: "queued", evidence: "inbox", handedToHost: false,
   };
   enqueue(project, message);
-  let owned = claimMessage(project, message, now);
+  let owned = withMailboxSlot(project, slot(target.address), () => {
+    const claimed = claimMessage(project, message, now);
+    return claimed?.claim?.token ? beginAttempt(project, claimed, now) : null;
+  });
   if (!owned?.claim?.token) return resultOf(message, "queued", "inbox");
   try {
     const assertTarget = () => assertConversationTarget(() => {
       project.io.assertCurrent();
-      const currentPresence = readJson(project, presenceFile(project, target.address));
+      const currentPresence = readPresence(project, target.address, environment);
       if (!verifiedPresence(project, currentPresence, path.basename(presenceFile(project, target.address)), environment)
         || currentPresence.registrationGeneration !== presence.registrationGeneration || JSON.stringify(currentPresence.channel) !== JSON.stringify(presence.channel)) fail("CONVERSATION_TARGET_CHANGED");
     });
-    owned = beginAttempt(project, owned, now);
     assertTarget();
     const attempt = await (deliver || defaultDeliver)({ message: owned, presence, environment, platform, signal, assertTarget });
     project.io.assertCurrent();
+    presenceProject(project, environment).io.assertCurrent();
     if (attempt?.outcome === "delivered" || attempt?.outcome === "sent") {
       const handed = markHanded(project, owned, attempt.outcome, attempt.evidence, attempt.receipt ?? null);
       if (!handed) return resultOf(owned, "unknown", "delivery-receipt-not-persisted");
@@ -920,7 +981,7 @@ export async function sendProjectConversation({ root, caller = null, environment
       preserveUnknown(project, owned, attempt?.evidence || "delivery-outcome-unknown");
       return resultOf(owned, "unknown", attempt?.evidence || "delivery-outcome-unknown");
     }
-    releaseClaim(project, owned);
+    if (!releaseClaim(project, owned)) return resultOf(owned, "unknown", "queue-handback-not-confirmed");
   } catch (error) {
     if (owned.externalAttempt) {
       const state = error.conversationTargetRefused ? "refused" : "unknown";
@@ -964,21 +1025,23 @@ export function registerHookPresence({ runtime, event, environment = process.env
   if (typeof event.cwd !== "string") return null;
   const identity = hookConversationIdentity(runtime, event);
   if (!identity) return null;
-  // Real Host lifecycle may register; observation-only callers do not open a mailbox.
-  if (!initialize) {
-    const project = openProject(event.cwd);
-    if (!project.io.existsSync(project.messaging)) return null;
-  }
+  // Recovery rendering and observation-only entry never publish a registry.
+  // The next ordinary prompt refreshes presence without a setup ritual.
+  if (!initialize || event.hook_event_name === "SessionStart" && event.source !== "startup") return null;
   let channel = { kind: runtime === "claude" ? "claude-prompt" : "codex-prompt" };
   try {
     if (runtime === "claude") channel = claudeChannel({ environment });
     if (runtime === "codex") channel = codexChannel({ environment, ancestors: collectAncestors({ platform, environment }) });
   } catch { /* A missing engine observation still leaves the prompt inbox. */ }
-  try { return registerConversationPresence({ root: event.cwd, identity, channel, environment, now }); }
+  try { return registerConversationPresence({ root: event.cwd, identity, channel, environment, now, lockTimeoutMs: 0 }); }
   catch { return null; }
 }
 
 function prepareAddressInjection(project, address, evidence, now) {
+  if (!hasAddressMessages(project, address)) return null;
+  return withMailboxSlot(project, slot(address), () => prepareAddressInjectionLocked(project, address, evidence, now));
+}
+function prepareAddressInjectionLocked(project, address, evidence, now) {
   const { claimed, remaining } = claimAddress(project, address, now);
   if (!claimed.length) return null;
   const attempts = claimed.map(message => beginAttempt(project, message, now));
@@ -1011,7 +1074,7 @@ export async function deliverQueuedOpenCode({ root, client, directory, environme
     const { claimed } = claimAddress(project, record.address, Date.now);
     for (const claimedMessage of claimed) {
       project.io.assertCurrent();
-      const currentPresence = readJson(project, presenceFile(project, record.address));
+      const currentPresence = readPresence(project, record.address, environment);
       const message = beginAttempt(project, claimedMessage);
       if (!verifiedPresence(project, currentPresence, path.basename(presenceFile(project, record.address)), environment) || currentPresence.registrationGeneration !== record.registrationGeneration || JSON.stringify(currentPresence.channel) !== JSON.stringify(record.channel)) {
         const refused = preserveUnknown(project, message, "CONVERSATION_TARGET_CHANGED", "refused"); if (refused) results.push(refused); continue;

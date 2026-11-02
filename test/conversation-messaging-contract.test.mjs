@@ -9,10 +9,10 @@ import { spawnSync } from "node:child_process";
 import { initializeProject } from "../scripts/lib/lode-core.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { resolveProjectStorage } from "../scripts/lib/project-storage-format.mjs";
-import { conversationMailboxStorage } from "../scripts/lib/conversation-mailbox-storage.mjs";
+import { conversationMailboxStorage, conversationHostDirectory } from "../scripts/lib/conversation-mailbox-storage.mjs";
 import { absoluteSystemExecutable, processBirth } from "../scripts/lib/native-session-process.mjs";
 import { ensureProjectStorageIgnore, ensureMessagingDirectoryIgnore } from "../scripts/lib/project-storage-ignore.mjs";
-import { registerConversationPresence, listProjectConversations, sendProjectConversation, writeOpenCodeCallerTicket, prepareHookInjection } from "../scripts/lib/conversation-messaging.mjs";
+import { registerConversationPresence, registerHookPresence, listProjectConversations, sendProjectConversation, writeOpenCodeCallerTicket, prepareHookInjection } from "../scripts/lib/conversation-messaging.mjs";
 import { deliverCodexTurn } from "../scripts/lib/conversation-messaging-codex.mjs";
 import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process-supervisor.mjs";
 import { deliverClaudeInbox } from "../scripts/lib/conversation-messaging-claude.mjs";
@@ -33,7 +33,7 @@ function fixture(t) {
   const mailbox = path.join(root, ".lode", "messaging");
   const register = (identity, channel = { kind: identity.runtime + "-next-prompt" }) => registerConversationPresence({ root, identity, channel, environment });
   const send = extra => sendProjectConversation({ root, environment, caller: who("claude", "sender"), to: "codex:receiver", body: "synthetic peer evidence", waitMs: 0, ...extra });
-  return { base, root, home, environment, mailbox, register, send };
+  return { base, root, home, environment, mailbox, registry: path.join(conversationHostDirectory(environment, root), "registry"), register, send };
 }
 function inventory(root) {
   if (!fs.existsSync(root)) return [];
@@ -59,14 +59,14 @@ test("generic sender heartbeat preserves each verified rich channel and registra
     listProjectConversations({ root: f.root, caller: id, environment: f.environment });
     assert.deepEqual(inventory(f.mailbox), filesBeforeList);
     await f.send({ caller: id, deliver: async () => ({ outcome: "unavailable" }) });
-    const stored = JSON.parse(fs.readFileSync(path.join(f.mailbox, "presence", hash(before.address) + ".json")));
+    const stored = JSON.parse(fs.readFileSync(path.join(f.registry, "presence", hash(before.address) + ".json")));
     assert.deepEqual(stored.channel, channel); assert.equal(stored.registrationGeneration, before.registrationGeneration);
   }
 });
 
 test("presence filename, native identity, channel and registration tamper never dispatch", async t => {
   const f = fixture(t), original = f.register(who("codex", "receiver"), { kind: "codex-immediate", socketPath: path.join(f.home, "registered.sock") });
-  const file = path.join(f.mailbox, "presence", hash(original.address) + ".json");
+  const file = path.join(f.registry, "presence", hash(original.address) + ".json");
   let calls = 0;
   for (const mutate of [x => x.nativeSessionId = "foreign-thread", x => x.runtime = "claude", x => x.channel.socketPath = path.join(f.home, "foreign.sock"), x => x.registrationGeneration = crypto.randomUUID()]) {
     const changed = structuredClone(original); mutate(changed); fs.writeFileSync(file, JSON.stringify(changed));
@@ -78,12 +78,12 @@ test("presence filename, native identity, channel and registration tamper never 
   assert.equal(calls, 0);
 });
 
-test("mailbox and intermediate-directory junctions cannot read or write an outside canary", t => {
+test("mailbox and intermediate-directory junctions cannot read or write an outside canary", async t => {
   const f = fixture(t), outside = path.join(f.base, "outside"); fs.mkdirSync(outside); fs.writeFileSync(path.join(outside, "canary"), "unchanged");
   fs.symlinkSync(outside, f.mailbox, process.platform === "win32" ? "junction" : "dir");
-  try { assert.throws(() => f.register(who("codex", "receiver")), /CONVERSATION_PATH_ESCAPE/); } finally { fs.unlinkSync(f.mailbox); }
+  try { await assert.rejects(() => f.send(), /CONVERSATION_PATH_ESCAPE/); } finally { fs.unlinkSync(f.mailbox); }
   f.register(who("codex", "receiver"));
-  const presence = path.join(f.mailbox, "presence"); fs.renameSync(presence, path.join(f.mailbox, "retained-presence"));
+  const presence = path.join(f.registry, "presence"); fs.renameSync(presence, path.join(f.registry, "retained-presence"));
   fs.symlinkSync(outside, presence, process.platform === "win32" ? "junction" : "dir");
   try { assert.throws(() => listProjectConversations({ root: f.root, environment: f.environment }), /CONVERSATION_PATH_ESCAPE/); } finally { fs.unlinkSync(presence); }
   assert.deepEqual(inventory(outside), ["canary:" + hash("unchanged")]);
@@ -131,6 +131,7 @@ test("lost turn/start receipt is unknown and never offered again to a prompt", a
 test("descriptor reads are byte-bounded and reject aliased files before decoding", t => {
   const f = fixture(t); f.register(who("codex", "receiver"));
   const io = conversationMailboxStorage(resolveProjectStorage(f.root)), file = path.join(f.mailbox, "large.json");
+  io.mkdirSync(f.mailbox);
   fs.writeFileSync(file, Buffer.alloc(65537)); assert.throws(() => io.readFileSync(file, "utf8"), /CONVERSATION_RECORD_TOO_LARGE/);
   const alias = path.join(f.mailbox, "alias.json"); fs.linkSync(file, alias);
   assert.throws(() => io.readFileSync(alias, "utf8"), /CONVERSATION_UNSAFE_FILE/);
@@ -190,8 +191,9 @@ test("Core does not queue a target refusal hidden behind a provider connection a
   assert.equal(prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: f.root, session_id: "receiver" }, environment: f.environment }), null);
 });
 
-test("Project copy evidence excludes mailbox bodies, tickets and live endpoint registrations", t => {
+test("Project copy evidence excludes mailbox bodies, tickets and live endpoint registrations", async t => {
   const f = fixture(t); f.register(who("codex", "receiver"));
+  await f.send();
   const copied = inspectCopiedProjectFiles({ root: f.root, directory: ".lode" });
   assert.equal(copied.files.some(file => file.path.startsWith(".lode/messaging/")), false);
   assert.ok(copied.excludedPaths.includes(".lode/messaging"));
@@ -295,4 +297,111 @@ input.on('close',()=>process.exit(0));
     assert.ok(fs.readFileSync(trace, "utf8").includes("drop-receipt-accepted"));
     assert.equal(lost.outcome, "unknown"); assert.equal(lost.cleanup.verified, true);
   } finally { clearInterval(monitor); clearTimeout(bound); }
+});
+
+test("Host startup discovers peers without changing Project; recovery and empty lookup do not publish", t => {
+  const f = fixture(t), projectBefore = inventory(f.root);
+  const event = { hook_event_name: "SessionStart", source: "startup", session_id: "receiver", cwd: f.root };
+  const registered = registerHookPresence({ runtime: "codex", event, environment: f.environment });
+  assert.equal(registered.address, "codex:receiver");
+  assert.deepEqual(inventory(f.root), projectBefore);
+  assert.equal(fs.existsSync(f.mailbox), false);
+  const hostBefore = inventory(f.home);
+  const listed = listProjectConversations({ root: f.root, environment: f.environment });
+  assert.equal(listed.conversations[0].address, "codex:receiver");
+  for (const source of ["resume", "clear", "compact", "fork"]) {
+    assert.equal(registerHookPresence({ runtime: "codex", event: { ...event, source, session_id: source }, environment: f.environment }), null);
+  }
+  assert.equal(registerHookPresence({ runtime: "codex", event, environment: f.environment, initialize: false }), null);
+  assert.equal(prepareHookInjection({ runtime: "codex", event: { ...event, hook_event_name: "UserPromptSubmit" }, environment: f.environment }), null);
+  assert.deepEqual(inventory(f.root), projectBefore);
+  assert.deepEqual(inventory(f.home), hostBefore);
+});
+
+test("Host registry namespace replacement during transport cannot authorize or publish success", async t => {
+  const f = fixture(t); f.register(who("codex", "receiver"));
+  const retained = f.registry + "-original", outside = path.join(f.base, "registry-outside");
+  fs.mkdirSync(outside); fs.writeFileSync(path.join(outside, "canary"), "unchanged");
+  let result;
+  try {
+    result = await f.send({ deliver: async ({ assertTarget }) => {
+      fs.renameSync(f.registry, retained);
+      fs.symlinkSync(outside, f.registry, process.platform === "win32" ? "junction" : "dir");
+      await Promise.resolve();
+      assertTarget();
+      return { outcome: "delivered", evidence: "must-not-occur" };
+    } });
+    assert.equal(result.state, "refused"); assert.equal(result.reasonCode, "CONVERSATION_PATH_ESCAPE");
+    assert.deepEqual(inventory(outside), ["canary:" + hash("unchanged")]);
+  } finally {
+    if (fs.lstatSync(f.registry, { throwIfNoEntry: false })?.isSymbolicLink()) fs.unlinkSync(f.registry);
+    if (fs.existsSync(retained)) fs.renameSync(retained, f.registry);
+  }
+  assert.equal(prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: f.root, session_id: "receiver" }, environment: f.environment }), null);
+});
+
+test("old Project presence remains diagnostic and private registry survives module replacement", async t => {
+  const f = fixture(t);
+  const legacy = path.join(f.mailbox, "presence"); fs.mkdirSync(legacy, { recursive: true });
+  fs.writeFileSync(path.join(legacy, hash("codex:old") + ".json"), JSON.stringify({ address: "codex:old" }));
+  const projectBefore = inventory(f.root), homeBefore = inventory(f.home);
+  const old = listProjectConversations({ root: f.root, environment: f.environment });
+  assert.equal(old.registrationNotice.unverified, 1); assert.deepEqual(old.conversations, []);
+  assert.deepEqual(inventory(f.root), projectBefore); assert.deepEqual(inventory(f.home), homeBefore);
+  f.register(who("codex", "receiver"));
+  const replacement = await import("../scripts/lib/conversation-messaging.mjs?registry-replacement");
+  assert.equal(replacement.listProjectConversations({ root: f.root, environment: f.environment }).conversations[0].address, "codex:receiver");
+  const marker = path.join(f.root, ".lode", "project.json"), raw = fs.readFileSync(marker), original = JSON.parse(raw);
+  try {
+    fs.writeFileSync(marker, JSON.stringify({ ...original, projectId: original.projectId + "-changed" }));
+    assert.throws(() => replacement.listProjectConversations({ root: f.root, environment: f.environment }), { code: "PROJECT_IDENTITY_MISMATCH" });
+  } finally { fs.writeFileSync(marker, raw); }
+});
+
+test("optional fresh Host registration never inherits the ordinary ten-second lock wait", t => {
+  const f = fixture(t); f.register(who("claude", "receiver"));
+  const event = { hook_event_name: "UserPromptSubmit", session_id: "receiver", cwd: f.root };
+  for (const lock of [path.join(f.registry, ".registration-locks", hash("claude:receiver") + ".lock"), path.join(path.dirname(f.registry), "key-access.lock")]) {
+    fs.mkdirSync(lock);
+    const owner = path.join(lock, "owner-" + hash(os.hostname()).slice(0, 16) + "-" + process.pid + "-" + "a".repeat(32) + ".json");
+    fs.writeFileSync(owner, "{}");
+    const before = inventory(f.root), hostBefore = inventory(f.home), started = Date.now();
+    try {
+      assert.equal(registerHookPresence({ runtime: "claude", event, environment: f.environment }), null);
+      assert.ok(Date.now() - started < 1500, "optional registration must not inherit the ten-second wait");
+      assert.deepEqual(inventory(f.root), before);
+      assert.deepEqual(inventory(f.home), hostBefore);
+    } finally { fs.unlinkSync(owner); fs.rmdirSync(lock); }
+  }
+});
+
+test("a linked Host-private ancestor is refused without reading or changing outside data", t => {
+  const f = fixture(t); f.register(who("codex", "receiver"));
+  const parent = path.dirname(f.registry), retained = parent + "-retained", outside = path.join(f.base, "private-ancestor-outside");
+  fs.mkdirSync(outside); fs.writeFileSync(path.join(outside, "canary"), "unchanged");
+  fs.renameSync(parent, retained); fs.symlinkSync(outside, parent, process.platform === "win32" ? "junction" : "dir");
+  try {
+    assert.throws(() => listProjectConversations({ root: f.root, environment: f.environment }), { code: "CONVERSATION_PATH_ESCAPE" });
+    assert.deepEqual(inventory(outside), ["canary:" + hash("unchanged")]);
+  } finally { fs.unlinkSync(parent); fs.renameSync(retained, parent); }
+});
+
+test("provider await never owns the recipient transition lock and an uncertain attempt stays exact", async t => {
+  const f = fixture(t); f.register(who("codex", "receiver"));
+  const lock = path.join(f.mailbox, ".delivery-locks", hash("codex:receiver") + ".lock");
+  let before, after;
+  const result = await f.send({ deliver: async ({ message }) => {
+    assert.equal(fs.existsSync(lock), false);
+    const file = path.join(f.mailbox, "inflight", hash("codex:receiver"), message.id + ".json");
+    before = fs.readFileSync(file);
+    assert.equal(prepareHookInjection({ runtime: "codex", environment: f.environment, event: {
+      hook_event_name: "UserPromptSubmit", cwd: f.root, session_id: "receiver" } }), null);
+    after = fs.readFileSync(file);
+    assert.deepEqual(after, before, "an admitted live attempt cannot be rewritten by another prompt");
+    await Promise.resolve(); assert.equal(fs.existsSync(lock), false);
+    return { outcome: "unknown", evidence: "synthetic receipt loss" };
+  } });
+  assert.equal(result.state, "unknown");
+  assert.equal(prepareHookInjection({ runtime: "codex", environment: f.environment,
+    event: { hook_event_name: "UserPromptSubmit", cwd: f.root, session_id: "receiver" } }), null);
 });
