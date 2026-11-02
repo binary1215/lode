@@ -5,7 +5,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
-import { formatForVerifiedOwner, assertProjectStorageUnchanged } from "./project-storage-format.mjs";
+import { formatForVerifiedOwner, assertProjectStorageUnchanged, projectOwnsRecordedRoot, projectOwnsRecordedRecord, projectCopyRecordWasAdmitted, noteCopiedSnapshotRead } from "./project-storage-format.mjs";
 import { safeSnapshotPath, SNAPSHOT_STORAGE_LIMITS, readBoundedSnapshotDescriptor } from "./snapshot-storage-codec.mjs";
 const producer = Object.freeze({ name: "lode-domain-bundle", version: "0.1.0" });
 export const DOMAIN_BUNDLE_LAYOUT = "domain-bundles-v1";
@@ -88,6 +88,7 @@ function readBundle(context, ref, depth) {
     const after = fs.fstatSync(fd);
     if (encoded.length !== stat.size || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs) fail("SNAPSHOT_STORAGE_DRIFT");
   } finally { fs.closeSync(fd); }
+  context.encodedRecords.push({ path: ref.address, digest: hash(encoded) });
   let raw;
   try {
     if (ref.encoding === "gzip") raw = zlib.gunzipSync(encoded, { maxOutputLength: ref.byteLength });
@@ -108,7 +109,7 @@ function readBundle(context, ref, depth) {
 function contextFor(root, storage, encoding = "gzip") {
   if (!storage?.projectId || fs.realpathSync(root) !== storage.projectRoot) fail("SNAPSHOT_BUNDLE_OWNER_REQUIRED");
   assertProjectStorageUnchanged(storage);
-  return { root, storage, encoding, maxBundles: 8, chunked: false, addresses: new Map(), cache: new Map(), active: new Set(), metrics: { createdBytes: 0, createdBundles: 0, bundleReferences: 0, verifiedBundles: 0, decodedBytes: 0, serializationCount: 0, serializedBytes: 0, hashCount: 0, hashedBytes: 0 } };
+  return { root, storage, encoding, maxBundles: 8, chunked: false, addresses: new Map(), cache: new Map(), active: new Set(), encodedRecords: [], metrics: { createdBytes: 0, createdBundles: 0, bundleReferences: 0, verifiedBundles: 0, decodedBytes: 0, serializationCount: 0, serializedBytes: 0, hashCount: 0, hashedBytes: 0 } };
 }
 function splitGraphParts(context, graph) {
   const codeIds = new Set(graph.nodes.filter(node => codeKinds.has(node.kind)).map(node => node.nodeId));
@@ -186,7 +187,7 @@ function createSnapshotCompositionUncoordinated({ root, storage, document, encod
     reconstructedByteLength: reconstructed.length, reconstructedSha256: hash(reconstructed),
     body: world ? body : null, code, graph: graphRef }, metrics: context.metrics };
 }
-export function hydrateSnapshotComposition({ root, storage, document }) {
+export function hydrateSnapshotComposition({ root, storage, document, copiedEvidence = false }) {
   if (document?.kind !== "SnapshotComposition") return { document, dependencies: [], metrics: null };
   const context = contextFor(root, storage);
   const chunked = document.schemaVersion === 3;
@@ -228,15 +229,22 @@ export function hydrateSnapshotComposition({ root, storage, document }) {
   context.metrics.hashCount++; context.metrics.hashedBytes += raw.length;
   if (raw.length !== document.reconstructedByteLength || hash(raw) !== document.reconstructedSha256
     || result.projectId !== document.projectId || (document.snapshotKind === "world-model" ? result.worldModelId !== document.worldModelId : result.graphSnapshotId !== document.graphSnapshotId)) fail("SNAPSHOT_COMPOSITION_DIGEST_MISMATCH");
+  if (copiedEvidence || result.projectRoot && !projectOwnsRecordedRoot(storage, result.projectRoot)) {
+    for (const entry of context.encodedRecords) {
+      if (!projectOwnsRecordedRecord(storage, result.projectRoot, entry)) fail("SNAPSHOT_BUNDLE_DIGEST_MISMATCH");
+    }
+  }
   assertProjectStorageUnchanged(storage);
-  return { document: result, dependencies: [...context.cache.keys()].map(key => JSON.parse(key)), metrics: context.metrics };
+  return { document: result, dependencies: [...context.cache.keys()].map(key => JSON.parse(key)), encodedRecords: context.encodedRecords, metrics: context.metrics };
 }
 export function hydrateSnapshotEntry({ root, storage, entry }) {
-  if (!entry || entry.document?.kind !== "SnapshotComposition") return entry;
-  const hydrated = hydrateSnapshotComposition({ root, storage, document: entry.document });
-  return { ...entry, document: hydrated.document, snapshotStorage: { ...(entry.snapshotStorage || { kind: "local-file" }),
+  if (!entry || entry.document?.kind !== "SnapshotComposition") return noteCopiedSnapshotRead(storage, entry);
+  const copiedEvidence = typeof entry.location === "string"
+    && projectCopyRecordWasAdmitted(storage, path.relative(root, entry.location).replaceAll("\\", "/"));
+  const hydrated = hydrateSnapshotComposition({ root, storage, document: entry.document, copiedEvidence });
+  return noteCopiedSnapshotRead(storage, { ...entry, document: hydrated.document, snapshotStorage: { ...(entry.snapshotStorage || { kind: "local-file" }),
     layout: entry.document.schemaVersion === 3 ? CHUNKED_CODE_LAYOUT : entry.document.schemaVersion === 2 ? SHARED_DOMAIN_LAYOUT : DOMAIN_BUNDLE_LAYOUT,
-    reconstructedSha256: entry.document.reconstructedSha256, dependencies: hydrated.dependencies } };
+    reconstructedSha256: entry.document.reconstructedSha256, dependencies: hydrated.dependencies } }, hydrated.encodedRecords);
 }
 
 export function createSnapshotComposition(options = {}, ...rest) {

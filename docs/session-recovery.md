@@ -27,6 +27,11 @@ recovery direction, require a new Product review or re-onboard the Project.
 The plugin does not move files for you, scan the old location, or enforce that
 only one copy exists globally. User-owned integration files remain preserved.
 
+For exact selected-record export/import, verified legacy copies and the optional
+version-scoped native companion, see [Project portability](project-portability.md).
+Native metadata registration is a separate requested Host effect, not ordinary
+Session recovery or permission to continue a model conversation.
+
 ## Original Feature mapping
 
 The original source numbering is preserved rather than repurposed:

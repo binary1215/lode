@@ -110,14 +110,18 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
   const cliDisplay = `${ARTIFACT_COMPOSITION.identity}-agent`;
   const continuityName = ARTIFACT_COMPOSITION.identity === "head" ? "head-continuity" : "lode-continuity";
   const allCommands = [
-      `${cliDisplay} init <project> [--runtime claude,codex,opencode] [--profile core|product] [--input <onboarding.json>] [--instruction-integration link|preserve]`,
-      `${cliDisplay} resume <project> [--runtime claude,codex,opencode] [--profile core|product] [--input <onboarding.json>] [--instruction-integration link|preserve]`,
+      `${cliDisplay} init <project> [--runtime claude,codex,opencode] [--profile core|product] [--copied-project verified-copy] [--input <onboarding.json>] [--instruction-integration link|preserve]`,
+      `${cliDisplay} resume <project> [--runtime claude,codex,opencode] [--profile core|product] [--copied-project verified-copy] [--input <onboarding.json>] [--instruction-integration link|preserve]`,
       `${cliDisplay} --version`,
       `${cliDisplay} status <project>`,
       `${cliDisplay} doctor <project>`,
       `${cliDisplay} graph-query <project> --query <text> [--view all|work|product] [--paths <path,...>] [--anchors <id,...>] [--depth <n>] [--max-nodes <n>] [--max-edges <n>] [--world-model <id>] [--details] [--inventory-page --inventory-paths <owned-path,...> --inventory-cursor <returned-cursor>]`,
       `${cliDisplay} graph-index <project>`,
       `${cliDisplay} graph-explorer <project> [--layer project|code] [--query <text-or-source>] [--anchors <id,...>] [--paths <path,...>] [--history] [--share] [--output <new-file.html>]`,
+      `${cliDisplay} project-export <project> --destination <bundle-folder> [--provenance project-proof-metadata|selected-only] [--session <logical-session>] (default: project-proof-metadata)`,
+      `${cliDisplay} project-bundle-inspect <bundle-folder> [--expected-bundle <bundle-id>]`,
+      `${cliDisplay} project-import <target-project> --bundle <bundle-folder> [--expected-bundle <bundle-id>]`,
+      `${cliDisplay} project-native-history <bundle-folder> --action read|capture|restore|register [--native-home <exact-data-home> --executable <exact-codex.exe>] [--threads <exact-native-id,...>] [--runtime-root <current-workspace>]`,
       `${cliDisplay} session-create <project> [--purpose <text>] [--new-session <session-id>]`,
       `${cliDisplay} session-list <project> [--session <id>] [--max-sessions <1..64>] [--after-session <cursor>] [--conversation-candidates <json-file>]  # read-only preview and optional stored mappings; preserves selection`,
       `${cliDisplay} project-direction-read <project>`,
@@ -349,10 +353,11 @@ async function preparedRuntimeRead(root, value) {
     persisted: false, instructionAuthority: false, recoveryAuthority: false, executionAuthorization: false, modelUse: "unknown" } }; }
 }
 
-export async function runCommand(argv = process.argv.slice(2), { observationRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, sessionContext = null, signal, onProcess } = {}) {
+export async function runCommand(argv = process.argv.slice(2), { observationRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, sessionContext = null, signal, onProcess, onExportScope = null } = {}) {
   const entry = commandEntry(argv);
   const parsed = parse(entry.argv);
   const index = argv.indexOf("--session");
+  if (["project-import", "project-bundle-inspect", "project-native-history"].includes(parsed.command) && index >= 0) throw new Error("The bundle carries its exact Session selection; omit --session for import/inspection.");
   if (parsed.command === "session-list") {
     requireOperationSurface(parsed.command, entry.surface);
     if (argv.lastIndexOf("--session") !== index) throw new Error("Only one logical Session preview may be requested.");
@@ -373,12 +378,10 @@ export async function runCommand(argv = process.argv.slice(2), { observationRegi
     const routed = [...argv]; if (index >= 0) routed.splice(index, 2);
     if (["init", "resume"].includes(parsed.command)) {
       const projectSessionRoute = { sessionId: index >= 0 ? parsed.options.session : undefined, context: sessionContext };
-      const relocation = resumeProjectLocation({ root: parsed.root, pluginRoot, runtimes: parsed.options.runtime?.split(","), inspectOnly: true,
-        validateSelection: owner => validateRelocationSessionSelection(owner, projectSessionRoute) });
-      if (relocation) return (await runRoutedCommand(routed, {
-        observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, signal, onProcess, projectSessionRoute }));
+      return (await runRoutedCommand(routed, {
+        observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, signal, onProcess, onExportScope, projectSessionRoute }));
     }
-    const operation = async () => (await runRoutedCommand(routed, { observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, signal, onProcess }));
+    const operation = async () => (await runRoutedCommand(routed, { observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, signal, onProcess, onExportScope }));
     if (index < 0 && !sessionCallRequiresBinding(parsed.command, "cli")) return (await operation());
     try { return withSessionCallContext({ root: parsed.root, sessionId: index >= 0 ? parsed.options.session : undefined, context: sessionContext }, operation); }
     catch (error) {
@@ -386,10 +389,10 @@ export async function runCommand(argv = process.argv.slice(2), { observationRegi
       return sessionSelectionUnresolved(parsed.root, { includeProjectFacts: ["status", "doctor", "conversation-enter"].includes(parsed.command) });
     }
   }
-  return (await runRoutedCommand(argv, { observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, signal, onProcess }));
+  return (await runRoutedCommand(argv, { observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, signal, onProcess, onExportScope }));
 }
 
-async function runRoutedCommand(argv, { observationRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, signal, onProcess, projectSessionRoute = null } = {}) {
+async function runRoutedCommand(argv, { observationRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, signal, onProcess, onExportScope = null, projectSessionRoute = null } = {}) {
   const entry = commandEntry(argv);
   const { surface } = entry;
   const { command, root, options } = parse(entry.argv);
@@ -403,9 +406,27 @@ async function runRoutedCommand(argv, { observationRegistry = null, compactionLi
     pluginRoot,
     runtimes: options.runtime?.split(","),
     profile: options.profile || "core",
+    copiedProject: options["copied-project"] ?? null,
     instructionIntegration: options["instruction-integration"] ?? null,
     onboarding: options.input ? inputJson(options, "Project onboarding") : null,
   }));
+  if (command === "project-native-history") {
+    const allowed=new Set(["action","native-home","executable","threads","runtime-root","expected-bundle"]);
+    if(Object.keys(options).some(key=>!allowed.has(key))) throw new Error("Unsupported native history arguments.");
+    return (await import("./lib/project-native-history.mjs")).operateProjectNativeHistory({action:options.action,bundleRoot:root,
+      expectedBundleId:options["expected-bundle"]??null,nativeHome:options["native-home"],executable:options.executable,
+      threadIds:options.threads===undefined?undefined:String(options.threads).split(",").map(value=>value.trim()),
+      root:options["runtime-root"],pluginRoot,signal,onProcess});
+  }
+  if (command === "project-export") return (await import("./lib/project-portability.mjs")).exportProjectBundle({root,destination:options.destination,provenanceScope:options.provenance,signal,onExportScope});
+  if (command === "project-bundle-inspect") {
+    const core=await import("./lib/project-portability.mjs");
+    return core.projectBundleSummary(core.inspectProjectBundle({bundleRoot:root,expectedBundleId:options["expected-bundle"] ?? null,signal}));
+  }
+  if (command === "project-import") {
+    const result=(await import("./lib/project-portability.mjs")).importProjectBundle({root,bundleRoot:options.bundle,expectedBundleId:options["expected-bundle"] ?? null,pluginRoot,signal});
+    return {...result,nextRead:{command:"conversation-enter",projectRoot:result.targetRoot,sessionId:result.selectedSessionId},selectionScope:"exact-current-request-no-default-change"};
+  }
   if (command === "status" || command === "doctor") return (await inspectProjectExperience({ root }));
   if (command === "graph-query") return import("./lib/project-graph.mjs").then(({ queryProjectGraph }) => queryProjectGraph({ root, query: options.query || "", view: options.view || "all",
     paths: options.paths?.split(",") || [], anchorIds: options.anchors?.split(",") || [], depth: options.depth == null ? 1 : Number(options.depth),
@@ -851,6 +872,7 @@ export function runCliMain(directArgs = process.argv.slice(2)) {
     process.on("SIGINT", abortSource); process.on("SIGTERM", abortSource);
   }
   return Promise.resolve().then(async () => (await runCommand(normalizedArgs, { signal: sourceController.signal,
+    onExportScope: notice => fs.writeSync(process.stderr.fd, jsonOutput ? `${JSON.stringify({ projectExportScope: notice })}\n` : `${notice.message}\n`),
     onProcess: (event) => {
       if(directCommand === "storage-gc" && !directArgs.includes("--diagnostics")) return;
       if (event.purpose === "snapshot-filesystem-qualification" && !directArgs.includes("--diagnostics")) return;

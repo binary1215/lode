@@ -295,7 +295,10 @@ for (const mode of ["cancel", "timeout"]) {
 
 for (const scenario of ["preflight-normal", "preflight-enabled", "preflight-hang"]) {
   test(`fresh ${scenario} preserves exact preflight cleanup and observed stderr`, async t => {
-    const f = await fixture(t, { timeoutMs: scenario === "preflight-hang" ? 3000 : 6000 });
+    // The absolute deadline includes executable/policy verification before
+    // preflight spawn. Match the existing CI setup margin used above so the
+    // hanging case reaches its owned preflight before testing timeout cleanup.
+    const f = await fixture(t, { timeoutMs: 12000 });
     const result = await f.execute(scenario);
     assert.equal(result.receipt.status, scenario === "preflight-normal" ? "completed" : scenario === "preflight-hang" ? "timed-out" : "failed");
     assert.equal(result.actualProviderInvoked, false);

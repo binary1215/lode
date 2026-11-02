@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { sessionStatePath, assertRunSession, safeSessionPath } from "./session-routing.mjs";
+import { sessionStatePath, sessionStateForWrite, assertRunSession, safeSessionPath } from "./session-routing.mjs";
 import { readProjectDirection } from "./project-direction.mjs";
 import { atomicWriteArtifact } from "./artifact-storage.mjs";
 import { inspectProject, isProjectRecoveryReadable, SCHEMA_VERSION } from "./lode-core.mjs";
@@ -561,7 +561,7 @@ function persistRecoveryCheckpoint(inspected, checkpoint) {
     }
   }
   if (existed) readRecoveryCheckpoint({ root: inspected.project.projectRoot, checkpointId });
-  const state = { ...inspected.state, latestCheckpoint: checkpointId, updatedAt: now() };
+  const state = sessionStateForWrite(inspected.project.projectRoot, { ...inspected.state, latestCheckpoint: checkpointId, updatedAt: now() }, inspected.storage);
   replaceJson(sessionStatePath(inspected.project.projectRoot, inspected.storage), state);
   return { status: existed ? "existing" : "checkpointed", file, checkpoint, state };
 }
@@ -704,23 +704,8 @@ export function readRecoveryCheckpoint({ root = ".", checkpointId, historical = 
   const file = checkpointFile(inspected.project.projectRoot, checkpointId, inspected.storage);
   if (!fs.existsSync(file)) fail(`Recovery checkpoint not found: ${checkpointId}`, "RECOVERY_CHECKPOINT_NOT_FOUND");
   const checkpoint = readJson(file, "Recovery checkpoint");
-  if (checkpoint.kind !== "SessionRunCheckpoint" || checkpoint.projectId !== inspected.project.projectId
-    || !historical && checkpoint.sessionId !== inspected.state.sessionId || !checkpoint.purpose || !Array.isArray(checkpoint.approvedDecisions)
-    || !checkpoint.currentPosition || !checkpoint.nextExpectedResult) {
-    fail("Recovery checkpoint is incomplete or belongs to another Project/Session.", "INVALID_RECOVERY_CHECKPOINT");
-  }
-  const checkpointVersion = checkpoint.protocol?.version;
-  if (!familyFormatForOriginal("head-agent-core-session-run-recovery", checkpoint, inspected.storage) || !new Set(["0.1.0", "0.2.0", COMPACTION_RECOVERY_VERSION]).has(checkpointVersion)) {
-    fail("Recovery checkpoint protocol is invalid.", "INVALID_RECOVERY_CHECKPOINT");
-  }
-  if (new Set(["0.2.0", COMPACTION_RECOVERY_VERSION]).has(checkpointVersion)) {
-    verifyArtifactAuthorityBoundary("SessionRunCheckpoint", checkpoint.authorityBoundary);
-  }
-  if (checkpointVersion === COMPACTION_RECOVERY_VERSION && (!checkpoint.sessionPointer || typeof checkpoint.sessionPointer !== "object"
-    || !("reviewedRunIntegration" in checkpoint))) {
-    fail("Current recovery checkpoint is missing its immutable Session pointer.", "INVALID_RECOVERY_CHECKPOINT");
-  }
-  verifyContentIdentity(checkpoint, { idField: "checkpointId", hashField: "checkpointDigest", prefix: "checkpoint", label: "Recovery checkpoint" });
+  verifyRecoveryCheckpointOriginal({ checkpoint, projectId: inspected.project.projectId,
+    sessionId: historical ? null : inspected.state.sessionId, expectedCheckpointId: checkpointId, storage: inspected.storage });
   return { status: "verified", file, checkpoint };
 }
 
@@ -1086,4 +1071,29 @@ export function inspectCompaction({ root = "." } = {}) {
     recoveryAuthority: "session-run-checkpoint",
     providerSessionIdentityPersisted: false,
   };
+}
+
+// Pure original verification shared by ordinary reads and explicit copy preflight.
+export function verifyRecoveryCheckpointOriginal({ checkpoint, projectId, sessionId = null, expectedCheckpointId = null, storage }) {
+  if (expectedCheckpointId !== null && checkpoint?.checkpointId !== expectedCheckpointId) {
+    fail("Recovery checkpoint address differs from its original identity.", "INVALID_RECOVERY_CHECKPOINT");
+  }
+  if (checkpoint.kind !== "SessionRunCheckpoint" || checkpoint.projectId !== projectId
+    || sessionId !== null && checkpoint.sessionId !== sessionId || !checkpoint.purpose || !Array.isArray(checkpoint.approvedDecisions)
+    || !checkpoint.currentPosition || !checkpoint.nextExpectedResult) {
+    fail("Recovery checkpoint is incomplete or belongs to another Project/Session.", "INVALID_RECOVERY_CHECKPOINT");
+  }
+  const checkpointVersion = checkpoint.protocol?.version;
+  if (!familyFormatForOriginal("head-agent-core-session-run-recovery", checkpoint, storage) || !new Set(["0.1.0", "0.2.0", COMPACTION_RECOVERY_VERSION]).has(checkpointVersion)) {
+    fail("Recovery checkpoint protocol is invalid.", "INVALID_RECOVERY_CHECKPOINT");
+  }
+  if (new Set(["0.2.0", COMPACTION_RECOVERY_VERSION]).has(checkpointVersion)) {
+    verifyArtifactAuthorityBoundary("SessionRunCheckpoint", checkpoint.authorityBoundary);
+  }
+  if (checkpointVersion === COMPACTION_RECOVERY_VERSION && (!checkpoint.sessionPointer || typeof checkpoint.sessionPointer !== "object"
+    || !("reviewedRunIntegration" in checkpoint))) {
+    fail("Current recovery checkpoint is missing its immutable Session pointer.", "INVALID_RECOVERY_CHECKPOINT");
+  }
+  verifyContentIdentity(checkpoint, { idField: "checkpointId", hashField: "checkpointDigest", prefix: "checkpoint", label: "Recovery checkpoint" });
+  return checkpoint;
 }

@@ -2,20 +2,26 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import crypto from "node:crypto";
 import { explorerFixture } from "./helpers/graph-explorer-fixture.mjs";
 import { snapshot, pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 import { initializeOrResumeProject } from "../scripts/lib/project-bootstrap.mjs";
 import { inspectProject } from "../scripts/lib/lode-core.mjs";
-import { resolveProjectStorage, projectOwnsRecordedRoot } from "../scripts/lib/project-storage-format.mjs";
+import { resolveProjectStorage, projectOwnsRecordedRoot, projectOwnsRecordedRecord } from "../scripts/lib/project-storage-format.mjs";
+import { adoptVerifiedProjectCopy } from "../scripts/lib/project-copy-adoption.mjs";
 import { resumeProjectLocation } from "../scripts/lib/project-relocation.mjs";
+import { inspectProjectCopyOrigin, verifyProjectLocation } from "../scripts/lib/project-location-proof.mjs";
+import { copiedProjectFile, inspectCopiedProjectFiles, verifyCopiedProjectFile } from "../scripts/lib/project-copy-evidence.mjs";
+import { inspectManagedByteRepairs, repairManagedProjectBytes } from "../scripts/lib/project-record-byte-repair.mjs";
 import { createSessionCallContext, withSessionRoute } from "../scripts/lib/session-routing.mjs";
 import { readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
 import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
 import { inspectWorldDomainFreshness, readWorldModelSnapshot, queryWorldTemporalGraph } from "../scripts/lib/world-model.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
+import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world-model-store.mjs";
 import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
+import { createRecoveryCheckpoint, readRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
 import { restoreSessionFromArtifacts } from "../scripts/lib/session-recovery.mjs";
 import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
 import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
@@ -24,6 +30,103 @@ function copy(f, name = "relocated") {
   const root = path.join(f.base, name); fs.cpSync(f.root, root, { recursive: true }); return fs.realpathSync(root);
 }
 const bytes = (root, relative) => fs.readFileSync(path.join(root, relative), "utf8");
+
+test("copy origin inspection separates an unproved origin from damaged declared history without granting ownership", async t => {
+  for (const directory of [".head", ".lode"]) await t.test(directory, () => {
+    const root = fs.mkdtempSync(path.join(pluginRoot, ".qa-copy-origin-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const prefix = directory === ".lode" ? "lode" : "head";
+    const original = { schemaVersion: 1, projectId: `${prefix}-${"1".repeat(20)}`, projectRoot: "C:/historical/source", retained: "same" };
+    const observation = inspectProjectCopyOrigin(root, directory, original);
+    assert.equal(observation.status, "initial-origin-unverified");
+    assert.equal(observation.grantsOwnership, false);
+    assert.throws(() => verifyProjectLocation(root, directory, original), { code: "PROJECT_LOCATION_IDENTITY_MISMATCH" });
+    const originalBytes = Buffer.from(JSON.stringify(original));
+    const digest = crypto.createHash("sha256").update(originalBytes).digest("hex");
+    const history = path.join(root, directory, "project-location/history", `${digest}.json`);
+    fs.mkdirSync(path.dirname(history), { recursive: true });
+    fs.writeFileSync(history, originalBytes);
+    const successor = { ...original, projectRoot: "D:/copied/source", location: { identityRoot: original.projectRoot, previousProjectDigest: digest } };
+    assert.equal(inspectProjectCopyOrigin(root, directory, successor).status, "initial-origin-unverified");
+    fs.writeFileSync(history, Buffer.from(JSON.stringify({ ...original, retained: "tampered" })));
+    assert.throws(() => inspectProjectCopyOrigin(root, directory, successor), { code: "PROJECT_LOCATION_IDENTITY_MISMATCH" });
+    fs.writeFileSync(history, originalBytes);
+    assert.throws(() => inspectProjectCopyOrigin(root, directory, { ...successor, location: { ...successor.location, identityRoot: "C:/forged/origin" } }), { code: "PROJECT_LOCATION_IDENTITY_MISMATCH" });
+    fs.unlinkSync(history);
+    assert.throws(() => inspectProjectCopyOrigin(root, directory, successor), { code: "ENOENT" });
+    const verified = { ...original, projectId: `${prefix}-${crypto.createHash("sha256").update(original.projectRoot).digest("hex").slice(0, 20)}` };
+    assert.equal(inspectProjectCopyOrigin(root, directory, verified).status, "origin-verified");
+    assert.equal(verifyProjectLocation(root, directory, verified).identityRoot, original.projectRoot);
+  });
+});
+
+test("typed Core plus Product mode gives an actionable correction before initialization or relocation", async t => {
+  const root = fs.mkdtempSync(path.join(pluginRoot, ".qa-core-mode-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const invoke = project_root => dispatch({ jsonrpc: "2.0", id: "synthetic-core-mode", method: "tools/call", params: {
+    name: "lode_project_initialize_or_resume", arguments: { project_root, profile: "core", mode: "existing" },
+  } });
+  const fresh = await invoke(root);
+  assert.equal(fresh.error.code, -32000);
+  assert.match(fresh.error.message, /omit Product onboarding fields \(mode\)/);
+  assert.deepEqual(fs.readdirSync(root), []);
+  const f = await explorerFixture(t), relocated = copy(f, "mode-refusal"), before = snapshot(relocated);
+  const moved = await invoke(relocated);
+  assert.equal(moved.error.code, -32000);
+  assert.match(moved.error.message, /omit Product onboarding fields \(mode\)/);
+  assert.deepEqual(snapshot(relocated), before);
+});
+
+test("copied byte inventory excludes active owners but retains consumption evidence and refuses aliases or changed originals", t => {
+  const root = fs.mkdtempSync(path.join(pluginRoot, ".qa-copy-inventory-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const write = (relative, value) => { const file = path.join(root, relative); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, value); };
+  write(".lode/project.json", "{\"raw\":true}\r\n");
+  write(".lode/runtime/execution-leases/authorization/consumption.json", "consumed");
+  write(".lode/runtime/execution-leases/authorization/release.json", "released");
+  write(".lode/runtime/execution-leases/authorization/owner.lock/token", "source-owner");
+  write(".lode/.operations/current/token", "source-lock");
+  const inventory = inspectCopiedProjectFiles({ root, directory: ".lode" });
+  assert.equal(inventory.grantsOwnership, false);
+  assert.deepEqual(inventory.files.map(entry => entry.path), [".lode/project.json",
+    ".lode/runtime/execution-leases/authorization/consumption.json", ".lode/runtime/execution-leases/authorization/release.json"]);
+  for (const entry of inventory.files) verifyCopiedProjectFile(root, entry);
+  for (const relative of ["../escape", ".lode/project.json::$DATA", ".lode/../outside", ".lode\\project.json"]) {
+    assert.throws(() => copiedProjectFile(root, relative), { code: "PROJECT_COPY_PATH_INVALID" });
+  }
+  const entry = inventory.files[0];
+  assert.throws(() => verifyCopiedProjectFile(root, { ...entry, sha256: [entry.sha256] }), { code: "PROJECT_COPY_INVENTORY_INVALID" });
+  fs.writeFileSync(path.join(root, entry.path), "{\"raw\":true}\n");
+  assert.throws(() => verifyCopiedProjectFile(root, entry), { code: "PROJECT_COPY_SOURCE_CHANGED" });
+  fs.linkSync(path.join(root, entry.path), path.join(root, ".lode/linked.json"));
+  assert.throws(() => inspectCopiedProjectFiles({ root, directory: ".lode" }), { code: "PROJECT_COPY_UNSAFE_FILE" });
+});
+
+test("recorded-digest newline repair preserves observed bytes, BOM and later edits across an interrupted retry", t => {
+  const root = fs.mkdtempSync(path.join(pluginRoot, ".qa-byte-repair-")), directory = ".lode";
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, directory, "generated"), { recursive: true });
+  const firstPath = ".lode/generated/first.md", secondPath = ".lode/generated/second.md";
+  const expected = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("original\nbytes\n")]);
+  const observed = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("original\r\nbytes\r\n")]);
+  const sha = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+  for (const relative of [firstPath, secondPath]) fs.writeFileSync(path.join(root, relative), observed);
+  const manifest = { schemaVersion: 1, managed: [firstPath, secondPath].map(path => ({ path, sha256: sha(expected) })) };
+  const before = fs.readFileSync(path.join(root, firstPath));
+  const preview = inspectManagedByteRepairs({ root, directory, manifest });
+  assert.equal(preview.repairs.length, 2);
+  assert.deepEqual(fs.readFileSync(path.join(root, firstPath)), before);
+  assert.throws(() => repairManagedProjectBytes({ root, directory, manifest, onPublication() { throw new Error("synthetic interruption"); } }), /synthetic interruption/);
+  assert.deepEqual(fs.readFileSync(path.join(root, firstPath)), expected);
+  assert.deepEqual(fs.readFileSync(path.join(root, `${directory}/project-location/byte-repairs/${sha(observed)}.bin`)), observed);
+  fs.writeFileSync(path.join(root, secondPath), "later user edit\n");
+  const replay = repairManagedProjectBytes({ root, directory, manifest });
+  assert.equal(replay.applied.length, 0);
+  assert.equal(replay.unresolved[0].reasonCode, "MANAGED_CONTENT_EDITED");
+  assert.equal(fs.readFileSync(path.join(root, secondPath), "utf8"), "later user edit\n");
+  assert.equal(replay.wholeProjectReady, false);
+  assert.equal(replay.claimsGlobalAtomicity, false);
+});
 
 test("explicit public resume preserves Project/default/named Session and Work/World originals at the new folder", async t => {
   const f = await explorerFixture(t), original = inspectProject(f.root), root = copy(f);
@@ -216,4 +319,164 @@ test("history tamper, local owner conflicts and managed drift cannot acquire a n
   const drift = copy(f, "drift"); fs.appendFileSync(path.join(drift, "AGENTS.md"), "\nuser change\n");
   const before = snapshot(drift);
   await assert.rejects(((initializeOrResumeProject({ root: drift, pluginRoot }))), { code: "PROJECT_NOT_READY" }); assert.deepEqual(snapshot(drift), before);
+});
+
+function makeOriginUnverified(root) {
+  const file = path.join(root, ".lode/project.json");
+  const original = JSON.parse(fs.readFileSync(file));
+  fs.writeFileSync(file, JSON.stringify({ ...original, projectRoot: "C:/unverified-origin/synthetic-project" }, null, 2)+"\n");
+  const manifestFile = path.join(root, ".lode/generated/manifest.json"), manifest = JSON.parse(fs.readFileSync(manifestFile));
+  manifest.managed.find(entry => entry.path === ".lode/project.json").sha256 = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2)+"\n");
+}
+
+test("explicit copied Project adoption preserves exact originals and reads v3 World without an old-root alias", async t => {
+  const f = await explorerFixture(t), root = copy(f, "unproved-cli");
+  makeOriginUnverified(root);
+  const before = snapshot(root), session = bytes(root, ".lode/sessions/current.json");
+  const status = await runCommand(["status", root]);
+  assert.equal(status.projectLocation.origin, "initial-origin-unverified");
+  assert.deepEqual(snapshot(root), before);
+  await assert.rejects(runCommand(["resume", root]), { code: "PROJECT_COPY_CHOICE_REQUIRED" });
+  assert.deepEqual(snapshot(root), before);
+  const result = await runCommand(["resume", root, "--copied-project", "verified-copy", "--session", f.session.sessionId]);
+  assert.equal(result.projectLocation.status, "verified-copy-adopted");
+  assert.equal(result.projectLocation.origin, "initial-origin-unverified");
+  assert.equal(bytes(root, ".lode/sessions/current.json"), session);
+  const storage = resolveProjectStorage(root);
+  assert.equal(projectOwnsRecordedRoot(storage, f.root), false);
+  const worldModelId = JSON.parse(bytes(root, ".lode/world-model/current.json")).worldModelId;
+  const originalWorld = await readWorldModelSnapshot({ root, worldModelId });
+  assert.equal(originalWorld.snapshot.projectRoot, f.root);
+  const graph = await queryProjectGraph({ root, query: "relay", details: true });
+  assert(graph.nodes.length > 0);
+  const admitted = Object.entries(before).find(([p]) => p.replaceAll("\\", "/").includes("/project-direction/revisions/") && p.endsWith(".json"));
+  assert(admitted);
+  assert.equal(projectOwnsRecordedRecord(storage, f.root, { path: admitted[0].replaceAll("\\", "/"), digest: admitted[1].digest }), true);
+  assert.equal(projectOwnsRecordedRecord(storage, f.root, { path: ".lode/unadmitted.json", digest: admitted[1].digest }), false);
+  const next = copy({ ...f, root }, "adopted-second-move");
+  await initializeOrResumeProject({ root: next, pluginRoot });
+  assert.equal((await readWorldModelSnapshot({ root: next, worldModelId })).snapshot.projectRoot, f.root);
+  assert.equal(projectOwnsRecordedRoot(resolveProjectStorage(next), f.root), false);
+});
+
+test("typed MCP can adopt the exact copied named Session without selecting a replacement or promoting Canon", async t => {
+  const f = await explorerFixture(t), root = copy(f, "unproved-mcp");
+  makeOriginUnverified(root);
+  const before = bytes(root, ".lode/context/product-model.json");
+  const response = await dispatch({ jsonrpc: "2.0", id: "copy-resume", method: "tools/call", params: {
+    name: "lode_project_initialize_or_resume", arguments: { project_root: root, session_id: f.session.sessionId, copied_project: "verified-copy" } } });
+  assert(!response.error, JSON.stringify(response));
+  assert.equal(response.result.structuredContent.projectLocation.status, "verified-copy-adopted");
+  assert.equal(response.result.structuredContent.project.sessionId, f.session.sessionId);
+  assert.equal(bytes(root, ".lode/context/product-model.json"), before);
+});
+
+test("copy publication preserves concurrent raw edits and refuses final Project divergence without clearing pending", async t => {
+  const f = await explorerFixture(t);
+  for (const target of ["project", "manifest-raw"]) {
+    const root = copy(f, "concurrent-"+target); makeOriginUnverified(root);
+    const mf = path.join(root, ".lode/generated/manifest.json");
+    if (target === "manifest-raw") {
+      const value = JSON.parse(fs.readFileSync(mf)); value.synthetic = "\uFFFD"; fs.writeFileSync(mf, JSON.stringify(value));
+    }
+    let edited;
+    assert.throws(() => adoptVerifiedProjectCopy({ root, pluginRoot, onPublication(stage) {
+      if (stage !== "copy-project") return;
+      const file = target === "project" ? path.join(root, ".lode/project.json") : mf;
+      const old = fs.readFileSync(file);
+      if (target === "project") edited = Buffer.concat([old, Buffer.from(" ")]);
+      else { const at = old.indexOf(Buffer.from("\uFFFD")); assert(at >= 0); edited = Buffer.concat([old.subarray(0,at),Buffer.from([255]),old.subarray(at+3)]); }
+      fs.writeFileSync(file, edited);
+    } }), error => ["PROJECT_COPY_SOURCE_CHANGED", "PROJECT_COPY_PUBLICATION_CONFLICT"].includes(error.code));
+    assert.deepEqual(fs.readFileSync(target === "project" ? path.join(root, ".lode/project.json") : mf), edited);
+    assert(fs.existsSync(path.join(root, ".lode/project-location/pending.json")));
+  }
+});
+
+test("an interrupted copy can resume after optional index drift but never after changed common direction", async t => {
+  const f = await explorerFixture(t);
+  for (const change of ["graph-discovery/index.json", "project-direction/current.json"]) {
+    const root = copy(f, "retry-"+change.split("/")[0]); makeOriginUnverified(root);
+    assert.throws(() => adoptVerifiedProjectCopy({ root, pluginRoot, onPublication(stage) { if (stage === "copy-project") throw Error("interrupted"); } }), /interrupted/);
+    fs.appendFileSync(path.join(root, ".lode", change), " ");
+    if (change.startsWith("project-direction")) assert.throws(() => adoptVerifiedProjectCopy({ root, pluginRoot }), { code: "PROJECT_COPY_SOURCE_CHANGED" });
+    else assert.equal(adoptVerifiedProjectCopy({ root, pluginRoot }).status, "verified-copy-adopted");
+  }
+});
+
+test("managed aliases and binary data are preserved before repair/adoption effects", async t => {
+  const f = await explorerFixture(t), root = copy(f, "aliased"); makeOriginUnverified(root);
+  const mf = path.join(root, ".lode/generated/manifest.json"), manifest = JSON.parse(fs.readFileSync(mf));
+  manifest.managed.push({ ...manifest.managed.find(entry => entry.path === ".lode/project.json"), path: ".lode/PROJECT.JSON" });
+  fs.writeFileSync(mf, JSON.stringify(manifest));
+  const before = snapshot(root);
+  assert.throws(() => adoptVerifiedProjectCopy({ root, pluginRoot }), { code: "PROJECT_COPY_PATH_ALIAS" });
+  assert.throws(() => repairManagedProjectBytes({ root, directory: ".lode", manifest }), { code: "PROJECT_COPY_PATH_ALIAS" });
+  assert.deepEqual(snapshot(root), before);
+  const bin = Buffer.from([0,255,13,10]), expected = Buffer.from([0,255,10]), file = path.join(root, ".lode/assets/example.bin");
+  fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, bin);
+  const binaryManifest = { schemaVersion: 1, managed: [{ path: ".lode/assets/example.bin", sha256: crypto.createHash("sha256").update(expected).digest("hex") }] };
+  assert.equal(repairManagedProjectBytes({ root, directory: ".lode", manifest: binaryManifest }).applied.length, 0);
+  assert.deepEqual(fs.readFileSync(file), bin);
+});
+
+test("a completed byte-repair intent preserves a later mixed-ending edit on retry", t => {
+  const root = fs.mkdtempSync(path.join(pluginRoot, ".qa-repair-retry-")); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const relative = ".lode/generated/fixture.md", file = path.join(root, relative); fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "a\r\nb\r\n");
+  const manifest = { schemaVersion: 1, managed: [{ path: relative, sha256: crypto.createHash("sha256").update("a\nb\n").digest("hex") }] };
+  assert.throws(() => repairManagedProjectBytes({ root, directory: ".lode", manifest, onPublication() { throw Error("response lost"); } }), /response lost/);
+  fs.writeFileSync(file, "a\r\nb\n"); const before = fs.readFileSync(file);
+  const retry = repairManagedProjectBytes({ root, directory: ".lode", manifest });
+  assert.equal(retry.applied.length, 0); assert.equal(retry.unresolved[0].reasonCode, "PROJECT_REPAIR_RETRY_CONFLICT");
+  assert.deepEqual(fs.readFileSync(file), before);
+});
+
+test("copied Canon and current-direction closure fail before first adoption write while normal Core keeps optional independence", async t => {
+  const f=await explorerFixture(t);
+  for (const damage of ["direction", "knowledge"]) {
+    const root=copy(f,"preflight-"+damage); makeOriginUnverified(root);
+    if(damage==="direction") fs.writeFileSync(path.join(root,".lode/project-direction/current.json"),JSON.stringify({directionId:"direction-"+"1".repeat(24)}));
+    else { const file=path.join(root,".lode/context/knowledge.json"),doc=JSON.parse(fs.readFileSync(file));doc.schemaVersion=999;fs.writeFileSync(file,JSON.stringify(doc)); }
+    const before=snapshot(root);
+    await assert.rejects(runCommand(["resume",root,"--copied-project","verified-copy"]),error=>["INVALID_PROJECT_DIRECTION","INVALID_KNOWLEDGE_SCHEMA"].includes(error.code));
+    assert.deepEqual(snapshot(root),before);
+  }
+  const root=copy(f,"choice-before-repair");makeOriginUnverified(root);
+  const role=path.join(root,".lode/roles/developer.md"),raw=fs.readFileSync(role,"utf8");fs.writeFileSync(role,raw.replaceAll("\n","\r\n"));
+  const before=snapshot(root);
+  await assert.rejects(runCommand(["resume",root]),{code:"PROJECT_COPY_CHOICE_REQUIRED"});assert.deepEqual(snapshot(root),before);
+  const local=copy(f,"normal-with-foreign");await runCommand(["resume",local]);
+  fs.mkdirSync(path.join(local,".head"));fs.writeFileSync(path.join(local,".head/project.json"),"{\"unrelated\":true}");
+  const healthy=await runCommand(["resume",local]);assert.equal(healthy.status,"core_ready");
+});
+
+test("copied history cannot borrow a custom adapter or a cached entry after physical closure loss", async t => {
+  const f=await explorerFixture(t),root=copy(f,"adapter-copy");makeOriginUnverified(root);
+  await runCommand(["resume",root,"--copied-project","verified-copy"]);
+  const worldModelId=JSON.parse(bytes(root,".lode/world-model/current.json")).worldModelId;
+  const storage=resolveProjectStorage(root), adapter=new LocalJsonWorldModelStoreAdapter({projectRoot:root,storage});
+  const entry=await adapter.readSnapshot(worldModelId);
+  const custom=new LocalJsonWorldModelStoreAdapter({projectRoot:root,storage});
+  custom.readSnapshot=async()=>({location:null,document:structuredClone(entry.document)});
+  await assert.rejects(readWorldModelSnapshot({root,worldModelId,storeAdapter:custom}),{code:"WORLD_MODEL_IDENTITY_MISMATCH"});
+  const descriptor=entry.snapshotStorage.dependencies.find(ref=>ref.domain==="world-code-chunks");assert(descriptor);
+  fs.unlinkSync(path.join(root,descriptor.address));
+  custom.readSnapshot=async()=>entry;
+  await assert.rejects(readWorldModelSnapshot({root,worldModelId,storeAdapter:custom}),{code:"ENOENT"});
+  const core=await runCommand(["resume",root]);assert.equal(core.readiness.core.state,"ready");
+});
+
+test("copy preflight and actual recovery lookup reject a valid checkpoint stored at another requested address", async t => {
+ const f=await explorerFixture(t);
+ const checkpoint=withSessionRoute(f.root,f.session.sessionId,()=>createRecoveryCheckpoint({root:f.root,purpose:"Synthetic checkpoint identity",currentPosition:"Inspect exact address",nextExpectedResult:"Keep original direction",approvedDecisions:[]})).checkpoint;
+ const root=copy(f,"swapped-checkpoint"), fakeId="checkpoint-"+"f".repeat(24);makeOriginUnverified(root);
+ fs.copyFileSync(path.join(root,".lode/sessions/ledger",checkpoint.checkpointId+".json"),path.join(root,".lode/sessions/ledger",fakeId+".json"));
+ const stateFile=path.join(root,".lode/sessions/by-id",f.session.sessionId,"current.json"),state=JSON.parse(fs.readFileSync(stateFile));state.latestCheckpoint=fakeId;fs.writeFileSync(stateFile,JSON.stringify(state));
+ fs.copyFileSync(path.join(f.root,".lode/sessions/ledger",checkpoint.checkpointId+".json"),path.join(f.root,".lode/sessions/ledger",fakeId+".json"));
+ assert.throws(()=>withSessionRoute(f.root,f.session.sessionId,()=>readRecoveryCheckpoint({root:f.root,checkpointId:fakeId})),{code:"INVALID_RECOVERY_CHECKPOINT"});
+ const before=snapshot(root);
+ await assert.rejects(runCommand(["resume",root,"--session",f.session.sessionId,"--copied-project","verified-copy"]),{code:"INVALID_RECOVERY_CHECKPOINT"});
+ assert.deepEqual(snapshot(root),before);
 });

@@ -11,6 +11,21 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.76 — publication tracked separately
+
+- Move a Project and selected Session using exact original records and reference
+  closure. Preserve current destination settings, default selection and newer
+  common direction; recover known copy/newline transitions without inventing origin.
+- Include recovery-required common proof path/ID/hash metadata by default after
+  a pre-export scope notice. Other Session bodies remain excluded; explicit
+  `selected-only` retains partial provenance where proof is omitted.
+- Add an optional exact-version Codex native-history Host adapter with local
+  before-backups, current-policy metadata verification, bounded owned-process
+  cleanup and at-most-once partial-group recovery. This is experimental, not a
+  stable import API or proof of model continuation/current instruction binding.
+- Keep Core P1–P5 and P2 recovery boundaries. Native registration evidence never
+  grants a ReviewDecision, Canon promotion, Session ownership or execution permission.
+
 ## 0.3.0-beta.75 — publication tracked separately
 
 - Default complete new local World/Graph writes to coalesced `chunked-code-v3`

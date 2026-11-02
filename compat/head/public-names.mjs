@@ -1473,7 +1473,51 @@ export const OPERATION_NAME_PAIRS = Object.freeze([
     "managedMutation": false,
     "kind": "router",
     "nativeRole": null
-  }
+  },
+  {
+    "legacyName": "head_project_bundle_export",
+    "canonicalName": "lode_project_bundle_export",
+    "semanticName": "head_project_bundle_export",
+    "suffix": "project_bundle_export",
+    "router": false,
+    "sessionDependent": true,
+    "managedMutation": false,
+    "kind": "operation",
+    "nativeRole": null
+  },
+  {
+    "legacyName": "head_project_bundle_read",
+    "canonicalName": "lode_project_bundle_read",
+    "semanticName": "head_project_bundle_read",
+    "suffix": "project_bundle_read",
+    "router": false,
+    "sessionDependent": false,
+    "managedMutation": false,
+    "kind": "operation",
+    "nativeRole": null
+  },
+  {
+    "legacyName": "head_project_bundle_import",
+    "canonicalName": "lode_project_bundle_import",
+    "semanticName": "head_project_bundle_import",
+    "suffix": "project_bundle_import",
+    "router": false,
+    "sessionDependent": false,
+    "managedMutation": false,
+    "kind": "operation",
+    "nativeRole": null
+  },
+{
+  "legacyName": "head_project_native_history",
+  "canonicalName": "lode_project_native_history",
+  "semanticName": "head_project_native_history",
+  "suffix": "project_native_history",
+  "router": false,
+  "sessionDependent": false,
+  "managedMutation": false,
+  "kind": "operation",
+  "nativeRole": null
+}
 ].map(Object.freeze));
 export const ENVIRONMENT_NAME_PAIRS = Object.freeze([
   {

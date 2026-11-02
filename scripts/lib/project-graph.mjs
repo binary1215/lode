@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { formatForVerifiedOwner, relativeProjectArtifact, projectOwnsRecordedRoot, projectLocationBasis } from "./project-storage-format.mjs";
+import { formatForVerifiedOwner, relativeProjectArtifact, projectOwnsRecordedRecord, projectLocationBasis } from "./project-storage-format.mjs";
 import { publicToolName } from "./lode-artifact-composition.mjs";
 import { artifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import {
@@ -136,7 +136,7 @@ async function verifiedLayer(inventory, layer, entries, model) {
     const read = readGraphRecord(root, entry.path);
     if (read.digest !== entry.sha256) fail("PROJECT_GRAPH_READ_DRIFT");
     if (read.document.projectId && read.document.projectId !== projectId) fail("PROJECT_GRAPH_CROSS_PROJECT");
-    if (read.document.projectRoot && !projectOwnsRecordedRoot(storage, read.document.projectRoot)) fail("PROJECT_GRAPH_CROSS_ROOT");
+    if (read.document.projectRoot && !projectOwnsRecordedRecord(storage, read.document.projectRoot, { path: entry.path, digest: read.digest })) fail("PROJECT_GRAPH_CROSS_ROOT");
     return { ...read, path: entry.path };
   });
   const recordsByIdentity = firstBy(records, item => recordIdentity(item.document));

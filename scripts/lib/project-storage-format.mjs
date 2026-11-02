@@ -3,12 +3,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { verifyProjectLocation, safeLocationFile, locationJournalRelative } from "./project-location-proof.mjs";
 import { LEGACY_FORMAT, PROTOCOL_PAIRS, KIND_PAIRS, VALUE_PAIRS } from "../../compat/head/format.mjs";
+import { verifyCopiedGitOwner, verifyCopiedGitRef } from "./project-copy-git-proof.mjs";
+import { verifyCopiedProjectFile } from "./project-copy-evidence.mjs";
 
 const lodeFormat = Object.freeze({ dialect: "lode", directory: ".lode", projectPrefix: "lode-", roleField: "lode", sessionIdField: "lodeSessionId",
   protocol: value => Object.hasOwn(PROTOCOL_PAIRS, value) ? PROTOCOL_PAIRS[value] : value,
   kind: value => Object.hasOwn(KIND_PAIRS, value) ? KIND_PAIRS[value] : value,
   value: value => Object.hasOwn(VALUE_PAIRS, value) ? VALUE_PAIRS[value] : value });
 const markerBases = new WeakMap();
+const copiedSnapshotReads = new WeakMap();
+const copiedSnapshotEntries = new WeakMap();
+const copiedGitReads = new WeakMap();
 const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const fail = (message, code) => { throw Object.assign(new Error(message), { code }); };
 
@@ -147,6 +152,113 @@ export function projectOwnsRecordedRoot(storage, recordedRoot) {
   const basis = markerBases.get(storage);
   return Boolean(basis && (recordedRoot === storage.projectRoot || basis.location?.roots.includes(recordedRoot)));
 }
+
+export function projectCopyRecordWasAdmitted(storage, relative) {
+  return Boolean(markerBases.get(storage)?.location?.copyAdmission?.inventory.files.some(entry => entry.path === relative));
+}
+
+export function projectOwnsRecordedRecord(storage, recordedRoot, { path: relative, digest: rawDigest } = {}) {
+  if (projectOwnsRecordedRoot(storage, recordedRoot)) return true;
+  const admission = markerBases.get(storage)?.location?.copyAdmission;
+  const entry = admission?.inventory.files.find(item => item.path === relative && item.sha256 === rawDigest);
+  if (!entry) return false;
+  verifyCopiedProjectFile(storage.projectRoot, entry);
+  return true;
+}
+
+// Called only by the local physical reader after its bounded decode/hydrate.
+// A caller-supplied/custom adapter document cannot borrow a copied file scope.
+export function noteCopiedSnapshotRead(storage, entry, dependencies = []) {
+  const basis = markerBases.get(storage)?.location;
+  if (!basis?.copyAdmission || !entry?.document || typeof entry.location !== "string") return entry;
+  const relative = path.relative(storage.projectRoot, entry.location).replaceAll("\\", "/");
+  const admitted = basis.copyAdmission.inventory.files.find(item => item.path === relative);
+  if (!admitted) return entry;
+  verifyCopiedProjectFile(storage.projectRoot, admitted);
+  copiedSnapshotReads.set(entry.document, { projectRoot: storage.projectRoot, admissionDigest: basis.copyAdmissionDigest,
+    relative, dependencies, logicalHash: entry.document.worldModelHash || entry.document.graphSnapshotHash });
+  copiedSnapshotEntries.set(entry, entry.document);
+  return entry;
+}
+
+export function projectOwnsRecordedSnapshot(storage, snapshot, entry = null) {
+  if (snapshot?.projectId !== storage?.projectId) return false;
+  if (projectOwnsRecordedRoot(storage, snapshot.projectRoot)) return true;
+  const admission = markerBases.get(storage)?.location?.copyAdmission;
+  if (entry !== null && copiedSnapshotEntries.get(entry) !== snapshot) return false;
+  const read = copiedSnapshotReads.get(snapshot);
+  if (!read || read.projectRoot !== storage.projectRoot || read.admissionDigest !== markerBases.get(storage)?.location?.copyAdmissionDigest
+    || read.logicalHash !== (snapshot.worldModelHash || snapshot.graphSnapshotHash)) return false;
+  const snapshotId = snapshot.worldModelId || snapshot.graphSnapshotId;
+  if (!admission || typeof snapshotId !== "string" || !/^(world-model|graph-snapshot)-[a-f0-9]{24}$/.test(snapshotId)) return false;
+  const git = copiedGitReads.get(snapshot);
+  if (git) {
+    return git.snapshotId === snapshotId && verifyCopiedGitRef({root:storage.projectRoot,directory:storage.directory,
+      projectId:storage.projectId,dialect:storage.dialect,admission,owner:git.owner,
+      snapshotId,treeObjectId:git.treeObjectId});
+  }
+  const family = snapshot.worldModelId ? "world-model" : "graph-projection";
+  const base = `${storage.directory}/${family}/snapshots/${snapshotId}.json`;
+  const entries = admission.inventory.files.filter(entry => entry.path === base || entry.path === `${base}.gz`);
+  if (entries.length !== 1 || entries[0].path !== read.relative) return false;
+  for (const dependency of read.dependencies) {
+    if (!projectOwnsRecordedRecord(storage, snapshot.projectRoot, dependency)) return false;
+  }
+  // Bundle bytes are pinned inside the existing bounded typed hydrate, not
+  // through a second decoder/traversal with different limits.
+  verifyCopiedProjectFile(storage.projectRoot, entries[0]);
+  return true;
+}
+
+// Imported historical authorizations do not inherit a live Host execution
+// capability, even when the new PC happens to use the same absolute path.
+// Historical private-store identity is read-only evidence. This does not
+// change the current store owner used by ensure/write/GC.
+function normalSnapshotStoreOwner(storage,owner) {
+ const basis=markerBases.get(storage);
+ if(!basis||!owner||typeof owner!=="object"||Array.isArray(owner))return false;
+ return [storage.projectRoot,...(basis.location?.roots||[])].some(root=>JSON.stringify(owner)===JSON.stringify({
+  schemaVersion:1,kind:"LocalDerivedSnapshotStore",projectId:storage.projectId,rootDigest:digest(root),
+  dialect:storage.dialect,objectFormat:"sha256",authority:"derived-evidence-only"}));
+}
+export function projectOwnsSnapshotStoreOwner(storage,owner) {
+ return normalSnapshotStoreOwner(storage,owner)||verifyCopiedGitOwner({root:storage.projectRoot,directory:storage.directory,
+  projectId:storage.projectId,dialect:storage.dialect,admission:markerBases.get(storage)?.location?.copyAdmission,owner});
+}
+export function projectOwnsSnapshotStoreAddress(storage,owner,snapshotId,treeObjectId) {
+ return normalSnapshotStoreOwner(storage,owner)||verifyCopiedGitRef({root:storage.projectRoot,directory:storage.directory,
+  projectId:storage.projectId,dialect:storage.dialect,admission:markerBases.get(storage)?.location?.copyAdmission,
+  owner,snapshotId,treeObjectId});
+}
+
+export function projectCopyContainsAuthorization(storage, authorizationId) {
+  const admission = markerBases.get(storage)?.location?.copyAdmission;
+  return Boolean(admission?.inventory.files.some(entry => entry.path === `${storage.directory}/runtime/execution-authorizations/${authorizationId}.json`));
+}
+export function projectBundleWasImported(storage, manifestSha256) {
+  const receipt=markerBases.get(storage)?.location?.copyAdmission;
+  return receipt?.kind === "PortableProjectAdmission" && receipt.bundleManifestDigest === manifestSha256;
+}
+
+export function projectBundleOmittedOriginal(storage, relative) {
+  const receipt=markerBases.get(storage)?.location?.copyAdmission;
+  return receipt?.kind === "PortableProjectAdmission" && !receipt.inventory.files.some(entry => entry.path === relative);
+}
+
 export function projectLocationBasis(storage) {
   return markerBases.get(storage)?.location?.digest ?? null;
+}
+
+// Trusted local Git reader only, after verified content-addressed tree/blobs.
+export function noteCopiedGitSnapshotRead(storage,entry,owner){
+ const basis=markerBases.get(storage)?.location,admission=basis?.copyAdmission;
+ const snapshot=entry?.document,snapshotId=snapshot?.worldModelId||snapshot?.graphSnapshotId;
+ if(!admission||!snapshot||!verifyCopiedGitRef({root:storage.projectRoot,directory:storage.directory,
+   projectId:storage.projectId,dialect:storage.dialect,admission,owner,snapshotId,
+   treeObjectId:entry.snapshotStorage?.treeObjectId}))return entry;
+ copiedSnapshotReads.set(snapshot,{projectRoot:storage.projectRoot,admissionDigest:basis.copyAdmissionDigest,
+   logicalHash:snapshot.worldModelHash||snapshot.graphSnapshotHash});
+ copiedSnapshotEntries.set(entry,snapshot);
+ copiedGitReads.set(snapshot,{owner:structuredClone(owner),snapshotId,treeObjectId:entry.snapshotStorage.treeObjectId});
+ return entry;
 }

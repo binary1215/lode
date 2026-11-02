@@ -2,7 +2,7 @@ import { inspectStorageReaderCompatibility } from "./snapshot-storage-compatibil
 import { verifyWorldModelPointerOriginal } from "./world-model.mjs";
 import { verifyGraphProjectionPointer } from "./graph-projection-adapter.mjs";
 import fs from "node:fs";
-import { formatForVerifiedOwner } from "./project-storage-format.mjs";
+import { formatForVerifiedOwner, resolveProjectStorage } from "./project-storage-format.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lode-artifact-composition.mjs";
 import path from "node:path";
 import { readProjectDirectionView } from "./project-direction-view.mjs";
@@ -14,8 +14,9 @@ import { buildRepositorySourceScope } from "./repository-source-scope.mjs";
 import { inspectRecoveryCheckpointDiagnosis } from "./recovery-checkpoint-diagnosis.mjs";
 import { actionability, withExperienceProjections } from "./experience-projection.mjs";
 import { linkProjectInstructions, validateInstructionIntegration } from "./project-instruction-link.mjs";
-import { resumeProjectLocation } from "./project-relocation.mjs";
-import { withSessionCallContext, validateRelocationSessionSelection, sessionSelectionUnresolved } from "./session-routing.mjs";
+import { inspectPendingProjectImport } from "./project-portability.mjs";
+import { resumeProjectLocation, repairProjectBytesForResume } from "./project-relocation.mjs";
+import { withSessionCallContext, validateRelocationSessionSelection, sessionSelectionUnresolved, defaultSessionStatePath, sessionStatePath } from "./session-routing.mjs";
 import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
 import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
 
@@ -57,6 +58,9 @@ function validateProfile(value) {
 }
 
 function onboardingSummary(inspected) {
+  if (inspected.status === "not_transferred") return {
+    status:inspected.status,reasonCode:inspected.reasonCode,candidateSetId:null,candidateCount:null,verification:inspected.verification,
+  };
   if (inspected.status === "integrity_attention") return {
     status: inspected.status, reasonCode: inspected.reasonCode,
     candidateSetId: null, candidateCount: null, verification: "unverified",
@@ -79,6 +83,10 @@ function onboardingSummary(inspected) {
 
 function productReadiness(status) {
   const states = {
+    not_transferred: {
+      state:"not_transferred",status:"core_ready",action:"work_directly",
+      summary:"Selected Core/Session originals were transferred. Optional Product governance and World data were outside this bundle; they were not recreated or judged corrupt.",
+    },
     integrity_attention: {
       state: "integrity_attention", status: "product_integrity_attention",
       action: "inspect_product_governance",
@@ -605,6 +613,14 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
 // Physical location facts only: no Session selection, recovery, binding lookup,
 // publication lock, or adoption. Normal owned roots retain their existing route.
 export function inspectProjectLocationExperience({ root = ".", sessionId } = {}) {
+  const pendingImport=inspectPendingProjectImport({root});
+  if(pendingImport)return withExperienceProjections({
+    kind:"LodeProjectExperienceProjection",status:"project_import_pending",projectRoot:pendingImport.projectRoot,projectImport:pendingImport,
+    readiness:{core:{state:"import_pending"},product:{state:"not-inspected"},context:{state:"not-inspected"},recovery:{state:"not-restored",headActionRequired:true}},
+    nextAction:{id:"continue_selected_import",summary:"The selected import is incomplete. Reuse its exact bundle through the import entrypoint; ordinary coding remains available and no task execution was replayed.",
+      entrypoint:{tool:publicToolName("head_project_bundle_import"),bundleId:pendingImport.bundleId,bundleRootHint:pendingImport.bundleRootHint}},
+    authority:{plane:"P4",advisoryOnly:true,persisted:false,mutatesProject:false,grantsAuthorization:false,writesRecoveryDirection:false},
+  });
   const location = resumeProjectLocation({ root, pluginRoot: activePluginRoot, inspectOnly: true,
     validateSelection: sessionId === undefined ? null : owner => {
       if (typeof sessionId !== "string") throw new Error("An explicit logical Session route must be text.");
@@ -627,10 +643,23 @@ export function inspectProjectLocationExperience({ root = ".", sessionId } = {})
   });
 }
 
+function missingDefaultSessionProjection(root,error) {
+  if(!["INVALID_CANON","INVALID_SESSION_CANON","ENOENT"].includes(error.code))return null;
+  const storage=resolveProjectStorage(root);if(!storage)return null;
+  const file=defaultSessionStatePath(root,storage);
+  if(error.headSessionRecordPath!==file&&error.path!==file)return null;
+  if(sessionStatePath(root,storage)!==file)return null;
+  try{fs.lstatSync(file);return null;}catch(observed){if(observed.code!=="ENOENT")throw error;}
+  return sessionSelectionUnresolved(root,{reasonCode:"DEFAULT_SESSION_ABSENT"});
+}
+
 export async function inspectProjectExperience({ root = ".", recoveryOverride = null } = {}) {
   const location = inspectProjectLocationExperience({ root });
   if (location) return location;
-  const project = inspectProject(root);
+  let project;
+  try { project = inspectProject(root); } catch(error) {
+    const projection=missingDefaultSessionProjection(root,error);if(projection)return projection;throw error;
+  }
   if (project.status !== "ready") return projectExperience(project, null, recoveryOverride);
   return projectExperience(project, (await inspectOptionalOnboarding({ root })), recoveryOverride);
 }
@@ -664,18 +693,36 @@ function bootstrapResponse({ root, profile, before, installation, onboardingActi
 
 export async function initializeOrResumeProject(options = {}) {
   const { root = ".", pluginRoot, runtimes = null, profile: requestedProfile = "core", onboarding = null,
-    instructionIntegration = null, projectSessionRoute = null } = options;
+    instructionIntegration = null, projectSessionRoute = null, copiedProject = null } = options;
   validateInstructionIntegration(instructionIntegration);
   const profile = validateProfile(requestedProfile);
   const onboardingInput = validateOnboardingInput(onboarding);
   if (profile === "core" && Object.keys(onboardingInput).length) {
-    fail("PROJECT_BOOTSTRAP_PROFILE_REQUIRED", "Onboarding input requires the explicit product profile.");
+    const fields = Object.keys(onboardingInput).sort().join(", ");
+    fail("PROJECT_BOOTSTRAP_PROFILE_REQUIRED", `For Core initialization or resume, omit Product onboarding fields (${fields}). The mode existing/new choice belongs to Product onboarding. Use the explicit product profile when that is the requested outcome.`);
   }
-  const location = resumeProjectLocation({ root, pluginRoot, runtimes,
-    validateSelection: owner => validateRelocationSessionSelection(owner, projectSessionRoute ?? {}) });
+  if (copiedProject !== null && copiedProject !== "verified-copy") fail("PROJECT_COPY_CHOICE_INVALID", "copiedProject must be verified-copy.");
+  if(inspectPendingProjectImport({root}))return inspectProjectLocationExperience({root});
+  const route = projectSessionRoute ? { sessionId: projectSessionRoute.sessionId, context: projectSessionRoute.context } : null;
+  let contextResolved=false;
+  const resolveContext = async () => {
+    if(!route || route.context || !projectSessionRoute.resolveContext || contextResolved)return null;
+    contextResolved=true;
+    try { route.context=await projectSessionRoute.resolveContext();return null; }
+    catch(error) { if(route.sessionId===undefined)return error.code||"HEAD_SESSION_CONTEXT_UNAVAILABLE";return null; }
+  };
+  const validateSelection = owner => validateRelocationSessionSelection(owner, route ?? {});
+  // Decide the explicit copy scope before even an exact-byte repair.
+  const locationPreview = resumeProjectLocation({ root, pluginRoot, runtimes, copiedProject, validateSelection, inspectOnly: true });
+  if (locationPreview?.requiredChoice && copiedProject !== "verified-copy") fail("PROJECT_COPY_CHOICE_REQUIRED", "The initial origin cannot be proved. Choose copiedProject=verified-copy for this exact local copy; no file has been changed.");
+  if(!locationPreview){const failure=await resolveContext();if(failure)return sessionSelectionUnresolved(root,{reasonCode:failure});}
+  let byteRepair;
+  try { byteRepair = repairProjectBytesForResume({ root, pluginRoot, runtimes, validateSelection }); }
+  catch(error) { const projection=missingDefaultSessionProjection(root,error);if(projection)return projection;throw error; }
+  const location = resumeProjectLocation({ root, pluginRoot, runtimes, copiedProject, validateSelection });
+  if (location && byteRepair) location.byteRepair = byteRepair;
   const operation = async () => (await initializeOrResumeCurrentProject({ ...options, root, profile, onboardingInput, location }));
   if (!projectSessionRoute) return (await operation());
-  const route = { sessionId: projectSessionRoute.sessionId, context: projectSessionRoute.context };
   const unresolved = reasonCode => {
     const value = sessionSelectionUnresolved(root, { reasonCode });
     if (!location) return value;
@@ -683,14 +730,7 @@ export async function initializeOrResumeProject(options = {}) {
     return { ...value, projectLocation: location, nextHeadAction: `${summary} ${value.nextHeadAction}`,
       presentation: { ...value.presentation, mode: "exception", summary } };
   };
-  if (!route.context && projectSessionRoute.resolveContext) {
-    try { route.context = await projectSessionRoute.resolveContext(); }
-    catch (error) {
-      if (route.sessionId === undefined) return unresolved(error.code || "HEAD_SESSION_CONTEXT_UNAVAILABLE");
-      // The exact explicit route remains independent of optional P5 storage.
-      // Its canonical validation below is never bypassed by Host availability.
-    }
-  }
+  const contextFailure=await resolveContext();if(contextFailure)return unresolved(contextFailure);
   try { return await withSessionCallContext({ root, ...route }, operation); }
   catch (error) { if (error.code === "HEAD_SESSION_SELECTION_LOST") return unresolved(error.code); throw error; }
 }
@@ -727,11 +767,11 @@ async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = n
   if (!fs.existsSync(path.join(root, projectGraphIndexPath(initialization.storage ?? before.storage)))) noteProjectGraphChange(root);
   let current = profile === "core" ? (await inspectOptionalOnboarding({ root })) : (await inspectOnboarding({ root }));
   if (profile === "core") {
-    const productGovernanceActivated = !["initialized", "migration_required"].includes(current.status);
+    const productGovernanceActivated = !["initialized", "migration_required", "not_transferred"].includes(current.status);
     return bootstrapResponse({
       root,
       profile,
-      onboardingAction: productGovernanceActivated ? "preserved-existing-state" : "not-activated",
+      onboardingAction: current.status === "not_transferred" ? "optional-state-outside-transfer-scope" : productGovernanceActivated ? "preserved-existing-state" : "not-activated",
       inputDisposition: "not-applicable",
       before,
       installation,

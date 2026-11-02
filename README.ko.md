@@ -55,6 +55,11 @@ Codex, Claude Code 또는 연동한 OpenCode에서 평소처럼 코딩 에이전
 지원 Hook이 제공하는 제한된 prompt/final-response 참조는 인용된 P5 맥락이며,
 전체 대화록이나 현재 사용자 승인의 증거가 아닙니다. Host별 지원은 [대화 압축 복구](docs/ko/compaction-recovery.md), [Session 복구](docs/ko/session-recovery.md), [작업 맥락과 Host 지원](docs/ko/session-work-context.md)을 참고하세요.
 
+### 다른 폴더나 PC에서도 작업을 이어갑니다
+
+Lode에 선택한 프로젝트 기록을 옮겨 달라고 요청합니다. 선택한 Session과 현재 공통 제약을 유지하고, 대상의 설정과 완료한 효과를 보존합니다. 선택적인 Codex 네이티브 이력은 별도로 검증한 좁은 복원 범위를 사용합니다. [Project 이관](docs/ko/project-portability.md)을 참고하세요.
+
+
 ### 범위가 명확하고 검토 가능한 컨텍스트를 전달합니다
 
 원하는 변경을 말하면 Lode가 저장소를 읽고 필요한 코드와 결정 근거를 고릅니다. 맥락 전달이 필요할 때 Context Compiler가 선택한 자료를 묶고 제외 내용과 불확실성을 알립니다. 단어가 일치한다는 이유만으로 관련성이 입증되지는 않습니다. 사용자가 근거 양식을 쓰거나 예산을 관리할 필요는 없으며, Compiler도 실제 포함 여부나 의미적 충분성을 인증하지 않습니다. [Context Compiler](docs/ko/context-compiler.md)에서 자세히 설명합니다.

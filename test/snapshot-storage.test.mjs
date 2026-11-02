@@ -1,3 +1,4 @@
+import { adoptVerifiedProjectCopy } from "../scripts/lib/project-copy-adoption.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -7,6 +8,9 @@ import zlib from "node:zlib";
 import test from "node:test";
 import { initializeProject, inspectProject, convergeProjectInstallation } from "../scripts/lib/head-core.mjs";
 import { seedLegacyProject } from "./helpers/legacy-project-fixture.mjs";
+import { initializeOrResumeProject } from "../scripts/lib/project-bootstrap.mjs";
+import { resolveProjectStorage } from "../scripts/lib/project-storage-format.mjs";
+import { readWorldModelSnapshot } from "../scripts/lib/world-model.mjs";
 import { GitSnapshotStore, snapshotGitProcessStatus } from "../scripts/lib/git-snapshot-store.mjs";
 import { buildGraphExplorerSnapshot } from "../scripts/lib/graph-explorer.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
@@ -360,4 +364,62 @@ test("private Git batch reads use four reaped children and preserve raw bytes, f
  await assert.rejects(store.object(read.snapshotStorage.objectId,'blob',4096,{deadline:Date.now()-1}),{code:'SNAPSHOT_GIT_TIMEOUT'});
  assert.deepEqual(snapshotGitProcessStatus(),[]);assert.equal(events.filter(e=>e.event==='started').length,events.filter(e=>e.event==='closed').length);
  assert.deepEqual((await store.read(id)).document,document);
+});
+
+test("proved relocation reads private Git historical owner without changing originals or granting ensure/write/GC ownership", async t => {
+ const f=fixture(t); source(f); const events=[];
+ const world=new LocalJsonWorldModelStoreAdapter({projectRoot:f.root,storage:f.storage,snapshotEncoding:"git",gitOptions:{onProcess:e=>events.push(e)}});
+ const graph=new LocalJsonGraphProjectionAdapter({projectRoot:f.root,storage:f.storage,snapshotEncoding:"git",gitOptions:{onProcess:e=>events.push(e)}});
+ const built=await buildWorldModel({root:f.root,storeAdapter:world,graphProjectionAdapter:graph});
+ const moved=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),"lode-git-relocation-")));t.after(()=>fs.rmSync(moved,{recursive:true,force:true}));
+ fs.cpSync(f.root,moved,{recursive:true});
+ const gitDir=path.join(moved,".lode/snapshot-objects.git"), originals=tree(gitDir);
+ await initializeOrResumeProject({root:moved,pluginRoot});
+ const read=await readWorldModelSnapshot({root:moved,worldModelId:built.snapshot.worldModelId});
+ assert.equal(read.snapshot.worldModelHash,built.snapshot.worldModelHash);
+ assert.equal(read.snapshotStorage.storeId,built.snapshotStorage.storeId);
+ assert.equal(read.snapshotStorage.rawSha256,built.snapshotStorage.rawSha256);
+ assert.deepEqual(tree(gitDir),originals);
+ const store=new GitSnapshotStore({projectRoot:moved,storage:resolveProjectStorage(moved),onProcess:e=>events.push(e)});
+ assert.throws(()=>store.checkOwner(),{code:"SNAPSHOT_GIT_OWNER_MISMATCH"});
+ await assert.rejects(store.ensure(store.context()),{code:"SNAPSHOT_GIT_OWNER_MISMATCH"});
+ await assert.rejects(store.write(built.snapshot.worldModelId,built.snapshot),{code:"SNAPSHOT_GIT_OWNER_MISMATCH"});
+ await assert.rejects(store.list("world-model"),{code:"SNAPSHOT_GIT_OWNER_MISMATCH"});
+ assert.deepEqual(tree(gitDir),originals);
+ assert.deepEqual(snapshotGitProcessStatus(),[]);
+ assert.equal(events.filter(e=>e.event==="started").length,events.filter(e=>e.event==="closed").length);
+});
+
+
+test("unproved copied Git permits only its exact admitted ref/tree without granting root or write ownership",async t=>{
+ const f=fixture(t);source(f);
+ const world=new LocalJsonWorldModelStoreAdapter({projectRoot:f.root,storage:f.storage,snapshotEncoding:"git"});
+ const graph=new LocalJsonGraphProjectionAdapter({projectRoot:f.root,storage:f.storage,snapshotEncoding:"git"});
+ const built=await buildWorldModel({root:f.root,storeAdapter:world,graphProjectionAdapter:graph});
+ const projectFile=path.join(f.root,".lode/project.json"),project=JSON.parse(fs.readFileSync(projectFile));
+ fs.writeFileSync(projectFile,JSON.stringify({...project,projectRoot:"C:/unproved/synthetic-source"},null,2)+"\n");
+ const manifestFile=path.join(f.root,".lode/generated/manifest.json"),manifest=JSON.parse(fs.readFileSync(manifestFile));
+ manifest.managed.find(entry=>entry.path===".lode/project.json").sha256=digest(fs.readFileSync(projectFile));fs.writeFileSync(manifestFile,JSON.stringify(manifest,null,2)+"\n");
+ const copied=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),"lode-unproved-git-copy-")));
+ t.after(()=>{assert.match(path.basename(copied),/^lode-unproved-git-copy-/);fs.rmSync(copied,{recursive:true,force:true});});
+ fs.cpSync(f.root,copied,{recursive:true});
+ assert.equal(adoptVerifiedProjectCopy({root:copied,pluginRoot}).status,"verified-copy-adopted");
+ const directory=path.join(copied,".lode/snapshot-objects.git"),before=tree(directory);
+ const read=await readWorldModelSnapshot({root:copied,worldModelId:built.snapshot.worldModelId});
+ assert.equal(read.snapshot.worldModelHash,built.snapshot.worldModelHash);assert.equal(read.snapshotStorage.rawSha256,built.snapshotStorage.rawSha256);
+ const store=new GitSnapshotStore({projectRoot:copied,storage:resolveProjectStorage(copied)});
+ assert.throws(()=>store.checkOwner(),{code:"SNAPSHOT_GIT_OWNER_MISMATCH"});
+ await assert.rejects(store.write(built.snapshot.worldModelId,built.snapshot),{code:"SNAPSHOT_GIT_OWNER_MISMATCH"});
+ await assert.rejects(store.list("world-model"),{code:"SNAPSHOT_GIT_OWNER_MISMATCH"});
+ assert.deepEqual(tree(directory),before);
+ const extra=wid(99),extraRef=path.join(directory,"refs/lode-snapshots",extra);
+ fs.writeFileSync(extraRef,built.snapshotStorage.treeObjectId+"\n");
+ await assert.rejects(store.read(extra),{code:"SNAPSHOT_GIT_COPIED_ADDRESS_NOT_ADMITTED"});
+ fs.unlinkSync(extraRef);
+ const originalRef=path.join(directory,"refs/lode-snapshots",built.snapshot.worldModelId),original=fs.readFileSync(originalRef);
+ fs.writeFileSync(originalRef,"f".repeat(64)+"\n");
+ await assert.rejects(store.read(built.snapshot.worldModelId),{code:"PROJECT_COPY_SOURCE_CHANGED"});
+ fs.writeFileSync(originalRef,original);
+ assert.equal((await readWorldModelSnapshot({root:copied,worldModelId:built.snapshot.worldModelId})).snapshotStorage.rawSha256,read.snapshotStorage.rawSha256);
+ assert.deepEqual(tree(directory),before);assert.deepEqual(snapshotGitProcessStatus(),[]);
 });

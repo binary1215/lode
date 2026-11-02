@@ -1,3 +1,4 @@
+import { verifyImportedDefaultRun } from "./session-imported-run-proof.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -10,6 +11,7 @@ import { noteProjectGraphChange } from "./discovery-index.mjs";
 import { safeSessionPath, defaultSessionStatePath } from "./session-paths.mjs";
 export { safeSessionPath, defaultSessionStatePath } from "./session-paths.mjs";
 import { readProjectDirectionView } from "./project-direction-view.mjs";
+import { verifyImportedDefaultSession } from "./session-import-proof.mjs";
 import { publicToolName } from "./lode-artifact-composition.mjs";
 export { readProjectDirection, updateProjectDirection } from "./project-direction.mjs";
 
@@ -26,6 +28,8 @@ const validId = (id) => typeof id === "string" && /^session-[a-fA-F0-9-]{36}$/.t
 // unclassified CLI operations retain routing rather than guessing independence.
 const independentCliInfo = new Set(["help", "--help", "-h", "help-all", "version", "--version"]);
 const cliProjectCalls = new Map(Object.entries({
+  "project-native-history": "head_project_native_history",
+  "project-export": "head_project_bundle_export", "project-bundle-inspect": "head_project_bundle_read", "project-import": "head_project_bundle_import",
   "graph-query": "head_project_graph", "graph-index": "head_project_graph_index",
   "graph-explorer": "head_project_graph",
   "project-direction-read": "head_project_direction_read", "project-direction-update": "head_project_direction_update",
@@ -36,7 +40,7 @@ const cliProjectCalls = new Map(Object.entries({
   "context-read": "head_context_capsule", "lineage-read": "head_lineage_artifact",
   "metric-status": "head_metric_status",
 }));
-const selectedSessionCalls = new Set(["head_project_initialize_or_resume", "head_project_status", "head_conversation_enter", "head_session_restore", "head_session_continue",
+const selectedSessionCalls = new Set(["head_project_bundle_export", "head_project_initialize_or_resume", "head_project_status", "head_conversation_enter", "head_session_restore", "head_session_continue",
   "head_pending_review", "head_runtime_adapters", "head_runtime_state", "head_world_model", "head_context_prepare", "head_context_preview", "head_compaction_lifecycle_step",
   "head_continuity_snapshot", "head_product_operating_status", "head_session_work_record", "head_session_work_read"]);
 export function sessionCallRequiresBinding(name, surface = "mcp") {
@@ -50,15 +54,25 @@ export function sessionCallRequiresBinding(name, surface = "mcp") {
     || selectedSessionCalls.has(name);
 }
 
-function read(file) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
+function readWithBytes(file) {
+  try { const bytes=fs.readFileSync(file);return {document:JSON.parse(bytes.toString("utf8")),bytes}; }
   catch (error) { fail(`Session record cannot be read: ${error.message}`, "INVALID_SESSION_CANON", file); }
 }
+
+const read = file => readWithBytes(file).document;
 
 export function assertRunSession(root, run, state) {
   // Historical Runs predate the explicit owner field; their original default
   // Session can still read/finish them, but a new Session cannot adopt them.
-  const owner = run.sessionId || read(defaultSessionStatePath(root)).sessionId;
+  let owner=run.sessionId;
+  if(!owner){
+    const storage=resolveProjectStorage(root);
+    const runFile=safeSessionPath(root,storage.directory,"sessions","runs",run.runId,"run.json");
+    const runBytes=fs.readFileSync(runFile);
+    const imported=verifyImportedDefaultRun({root:storage.projectRoot,directory:storage.directory,
+      project:{projectId:storage.projectId},sessionId:state.sessionId,runFile,runBytes,run});
+    owner=imported?state.sessionId:read(defaultSessionStatePath(root,storage)).sessionId;
+  }
   if (owner !== state.sessionId) fail("Run belongs to another logical HEAD Session.", "RUN_SESSION_MISMATCH");
 }
 
@@ -144,8 +158,9 @@ export function sessionStatePath(root, storage) {
   const defaultFile = defaultSessionStatePath(root, storage);
   if (!route) return defaultFile;
   const file = safeSessionPath(root, path.relative(canonicalRoot(root), route.stateFile));
-  const state = read(file);
+  const {document:state,bytes}=readWithBytes(file);
   const project = read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project.json"));
+  if(route.importedDefault && state.projectId == null && !verifyImportedDefaultSession({root:canonicalRoot(root),directory:formatForVerifiedOwner(storage).directory,project,sessionId:route.sessionId,stateFile:file,stateBytes:bytes})) fail("Imported Session original changed.","HEAD_SESSION_IDENTITY_MISMATCH",file);
   if (state.sessionId !== route.sessionId || project.projectId !== route.projectId
     || state.projectId && state.projectId !== route.projectId) fail("Selected logical Session identity changed during the request.", "HEAD_SESSION_IDENTITY_MISMATCH");
   return file;
@@ -181,10 +196,14 @@ function resolveSessionRoute(base, sessionId, preflightOwner = null) {
     if (defaultState?.sessionId === sessionId) fail("Default and named Session identities collide.", "HEAD_SESSION_IDENTITY_MISMATCH", defaultFile);
   } else defaultState = read(defaultFile);
   const file = named ? namedFile : defaultState?.sessionId === sessionId ? defaultFile : namedFile;
+  const pendingImport = safeSessionPath(base, path.relative(base,path.join(path.dirname(file), "import-pending.json")));
+  if (fs.existsSync(pendingImport)) fail("The selected Session import is incomplete; retry its exact bundle. Other Sessions remain available.", "HEAD_SESSION_IMPORT_PENDING", file);
   if (!fs.existsSync(file)) fail("Logical HEAD Session does not exist.", "HEAD_SESSION_NOT_FOUND");
-  const state = read(file);
-  if (!state || state.sessionId !== sessionId || (named ? state.projectId !== project.projectId : state.projectId && state.projectId !== project.projectId)) fail("Session identity does not match this Project.", "HEAD_SESSION_IDENTITY_MISMATCH", file);
-  return { sessionId, stateFile: file, projectId: project.projectId, storage };
+  const {document:state,bytes}=readWithBytes(file);
+  let importedDefault=false;
+  if(named && state?.projectId == null && state?.sessionId===sessionId) importedDefault=verifyImportedDefaultSession({root:base,directory,project,sessionId,stateFile:file,stateBytes:bytes});
+  if (!state || state.sessionId !== sessionId || (named ? state.projectId !== project.projectId && !importedDefault : state.projectId && state.projectId !== project.projectId)) fail("Session identity does not match this Project.", "HEAD_SESSION_IDENTITY_MISMATCH", file);
+  return { sessionId, stateFile: file, projectId: project.projectId, storage, importedDefault };
 }
 
 // Read-only input preflight for the explicit resume transaction. This does not
@@ -193,11 +212,12 @@ export function validateRelocationSessionSelection({ root, storage, project }, {
   if (context && !callContexts.has(context)) fail("Expected a trusted caller-scoped Host context.", "INVALID_HEAD_SESSION_CALL_CONTEXT");
   const binding = context?.read(root);
   if (sessionId === undefined && binding?.status === "lost") fail("Selected logical Session was lost.", "HEAD_SESSION_SELECTION_LOST");
-  const selected = sessionId === undefined ? binding?.sessionId : sessionId;
+  const selected = sessionId === undefined ? binding?.sessionId ?? selectedId(root) : sessionId;
   if (selected == null || selected === "") {
     const file = defaultSessionStatePath(root, storage), state = read(file);
     if (state?.schemaVersion !== 1 || !validId(state.sessionId) || state.projectId && state.projectId !== project.projectId) fail("Default Session identity differs.", "INVALID_SESSION_CANON", file);
-  } else resolveSessionRoute(canonicalRoot(root), selected, { storage, project });
+    return { sessionId: state.sessionId, stateFile: file };
+  } else return resolveSessionRoute(canonicalRoot(root), selected, { storage, project });
 }
 
 export function withSessionRoute(root, sessionId, operation) {
@@ -267,7 +287,8 @@ export function listLodeSessions({ root = ".", maxSessions = 16, afterSessionId 
     try { state = JSON.parse(bytes); } catch { fail("Session state is malformed.", "INVALID_SESSION_CANON"); }
     if (state?.schemaVersion !== 1 || !validId(state.sessionId)
       || key !== "default" && state.sessionId !== key
-      || (key === "default" ? state.projectId && state.projectId !== project.projectId : state.projectId !== project.projectId)) {
+      || (key === "default" ? state.projectId && state.projectId !== project.projectId : state.projectId !== project.projectId
+        && !(state.projectId == null && verifyImportedDefaultSession({root:base,directory:managementDirectory,project,sessionId:state.sessionId,stateFile:file,stateBytes:bytes})))) {
       fail("Session identity differs.", "HEAD_SESSION_IDENTITY_MISMATCH");
     }
     safeSessionPath(base, path.relative(base, file));
@@ -335,3 +356,14 @@ export function listLodeSessions({ root = ".", maxSessions = 16, afterSessionId 
 
 // Exact historical exports only; execution has one implementation.
 export { createLodeSession as createHeadSession, listLodeSessions as listHeadSessions };
+
+// A legitimate next P2 mutation can record its already-verified current owner.
+// Import itself keeps the original bytes; no modified unowned file can reuse
+// the old receipt, and the new P2 content is written only by its normal writer.
+export function sessionStateForWrite(root, state, storage) {
+  const route=selectedRoute(root);
+  if(!route || !route.importedDefault || state.projectId != null)return state;
+  if(state.sessionId!==route.sessionId)fail("Session write identity changed.","HEAD_SESSION_IDENTITY_MISMATCH");
+  sessionStatePath(root,storage);
+  return {...state,projectId:route.projectId};
+}

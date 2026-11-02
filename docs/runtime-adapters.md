@@ -1,5 +1,9 @@
 # Runtime adapter contracts
 
+For the separate, explicitly requested, version-scoped Codex native transfer
+flow and its current policy/continuation limits, see [Project portability](project-portability.md).
+It does not expand the bounded worker transport or general provider resume.
+
 ## Ordinary Host delegation versus managed runtime
 
 Direct Lode work is the overall default. Ordinary delegation uses tools already

@@ -55,6 +55,10 @@ Recovery covers recorded work direction, so unsaved conversation may be lost.
 Supported Hooks can supply bounded prompt/final-response references as quoted
 P5 context. They are neither a full transcript nor proof of current approval. Host support differs; see [Compaction recovery](docs/compaction-recovery.md), [Session recovery](docs/session-recovery.md) and [Session work context and Host support](docs/session-work-context.md).
 
+### Continue in a new folder or on another computer
+
+Ask Lode to move the selected project records with you. It preserves the chosen Session and current shared constraints, keeps destination settings, and leaves completed effects alone. Optional Codex native history has a separate, narrowly measured restore path; see [Project portability](docs/project-portability.md).
+
 ### Give each task bounded, reviewable context
 
 Describe the change. Lode reads the repository and selects the code and decision evidence it needs. When a context handoff is useful, the Context Compiler packs that material and reports exclusions and uncertainty. Keyword overlap does not prove relevance. You do not fill in evidence forms or manage budgets, and the compiler does not certify inclusion or semantic sufficiency. See [Context Compiler](docs/context-compiler.md).

@@ -2,7 +2,7 @@ import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
+import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact, projectBundleOmittedOriginal } from "./project-storage-format.mjs";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
 import { defaultSessionStatePath, sessionStatePath } from "./session-routing.mjs";
 import {
@@ -1784,6 +1784,19 @@ async function inspectOptionalOnboardingRecords(root, inspectWorld) {
   const inspected = readyProject(root, "optional Product inspection", "selected");
   try { return (await inspectOnboardingRecords(root, inspectWorld)); }
   catch (error) {
+    const directory=inspected.storage.directory;
+    let missingDefault=false;
+    if(error.headSessionRecordPath === defaultSessionStatePath(root,inspected.storage)) {
+      try { fs.lstatSync(defaultSessionStatePath(root,inspected.storage)); } catch(observed) { missingDefault=observed.code === "ENOENT"; }
+    }
+    if(error.code === "ENOENT" || missingDefault) {
+      const omitted=projectBundleOmittedOriginal(inspected.storage, directory+"/onboarding/current.json");
+      const onboardingDirectory=path.join(root,directory,"onboarding");
+      if(omitted && !fs.existsSync(onboardingDirectory)) return {
+        status:"not_transferred",reasonCode:"OPTIONAL_GOVERNANCE_NOT_IN_SELECTED_BUNDLE",ordinaryWorkBlocked:false,userReviewRequired:false,
+        verification:"outside-selected-transfer-scope",authority:"originals-not-promoted-or-recreated",
+      };
+    }
     const unrelatedDefaultFailure = error.headSessionRecordPath === defaultSessionStatePath(root, inspected.storage)
       && sessionStatePath(root, inspected.storage) !== defaultSessionStatePath(root, inspected.storage);
     if (!/^(?:INVALID_)?(?:ONBOARDING|WORLD_MODEL|GRAPH_|TEMPORAL_|PRODUCT_MODEL|PRODUCT_CANON|DOCUMENT_|ARCADEDB|HISTORICAL_|STORAGE_SELECTION|SESSION_RECORD)/.test(error.code || "")
@@ -1793,6 +1806,7 @@ async function inspectOptionalOnboardingRecords(root, inspectWorld) {
         "INVALID_SNAPSHOT_BUNDLE_ADDRESS", "INVALID_SNAPSHOT_BUNDLE_ENCODING", "INVALID_SNAPSHOT_BUNDLE_REFERENCE", "INVALID_SNAPSHOT_BUNDLE_SHAPE",
         "SNAPSHOT_BUNDLE_BASIS_MISMATCH", "SNAPSHOT_BUNDLE_CODEC_UNAVAILABLE", "SNAPSHOT_BUNDLE_COUNT_LIMIT", "SNAPSHOT_BUNDLE_CYCLE",
         "SNAPSHOT_BUNDLE_DIGEST_MISMATCH", "SNAPSHOT_BUNDLE_TYPE_MISMATCH", "SNAPSHOT_STORAGE_LIMIT", "SNAPSHOT_STORAGE_DRIFT", "UNSAFE_SNAPSHOT_PATH",
+        "PROJECT_COPY_SOURCE_CHANGED", "PROJECT_COPY_UNSAFE_FILE", "PROJECT_COPY_UNSAFE_PATH",
       ]).has(error.code)
       && !unrelatedDefaultFailure) throw error;
     return {
