@@ -11,6 +11,24 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.80 — publication tracked separately
+
+- Include eligible exact retained source originals cited by the selected Session
+  in the default portable export, with a references-only alternative and explicit
+  per-reference omissions. Preserve raw bytes, identities and current target direction.
+- Connect fresh and existing same-Project import, resume and re-export to exact
+  CLI/MCP/Explorer historical diffs through verified admission/Session receipts.
+  Unrelated source-bundle inventory limits do not hide imported exact originals.
+- Reject duplicate and escaped-equivalent JSON keys at every raw object depth,
+  including structural response frames. Keep normal BOM/whitespace/CRLF/Unicode
+  bytes unchanged; fixed included-original conflicts cannot become omission success.
+- Validate manifest capabilities through historical ownership proofs. Keep older
+  bundles readable with honest source coverage and ordinary source/Git query behavior.
+- Targeted synthetic and independent review passed. Physical symlink escape,
+  exhaustive filesystem races, actual GUI/native-app continuation and performance
+  remain unqualified. Git-only source collection remains separate; no new Git fetch
+  or execution/recovery authority is introduced by this transfer.
+
 ## 0.3.0-beta.79 — publication tracked separately
 
 - Publish all selected OpenCode sessions, messages and parts in one transaction
