@@ -198,7 +198,7 @@ export function validateCopiedManagedPaths({ root, directory, manifest } = {}) {
   return manifest;
 }
 
-export function readCopiedProjectExcerpt(root, entry, { offset = 0, maxBytes = 65536 } = {}) {
+export function readCopiedProjectExcerpt(root, entry, { offset = 0, maxBytes = 65536, signal, assertCurrentAuthority } = {}) {
   if (
     !Number.isSafeInteger(offset) ||
     offset < 0 ||
@@ -211,6 +211,7 @@ export function readCopiedProjectExcerpt(root, entry, { offset = 0, maxBytes = 6
     fail("PROJECT_COPY_INVENTORY_INVALID");
   const chunks = [];
   const observed = inspectCopiedProjectFile(root, entry.path, {
+    signal, assertCurrentAuthority,
     onChunk(bytes, start) {
       const from = Math.max(offset, start),
         to = Math.min(offset + maxBytes, start + bytes.length);

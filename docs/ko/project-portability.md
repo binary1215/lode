@@ -77,48 +77,120 @@ Windows x64·Codex 엔진 `0.166.0-alpha.5.1`이며, DB 스키마·마이그레�
 공개 작업은 `lode_project_native_history`이며 CLI는 다음과 같습니다.
 
 ```sh
-node scripts/lode.mjs project-native-history "<bundle>" --action capture --native-home "<source-CODEX_HOME>" --executable "<exact-codex.exe>" --threads "<explicit-native-id,...>"
+node scripts/lode.mjs project-native-history "<bundle>" --action capture --provider codex --native-home "<source-CODEX_HOME>" --executable "<exact-codex.exe>" --threads "<explicit-native-id,...>"
 node scripts/lode.mjs project-native-history "<bundle>" --action read
 node scripts/lode.mjs project-native-history "<bundle>" --action restore --native-home "<target-CODEX_HOME>" --executable "<exact-codex.exe>"
 node scripts/lode.mjs project-native-history "<bundle>" --action register --native-home "<target-CODEX_HOME>" --executable "<exact-codex.exe>" --runtime-root "<current-workspace>"
 ```
+
+capture에는 `provider`(`codex`, `claude`, `opencode`)가 필수입니다. 에이전트가
+요청된 출발 플랫폼이나 검증된 Host 경로에서 공급하며, 사용자에게 ID나 JSON 작성을
+요구하지 않습니다. read·restore·register는 검증된 companion link에서 플랫폼을
+가져올 수 있고, 명시한 provider가 있다면 link와 같아야 합니다. ID나 실행 파일 이름으로
+플랫폼을 추정하지 않습니다. 현재 로컬 후보는 Claude 2.1.223과 OpenCode 1.19.5
+어댑터도 연결합니다. 공식 클라이언트를 실행한 지원 검증은 아직 미완료이며, 합성
+시험은 로컬 흐름을 검증할 뿐 실제 앱 설치의 성공을 뜻하지 않습니다. 실행 파일을
+사용할 수 없으면 native home 접근이나 시작 전에 반환합니다. 지원이 확인되지 않은
+조합은 해당 네이티브 작업에만 영향을 주며, 공통 복구와 Handoff는 계속 사용할 수 있습니다.
+선택한 원문과 부속 자료는 비밀 제거 없이 보존합니다. 설정을 자동 수집하지 않는다는
+사실이 선택한 내용에 비밀이 없음을 보증하지는 않습니다.
+Claude 구조 검사에서는 파일명이나 메타데이터 행만으로 선택한 대화를 확인하지 않고,
+메시지 행에서 선택한 session ID가 관측돼야 합니다. 분기의 조상 기록은 원문 그대로
+보존하며, 선택한 조상 계보 밖의 다른 session 메시지와 ID 누락을 별도로 표시합니다.
+이는 공식 클라이언트에서의 대화 소유 검증을 뜻하지 않습니다.
 
 각각 별도로 요청하는 효과입니다. 일반 개발 전에 이 명령들을 순서대로 실행할 필요는
 없습니다. 데이터 조회에는 기존 읽기 전용 `lode_project_bundle_read`의
 `include_native_history: true`를 사용합니다. SDK를 시작하지 않으며, 공통 결과와 선택적
 네이티브 오류를 분리해서 보여 줍니다.
 
-캡처와 raw·SQLite 복원에는 쓰기 프로세스가 멈춘 창을 실제로 관측해야 합니다. Lode가
+Codex 어댑터의 캡처와 raw·SQLite 복원에는 쓰기 프로세스가 멈춘 창을 실제로 관측해야 합니다. Lode가
 앱이나 기존 MCP 연결을 종료·재시작하지 않습니다. 관련 writer가 불명확하면 네이티브
 작업만 사용할 수 없으며 Core 복구는 계속됩니다. 현재 대화가 자기 앱을 닫은 뒤 그대로
 실행을 이어가는 구조는 아닙니다. 이관을 준비하고, 사용자가 선택한 오프라인 창에서
 CLI로 진행합니다.
 
-캡처는 선택한 원본 바이트, 원래 파일명, 타입을 보존한 이력 행을 담습니다. 64비트 정수,
+### Claude와 OpenCode 로컬 어댑터
+
+선택한 대화를 같은 클라이언트로 옮겨 이력을 복원해 달라고 요청하면 됩니다.
+에이전트가 출발지·대상·선택 범위를 확인하며, 내부 ID나 JSON을 직접 작성할 필요는
+없습니다. 고급 CLI·MCP는 위 표면을 그대로 사용합니다. 두 provider의 capture·restore·register에는
+`--runtime-root <source-or-target-project>` / `runtime_root`도 공급합니다.
+읽기에는 번들만 있으면 됩니다.
+OpenCode 출발지 수집에서는 현재 Host가 이미 선택된 정확 ID의 export capability를
+제공해야 합니다. 출발 native-home·executable을 별도로 지정해 이 경로를 바꾸거나
+일반 프로필의 폴더 구조를 추정하지 않습니다.
+
+Claude capture는 선택한 JSONL의 안정된 스냅샷을 보존하며, 진행 중인 원본 대화가
+끝났다고 주장하지 않습니다. 선택적인 `--companions` / `companion_paths`는 출발
+프로젝트 이력 폴더의 `<native-id>/` 아래 파일만 지정하며 외부 참조를 따라가지 않습니다.
+restore는 파일 충돌과 다른 프로젝트 폴더의 동일 ID를 먼저 검사하고, 쓰기 중지 창을
+다시 관측한 뒤 없는 파일만 생성해 바이트를 재조회합니다. 같은 원문은 재쓰기 없이
+확인하고 다른 내용은 보존합니다. 초기 writer 관측은 Windows native `claude.exe`를
+지원 대상으로 삼으며 다른 조합은 아직 검증되지 않았습니다. 문서화된 경로 변환이
+200자를 넘으면 검증된 공식 경로 해석이 필요하며 임의 해시를 만들지 않습니다.
+이 제한은 네이티브 쓰기에만 적용됩니다. register는 이미 설치된 Agent SDK 0.3.234로
+목록과 반환 메시지를 읽을 수 있으며 SDK가 없어도 원문 복원 결과는 독립적으로
+사용할 수 있습니다. SDK 목록과 CLI picker 노출은 별개이고 모델 턴을 시작하지 않습니다.
+
+OpenCode 출발지 수집은 현재 Host capability가 반환한 정확한 export 바이트를
+보존하며, 해당 capability가 없으면 수집할 수 없습니다. 대상 복원 흐름은 이번 이관을
+위해 선택한 새 빈 프로필 기준 폴더 안에 `profile/`을 만들고
+`data/config/state/cache/home` 구조와 명령의 XDG·config·home·tmp를 그곳에
+한정합니다. 프로젝트 설정·기본 및 외부 플러그인·모델 가져오기·자동 업데이트를 끕니다. 일반 프로필로
+전환하거나 그 DB를 수정하거나 다른 provider 데이터를 변환하지 않습니다. 모든 입력은
+import 전에 구조 검사하며, 공식 스키마 decode는 격리된 import 중에 수행됩니다.
+별도의 완전한 공식 사전 decode를 했다고 주장하지 않습니다. 원본 export는 불변으로
+보존하고 파생 import 파일의 digest와 변경점을 분리합니다. 출발 Session Info의 활성
+permission·model·agent·revert·workspace·compacting 값은 파생본에서 제외하되 과거
+메시지 메타데이터는 그대로 둡니다. prompt loop나 미완료 tool·subtask·compaction을
+실행하지 않습니다. 정확한 ID의 export 재조회로 확인한 이력과 기본 root 전용 목록은
+서로 독립적으로 보고합니다.
+
+기본 OpenCode CLI 어댑터는 버전 확인 프로세스도 시작하기 전에
+`NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED`를 반환합니다. 공식 메타데이터
+명령도 설정·의존성 처리를 초기화할 수 있으며, 위 플래그가 설치나 네트워크 효과가
+없음을 입증하지는 않습니다. 출발지 수집과 대상 복원 흐름은 합성 Host 시험을 했을 뿐,
+실제 등록된 클라이언트 자격화가 아닙니다. 이 제한을 우회하는 옵션이나 JSON 스위치는
+없습니다. 향후 검증된 현재 Host가 한정된 메타데이터 capability를 제공할 수 있지만,
+새 실행 권한을 부여하지는 않습니다. 순수 번들·Handoff 조회는 계속 사용할 수 있습니다.
+
+두 어댑터는 생성 전용 운영 시도·결과 기록을 남깁니다. 기록과 실제 파일 게시·CLI
+import가 원자적으로 묶이지 않으므로 중단이나 부분 효과는 원래 실패 원인·영향 범위와
+함께 불확실한 상태로 남습니다. 이후 승인된 요청에서 현재 파일·ID를 정확히 재조회할
+수 있지만 효과를 자동 재실행하지는 않습니다. 충돌한 원문은 덮어쓰지 않습니다.
+원문·이력 검증, 목록 관측, 이어서 실행할 준비 여부를 분리하며 합성 시험의 성공으로
+대상 모델·권한 준비나 실제 Claude·OpenCode 지원을 추론하지 않습니다.
+
+Codex 캡처는 선택한 원본 바이트, 원래 파일명, 타입을 보존한 이력 행을 담습니다. 64비트 정수,
 BLOB, NULL, 알 수 없는 JSON 필드도 보존합니다. SQLite가 읽는 commit된 WAL을 사용하며,
 source WAL·SHM이나 source DB 전체를 전송하지 않습니다. 선택한 과거 state는 계정 선택
 열을 제외한 역사적 근거이며, 대상 state 행이나 현재 권한 설정으로 적용하지 않습니다.
 옛 절대경로도 역사적 정보로 남습니다. fork·history-base·압축·회전·보관 이력은 각각의
 closure·형식 검증 한계를 유지합니다. 보존했다고 네이티브 복원이 검증된 것은 아닙니다.
 
-create-only `native-history.json`은 정확한 공통 번들과 선택한 네이티브 payload를
+모든 provider에서 create-only `native-history.json`은 정확한 공통 번들과 선택한 네이티브 payload를
 연결합니다. P3 이관 근거이며, **이 Lode Session이 해당 네이티브 대화를 소유한다는
 증명은 아닙니다.** 명시적인 선택이나 별도로 검증된 Host 경로를 사용하고 제목·최신
 순서로 소유를 추정하지 않습니다. runtime binding·checkpoint·ReviewDecision·Canon·실행
 권한을 만들지 않습니다. 연결 파일의 부재·부분 복사·손상은 네이티브 결과의 문제이며,
 공통 manifest는 바뀌지 않습니다.
 
-복원은 검증된 대상 이력 DB의 로컬 사전 백업 뒤, 없는 정확한 raw 파일과 선택한 이력
+Codex 복원은 검증된 대상 이력 DB의 로컬 사전 백업 뒤, 없는 정확한 raw 파일과 선택한 이력
 행만 추가합니다. state DB 교체, `INSERT OR REPLACE`, 이후 사용자의 변경을 전체 백업으로
 덮어쓰기, 대상 설정 변경은 하지 않습니다. 파일 게시와 SQLite 트랜잭션은 별도 경계이며,
 앱 시작이나 source·target의 변경이 감지되면 의존하는 후속 작업을 중단합니다.
 
-디코더 한도를 넘는 큰 frame도 원문 바이트로 스트리밍해 보관합니다. 최종 바이트 길이가
+Codex rollout 캡처는 디코더 한도를 넘는 큰 frame도 원문 바이트로 스트리밍해 보관합니다. 최종 바이트 길이가
 선택한 cutoff와 같아야 하지만, 한도 이후의 frame 경계와 의존성은 미검증으로 남습니다.
 캡처나 재조회가 이를 네이티브 게시 지원으로 승격하지 않습니다. ID·권한·잘못된 형식·
 cutoff의 오류는 원래 실패를 유지합니다.
 
 ## 등록과 실제 검증 한계
+
+이 절은 고정된 Codex SDK의 메타데이터 등록 수명주기와 로컬 SQLite 백업만 설명합니다.
+Claude의 선택적 SDK 조회와 OpenCode의 Host·격리 프로필 흐름은 위에 설명한 별도의
+효과와 한계를 가집니다. Codex 백업·정책 조회·등록의 보증을 두 provider에 적용하지 않습니다.
 
 등록은 소유권을 확인하고 감독하는 SDK 메타데이터 수명주기를 시작합니다. **SDK 시작만으로
 파일을 발견해 명시적인 resume 전에 메타데이터를 바꿀 수 있습니다.** 따라서 시작 전부터
@@ -148,7 +220,7 @@ EOF flush를 확인한 뒤 supervisor에 정상 종료 시간을 줍니다. EOF�
 없어도 정리 대기는 제한되며 불확실성을 명시합니다. 강제 종료·자발적 실패·미확인 정리를
 등록 성공으로 승격하지 않습니다.
 
-| 검증한 정책·조회 | 고정 SDK에서 확인한 결과 |
+| 검증한 Codex 정책·조회 | 고정 Codex SDK에서 확인한 결과 |
 | --- | --- |
 | `read-only`, 독립된 paginated 합성 이력 | 메타데이터 등록과 원래 API 조회 내용의 동등성 검증 |
 | `danger-full-access`, 동일한 격리 메타데이터 범위 | 명시적인 현재 설정과 원래 API 조회의 동등성 검증. 모델·명령 실행 없음 |
@@ -170,3 +242,35 @@ EOF flush를 확인한 뒤 supervisor에 정상 종료 시간을 줍니다. EOF�
 raw·이력 보존, SDK 메타데이터 등록, 현재 네이티브 연결, Lode P2 복구, 모델이 실제로
 컨텍스트를 사용하는 것은 다른 결과입니다. 무엇을 검증했고 무엇이 미확인인지 분리해서
 설명합니다. 성공한 조회를 권위나 의미적 연속성의 보장으로 바꾸지 않습니다.
+
+
+## HANDOFF.md만 읽고 이어가기
+
+새 export는 읽기 쉬운 `HANDOFF.md`를 기본 생성하고, 생성 당시 digest와 정확한
+원본 basis를 최초 bundle manifest에 함께 고정합니다. 선택한 작업 목적, 원본의
+조건·취소, 판단과 이유, 보고된 결과, 불확실한 효과와 남은 일을 담습니다.
+저장된 관측만으로 완료를 추정하지 않습니다. 긴 작업 필드의 부분 범위와 bundle
+안의 원문 object 링크도 표시합니다.
+
+“이 HANDOFF.md를 읽고 현재 요청에 맞게 미완료 작업을 이어가자”라고 요청하면 됩니다.
+파일을 읽는 데 Project·DB·provider·checkpoint·새 초기화가 필요하지 않습니다.
+
+```sh
+node scripts/lode.mjs project-bundle-inspect "<HANDOFF.md>"
+```
+
+기존 `lode_project_bundle_read`에도 `bundle_root` 대신 `handoff_file`을 전달할 수
+있습니다. 인자는 에이전트가 준비합니다. byte 페이지는 부분 출력과 다음 offset을
+표시하며, 필요한 나머지 근거를 추가로 읽을 수 있습니다.
+
+Handoff는 인용된 P4 맥락이며 새로운 P2 방향이나 재승인이 아닙니다. 현재 대상의
+조건·설정·취소가 우선합니다. 읽기는 링크 추적·명령 실행·선택 변경·완료 또는
+불확실한 효과의 재시도를 하지 않습니다. 화면용 escaping을 원문 보존으로 주장하지
+않으며, 연결된 object가 원래 byte를 보존합니다.
+
+Handoff 누락·변경·안전한 읽기 실패는 공통 원본 검증·import 결과와 별도로 표시합니다.
+digest가 다르다는 사실만으로 편집 주체를 사용자라고 단정하지 않습니다. 읽기는
+파일을 복구하지 않으며 같은 export를 반복해도 기존 변경 파일을 덮지 않습니다.
+manifest·sourceBasis 변조는 여전히 공통 검증 실패입니다. 구형 bundle은 Handoff 없음으로
+표시하며 조용히 다시 쓰지 않습니다. native 목록 노출·이력 읽기·실제 모델 이어쓰기는
+각각 별도 결과입니다.

@@ -119,9 +119,10 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
       `${cliDisplay} graph-index <project>`,
       `${cliDisplay} graph-explorer <project> [--layer project|code] [--query <text-or-source>] [--anchors <id,...>] [--paths <path,...>] [--history] [--share] [--output <new-file.html>]`,
       `${cliDisplay} project-export <project> --destination <bundle-folder> [--provenance project-proof-metadata|selected-only] [--session <logical-session>] (default: project-proof-metadata)`,
-      `${cliDisplay} project-bundle-inspect <bundle-folder> [--expected-bundle <bundle-id>]`,
+      `${cliDisplay} project-bundle-inspect <bundle-folder-or-HANDOFF.md> [--expected-bundle <bundle-id>] [--handoff-offset <bytes> --handoff-max-bytes <bytes>]`,
       `${cliDisplay} project-import <target-project> --bundle <bundle-folder> [--expected-bundle <bundle-id>]`,
-      `${cliDisplay} project-native-history <bundle-folder> --action read|capture|restore|register [--native-home <exact-data-home> --executable <exact-codex.exe>] [--threads <exact-native-id,...>] [--runtime-root <current-workspace>]`,
+      `${cliDisplay} project-native-history <bundle-folder> --action read|capture|restore|register [--provider codex|claude|opencode] [--native-home <exact-data-home> --executable <exact-client>] [--threads <exact-native-id,...>] [--runtime-root <current-workspace>]`,
+      `  capture requires --provider; read/restore/register derive it only from a verified companion link. Claude/OpenCode effects also require --runtime-root; optional Claude --companions <selected-id/relative-file,...>. OpenCode source capture requires a registered Host export capability; its default CLI bootstrap remains unavailable pending qualification. The isolated destination workflow never switches the default profile.`,
       `${cliDisplay} session-create <project> [--purpose <text>] [--new-session <session-id>]`,
       `${cliDisplay} session-list <project> [--session <id>] [--max-sessions <1..64>] [--after-session <cursor>] [--conversation-candidates <json-file>]  # read-only preview and optional stored mappings; preserves selection`,
       `${cliDisplay} project-direction-read <project>`,
@@ -353,7 +354,7 @@ async function preparedRuntimeRead(root, value) {
     persisted: false, instructionAuthority: false, recoveryAuthority: false, executionAuthorization: false, modelUse: "unknown" } }; }
 }
 
-export async function runCommand(argv = process.argv.slice(2), { observationRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, sessionContext = null, signal, onProcess, onExportScope = null } = {}) {
+export async function runCommand(argv = process.argv.slice(2), { observationRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, sessionContext = null, nativeHistoryHost = null, signal, onProcess, onExportScope = null } = {}) {
   const entry = commandEntry(argv);
   const parsed = parse(entry.argv);
   const index = argv.indexOf("--session");
@@ -379,9 +380,9 @@ export async function runCommand(argv = process.argv.slice(2), { observationRegi
     if (["init", "resume"].includes(parsed.command)) {
       const projectSessionRoute = { sessionId: index >= 0 ? parsed.options.session : undefined, context: sessionContext };
       return (await runRoutedCommand(routed, {
-        observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, signal, onProcess, onExportScope, projectSessionRoute }));
+        observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, nativeHistoryHost, signal, onProcess, onExportScope, projectSessionRoute }));
     }
-    const operation = async () => (await runRoutedCommand(routed, { observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, signal, onProcess, onExportScope }));
+    const operation = async () => (await runRoutedCommand(routed, { observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, nativeHistoryHost, signal, onProcess, onExportScope }));
     if (index < 0 && !sessionCallRequiresBinding(parsed.command, "cli")) return (await operation());
     try { return withSessionCallContext({ root: parsed.root, sessionId: index >= 0 ? parsed.options.session : undefined, context: sessionContext }, operation); }
     catch (error) {
@@ -389,10 +390,10 @@ export async function runCommand(argv = process.argv.slice(2), { observationRegi
       return sessionSelectionUnresolved(parsed.root, { includeProjectFacts: ["status", "doctor", "conversation-enter"].includes(parsed.command) });
     }
   }
-  return (await runRoutedCommand(argv, { observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, signal, onProcess, onExportScope }));
+  return (await runRoutedCommand(argv, { observationRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, workerPreparationBackend, nativeHistoryHost, signal, onProcess, onExportScope }));
 }
 
-async function runRoutedCommand(argv, { observationRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, signal, onProcess, onExportScope = null, projectSessionRoute = null } = {}) {
+async function runRoutedCommand(argv, { observationRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, nativeHistoryHost = null, signal, onProcess, onExportScope = null, projectSessionRoute = null } = {}) {
   const entry = commandEntry(argv);
   const { surface } = entry;
   const { command, root, options } = parse(entry.argv);
@@ -411,17 +412,24 @@ async function runRoutedCommand(argv, { observationRegistry = null, compactionLi
     onboarding: options.input ? inputJson(options, "Project onboarding") : null,
   }));
   if (command === "project-native-history") {
-    const allowed=new Set(["action","native-home","executable","threads","runtime-root","expected-bundle"]);
+    const allowed=new Set(["action","provider","native-home","executable","threads","runtime-root","expected-bundle","companions"]);
     if(Object.keys(options).some(key=>!allowed.has(key))) throw new Error("Unsupported native history arguments.");
-    return (await import("./lib/project-native-history.mjs")).operateProjectNativeHistory({action:options.action,bundleRoot:root,
+    return (await import("./lib/project-native-history.mjs")).operateProjectNativeHistory({action:options.action,provider:options.provider,bundleRoot:root,
       expectedBundleId:options["expected-bundle"]??null,nativeHome:options["native-home"],executable:options.executable,
       threadIds:options.threads===undefined?undefined:String(options.threads).split(",").map(value=>value.trim()),
-      root:options["runtime-root"],pluginRoot,signal,onProcess});
+      companionPaths:options.companions===undefined?[]:String(options.companions).split(",").map(value=>value.trim()),
+      root:options["runtime-root"],pluginRoot,nativeHistoryHost,signal,onProcess});
   }
   if (command === "project-export") return (await import("./lib/project-portability.mjs")).exportProjectBundle({root,destination:options.destination,provenanceScope:options.provenance,signal,onExportScope});
   if (command === "project-bundle-inspect") {
+    const handoffOptions = { offset: options["handoff-offset"] === undefined ? 0 : Number(options["handoff-offset"]),
+      maxBytes: options["handoff-max-bytes"] === undefined ? 65536 : Number(options["handoff-max-bytes"]) };
+    if (!fs.lstatSync(root).isDirectory()) {
+      if (options["expected-bundle"] !== undefined) throw new Error("A standalone Handoff has no verified bundle identity.");
+      return (await import("./lib/project-handoff.mjs")).readProjectHandoffFile({file:root,...handoffOptions,signal});
+    }
     const core=await import("./lib/project-portability.mjs");
-    return core.projectBundleSummary(core.inspectProjectBundle({bundleRoot:root,expectedBundleId:options["expected-bundle"] ?? null,signal}));
+    return core.projectBundleSummary(core.inspectProjectBundle({bundleRoot:root,expectedBundleId:options["expected-bundle"] ?? null,signal,handoffOptions}));
   }
   if (command === "project-import") {
     const result=(await import("./lib/project-portability.mjs")).importProjectBundle({root,bundleRoot:options.bundle,expectedBundleId:options["expected-bundle"] ?? null,pluginRoot,signal});

@@ -1,3 +1,4 @@
+import { inspectProviderNativePayload, providerNativePayloadSummary } from "./provider-native-history-payload.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -11,7 +12,9 @@ import {
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
 import { readSnapshotFile } from "./snapshot-storage-codec.mjs";
 
-const relative = "native/codex/history";
+const providers = new Set(["codex", "claude", "opencode"]);
+const relativeFor = provider => providers.has(provider) ? "native/" + provider + "/history" : null;
+const inspectNative = (provider, options) => provider === "codex" ? inspectCodexNativePayload(options) : inspectProviderNativePayload({ ...options, expectedProvider: provider });
 const linkPath = "native-history.json";
 const bytes = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -22,7 +25,7 @@ const cancelled = (signal) => {
   if (signal?.aborted) fail("PROJECT_NATIVE_TRANSFER_CANCELLED");
 };
 
-function linkFor(common, native) {
+function linkFor(common, native, provider = "codex") {
   return {
     schemaVersion: 1,
     kind: "NativeHistoryTransferLink",
@@ -31,8 +34,8 @@ function linkFor(common, native) {
     commonManifestDigest: common.manifestSha256,
     projectId: common.manifest.projectId,
     selectedSessionId: common.manifest.selectedSessionId,
-    provider: "codex",
-    path: relative,
+    provider,
+    path: relativeFor(provider),
     payloadId: native.payloadId,
     payloadDigest: native.payloadDigest,
     selection: "explicit-native-history-selection",
@@ -59,7 +62,7 @@ export function readProjectNativeTransfer({ bundleRoot, expectedBundleId = null,
   cancelled(signal);
   if (!fs.existsSync(copiedProjectFile(root, linkPath)))
     return {
-      status: fs.existsSync(copiedProjectFile(root, "native/codex"))
+      status: [...providers].some(provider => fs.existsSync(copiedProjectFile(root, "native/" + provider)))
         ? "native-transfer-incomplete-without-link"
         : "native-history-not-attached",
       bundleId: common.bundleId,
@@ -75,17 +78,17 @@ export function readProjectNativeTransfer({ bundleRoot, expectedBundleId = null,
     };
   const original = readLink(root),
     link = original.document;
-  if (!link || link.path !== relative || link.provider !== "codex")
+  if (!link || !providers.has(link.provider) || link.path !== relativeFor(link.provider))
     fail("PROJECT_NATIVE_TRANSFER_LINK_INVALID");
-  const native = inspectCodexNativePayload({
-    directory: copiedProjectFile(root, relative),
+  const native = inspectNative(link.provider, {
+    directory: copiedProjectFile(root, relativeFor(link.provider)),
     expectedPayloadId: link.payloadId,
     signal,
   });
-  if (!original.bytes.equals(bytes(linkFor(common, native))))
+  if (!original.bytes.equals(bytes(linkFor(common, native, link.provider))))
     fail("PROJECT_NATIVE_TRANSFER_LINK_MISMATCH");
   return {
-    status: native.mechanicalOriginalsReady
+    status: native.provider ? "verified-native-raw-transfer" : native.mechanicalOriginalsReady
       ? "verified-native-transfer"
       : "verified-native-transfer-partial",
     bundleId: common.bundleId,
@@ -93,6 +96,7 @@ export function readProjectNativeTransfer({ bundleRoot, expectedBundleId = null,
     projectId: common.manifest.projectId,
     selectedSessionId: common.manifest.selectedSessionId,
     commonProjectAdmissionReady: common.projectAdmissionReady,
+    sourceProvider: link.provider,
     linkDigest: hash(original.bytes),
     native,
     ordinaryCoreBlocked: false,
@@ -107,7 +111,7 @@ export function readProjectNativeTransfer({ bundleRoot, expectedBundleId = null,
 
 export function projectNativeTransferSummary(result) {
   const { native, ...summary } = result;
-  return { ...summary, native: native ? codexNativePayloadSummary(native) : null };
+  return { ...summary, native: native ? native.provider ? providerNativePayloadSummary(native) : codexNativePayloadSummary(native) : null };
 }
 
 // Recheck the exact already-verified selection headers at effect boundaries.
@@ -129,6 +133,7 @@ export function assertProjectNativeTransferCurrent({
 }
 
 export function attachProjectNativeTransfer({
+  provider = "codex",
   bundleRoot,
   directory,
   expectedBundleId = null,
@@ -147,11 +152,13 @@ export function attachProjectNativeTransfer({
   };
   check();
 
+  if (!providers.has(provider)) fail("NATIVE_HISTORY_PROVIDER_UNSUPPORTED");
   const common = inspectProjectBundle({ bundleRoot, expectedBundleId, signal }),
-    native = inspectCodexNativePayload({ directory, signal }),
+    native = inspectNative(provider, { directory, signal }),
+    relative = relativeFor(provider),
     root = common.bundleRoot;
   cancelled(signal);
-  const encoded = bytes(linkFor(common, native)),
+  const encoded = bytes(linkFor(common, native, provider)),
     existing = copiedProjectFile(root, linkPath);
   if (fs.existsSync(existing)) {
     if (!readLink(root).bytes.equals(encoded)) fail("PROJECT_NATIVE_TRANSFER_LINK_CONFLICT");
@@ -187,12 +194,12 @@ export function attachProjectNativeTransfer({
     copy("objects/" + sha256 + ".bin");
   copy("manifest.json");
   check();
-  const copied = inspectCodexNativePayload({
+  const copied = inspectNative(provider, {
     directory: target,
     expectedPayloadId: native.payloadId,
     signal,
   });
-  const current = inspectCodexNativePayload({
+  const current = inspectNative(provider, {
     directory: native.directory,
     expectedPayloadId: native.payloadId,
     signal,
@@ -224,6 +231,7 @@ export function attachProjectNativeTransfer({
 }
 
 export function projectNativeCaptureDirectory({
+  provider = "codex",
   bundleRoot,
   expectedBundleId = null,
   assertCurrentAuthority = () => {},
@@ -238,9 +246,10 @@ export function projectNativeCaptureDirectory({
   };
   check();
   const common = inspectProjectBundle({ bundleRoot, expectedBundleId });
-  const parent = copiedProjectFile(common.bundleRoot, "native/codex");
+  if (!providers.has(provider)) fail("NATIVE_HISTORY_PROVIDER_UNSUPPORTED");
+  const parent = copiedProjectFile(common.bundleRoot, "native/" + provider);
   check();
   fs.mkdirSync(parent, { recursive: true });
-  copiedProjectFile(common.bundleRoot, "native/codex");
+  copiedProjectFile(common.bundleRoot, "native/" + provider);
   return path.join(parent, "history");
 }
