@@ -50,7 +50,7 @@ test("small default discovery keeps all optional contracts discoverable and mana
   const ordinary = (await dispatch({ id: 1, method: "tools/list" })).result.tools;
   const retained = (await dispatch({ id: 2, method: "tools/list" }, { surface: "managed-maintenance" })).result.tools;
   assert.deepEqual(ordinary, tools); assert.deepEqual(retained, toolsForSurface("managed-maintenance"));
-  assert.equal(ordinary.length, 20);
+  assert.equal(ordinary.length, 22);
   for (const name of ["lode_session_create", "lode_project_direction_update"]) {
     assert.strictEqual(tools.find(tool => tool.name === name), catalogTools.find(tool => tool.name === name));
     assert.deepEqual(ordinary.find(tool => tool.name === name), retained.find(tool => tool.name === name));

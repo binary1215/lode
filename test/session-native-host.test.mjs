@@ -504,8 +504,8 @@ test("Claude matcher derives Session and effectful coverage from the catalog, ex
   const hooks=JSON.parse(fs.readFileSync(path.join(pluginRoot,"hooks/claude.json"),"utf8"));
   assert.deepEqual(hooks.hooks.PreToolUse.map(group=>group.matcher),claudeNativeHookMatchers(catalogTools));
   for(const tool of catalogTools){
-    const expected=sessionCallRequiresBinding(tool.name)||["lode_tools_call","lode_tools_read"].includes(tool.name)||tool.annotations?.readOnlyHint!==true;
     for(const spelling of [tool.name,resolveOperation(tool.name).legacyName]){
+      const expected=sessionCallRequiresBinding(tool.name)||["lode_tools_call","lode_tools_read"].includes(tool.name)||tool.annotations?.readOnlyHint!==true||["lode_conversation_list","head_conversation_list"].includes(spelling);
       assert.equal(new RegExp(hooks.hooks.PreToolUse[0].matcher).test("mcp__lode__"+spelling),expected,spelling);
       assert.equal(new RegExp(hooks.hooks.PreToolUse[1].matcher).test("mcp__plugin_lode-agent-core_lode__"+spelling),expected,spelling);
     }
