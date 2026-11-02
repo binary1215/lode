@@ -362,6 +362,7 @@ func runOwnedProvider(request Request, input io.Reader, interactiveInput io.Clos
 	if interactiveInput == nil {
 		command.Stdin = input
 	} else {
+		var err error
 		inputPipe, err = command.StdinPipe()
 		if err != nil {
 			return 2, errors.New("interactive provider stdin could not be prepared")
