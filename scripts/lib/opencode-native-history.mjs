@@ -43,9 +43,14 @@ export async function operateOpenCodeNativeHistory({ action, selected, nativeHom
   if (home) nativeSeparate(home, nativeRoot(selected.bundleRoot));
   if (companionPaths.length) nativeFail("NATIVE_OPENCODE_COMPANION_IMPORT_UNSUPPORTED");
   const version = "1.19.5";
+  const atomic = typeof host.observeAtomicBatch === "function" && typeof host.publishAtomicBatch === "function";
   const base = { clientEvidence: host.evidenceKind, clientVersion: version, profileMode: "explicit-isolated-profile",
     defaultProfileChanged: false, metadataCommandsArePureFileReads: false,
-    officialPredecode: "not-performed; structural checks precede isolated official import" };
+    officialPredecode: atomic ? "source-bound-fixed-version-validation; not an Effect decoder" : "not-performed",
+    ...(atomic ? { profileMode: "explicit-qualified-isolated-db", metadataCommandsArePureFileReads: false,
+      metadataCommandMode: "read-only-sqlite; WAL/SHM activity is not byte-level immutability",
+      nativeClientVisibility: "qualified-db-readback; live app cache not observed", atomicBatchPublication: true,
+      providerProcessStarted: false } : {}) };
   if (action === "capture") {
     // Source profile routing belongs to the current Host capability, not an
     // invented isolated-home mapping or a new source CLI/bootstrap.
@@ -94,15 +99,40 @@ export async function operateOpenCodeNativeHistory({ action, selected, nativeHom
   if (fs.existsSync(markerFile)) {
     if (!nativeRaw(home, "native-profile-intent.json", signal, check).raw.equals(nativeJson(marker))) nativeFail("NATIVE_OPENCODE_PROFILE_CONFLICT");
   } else if (action === "register") return nativeOutcome("opencode", { ...base, status: "native-history-not-restored" });
-  else if (fs.readdirSync(home).length) nativeFail("NATIVE_OPENCODE_NEW_ISOLATED_PROFILE_REQUIRED");
+  else if (atomic ? fs.readdirSync(home).some(name => name !== "profile") : fs.readdirSync(home).length)
+    nativeFail("NATIVE_OPENCODE_NEW_ISOLATED_PROFILE_REQUIRED");
   // All path/profile admission checks precede even a version command.
   const observedVersion = await host.version({ home, cwd: project }); check();
   if (observedVersion !== version) nativeFail("NATIVE_OPENCODE_VERSION_UNQUALIFIED");
-  let observations = [], listing = null, readbackFailure = null;
+  const documents = plans.map(plan => ({ nativeId: plan.entry.nativeId, raw: plan.derived.bytes }));
+  if (action === "restore" && !atomic) return nativeOutcome("opencode", { ...base, status: "native-atomic-history-capability-unavailable",
+    reasonCode: "NATIVE_OPENCODE_ATOMIC_BATCH_HOST_REQUIRED", persisted: false });
+  if (atomic) {
+    check(); const preflight = await host.observeAtomicBatch({ documents, cwd: project, home: profile }); check();
+    if (!["absent", "matches", "partial", "diverged"].includes(preflight.state)) nativeFail("NATIVE_OPENCODE_ATOMIC_OBSERVATION_INVALID");
+    if (["partial", "diverged"].includes(preflight.state)) return nativeOutcome("opencode", { ...base,
+      status: "native-history-target-conflict", currentObservation: preflight.state, persisted: false,
+      reasonCode: preflight.state === "partial" ? "NATIVE_OPENCODE_PARTIAL_HISTORY_OBSERVED" : "NATIVE_OPENCODE_HISTORY_READBACK_MISMATCH" });
+    // This is observation, not a fresh write license. Existing attempts are
+    // still reconciled below by the create-only at-most-once journal.
+  }
+  let observations = [], listing = null, readbackFailure = null, normalizations = [];
   const observe = async () => {
     check();
     if (!fs.existsSync(profile)) return { state: "absent" };
     nativeRoot(profile);
+    if (atomic) {
+      const observed = await host.observeAtomicBatch({ documents, cwd: project, home: profile }); check();
+      if (observed.state === "matches") {
+        normalizations = observed.normalizations ?? [];
+        observations = observed.documents.map(actual => ({ nativeId: actual.info.id, messageCount: actual.messages.length,
+          partCount: actual.messages.reduce((n, row) => n + row.parts.length, 0), historyDigest: nativeHash(nativeJson(canonical(actual))) }));
+        return { state: "matches", evidenceDigest: observed.evidenceDigest };
+      }
+      if (observed.state === "partial") return { state: "unknown", primaryReadbackCode: "NATIVE_OPENCODE_PARTIAL_HISTORY_OBSERVED" };
+      if (!["absent", "diverged"].includes(observed.state)) nativeFail("NATIVE_OPENCODE_ATOMIC_OBSERVATION_INVALID");
+      return { state: observed.state };
+    }
     const results = [];
     for (const plan of plans) {
       try {
@@ -134,13 +164,15 @@ export async function operateOpenCodeNativeHistory({ action, selected, nativeHom
       currentObservation: observed.state, primaryFailure: observed.primaryReadbackCode ? { code: observed.primaryReadbackCode } : null });
     await list();
     return nativeOutcome("opencode", { ...base, status: "native-history-reader-observed", isolatedProfile: profile,
-      historyReadbackVerified: true, observations, listing, listCoverage: "official-default-root-list; not all historical IDs" });
+      historyReadbackVerified: true, observations, listing,
+      ...(atomic ? { normalizations } : {}),
+      listCoverage: atomic ? "qualified-db-root-list; child IDs require exact readback" : "official-default-root-list; not all historical IDs" });
   }
   check();
   if (!fs.existsSync(markerFile)) atomicCreateArtifact(markerFile, nativeJson(marker));
   const operationRoot = copiedProjectFile(home, ".lode-native-transfer");
   fs.mkdirSync(operationRoot, { recursive: true }); copiedProjectFile(home, ".lode-native-transfer");
-  const input = { provider: "opencode", profileId: "opencode-official-isolated-1.19.5", payloadDigest: native.payloadDigest,
+  const input = { provider: "opencode", profileId: atomic ? host.atomicProfileId : "opencode-official-isolated-1.19.5", payloadDigest: native.payloadDigest,
     targetHomeDigest: nativeHash(home), nativeThreadId: native.payloadId, targetPathDigest: nativeHash(project),
     currentPolicyDigest: nativeHash("no-source-active-settings-no-prompt"), runtimeRootsDigest: nativeHash(project) };
   let importsAttempted = 0;
@@ -149,24 +181,15 @@ export async function operateOpenCodeNativeHistory({ action, selected, nativeHom
     readStatus: async ({ inputDigest }) => ({ ...await observe(), inputDigest }),
     register: async () => {
       check();
-      if (fs.existsSync(profile)) nativeFail("NATIVE_OPENCODE_PROFILE_CHANGED_BEFORE_IMPORT");
-      fs.mkdirSync(profile);
-      for (const name of ["home", "config", "data", "cache", "state", "tmp", "inputs"]) fs.mkdirSync(copiedProjectFile(profile, name));
-      // All inputs were structurally decoded/derived above. Official v1 performs
-      // its own schema decoding during import; partial writes stay isolated.
-      for (const plan of plans) {
-        nativeObject(native, plan.entry, signal, check); check();
-        const relative = "inputs/" + nativeHash(plan.entry.nativeId) + ".json", file = copiedProjectFile(profile, relative);
-        atomicCreateArtifact(file, plan.derived.bytes);
-        if (!nativeRaw(profile, relative, signal, check).raw.equals(plan.derived.bytes)) nativeFail("NATIVE_OPENCODE_IMPORT_INPUT_CHANGED");
-        importsAttempted++;
-        await host.run({ args: ["import", file], cwd: project, home: profile }); check();
-      }
+      for (const plan of plans) nativeObject(native, plan.entry, signal, check);
+      check(); importsAttempted++;
+      await host.publishAtomicBatch({ documents, cwd: project, home: profile }); check();
     } }); } catch (error) {
     return nativeOutcome("opencode", { ...base, status: "native-history-operation-uncertain", historyReadbackVerified: false,
       isolatedProfile: profile, importsAttempted, observations, primaryFailure: { code: error.code || "NATIVE_OPENCODE_OPERATION_FAILED",
-        ...(error.nativeCleanupFailure ? { cleanupFailure: error.nativeCleanupFailure } : {}) },
-      recovery: "Inspect exact IDs in this isolated profile on a fresh authorized request; do not replay import." });
+        ...(error.nativeCleanupFailure ? { cleanupFailure: error.nativeCleanupFailure } : {}),
+        ...(error.nativeDatabaseOutcome ? { databaseOutcome: error.nativeDatabaseOutcome } : {}) },
+      recovery: "Inspect this exact batch in the selected isolated DB on a fresh authorized request; do not replay publication." });
   }
   let listFailure = null;
   if (result.status === "native-registration-verified") {
@@ -175,6 +198,8 @@ export async function operateOpenCodeNativeHistory({ action, selected, nativeHom
   return nativeOutcome("opencode", { ...base, ...result,
     status: result.status === "native-registration-verified" ? "native-isolated-history-restoration-verified" : result.status,
     isolatedProfile: profile, historyReadbackVerified: result.status === "native-registration-verified",
+    ...(atomic ? { listCoverage: "qualified-db-root-list; child IDs require exact readback" } : {}),
+    ...(atomic ? { normalizations } : {}),
     observations, listing, listFailure, readbackFailure, importsAttempted, sourceOriginalsChanged: false,
     derivations: plans.map(plan => ({ nativeId: plan.entry.nativeId, sourceSha256: plan.derived.sourceSha256,
       importSha256: plan.derived.importSha256, changes: plan.derived.changes })) });

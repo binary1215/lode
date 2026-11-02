@@ -112,9 +112,20 @@ export async function operateProjectNativeHistory({
   if (sourceProvider !== "codex") {
     // Host callbacks are executable capabilities supplied only by the current
     // trusted Host, never by bundle JSON or tool arguments.
-    if (sourceProvider === "opencode" && !nativeHistoryHost) return { ...providerUnavailable(),
-      reasonCode: "NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED",
-      missingCapability: action === "capture" ? "current-host-exact-id-export" : "qualified-isolated-metadata-command-host" };
+    if (sourceProvider === "opencode" && !nativeHistoryHost) {
+      if (action === "capture" || ![executable, nativeHome, root].every(value => typeof value === "string" && path.isAbsolute(value))
+        || !fs.existsSync(executable)) return { ...providerUnavailable(), reasonCode: "NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED",
+        missingCapability: action === "capture" ? "current-host-exact-id-export" : "qualified-fixed-version-atomic-db-profile" };
+      const { createOpenCodeAtomicHistoryHost } = await import("./opencode-atomic-history-host.mjs");
+      try { nativeHistoryHost = createOpenCodeAtomicHistoryHost({ executable, nativeHome, root, signal, assertCurrentAuthority }); }
+      catch (error) {
+        if (error.code === "NATIVE_OPENCODE_VERSION_UNQUALIFIED") return { ...providerUnavailable(),
+          reasonCode: "NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED", missingCapability: "qualified-fixed-version-atomic-db-profile" };
+        if (["NATIVE_OPENCODE_QUALIFIED_PROFILE_REQUIRED", "NATIVE_OPENCODE_QUALIFIED_DATABASE_REQUIRED"].includes(error.code))
+          return { ...providerUnavailable(), reasonCode: error.code, nativeHomeInspected: true, missingCapability: "existing-qualified-isolated-db-and-current-project" };
+        throw error;
+      }
+    }
     if (!nativeHistoryHost && (typeof executable !== "string" || !path.isAbsolute(executable) || !fs.existsSync(executable)))
       return providerUnavailable();
     const hostRoutedCapture = sourceProvider === "opencode" && action === "capture";
@@ -124,7 +135,7 @@ export async function operateProjectNativeHistory({
     const host = nativeHistoryHost ?? createProviderNativeHost({ provider: sourceProvider, executable, pluginRoot, signal, onProcess });
     if (host.provider !== sourceProvider
       || (!hostRoutedCapture && typeof host.version !== "function")
-      || !["synthetic-test", "external-client-command-unqualified", "host-metadata-capability"].includes(host.evidenceKind))
+      || !["synthetic-test", "external-client-command-unqualified", "host-metadata-capability", "qualified-opencode-sqlite-adapter"].includes(host.evidenceKind))
       fail("NATIVE_HISTORY_PROVIDER_HOST_INVALID");
     if (sourceProvider === "opencode" && (hostRoutedCapture ? typeof host.exportSelected !== "function" : typeof host.run !== "function"))
       return { ...providerUnavailable(), reasonCode: "NATIVE_OPENCODE_HOST_CAPABILITY_UNAVAILABLE" };

@@ -93,8 +93,8 @@ by the agent from the requested source platform or a verified Host route.
 Read, restore and register may derive it from the verified companion link;
 an explicit provider must match that link. IDs and executable names do not
 identify the platform. This local candidate also connects Claude 2.1.223 and
-OpenCode 1.19.5 adapters. Their actual official-client qualification is still
-incomplete; synthetic tests prove the local workflow, not a working app install.
+OpenCode 1.19.5 adapters. Isolated official version/history/schema checks are documented below;
+ordinary app and model continuation qualification remains incomplete.
 Missing executable capability is reported before native-home access or startup.
 An unsupported profile limits that native operation; common recovery and Handoff remain usable.
 Selected raw files and companions are preserved without redaction. Not collecting
@@ -140,32 +140,53 @@ native writes only. Register can use an already installed Agent SDK 0.3.234 to l
 and read returned records; missing SDK leaves raw restoration independently usable.
 SDK listing is separate from the CLI picker, and neither starts a model turn.
 
-OpenCode source capture consumes exact export bytes from that current Host
-capability. Without it, capture is unavailable. The destination workflow requires
-a new empty profile base selected for this transfer. It creates `profile/` there
-with a `data/config/state/cache/home` layout and scopes XDG/config/home/tmp there.
-Project config, default/external plugins, model fetching and auto-update are disabled
-for those commands. It never switches the ordinary profile, writes its database,
-or converts another provider's data. Every input is structurally checked before
-import; official schema decoding happens during isolated import and is not
-claimed as a separate complete predecode. The original export remains immutable;
-derived import files have separate digests and changes. Source active permission,
-model, agent, revert, workspace and compacting fields are omitted from that derived
-Session Info; historical message metadata stays exact. No prompt loop, pending
-tool, subtask or compaction is executed. Exact-ID export readback verifies history
-independently from the default root-only session list.
+OpenCode source capture consumes exact export bytes from the current Host
+capability. Without that capability, capture stays unavailable. Destination
+restore now publishes the whole selected batch in one SQLite transaction:
+sessions, messages and parts are committed together, with no upsert or
+ignore-on-conflict behavior. Historical message/part JSON remains intact.
+Original exports and derived inputs have separate digests; source active
+permission, model, agent, revert, workspace and compacting values are omitted
+from derived Session Info. No prompt loop or historical pending work is run.
 
-The default OpenCode CLI adapter currently returns
-`NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED` before even a version subprocess.
-Official metadata commands can initialize configuration and dependency handling;
-the flags above are not proof of no installation or network effects. Source
-capture and the destination workflow have synthetic Host tests, not actual
-registered-client qualification. There is no option/JSON switch to bypass this
-limit. A future qualified current Host can supply the bounded metadata capability;
-it grants no new action permission. Pure bundle/Handoff reading remains available.
+The qualified offline adapter currently recognizes the official Windows x64
+baseline OpenCode 1.19.5 binary by its bytes and SHA-256. It requires an existing,
+explicitly selected isolated layout
+`<native-home>/profile/data/opencode/opencode.db`, the exact qualified schema
+and migration set, and an existing Project mapping for the current target root.
+It never initializes or migrates that database, invents a Project ID, switches
+the ordinary profile, or starts the client. Unsupported combinations affect
+only this native operation; there is no user JSON or boolean qualification
+bypass. Source capture still requires the current Host's exact-ID export.
+
+Before writing, a source-bound validator checks Session Info, User/Assistant
+messages, all twelve known Part variants and their nested tool/file structures.
+Unknown variants or Session fields that cannot survive the SQL mapping are
+rejected with the originals preserved. This is not an execution of the official
+Effect decoder. Target location and the official missing-usage/empty-share
+normalizations are reported separately. Global IDs, reachable existing parent
+ownership/cycles, schema, Project and physical DB identity are checked again
+inside the transaction. Message SQL ordering keys must match their body; an
+inconsistent result is not silently sorted into a successful comparison.
+
+The default full OpenCode CLI bootstrap remains unavailable
+(`NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED`). The offline adapter performs direct
+qualified DB reads, not `import`, `export`, `session list` or model commands.
+Root-only listing, exact selected-ID readback and live app visibility remain
+separate. A reader may coexist; a competing writer is reported promptly without
+requiring all apps to close. WAL/SHM activity is not a claim of byte-for-byte
+file immutability.
+
+Isolated qualification has exercised official Claude Code 2.1.223 version output,
+SDK 0.3.234 list/message reads on synthetic JSONL, and the official OpenCode
+1.19.5 non-instance `db` command on a fresh synthetic database. No installation
+script, global profile, user history or model turn is involved. Those results
+do not establish picker visibility, ordinary-profile support or model
+continuation. The optional SDK's history reader does not start its bundled
+Claude backend.
 
 Both adapters keep create-only operational attempt/result evidence. The evidence
-is not atomic with file publication or CLI import: interrupted or partial effects
+is not atomic with file publication or the SQLite commit: interrupted or partial effects
 remain uncertain, with the primary failure and affected scope. A later authorized
 request may verify exact current files/IDs without replaying the effect. Conflicts
 do not overwrite originals. Verified raw bytes/history, observed lists and
