@@ -11,6 +11,16 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.77 — publication tracked separately
+
+- Integrate same-project conversation messaging with read-only discovery,
+  Host-registered destination binding and exclusive caller-ticket consumption.
+- Keep unconfirmed handoffs unknown without automatic redelivery; reuse the
+  existing Go supervisor for owned Codex proxy cleanup. Preserve ordinary
+  work, current P1–P5 authority and Project/native-history portability boundaries.
+- Preserve user ignore policies and actual pre-beta75 generated history rules.
+  Provider protocol fixtures do not claim three-client live acceptance.
+
 ## 0.3.0-beta.76 — publication tracked separately
 
 - Move a Project and selected Session using exact original records and reference

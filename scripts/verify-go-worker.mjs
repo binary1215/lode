@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { processExists } from "./lib/process-exists.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { executeComputeOperation, verifyComputeAdapterConformance } from "./lib/compute-adapter.mjs";
@@ -39,17 +40,6 @@ function parseArguments(values) {
     pluginRoot: path.resolve(result["plugin-root"]),
     repositoryRoot: path.resolve(result["repository-root"] || path.join(scriptDirectory, "../benchmarks/repository-scan-v1/basic")),
   };
-}
-
-function processExists(pid) {
-  if (!Number.isInteger(pid) || pid < 1) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    if (error.code === "ESRCH") return false;
-    throw error;
-  }
 }
 
 async function waitForNoOwnedProcesses(adapter) {

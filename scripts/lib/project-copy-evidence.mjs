@@ -105,7 +105,7 @@ export function inspectCopiedProjectFile(
 function excluded(relative) {
   const local = relative.split("/").slice(1).join("/");
   return (
-    /^(?:\.operations|\.snapshot-gc)(?:\/|$)/.test(local) ||
+    /^(?:\.operations|\.snapshot-gc|messaging)(?:\/|$)/.test(local) ||
     /^refresh\/writer\.lock(?:\.|\/|$)/.test(local) ||
     /^runtime\/execution-leases\/[^/]+\/owner\.lock(?:\/|$)/.test(local)
   );

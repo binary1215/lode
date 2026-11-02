@@ -1,3 +1,7 @@
+import { conversationMailboxStorage } from "./conversation-mailbox-storage.mjs";
+import { resolveProjectStorage } from "./project-storage-format.mjs";
+import { spawnSync } from "node:child_process";
+import { absoluteSystemExecutable } from "./native-session-process.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { formatForVerifiedOwner, assertProjectStorageUnchanged } from "./project-storage-format.mjs";
@@ -10,6 +14,7 @@ import { withProjectMutation } from "./project-mutation-lock.mjs";
 export const GENERATED_STORAGE_IGNORE_RULES = Object.freeze([
   Object.freeze({ pattern: "/graph-discovery/index.json", reason: "Rebuilt from current verified original records." }),
   Object.freeze({ pattern: "/.operations/", reason: "Transient scoped process locks, not portable Project state." }),
+  Object.freeze({ pattern: "/messaging/", reason: "Live same-project conversation mailbox, not canon or recovery state." }),
   Object.freeze({ pattern: "/.snapshot-gc/", reason: "Transient local snapshot participants and collector attempts, not recovery direction." }),
   Object.freeze({ pattern: "/refresh/writer.lock/", reason: "Active host-local refresh lease, not a retained snapshot." }),
   Object.freeze({ pattern: "/refresh/writer.lock.*.staging/", reason: "Unpublished nonce-owned refresh lease staging." }),
@@ -80,6 +85,56 @@ function assertIgnorePoliciesUnchanged(policies) {
   }
 }
 
+// The tracked storage gitignore is create-only. A mailbox hides its own files,
+// including this ignore file, so an existing project gains no untracked path.
+const MESSAGING_IGNORE = "# Live conversation mailbox, not canon.\n*\n";
+const PREVIOUS_MESSAGING_IGNORE = "# Live conversation mailbox, not canon.\n*\n!.gitignore\n";
+
+function gitTracksFile(root, file) {
+  try {
+    const relative = path.relative(root, file).replaceAll("\\", "/");
+    if (!relative || relative.startsWith("..")) return "unknown";
+    const git = absoluteSystemExecutable("git") || absoluteSystemExecutable("git.exe");
+    if (!git) return "unknown";
+    const result = spawnSync(git, ["-C", root, "ls-files", "-z", "--", relative], {
+      encoding: "utf8", timeout: 2000, shell: false, stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (result?.status !== 0 || result.error || result.signal) return "unknown";
+    return result.stdout ? "tracked" : "untracked";
+  } catch { return "unknown"; }
+}
+
+export function ensureMessagingDirectoryIgnore({ root, directory, mailboxStorage = null }) {
+  const storage = resolveProjectStorage(root);
+  if (!storage || storage.directory !== directory) return { status: "preserved", reasonCode: "CONVERSATION_PATH_ESCAPE" };
+  const io = mailboxStorage || conversationMailboxStorage(storage);
+  const messaging = path.join(root, directory, "messaging");
+  const file = path.join(messaging, ".gitignore");
+  try {
+    io.assertCurrent();
+    const dirStat = io.lstatSync(messaging);
+    if (!dirStat.isDirectory() || dirStat.isSymbolicLink()) return { status: "preserved", reasonCode: "MESSAGING_DIR_UNAVAILABLE" };
+    const relative = path.relative(fs.realpathSync(root), fs.realpathSync(messaging));
+    if (relative.startsWith("..") || path.isAbsolute(relative)) return { status: "preserved", reasonCode: "CONVERSATION_PATH_ESCAPE" };
+    const existing = io.lstatSync(file, { throwIfNoEntry: false });
+    if (existing?.isSymbolicLink()) return { status: "preserved", reasonCode: "USER_IGNORE_UNAVAILABLE" };
+    if (existing?.isFile()) {
+      const current = io.readFileSync(file, "utf8");
+      if (current === MESSAGING_IGNORE) return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
+      if (current !== PREVIOUS_MESSAGING_IGNORE) return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
+      const tracking = gitTracksFile(root, file);
+      if (tracking !== "untracked") return { status: "preserved", reasonCode: tracking === "tracked" ? "TRACKED_MESSAGING_IGNORE" : "MESSAGING_IGNORE_TRACKING_UNKNOWN" };
+      io.atomicWrite(file, MESSAGING_IGNORE, { beforePublish: () => { if (io.readFileSync(file, "utf8") !== current || gitTracksFile(root, file) !== "untracked") throw Object.assign(new Error("Messaging ignore changed."), { code: "USER_IGNORE_CHANGED_CONCURRENTLY" }); } });
+      return { status: "updated", trackingChanged: false };
+    }
+    io.atomicCreate(file, MESSAGING_IGNORE);
+    return { status: "created", trackingChanged: false };
+  } catch (error) {
+    if (error?.code === "EEXIST") return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
+    return { status: "preserved", reasonCode: error?.code || "USER_IGNORE_UNAVAILABLE" };
+  }
+}
+
 export function ensureProjectStorageIgnore({ root, storage }) {
   const file = path.join(root, formatForVerifiedOwner(storage).directory, ".gitignore");
   try {
@@ -92,7 +147,7 @@ export function ensureProjectStorageIgnore({ root, storage }) {
       const existing = readIgnorePolicy(root, file, [], true);
       // Only the entire exact legacy-generated body identifies an upgrade. A
       // marker inside a user file, extra comment or reordered rule grants none.
-      const legacy = [BEGIN, ...GENERATED_STORAGE_IGNORE_RULES.map(rule => rule.pattern), END, ""].join("\n");
+      const legacy = [BEGIN, "/graph-discovery/index.json", "/.operations/", "/.snapshot-gc/", "/refresh/writer.lock/", "/refresh/writer.lock.*.staging/", END, ""].join("\n");
       if (existing.bytes !== null && ![legacy, legacy.replaceAll("\n", "\r\n")].some(text => existing.bytes.equals(Buffer.from(text)))) {
         return { status: "preserved", reasonCode: "EXISTING_STORAGE_IGNORE", ordinaryWorkBlocked: false };
       }

@@ -14,7 +14,8 @@ export function claudeNativeHookMatchers(catalog) {
   for (const tool of catalog) {
     const operation = resolveOperation(tool.name);
     if (!operation || operation.semanticName === "head_session_host_request_prepare") continue;
-    if (operation.router || sessionCallRequiresBinding(tool.name) || tool.annotations?.readOnlyHint !== true) {
+    if (operation.router || sessionCallRequiresBinding(tool.name) || tool.annotations?.readOnlyHint !== true
+      || operation.semanticName === "head_conversation_list") {
       names.add(operation.canonicalName); names.add(operation.legacyName);
     }
   }

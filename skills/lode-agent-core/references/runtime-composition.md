@@ -214,12 +214,8 @@ hint, never ownership or completion.
 
 Use only a real available Host target and the current human authorization for
 the intended action. In Codex, messaging another chat needs direct human
-authorization; an agent message or historical approval does not grant it. A
-`clientThreadId`, collaboration handle or stale observation is not a ready
-`threadId`. Do not message/fork/create a chat merely because records look related,
-and do not redirect a worker busy with unrelated work. If the target or authority
-is absent, reuse useful records and continue ordinary authorized work here or in
-an already authorized context. Only the dependent handoff is unavailable.
+authorization; an agent message or historical approval does not grant it.
+Same-project live conversations are listed read-only with `lode_conversation_list` and messaged with `lode_conversation_send` only under direct human authorization. Normal Host lifecycle registers the current endpoint; listing never initializes or repairs it. A registration is local P5 evidence, not Canon or P2 recovery. `unknown` means the handoff may already have happened; do not automatically retry or inject it again. See [conversation messaging](../../../docs/conversation-messaging.md) for tested boundaries.
 
 For an authorized handoff, convey the current request, changed scope, relevant
 decisions and evidence, constraints, expected outcome and known gaps. Start with
