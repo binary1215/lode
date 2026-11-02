@@ -118,7 +118,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
       `${cliDisplay} graph-query <project> --query <text> [--view all|work|product] [--paths <path,...>] [--anchors <id,...>] [--depth <n>] [--max-nodes <n>] [--max-edges <n>] [--world-model <id>] [--details] [--inventory-page --inventory-paths <owned-path,...> --inventory-cursor <returned-cursor>]`,
       `${cliDisplay} graph-index <project>`,
       `${cliDisplay} graph-explorer <project> [--layer project|code] [--query <text-or-source>] [--anchors <id,...>] [--paths <path,...>] [--history] [--share] [--output <new-file.html>]`,
-      `${cliDisplay} project-export <project> --destination <bundle-folder> [--provenance project-proof-metadata|selected-only] [--session <logical-session>] (default: project-proof-metadata)`,
+      `${cliDisplay} project-export <project> --destination <bundle-folder> [--provenance project-proof-metadata|selected-only] [--sources selected-retained-sources|refs-only] [--session <logical-session>] (default: project-proof-metadata)`,
       `${cliDisplay} project-bundle-inspect <bundle-folder-or-HANDOFF.md> [--expected-bundle <bundle-id>] [--handoff-offset <bytes> --handoff-max-bytes <bytes>]`,
       `${cliDisplay} project-import <target-project> --bundle <bundle-folder> [--expected-bundle <bundle-id>]`,
       `${cliDisplay} project-native-history <bundle-folder> --action read|capture|restore|register [--provider codex|claude|opencode] [--native-home <exact-data-home> --executable <exact-client>] [--threads <exact-native-id,...>] [--runtime-root <current-workspace>]`,
@@ -422,7 +422,7 @@ async function runRoutedCommand(argv, { observationRegistry = null, compactionLi
       companionPaths:options.companions===undefined?[]:String(options.companions).split(",").map(value=>value.trim()),
       root:options["runtime-root"],pluginRoot,nativeHistoryHost,signal,onProcess});
   }
-  if (command === "project-export") return (await import("./lib/project-portability.mjs")).exportProjectBundle({root,destination:options.destination,provenanceScope:options.provenance,signal,onExportScope});
+  if (command === "project-export") return (await import("./lib/project-portability.mjs")).exportProjectBundle({root,destination:options.destination,provenanceScope:options.provenance,sourceMode:options.sources,signal,onExportScope});
   if (command === "project-bundle-inspect") {
     const handoffOptions = { offset: options["handoff-offset"] === undefined ? 0 : Number(options["handoff-offset"]),
       maxBytes: options["handoff-max-bytes"] === undefined ? 65536 : Number(options["handoff-max-bytes"]) };
@@ -882,7 +882,7 @@ export function runCliMain(directArgs = process.argv.slice(2)) {
     process.on("SIGINT", abortSource); process.on("SIGTERM", abortSource);
   }
   return Promise.resolve().then(async () => (await runCommand(normalizedArgs, { signal: sourceController.signal,
-    onExportScope: notice => fs.writeSync(process.stderr.fd, jsonOutput ? `${JSON.stringify({ projectExportScope: notice })}\n` : `${notice.message}\n`),
+    onExportScope: notice => fs.writeSync(process.stderr.fd, jsonOutput ? `${JSON.stringify({ projectExportScope: notice })}\n` : `${notice.message}\n${notice.sourceNotice || ""}\n`),
     onProcess: (event) => {
       if(directCommand === "storage-gc" && !directArgs.includes("--diagnostics")) return;
       if (event.purpose === "snapshot-filesystem-qualification" && !directArgs.includes("--diagnostics")) return;

@@ -348,6 +348,7 @@ const allTools = [
     description: "Export only common Project originals, the selected logical Session's typed P2/reference closure and its work evidence into a create-only local bundle. Never reads/copies user MCP configuration, unrelated Session payloads or rebuildable caches. Does not run providers or transfer execution authority. Before invoking export, tell the user that recovery-required common proof metadata can include other Sessions' paths, IDs and hashes, while their bodies remain excluded; no extra approval is required.",
     inputSchema: { type: "object", properties: {
       project_root: {type:"string",minLength:1}, destination: {type:"string",minLength:1},
+      source_mode: {type:"string",enum:["selected-retained-sources","refs-only"],default:"selected-retained-sources",description:"Default: include eligible exact full-file retained originals cited by the selected Session after explaining scope. Current worktree/other Session bodies/Git-only collection excluded. refs-only omits source bodies; per-reference gaps do not block ordinary recovery."},
       provenance_scope: {type:"string",enum:["project-proof-metadata","selected-only"],default:"project-proof-metadata",description:"Defaults to only recovery-required original common-proof path/ID/hash metadata, never other Session bodies. Explain this scope before export. Explicit selected-only omits cross-session proof and can leave legacy admission partial; never rewrite omitted proof."},
     }, required:["project_root","destination"],additionalProperties:false},
     annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false},
@@ -3031,7 +3032,7 @@ const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fil
 if (invokedDirectly) serveMcp();
 
 async function projectBundleFromMcp(name,args,signal,onExportScope = null) {
-  const fields=name==="head_project_bundle_export"?["project_root","destination","provenance_scope"]
+  const fields=name==="head_project_bundle_export"?["project_root","destination","provenance_scope","source_mode"]
     :name==="head_project_bundle_read"?["bundle_root","expected_bundle_id","include_native_history","handoff_file","handoff_offset","handoff_max_bytes"]:["target_root","bundle_root","expected_bundle_id"];
   if(!args||typeof args!=="object"||Array.isArray(args)||Object.keys(args).some(key=>!fields.includes(key)))throw new Error("Unsupported Project bundle arguments.");
   const required=name==="head_project_bundle_export"?["project_root","destination"]:name==="head_project_bundle_read"?[]:["target_root","bundle_root"];
@@ -3051,7 +3052,7 @@ async function projectBundleFromMcp(name,args,signal,onExportScope = null) {
     try{return {...common,nativeHistory:native.projectNativeTransferSummary(native.readProjectNativeTransfer({bundleRoot:args.bundle_root,expectedBundleId:common.bundleId,signal}))};}
     catch(error){return {...common,nativeHistory:{status:"native-transfer-invalid",isError:true,primaryFailure:{code:error.code||"NATIVE_TRANSFER_READ_FAILED"},ordinaryCoreBlocked:false}};}
   }
-  if(name==="head_project_bundle_export")return core.exportProjectBundle({root:args.project_root,destination:args.destination,provenanceScope:args.provenance_scope,signal,onExportScope});
+  if(name==="head_project_bundle_export")return core.exportProjectBundle({root:args.project_root,destination:args.destination,provenanceScope:args.provenance_scope,sourceMode:args.source_mode,signal,onExportScope});
   const result=core.importProjectBundle({root:args.target_root,bundleRoot:args.bundle_root,expectedBundleId:args.expected_bundle_id??null,pluginRoot,signal});
   return {...result,nextRead:{tool:publicToolName("head_conversation_enter"),arguments:{project_root:result.targetRoot,session_id:result.selectedSessionId}},
     selectionScope:"exact-current-request-no-default-change"};

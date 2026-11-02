@@ -1,3 +1,6 @@
+import { withSnapshotReferences } from "./snapshot-reference-lifetime.mjs";
+import { PORTABLE_SOURCE_CAPABILITY, validatePortableManifestFormat, verifyPortableSourceReferenceClosure } from "./portable-project-format.mjs";
+import { collectPortableSourceOriginals, verifyPortableSourceObjects } from "./portable-source-originals.mjs";
 import { buildProjectHandoff, readBundleHandoff, validateProjectHandoffDescriptor } from "./project-handoff.mjs";
 import { verifyImportedDefaultRun } from "./session-imported-run-proof.mjs";
 import fs from "node:fs";
@@ -99,16 +102,18 @@ function exactCreate(root, relative, bytes) {
 
 export const DEFAULT_PROJECT_PROVENANCE_SCOPE = "project-proof-metadata";
 
-export function exportProjectBundle({
+function exportProjectBundleUncoordinated({
   root = ".",
   destination,
   signal,
   onObject = null,
   onExportScope = null,
   provenanceScope = DEFAULT_PROJECT_PROVENANCE_SCOPE,
+  sourceMode = "selected-retained-sources",
 } = {}) {
   if (!["selected-only", "project-proof-metadata"].includes(provenanceScope))
     fail("PROJECT_BUNDLE_PROVENANCE_SCOPE_INVALID");
+  if (!["selected-retained-sources", "refs-only"].includes(sourceMode)) fail("PROJECT_BUNDLE_SOURCE_MODE_INVALID");
   check(signal);
   const inspected = readGraphProject(root);
   if (!inspected.project) fail("NOT_INITIALIZED");
@@ -179,6 +184,7 @@ export function exportProjectBundle({
   add(directory + "/project.json");
   if (fs.existsSync(copiedProjectFile(sourceRoot, directory + "/instructions/project.md")))
     add(directory + "/instructions/project.md");
+  const workRecords = [];
   const workDirectory = path.posix.dirname(stateRelative) + "/work-evidence",
     workPath = copiedProjectFile(sourceRoot, workDirectory);
   if (fs.existsSync(workPath))
@@ -188,12 +194,14 @@ export function exportProjectBundle({
         entry = add(relative),
         raw = fs.readFileSync(copiedProjectFile(sourceRoot, relative));
       if (sha(raw) !== entry.sha256) fail("PROJECT_COPY_SOURCE_CHANGED");
-      verifySessionWorkEvidenceOriginal({
+      workRecords.push(verifySessionWorkEvidenceOriginal({
         owner: { projectId: storage.projectId, sessionId: canon.sessionId, storage },
         evidenceId: name.slice(0, -5),
         bytes: raw,
-      });
+      }));
     }
+  const sourceCollection = collectPortableSourceOriginals({ root: sourceRoot, storage, project: inspected.project, sessionId: canon.sessionId, records: workRecords, mode: sourceMode, signal });
+  for (const entry of sourceCollection.files) filesByPath.set(entry.path, entry);
   // Only the selected Project's declared location proof is common closure.
   // No generated manifest/config, cache or unrelated Session directory is read.
   const omittedCommonProof =
@@ -237,7 +245,9 @@ export function exportProjectBundle({
     a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
   );
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    requiredCapabilities: [PORTABLE_SOURCE_CAPABILITY],
+    sourceTransfer: sourceCollection.transfer,
     kind: "PortableProjectBundle",
     authorityPlane: "P3",
     projectId: storage.projectId,
@@ -273,6 +283,8 @@ export function exportProjectBundle({
       derivedCaches: "not-read-not-included",
       historicalExecution: "not-included-no-execution-permission-transferred",
       repositoryWorktree: "not-included",
+      retainedSourceOriginals: sourceCollection.transfer,
+      exactDiffPortability: sourceCollection.transfer.references.every(ref => ref.status === "included-verified-retained-original") ? "selected-source-bytes-included-diff-not-yet-queried" : "partial-selected-source-bytes",
       attachments: "not-included-unless-explicitly-selected",
       nativeHistory: "not-requested",
     },
@@ -296,6 +308,9 @@ export function exportProjectBundle({
     authorityPlane: "P4",
     persisted: false,
     provenanceScope,
+    sourceMode,
+    retainedSourceOriginals: sourceCollection.transfer,
+    sourceNotice: "Before export: eligible exact full-file retained originals cited by this selected Session are included by default. Current worktree, other Session bodies and Git-only collection are excluded. Choose refs-only to omit source bodies. Source identity is not producer truth or execution permission; exclusions remain per-reference partial.",
     commonProofMetadata:
       provenanceScope === "project-proof-metadata"
         ? "required-original-path-id-hash-metadata"
@@ -385,7 +400,7 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
   )
     fail("PROJECT_BUNDLE_IDENTITY_MISMATCH");
   if (
-    manifest?.schemaVersion !== 1 ||
+    ![1, 2].includes(manifest?.schemaVersion) ||
     manifest.kind !== "PortableProjectBundle" ||
     manifest.authorityPlane !== "P3" ||
     ![".lode", ".head"].includes(manifest.directory) ||
@@ -400,6 +415,7 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
     manifest.transfersNativeBinding !== false
   )
     fail("PROJECT_BUNDLE_MANIFEST_INVALID");
+  validatePortableManifestFormat(manifest);
   const names = new Set(),
     entries = new Map();
   for (const entry of manifest.files) {
@@ -493,6 +509,7 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
   });
   const instruction = manifest.directory + "/instructions/project.md";
   if (entries.has(instruction)) allowed.add(instruction);
+  const workRecords = [];
   const workDirectory = path.posix.dirname(manifest.selectedSessionPath) + "/work-evidence/";
   for (const entry of entries.values())
     if (
@@ -501,7 +518,7 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
     ) {
       if (entry.bytes > 64 * 1024) fail("INVALID_SESSION_WORK_EVIDENCE");
       const raw = originalBytes(entry.path);
-      verifySessionWorkEvidenceOriginal({
+      workRecords.push(verifySessionWorkEvidenceOriginal({
         owner: {
           projectId: project.projectId,
           sessionId: selected.sessionId,
@@ -512,8 +529,10 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
         },
         evidenceId: path.posix.basename(entry.path).slice(0, -5),
         bytes: raw,
-      });
+      }));
     }
+  verifyPortableSourceReferenceClosure(manifest, workRecords);
+  for (const relative of verifyPortableSourceObjects({ root, manifest, readOriginal: originalBytes })) allowed.add(relative);
   for (const relative of entries.keys())
     if (!allowed.has(relative)) fail("PROJECT_BUNDLE_SCOPE_MISMATCH");
   validateProjectHandoffDescriptor(manifest);
@@ -530,6 +549,8 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
     handoff: readBundleHandoff({ bundleRoot: root, manifest, signal, ...handoffOptions }),
     coverage: {
       selectedSession: "typed-original-reference-closure-verified",
+      retainedSourceOriginals: manifest.sourceTransfer || { status: "not-recorded-not-certified", gitLookup: "not-looked-up-not-included" },
+      exactDiff: "not-yet-queried",
       sourceLocationProof: partialProvenance ? "partial-not-project-admission" : "verified",
       operationalCapabilities: "excluded",
       otherSessions:
@@ -721,6 +742,7 @@ export function importProjectBundle({
             selectedSessionId: plan.selectedSessionId,
             targetRoot,
             persisted: false,
+            sourceTransfer: { coverage: inspected.manifest.sourceTransfer || { status: "not-recorded-not-certified" }, destinationOriginals: "verified-identical", exactDiff: "not-yet-queried" },
             defaultSessionChanged: false,
             restoresExecutionPermission: false,
             nativeBindingTransferred: false,
@@ -776,14 +798,7 @@ export function importProjectBundle({
         });
         onPublication?.("record", entry.path);
       }
-      for (const [relative, bytes] of plan.generated) {
-        check(signal);
-        exactCreate(targetRoot, relative, bytes);
-        onPublication?.(
-          relative === directory + "/project.json" ? "project" : "generated",
-          relative,
-        );
-      }
+      const finish = () => {
       for (const entry of expected) verifyCopiedProjectFile(targetRoot, entry);
       if (!fs.readFileSync(pendingFile).equals(pendingBytes))
         fail("PROJECT_BUNDLE_IMPORT_INTENT_CONFLICT");
@@ -809,6 +824,7 @@ export function importProjectBundle({
         fail("HEAD_SESSION_IDENTITY_MISMATCH");
       check(signal);
       fs.unlinkSync(pendingFile);
+      return withSnapshotReferences({ root: targetRoot }, () => {
       const restored = withSessionRoute(targetRoot, plan.selectedSessionId, () =>
         inspectProject(targetRoot),
       );
@@ -820,6 +836,7 @@ export function importProjectBundle({
         selectedSessionId: plan.selectedSessionId,
         targetRoot,
         admissionDigest: plan.admissionDigest,
+        sourceTransfer: { coverage: inspected.manifest.sourceTransfer || { status: "not-recorded-not-certified" }, destinationOriginals: "verified-copied", exactDiff: "not-yet-queried" },
         defaultSessionChanged: false,
         restoresExecutionPermission: false,
         nativeBindingTransferred: false,
@@ -827,6 +844,14 @@ export function importProjectBundle({
         nativeHistory: "not-requested",
         worktree: "not-imported",
       };
+      });
+      };
+      for (const [relative, bytes] of plan.generated) {
+        check(signal); exactCreate(targetRoot, relative, bytes);
+        // The pending import keeps this namespace ineligible for collection.
+        onPublication?.(relative === directory + "/project.json" ? "project" : "generated", relative);
+      }
+      return finish();
     },
   );
 }
@@ -967,7 +992,7 @@ function importSelectedSessionIntoExisting({
       entry.path === sourceSelectedPath ||
       entry.path.startsWith(sourceSessionDirectory + "/work-evidence/");
     const immutableClosure =
-      /^(?:lineage\/(?:whole-plans|execution-contracts|result-packets|review-decisions)\/|context\/capsules\/|sessions\/ledger\/|sessions\/runs\/)/.test(
+      /^(?:lineage\/(?:whole-plans|execution-contracts|result-packets|review-decisions)\/|context\/capsules\/|sessions\/ledger\/|sessions\/runs\/|observations\/source-bundles\/)/.test(
         local,
       );
     if (belongsToSession || immutableClosure || ownerProofPaths.has(entry.path))
@@ -1162,6 +1187,7 @@ function importSelectedSessionIntoExisting({
         selectedSessionId: manifest.selectedSessionId,
         targetRoot,
         sourceOriginalsReceipt: archive + "/receipt.json",
+        sourceTransfer: { coverage: manifest.sourceTransfer || { status: "not-recorded-not-certified" }, destinationOriginals: "verified-copied", exactDiff: "not-yet-queried" },
         currentTargetCommon: "preserved-not-replaced",
         sourceCommon: "historical-only",
         defaultSessionChanged: false,
@@ -1213,6 +1239,7 @@ export function readImportedSourceOriginal({
     bundleId !== "project-bundle-" + receipt.manifestSha256.slice(0, 24)
   )
     fail("PROJECT_IMPORTED_ORIGINAL_RECEIPT_INVALID");
+  validatePortableManifestFormat(originalManifest.value);
   const mapping =
     receipt.historicalOriginals.find(
       (entry) => entry.sourcePath === sourcePath && entry.sha256 === expectedDigest,
@@ -1316,4 +1343,10 @@ function verifyBundledRunOwner({ root, manifest, entries, allowed, runId, run })
   });
   if (!valid) fail("RUN_SESSION_MISMATCH");
   return true;
+}
+
+// Hold the cooperative original lifetime from the first read to final publication.
+export function exportProjectBundle(options = {}) {
+  const root = options.root ?? ".";
+  return withSnapshotReferences({ root, storage: resolveProjectStorage(root) }, () => exportProjectBundleUncoordinated(options));
 }

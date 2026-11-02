@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { validatePortableManifestFormat } from "./portable-project-format.mjs";
 import crypto from "node:crypto";
 import { copiedProjectFile, verifyCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { readSnapshotFile, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
@@ -86,6 +87,7 @@ export function verifyImportedDefaultSession({
     bundle.document.selectedSessionPath !== owner.sourcePath
   )
     fail();
+  validatePortableManifestFormat(bundle.document);
   const sourceBytes = (relative) => {
     const declared = bundle.document.files.find((entry) => entry.path === relative);
     const mapping = receipt.historicalOriginals.find(
