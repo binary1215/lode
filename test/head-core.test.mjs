@@ -3820,3 +3820,25 @@ test("rejects a tampered execution lineage artifact", (t) => {
     { code: "LINEAGE_DIGEST_MISMATCH" },
   );
 });
+
+test("installation convergence preserves target manifest-unowned root settings despite source managed flags",t=>{
+ const root=temporaryProject();t.after(()=>fs.rmSync(root,{recursive:true,force:true}));initializeProject({root,pluginRoot,runtimes:["claude","codex","opencode"]});
+ const rootPaths=["AGENTS.md","CLAUDE.md",".mcp.json","opencode.json"],mf=path.join(root,".lode/generated/manifest.json"),manifest=JSON.parse(fs.readFileSync(mf));
+ manifest.managed=manifest.managed.filter(item=>!rootPaths.includes(item.path));manifest.packageVersion="0.0.0-synthetic-previous";fs.writeFileSync(mf,JSON.stringify(manifest));
+ for(const relative of rootPaths)fs.writeFileSync(path.join(root,relative),relative.endsWith("json")?JSON.stringify({userOwned:true,model:"target-only",permissions:["preserve"],synthetic:"not-credentials"}):"User-owned current target instructions\r\n");
+ assert.equal(inspectProject(root).status,"ready");const original=new Map(rootPaths.map(relative=>[path.join(root,relative),fs.readFileSync(path.join(root,relative))])),read=fs.readFileSync;
+ fs.readFileSync=function(file,...args){if(original.has(String(file)))throw Error("Read of unowned root settings");return read.call(this,file,...args);};
+ try{assert.equal(convergeProjectInstallation({root,pluginRoot}).status,"converged");}finally{fs.readFileSync=read;}
+ for(const [file,raw]of original)assert.deepEqual(fs.readFileSync(file),raw);assert.equal(inspectProject(root).status,"ready");
+});
+
+test("installation rollback never replaces a user edit made after our managed projection publication",t=>{
+ const root=temporaryProject();t.after(()=>fs.rmSync(root,{recursive:true,force:true}));initializeProject({root,pluginRoot,runtimes:["claude"]});
+ const mf=path.join(root,".lode/generated/manifest.json"),manifest=JSON.parse(fs.readFileSync(mf)),mcp=path.join(root,".mcp.json");
+ fs.writeFileSync(mcp,JSON.stringify({mcpServers:{lode:{command:"node",args:["C:/synthetic-old/scripts/mcp-server.mjs"]}}}));
+ manifest.managed.find(item=>item.path===".mcp.json").sha256=crypto.createHash("sha256").update(fs.readFileSync(mcp)).digest("hex");manifest.pluginRoot="C:/synthetic-old";manifest.packageVersion="0.0.0-synthetic-previous";fs.writeFileSync(mf,JSON.stringify(manifest));
+ const beforeManifest=fs.readFileSync(mf),edit=Buffer.from('{"currentUserEdit":"preserve"}'),rename=fs.renameSync;let edited=false;
+ fs.renameSync=function(source,target){const result=rename.call(this,source,target);if(target===mcp&&!edited){edited=true;fs.writeFileSync(mcp,edit);}return result;};
+ try{assert.throws(()=>convergeProjectInstallation({root,pluginRoot}),{code:"MANAGED_PROJECTION_CHANGED_AFTER_WRITE"});}finally{fs.renameSync=rename;}
+ assert(edited);assert.deepEqual(fs.readFileSync(mcp),edit);assert.deepEqual(fs.readFileSync(mf),beforeManifest);
+});

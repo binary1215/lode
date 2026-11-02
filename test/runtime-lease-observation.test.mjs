@@ -6,6 +6,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
+import { exportProjectBundle, importProjectBundle } from "../scripts/lib/project-portability.mjs";
+import { updateProjectDirection, readProjectDirection } from "../scripts/lib/project-direction.mjs";
+import { adoptVerifiedProjectCopy } from "../scripts/lib/project-copy-adoption.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
 import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
 import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
@@ -67,7 +70,7 @@ async function fixture(t) {
   const input = { projectRoot: root, projectId: authorization.projectId, authorizationId: authorization.authorizationId, storage };
   const leaseInput = { projectRoot: root, authorization, ownerFenceDigest };
   const lock = path.join(operational, "runtime-execution-leases", authorization.projectId, authorization.authorizationId, "owner.lock");
-  return { storage, root, container, operational, authorization, input, leaseInput, lock, ownerFile: path.join(lock, "owner.json") };
+  return { storage, root, container, operational, authorization, versionEvidence, protocolEvidence, input, leaseInput, lock, ownerFile: path.join(lock, "owner.json") };
 }
 
 function snapshot(root) {
@@ -244,4 +247,48 @@ test("stable incomplete locks cannot be acquired or verified and invalid owner e
   });
   await assert.rejects(() => withRuntimeExecutionLease(f.leaseInput, async () => assert.fail("Must not execute"), { preConsumeGate: gate }), { code: "FIXTURE_END" });
   inspectReadOnly(f, { status: "available", ownerStatus: "none", replayAllowed: true, singleUseConsumed: false });
+});
+
+test("adopting a same-path copy fences old authorization before operational creation but retains lease observation", async t => {
+  const f = await fixture(t), projectFile = path.join(f.root, ".lode/project.json");
+  const project = JSON.parse(fs.readFileSync(projectFile));
+  fs.writeFileSync(projectFile, JSON.stringify({ ...project, projectRoot: "C:/unverified/synthetic-old-pc" }, null, 2)+"\n");
+  const mf = path.join(f.root, ".lode/generated/manifest.json"), manifest = JSON.parse(fs.readFileSync(mf));
+  manifest.managed.find(entry => entry.path === ".lode/project.json").sha256 = crypto.createHash("sha256").update(fs.readFileSync(projectFile)).digest("hex");
+  fs.writeFileSync(mf, JSON.stringify(manifest, null, 2)+"\n");
+  assert.equal(adoptVerifiedProjectCopy({ root: f.root, pluginRoot }).status, "verified-copy-adopted");
+  const before = snapshot(f.container); let launched = false;
+  await assert.rejects(withRuntimeExecutionLease(f.leaseInput, async () => { launched = true; }), { code: "RUNTIME_IMPORTED_AUTHORIZATION_NOT_EXECUTABLE" });
+  assert.equal(launched, false); assert.deepEqual(snapshot(f.container), before);
+  const old = inspectRuntimeExecutionLease({ ...f.input, storage: inspectProject(f.root).storage });
+  assert.equal(old.singleUseConsumed, false);
+  const oldFile = path.join(f.root, ".lode/runtime/execution-authorizations", f.authorization.authorizationId+".json");
+  assert(fs.existsSync(oldFile));
+});
+
+
+test("imported history cannot replace current cancellation or reach a provider callback", async t => {
+  const f=await fixture(t);
+  const bundle=exportProjectBundle({root:f.root,destination:path.join(f.container,"common-bundle")});
+  const target=path.join(f.container,"target");fs.mkdirSync(target);
+  importProjectBundle({root:target,bundleRoot:bundle.bundleRoot,pluginRoot});
+  const inspected=inspectProject(target);
+  const binding=buildRuntimeProjectBinding({storage:inspected.storage,projectId:inspected.project.projectId,
+    headSessionId:inspected.state.sessionId,projectRoot:target,projectStatus:"ready",
+    versionEvidence:f.versionEvidence,protocolEvidence:f.protocolEvidence});
+  const authorize=()=>buildRuntimeInvocationAuthorization({root:target,runtime:"codex",
+    protocolEvidence:f.protocolEvidence,projectBinding:binding,
+    scope:{kind:"session",request:"Read only the selected synthetic evidence"}}).authorization;
+  const currentAuthorization=authorize();
+  updateProjectDirection({root:target,input:{goal:"Current target work",cancelledActions:["runtime.invoke"]}});
+  importProjectBundle({root:target,bundleRoot:bundle.bundleRoot,pluginRoot});
+  assert.deepEqual(readProjectDirection({root:target}).input.cancelledActions,["runtime.invoke"]);
+  let providerCalls=0;
+  await assert.rejects(withRuntimeExecutionLease({projectRoot:target,authorization:currentAuthorization,ownerFenceDigest},async()=>{providerCalls++;}),{code:"RUNTIME_PROJECT_DIRECTION_DRIFT"});
+  const reassessed=authorize();
+  await assert.rejects(withRuntimeExecutionLease({projectRoot:target,authorization:reassessed,ownerFenceDigest},async()=>{providerCalls++;}),{code:"PROJECT_ACTION_CANCELLED"});
+  assert.equal(providerCalls,0);
+  const observed=inspectRuntimeExecutionLease({projectRoot:target,projectId:currentAuthorization.projectId,
+    authorizationId:currentAuthorization.authorizationId,storage:inspectProject(target).storage});
+  assert.equal(observed.singleUseConsumed,false);
 });

@@ -179,22 +179,7 @@ export function readLineageArtifact({ root = ".", artifactId } = {}) {
   let artifact;
   try { artifact = JSON.parse(fs.readFileSync(file, "utf8")); }
   catch (error) { fail(`Lineage artifact is invalid JSON: ${error.message}`, "INVALID_LINEAGE_ARTIFACT"); }
-  if (artifact.kind !== definition.kind || artifact.projectId !== project.projectId) {
-    fail("Lineage artifact identity does not match this project.", "LINEAGE_IDENTITY_MISMATCH");
-  }
-  const lineageVersion = artifact.protocol?.version;
-  if (!familyFormatForOriginal("head-agent-core-execution-lineage", artifact, projectStorage.get(project)) || !new Set(["0.3.0", EXECUTION_LINEAGE_VERSION]).has(lineageVersion)) {
-    fail("Lineage artifact protocol is invalid.", "INVALID_LINEAGE_ARTIFACT");
-  }
-  if (lineageVersion === EXECUTION_LINEAGE_VERSION) verifyArtifactAuthorityBoundary(artifact.kind, artifact.authorityBoundary);
-  const recordedHash = artifact.artifactHash;
-  const payload = { ...artifact };
-  delete payload[definition.idField];
-  delete payload.artifactHash;
-  const actualHash = digest(canonicalJson(payload));
-  if (artifact[definition.idField] !== artifactId || recordedHash !== actualHash || artifactId !== `${definition.prefix}-${actualHash.slice(0, 24)}`) {
-    fail("Lineage artifact digest verification failed.", "LINEAGE_DIGEST_MISMATCH");
-  }
+  verifyLineageArtifactOriginal({ artifact, artifactId, projectId: project.projectId, storage: projectStorage.get(project) });
   return { status: "verified", file, artifact };
 }
 
@@ -453,4 +438,30 @@ export function createResultPacket(options = {}, ...rest) {
 
 export function createReviewDecision(options = {}, ...rest) {
   return options.persist === false ? createReviewDecisionUncoordinated(options, ...rest) : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createReviewDecisionUncoordinated(options, ...rest));
+}
+
+export function lineageArtifactRelativePath(artifactId, directory) {
+  if (![".lode", ".head"].includes(directory)) fail("Unknown lineage format.", "INVALID_LINEAGE_ID");
+  return [directory, "lineage", definitionForId(artifactId).directory, artifactId+".json"].join("/");
+}
+
+export function verifyLineageArtifactOriginal({ artifact, artifactId, projectId, storage }) {
+  const definition = definitionForId(artifactId);
+  if (artifact.kind !== definition.kind || artifact.projectId !== projectId) {
+    fail("Lineage artifact identity does not match this project.", "LINEAGE_IDENTITY_MISMATCH");
+  }
+  const lineageVersion = artifact.protocol?.version;
+  if (!familyFormatForOriginal("head-agent-core-execution-lineage", artifact, storage) || !new Set(["0.3.0", EXECUTION_LINEAGE_VERSION]).has(lineageVersion)) {
+    fail("Lineage artifact protocol is invalid.", "INVALID_LINEAGE_ARTIFACT");
+  }
+  if (lineageVersion === EXECUTION_LINEAGE_VERSION) verifyArtifactAuthorityBoundary(artifact.kind, artifact.authorityBoundary);
+  const recordedHash = artifact.artifactHash;
+  const payload = { ...artifact };
+  delete payload[definition.idField];
+  delete payload.artifactHash;
+  const actualHash = digest(canonicalJson(payload));
+  if (artifact[definition.idField] !== artifactId || recordedHash !== actualHash || artifactId !== `${definition.prefix}-${actualHash.slice(0, 24)}`) {
+    fail("Lineage artifact digest verification failed.", "LINEAGE_DIGEST_MISMATCH");
+  }
+  return artifact;
 }

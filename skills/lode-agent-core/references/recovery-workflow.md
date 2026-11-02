@@ -1,5 +1,21 @@
 # Recovery and compaction
 
+For an actual folder move, older verified-copy adoption or selected-record
+transfer, use [Project portability](../../../docs/project-portability.md). Keep
+Core recovery independent of optional native completeness. Before a requested
+export, tell the user that recovery-required common proof metadata can include
+other Sessions' paths, IDs and hashes, while their bodies and runtime settings
+remain excluded. Then export under the existing request; do not add a new
+approval, plan, save, bind or acknowledgement step. The default is
+`project-proof-metadata`; honor an explicit `selected-only` choice and explain
+any resulting partial legacy proof without rewriting originals. A scope notice
+is P4 information, never proof that the user read it or granted authority. Native data read
+never initializes an SDK; capture/restore and registration have distinct
+requested effects. Registration startup may write metadata before resume.
+Use exact explicit native selection or a verified Host route, never titles or
+recency, and do not ask users to author JSON or collect IDs. Unknown SDK outcomes
+are not automatically retried; native links/results grant no binding or P2.
+
 Startup, resume and fork labels, matching IDs/digests, a bound route or a local
 stdout callback do not prove the model currently holds the needed context.
 Keep existing recovery and the provider's normal compaction summary when that

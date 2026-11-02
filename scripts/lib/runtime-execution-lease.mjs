@@ -1,4 +1,4 @@
-import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { formatForVerifiedOwner, familyFormatForOriginal, resolveProjectStorage, projectCopyContainsAuthorization } from "./project-storage-format.mjs";
 const originalFormat = record => familyFormatForOriginal({ sessionIdentity: true }, record);
 const sessionIdOf = record => { const format = originalFormat(record); return format ? record?.[format.sessionIdField] : undefined; };
 import crypto from "node:crypto";
@@ -95,6 +95,13 @@ function requireAuthorizationShape(authorization) {
     fail("Runtime invocation authorization digest verification failed at lease acquisition.", "RUNTIME_EXECUTION_LEASE_AUTHORIZATION_DIGEST_MISMATCH");
   }
   return authorization;
+}
+
+function assertAuthorizationExecutable(projectRoot, authorization) {
+  const storage = resolveProjectStorage(projectRoot);
+  if (projectCopyContainsAuthorization(storage, authorization.authorizationId)) {
+    fail("Imported authorization is historical evidence. Use the current HEAD direction to create a fresh bounded authorization; the original is preserved.", "RUNTIME_IMPORTED_AUTHORIZATION_NOT_EXECUTABLE");
+  }
 }
 
 function verifyPersistedAuthorization(projectRoot, authorization) {
@@ -460,6 +467,7 @@ export function reconcileUnconsumedWorkerLease({ projectRoot, authorization }) {
 
 function acquire({ projectRoot, operationalStateRoot, authorization, ownerFenceDigest }) {
   const verified = requireAuthorizationShape(authorization);
+  assertAuthorizationExecutable(projectRoot, verified);
   verifyPersistedAuthorization(projectRoot, verified);
   if (!/^[a-f0-9]{64}$/.test(ownerFenceDigest || "")) fail("Runtime execution owner fence digest is invalid.", "INVALID_RUNTIME_EXECUTION_OWNER_FENCE");
   const directory = durableLeaseDirectory(projectRoot, verified.authorizationId, originalFormat(verified));
@@ -749,6 +757,7 @@ export async function withRuntimeExecutionLease(
     fail("Runtime pre-consume gate capability is invalid.", "INVALID_RUNTIME_PRE_CONSUME_GATE");
   }
   const verified = requireAuthorizationShape(authorization);
+  assertAuthorizationExecutable(projectRoot, verified);
   const operationalStateRoot = resolveRuntimeOperationalStateRoot({ projectRoot, storage: originalFormat(verified), create: true });
   const acquireCurrent = () => {
     requireCurrentWorkerMember(projectRoot, verified);

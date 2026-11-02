@@ -5,7 +5,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
-import { assertProjectStorageUnchanged } from "./project-storage-format.mjs";
+import { assertProjectStorageUnchanged, projectOwnsSnapshotStoreOwner, projectOwnsSnapshotStoreAddress, noteCopiedGitSnapshotRead } from "./project-storage-format.mjs";
 import { safeSnapshotPath, decodeSnapshotBytes, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
 import { withProjectMutationAsync } from "./project-mutation-lock.mjs";
@@ -75,14 +75,15 @@ export class GitSnapshotStore {
     this.storeId = "snapshot-store-" + hash(JSON.stringify(this.owner)).slice(0, 24);
   }
   context() { assertProjectStorageUnchanged(this.storage); return { deadline: Date.now() + this.timeoutMs, signal: this.signal }; }
-  checkOwner(deadline = Infinity) {
+  checkOwner(deadline = Infinity, historicalRead = false) {
     if (Date.now() >= deadline) fail("SNAPSHOT_GIT_TIMEOUT");
     assertProjectStorageUnchanged(this.storage); safeSnapshotPath(this.root, this.directory);
     if (!fs.existsSync(this.directory)) return false;
     const ownerFile = safeSnapshotPath(this.root, path.join(this.directory, "lode-owner.json"));
     const stat = fs.lstatSync(ownerFile); if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 4096) fail("SNAPSHOT_GIT_OWNER_MISMATCH");
     let actual; try { actual = JSON.parse(fs.readFileSync(ownerFile, "utf8")); } catch (error) { if (error.code) throw error; fail("SNAPSHOT_GIT_OWNER_MISMATCH"); }
-    if (JSON.stringify(actual) !== JSON.stringify(this.owner)) fail("SNAPSHOT_GIT_OWNER_MISMATCH");
+    if (JSON.stringify(actual) !== JSON.stringify(this.owner)
+      && (!historicalRead || !projectOwnsSnapshotStoreOwner(this.storage, actual))) fail("SNAPSHOT_GIT_OWNER_MISMATCH");
     const configFile = safeSnapshotPath(this.root, path.join(this.directory, "config"));
     const configStat = fs.lstatSync(configFile);
     if (!configStat.isFile() || configStat.nlink !== 1 || configStat.size > 16384) fail("SNAPSHOT_GIT_CONFIG_REJECTED");
@@ -101,7 +102,7 @@ export class GitSnapshotStore {
     const inspect = directory => { if (!fs.existsSync(directory)) return; for (const entry of fs.readdirSync(directory)) { if (Date.now() >= deadline) fail("SNAPSHOT_GIT_TIMEOUT"); if (++visited > 200000) fail("SNAPSHOT_GIT_INVENTORY_LIMIT"); const file = safeSnapshotPath(this.root, path.join(directory, entry)); let stat; try { stat=fs.lstatSync(file); } catch(error) { const relative=path.relative(this.directory,file).replaceAll("\\","/"); if(error.code==="ENOENT"&&/^(?:objects\/(?:[a-f0-9]{2}\/[a-f0-9]{62}|pack\/pack-[a-f0-9]{64}\.(?:pack|idx))|refs\/lode-snapshots\/(?:world-model|graph-snapshot)-[a-f0-9]{24}(?:\.lock)?)$/.test(relative))continue;throw error; } if (stat.isDirectory()) inspect(file); else if (!stat.isFile() || stat.nlink !== 1) fail("UNSAFE_SNAPSHOT_PATH"); } };
     inspect(path.join(this.directory, "objects")); inspect(path.join(this.directory, "refs"));
     for (const name of ["config", "HEAD", "packed-refs"]) safeSnapshotPath(this.root, path.join(this.directory, name));
-    return true;
+    return { owner: actual, storeId: "snapshot-store-" + hash(JSON.stringify(actual)).slice(0, 24) };
   }
   async invoke(args, context, options = {}) { const result = await command(this, args, { ...context, ...options }); if (result.code !== 0) { const error=Object.assign(new Error("Private snapshot Git command failed: "+args[0]),{code:"SNAPSHOT_GIT_COMMAND_FAILED",gitStderr:result.stderr,gitAction:args[0]});throw error; } return result.stdout; }
   async ensure(context) {
@@ -135,7 +136,8 @@ export class GitSnapshotStore {
     return decoder.finish();
   }
   async read(id, context = this.context()) {
-    this.ref(id); if (!this.checkOwner(context.deadline)) return null;
+    this.ref(id); const identity = this.checkOwner(context.deadline, true); if (!identity) return null;
+    if (!projectOwnsSnapshotStoreAddress(this.storage, identity.owner, id, null)) fail("SNAPSHOT_GIT_COPIED_ADDRESS_NOT_ADMITTED");
     const treeOid = await this.resolve(id, context); if (!treeOid) return null;
     const packBasis=()=>{const directory=path.join(this.directory,"objects","pack");return fs.existsSync(directory)?fs.readdirSync(directory).sort().map(name=>{
       try {const s=fs.lstatSync(path.join(directory,name),{bigint:true});return name+":"+s.ino+":"+s.size+":"+s.ctimeNs;}
@@ -148,11 +150,14 @@ export class GitSnapshotStore {
       // select current again, retry effects, or hide permission/digest failure.
       const text=error.gitStderr||"";
       if(error.code!=="SNAPSHOT_GIT_COMMAND_FAILED"||context.signal?.aborted||Date.now()>=context.deadline||/permission|access is denied|not permitted|corrupt|mismatch/i.test(text)||(!error.gitMissingObject&&!/could not get object info|could not read|cannot be accessed|no such file|not a valid object name/i.test(text))||before===packBasis())throw error;
-      this.checkOwner(context.deadline);
+      this.checkOwner(context.deadline, true);
       try {return await this.readExactTree(id,treeOid,context);}catch(next){next.initialReadFailure={code:error.code,action:error.gitAction};throw next;}
     }
   }
   async readExactTree(id,treeOid,context) {
+    const readIdentity = this.checkOwner(context.deadline, true);
+    if (!readIdentity) fail("SNAPSHOT_GIT_OWNER_MISMATCH");
+    if (!projectOwnsSnapshotStoreAddress(this.storage, readIdentity.owner, id, treeOid)) fail("SNAPSHOT_GIT_COPIED_ADDRESS_NOT_ADMITTED");
     await this.object(treeOid, "tree", 4096, context);
     const listing = (await this.invoke(["ls-tree", treeOid], context, { maxBytes: 4096 })).toString("utf8").trim().split("\n");
     const entries = listing.map(line => /^(100644) blob ([a-f0-9]{64})\t(metadata.json|snapshot.json)$/.exec(line));
@@ -162,7 +167,7 @@ export class GitSnapshotStore {
     const objects = await this.#objects([
       { oid: byName["metadata.json"], type: "blob", maximum: 4096, onObject: raw => {
         metadata = decodeSnapshotBytes(raw, { decodedBytes: 4096 });
-        if (metadata.schemaVersion !== 1 || metadata.storeId !== this.storeId || metadata.projectId !== this.storage.projectId || metadata.snapshotId !== id || metadata.encoding !== "utf8-json" || metadata.objectFormat !== "sha256" || metadata.objectId !== byName["snapshot.json"] || !/^[a-f0-9]{64}$/.test(metadata.rawSha256 || "") || !Number.isSafeInteger(metadata.byteLength) || metadata.byteLength < 1 || metadata.byteLength > MAX) fail("SNAPSHOT_GIT_METADATA_MISMATCH");
+        if (metadata.schemaVersion !== 1 || metadata.storeId !== readIdentity.storeId || metadata.projectId !== this.storage.projectId || metadata.snapshotId !== id || metadata.encoding !== "utf8-json" || metadata.objectFormat !== "sha256" || metadata.objectId !== byName["snapshot.json"] || !/^[a-f0-9]{64}$/.test(metadata.rawSha256 || "") || !Number.isSafeInteger(metadata.byteLength) || metadata.byteLength < 1 || metadata.byteLength > MAX) fail("SNAPSHOT_GIT_METADATA_MISMATCH");
       } },
       { oid: byName["snapshot.json"], type: "blob", maximum: () => metadata.byteLength },
     ], context, 4096 + MAX);
@@ -170,8 +175,8 @@ export class GitSnapshotStore {
     if (bytes.length !== metadata.byteLength || hash(bytes) !== metadata.rawSha256) fail("SNAPSHOT_GIT_RAW_DIGEST_MISMATCH");
     const document = decodeSnapshotBytes(bytes);
     if (document.projectId !== this.storage.projectId || (document.worldModelId || document.graphSnapshotId) !== id) fail("SNAPSHOT_GIT_IDENTITY_MISMATCH");
-    this.checkOwner(context.deadline);
-    return { location: null, document, snapshotStorage: { kind: "local-git-object", storeId: this.storeId, objectFormat: "sha256", treeObjectId: treeOid, objectId: metadata.objectId, encoding: metadata.encoding, byteLength: metadata.byteLength, rawSha256: metadata.rawSha256 } };
+    if (this.checkOwner(context.deadline, true)?.storeId !== readIdentity.storeId) fail("SNAPSHOT_GIT_OWNER_MISMATCH");
+    return noteCopiedGitSnapshotRead(this.storage, { location: null, document, snapshotStorage: { kind: "local-git-object", storeId: readIdentity.storeId, objectFormat: "sha256", treeObjectId: treeOid, objectId: metadata.objectId, encoding: metadata.encoding, byteLength: metadata.byteLength, rawSha256: metadata.rawSha256 } }, readIdentity.owner);
   }
   async write(id, document) {
     return withSnapshotReferencesAsync({root:this.root,storage:this.storage},()=>this.writeUnderLifetime(id,document));

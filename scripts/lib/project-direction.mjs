@@ -22,7 +22,7 @@ function directionStorage(root) {
   } });
 }
 
-function verify(record, project) {
+export function verifyProjectDirectionOriginal(record, project) {
   const keys = ["schemaVersion", "kind", "authorityPlane", "authorityBoundary", "projectId", "previousDirectionId", "input", "source", "grantsExecutionAuthorization", "directionId", "directionHash"];
   if (!record || Object.keys(record).some((key) => !keys.includes(key)) || keys.some((key) => !Object.hasOwn(record, key))
     || record.schemaVersion !== 1 || record.kind !== "ProjectDirection" || record.authorityPlane !== "P2"
@@ -74,14 +74,7 @@ export function readProjectDirection({ root = ".", storage } = {}) {
   storage ??= directionStorage(root);
   const project = read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project.json"));
   if (project.projectRoot !== fs.realpathSync(path.resolve(root))) fail("Project identity differs.", "PROJECT_IDENTITY_MISMATCH");
-  const file = safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "current.json");
-  if (!directionFileStat(file)) {
-    if (hasUnlinkedDirectionTrace(root, storage)) fail("Current Project direction linkage is unavailable; retained originals or publication stages are not an approved empty direction.", "PROJECT_DIRECTION_UNAVAILABLE");
-    return null;
-  }
-  const pointer = read(file);
-  if (!/^direction-[a-f0-9]{24}$/.test(pointer.directionId || "")) fail("Project direction pointer is invalid.", "INVALID_PROJECT_DIRECTION");
-  return verify(read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "revisions", `${pointer.directionId}.json`)), project);
+  return inspectProjectDirectionOriginalFiles({ root, directory: formatForVerifiedOwner(storage).directory, project });
 }
 
 export function readProjectDirectionRevision({ root = ".", directionId, storage } = {}) {
@@ -89,7 +82,7 @@ export function readProjectDirectionRevision({ root = ".", directionId, storage 
   storage ??= directionStorage(root);
   const project = read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project.json"));
   if (project.projectRoot !== fs.realpathSync(path.resolve(root))) fail("Project identity differs.", "PROJECT_IDENTITY_MISMATCH");
-  return verify(read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "revisions", `${directionId}.json`)), project);
+  return verifyProjectDirectionOriginal(read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "revisions", `${directionId}.json`)), project);
 }
 
 function normalized(input) {
@@ -142,4 +135,19 @@ export function assertAuthorizationProjectDirection(root, authorization, storage
   const current = readProjectDirection({ root, storage });
   if ((authorization.currentProjectDirectionId || null) !== (current?.directionId || null)) fail("Execution authorization predates the current common Project direction; reassess only this effect against current user direction.", "RUNTIME_PROJECT_DIRECTION_DRIFT");
   return current;
+}
+
+// Read-only source validation: data format is explicit and no Core ownership,
+// current-root alias, Session route or recovery direction is established.
+export function inspectProjectDirectionOriginalFiles({ root, directory, project }) {
+  if (![".lode", ".head"].includes(directory)) fail("Unknown direction format.", "INVALID_PROJECT_DIRECTION");
+  const storage = { directory, dialect: directory === ".lode" ? "lode" : "head" };
+  const file = safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "current.json");
+  if (!directionFileStat(file)) {
+    if (hasUnlinkedDirectionTrace(root, storage)) fail("Current Project direction linkage is unavailable; retained originals or publication stages are not an approved empty direction.", "PROJECT_DIRECTION_UNAVAILABLE");
+    return null;
+  }
+  const pointer = read(file);
+  if (!/^direction-[a-f0-9]{24}$/.test(pointer.directionId || "")) fail("Project direction pointer is invalid.", "INVALID_PROJECT_DIRECTION");
+  return verifyProjectDirectionOriginal(read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "revisions", `${pointer.directionId}.json`)), project);
 }

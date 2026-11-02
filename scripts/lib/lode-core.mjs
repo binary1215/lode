@@ -1,3 +1,4 @@
+import { verifyImportedDefaultSession } from "./session-import-proof.mjs";
 import { ensureProjectStorageIgnore } from "./project-storage-ignore.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -63,13 +64,15 @@ function atomicWrite(file, content) {
   atomicWriteArtifact(file, content);
 }
 
-function readJson(file, label) {
+function readJsonOriginal(file, label) {
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
+    const bytes=fs.readFileSync(file);return {document:JSON.parse(bytes.toString("utf8")),bytes};
   } catch (error) {
     fail(`${label} is invalid JSON: ${error.message}`, "INVALID_CANON");
   }
 }
+
+const readJson = (file,label) => readJsonOriginal(file,label).document;
 
 function packageVersionAt(pluginRoot) {
   for (const relative of [path.join(".codex-plugin", "plugin.json"), "package.json"]) {
@@ -364,6 +367,10 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
       try { fs.lstatSync(file); continue; } catch (error) { if (error.code !== "ENOENT") throw error; }
       // A missing managed original is drift, never permission to regenerate it.
       if (manifest.managed.some(item => item.path === relative)) fail(`Managed installation projection is missing: ${relative}`, "MANAGED_INSTALLATION_PROJECTION_MISSING");
+      // A moved/imported Project does not make absent root settings ours.
+      // Keep its historical integration fields unchanged; current ownership is
+      // the target manifest, and existing direct installation keeps its flow.
+      if (inspected.project.location || manifest.integrationPolicy === "preserve-unowned-root-files") continue;
       if (relative === ".mcp.json" && pluginMcpServesProject(installationContext, projectRoot, inspected.project.projectId)) continue;
       assertNoSymlinkAncestors(projectRoot, file);
       additions.set(relative, content);
@@ -388,6 +395,10 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
   const replacements = new Map();
   const addReplacement = (relative, content) => {
     if (additions.has(relative)) return;
+    if (!manifest.managed.some(item => item.path === relative)) {
+      if (["AGENTS.md", "CLAUDE.md", ".mcp.json", "opencode.json"].includes(relative)) return;
+      fail(`Managed manifest does not own installation projection: ${relative}`, "MANAGED_INSTALLATION_PROJECTION_UNOWNED");
+    }
     const file = path.join(projectRoot, relative);
     if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== content) replacements.set(relative, content);
   };
@@ -420,7 +431,8 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
     addReplacement(relativeProjectArtifact(storage, "project.json"), json(project));
   }
   assertProjectStorageUnchanged(storage);
-  const originals = new Map([[manifestFile, fs.readFileSync(manifestFile)]]);
+  const manifestBefore = fs.readFileSync(manifestFile);
+  const published = new Map();
   const created = new Map();
   try {
     for (const [relative, content] of additions) {
@@ -436,8 +448,16 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
       const file = path.join(projectRoot, relative);
       assertNoSymlinkAncestors(projectRoot, file);
       if (!fs.existsSync(file)) fail(`Managed installation projection is missing: ${relative}`, "MANAGED_INSTALLATION_PROJECTION_MISSING");
-      originals.set(file, fs.readFileSync(file));
-      atomicWrite(file, content);
+      const beforeBytes = fs.readFileSync(file), afterBytes = Buffer.from(content);
+      const expected = manifest.managed.find(item => item.path === relative);
+      if (sha256(beforeBytes) !== expected.sha256) fail(`Installation projection changed: ${relative}`, "PROJECT_NOT_READY");
+      atomicWriteArtifact(file, afterBytes, { beforePublish() {
+        if (!fs.readFileSync(file).equals(beforeBytes)) fail(`Installation projection changed: ${relative}`, "PROJECT_NOT_READY");
+      } });
+      published.set(file, { before: beforeBytes, after: afterBytes });
+    }
+    for (const [file, change] of published) {
+      if (!fs.readFileSync(file).equals(change.after)) fail("Installation projection changed after publication.", "MANAGED_PROJECTION_CHANGED_AFTER_WRITE");
     }
     const managed = (manifest.managed || []).map((item) => replacements.has(item.path)
       ? { ...item, sha256: sha256(fs.readFileSync(path.join(projectRoot, item.path))) }
@@ -448,10 +468,22 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
         fail(`Managed manifest does not own installation projection: ${relative}`, "MANAGED_INSTALLATION_PROJECTION_UNOWNED");
       }
     }
-    atomicWrite(manifestFile, json({ ...manifest, generatedAt: now(), pluginRoot: canonicalPluginRoot, packageVersion, managed }));
+    const manifestAfter = Buffer.from(json({ ...manifest, generatedAt: now(), pluginRoot: canonicalPluginRoot, packageVersion, managed }));
+    atomicWriteArtifact(manifestFile, manifestAfter, { beforePublish() {
+      if (!fs.readFileSync(manifestFile).equals(manifestBefore)) fail("Installation manifest changed.", "PROJECT_NOT_READY");
+    } });
+    published.set(manifestFile, { before: manifestBefore, after: manifestAfter });
   } catch (error) {
-    for (const [file, content] of [...originals.entries()].reverse()) {
-      try { atomicWrite(file, content); } catch {}
+    // Roll back only our exact after state. A later user edit is not our stage.
+    for (const [file, change] of [...published.entries()].reverse()) {
+      try {
+        if (!fs.readFileSync(file).equals(change.after)) {
+          error.projectionCleanup = { code: "MANAGED_PROJECTION_CHANGED_AFTER_WRITE", preservedPath: file }; continue;
+        }
+        atomicWriteArtifact(file, change.before, { beforePublish() {
+          if (!fs.readFileSync(file).equals(change.after)) fail("Projection changed before rollback.", "MANAGED_PROJECTION_CHANGED_AFTER_WRITE");
+        } });
+      } catch (cleanup) { error.projectionCleanup = { code: cleanup.code, preservedPath: file }; }
     }
     for (const [file, owned] of [...created].reverse()) try {
       const stat = fs.lstatSync(file);
@@ -488,7 +520,11 @@ function inspectProjectOwner(root, sessionScope) {
   }
   let state;
   try {
-    state = readJson(stateFile, "Session canon");
+    const original=readJsonOriginal(stateFile,"Session canon");state=original.document;
+    if(state?.projectId == null && stateFile !== defaultSessionStatePath(canonicalRoot,storage)
+      && !verifyImportedDefaultSession({root:canonicalRoot,directory:storage.directory,project,sessionId:state?.sessionId,stateFile,stateBytes:original.bytes})) {
+      fail("Named Session has no verified Project owner.","HEAD_SESSION_IDENTITY_MISMATCH");
+    }
     if (!state || state.schemaVersion !== SCHEMA_VERSION || !/^session-[a-fA-F0-9-]{36}$/.test(state.sessionId || "")) {
       fail("Session canon has an invalid canonical identity.", "INVALID_SESSION_CANON");
     }
@@ -599,3 +635,18 @@ export function createCheckpoint({ root = ".", summary, next = "" } = {}) {
   );
 }
 
+
+// Current installation projections only. No source client configuration,
+// Project identity, user policy, binding, or root integration is imported.
+export function buildCurrentInstallationProjections({ projectRoot, pluginRoot, directory = ".lode" } = {}) {
+  if(![".lode",".head"].includes(directory))fail("Unknown Project format.","PROJECT_IDENTITY_MISMATCH");
+  const currentPluginRoot=fs.realpathSync(path.resolve(pluginRoot)),version=packageVersionAt(currentPluginRoot);
+  const storage={dialect:directory===".lode"?"lode":"head",directory},format=formatForVerifiedOwner(storage);
+  const files=new Map([
+    [relativeProjectArtifact(storage,"generated",format.dialect+"-instructions.md"),lodeInstructions()],
+    [relativeProjectArtifact(storage,"generated","claude.mcp.json"),json(claudeMcpProjection(currentPluginRoot,projectRoot))],
+    [relativeProjectArtifact(storage,"generated","opencode.json"),json(opencodeProjection(currentPluginRoot,storage,projectRoot))],
+    ...[format.roleField,"developer","coder","reviewer"].map(role=>[relativeProjectArtifact(storage,"roles",role+".md"),roleInstruction(role)]),
+  ]);
+  return {pluginRoot:currentPluginRoot,packageVersion:version,files,rootIntegrationPolicy:"preserve-unowned-root-files"};
+}

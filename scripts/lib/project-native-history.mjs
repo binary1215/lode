@@ -1,0 +1,203 @@
+import fs from "node:fs";
+import path from "node:path";
+import { inspectProjectBundle } from "./project-portability.mjs";
+import { prepareCodexNativeOffline } from "./codex-native-offline.mjs";
+import { captureCodexNativeHistory } from "./codex-native-capture.mjs";
+import { publishCodexNativeHistory } from "./codex-native-publication.mjs";
+import { registerCodexNativeHistory } from "./codex-native-registration.mjs";
+import { resolveVerifiedProcessSupervisor } from "./runtime-process-supervisor.mjs";
+import { copiedProjectFile } from "./project-copy-evidence.mjs";
+import {
+  projectNativeCaptureDirectory,
+  attachProjectNativeTransfer,
+  readProjectNativeTransfer,
+  projectNativeTransferSummary,
+  assertProjectNativeTransferCurrent,
+} from "./project-native-transfer.mjs";
+
+const fail = (code) => {
+  throw Object.assign(new Error(code), { code });
+};
+const unavailable = (offline) => ({
+  status: "native-offline-window-unavailable",
+  reason: offline.status,
+  ordinaryCoreBlocked: false,
+  sdkLifecycleRequestedThisCall: false,
+  appsStopped: false,
+  mcpRestarted: false,
+  persisted: false,
+  grantsRecoveryAuthority: false,
+  restoresExecutionPermission: false,
+});
+function registrationEnvironment(home) {
+  // Current destination process only. Source config/account/credential
+  // environment is never copied into a registration process.
+  const keys = [
+    "SystemRoot",
+    "WINDIR",
+    "PATH",
+    "Path",
+    "TEMP",
+    "TMP",
+    "HOME",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
+  ];
+  return {
+    ...Object.fromEntries(
+      keys
+        .filter((key) => typeof process.env[key] === "string")
+        .map((key) => [key, process.env[key]]),
+    ),
+    CODEX_HOME: home,
+  };
+}
+
+// One public Host operation, distinct explicit effects. read never starts a
+// provider; restore never implicitly registers/opens it. The caller carries
+// the user's actual requested scope, not authority inferred from the bundle.
+export async function operateProjectNativeHistory({
+  action,
+  bundleRoot,
+  expectedBundleId = null,
+  nativeHome,
+  executable,
+  threadIds,
+  root,
+  pluginRoot,
+  signal,
+  onProcess,
+  assertCurrentAuthority = () => {},
+} = {}) {
+  if (!["capture", "read", "restore", "register"].includes(action))
+    fail("PROJECT_NATIVE_ACTION_INVALID");
+  if (action === "read") {
+    if ([nativeHome, executable, threadIds, root].some((value) => value !== undefined))
+      fail("PROJECT_NATIVE_READ_HAS_EFFECT_ARGUMENTS");
+    return projectNativeTransferSummary(
+      readProjectNativeTransfer({ bundleRoot, expectedBundleId, signal }),
+    );
+  }
+  if (
+    typeof nativeHome !== "string" ||
+    !nativeHome.trim() ||
+    typeof executable !== "string" ||
+    !executable.trim()
+  )
+    fail("PROJECT_NATIVE_HOST_REQUIRED");
+  if (
+    action === "capture" &&
+    (!Array.isArray(threadIds) ||
+      !threadIds.length ||
+      new Set(threadIds).size !== threadIds.length ||
+      threadIds.some(
+        (id) =>
+          typeof id !== "string" ||
+          !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id),
+      ))
+  )
+    fail("PROJECT_NATIVE_EXACT_SELECTION_REQUIRED");
+  if (action !== "capture" && threadIds !== undefined)
+    fail("PROJECT_NATIVE_SELECTION_IS_IN_PAYLOAD");
+  if (action !== "register" && root !== undefined) fail("PROJECT_NATIVE_RUNTIME_ROOT_NOT_USED");
+  if (action === "register" && (typeof root !== "string" || !root.trim()))
+    fail("PROJECT_NATIVE_RUNTIME_ROOT_REQUIRED");
+  const authority = () => {
+    if (signal?.aborted) fail("PROJECT_NATIVE_ACTION_CANCELLED");
+    if (typeof assertCurrentAuthority !== "function") fail("NATIVE_CODEX_AUTHORITY_CHECK_REQUIRED");
+    const result = assertCurrentAuthority();
+    if (result && typeof result.then === "function") {
+      Promise.resolve(result).catch(() => {});
+      fail("NATIVE_CODEX_SYNCHRONOUS_AUTHORITY_REQUIRED");
+    }
+  };
+  authority();
+  // Validate data/selection before process observation or destination creation.
+  const selected =
+    action === "capture"
+      ? inspectProjectBundle({ bundleRoot, expectedBundleId, signal })
+      : readProjectNativeTransfer({ bundleRoot, expectedBundleId, signal });
+  if (action !== "capture" && !selected.native) return projectNativeTransferSummary(selected);
+  const transferRoot = fs.realpathSync(path.resolve(bundleRoot)),
+    hostHome = fs.realpathSync(path.resolve(nativeHome));
+  const inside = (base, file) => {
+    const relative = path.relative(base, file);
+    return (
+      !relative ||
+      (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))
+    );
+  };
+  if (inside(transferRoot, hostHome) || inside(hostHome, transferRoot))
+    fail("PROJECT_NATIVE_SOURCE_TARGET_OVERLAP");
+  const selectedTransferCurrent = () => {
+    authority();
+    if (action !== "capture")
+      assertProjectNativeTransferCurrent({
+        bundleRoot,
+        commonManifestDigest: selected.commonManifestDigest,
+        linkDigest: selected.linkDigest,
+        signal,
+      });
+  };
+  selectedTransferCurrent();
+  const offline = await prepareCodexNativeOffline({
+    home: nativeHome,
+    executable,
+    signal,
+    onProcess,
+  });
+  selectedTransferCurrent();
+  if (!offline.witness) return unavailable(offline);
+  if (action === "capture") {
+    const destination = projectNativeCaptureDirectory({
+      bundleRoot: selected.bundleRoot,
+      expectedBundleId: selected.bundleId,
+      assertCurrentAuthority: authority,
+    });
+    const captured = await captureCodexNativeHistory({
+      witness: offline.witness,
+      threadIds,
+      destination,
+      signal,
+      onProcess,
+      assertCurrentAuthority: authority,
+    });
+    return attachProjectNativeTransfer({
+      bundleRoot: selected.bundleRoot,
+      expectedBundleId: selected.bundleId,
+      directory: captured.directory,
+      signal,
+      assertCurrentAuthority: authority,
+    });
+  }
+  if (action === "restore")
+    return publishCodexNativeHistory({
+      witness: offline.witness,
+      directory: selected.native.directory,
+      expectedPayloadId: selected.native.payloadId,
+      signal,
+      onProcess,
+      assertCurrentAuthority: selectedTransferCurrent,
+    });
+  const home = fs.realpathSync(path.resolve(nativeHome)),
+    controlDirectory = copiedProjectFile(home, ".lode-native-portability/registration-control");
+  authority();
+  fs.mkdirSync(controlDirectory, { recursive: true });
+  copiedProjectFile(home, ".lode-native-portability/registration-control");
+  return registerCodexNativeHistory({
+    witness: offline.witness,
+    directory: selected.native.directory,
+    expectedPayloadId: selected.native.payloadId,
+    cwd: root,
+    environment: registrationEnvironment(home),
+    supervisorSelection: resolveVerifiedProcessSupervisor({ pluginRoot }),
+    controlFile: path.join(controlDirectory, selected.native.payloadId + ".jsonl"),
+    signal,
+    onProcess,
+    assertCurrentAuthority: selectedTransferCurrent,
+  });
+}

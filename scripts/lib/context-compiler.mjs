@@ -208,7 +208,7 @@ function validateId(value, kind) {
   }
 }
 
-function validateKnowledge(value) {
+export function validateKnowledge(value) {
   if (value?.schemaVersion !== SCHEMA_VERSION) fail("Knowledge canon schema is incompatible.", "INVALID_KNOWLEDGE_SCHEMA");
   for (const key of ["evidence", "claims", "decisions", "unknowns"]) {
     if (!Array.isArray(value[key])) fail(`Knowledge canon ${key} must be an array.`, "INVALID_KNOWLEDGE_SCHEMA");
@@ -1216,18 +1216,23 @@ export function readContextCapsule({ root = ".", capsuleId } = {}) {
   const file = path.join(inspected.project.projectRoot, relativeProjectArtifact(inspected.storage, "context", "capsules", `${capsuleId}.json`));
   if (!fs.existsSync(file)) fail(`Context Capsule not found: ${capsuleId}`, "CAPSULE_NOT_FOUND");
   const capsule = readJson(file, "Context Capsule");
+  verifyContextCapsuleOriginal({ capsule, capsuleId, projectId: inspected.project.projectId });
+  return { status: "verified", file, capsule };
+}
+
+export async function compileContext(options = {}, ...rest) {
+  return (options.persist) ? withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => compileContextUncoordinated(options, ...rest)) : compileContextUncoordinated(options, ...rest);
+}
+
+export function verifyContextCapsuleOriginal({ capsule, capsuleId, projectId }) {
   const recordedHash = capsule.capsuleHash;
   const payload = { ...capsule };
   delete payload.capsuleId;
   delete payload.capsuleHash;
   const actualHash = digest(canonicalJson(payload));
   if (recordedHash !== actualHash || capsuleId !== `capsule-${actualHash.slice(0, 24)}`) fail("Context Capsule digest verification failed.", "CAPSULE_DIGEST_MISMATCH");
-  if (capsule.snapshot?.projectId !== inspected.project.projectId) {
+  if (capsule.snapshot?.projectId !== projectId) {
     fail("Context Capsule belongs to another HEAD Project.", "CONTEXT_CAPSULE_PROJECT_MISMATCH");
   }
-  return { status: "verified", file, capsule };
-}
-
-export async function compileContext(options = {}, ...rest) {
-  return (options.persist) ? withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => compileContextUncoordinated(options, ...rest)) : compileContextUncoordinated(options, ...rest);
+  return capsule;
 }

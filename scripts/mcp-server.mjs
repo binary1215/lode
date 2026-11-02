@@ -114,7 +114,7 @@ async function initializeProjectFromMcp(args, { projectSessionRoute, onValidated
     caller: installationCaller, root: args.project_root });
   try {
     return await (await import("./lib/project-bootstrap.mjs")).initializeOrResumeProject({ root: args.project_root, pluginRoot,
-      projectSessionRoute, runtimes: args.runtimes || null, profile: args.profile || "core",
+      projectSessionRoute, runtimes: args.runtimes || null, profile: args.profile || "core", copiedProject: args.copied_project ?? null,
       instructionIntegration: args.instruction_integration ?? null, onboarding, onValidatedSessionSelection, installationContext });
   } finally { releasePluginInitializationContext(installationContext); }
 }
@@ -344,6 +344,39 @@ const allTools = [
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
+    name: "head_project_bundle_export",
+    description: "Export only common Project originals, the selected logical Session's typed P2/reference closure and its work evidence into a create-only local bundle. Never reads/copies user MCP configuration, unrelated Session payloads or rebuildable caches. Does not run providers or transfer execution authority. Before invoking export, tell the user that recovery-required common proof metadata can include other Sessions' paths, IDs and hashes, while their bodies remain excluded; no extra approval is required.",
+    inputSchema: { type: "object", properties: {
+      project_root: {type:"string",minLength:1}, destination: {type:"string",minLength:1},
+      provenance_scope: {type:"string",enum:["project-proof-metadata","selected-only"],default:"project-proof-metadata",description:"Defaults to only recovery-required original common-proof path/ID/hash metadata, never other Session bodies. Explain this scope before export. Explicit selected-only omits cross-session proof and can leave legacy admission partial; never rewrite omitted proof."},
+    }, required:["project_root","destination"],additionalProperties:false},
+    annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false},
+  },
+  {
+    name: "head_project_bundle_read",
+    description: "Read-only inspection of one selected local Project bundle: verify raw objects, exact manifest identity and the selected original/reference closure, then return a bounded summary. This neither imports data nor resumes a native conversation.",
+    inputSchema:{type:"object",properties:{include_native_history:{type:"boolean",description:"Inspect the optional native companion as data only, without SDK startup. A native failure remains separate from the common Project result."},bundle_root:{type:"string",minLength:1},expected_bundle_id:{type:"string",pattern:"^project-bundle-[a-f0-9]{24}$"}},required:["bundle_root"],additionalProperties:false},
+    annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false},
+  },
+  {
+    name: "head_project_bundle_import",
+    description: "Import the exact selected logical Session/common originals into a chosen target without overwriting a divergent existing Project, newer cancellation or user-owned root settings. Creates current-installation projections and exact recoverable publication evidence. Never imports a provider binding, credentials, model policy or execution permission; no model/native resume is called.",
+    inputSchema:{type:"object",properties:{target_root:{type:"string",minLength:1},bundle_root:{type:"string",minLength:1},expected_bundle_id:{type:"string",pattern:"^project-bundle-[a-f0-9]{24}$"}},required:["target_root","bundle_root"],additionalProperties:false},
+    annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false},
+  },
+  {
+    name: "head_project_native_history",
+    description: "Operate explicitly selected optional Codex native history attached to one Project bundle. read only verifies transfer data and never starts an SDK. capture needs an offline source window; restore writes absent exact native raw/history rows in an offline target window; register separately starts the version-scoped metadata SDK and may change native metadata even before resume. No model turn, app kill, credential copy, P2 authority or inferred native ownership. Ordinary Core recovery remains independent. The HEAD supplies exact user-selected native IDs and locations; users do not author JSON.",
+    inputSchema: { type: "object", properties: {
+      action: {type:"string",enum:["capture","read","restore","register"]},
+      bundle_root: {type:"string",minLength:1}, expected_bundle_id: {type:"string",pattern:"^project-bundle-[a-f0-9]{24}$"},
+      native_home: {type:"string",minLength:1}, executable: {type:"string",minLength:1},
+      thread_ids: {type:"array",minItems:1,uniqueItems:true,items:{type:"string",pattern:"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"}},
+      runtime_root: {type:"string",minLength:1},
+    }, required:["action","bundle_root"],additionalProperties:false},
+    annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:false},
+  },
+  {
     name: "head_project_initialize_or_resume",
     description: "Initialize or resume one Lode Project and its explicitly routed logical Session, and converge managed plugin projections. Core is the default. Core initialize/resume requires no Product brief or semantic proposal and leaves optional Product governance inactive or preserves its existing state. Only the explicit Product profile requires a fresh provider proposal or user-owned brief when Product candidates need to be created; Core verifies evidence but never infers product meaning. This writes only the selected project and never contacts GraphDB.",
     inputSchema: {
@@ -351,12 +384,13 @@ const allTools = [
       properties: {
         project_root: { type: "string", minLength: 1 },
         profile: { type: "string", enum: ["core", "product"], default: "core" },
+        copied_project: { type: "string", enum: ["verified-copy"], description: "Explicitly adopt this local copied Project when the initial origin cannot be proved. Retains exact originals and an origin-unverified label; does not transfer native bindings or execution permission. Not needed for ordinary proved relocation." },
         instruction_integration: { type: "string", enum: ["link", "preserve"], description: "Optional existing setup choice. Link a bounded host-specific instruction block only when the user chose it; preserve makes no instruction edits. Never a prerequisite for ordinary work." },
         runtimes: {
           type: "array", minItems: 1, maxItems: 3, uniqueItems: true,
           items: { type: "string", enum: ["claude", "codex", "opencode"] },
         },
-        mode: { type: "string", enum: ["existing", "new"] },
+        mode: { type: "string", enum: ["existing", "new"], description: "Product onboarding only. Omit mode for Core initialization or resume; existing/new describes the optional Product analysis, not whether a Core Project exists." },
         source_scope: {
           type: "object",
           properties: {
@@ -2397,7 +2431,6 @@ async function dispatchSessionRequest(request, options = {}) {
   const dependent = sessionCallRequiresBinding(requestedName);
   let sessionContext = options.sessionContext;
   let bindingFailure = null;
-  let relocationNeeded = false;
   if (request.method === "tools/call" && args?.project_root && requestedName === "head_project_status") {
     try {
       const { inspectProjectLocationExperience } = await import("./lib/project-bootstrap.mjs");
@@ -2406,20 +2439,11 @@ async function dispatchSessionRequest(request, options = {}) {
       if (projectLocationProjection) return (await dispatchRouted(request, { ...options, projectLocationProjection }));
     } catch (error) { return failure(request.id ?? null, error.message); }
   }
-  if (request.method === "tools/call" && args?.project_root && requestedName === "head_project_initialize_or_resume") {
-    try {
-      if (hasSelection && typeof args.session_id !== "string") throw new Error("An explicit logical Session route must be text; omit it for an unspecified route.");
-      const { resumeProjectLocation } = await import("./lib/project-relocation.mjs");
-      const { validateRelocationSessionSelection } = await import("./lib/session-routing.mjs");
-      relocationNeeded = Boolean(resumeProjectLocation({ root: args.project_root, pluginRoot, runtimes: args.runtimes ?? null, inspectOnly: true,
-        validateSelection: owner => validateRelocationSessionSelection(owner, { sessionId: hasSelection ? args.session_id : undefined, context: sessionContext }) }));
-    } catch (error) { return failure(request.id ?? null, error.message); }
-  }
   // Explicit resume validates/adopts the local Project location before an
   // optional native Host adapter can read its binding at that current root.
   // Other tools retain the original selected-Session call boundary unchanged.
   if (request.method === "tools/call" && args?.project_root && requestedName === "head_project_initialize_or_resume"
-    && relocationNeeded && (hasSelection || sessionContext || options.resolveSessionContext)) {
+    && (hasSelection || sessionContext || options.resolveSessionContext)) {
     try {
       if (hasSelection && typeof args.session_id !== "string") throw new Error("An explicit logical Session route must be text; omit it for an unspecified route.");
       const cleanArgs = { ...args }; delete cleanArgs.session_id;
@@ -2474,7 +2498,7 @@ async function dispatchSessionRequest(request, options = {}) {
   return (await dispatchRouted(request, options));
 }
 
-async function dispatchRouted(request, { surface = "ordinary", graphDbTransport = null, coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, signal, onProcess, onValidatedSessionSelection = null, readRelatedNativeContext = null, projectSessionRoute = null, projectLocationProjection = null, caller = null, hostEnvironment = process.env, pluginLaunch = null, servingModuleUrl = null, installationCaller = null } = {}) {
+async function dispatchRouted(request, { surface = "ordinary", graphDbTransport = null, coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, signal, onProcess, onExportScope = null, onValidatedSessionSelection = null, readRelatedNativeContext = null, projectSessionRoute = null, projectLocationProjection = null, caller = null, hostEnvironment = process.env, pluginLaunch = null, servingModuleUrl = null, installationCaller = null } = {}) {
   requireSurface(surface);
   const id = request.id ?? null;
     if (request.method === "initialize") {
@@ -2528,6 +2552,10 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
           inventoryPage: args.inventory_page === true, inventoryPaths: args.inventory_paths, inventoryCursor: args.inventory_cursor }))
       : name === "head_project_graph_index"
         ? (await import("./lib/project-graph.mjs")).indexProjectGraph({ root: args.project_root })
+      : name === "head_project_native_history"
+        ? (await projectNativeHistoryFromMcp(args,signal))
+      : name === "head_project_bundle_export" || name === "head_project_bundle_read" || name === "head_project_bundle_import"
+        ? (await projectBundleFromMcp(name,args,signal,onExportScope))
       : name === "head_session_create"
         ? (await import("./lib/session-routing.mjs")).createHeadSession({ root: args.project_root, sessionId: args.new_session_id, purpose: args.purpose })
       : name === "head_session_list"
@@ -2938,7 +2966,7 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
   }
 }
 
-export function serveMcp({ surface = "ordinary", coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, sessionContext = null, resolveSessionContext = null, nativeSessionBridge, pluginLaunch = null } = {}) {
+export function serveMcp({ surface = "ordinary", coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, sessionContext = null, resolveSessionContext = null, nativeSessionBridge, pluginLaunch = null, onExportScope = null } = {}) {
   requireSurface(surface);
   if (nativeSessionBridge === undefined) nativeSessionBridge = createNativeSessionHostBridge({ pluginLaunch, servingModuleUrl: import.meta.url });
   const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -2965,7 +2993,7 @@ export function serveMcp({ surface = "ordinary", coordinationWorkspaceHost = nul
         controller = new AbortController(); sourceRequests.set(sourceRequestId, controller); ownsSourceRequest = true;
       }
       response = await dispatch(request, { surface, coordinationWorkspaceHost, observationRegistry, conformanceTriggerRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, sessionContext, resolveSessionContext, nativeSessionBridge,
-        signal: controller?.signal, onProcess: (event) => process.stderr.write(`${JSON.stringify({ sourceProcess: event })}\n`) });
+        signal: controller?.signal, onExportScope: onExportScope ?? (notice => fs.writeSync(process.stderr.fd, `${JSON.stringify({ projectExportScope: notice })}\n`)), onProcess: (event) => process.stderr.write(`${JSON.stringify({ sourceProcess: event })}\n`) });
     }
     catch (error) { response = failure(null, `Parse error: ${error.message}`); }
     finally { if (ownsSourceRequest) sourceRequests.delete(sourceRequestId); cleanupSignals(); }
@@ -2976,3 +3004,33 @@ export function serveMcp({ surface = "ordinary", coordinationWorkspaceHost = nul
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) serveMcp();
+
+async function projectBundleFromMcp(name,args,signal,onExportScope = null) {
+  const fields=name==="head_project_bundle_export"?["project_root","destination","provenance_scope"]
+    :name==="head_project_bundle_read"?["bundle_root","expected_bundle_id","include_native_history"]:["target_root","bundle_root","expected_bundle_id"];
+  if(!args||typeof args!=="object"||Array.isArray(args)||Object.keys(args).some(key=>!fields.includes(key)))throw new Error("Unsupported Project bundle arguments.");
+  const required=name==="head_project_bundle_export"?["project_root","destination"]:name==="head_project_bundle_read"?["bundle_root"]:["target_root","bundle_root"];
+  if(required.some(key=>typeof args[key]!=="string"||!args[key].trim()))throw new Error("Project bundle locations must be non-empty text.");
+  const core=await import("./lib/project-portability.mjs");
+  if(name==="head_project_bundle_read"){
+    if(args.include_native_history!==undefined&&typeof args.include_native_history!=="boolean")throw new Error("include_native_history must be boolean.");
+    const common=core.projectBundleSummary(core.inspectProjectBundle({bundleRoot:args.bundle_root,expectedBundleId:args.expected_bundle_id??null,signal}));
+    if(!args.include_native_history)return common;
+    const native=await import("./lib/project-native-transfer.mjs");
+    try{return {...common,nativeHistory:native.projectNativeTransferSummary(native.readProjectNativeTransfer({bundleRoot:args.bundle_root,expectedBundleId:common.bundleId,signal}))};}
+    catch(error){return {...common,nativeHistory:{status:"native-transfer-invalid",isError:true,primaryFailure:{code:error.code||"NATIVE_TRANSFER_READ_FAILED"},ordinaryCoreBlocked:false}};}
+  }
+  if(name==="head_project_bundle_export")return core.exportProjectBundle({root:args.project_root,destination:args.destination,provenanceScope:args.provenance_scope,signal,onExportScope});
+  const result=core.importProjectBundle({root:args.target_root,bundleRoot:args.bundle_root,expectedBundleId:args.expected_bundle_id??null,pluginRoot,signal});
+  return {...result,nextRead:{tool:publicToolName("head_conversation_enter"),arguments:{project_root:result.targetRoot,session_id:result.selectedSessionId}},
+    selectionScope:"exact-current-request-no-default-change"};
+}
+
+async function projectNativeHistoryFromMcp(args,signal) {
+ const allowed=["action","bundle_root","expected_bundle_id","native_home","executable","thread_ids","runtime_root"];
+ if(!args||typeof args!=="object"||Array.isArray(args)||Object.keys(args).some(key=>!allowed.includes(key)))throw new Error("Unsupported native history arguments.");
+ if(typeof args.bundle_root!=="string"||!args.bundle_root.trim())throw new Error("Native history requires one exact bundle location.");
+ return (await import("./lib/project-native-history.mjs")).operateProjectNativeHistory({action:args.action,bundleRoot:args.bundle_root,
+ expectedBundleId:args.expected_bundle_id??null,nativeHome:args.native_home,executable:args.executable,threadIds:args.thread_ids,
+ root:args.runtime_root,pluginRoot,signal});
+}

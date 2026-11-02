@@ -2,6 +2,10 @@
 
 [영어 원문](../runtime-adapters.md)
 
+별도로 요청하는 버전별 Codex 네이티브 이관과 정책·이어쓰기 검증 한계는
+[Project 이관](project-portability.md)을 참고합니다. bounded worker 전송기나 일반적인
+공급자 resume의 지원 범위를 넓히는 기능은 아닙니다.
+
 ## 일반 Host 위임과 관리형 런타임
 
 전체 기본은 Lode 직접 작업입니다. 일반 위임은 현재 Host가 이미 제공하는 도구와

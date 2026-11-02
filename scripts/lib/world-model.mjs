@@ -91,7 +91,7 @@ import { readGraphProject, safeGraphFile } from "./discovery-index.mjs";
 import { SOURCE_ANALYSIS_VERSION } from "./source-analysis.mjs";
 import { withSessionRoute } from "./session-routing.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lode-artifact-composition.mjs";
-import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact, projectOwnsRecordedRoot } from "./project-storage-format.mjs";
+import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact, projectOwnsRecordedSnapshot } from "./project-storage-format.mjs";
 
 export const WORLD_MODEL_VERSION = "0.19.0";
 export const WORLD_MODEL_STORE = WORLD_MODEL_STORAGE_CONTRACT;
@@ -831,7 +831,7 @@ export async function readWorldModel({ root = ".", storeAdapter = null } = {}) {
   const snapshotEntry = (await adapter.readSnapshot(pointer.worldModelId));
   if (!snapshotEntry) fail("World Model snapshot is missing.", "WORLD_MODEL_SNAPSHOT_MISSING");
   const snapshot = verifyWorldModelSnapshotOriginal({ document: snapshotEntry.document, worldModelId: pointer.worldModelId, storage });
-  if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedRoot(storage, snapshot.projectRoot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
+  if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedSnapshot(storage, snapshot, snapshotEntry)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   if (snapshot.worldModelHash !== pointer.worldModelHash) fail("World Model pointer hash does not match its snapshot.", "WORLD_MODEL_POINTER_MISMATCH");
   return {
     storage,
@@ -853,7 +853,7 @@ export async function readWorldModelSnapshot({ root = ".", worldModelId, storeAd
   const snapshotEntry = (await adapter.readSnapshot(worldModelId));
   if (!snapshotEntry) fail(`World Model snapshot is missing: ${worldModelId}`, "WORLD_MODEL_SNAPSHOT_MISSING");
   const snapshot = verifyWorldModelSnapshotOriginal({ document: snapshotEntry.document, worldModelId, storage });
-  if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedRoot(storage, snapshot.projectRoot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
+  if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedSnapshot(storage, snapshot, snapshotEntry)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   return {
     status: "verified",
     file: snapshotEntry.location,
@@ -889,12 +889,12 @@ export async function readWorldModelForDiscovery({ root = ".", worldModelId = ""
     : { ...entry, document: ownWorldSnapshotForTemporalScope(temporalVerificationScope, entry.document) };
   // A synchronous adapter's returned value exists now: detach its aliases
   // before yielding. A Promise value is not observed until it resolves.
-  const entry = pendingEntry && typeof pendingEntry.then === "function"
-    ? ownEntry(await pendingEntry) : ownEntry(pendingEntry);
+  const originalEntry = pendingEntry && typeof pendingEntry.then === "function" ? await pendingEntry : pendingEntry;
+  const entry = ownEntry(originalEntry);
   if (!entry) fail("World Model snapshot is missing.", "WORLD_MODEL_SNAPSHOT_MISSING");
   const document = entry.document;
   const snapshot = verifiedSnapshot(document, selectedId, storage);
-  if (snapshot.projectId !== project.projectId || !projectOwnsRecordedRoot(storage, snapshot.projectRoot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
+  if (snapshot.projectId !== project.projectId || !projectOwnsRecordedSnapshot(storage, originalEntry.document, originalEntry)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   if (!worldModelId && pointer.worldModelHash !== snapshot.worldModelHash) fail("World pointer hash differs from retained bytes.", "WORLD_MODEL_POINTER_MISMATCH");
   return { snapshot, pointer, storage, file: entry.location, ...(entry.snapshotStorage ? { snapshotStorage: entry.snapshotStorage } : {}), historical: !pointer || selectedId !== pointer.worldModelId };
 }
@@ -2020,6 +2020,6 @@ export function verifyWorldModelPointerOriginal(pointer, projectId) {
 }
 export function verifyWorldModelSnapshotOriginal({ document, worldModelId, storage }) {
   const snapshot = verifiedSnapshot(document, worldModelId, storage);
-  if (snapshot.projectId !== storage.projectId || !projectOwnsRecordedRoot(storage, snapshot.projectRoot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
+  if (snapshot.projectId !== storage.projectId || !projectOwnsRecordedSnapshot(storage, snapshot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   return snapshot;
 }

@@ -5,14 +5,23 @@ import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mj
 import { withLocalMutation } from "./project-mutation-lock.mjs";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { safeLocationFile, verifyProjectLocation, locationJournalRelative } from "./project-location-proof.mjs";
+import { COPIED_PROJECT_LOCATION_KIND } from "./project-copy-proof.mjs";
+import { adoptVerifiedProjectCopy, inspectProjectCopyInput } from "./project-copy-adoption.mjs";
+import { validateCopiedManagedPaths } from "./project-copy-evidence.mjs";
+import { inspectProjectCopyOrigin } from "./project-location-proof.mjs";
+import { inspectManagedByteRepairs, repairManagedProjectBytes } from "./project-record-byte-repair.mjs";
 
 const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const json = value => `${JSON.stringify(value, null, 2)}\n`;
 const fail = (message, code = "PROJECT_RELOCATION_CONFLICT") => { throw Object.assign(new Error(message), { code }); };
 const read = file => fs.readFileSync(file, "utf8");
+const nextLocation = (proof, previousProjectDigest) => proof.copyAdmissionDigest
+  ? { kind: proof.locationKind ?? COPIED_PROJECT_LOCATION_KIND, admissionDigest: proof.copyAdmissionDigest, previousProjectDigest }
+  : { identityRoot: proof.identityRoot, previousProjectDigest };
 
 function validateManifest(root, directory, projectBytes, manifestBytes) {
   const manifest = JSON.parse(manifestBytes), paths = new Set();
+  validateCopiedManagedPaths({ root, directory, manifest });
   if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.managed)) fail("Managed manifest is invalid.");
   for (const entry of manifest.managed) {
     if (typeof entry.path !== "string" || paths.has(entry.path) || !/^[a-f0-9]{64}$/.test(entry.sha256 || "")) fail("Managed manifest has invalid entries.");
@@ -33,10 +42,36 @@ function validateManifest(root, directory, projectBytes, manifestBytes) {
   return manifest;
 }
 
+// Exact recorded bytes can be restored during explicit resume, after the same
+// pure owner/Session/runtime checks. Missing and edited files remain untouched.
+export function repairProjectBytesForResume(options = {}) {
+  const root = fs.realpathSync(path.resolve(options.root || "."));
+  const local = [".lode", ".head"].filter(directory => fs.existsSync(path.join(root, directory, "project.json")));
+  if (!local.length) return null;
+  // A no-op byte inspection does not consume a logical Session. Validate it
+  // only when an actual repair depends on that owner.
+  const input = inspectProjectCopyInput({ ...options, root, validateSelection: null });
+  if (fs.existsSync(safeLocationFile(root, input.directory, locationJournalRelative))) return null;
+  if ([COPIED_PROJECT_LOCATION_KIND, "portable-project-copy"].includes(input.project.location?.kind)) verifyProjectLocation(root, input.directory, input.project);
+  else inspectProjectCopyOrigin(root, input.directory, input.project);
+  const plan = inspectManagedByteRepairs({ root, directory: input.directory, manifest: input.manifest });
+  if (!plan.repairs.length) return null;
+  options.validateSelection?.({ root, storage: {dialect: input.dialect, directory: input.directory}, project: input.project });
+  return repairManagedProjectBytes({ root, directory: input.directory, manifest: input.manifest });
+}
+
 // An explicit initialize/resume may adopt only the local copied owner. No old
 // directory is probed, no Session history is rewritten, and no effect is replayed.
-export function resumeProjectLocation({ root, pluginRoot, runtimes, validateSelection = null, onPublication = null, inspectOnly = false } = {}) {
+export function resumeProjectLocation({ root, pluginRoot, runtimes, validateSelection = null, onPublication = null, inspectOnly = false, copiedProject = null } = {}) {
   const currentRoot = fs.realpathSync(path.resolve(root || "."));
+  if (copiedProject !== null && copiedProject !== "verified-copy") fail("copiedProject must be verified-copy when explicitly adopting an unproved local copy.", "PROJECT_COPY_CHOICE_INVALID");
+  const local = [".lode", ".head"].filter(directory => fs.existsSync(path.join(currentRoot, directory, "project.json")));
+  const copyPending = local.length === 1 && fs.existsSync(safeLocationFile(currentRoot, local[0], locationJournalRelative))
+    && JSON.parse(read(safeLocationFile(currentRoot, local[0], locationJournalRelative))).kind === "ProjectCopyPublication";
+  if (copiedProject || copyPending) {
+    const adopted = adoptVerifiedProjectCopy({ root: currentRoot, pluginRoot, runtimes, validateSelection, onPublication, inspectOnly });
+    if (adopted) return adopted;
+  }
   try { if (resolveProjectStorage(currentRoot)) return null; }
   catch (error) { if (!["PROJECT_RELOCATION_PENDING", "PROJECT_IDENTITY_MISMATCH"].includes(error.code)) throw error; }
   const candidates = [".lode", ".head"].filter(directory => fs.existsSync(path.join(currentRoot, directory, "project.json")));
@@ -74,8 +109,14 @@ export function resumeProjectLocation({ root, pluginRoot, runtimes, validateSele
     } else {
       const project = JSON.parse(currentProjectBytes);
       if (project.projectRoot === currentRoot) return null;
+      const origin = [COPIED_PROJECT_LOCATION_KIND, "portable-project-copy"].includes(project.location?.kind) ? null : inspectProjectCopyOrigin(currentRoot, directory, project);
+      if (origin?.status === "initial-origin-unverified") {
+        if (inspectOnly) return { status: "verified-copy-available", projectId: project.projectId, projectRoot: currentRoot,
+          previousRoot: project.projectRoot, origin: origin.status, persisted: false, requiredChoice: "verified-copy" };
+        fail("The initial origin cannot be proved. Explicitly choose copiedProject=verified-copy to retain it as an origin-unverified copy; damaged declared history cannot be adopted.", "PROJECT_COPY_CHOICE_REQUIRED");
+      }
       const proof = verifyProjectLocation(currentRoot, directory, project);
-      const nextProject = { ...project, projectRoot: currentRoot, location: { identityRoot: proof.identityRoot, previousProjectDigest: hash(currentProjectBytes) } };
+      const nextProject = { ...project, projectRoot: currentRoot, location: nextLocation(proof, hash(currentProjectBytes)) };
       const manifest = validateManifest(currentRoot, directory, currentProjectBytes, currentManifestBytes);
       const nextBytes = json(nextProject);
       transaction = { kind: "ProjectLocationPublication", targetRoot: currentRoot,
@@ -89,7 +130,7 @@ export function resumeProjectLocation({ root, pluginRoot, runtimes, validateSele
       || !Array.isArray(original.runtimes) || !original.runtimes.length || !original.runtimes.every(value => ["codex", "claude", "opencode"].includes(value))
       || !original.integrations || typeof original.integrations !== "object" || Array.isArray(original.integrations)) fail("Copied Project metadata is malformed.", "INVALID_CANON");
     const proof = verifyProjectLocation(currentRoot, directory, original);
-    const expected = { ...original, projectRoot: currentRoot, location: { identityRoot: proof.identityRoot, previousProjectDigest: hash(transaction.beforeProject) } };
+    const expected = { ...original, projectRoot: currentRoot, location: nextLocation(proof, hash(transaction.beforeProject)) };
     if (JSON.stringify(next) !== JSON.stringify(expected)) fail("Pending relocation changes more than location metadata.");
     const manifest = validateManifest(currentRoot, directory, transaction.beforeProject, transaction.beforeManifest);
     if (transaction.afterManifest !== json({ ...manifest, managed: manifest.managed.map(entry => entry.path === `${directory}/project.json` ? { ...entry, sha256: hash(transaction.afterProject) } : entry) })) fail("Pending manifest is not the exact location transition.");
