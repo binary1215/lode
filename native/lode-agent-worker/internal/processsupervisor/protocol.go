@@ -320,6 +320,20 @@ func runRequestInput(request Request, input io.Reader, interactiveInput io.Close
 		return 2, fmt.Errorf("process-tree ownership could not be established: %w", err)
 	}
 	events := &eventWriter{encoder: json.NewEncoder(controlFile), sync: controlFile.Sync}
+	return runOwnedProvider(request, input, interactiveInput, stdout, stderr, stop, onStop, controller, events, subscribeStopSignals)
+}
+
+func subscribeStopSignals() (<-chan os.Signal, func()) {
+	channel := make(chan os.Signal, 1)
+	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)
+	return channel, func() { signal.Stop(channel) }
+}
+
+func runOwnedProvider(request Request, input io.Reader, interactiveInput io.Closer, stdout io.Writer, stderr io.Writer, stop <-chan string, onStop func(string), controller platformController, events *eventWriter, subscribe func() (<-chan os.Signal, func())) (int, error) {
+	// Readiness/provider ownership must never become observable before stop
+	// delivery is buffered. An early stop remains pending through child startup.
+	signalChannel, unsubscribe := subscribe()
+	defer unsubscribe()
 	if err := events.emit(controlEvent{
 		Type:                     "supervisor.ready",
 		Strategy:                 controller.Strategy(),
@@ -401,9 +415,6 @@ func runRequestInput(request Request, input io.Reader, interactiveInput io.Close
 
 	waitChannel := make(chan error, 1)
 	go func() { waitChannel <- command.Wait() }()
-	signalChannel := make(chan os.Signal, 1)
-	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signalChannel)
 	terminationRequested := false
 	forceUsed := false
 	var waitError error

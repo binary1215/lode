@@ -455,7 +455,10 @@ export function spawnSupervisedProcess({
   const terminate = (force = false) => {
     terminationRequested = true;
     const signal = force ? "SIGKILL" : "SIGTERM";
-    processGroupSignal(state.providerPid, signal);
+    // Graceful stop belongs to the native owner: killing the provider first
+    // races the owner's signal subscription/normal-exit cleanup. Explicit force
+    // still targets the exact proven group before killing its owner.
+    if (force) processGroupSignal(state.providerPid, signal);
     if (child.exitCode === null && child.signalCode === null) {
       try { child.kill(signal); } catch {}
     }

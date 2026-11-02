@@ -122,7 +122,6 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
       `${cliDisplay} project-bundle-inspect <bundle-folder-or-HANDOFF.md> [--expected-bundle <bundle-id>] [--handoff-offset <bytes> --handoff-max-bytes <bytes>]`,
       `${cliDisplay} project-import <target-project> --bundle <bundle-folder> [--expected-bundle <bundle-id>]`,
       `${cliDisplay} project-native-history <bundle-folder> --action read|capture|restore|register [--provider codex|claude|opencode] [--native-home <exact-data-home> --executable <exact-client>] [--threads <exact-native-id,...>] [--runtime-root <current-workspace>]`,
-      `  capture requires --provider; read/restore/register derive it only from a verified companion link. Claude/OpenCode effects also require --runtime-root; optional Claude --companions <selected-id/relative-file,...>. OpenCode source capture requires a registered Host export capability; its default CLI bootstrap remains unavailable pending qualification. The isolated destination workflow never switches the default profile.`,
       `${cliDisplay} session-create <project> [--purpose <text>] [--new-session <session-id>]`,
       `${cliDisplay} session-list <project> [--session <id>] [--max-sessions <1..64>] [--after-session <cursor>] [--conversation-candidates <json-file>]  # read-only preview and optional stored mappings; preserves selection`,
       `${cliDisplay} project-direction-read <project>`,
@@ -289,6 +288,9 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} help-all  # advanced, audit, and recovery commands`,
   ];
   return {
+    ...((all || surface === "managed-maintenance") ? { commandNotes: {
+      "project-native-history": "capture requires --provider; read/restore/register derive it only from a verified companion link. Claude/OpenCode effects also require --runtime-root; optional Claude --companions <selected-id/relative-file,...>. OpenCode source capture requires a registered Host export capability; its default CLI bootstrap remains unavailable pending qualification. The isolated destination workflow never switches the default profile.",
+    } } : {}),
     surface: surface === "managed-maintenance" ? surface : all ? "ordinary-complete" : "light-default",
     commands: surface === "managed-maintenance"
       ? allCommands.map(line => line.replace(cliDisplay + " ", cliDisplay + " managed-maintenance "))

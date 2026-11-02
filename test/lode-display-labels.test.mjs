@@ -57,6 +57,8 @@ test("canonical light and complete help use the real launcher without changing s
   assert.equal(light.surface, "light-default"); assert.equal(complete.surface, "ordinary-complete");
   assert(light.commands.every(line => line.startsWith("lode-agent ")));
   assert(complete.commands.every(line => line.startsWith("lode-agent ")));
+  assert.match(complete.commandNotes["project-native-history"], /capture requires --provider/);
+  assert.match(complete.commandNotes["project-native-history"], /default CLI bootstrap remains unavailable/);
   assert.equal(light.advancedCommand, "lode-agent help-all");
   assert.equal(complete.advancedCommand, null);
   assert.equal(light.executionMeans.default, "lode-direct");
