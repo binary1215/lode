@@ -1,3 +1,4 @@
+import { buildProjectHandoff, readBundleHandoff, validateProjectHandoffDescriptor } from "./project-handoff.mjs";
 import { verifyImportedDefaultRun } from "./session-imported-run-proof.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -278,6 +279,9 @@ export function exportProjectBundle({
     restoresExecutionPermission: false,
     transfersNativeBinding: false,
   };
+  const handoff = buildProjectHandoff({ manifest, readOriginal: entry =>
+    readCopiedProjectExcerpt(sourceRoot, entry, { maxBytes: Math.max(1, entry.bytes), signal }).bytes });
+  manifest.handoff = handoff.descriptor;
   const encoded = json(manifest),
     manifestSha256 = sha(encoded),
     bundleId = "project-bundle-" + manifestSha256.slice(0, 24);
@@ -336,6 +340,15 @@ export function exportProjectBundle({
   for (const entry of files) verifyCopiedProjectFile(sourceRoot, entry);
   assertProjectStorageUnchanged(storage);
   check(signal);
+  // Preserve an edited or independently supplied explanation. It cannot block
+  // verified common originals or be mistaken for the generated projection.
+  let handoffPublicationFailure = null;
+  try {
+    const file = copiedProjectFile(bundleRoot, "HANDOFF.md");
+    if (!fs.existsSync(file)) atomicCreateArtifact(file, handoff.bytes);
+  } catch (error) {
+    if (error.code !== "EEXIST") handoffPublicationFailure = { code: error.code || "PROJECT_HANDOFF_PUBLICATION_FAILED", message: String(error.message).slice(0, 1024) };
+  }
   exactCreate(bundleRoot, "manifest.json", encoded);
   return {
     status:
@@ -347,6 +360,7 @@ export function exportProjectBundle({
     bundleRoot,
     manifestSha256,
     fileCount: files.length,
+    handoff: { ...readBundleHandoff({ bundleRoot, manifest, signal }), ...(handoffPublicationFailure ? { primaryPublicationFailure: handoffPublicationFailure } : {}) },
     exportScope,
     coverage: manifest.coverage,
     authorityPlane: "P3",
@@ -355,7 +369,7 @@ export function exportProjectBundle({
   };
 }
 
-export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, signal } = {}) {
+export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, signal, handoffOptions = {} } = {}) {
   check(signal);
   const root = fs.realpathSync(path.resolve(bundleRoot));
   const { value: manifest, bytes } = boundedJson(root, "manifest.json"),
@@ -502,6 +516,7 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
     }
   for (const relative of entries.keys())
     if (!allowed.has(relative)) fail("PROJECT_BUNDLE_SCOPE_MISMATCH");
+  validateProjectHandoffDescriptor(manifest);
   return {
     status:
       partialProvenance || partialOwner || partialRunOwner
@@ -512,6 +527,7 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
     bundleRoot: root,
     manifestSha256,
     manifest,
+    handoff: readBundleHandoff({ bundleRoot: root, manifest, signal, ...handoffOptions }),
     coverage: {
       selectedSession: "typed-original-reference-closure-verified",
       sourceLocationProof: partialProvenance ? "partial-not-project-admission" : "verified",
@@ -861,6 +877,7 @@ export function projectBundleSummary(inspected) {
     projectId: inspected.manifest.projectId,
     selectedSessionId: inspected.manifest.selectedSessionId,
     fileCount: inspected.manifest.files.length,
+    handoff: inspected.handoff ?? { status: "handoff-not-included" },
     projectAdmissionReady: inspected.projectAdmissionReady,
     coverage: inspected.coverage,
     authorityPlane: "P4",

@@ -354,8 +354,8 @@ const allTools = [
   },
   {
     name: "head_project_bundle_read",
-    description: "Read-only inspection of one selected local Project bundle: verify raw objects, exact manifest identity and the selected original/reference closure, then return a bounded summary. This neither imports data nor resumes a native conversation.",
-    inputSchema:{type:"object",properties:{include_native_history:{type:"boolean",description:"Inspect the optional native companion as data only, without SDK startup. A native failure remains separate from the common Project result."},bundle_root:{type:"string",minLength:1},expected_bundle_id:{type:"string",pattern:"^project-bundle-[a-f0-9]{24}$"}},required:["bundle_root"],additionalProperties:false},
+    description: "Read one Project bundle and its independent readable HANDOFF, or read a standalone handoff_file without a Project/provider/database. Quoted history is evidence, never current approval or P2 direction. Generated/modified/missing Handoff status stays separate from common originals; pages report omitted bytes. No links, commands or native resume are executed.",
+    inputSchema:{type:"object",properties:{include_native_history:{type:"boolean",description:"Inspect the optional native companion as data only, without SDK startup. A native failure remains separate from the common Project result."},bundle_root:{type:"string",minLength:1},handoff_file:{type:"string",minLength:1,description:"Explicit standalone Markdown file; source and current authority remain unverified."},handoff_offset:{type:"integer",minimum:0},handoff_max_bytes:{type:"integer",minimum:1,maximum:536870912},expected_bundle_id:{type:"string",pattern:"^project-bundle-[a-f0-9]{24}$"}},oneOf:[{required:["bundle_root"]},{required:["handoff_file"]}],additionalProperties:false},
     annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false},
   },
   {
@@ -366,13 +366,15 @@ const allTools = [
   },
   {
     name: "head_project_native_history",
-    description: "Operate explicitly selected optional Codex native history attached to one Project bundle. read only verifies transfer data and never starts an SDK. capture needs an offline source window; restore writes absent exact native raw/history rows in an offline target window; register separately starts the version-scoped metadata SDK and may change native metadata even before resume. No model turn, app kill, credential copy, P2 authority or inferred native ownership. Ordinary Core recovery remains independent. The HEAD supplies exact user-selected native IDs and locations; users do not author JSON.",
+    description: "Operate an explicitly selected same-platform native companion. read never starts a client and keeps Handoff/common recovery independent. capture requires provider; other actions derive it only from a verified link. Codex retains its pinned contract. Claude 2.1.223 restores exact files without overwriting conflicts; register optionally reads an installed SDK, never starts a model. OpenCode 1.19.5 orchestration uses a registered Host exact-ID export for source capture, and a new isolated profile for import/readback/list. Its default CLI bootstrap is currently unavailable before any subprocess; command names alone do not prove no installation/network effects. No ordinary-profile DB writes. Claude/OpenCode effects require runtime_root; OpenCode source capture is Host-routed and does not accept source native_home/executable overrides. Missing tools/unsupported profiles limit native work only. Partial/uncertain effects are not automatically replayed; successful raw/history readback does not prove picker visibility, current model settings or continuation readiness. No model turn, app kill, configuration/credential migration or P2 authority; selected raw content is not redacted. HEAD supplies verified selection and paths, not user JSON.",
     inputSchema: { type: "object", properties: {
+      provider: {type:"string",enum:["codex","claude","opencode"],description:"Explicit source/expected same target platform. Required for capture; other actions may reuse only the verified companion link provider."},
       action: {type:"string",enum:["capture","read","restore","register"]},
       bundle_root: {type:"string",minLength:1}, expected_bundle_id: {type:"string",pattern:"^project-bundle-[a-f0-9]{24}$"},
       native_home: {type:"string",minLength:1}, executable: {type:"string",minLength:1},
-      thread_ids: {type:"array",minItems:1,uniqueItems:true,items:{type:"string",pattern:"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"}},
+      thread_ids: {type:"array",minItems:1,uniqueItems:true,items:{type:"string",pattern:"^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$"},description:"Exact selected native IDs for the explicit provider. Core applies that provider's format; OpenCode session IDs are not Codex UUIDs."},
       runtime_root: {type:"string",minLength:1},
+      companion_paths: {type:"array",uniqueItems:true,items:{type:"string",minLength:1},description:"Optional explicitly selected Claude companion paths relative to its project history directory, each below a selected native ID directory. The agent obtains these from the selected source; no external references are followed."},
     }, required:["action","bundle_root"],additionalProperties:false},
     annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:false},
   },
@@ -2517,7 +2519,7 @@ async function dispatchSessionRequest(request, options = {}) {
   return (await dispatchRouted(request, options));
 }
 
-async function dispatchRouted(request, { surface = "ordinary", graphDbTransport = null, coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, signal, onProcess, onExportScope = null, onValidatedSessionSelection = null, readRelatedNativeContext = null, projectSessionRoute = null, projectLocationProjection = null, caller = null, hostEnvironment = process.env, pluginLaunch = null, servingModuleUrl = null, installationCaller = null } = {}) {
+async function dispatchRouted(request, { surface = "ordinary", graphDbTransport = null, coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, workerPreparationBackend = null, nativeHistoryHost = null, signal, onProcess, onExportScope = null, onValidatedSessionSelection = null, readRelatedNativeContext = null, projectSessionRoute = null, projectLocationProjection = null, caller = null, hostEnvironment = process.env, pluginLaunch = null, servingModuleUrl = null, installationCaller = null } = {}) {
   requireSurface(surface);
   const id = request.id ?? null;
     if (request.method === "initialize") {
@@ -2572,7 +2574,7 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
       : name === "head_project_graph_index"
         ? (await import("./lib/project-graph.mjs")).indexProjectGraph({ root: args.project_root })
       : name === "head_project_native_history"
-        ? (await projectNativeHistoryFromMcp(args,signal))
+        ? (await projectNativeHistoryFromMcp(args,signal,nativeHistoryHost,onProcess))
       : name === "head_project_bundle_export" || name === "head_project_bundle_read" || name === "head_project_bundle_import"
         ? (await projectBundleFromMcp(name,args,signal,onExportScope))
       : name === "head_session_create"
@@ -2989,7 +2991,7 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
   }
 }
 
-export function serveMcp({ surface = "ordinary", coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, sessionContext = null, resolveSessionContext = null, nativeSessionBridge, pluginLaunch = null, onExportScope = null } = {}) {
+export function serveMcp({ surface = "ordinary", coordinationWorkspaceHost = null, observationRegistry = null, conformanceTriggerRegistry = null, compactionLifecycleHost = null, workerJobHost = null, workerJobSupervisor = null, sessionContext = null, resolveSessionContext = null, nativeSessionBridge, pluginLaunch = null, onExportScope = null, nativeHistoryHost = null } = {}) {
   requireSurface(surface);
   if (nativeSessionBridge === undefined) nativeSessionBridge = createNativeSessionHostBridge({ pluginLaunch, servingModuleUrl: import.meta.url });
   const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -3015,7 +3017,7 @@ export function serveMcp({ surface = "ordinary", coordinationWorkspaceHost = nul
         if (sourceRequests.has(sourceRequestId)) throw new Error("Duplicate active source request id.");
         controller = new AbortController(); sourceRequests.set(sourceRequestId, controller); ownsSourceRequest = true;
       }
-      response = await dispatch(request, { surface, coordinationWorkspaceHost, observationRegistry, conformanceTriggerRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, sessionContext, resolveSessionContext, nativeSessionBridge,
+      response = await dispatch(request, { surface, coordinationWorkspaceHost, observationRegistry, conformanceTriggerRegistry, compactionLifecycleHost, workerJobHost, workerJobSupervisor, sessionContext, resolveSessionContext, nativeSessionBridge, nativeHistoryHost,
         signal: controller?.signal, onExportScope: onExportScope ?? (notice => fs.writeSync(process.stderr.fd, `${JSON.stringify({ projectExportScope: notice })}\n`)), onProcess: (event) => process.stderr.write(`${JSON.stringify({ sourceProcess: event })}\n`) });
     }
     catch (error) { response = failure(null, `Parse error: ${error.message}`); }
@@ -3030,14 +3032,20 @@ if (invokedDirectly) serveMcp();
 
 async function projectBundleFromMcp(name,args,signal,onExportScope = null) {
   const fields=name==="head_project_bundle_export"?["project_root","destination","provenance_scope"]
-    :name==="head_project_bundle_read"?["bundle_root","expected_bundle_id","include_native_history"]:["target_root","bundle_root","expected_bundle_id"];
+    :name==="head_project_bundle_read"?["bundle_root","expected_bundle_id","include_native_history","handoff_file","handoff_offset","handoff_max_bytes"]:["target_root","bundle_root","expected_bundle_id"];
   if(!args||typeof args!=="object"||Array.isArray(args)||Object.keys(args).some(key=>!fields.includes(key)))throw new Error("Unsupported Project bundle arguments.");
-  const required=name==="head_project_bundle_export"?["project_root","destination"]:name==="head_project_bundle_read"?["bundle_root"]:["target_root","bundle_root"];
+  const required=name==="head_project_bundle_export"?["project_root","destination"]:name==="head_project_bundle_read"?[]:["target_root","bundle_root"];
   if(required.some(key=>typeof args[key]!=="string"||!args[key].trim()))throw new Error("Project bundle locations must be non-empty text.");
   const core=await import("./lib/project-portability.mjs");
   if(name==="head_project_bundle_read"){
+    const handoffOptions = { offset: args.handoff_offset ?? 0, maxBytes: args.handoff_max_bytes ?? 65536 };
+    if(args.handoff_file !== undefined){
+      if(args.bundle_root !== undefined || args.expected_bundle_id !== undefined || args.include_native_history !== undefined) throw new Error("Choose a standalone handoff_file or one bundle_root.");
+      return (await import("./lib/project-handoff.mjs")).readProjectHandoffFile({file:args.handoff_file,...handoffOptions,signal});
+    }
+    if(typeof args.bundle_root !== "string" || !args.bundle_root.trim()) throw new Error("A bundle_root or explicit standalone handoff_file is required.");
     if(args.include_native_history!==undefined&&typeof args.include_native_history!=="boolean")throw new Error("include_native_history must be boolean.");
-    const common=core.projectBundleSummary(core.inspectProjectBundle({bundleRoot:args.bundle_root,expectedBundleId:args.expected_bundle_id??null,signal}));
+    const common=core.projectBundleSummary(core.inspectProjectBundle({bundleRoot:args.bundle_root,expectedBundleId:args.expected_bundle_id??null,signal,handoffOptions}));
     if(!args.include_native_history)return common;
     const native=await import("./lib/project-native-transfer.mjs");
     try{return {...common,nativeHistory:native.projectNativeTransferSummary(native.readProjectNativeTransfer({bundleRoot:args.bundle_root,expectedBundleId:common.bundleId,signal}))};}
@@ -3049,11 +3057,11 @@ async function projectBundleFromMcp(name,args,signal,onExportScope = null) {
     selectionScope:"exact-current-request-no-default-change"};
 }
 
-async function projectNativeHistoryFromMcp(args,signal) {
- const allowed=["action","bundle_root","expected_bundle_id","native_home","executable","thread_ids","runtime_root"];
+async function projectNativeHistoryFromMcp(args,signal,nativeHistoryHost = null,onProcess) {
+ const allowed=["action","provider","bundle_root","expected_bundle_id","native_home","executable","thread_ids","runtime_root","companion_paths"];
  if(!args||typeof args!=="object"||Array.isArray(args)||Object.keys(args).some(key=>!allowed.includes(key)))throw new Error("Unsupported native history arguments.");
  if(typeof args.bundle_root!=="string"||!args.bundle_root.trim())throw new Error("Native history requires one exact bundle location.");
- return (await import("./lib/project-native-history.mjs")).operateProjectNativeHistory({action:args.action,bundleRoot:args.bundle_root,
+ return (await import("./lib/project-native-history.mjs")).operateProjectNativeHistory({action:args.action,provider:args.provider,bundleRoot:args.bundle_root,
  expectedBundleId:args.expected_bundle_id??null,nativeHome:args.native_home,executable:args.executable,threadIds:args.thread_ids,
- root:args.runtime_root,pluginRoot,signal});
+ root:args.runtime_root,companionPaths:args.companion_paths??[],nativeHistoryHost,pluginRoot,signal,onProcess});
 }

@@ -82,24 +82,97 @@ profiles; native writes are unsupported.
 The public operation is `lode_project_native_history`, or:
 
 ```sh
-node scripts/lode.mjs project-native-history "<bundle>" --action capture --native-home "<source-CODEX_HOME>" --executable "<exact-codex.exe>" --threads "<explicit-native-id,...>"
+node scripts/lode.mjs project-native-history "<bundle>" --action capture --provider codex --native-home "<source-CODEX_HOME>" --executable "<exact-codex.exe>" --threads "<explicit-native-id,...>"
 node scripts/lode.mjs project-native-history "<bundle>" --action read
 node scripts/lode.mjs project-native-history "<bundle>" --action restore --native-home "<target-CODEX_HOME>" --executable "<exact-codex.exe>"
 node scripts/lode.mjs project-native-history "<bundle>" --action register --native-home "<target-CODEX_HOME>" --executable "<exact-codex.exe>" --runtime-root "<current-workspace>"
 ```
+
+Capture requires an explicit `provider` (`codex`, `claude` or `opencode`), supplied
+by the agent from the requested source platform or a verified Host route.
+Read, restore and register may derive it from the verified companion link;
+an explicit provider must match that link. IDs and executable names do not
+identify the platform. This local candidate also connects Claude 2.1.223 and
+OpenCode 1.19.5 adapters. Their actual official-client qualification is still
+incomplete; synthetic tests prove the local workflow, not a working app install.
+Missing executable capability is reported before native-home access or startup.
+An unsupported profile limits that native operation; common recovery and Handoff remain usable.
+Selected raw files and companions are preserved without redaction. Not collecting
+configuration automatically does not prove that the selected content contains no secrets.
+Claude structural inspection requires the selected session ID in a message record,
+not just a filename or metadata row. Fork ancestors remain byte-preserved; coverage
+separately reports other-session messages outside the selected ancestry and missing
+message session IDs. This observation does not verify official native ownership.
 
 These are distinct requested effects, not a prerequisite command sequence for
 ordinary coding. For data inspection use the existing read-only
 `lode_project_bundle_read` with `include_native_history: true`; no SDK starts.
 Its common result and an optional native failure are reported separately.
 
-Capture and raw/SQLite restoration require an observed stopped-writer window.
+The Codex adapter's capture and raw/SQLite restoration require an observed stopped-writer window.
 Lode does not stop/restart apps or an existing MCP connection. An ambiguous live
 writer makes this native operation unavailable; it does not block Core recovery.
 The current interactive app cannot close itself and continue its own operation.
 Prepare the transfer there and use the CLI in the requested offline window.
 
-Capture preserves selected raw bytes, exact original names and typed history
+### Claude and OpenCode local adapters
+
+Ask to move the selected conversation to the same client and restore its history.
+The agent resolves the source, target and selection; you do not need to write IDs
+or JSON. Advanced CLI/MCP calls reuse the existing surface above. For these two
+providers, also supply `--runtime-root <source-or-target-project>` / `runtime_root`
+for capture, restore and register. Read still needs only the bundle.
+OpenCode source capture is an exception to the data-home arguments: the current
+Host must already provide the selected exact-ID export capability. It does not
+take a source native-home/executable override or guess the ordinary profile layout.
+
+Claude capture preserves a stable snapshot of the exact selected JSONL; it does
+not claim a live source conversation has ended. Optional `--companions` /
+`companion_paths` select files below `<native-id>/` in the source project-history
+directory. External references are not followed. Restore checks all conflicts and
+duplicate selected IDs in other project directories, rechecks the stopped-writer
+window, then creates missing files and reads back their bytes. Identical files are
+confirmed without rewriting; different files are preserved. The initial observer
+supports Windows native `claude.exe`; other writer profiles remain unqualified.
+Names longer than the documented 200-character conversion need a qualified
+official resolver; this candidate does not invent the hash. Those limits affect
+native writes only. Register can use an already installed Agent SDK 0.3.234 to list
+and read returned records; missing SDK leaves raw restoration independently usable.
+SDK listing is separate from the CLI picker, and neither starts a model turn.
+
+OpenCode source capture consumes exact export bytes from that current Host
+capability. Without it, capture is unavailable. The destination workflow requires
+a new empty profile base selected for this transfer. It creates `profile/` there
+with a `data/config/state/cache/home` layout and scopes XDG/config/home/tmp there.
+Project config, default/external plugins, model fetching and auto-update are disabled
+for those commands. It never switches the ordinary profile, writes its database,
+or converts another provider's data. Every input is structurally checked before
+import; official schema decoding happens during isolated import and is not
+claimed as a separate complete predecode. The original export remains immutable;
+derived import files have separate digests and changes. Source active permission,
+model, agent, revert, workspace and compacting fields are omitted from that derived
+Session Info; historical message metadata stays exact. No prompt loop, pending
+tool, subtask or compaction is executed. Exact-ID export readback verifies history
+independently from the default root-only session list.
+
+The default OpenCode CLI adapter currently returns
+`NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED` before even a version subprocess.
+Official metadata commands can initialize configuration and dependency handling;
+the flags above are not proof of no installation or network effects. Source
+capture and the destination workflow have synthetic Host tests, not actual
+registered-client qualification. There is no option/JSON switch to bypass this
+limit. A future qualified current Host can supply the bounded metadata capability;
+it grants no new action permission. Pure bundle/Handoff reading remains available.
+
+Both adapters keep create-only operational attempt/result evidence. The evidence
+is not atomic with file publication or CLI import: interrupted or partial effects
+remain uncertain, with the primary failure and affected scope. A later authorized
+request may verify exact current files/IDs without replaying the effect. Conflicts
+do not overwrite originals. Verified raw bytes/history, observed lists and
+continuation readiness are reported separately; target model/permission readiness
+and actual Claude/OpenCode support are not inferred from fixture success.
+
+Codex capture preserves selected raw bytes, exact original names and typed history
 rows, including 64-bit integers, BLOB, NULL and unknown JSON fields. SQLite reads
 committed WAL; source WAL/SHM and full source databases are not transferred.
 Selected historical state excludes account-selector columns, never becomes a
@@ -107,26 +180,31 @@ target state row and never selects target policy. Historical absolute paths stay
 historical. Fork/history-base, compressed/rotated and archived cases retain their
 explicit closure/format limits; preservation does not imply native qualification.
 
-The create-only `native-history.json` companion links one exact common bundle to
+For all providers, the create-only `native-history.json` companion links one exact common bundle to
 the selected native payload. It is P3 transfer evidence, **not proof that a Lode
 Session owns those native threads**. Use explicit selection or an independently
 verified Host route; never titles or recency. It creates no runtime binding,
 checkpoint, ReviewDecision, Canon or execution permission. A missing/partial or
 damaged companion is a native failure; the common manifest is unchanged.
 
-Restore publishes only absent exact raw files and missing selected history rows,
+Codex restore publishes only absent exact raw files and missing selected history rows,
 after a verified local target-history backup. It never replaces the state DB,
 uses `INSERT OR REPLACE`, restores a whole backup over later edits, or changes
 target settings. Raw-file publication and the SQLite transaction are separate
 boundaries. App startup or a source/target change interrupts dependent work.
 
-A frame beyond the measured decoder limit is still streamed and preserved as
+For Codex rollout capture, a frame beyond the measured decoder limit is still streamed and preserved as
 raw bytes. Its final byte length must match the selected cutoff, but the
 remaining frame boundaries and dependencies remain unverified. Neither capture
 nor rereading promotes that partial data to native publication support. Identity,
 permission, malformed-input and cutoff failures retain their primary errors.
 
 ## Registration and its actual limits
+
+This section describes the pinned Codex SDK metadata registration lifecycle and
+its local SQLite backups only. Claude's optional SDK reader and OpenCode's
+Host/isolated-profile workflow have the separate effects and limitations above;
+the Codex backup, policy-view and registration guarantees do not apply to them.
 
 Registration starts an owned, supervised SDK metadata lifecycle. **SDK startup
 can discover files and change native metadata before explicit resume.** It is
@@ -161,7 +239,7 @@ budget. An unresponsive EOF or final close has a bounded cleanup path and
 explicit uncertainty; forced shutdown, spontaneous failure and unverified
 cleanup are not promoted to successful registration.
 
-| Measured policy/view | Result in the pinned SDK |
+| Measured Codex policy/view | Result in the pinned Codex SDK |
 | --- | --- |
 | `read-only`, standalone paginated synthetic history | Metadata registration and original API-view equality verified |
 | `danger-full-access`, same isolated metadata-only scope | Explicit current settings and original API-view equality verified; no model or command executed |
@@ -185,3 +263,40 @@ Raw/history preservation, SDK metadata registration, current native attachment,
 Lode P2 recovery and a model actually using context are different results. Report
 which were verified and what remains unknown; do not turn a successful view into
 authority or a guarantee of semantic continuity.
+
+
+## Continue from HANDOFF.md alone
+
+New exports include a readable `HANDOFF.md` whose generated digest and exact
+source basis are bound in the initial bundle manifest. It explains the selected
+purpose, source conditions and cancellations, recorded choices and reasons,
+reported results, unknown effects and pending work. It does not infer that a
+saved observation proves completion. Long work fields identify their partial
+range and link to the exact raw object inside the bundle.
+
+Say “Read this HANDOFF.md and continue the unfinished work under my current
+request.” The file can be read without a Project, database, provider, checkpoint
+or new setup. The existing inspection command also accepts its explicit path:
+
+```sh
+node scripts/lode.mjs project-bundle-inspect "<HANDOFF.md>"
+```
+
+The existing `lode_project_bundle_read` accepts `handoff_file` instead of
+`bundle_root` for this standalone read. The agent supplies the argument.
+Optional byte paging reports partial output and the next offset; remaining
+evidence can be read when needed.
+
+Handoff is quoted P4 context, not a new P2 direction or renewed approval.
+Current target constraints, settings and cancellations take precedence.
+Reading never follows links, executes commands, changes selection or retries
+completed/uncertain effects. Display escaping is not raw-byte preservation:
+the linked objects retain the original bytes.
+
+A missing, changed or unsafe Handoff is reported separately from verified
+common originals and their import. A changed digest establishes only that the
+description differs, not who edited it. Reads never repair it and repeated
+export preserves an existing changed file. Manifest/source-basis corruption
+still fails common verification. Older bundles have no Handoff and are not
+silently rewritten. Native conversation listing, history reading and actual
+model continuation remain separate outcomes.

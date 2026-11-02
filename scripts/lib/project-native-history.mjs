@@ -6,7 +6,8 @@ import { captureCodexNativeHistory } from "./codex-native-capture.mjs";
 import { publishCodexNativeHistory } from "./codex-native-publication.mjs";
 import { registerCodexNativeHistory } from "./codex-native-registration.mjs";
 import { resolveVerifiedProcessSupervisor } from "./runtime-process-supervisor.mjs";
-import { copiedProjectFile } from "./project-copy-evidence.mjs";
+import { copiedProjectFile, inspectCopiedProjectFile } from "./project-copy-evidence.mjs";
+import { createProviderNativeHost } from "./provider-native-history-host.mjs";
 import {
   projectNativeCaptureDirectory,
   attachProjectNativeTransfer,
@@ -62,11 +63,14 @@ function registrationEnvironment(home) {
 // the user's actual requested scope, not authority inferred from the bundle.
 export async function operateProjectNativeHistory({
   action,
+  provider,
   bundleRoot,
   expectedBundleId = null,
   nativeHome,
   executable,
   threadIds,
+  companionPaths = [],
+  nativeHistoryHost = null,
   root,
   pluginRoot,
   signal,
@@ -75,13 +79,78 @@ export async function operateProjectNativeHistory({
 } = {}) {
   if (!["capture", "read", "restore", "register"].includes(action))
     fail("PROJECT_NATIVE_ACTION_INVALID");
+  if (!Array.isArray(companionPaths)) fail("NATIVE_CLAUDE_COMPANION_SCOPE_UNSUPPORTED");
+  if (provider !== undefined && !["codex", "claude", "opencode"].includes(provider)) fail("NATIVE_HISTORY_PROVIDER_UNSUPPORTED");
   if (action === "read") {
-    if ([nativeHome, executable, threadIds, root].some((value) => value !== undefined))
+    if ([nativeHome, executable, threadIds, root].some((value) => value !== undefined) || companionPaths.length)
       fail("PROJECT_NATIVE_READ_HAS_EFFECT_ARGUMENTS");
-    return projectNativeTransferSummary(
-      readProjectNativeTransfer({ bundleRoot, expectedBundleId, signal }),
-    );
+    const selected = readProjectNativeTransfer({ bundleRoot, expectedBundleId, signal });
+    if (provider !== undefined && selected.native && provider !== selected.sourceProvider) fail("NATIVE_HISTORY_SAME_PLATFORM_REQUIRED");
+    return projectNativeTransferSummary(selected);
   }
+  // Link identity is data, not a guess from UUID shape or an arbitrary executable.
+  // Dispatch before any native-home lookup, OS observation, control file or SDK.
+  if (signal?.aborted) fail("PROJECT_NATIVE_ACTION_CANCELLED");
+  if (typeof assertCurrentAuthority !== "function") fail("NATIVE_HISTORY_AUTHORITY_CHECK_REQUIRED");
+  const currentAuthority = assertCurrentAuthority();
+  if (currentAuthority && typeof currentAuthority.then === "function") {
+    Promise.resolve(currentAuthority).catch(() => {}); fail("NATIVE_HISTORY_SYNCHRONOUS_AUTHORITY_REQUIRED");
+  }
+  const selected = action === "capture" ? inspectProjectBundle({ bundleRoot, expectedBundleId, signal })
+    : readProjectNativeTransfer({ bundleRoot, expectedBundleId, signal });
+  const sourceProvider = action === "capture" ? provider : selected.sourceProvider;
+  if (action === "capture" && !sourceProvider) fail("NATIVE_HISTORY_PROVIDER_REQUIRED");
+  if (action !== "capture" && !selected.native) return projectNativeTransferSummary(selected);
+  if (provider !== undefined && provider !== sourceProvider) fail("NATIVE_HISTORY_SAME_PLATFORM_REQUIRED");
+  const providerUnavailable = () => ({
+    status: "native-provider-operation-unavailable", reasonCode: "NATIVE_HISTORY_PROVIDER_CAPABILITY_UNAVAILABLE",
+    provider: sourceProvider, action, nativeHomeInspected: false, processObservationRequested: false,
+    sdkLifecycleRequestedThisCall: false, targetProviderVerification: "not-performed", ordinaryCoreBlocked: false,
+    rawHistoryReadable: action !== "capture", commonBundleReadable: true, handoffIndependent: true, continuationReady: false, targetExecutionSettingsVerified: false,
+    persisted: false, grantsRecoveryAuthority: false, restoresExecutionPermission: false
+  });
+  if (sourceProvider !== "codex") {
+    // Host callbacks are executable capabilities supplied only by the current
+    // trusted Host, never by bundle JSON or tool arguments.
+    if (sourceProvider === "opencode" && !nativeHistoryHost) return { ...providerUnavailable(),
+      reasonCode: "NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED",
+      missingCapability: action === "capture" ? "current-host-exact-id-export" : "qualified-isolated-metadata-command-host" };
+    if (!nativeHistoryHost && (typeof executable !== "string" || !path.isAbsolute(executable) || !fs.existsSync(executable)))
+      return providerUnavailable();
+    const hostRoutedCapture = sourceProvider === "opencode" && action === "capture";
+    if ((!hostRoutedCapture && (typeof nativeHome !== "string" || !path.isAbsolute(nativeHome))) || typeof root !== "string" || !path.isAbsolute(root))
+      fail("PROJECT_NATIVE_HOST_REQUIRED");
+    if (!Array.isArray(companionPaths)) fail("NATIVE_CLAUDE_COMPANION_SCOPE_UNSUPPORTED");
+    const host = nativeHistoryHost ?? createProviderNativeHost({ provider: sourceProvider, executable, pluginRoot, signal, onProcess });
+    if (host.provider !== sourceProvider
+      || (!hostRoutedCapture && typeof host.version !== "function")
+      || !["synthetic-test", "external-client-command-unqualified", "host-metadata-capability"].includes(host.evidenceKind))
+      fail("NATIVE_HISTORY_PROVIDER_HOST_INVALID");
+    if (sourceProvider === "opencode" && (hostRoutedCapture ? typeof host.exportSelected !== "function" : typeof host.run !== "function"))
+      return { ...providerUnavailable(), reasonCode: "NATIVE_OPENCODE_HOST_CAPABILITY_UNAVAILABLE" };
+    if (hostRoutedCapture && (nativeHome !== undefined || executable !== undefined)) fail("NATIVE_OPENCODE_SOURCE_IS_HOST_ROUTED");
+    const current = () => {
+      if (signal?.aborted) fail("PROJECT_NATIVE_ACTION_CANCELLED");
+      const result = assertCurrentAuthority();
+      if (result && typeof result.then === "function") { Promise.resolve(result).catch(() => {}); fail("NATIVE_HISTORY_SYNCHRONOUS_AUTHORITY_REQUIRED"); }
+      if (action === "capture") {
+        if (inspectCopiedProjectFile(selected.bundleRoot, "manifest.json").sha256 !== selected.manifestSha256) fail("PROJECT_NATIVE_TRANSFER_IDENTITY_CHANGED");
+      } else {
+        assertProjectNativeTransferCurrent({ bundleRoot, commonManifestDigest: selected.commonManifestDigest, linkDigest: selected.linkDigest, signal });
+        if (inspectCopiedProjectFile(selected.native.directory, "manifest.json").sha256 !== selected.native.payloadDigest) fail("NATIVE_HISTORY_PAYLOAD_IDENTITY_MISMATCH");
+      }
+    };
+    const adapter = sourceProvider === "claude" ? await import("./claude-native-history.mjs") : await import("./opencode-native-history.mjs");
+    return await (sourceProvider === "claude" ? adapter.operateClaudeNativeHistory : adapter.operateOpenCodeNativeHistory)({
+      action, selected: { ...selected, bundleRoot: path.resolve(bundleRoot) }, nativeHome, root, threadIds, companionPaths,
+      host, signal, assertCurrentAuthority: current,
+      captureDirectory: () => projectNativeCaptureDirectory({ provider: sourceProvider, bundleRoot, expectedBundleId: selected.bundleId, assertCurrentAuthority: current }),
+      attach: directory => attachProjectNativeTransfer({ provider: sourceProvider, bundleRoot, directory, expectedBundleId: selected.bundleId, signal, assertCurrentAuthority: current }),
+    });
+  }
+  // A server may carry another provider's optional capability. It is not an
+  // argument to the independently selected Codex adapter and is never called.
+  if (companionPaths.length) fail("PROJECT_NATIVE_CODEX_HAS_OTHER_PROVIDER_ARGUMENTS");
   if (
     typeof nativeHome !== "string" ||
     !nativeHome.trim() ||
@@ -117,10 +186,7 @@ export async function operateProjectNativeHistory({
   };
   authority();
   // Validate data/selection before process observation or destination creation.
-  const selected =
-    action === "capture"
-      ? inspectProjectBundle({ bundleRoot, expectedBundleId, signal })
-      : readProjectNativeTransfer({ bundleRoot, expectedBundleId, signal });
+
   if (action !== "capture" && !selected.native) return projectNativeTransferSummary(selected);
   const transferRoot = fs.realpathSync(path.resolve(bundleRoot)),
     hostHome = fs.realpathSync(path.resolve(nativeHome));
