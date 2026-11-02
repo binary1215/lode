@@ -289,7 +289,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
   ];
   return {
     ...((all || surface === "managed-maintenance") ? { commandNotes: {
-      "project-native-history": "capture requires --provider; read/restore/register derive it only from a verified companion link. Claude/OpenCode effects also require --runtime-root; optional Claude --companions <selected-id/relative-file,...>. OpenCode source capture requires a registered Host export capability; its default CLI bootstrap remains unavailable pending qualification. The isolated destination workflow never switches the default profile.",
+      "project-native-history": "capture requires --provider; read/restore/register derive it only from a verified companion link. Claude/OpenCode effects also require --runtime-root; optional Claude --companions <selected-id/relative-file,...>. OpenCode source capture requires a registered Host export capability; its default CLI bootstrap remains unavailable pending qualification. A pinned Windows x64 baseline 1.19.5 binary can restore/register through an existing qualified isolated DB and current Project mapping, with whole-batch atomic publication and no app startup or automatic migration. The isolated destination workflow never switches the default profile.",
     } } : {}),
     surface: surface === "managed-maintenance" ? surface : all ? "ordinary-complete" : "light-default",
     commands: surface === "managed-maintenance"

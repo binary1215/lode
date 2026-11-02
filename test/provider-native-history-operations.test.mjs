@@ -55,20 +55,13 @@ function claudeHost(overrides = {}) {
 function openHost(overrides = {}) {
   const profiles = new Map(), calls = [];
   const host = { provider: "opencode", evidenceKind: "synthetic-test", profiles, calls, imports: 0,
+    atomicProfileId: "opencode-synthetic-atomic-v1",
     clientVersion: "1.19.5",
     async version() { return "1.19.5"; },
     async run({ args, cwd, home }) {
       calls.push({ args, cwd, home });
       if (!profiles.has(home)) profiles.set(home, new Map());
       const profile = profiles.get(home);
-      if (args[0] === "import") {
-        host.imports++;
-        const value = JSON.parse(fs.readFileSync(args[1], "utf8"));
-        value.info.directory = cwd; value.info.projectID = "target-project"; value.info.path = "";
-        profile.set(value.info.id, value);
-        if (overrides.afterImport) await overrides.afterImport({ host, value, home });
-        return { stdout: Buffer.from("Imported session: " + value.info.id), exitCode: 0 };
-      }
       if (args[0] === "export") {
         if (!profile.has(args[1])) throw Object.assign(Error("Synthetic selected ID absent"), { code: "SYNTHETIC_ID_ABSENT" });
         return { stdout: Buffer.from(JSON.stringify(profile.get(args[1])) + "\n"), exitCode: 0 };
@@ -76,6 +69,25 @@ function openHost(overrides = {}) {
       if (args.join(" ") === "session list --format json") return { stdout: Buffer.from(JSON.stringify([...profile.values()].filter(x => !x.info.parentID).map(x => x.info))), exitCode: 0 };
       assert.fail("A prompt/server/run command was attempted");
     } };
+  const target = (raw, cwd) => {
+    const value = JSON.parse(raw); value.info.directory = cwd; value.info.projectID = "target-project"; value.info.path = ""; return value;
+  };
+  host.observeAtomicBatch = async ({ documents, cwd, home }) => {
+    const stored = profiles.get(home) ?? new Map(), present = documents.filter(row => stored.has(row.nativeId));
+    if (!present.length) return { state: "absent" };
+    if (present.length !== documents.length) return { state: "partial" };
+    if (documents.some(row => JSON.stringify(stored.get(row.nativeId)) !== JSON.stringify(target(row.raw, cwd)))) return { state: "diverged" };
+    return { state: "matches", evidenceDigest: "a".repeat(64), documents: documents.map(row => stored.get(row.nativeId)) };
+  };
+  host.publishAtomicBatch = async ({ documents, cwd, home }) => {
+    host.imports++; const staged = new Map(profiles.get(home) ?? []);
+    if (!fs.existsSync(home)) fs.mkdirSync(home);
+    for (const row of documents) {
+      const value = target(row.raw, cwd); staged.set(row.nativeId, value);
+      if (overrides.afterImport) await overrides.afterImport({ host, value, home });
+    }
+    profiles.set(home, staged);
+  };
   host.exportSelected = async ({ nativeId }) => {
     const values = [...profiles.values()].filter(profile => profile.has(nativeId));
     if (values.length !== 1) throw Object.assign(Error("Synthetic Host source route is ambiguous"), { code: "SYNTHETIC_SOURCE_ROUTE_UNRESOLVED" });
@@ -142,16 +154,16 @@ test("Claude native capture uses explicit source path and bounded companion sele
   assert.equal(readProjectNativeTransfer({ bundleRoot: bundle }).native.provider, "claude");
 });
 
-test("OpenCode official-command profile restores independently, preserves historical settings and does not repeat import", async t => {
+test("OpenCode atomic batch profile restores independently, preserves historical settings and does not repeat publication", async t => {
   const f = setup(t, "opencode", { multiple: true }), host = openHost(), before = snapshot(f.root);
   const result = await runCommand(["project-native-history", f.bundle, "--action", "restore", "--native-home", f.home, "--runtime-root", f.project], { nativeHistoryHost: host });
   assert.equal(result.status, "native-isolated-history-restoration-verified");
-  assert.equal(result.historyReadbackVerified, true); assert.equal(result.defaultProfileChanged, false); assert.equal(host.imports, 2);
+  assert.equal(result.historyReadbackVerified, true); assert.equal(result.defaultProfileChanged, false); assert.equal(host.imports, 1);
   const imported = host.profiles.get(path.join(f.home, "profile")).get("ses_selected");
   for (const key of ["permission", "model", "agent", "workspaceID"]) assert.equal(Object.hasOwn(imported.info, key), false);
   assert.equal(Object.hasOwn(imported.info.time, "compacting"), false);
   assert.equal(imported.messages[0].info.agent, "historical-agent"); assert.equal(imported.info.metadata.note, "Historical metadata");
-  const retry = await restore(f, host); assert.equal(retry.importsAttempted, 0); assert.equal(host.imports, 2);
+  const retry = await restore(f, host); assert.equal(retry.importsAttempted, 0); assert.equal(host.imports, 1);
   const response = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "head_project_native_history", arguments: {
     action: "register", bundle_root: f.bundle, native_home: f.home, runtime_root: f.project } } }, { nativeHistoryHost: host });
   assert.equal(response.error, undefined); assert.equal(response.result.structuredContent.status, "native-history-reader-observed");
@@ -159,16 +171,17 @@ test("OpenCode official-command profile restores independently, preserves histor
   const env = nativeEnvironment("opencode", path.join(f.home, "profile"));
   assert.equal(env.OPENCODE_DISABLE_PROJECT_CONFIG, "1"); assert.ok(env.XDG_DATA_HOME.startsWith(f.home));
   assert.equal(Object.hasOwn(env, "ANTHROPIC_API_KEY"), false);
-  assert.ok(host.calls.every(call => ["import", "export", "session"].includes(call.args[0])));
+  assert.ok(host.calls.every(call => ["export", "session"].includes(call.args[0])));
 });
 
-test("OpenCode import failure after a partial write remains uncertain and replay performs no import", async t => {
+test("OpenCode failed atomic publication stays uncertain and an absent batch is never replayed", async t => {
   const f = setup(t, "opencode", { multiple: true }), host = openHost({ afterImport({ host }) {
     if (host.imports === 1) throw Object.assign(Error("Synthetic post-effect failure"), { code: "SYNTHETIC_IMPORT_INTERRUPTED" });
   } });
   const result = await restore(f, host);
   assert.equal(result.status, "native-registration-uncertain"); assert.equal(result.primaryFailure.code, "SYNTHETIC_IMPORT_INTERRUPTED");
   assert.equal(result.historyReadbackVerified, false); assert.equal(host.imports, 1);
+  assert.equal(host.profiles.get(path.join(f.home, "profile"))?.size ?? 0, 0);
   const retry = await restore(f, host);
   assert.equal(retry.status, "native-registration-uncertain"); assert.equal(retry.importsAttempted, 0); assert.equal(host.imports, 1);
 });
@@ -395,7 +408,7 @@ test("OpenCode source and derived files preserve distinct case-sensitive IDs on 
   assert.equal(new Set(native.payload.files.map(entry => entry.path.toLowerCase())).size, 2);
   assert.deepEqual(native.payload.nativeIds, ["ses_case", "ses_CASE"]);
   const result = await operateProjectNativeHistory({ action: "restore", bundleRoot: bundle, nativeHome: home, root: f.root, nativeHistoryHost: host });
-  assert.equal(result.status, "native-isolated-history-restoration-verified"); assert.equal(host.imports, 2);
-  assert.equal(fs.readdirSync(path.join(home, "profile", "inputs")).length, 2);
+  assert.equal(result.status, "native-isolated-history-restoration-verified"); assert.equal(host.imports, 1);
+  assert.equal(fs.existsSync(path.join(home, "profile", "inputs")), false);
   assert.deepEqual([...host.profiles.get(path.join(home, "profile")).keys()], ["ses_case", "ses_CASE"]);
 });

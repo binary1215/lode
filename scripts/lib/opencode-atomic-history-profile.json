@@ -1,0 +1,2944 @@
+{
+  "schemaVersion": 1,
+  "profileId": "opencode-v1.19.5-official-fresh-schema",
+  "clientVersion": "1.19.5",
+  "upstreamCommit": "810c0eba1a7348036f8bdf61e6632d0c36c6876c",
+  "sourceBlobs": {
+    "session": "75e9282f117cb25078b087661434fcf5e6660620",
+    "sessionSql": "264a1d2cca0a351c158600c45cfe4ec475f224d8",
+    "generatedSql": "ed60fde6c55fe4df217bba241ed9e8fa1ba323d5",
+    "migrations": "e6ea4eaa1477e80397c8cc5c6808f2ac1214891a",
+    "sessionMapping": "a2a91cd47b5e854606444d1fc09fb18515fbe3b7"
+  },
+  "qualifiedExecutables": [
+    {
+      "platform": "win32",
+      "arch": "x64",
+      "variant": "official-baseline",
+      "bytes": 211564424,
+      "sha256": "6f15c8f241f3df22375f174753193a71c488f6c0a6bbbae3f9fa34d112673b7b"
+    }
+  ],
+  "database": {
+    "schema": [
+      {
+        "type": "index",
+        "name": "event_aggregate_seq_idx",
+        "tbl_name": "event",
+        "sql": "CREATE UNIQUE INDEX `event_aggregate_seq_idx` ON `event` (`aggregate_id`,`seq`)"
+      },
+      {
+        "type": "index",
+        "name": "event_aggregate_type_seq_idx",
+        "tbl_name": "event",
+        "sql": "CREATE INDEX `event_aggregate_type_seq_idx` ON `event` (`aggregate_id`,`type`,`seq`)"
+      },
+      {
+        "type": "index",
+        "name": "message_session_time_created_id_idx",
+        "tbl_name": "message",
+        "sql": "CREATE INDEX `message_session_time_created_id_idx` ON `message` (`session_id`,`time_created`,`id`)"
+      },
+      {
+        "type": "index",
+        "name": "part_message_id_id_idx",
+        "tbl_name": "part",
+        "sql": "CREATE INDEX `part_message_id_id_idx` ON `part` (`message_id`,`id`)"
+      },
+      {
+        "type": "index",
+        "name": "part_session_idx",
+        "tbl_name": "part",
+        "sql": "CREATE INDEX `part_session_idx` ON `part` (`session_id`)"
+      },
+      {
+        "type": "index",
+        "name": "permission_project_action_resource_idx",
+        "tbl_name": "permission",
+        "sql": "CREATE UNIQUE INDEX `permission_project_action_resource_idx` ON `permission` (`project_id`,`action`,`resource`)"
+      },
+      {
+        "type": "index",
+        "name": "session_input_session_admitted_seq_idx",
+        "tbl_name": "session_input",
+        "sql": "CREATE UNIQUE INDEX `session_input_session_admitted_seq_idx` ON `session_input` (`session_id`,`admitted_seq`)"
+      },
+      {
+        "type": "index",
+        "name": "session_input_session_pending_delivery_seq_idx",
+        "tbl_name": "session_input",
+        "sql": "CREATE INDEX `session_input_session_pending_delivery_seq_idx` ON `session_input` (`session_id`,`promoted_seq`,`delivery`,`admitted_seq`)"
+      },
+      {
+        "type": "index",
+        "name": "session_input_session_promoted_seq_idx",
+        "tbl_name": "session_input",
+        "sql": "CREATE UNIQUE INDEX `session_input_session_promoted_seq_idx` ON `session_input` (`session_id`,`promoted_seq`)"
+      },
+      {
+        "type": "index",
+        "name": "session_message_session_seq_idx",
+        "tbl_name": "session_message",
+        "sql": "CREATE UNIQUE INDEX `session_message_session_seq_idx` ON `session_message` (`session_id`,`seq`)"
+      },
+      {
+        "type": "index",
+        "name": "session_message_session_time_created_id_idx",
+        "tbl_name": "session_message",
+        "sql": "CREATE INDEX `session_message_session_time_created_id_idx` ON `session_message` (`session_id`,`time_created`,`id`)"
+      },
+      {
+        "type": "index",
+        "name": "session_message_session_type_seq_idx",
+        "tbl_name": "session_message",
+        "sql": "CREATE INDEX `session_message_session_type_seq_idx` ON `session_message` (`session_id`,`type`,`seq`)"
+      },
+      {
+        "type": "index",
+        "name": "session_message_time_created_idx",
+        "tbl_name": "session_message",
+        "sql": "CREATE INDEX `session_message_time_created_idx` ON `session_message` (`time_created`)"
+      },
+      {
+        "type": "index",
+        "name": "session_parent_idx",
+        "tbl_name": "session",
+        "sql": "CREATE INDEX `session_parent_idx` ON `session` (`parent_id`)"
+      },
+      {
+        "type": "index",
+        "name": "session_project_idx",
+        "tbl_name": "session",
+        "sql": "CREATE INDEX `session_project_idx` ON `session` (`project_id`)"
+      },
+      {
+        "type": "index",
+        "name": "session_workspace_idx",
+        "tbl_name": "session",
+        "sql": "CREATE INDEX `session_workspace_idx` ON `session` (`workspace_id`)"
+      },
+      {
+        "type": "index",
+        "name": "todo_session_idx",
+        "tbl_name": "todo",
+        "sql": "CREATE INDEX `todo_session_idx` ON `todo` (`session_id`)"
+      },
+      {
+        "type": "table",
+        "name": "account",
+        "tbl_name": "account",
+        "sql": "CREATE TABLE `account` (\n          `id` text PRIMARY KEY,\n          `email` text NOT NULL,\n          `url` text NOT NULL,\n          `access_token` text NOT NULL,\n          `refresh_token` text NOT NULL,\n          `token_expiry` integer,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL\n        )"
+      },
+      {
+        "type": "table",
+        "name": "account_state",
+        "tbl_name": "account_state",
+        "sql": "CREATE TABLE `account_state` (\n          `id` integer PRIMARY KEY,\n          `active_account_id` text,\n          `active_org_id` text,\n          CONSTRAINT `fk_account_state_active_account_id_account_id_fk` FOREIGN KEY (`active_account_id`) REFERENCES `account`(`id`) ON DELETE SET NULL\n        )"
+      },
+      {
+        "type": "table",
+        "name": "control_account",
+        "tbl_name": "control_account",
+        "sql": "CREATE TABLE `control_account` (\n          `email` text NOT NULL,\n          `url` text NOT NULL,\n          `access_token` text NOT NULL,\n          `refresh_token` text NOT NULL,\n          `token_expiry` integer,\n          `active` integer NOT NULL,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          CONSTRAINT `control_account_pk` PRIMARY KEY(`email`, `url`)\n        )"
+      },
+      {
+        "type": "table",
+        "name": "credential",
+        "tbl_name": "credential",
+        "sql": "CREATE TABLE `credential` (\n          `id` text PRIMARY KEY,\n          `integration_id` text,\n          `label` text NOT NULL,\n          `value` text NOT NULL,\n          `connector_id` text,\n          `method_id` text,\n          `active` integer,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL\n        )"
+      },
+      {
+        "type": "table",
+        "name": "data_migration",
+        "tbl_name": "data_migration",
+        "sql": "CREATE TABLE `data_migration` (\n          `name` text PRIMARY KEY,\n          `time_completed` integer NOT NULL\n        )"
+      },
+      {
+        "type": "table",
+        "name": "event",
+        "tbl_name": "event",
+        "sql": "CREATE TABLE `event` (\n          `id` text PRIMARY KEY,\n          `aggregate_id` text NOT NULL,\n          `seq` integer NOT NULL,\n          `type` text NOT NULL,\n          `data` text NOT NULL,\n          CONSTRAINT `fk_event_aggregate_id_event_sequence_aggregate_id_fk` FOREIGN KEY (`aggregate_id`) REFERENCES `event_sequence`(`aggregate_id`) ON DELETE CASCADE\n        )"
+      },
+      {
+        "type": "table",
+        "name": "event_sequence",
+        "tbl_name": "event_sequence",
+        "sql": "CREATE TABLE `event_sequence` (\n          `aggregate_id` text PRIMARY KEY,\n          `seq` integer NOT NULL,\n          `owner_id` text\n        )"
+      },
+      {
+        "type": "table",
+        "name": "message",
+        "tbl_name": "message",
+        "sql": "CREATE TABLE `message` (\n          `id` text PRIMARY KEY,\n          `session_id` text NOT NULL,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `data` text NOT NULL,\n          CONSTRAINT `fk_message_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE\n        )"
+      },
+      {
+        "type": "table",
+        "name": "migration",
+        "tbl_name": "migration",
+        "sql": "CREATE TABLE \"migration\" (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL)"
+      },
+      {
+        "type": "table",
+        "name": "part",
+        "tbl_name": "part",
+        "sql": "CREATE TABLE `part` (\n          `id` text PRIMARY KEY,\n          `message_id` text NOT NULL,\n          `session_id` text NOT NULL,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `data` text NOT NULL,\n          CONSTRAINT `fk_part_message_id_message_id_fk` FOREIGN KEY (`message_id`) REFERENCES `message`(`id`) ON DELETE CASCADE\n        )"
+      },
+      {
+        "type": "table",
+        "name": "permission",
+        "tbl_name": "permission",
+        "sql": "CREATE TABLE `permission` (\n          `id` text PRIMARY KEY,\n          `project_id` text NOT NULL,\n          `action` text NOT NULL,\n          `resource` text NOT NULL,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          CONSTRAINT `fk_permission_project_id_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON DELETE CASCADE\n        )"
+      },
+      {
+        "type": "table",
+        "name": "project",
+        "tbl_name": "project",
+        "sql": "CREATE TABLE `project` (\n          `id` text PRIMARY KEY,\n          `worktree` text NOT NULL,\n          `vcs` text,\n          `name` text,\n          `icon_url` text,\n          `icon_url_override` text,\n          `icon_color` text,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `time_initialized` integer,\n          `sandboxes` text NOT NULL,\n          `commands` text\n        )"
+      },
+      {
+        "type": "table",
+        "name": "project_directory",
+        "tbl_name": "project_directory",
+        "sql": "CREATE TABLE `project_directory` (\n          `project_id` text NOT NULL,\n          `directory` text NOT NULL,\n          `type` text,\n          `strategy` text,\n          `time_created` integer NOT NULL,\n          CONSTRAINT `project_directory_pk` PRIMARY KEY(`project_id`, `directory`),\n          CONSTRAINT `fk_project_directory_project_id_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON DELETE CASCADE\n        )"
+      },
+      {
+        "type": "table",
+        "name": "session",
+        "tbl_name": "session",
+        "sql": "CREATE TABLE `session` (\n          `id` text PRIMARY KEY,\n          `project_id` text NOT NULL,\n          `workspace_id` text,\n          `parent_id` text,\n          `slug` text NOT NULL,\n          `directory` text NOT NULL,\n          `path` text,\n          `title` text NOT NULL,\n          `version` text NOT NULL,\n          `share_url` text,\n          `summary_additions` integer,\n          `summary_deletions` integer,\n          `summary_files` integer,\n          `summary_diffs` text,\n          `metadata` text,\n          `cost` real DEFAULT 0 NOT NULL,\n          `tokens_input` integer DEFAULT 0 NOT NULL,\n          `tokens_output` integer DEFAULT 0 NOT NULL,\n          `tokens_reasoning` integer DEFAULT 0 NOT NULL,\n          `tokens_cache_read` integer DEFAULT 0 NOT NULL,\n          `tokens_cache_write` integer DEFAULT 0 NOT NULL,\n          `revert` text,\n          `permission` text,\n          `agent` text,\n          `model` text,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `time_compacting` integer,\n          `time_archived` integer,\n          CONSTRAINT `fk_session_project_id_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON DELETE CASCADE\n        )"
+      },
+      {
+        "type": "table",
+        "name": "session_context_epoch",
+        "tbl_name": "session_context_epoch",
+        "sql": "CREATE TABLE `session_context_epoch` (\n          `session_id` text PRIMARY KEY,\n          `baseline` text NOT NULL,\n          `snapshot` text NOT NULL,\n          `baseline_seq` integer NOT NULL,\n          CONSTRAINT `fk_session_context_epoch_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE\n        )"
+      },
+      {
+        "type": "table",
+        "name": "session_input",
+        "tbl_name": "session_input",
+        "sql": "CREATE TABLE `session_input` (\n          `id` text PRIMARY KEY,\n          `session_id` text NOT NULL,\n          `prompt` text NOT NULL,\n          `delivery` text NOT NULL,\n          `admitted_seq` integer NOT NULL,\n          `promoted_seq` integer,\n          `time_created` integer NOT NULL,\n          CONSTRAINT `fk_session_input_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE\n        )"
+      },
+      {
+        "type": "table",
+        "name": "session_message",
+        "tbl_name": "session_message",
+        "sql": "CREATE TABLE `session_message` (\n          `id` text PRIMARY KEY,\n          `session_id` text NOT NULL,\n          `type` text NOT NULL,\n          `seq` integer NOT NULL,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `data` text NOT NULL,\n          CONSTRAINT `fk_session_message_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE\n        )"
+      },
+      {
+        "type": "table",
+        "name": "session_share",
+        "tbl_name": "session_share",
+        "sql": "CREATE TABLE `session_share` (\n          `session_id` text PRIMARY KEY,\n          `id` text NOT NULL,\n          `secret` text NOT NULL,\n          `url` text NOT NULL,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          CONSTRAINT `fk_session_share_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE\n        )"
+      },
+      {
+        "type": "table",
+        "name": "todo",
+        "tbl_name": "todo",
+        "sql": "CREATE TABLE `todo` (\n          `session_id` text NOT NULL,\n          `content` text NOT NULL,\n          `status` text NOT NULL,\n          `priority` text NOT NULL,\n          `position` integer NOT NULL,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          CONSTRAINT `todo_pk` PRIMARY KEY(`session_id`, `position`),\n          CONSTRAINT `fk_todo_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE\n        )"
+      },
+      {
+        "type": "table",
+        "name": "workspace",
+        "tbl_name": "workspace",
+        "sql": "CREATE TABLE `workspace` (\n          `id` text PRIMARY KEY,\n          `type` text NOT NULL,\n          `name` text DEFAULT '' NOT NULL,\n          `branch` text,\n          `directory` text,\n          `extra` text,\n          `project_id` text NOT NULL,\n          `time_used` integer NOT NULL,\n          CONSTRAINT `fk_workspace_project_id_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON DELETE CASCADE\n        )"
+      }
+    ],
+    "tables": [
+      {
+        "name": "account",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "email",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "url",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "access_token",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "refresh_token",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "token_expiry",
+            "type": "INTEGER",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 6,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 7,
+            "name": "time_updated",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "sqlite_autoindex_account_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "account_state",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "INTEGER",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "active_account_id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "active_org_id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "account",
+            "from": "active_account_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "SET NULL",
+            "match": "NONE"
+          }
+        ],
+        "indexes": []
+      },
+      {
+        "name": "control_account",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "email",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "url",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 2,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "access_token",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "refresh_token",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "token_expiry",
+            "type": "INTEGER",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "active",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 6,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 7,
+            "name": "time_updated",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "sqlite_autoindex_control_account_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "email",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 1,
+                "name": "url",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "credential",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "integration_id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "label",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "value",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "connector_id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "method_id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 6,
+            "name": "active",
+            "type": "INTEGER",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 7,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 8,
+            "name": "time_updated",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "sqlite_autoindex_credential_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "data_migration",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "name",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "time_completed",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "sqlite_autoindex_data_migration_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "name",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "event",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "aggregate_id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "seq",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "type",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "data",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "event_sequence",
+            "from": "aggregate_id",
+            "to": "aggregate_id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "event_aggregate_type_seq_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "aggregate_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 3,
+                "name": "type",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": 2,
+                "name": "seq",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 3,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 1,
+            "name": "event_aggregate_seq_idx",
+            "unique": 1,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "aggregate_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 2,
+                "name": "seq",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 2,
+            "name": "sqlite_autoindex_event_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "event_sequence",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "aggregate_id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "seq",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "owner_id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "sqlite_autoindex_event_sequence_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "aggregate_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "message",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "session_id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "time_updated",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "data",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "session",
+            "from": "session_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "message_session_time_created_id_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 2,
+                "name": "time_created",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 3,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 1,
+            "name": "sqlite_autoindex_message_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "migration",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "time_completed",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "sqlite_autoindex_migration_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "part",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "message_id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "session_id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "time_updated",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "data",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "message",
+            "from": "message_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "part_session_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 2,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 1,
+            "name": "part_message_id_id_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "message_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 2,
+            "name": "sqlite_autoindex_part_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "permission",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "project_id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "action",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "resource",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "time_updated",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "project",
+            "from": "project_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "permission_project_action_resource_idx",
+            "unique": 1,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "project_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 2,
+                "name": "action",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": 3,
+                "name": "resource",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 3,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 1,
+            "name": "sqlite_autoindex_permission_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "project",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "worktree",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "vcs",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "name",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "icon_url",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "icon_url_override",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 6,
+            "name": "icon_color",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 7,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 8,
+            "name": "time_updated",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 9,
+            "name": "time_initialized",
+            "type": "INTEGER",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 10,
+            "name": "sandboxes",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 11,
+            "name": "commands",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "sqlite_autoindex_project_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "project_directory",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "project_id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "directory",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 2,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "type",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "strategy",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "project",
+            "from": "project_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "sqlite_autoindex_project_directory_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "project_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 1,
+                "name": "directory",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "session",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "project_id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "workspace_id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "parent_id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "slug",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "directory",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 6,
+            "name": "path",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 7,
+            "name": "title",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 8,
+            "name": "version",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 9,
+            "name": "share_url",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 10,
+            "name": "summary_additions",
+            "type": "INTEGER",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 11,
+            "name": "summary_deletions",
+            "type": "INTEGER",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 12,
+            "name": "summary_files",
+            "type": "INTEGER",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 13,
+            "name": "summary_diffs",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 14,
+            "name": "metadata",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 15,
+            "name": "cost",
+            "type": "REAL",
+            "notnull": 1,
+            "dflt_value": "0",
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 16,
+            "name": "tokens_input",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": "0",
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 17,
+            "name": "tokens_output",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": "0",
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 18,
+            "name": "tokens_reasoning",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": "0",
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 19,
+            "name": "tokens_cache_read",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": "0",
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 20,
+            "name": "tokens_cache_write",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": "0",
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 21,
+            "name": "revert",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 22,
+            "name": "permission",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 23,
+            "name": "agent",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 24,
+            "name": "model",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 25,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 26,
+            "name": "time_updated",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 27,
+            "name": "time_compacting",
+            "type": "INTEGER",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 28,
+            "name": "time_archived",
+            "type": "INTEGER",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "project",
+            "from": "project_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "session_parent_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 3,
+                "name": "parent_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 1,
+            "name": "session_workspace_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 2,
+                "name": "workspace_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 2,
+            "name": "session_project_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "project_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 3,
+            "name": "sqlite_autoindex_session_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "session_context_epoch",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "session_id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "baseline",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "snapshot",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "baseline_seq",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "session",
+            "from": "session_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "sqlite_autoindex_session_context_epoch_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "session_input",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "session_id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "prompt",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "delivery",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "admitted_seq",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "promoted_seq",
+            "type": "INTEGER",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 6,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "session",
+            "from": "session_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "session_input_session_promoted_seq_idx",
+            "unique": 1,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 5,
+                "name": "promoted_seq",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 1,
+            "name": "session_input_session_admitted_seq_idx",
+            "unique": 1,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 4,
+                "name": "admitted_seq",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 2,
+            "name": "session_input_session_pending_delivery_seq_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 5,
+                "name": "promoted_seq",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": 3,
+                "name": "delivery",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 3,
+                "cid": 4,
+                "name": "admitted_seq",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 4,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 3,
+            "name": "sqlite_autoindex_session_input_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "session_message",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "session_id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "type",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "seq",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "time_updated",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 6,
+            "name": "data",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "session",
+            "from": "session_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "session_message_time_created_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 4,
+                "name": "time_created",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 1,
+            "name": "session_message_session_time_created_id_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 4,
+                "name": "time_created",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 3,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 2,
+            "name": "session_message_session_type_seq_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 2,
+                "name": "type",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": 3,
+                "name": "seq",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 3,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 3,
+            "name": "session_message_session_seq_idx",
+            "unique": 1,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 1,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 3,
+                "name": "seq",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 4,
+            "name": "sqlite_autoindex_session_message_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "session_share",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "session_id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "secret",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "url",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "time_updated",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "session",
+            "from": "session_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "sqlite_autoindex_session_share_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "todo",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "session_id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "content",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "status",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "priority",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "position",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 2,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "time_created",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 6,
+            "name": "time_updated",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "session",
+            "from": "session_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "todo_session_idx",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          },
+          {
+            "seq": 1,
+            "name": "sqlite_autoindex_todo_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "session_id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": 4,
+                "name": "position",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 2,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "workspace",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 1,
+            "hidden": 0
+          },
+          {
+            "cid": 1,
+            "name": "type",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 2,
+            "name": "name",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": "''",
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 3,
+            "name": "branch",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 4,
+            "name": "directory",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 5,
+            "name": "extra",
+            "type": "TEXT",
+            "notnull": 0,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 6,
+            "name": "project_id",
+            "type": "TEXT",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          },
+          {
+            "cid": 7,
+            "name": "time_used",
+            "type": "INTEGER",
+            "notnull": 1,
+            "dflt_value": null,
+            "pk": 0,
+            "hidden": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "project",
+            "from": "project_id",
+            "to": "id",
+            "on_update": "NO ACTION",
+            "on_delete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "seq": 0,
+            "name": "sqlite_autoindex_workspace_1",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              {
+                "seqno": 0,
+                "cid": 0,
+                "name": "id",
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 1
+              },
+              {
+                "seqno": 1,
+                "cid": -1,
+                "name": null,
+                "desc": 0,
+                "coll": "BINARY",
+                "key": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "migrationIds": [
+      "20260127222353_familiar_lady_ursula",
+      "20260211171708_add_project_commands",
+      "20260213144116_wakeful_the_professor",
+      "20260225215848_workspace",
+      "20260227213759_add_session_workspace_id",
+      "20260228203230_blue_harpoon",
+      "20260303231226_add_workspace_fields",
+      "20260309230000_move_org_to_state",
+      "20260312043431_session_message_cursor",
+      "20260323234822_events",
+      "20260410174513_workspace-name",
+      "20260413175956_chief_energizer",
+      "20260423070820_add_icon_url_override",
+      "20260427172553_slow_nightmare",
+      "20260428004200_add_session_path",
+      "20260501142318_next_venus",
+      "20260504145000_add_sync_owner",
+      "20260507164347_add_workspace_time",
+      "20260510033149_session_usage",
+      "20260511000411_data_migration_state",
+      "20260511173437_session-metadata",
+      "20260601010001_normalize_storage_paths",
+      "20260601202201_amazing_prowler",
+      "20260602002951_lowly_union_jack",
+      "20260602182828_add_project_directories",
+      "20260603001617_session_message_projection_indexes",
+      "20260603040000_session_message_projection_order",
+      "20260603141458_session_input_inbox",
+      "20260603160727_jittery_ezekiel_stane",
+      "20260604172448_event_sourced_session_input",
+      "20260605003541_add_session_context_snapshot",
+      "20260605042240_add_context_epoch_agent",
+      "20260611035744_credential",
+      "20260611192811_lush_chimera",
+      "20260612174303_project_dir_strategy",
+      "20260622142730_simplify_session_context_epoch",
+      "20260622170816_reset_v2_session_state",
+      "20260622202450_simplify_session_input"
+    ],
+    "journalMode": "wal",
+    "userVersion": 0
+  },
+  "qualification": "Official fixed-version binary empty isolated DB initialization; selected transcript validation uses source-bound validator. No ordinary profile, live app cache or model continuation qualification.",
+  "authorityPlane": "P5",
+  "grantsRecoveryAuthority": false,
+  "licenseNotice": "../../docs/opencode-third-party-license.txt"
+}
