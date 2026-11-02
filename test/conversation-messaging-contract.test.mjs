@@ -18,6 +18,7 @@ import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process
 import { deliverClaudeInbox } from "../scripts/lib/conversation-messaging-claude.mjs";
 import { deliverOpenCodePrompt } from "../scripts/lib/conversation-messaging-opencode.mjs";
 import { inspectCopiedProjectFiles } from "../scripts/lib/project-copy-evidence.mjs";
+import { withLocalMutation } from "../scripts/lib/project-mutation-lock.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const who = (runtime, nativeSessionId) => ({ runtime, nativeSessionId, agentId: null, subagent: false, parentSessionId: null });
@@ -227,6 +228,22 @@ test("peer PID birth observes reuse and recovers from a previously unavailable s
   const delayed = { platform: "linux", readFile() { if (!available) throw Object.assign(Error("temporarily missing"), { code: "ENOENT" }); return row(300); } };
   assert.equal(processBirth(424243, delayed), null); available = true;
   assert.equal(processBirth(424243, delayed), "300");
+});
+
+test("unverifiable lock owners are preserved and only ESRCH permits stale-owner cleanup", t => {
+  const f = fixture(t), parent = path.join(f.base, "locks"); fs.mkdirSync(parent);
+  const host = hash(os.hostname()).slice(0, 16), originalKill = process.kill;
+  for (const [label, pid, observation, preserved] of [["unsafe-pid", "9007199254740993", null, true], ["protected-peer", "424244", "EPERM", true], ["unreadable-peer", "424245", "EACCES", true], ["known-absent", "424246", "ESRCH", false]]) {
+    const directory = path.join(parent, label + ".lock"), file = path.join(directory, "owner-" + host + "-" + pid + "-" + "a".repeat(32) + ".json");
+    fs.mkdirSync(directory); fs.writeFileSync(file, "synthetic owner original"); let called = 0;
+    if (observation) process.kill = function(target, signal) { if (String(target) === pid && signal === 0) throw Object.assign(Error("synthetic observation"), { code: observation }); return originalKill(target, signal); };
+    try {
+      if (preserved) assert.throws(() => withLocalMutation({ directory, timeoutMs: 0 }, () => called++), { code: "PROJECT_MUTATION_BUSY" });
+      else withLocalMutation({ directory, timeoutMs: 100 }, () => called++);
+    } finally { process.kill = originalKill; }
+    assert.equal(fs.existsSync(file), preserved); assert.equal(called, preserved ? 0 : 1);
+    if (preserved) assert.equal(fs.readFileSync(file, "utf8"), "synthetic owner original");
+  }
 });
 
 test("hardlinked and symlinked Host keys are rejected without creating a signed registration", t => {
