@@ -11,6 +11,23 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.79 — publication tracked separately
+
+- Publish all selected OpenCode sessions, messages and parts in one transaction
+  through the qualified offline adapter. Preserve originals and reject global ID
+  collisions without upsert, partial publication or automatic uncertain replay.
+- Bind the official Windows x64 baseline 1.19.5 binary and the observed isolated
+  schema/migration set; preserve existing Project mappings and target settings.
+  Validate known message/part fields, existing ancestry and actual SQL ordering.
+- Fix independent-review counterexamples for cross-Project parents, existing
+  cycles, ordering-key drift, unrepresentable nested Session fields and hidden
+  schema objects. Keep read-only clients usable and report writer contention.
+- Relevant local tests passed 106/106. A separate independent CLI/MCP test and
+  official isolated SQL reads checked 2 sessions, 63 messages and 63 parts; these
+  are distinct evidence. Claude version/SDK synthetic reads were also exercised.
+  GUI picker, native continuation, real user databases and model calls remain
+  unqualified. No ordinary-profile fallback or default CLI bootstrap is enabled.
+
 ## 0.3.0-beta.78 — publication tracked separately
 
 - Add a readable, digest-bound HANDOFF to selected Project/Session bundles and
