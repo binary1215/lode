@@ -70,6 +70,50 @@ permission settings are preserved. Resume uses the returned exact Session route.
 Equal files are reused, missing owned publication steps may converge, and third
 states remain conflicts. Import does not replay completed or uncertain effects.
 
+## Retained source originals and exact diffs
+
+Default export includes eligible full-file source originals already retained by Lode
+and exactly cited by the selected Session’s work evidence. The agent explains this
+scope before export. It copies the existing raw SourceObservation bytes unchanged,
+with separate file SHA-256, bundle key and observation identities. This does not
+include the current worktree, unrelated Session bodies or a collection from Git.
+Known source, outgoing-call and declaration formats receive an additional closed
+export check, including duplicate and escaped-equivalent JSON keys at every
+object depth and in embedded structural-response frames. Unknown profiles/extra fields stay excluded without changing the
+ordinary source reader. A hash identifies bytes; it does not attest producer truth
+or the absence of sensitive content in the selected file. Review before sharing.
+
+To carry references without source bodies, ask for references only, or use
+`--sources refs-only` / typed `source_mode: "refs-only"`. Missing, unsupported or
+unavailable originals remain explicit per-reference coverage in the scope notice,
+manifest, Handoff and import result. They do not block ordinary Session recovery.
+Source sizes that could not be verified remain unknown. Export does not inspect
+local Git to classify missing originals; the existing bounded local Git query
+fallback remains available and is reported separately. Git-only source collection
+is outside this transfer.
+
+Both a fresh Project and a Session imported into the same existing Project keep
+eligible originals in immutable common source storage. Verified admission/Session
+receipt mappings let the exact reader find them without scanning unrelated source
+bundles. After resume, CLI/MCP/Explorer can compare two retained cited revisions
+even when the original PC and worktree are absent. Re-export preserves this link.
+Copied and verified originals are reported separately from a successfully queried
+diff; missing pairs remain partial rather than an empty successful comparison.
+
+A fixed included-original manifest must import exactly: destination conflicts are
+errors/incomplete imports, never successful omission. Existing target work stays
+available. Exact interrupted retries reuse equal originals and receipts; divergent
+bytes are preserved as conflicts. A references-only alternative is a separate
+explicit export and bundle identity.
+
+The source evidence format is unchanged. New portable manifests use schema 2 and
+`portable-selected-retained-sources-v1`; admission and historical owner proofs
+validate its required capability throughout recovery and re-export. New readers
+still accept schema 1 bundles, with source portability marked not recorded/not
+certified. Older readers reject schema 2 before import writes. This compatibility
+check affects that import, not ordinary work or existing records. No source proof
+or coverage view creates P2 direction, approval or execution permission.
+
 ## Optional Codex native history
 
 This is a separate experimental Host adapter, **not a stable Codex import API**.

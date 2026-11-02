@@ -5,7 +5,8 @@ import { spawn } from "node:child_process";
 import { safeGraphFile } from "./discovery-index.mjs";
 import { DEFAULT_SCAN, MAX_REFERENCE_BYTES } from "./session-work-evidence-original.mjs";
 import { relativeProjectArtifact } from "./project-storage-format.mjs";
-import { readSourceObservation } from "./source-observation.mjs";
+import { readPortableSourceHints } from "./portable-source-originals.mjs";
+import { readSourceObservationOriginal } from "./source-observation.mjs";
 import { resolveLocalGitRepository, LOCAL_GIT_DISCOVERY_ARGS, localGitReadEnvironment } from "./local-git-repository.mjs";
 
 const sha = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -73,16 +74,18 @@ function git(root, args, maximum = MAX_REFERENCE_BYTES) {
 }
 
 // Per-request only. Git is an optional byte supplier, never a work/Run oracle.
-export function createContextSourceReader(root, projectId, { storage = null, bundleHints = [] } = {}) {
+export function createContextSourceReader(root, projectId, { storage = null, bundleHints = [], project = null, sourceOwners = [] } = {}) {
   const retained = new Map(), histories = new Map(); let prefix, gitCalls = 0, lastCommandReason = null, prefixReason = null, repository, repositoryLookup, objectFormat, metadataFailureCause = null;
+  let transferHints; const transferReads = [];
   const bundles = new Map(); let bundleKeys, inventoryReason = null, inventoryPartial = false, inspectedEntries = 0, bundleBytes = 0;
-  function bundleVersion(key, relative, expectedDigest, maxBytes = MAX_REFERENCE_BYTES, countBudget = false) {
+  function bundleVersion(key, relative, expectedDigest, maxBytes = MAX_REFERENCE_BYTES, countBudget = false, expectedRawSha256 = null) {
     const file = safeGraphFile(root, `${relativeProjectArtifact(storage, "observations", "source-bundles")}/${key}.json`);
     const before = fs.lstatSync(file);
-    if (!before.isFile() || before.isSymbolicLink()) throw Object.assign(new Error("Not a regular bundle"), { code: "SOURCE_NOT_REGULAR_FILE" });
+    if (!before.isFile() || before.isSymbolicLink() || expectedRawSha256 !== null && before.nlink !== 1) throw Object.assign(new Error("Not a regular bundle"), { code: "SOURCE_NOT_REGULAR_FILE" });
     if (before.size > MAX_REFERENCE_BYTES || countBudget && bundleBytes + before.size > MAX_REFERENCE_BYTES) throw Object.assign(new Error("Source bundle byte budget"), { code: "RETAINED_SOURCE_BUNDLE_BYTE_BUDGET_REACHED" });
     if (countBudget) bundleBytes += before.size;
-    const bundle = readSourceObservation(root, projectId, key, { requireCurrent: false, storage });
+    const { bundle, original } = readSourceObservationOriginal(root, projectId, key, { requireCurrent: false, storage });
+    if (expectedRawSha256 !== null && original.sha256 !== expectedRawSha256) throw Object.assign(new Error("Transferred original changed"), { code: "SOURCE_TRANSFER_RAW_IDENTITY_MISMATCH" });
     const after = fs.lstatSync(file);
     if (countBudget) bundleBytes += Math.max(0, after.size - before.size);
     if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size
@@ -243,6 +246,23 @@ export function createContextSourceReader(root, projectId, { storage = null, bun
       if (currentReason && !["ENOENT", "SOURCE_READ_DRIFT", "SOURCE_BYTE_BOUND"].includes(currentReason)) return { status: "unavailable", path: relative, expectedDigest, reasonCode: currentReason };
       if (!expectedDigest || !/^[a-f0-9]{64}$/.test(expectedDigest)) return { status: "unavailable", path: relative, reasonCode: currentReason || "EXACT_SOURCE_DIGEST_REQUIRED" };
       try { safeGraphFile(root, relative); } catch (error) { return { status: "unavailable", path: relative, reasonCode: error.code }; }
+      if (project && sourceOwners.length) {
+        transferHints ??= readPortableSourceHints(root, storage, project, sourceOwners);
+        const binding = transferHints.bindings.get(JSON.stringify([relative, expectedDigest]));
+        if (binding) {
+          try {
+            const version = bundleVersion(binding.bundleKey, relative, expectedDigest, maxBytes, false, binding.rawSha256);
+            if (!version) throw Object.assign(new Error("Transferred source reference mismatch"), { code: "SOURCE_BUNDLE_REFERENCE_MISMATCH" });
+            version.basis.transfer = { status: "verified-imported-exact-original", rawSha256: binding.rawSha256, ownerSessionId: binding.ownerSessionId, producerTruth: "not-claimed" };
+            transferReads.push({ path: relative, digest: expectedDigest, status: "verified-readable-original", bundleKey: binding.bundleKey });
+            await describeAsset(version, current); retained.set(cacheKey, version); return version;
+          } catch (error) {
+            transferReads.push({ path: relative, digest: expectedDigest, status: "unavailable", reasonCode: error.code });
+            return { status: "unavailable", path: relative, expectedDigest, reasonCode: error.code || "SOURCE_TRANSFER_ORIGINAL_UNAVAILABLE" };
+          }
+        }
+        if (transferHints.errors.length) return { status: "unavailable", path: relative, expectedDigest, reasonCode: transferHints.errors[0] };
+      }
       const historical = retainedBundleVersion(relative, expectedDigest);
       if (historical.version) {
         if ((historical.version.asset?.rawByteLength ?? Buffer.byteLength(historical.version.text)) > maxBytes) return { status: "unavailable", path: relative, expectedDigest, reasonCode: "SOURCE_BYTE_BOUND" };
@@ -292,7 +312,7 @@ export function createContextSourceReader(root, projectId, { storage = null, bun
       } catch { return { candidates: [], status: "local-rename-evidence-unavailable" }; }
       return { candidates, status: gitCalls >= 24 ? "partial-local-git-budget" : "observed-most-recent-path-change-only", renameEstablished: false };
     },
-    diagnostics() { return { localGitCommands: gitCalls, maxLocalGitCommands: 24, maxPathHistoryCommits: 16, maxSourceBytes: MAX_REFERENCE_BYTES,
+    diagnostics() { return { sourceTransfer: { state: transferHints ? "proof-lookup-performed" : "not-looked-up", reads: transferReads, errors: transferHints?.errors || [], partial: transferHints?.partial || false, newGitCollection: "not-performed" }, localGitCommands: gitCalls, maxLocalGitCommands: 24, maxPathHistoryCommits: 16, maxSourceBytes: MAX_REFERENCE_BYTES,
       ...(metadataFailureCause ? { gitMetadataFailureCause: metadataFailureCause } : {}),
       retainedSourceBundles: { inspected: bundles.size, inspectedDirectoryEntries: inspectedEntries, inventoryPartial, preflightBytes: bundleBytes,
         maxDirectoryEntries: DEFAULT_SCAN, maxBundleBytes: MAX_REFERENCE_BYTES, preflightByteBudget: MAX_REFERENCE_BYTES,

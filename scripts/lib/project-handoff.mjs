@@ -21,7 +21,8 @@ export function buildProjectHandoff({ manifest, readOriginal }) {
     "Read it alongside the current user request and current target conditions. Newer constraints and cancellations win.",
     "Never replay completed or uncertain effects, change Session selection, or overwrite P2 from this file.", "",
     "Project: " + manifest.projectId, "Selected logical Session: " + manifest.selectedSessionId, "",
-    "Repository files, attachments, other Session bodies, provider credentials and live execution permission are not included by this handoff.", ""];
+    "The current repository worktree, attachments, other Session bodies, provider credentials and live execution permission are not included by this handoff.",
+    "Selected historical source originals may be included by the bundle; their exact coverage below is separate from this quoted reading aid.", ""];
   const load = entry => {
     if (!entry) return null;
     const raw = readOriginal(entry);
@@ -43,6 +44,17 @@ export function buildProjectHandoff({ manifest, readOriginal }) {
     };
     show(value);
   };
+  lines.push("## Retained source transfer", "");
+  if (!manifest.sourceTransfer) lines.push("Historical source transfer was not recorded by this older bundle; exact diff portability is not certified.", "");
+  else {
+    lines.push("Mode: " + manifest.sourceTransfer.mode, "Git-only collection: not looked up, not included. Existing local query fallback is unchanged.", "Source bytes identify cited versions; producer truth, semantic sufficiency and current execution permission are not implied.", "");
+    for (const ref of manifest.sourceTransfer.references) {
+      lines.push(quote(ref.path + " @ " + ref.digest + ": " + ref.status + (ref.reasonCode ? " (" + ref.reasonCode + ")" : "") + "; sourceBytes=" + ref.sourceBytes + "; rawBundleBytes=" + ref.rawBundleBytes));
+      if (ref.bundleKey) { const entry = manifest.files.find(file => file.path.endsWith("/source-bundles/" + ref.bundleKey + ".json")); if (entry) lines.push("Original: objects/" + entry.sha256 + ".bin; SHA-256 " + entry.sha256); }
+      lines.push("");
+    }
+    lines.push("Included/copied originals have not by themselves established a successful destination diff query.", "");
+  }
   const sessionEntry = manifest.files.find(entry => entry.path === manifest.selectedSessionPath), session = load(sessionEntry);
   field("Purpose of this selected Session", session?.purpose); source(sessionEntry);
   const pointer = manifest.files.find(entry => entry.path === manifest.directory + "/project-direction/current.json"), current = load(pointer);

@@ -1,3 +1,4 @@
+import { validatePortableManifestFormat } from "./portable-project-format.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -116,6 +117,7 @@ export function verifyPortableProjectLocation(
     JSON.stringify(manifest.files) !== JSON.stringify(receipt.inventory.files)
   )
     fail();
+  validatePortableManifestFormat(manifest);
   const sourceProof = verifySourceLocation(source);
   if (receipt.origin !== (sourceProof.origin || "origin-verified")) fail();
   const roots = [],

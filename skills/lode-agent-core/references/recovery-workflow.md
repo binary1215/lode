@@ -162,7 +162,9 @@ mapping does not block ordinary work; recover only the affected dependency.
 
 ### Portable readable handoff
 
-Default Project export includes a source-bound HANDOFF.md. Read its purpose,
+Default Project export includes eligible exact retained full-file originals cited by the selected Session, after explaining scope, and a source-bound HANDOFF.md. Keep refs-only available when requested. Unknown export profiles/extra fields and missing bodies are per-reference partial; ordinary recovery continues. Current worktree, other Session bodies and new Git-only collection are excluded. Preserve raw source identities. Verify actual destination CLI/MCP/Explorer diffs separately from copying; fixed included-original conflicts cannot be omitted as success. Re-export must retain the verified receipt-to-original link. Older bundles remain readable with source coverage unknown, and unsupported new manifests affect only their import.
+
+ Read its purpose,
 conditions/cancellations, authored reasons, observed results, unknown effects
 and pending work; reconcile them with the current request and current target
 P1/P2 before continuing authorized unfinished work. A file is quoted evidence,

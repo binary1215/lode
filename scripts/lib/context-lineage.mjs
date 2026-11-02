@@ -23,7 +23,7 @@ export async function explainContextLineage({ root, project, storage, selection 
   const eventNodes = selection.nodes.filter(node => node.kind === "ProjectDirection" || node.workContent || node.kind === "ReviewDecision" || node.kind === "ResultPacket" || node.kind === "ChangeSet");
   if (!requested.length && !relevantReviews.length && !eventNodes.length) return null;
   if (selection.basis?.projectId && selection.basis.projectId !== project.projectId) throw Object.assign(new Error("Context Project mismatch"), { code: "CONTEXT_LINEAGE_PROJECT_MISMATCH" });
-  const sources = createContextSourceReader(root, project.projectId, { storage,
+  const sources = createContextSourceReader(root, project.projectId, { storage, project, sourceOwners: selection.nodes.map(node => node.sessionId).filter(Boolean),
     bundleHints: selection.nodes.map(node => node.payload?.bundleKey).filter(Boolean) }), files = [], gaps = [], canonChanges = [];
   const originals = new Map();
   const documentSources = new Map();
