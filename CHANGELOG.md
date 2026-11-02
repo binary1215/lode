@@ -11,6 +11,19 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.78 — publication tracked separately
+
+- Add a readable, digest-bound HANDOFF to selected Project/Session bundles and
+  standalone inspection without provider startup or recovery-authority promotion.
+- Connect same-platform Claude raw-history capture/restoration and optional SDK
+  reading, with preflight conflicts, exact readback and no replay of uncertain effects.
+- Add OpenCode Host-export and isolated import/readback interfaces. Keep the
+  default CLI bootstrap unavailable until qualified; no ordinary-profile DB writer.
+- Preserve source originals, current target authority and existing Codex behavior.
+  Cover companion aliases, whitespace JSONL, exact-case IDs and partial failures.
+  Local implementation and independent integration review passed; actual official
+  client/SDK app tests, picker visibility and model continuation were excluded.
+
 ## 0.3.0-beta.77 — publication tracked separately
 
 - Integrate same-project conversation messaging with read-only discovery,
