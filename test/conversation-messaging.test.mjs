@@ -74,6 +74,9 @@ test("three clients are listed with addresses and current reachability inside is
   register(root, environment, opencode, { kind: "opencode-async" });
   const listed = listProjectConversations({ root, caller: claude, environment, now: fixedNow });
   assert.equal(listed.self.address, "claude:claude-live");
+  assert.equal(listed.desktop.codex.delivery, "next-prompt");
+  assert.match(listed.desktop.claude.limitation, /not listed/);
+  assert.equal(listed.desktop.opencode.delivery, "queue");
   assert.deepEqual(listed.conversations.map(row => [row.address, row.runtime, row.reachable, row.delivery]).sort(), [
     ["codex:codex-live", "codex", true, "next-prompt"],
     ["opencode:ses_live", "opencode", true, "async"],
@@ -1213,4 +1216,15 @@ test("a corrupt inbox file is quarantined with its original bytes and does not b
   assert.equal(third, null, "the unreadable notice is not repeated");
   const listed = listProjectConversations({ root, caller: caller("codex", "codex-sender"), environment, now: fixedNow });
   assert.equal(listed.quarantine.count, 2);
+});
+
+test("an unreachable send does not consume the caller ticket", async t => {
+  const { root, environment } = isolated(t);
+  register(root, environment, caller("opencode", "ses_sender"), { kind: "opencode-async" });
+  const args = { project_root: root, to: "opencode:ses_missing", body: "keep the ticket", reply_to: null };
+  const ticket = writeOpenCodeCallerTicket({ root, session: { id: "ses_sender", directory: root }, args, environment, now: fixedNow });
+  const first = await sendProjectConversation({ root, environment, hostTicket: ticket, to: args.to, body: args.body, now: fixedNow, waitMs: 0 });
+  assert.equal(first.state, "unreachable");
+  const second = await sendProjectConversation({ root, environment, hostTicket: ticket, to: args.to, body: args.body, now: fixedNow, waitMs: 0 });
+  assert.equal(second.state, "unreachable");
 });

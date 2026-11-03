@@ -606,7 +606,7 @@ function senderOf({ caller, hostTicket, root, args, environment, now }) {
   const trusted = identityFromCaller(caller);
   if (caller?.subagent === true && !trusted) fail("CONVERSATION_SUBAGENT_IDENTITY_REQUIRED", "A subagent cannot send as its parent.");
   if (trusted) return trusted;
-  return consumeTicket({ root, hostTicket, args, environment, now });
+  return inspectTicket({ root, hostTicket, args, environment, now }, false);
 }
 
 function validTicketKey(text) {
@@ -695,7 +695,13 @@ function inspectTicket({ root, hostTicket, args, environment, now = Date.now }, 
   if (!ticket || ticket.digest !== argumentDigest(args) || ticket.projectRoot !== project.root) return null;
   if (!Number.isFinite(ticket.expiresAt) || ticket.expiresAt <= nowMs(now)) return null;
   const macBody = { digest: ticket.digest, projectRoot: ticket.projectRoot, caller: ticket.caller, expiresAt: ticket.expiresAt };
-  if (ticket.mac !== ticketMac(environment, macBody, false)) return null;
+  let mac;
+  try { mac = ticketMac(environment, macBody, false); }
+  catch (error) {
+    if (!consume && ["CONVERSATION_TICKET_KEY_INVALID", "CONVERSATION_TICKET_KEY_CHANGED"].includes(error.code)) return null;
+    throw error;
+  }
+  if (ticket.mac !== mac) return null;
   const environmentDirectory = environment?.LODE_CONVERSATION_DIRECTORY;
   if (environmentDirectory && path.resolve(environmentDirectory) !== project.root) return null;
   const identity = identityFromCaller(ticket.caller);
@@ -935,7 +941,7 @@ function markHandedLocked(project, message, state, evidence, receipt = null) {
   const next = { ...current, state, evidence, handedToHost: true, ...(receipt ? { receipt } : {}) };
   const archive = messageFile(project, "archive", message.to.address, message.id);
   try {
-    fs.writeFileSync(holding, JSON.stringify(next));
+    writeJson(project, holding, next);
     fs.mkdirSync(path.dirname(archive), { recursive: true });
     fs.renameSync(holding, archive);
     return next;
@@ -1048,6 +1054,7 @@ export async function sendProjectConversation({ root, caller = null, environment
   const visible = presence && channelLive(presence, environment, now, platform).delivery !== "unreachable";
   if (!visible) return resultOf({ from, to: target, replyTo: replyTo ?? null }, "unreachable", presence ? "presence-stale" : "no-same-project-conversation");
   if (!mailboxAccepts(project, target.address, Buffer.byteLength(body, "utf8") + CONVERSATION_LIMITS.mailboxSlackBytes)) fail("CONVERSATION_MAILBOX_FULL", "That conversation's mailbox is at its size limit.");
+  if (!identityFromCaller(caller)) consumeTicket({ root, hostTicket, args, environment, now });
   const message = {
     schemaVersion: 1, id: "msg-" + crypto.randomBytes(12).toString("hex"), projectRoot: project.root,
     from, to: { runtime: target.runtime, nativeSessionId: target.nativeSessionId, agentId: target.agentId, address: target.address },
@@ -1116,6 +1123,11 @@ export function listProjectConversations({ root, caller = null, environment = pr
     omitted: Math.max(0, rows.length - CONVERSATION_LIMITS.maxList),
     ...(diagnostics.unverified ? { registrationNotice: { unverified: diagnostics.unverified, message: "Normal Host lifecycle registration can refresh these entries. Listing never creates keys, repairs records or authorizes contact." } } : {}),
     quarantine: (() => { try { return listQuarantinedConversationItems({ root }); } catch { return { kind: "ConversationQuarantineList", count: 0, items: [], unavailable: true }; } })(),
+    desktop: {
+      codex: { delivery: "next-prompt", immediate: "shared-app-server-socket-only", limitation: "Codex Desktop has no supported third-party pending-turn queue. If the shared app-server socket is connected, delivery is immediate. Otherwise the message waits for the next Codex prompt that loads trusted Lode hooks, including a desktop thread." },
+      claude: { listed: "claude-code-sessions", limitation: "Claude Desktop conversations are not listed. The desktop app does not publish a stable local transcript index. Claude Code sessions in this project are listed, and messages wait for the next Claude Code prompt or inbox socket." },
+      opencode: { delivery: "queue", limitation: "OpenCode delivers through its project queue and prompt watcher on Linux, macOS, and Windows." },
+    },
   };
 }
 
