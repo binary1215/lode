@@ -146,10 +146,12 @@ entry/module declarations and exact file tree; outer marketplace repository and
 commit checks remain separate. Local synthetic stdio tests do not establish
 installed Host loading, Hook interpolation or model reception.
 
-With `LODE_SUBAGENT_WRITE_GUARD` unset, only supported exact-correlated
-Claude/OpenCode child state writes are protected by default. Codex and unproven
-callers stay off by default. Explicit `enforce` preserves the existing broader
-known-child policy; `off` disables this optional Host policy and its additional
+With `LODE_SUBAGENT_WRITE_GUARD` unset, exact-correlated Claude Code and
+OpenCode child state writes are protected, and a detected Codex sub-conversation
+is read-only too. Detection is `sessionId` different from `threadId`, a child
+agent id, or `subagent: true` on the Codex tool call. Unproven callers stay off.
+Explicit `enforce` preserves the existing broader known-child policy; `off` is
+the explicit opt-out and disables this Host policy and its additional
 lookup/correlation cost. An invalid value warns once per changed value without
 echoing it, and disables protection rather than blocking ordinary work.
 The catalog's effect metadata determines coverage after router unwrap, once per

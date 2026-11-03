@@ -133,10 +133,12 @@ ENV·모델 인수·서버명·launch 객체만으로는 증명할 수 없습니
 repository·commit 검사는 별개이며, 로컬 합성 stdio 검사는 실제 설치 Host의 로딩·Hook 변수
 해석·모델 수신을 증명하지 않습니다.
 
-`LODE_SUBAGENT_WRITE_GUARD`가 없으면 정확한 호출 연결이 검증된 지원
-Claude/OpenCode 자식의 상태 쓰기만 기본 보호합니다. Codex와 근거가 없는 caller는
-기본으로 켜지지 않습니다. 명시적 `enforce`는 기존의 더 넓은 확인된 자식 정책을
-유지하고, `off`는 이 선택적 Host 보호와 추가 조회·상관 비용을 끕니다. 잘못된 값은
+`LODE_SUBAGENT_WRITE_GUARD`가 없으면 정확한 호출 연결이 검증된 Claude Code와
+OpenCode 자식의 상태 쓰기를 보호하고, 감지된 Codex 하위 대화도 읽기 전용입니다.
+감지는 `sessionId`와 `threadId`가 다르거나, 자식 agent id, 또는 Codex 도구 호출의
+`subagent: true`입니다. 근거가 없는 caller는 기본으로 켜지지 않습니다. 명시적
+`enforce`는 기존의 더 넓은 확인된 자식 정책을 유지하고, `off`는 명시적 해제이며
+이 Host 보호와 추가 조회·상관 비용을 끕니다. 잘못된 값은
 변경된 값마다 한 번만 값을 노출하지 않고 경고하며, 일반 작업을 막는 대신 보호를
 끕니다. 카탈로그의 effect metadata로 라우터 내부 도구를 확인한 뒤 MCP 호출마다 한 번,
 선택적 Session 연결 안내보다 먼저 판단합니다. 읽기·부모/독립 작업·일반 소스 편집은

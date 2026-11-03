@@ -442,10 +442,10 @@ selector를 넣지 않습니다. 선택적 연결 유실 후에도 정확한 명
 작업은 가능합니다.
 
 공유 상태 쓰기 정책은 라우터 내부 도구를 확인한 뒤 종속 Session 안내보다 먼저
-한 번 적용합니다. 기본 보호는 정확한 근거가 있는 지원 Claude·OpenCode 자식 호출만
-대상입니다. Codex는 기본 off를 유지하며, 명시적
+한 번 적용합니다. 기본 보호는 정확한 근거가 있는 Claude·OpenCode 자식 호출과
+감지된 Codex 하위 대화를 대상으로 합니다. 명시적
 `LODE_SUBAGENT_WRITE_GUARD=enforce`는 기존의 확인된 자식 동작을 유지합니다.
-명시적 off는 이 선택적 Host 보호를 끕니다. 보호할 상태 쓰기는 카탈로그의
+명시적 `off`는 이 Host 보호의 해제입니다. 보호할 상태 쓰기는 카탈로그의
 `readOnlyHint` metadata로 판단합니다. 읽기·부모/독립 작업·일반 소스 편집은
 계속 가능합니다. 거절 오류 `SUBAGENT_STATE_WRITE_REJECTED`는 새 사용자 승인
 절차나 부모의 권한을 만들지 않습니다.

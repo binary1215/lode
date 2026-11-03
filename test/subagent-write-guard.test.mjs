@@ -31,11 +31,13 @@ function project(t) {
 
 const rejected = response => response?.error?.message?.includes(SUBAGENT_STATE_WRITE_REJECTED) === true;
 
-test("supported-default: only exact Claude/OpenCode child provenance enables unset policy", () => {
+test("supported-default: exact Claude/OpenCode children and detected Codex sub-conversations enable unset policy", () => {
   for (const value of [undefined, null, ""]) for (const runtime of ["claude", "opencode", "codex", "unknown"]) {
-    for (const correlation of [undefined, "signal-only", "exact-native-tool-use", "awaited-native-before-hook"]) for (const subagent of [false, true]) {
+    for (const correlation of [undefined, "signal-only", "exact-native-tool-use", "awaited-native-before-hook", "codex-subconversation"]) for (const subagent of [false, true]) {
       const caller = { runtime, correlation, subagent }, environment = { LODE_SUBAGENT_WRITE_GUARD: value };
-      const expected = subagent && (runtime === "claude" && correlation === "exact-native-tool-use" || runtime === "opencode" && correlation === "awaited-native-before-hook");
+      const expected = subagent && (runtime === "claude" && correlation === "exact-native-tool-use"
+        || runtime === "opencode" && correlation === "awaited-native-before-hook"
+        || runtime === "codex" && correlation === "codex-subconversation");
       assert.equal(subagentWriteGuardEnabled(environment, { caller }), expected);
       assert.equal(subagentWriteGuardEnabled({ LODE_SUBAGENT_WRITE_GUARD: "off" }, { caller }), false);
       assert.equal(subagentWriteGuardEnabled({ LODE_SUBAGENT_WRITE_GUARD: "enforce" }, { caller }), true);
@@ -121,12 +123,22 @@ test("supported-default: signal-only, spent, divergent and expired claims never 
   assert.equal(fs.existsSync(operational), false);
 });
 
-test("supported-default: Codex unset and unsupported OpenCode scope remain ordinary work, not protection success", async t => {
+test("supported-default: detected Codex children are read-only unless explicitly opted out; unsupported OpenCode scope stays ordinary work", async t => {
   const { root, operational } = project(t), environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: operational };
   const codex = createNativeSessionHostBridge({ runtime: "codex", environment }); t.after(() => codex.dispose());
-  const result = await dispatch({ jsonrpc: "2.0", id: "codex-unset", method: "tools/call", params: {
-    _meta: { threadId: "codex-parent", subagent: true }, name: "lode_session_create", arguments: { project_root: root, purpose: "Codex default remains off" } } }, { nativeSessionBridge: codex });
-  assert.equal(rejected(result), false); assert(result.result.structuredContent.sessionId);
+  const child = await dispatch({ jsonrpc: "2.0", id: "codex-child", method: "tools/call", params: {
+    _meta: { threadId: "codex-child", sessionId: "codex-parent" }, name: "lode_session_create", arguments: { project_root: root, purpose: "Detected Codex child is read-only" } } }, { nativeSessionBridge: codex });
+  assert.equal(rejected(child), true);
+  const marked = await dispatch({ jsonrpc: "2.0", id: "codex-marked", method: "tools/call", params: {
+    _meta: { threadId: "codex-marked", subagent: true }, name: "lode_session_create", arguments: { project_root: root, purpose: "Marked Codex child is read-only" } } }, { nativeSessionBridge: codex });
+  assert.equal(rejected(marked), true);
+  const parent = await dispatch({ jsonrpc: "2.0", id: "codex-parent", method: "tools/call", params: {
+    _meta: { threadId: "codex-parent", sessionId: "codex-parent" }, name: "lode_session_create", arguments: { project_root: root, purpose: "Codex parent still writes" } } }, { nativeSessionBridge: codex });
+  assert.equal(rejected(parent), false); assert(parent.result.structuredContent.sessionId);
+  const optedOut = createNativeSessionHostBridge({ runtime: "codex", environment: { ...environment, LODE_SUBAGENT_WRITE_GUARD: "off" } }); t.after(() => optedOut.dispose());
+  const allowed = await dispatch({ jsonrpc: "2.0", id: "codex-off", method: "tools/call", params: {
+    _meta: { threadId: "codex-child", sessionId: "codex-parent" }, name: "lode_session_create", arguments: { project_root: root, purpose: "Explicit off keeps the child write" } } }, { nativeSessionBridge: optedOut });
+  assert.equal(rejected(allowed), false); assert(allowed.result.structuredContent.sessionId);
   for (const variant of ["project", "directory", "error", "timeout"]) {
     const hooks = await plugin.server({ client: { session: { get() {
       if (variant === "timeout") return new Promise(() => {});
