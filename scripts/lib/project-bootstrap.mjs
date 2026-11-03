@@ -696,7 +696,7 @@ function bootstrapResponse({ root, profile, before, installation, onboardingActi
 
 export async function initializeOrResumeProject(options = {}) {
   const { root = ".", pluginRoot, runtimes = null, profile: requestedProfile = "core", onboarding = null,
-    instructionIntegration = null, projectSessionRoute = null, copiedProject = null } = options;
+    instructionIntegration = null, projectSessionRoute = null, copiedProject = null, writeRootInstructionFiles = true } = options;
   validateInstructionIntegration(instructionIntegration);
   const profile = validateProfile(requestedProfile);
   const onboardingInput = validateOnboardingInput(onboarding);
@@ -739,12 +739,12 @@ export async function initializeOrResumeProject(options = {}) {
 }
 
 async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = null, profile, onboardingInput,
-  instructionIntegration = null, onValidatedSessionSelection = null, location = null, installationContext = null }) {
+  instructionIntegration = null, onValidatedSessionSelection = null, location = null, installationContext = null, writeRootInstructionFiles = true }) {
   const before = inspectProject(root);
   let initialization;
   let installation;
   if (before.status === "not_initialized") {
-    initialization = initializeProject({ root, pluginRoot, runtimes: runtimes || undefined, installationContext });
+    initialization = initializeProject({ root, pluginRoot, runtimes: runtimes || undefined, installationContext, writeRootInstructionFiles });
     installation = {
       status: "initialized-current",
       projectId: initialization.project.projectId,

@@ -158,11 +158,13 @@ Claude Code는 플러그인을 버전별 캐시에 복사하고 `${CLAUDE_PLUGIN
 아래 사용자 범위 설치를 쓰는 경우 OpenCode는 `--runtime opencode`, Claude Code는
 `--runtime claude`, Codex는 `--runtime codex`로 선택한 클라이언트만 초기화합니다.
 여러 통합을 원할 때만 쉼표로 조합합니다. 마켓플레이스로 설치한 Claude Code 사용자는 번들 Skill에 같은
-초기화를 요청할 수 있습니다. 프로젝트에 해당 파일이 없을 때만 Claude Code용
-`CLAUDE.md`, Codex용 `AGENTS.md`, OpenCode용 `opencode.json`을 만듭니다.
+초기화를 요청할 수 있습니다. `CLAUDE.md`, `AGENTS.md`, `opencode.json`은
+`--write-root-instructions` 또는 MCP `write_root_instruction_files: true`를
+줬을 때만 만들거나 수정합니다. 그 플래그 없는 비대화형 init은 이 파일을 만들지 않습니다.
 검증된 플러그인 MCP 연결이 있으면 중복 프로젝트 `.mcp.json`을 만들지 않습니다.
-standalone Claude 초기화는 검증된 로컬 launcher나 정확한 절대 패키지 경로로
-누락된 파일을 만들 수 있습니다. 기존 파일은 보존하고 직접 통합할 때 쓸 생성 파일은 선택된 정본 루트의
+프로젝트 `.mcp.json`은 `node`와 `${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs`를
+기록합니다. Claude Code가 환경 변수로 풀어 내므로 파일에 기기 경로가 없습니다.
+각 컴퓨터에서 `LODE_PLUGIN_ROOT`를 Lode 설치 경로로 두세요. 기존 파일은 보존하고 직접 통합할 때 쓸 생성 파일은 선택된 정본 루트의
 `.lode/generated/` 또는 기존 `.head/generated/`에 둡니다.
 
 OpenCode 로컬 설정은 절대 Node 바이너리나 설치 경로 대신 `node`와

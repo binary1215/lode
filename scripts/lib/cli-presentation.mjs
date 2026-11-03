@@ -45,6 +45,11 @@ function formatBudget(value) {
 function integrationNotices(value) {
   const lines = [], integrations = value.project?.integrations || value.integrations || value.hostIntegration || {};
   const display = text => compactText(inertTerminalText(text), 240);
+  const withheld = Object.entries(integrations).flatMap(([client, item]) => {
+    const parts = [item, item?.instruction, item?.mcp].filter(part => part?.status === "withheld");
+    return parts.map(part => `${client} ${part.path}`);
+  });
+  if (withheld.length) lines.push(`Root instruction files were not created or modified (${withheld.join(", ")}). Pass --write-root-instructions, or write_root_instruction_files for MCP, before Lode writes them. Non-interactive init leaves them absent. Ordinary work continues.`);
   const manual = Object.entries(integrations).filter(([client, item]) => item?.status === "manual" && !(client === "opencode" && value.opencodeConnection));
   if (manual.length) lines.push(`Host configuration: ${manual.map(([client, item]) => `${display(client)} existing files preserved; generated projection ${[item.projection, item.instructionProjection, item.mcpProjection].filter(Boolean).map(display).join(", ") || "not recorded"}`).join("; ")}. Automatic connection was not verified; ordinary work continues.`);
   for (const layer of value.readiness?.storage?.layers || []) {

@@ -161,11 +161,13 @@ When using the user-scoped installation below, initialize the project with
 `--runtime codex` for Codex; combine these only if you want multiple integrations.
 Marketplace-installed Claude Code users can
 request the same initialization through the bundled Skill. Lode creates
-`CLAUDE.md` for Claude Code, `AGENTS.md` for Codex, and `opencode.json` for
-OpenCode only when those project files are absent. A verified plugin MCP
-connection avoids creating a duplicate project `.mcp.json`; standalone Claude
-initialization can create a missing file with a verified local launcher or exact
-absolute package entry. Existing
+`CLAUDE.md`, `AGENTS.md`, and `opencode.json` only when you pass
+`--write-root-instructions` (or MCP `write_root_instruction_files: true`).
+A non-interactive init without that flag does not create or modify them. A verified plugin MCP
+connection avoids creating a duplicate project `.mcp.json`. A project
+`.mcp.json` uses `node` and `${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs`, which
+Claude Code expands from the environment, so the file has no machine path.
+Set `LODE_PLUGIN_ROOT` to the Lode install on each computer. Existing
 files are preserved and generated manual-integration projections remain under
 the selected root's `.lode/generated/` or existing `.head/generated/` directory.
 

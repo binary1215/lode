@@ -80,6 +80,19 @@ test("default and declined linking preserve files and do not re-offer or block o
   assert(fs.readFileSync(path.join(root, "CLAUDE.md")).equals(original));
 });
 
+test("init does not create root instruction files unless the flag is set, including a non-interactive run", async t => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "한글 café (team)'s init-")));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const quiet = await runCommand(["init", root, "--runtime", "claude,codex,opencode"]);
+  assert.equal(quiet.readiness.core.state, "ready");
+  for (const name of ["CLAUDE.md", "AGENTS.md", "opencode.json"]) assert.equal(fs.existsSync(path.join(root, name)), false, name);
+  assert.match(formatProjectBootstrap(quiet), /were not created or modified/);
+  const opted = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-init-opt-")));
+  t.after(() => fs.rmSync(opted, { recursive: true, force: true }));
+  await runCommand(["init", opted, "--runtime", "claude,codex,opencode", "--write-root-instructions"]);
+  for (const name of ["CLAUDE.md", "AGENTS.md", "opencode.json"]) assert.equal(fs.existsSync(path.join(opted, name)), true, name);
+});
+
 test("the existing CLI setup carries the explicit choice without another API or user form", async t => {
   const root = project(t);
   const result = await runCommand(["init", root, "--runtime", "codex,claude", "--instruction-integration", "link"]);

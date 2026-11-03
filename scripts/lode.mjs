@@ -87,6 +87,7 @@ export function parse(argv) {
     if (!item.startsWith("--")) throw new Error(`Unexpected argument: ${item}`);
     const key = item.slice(2);
     if (command === "storage-gc" && ["apply", "diagnostics"].includes(key)) { options[key] = true; continue; }
+    if (["init", "resume"].includes(command) && key === "write-root-instructions") { options[key] = true; continue; }
     if (command === "graph-explorer" && ["history", "share"].includes(key)) { options[key] = true; continue; }
     if (key === "details" || command === "session-work-read" && key === "scan-evidence" || command === "graph-query" && key === "inventory-page") {
       const value = rest[index + 1];
@@ -110,7 +111,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
   const cliDisplay = `${ARTIFACT_COMPOSITION.identity}-agent`;
   const continuityName = ARTIFACT_COMPOSITION.identity === "head" ? "head-continuity" : "lode-continuity";
   const allCommands = [
-      `${cliDisplay} init <project> [--runtime claude,codex,opencode] [--profile core|product] [--copied-project verified-copy] [--input <onboarding.json>] [--instruction-integration link|preserve]`,
+      `${cliDisplay} init <project> [--runtime claude,codex,opencode] [--profile core|product] [--copied-project verified-copy] [--input <onboarding.json>] [--instruction-integration link|preserve] [--write-root-instructions]`,
       `${cliDisplay} resume <project> [--runtime claude,codex,opencode] [--profile core|product] [--copied-project verified-copy] [--input <onboarding.json>] [--instruction-integration link|preserve]`,
       `${cliDisplay} --version`,
       `${cliDisplay} status <project>`,
@@ -411,6 +412,7 @@ async function runRoutedCommand(argv, { observationRegistry = null, compactionLi
     profile: options.profile || "core",
     copiedProject: options["copied-project"] ?? null,
     instructionIntegration: options["instruction-integration"] ?? null,
+    writeRootInstructionFiles: options["write-root-instructions"] === true,
     onboarding: options.input ? inputJson(options, "Project onboarding") : null,
   }));
   if (command === "project-native-history") {

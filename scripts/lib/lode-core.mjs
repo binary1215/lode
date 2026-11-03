@@ -150,19 +150,23 @@ function claudeMcpProjection(pluginRoot, projectRoot) {
   };
 }
 
-function integrationPlan(root, runtimes, storage, installationContext = null) {
+function withheldInstruction(pathName, projection) {
+  return { status: "withheld", path: pathName, reason: `Root ${pathName} was not created. Pass --write-root-instructions to create or modify it. Projection: ${projection}.`, projection };
+}
+function integrationPlan(root, runtimes, storage, installationContext = null, { writeRootInstructionFiles = true } = {}) {
   const integrations = {};
   let pluginMcpProvided = false;
   if (runtimes.includes("claude")) {
     const instructionFile = path.join(root, "CLAUDE.md");
     const mcpFile = path.join(root, ".mcp.json");
     const exists = file => { try { fs.lstatSync(file); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } };
-    const instruction = exists(instructionFile) ? "manual" : "managed";
+    const instruction = exists(instructionFile) ? "manual" : writeRootInstructionFiles ? "managed" : "withheld";
     pluginMcpProvided = !exists(mcpFile) && pluginMcpServesProject(installationContext, root, storage.projectId);
     const mcp = exists(mcpFile) || pluginMcpProvided ? "manual" : "managed";
+    const claudeStatus = instruction === "managed" && mcp === "managed" ? "managed" : instruction === "withheld" && mcp !== "manual" ? "withheld" : "manual";
     integrations.claude = {
-      status: instruction === "managed" && mcp === "managed" ? "managed" : "manual",
-      instruction: { status: instruction, path: "CLAUDE.md" }, mcp: { status: mcp, path: ".mcp.json",
+      status: claudeStatus,
+      instruction: instruction === "withheld" ? withheldInstruction("CLAUDE.md", relativeProjectArtifact(storage, "generated/lode-instructions.md")) : { status: instruction, path: "CLAUDE.md" }, mcp: { status: mcp, path: ".mcp.json",
         ...(pluginMcpProvided ? { reason: "No project MCP file was created for this invocation; its verified plugin server handled the request. A later standalone resume can provide the absent file." } : {}) },
       paths: [instruction === "managed" && "CLAUDE.md", mcp === "managed" && ".mcp.json"].filter(Boolean),
       ...(instruction === "manual" || mcp === "manual" ? {
@@ -176,13 +180,13 @@ function integrationPlan(root, runtimes, storage, installationContext = null) {
     const file = path.join(root, "AGENTS.md");
     integrations.codex = fs.existsSync(file)
       ? { status: "manual", reason: "Existing project-owned AGENTS.md was preserved.", projection: relativeProjectArtifact(storage, "generated/lode-instructions.md") }
-      : { status: "managed", path: "AGENTS.md" };
+      : writeRootInstructionFiles ? { status: "managed", path: "AGENTS.md" } : withheldInstruction("AGENTS.md", relativeProjectArtifact(storage, "generated/lode-instructions.md"));
   }
   if (runtimes.includes("opencode")) {
     const file = path.join(root, "opencode.json");
     integrations.opencode = fs.existsSync(file) || fs.existsSync(path.join(root, "opencode.jsonc"))
       ? { status: "manual", reason: "Existing project-owned OpenCode configuration was preserved.", projection: relativeProjectArtifact(storage, "generated/opencode.json") }
-      : { status: "managed", path: "opencode.json" };
+      : writeRootInstructionFiles ? { status: "managed", path: "opencode.json" } : withheldInstruction("opencode.json", relativeProjectArtifact(storage, "generated/opencode.json"));
   }
   return { integrations, pluginMcpProvided };
 }
@@ -277,7 +281,7 @@ function pruneEmptyDirectories(root, directories) {
   }
 }
 
-export function initializeProject({ root = ".", pluginRoot, runtimes, installationContext = null } = {}) {
+export function initializeProject({ root = ".", pluginRoot, runtimes, installationContext = null, writeRootInstructionFiles = true } = {}) {
   const canonicalRoot = canonicalDirectory(root);
   const canonicalPluginRoot = fs.realpathSync(path.resolve(pluginRoot));
   const selectedRuntimes = normalizeRuntimes(runtimes);
@@ -288,7 +292,7 @@ export function initializeProject({ root = ".", pluginRoot, runtimes, installati
   const target = path.join(canonicalRoot, storage.directory);
   if (fs.existsSync(target) && (!fs.statSync(target).isDirectory() || fs.readdirSync(target).length)) fail("Fresh Project storage target is occupied.", "MANAGED_COLLISION");
 
-  const { integrations, pluginMcpProvided } = integrationPlan(canonicalRoot, selectedRuntimes, storage, installationContext);
+  const { integrations, pluginMcpProvided } = integrationPlan(canonicalRoot, selectedRuntimes, storage, installationContext, { writeRootInstructionFiles });
   const { files, project } = projectFiles(canonicalRoot, canonicalPluginRoot, selectedRuntimes, integrations, storage);
   const createdFiles = [];
   const createdDirectories = new Set();
