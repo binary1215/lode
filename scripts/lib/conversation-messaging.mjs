@@ -294,7 +294,91 @@ function storedAgeMs(project, file, iso, now) {
 }
 
 function isExpiryNotice(project, file) {
-  return readJson(project, file)?.notice === "expired";
+  const notice = readJson(project, file)?.notice;
+  return notice === "expired" || notice === "unreadable";
+}
+
+function readInboxRecord(project, file) {
+  let text;
+  try { text = project.io.readFileSync(file, "utf8"); }
+  catch (error) {
+    if (error.code?.startsWith("CONVERSATION_PATH") || error.code === "CONVERSATION_UNSAFE_FILE" || error.code === "PROJECT_IDENTITY_MISMATCH") throw error;
+    return { ok: false, reason: error.code === "CONVERSATION_RECORD_TOO_LARGE" ? "truncated" : "unreadable" };
+  }
+  if (typeof text !== "string" || text.length > CONVERSATION_LIMITS.maxJsonBytes) return { ok: false, reason: "truncated" };
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch { return { ok: false, reason: "invalid-json" }; }
+  if (!object(parsed) || parsed.schemaVersion !== 1 || !MESSAGE_ID.test(parsed.id || "")) return { ok: false, reason: "invalid-schema" };
+  return { ok: true, message: parsed };
+}
+
+// Move the original file. Do not re-encode it. A failure here must not stop
+// delivery of any other message; the caller continues.
+function quarantineInboxFile(project, source, address, reason, now) {
+  const id = "qrn-" + crypto.randomBytes(12).toString("hex");
+  const directory = path.join(project.messaging, "quarantine", id);
+  const payload = path.join(directory, "payload");
+  try {
+    project.io.mkdirSync(directory);
+    project.io.renameSync(source, payload);
+    const byteLength = project.io.statSync(payload).size;
+    const meta = { schemaVersion: 1, id, reason, address: address || null, byteLength, sourceName: path.basename(source), quarantinedAt: stamp(now) };
+    project.io.atomicCreate(path.join(directory, "meta.json"), JSON.stringify(meta));
+    if (address) publishUnreadableNotice(project, address, id, reason, now);
+    return meta;
+  } catch { return null; }
+}
+
+function publishUnreadableNotice(project, address, quarantineId, reason, now) {
+  const target = parseAddress(address);
+  if (!target || !/^qrn-[a-f0-9]{24}$/u.test(quarantineId || "")) return;
+  const directory = area(project, "inbox", address);
+  let existing = null;
+  for (const entry of jsonFiles(project, directory)) {
+    const notice = readJson(project, entry.file);
+    if (notice?.notice === "unreadable") { existing = { file: entry.file, notice }; break; }
+  }
+  const prior = Array.isArray(existing?.notice?.quarantineIds) ? existing.notice.quarantineIds : [];
+  if (existing && prior.includes(quarantineId)) return;
+  const ids = [...new Set([...prior, quarantineId])].filter(id => /^qrn-[a-f0-9]{24}$/u.test(id));
+  const shown = ids.slice(0, CONVERSATION_LIMITS.noticeIdPreview);
+  const notice = {
+    schemaVersion: 1,
+    id: existing?.notice?.id && MESSAGE_ID.test(existing.notice.id) ? existing.notice.id : "msg-" + crypto.randomBytes(12).toString("hex"),
+    projectRoot: project.root,
+    notice: "unreadable",
+    quarantineCount: ids.length,
+    quarantineId: shown[0],
+    quarantineIds: shown,
+    reason,
+    from: { runtime: target.runtime, nativeSessionId: target.nativeSessionId, agentId: target.agentId, address },
+    to: { runtime: target.runtime, nativeSessionId: target.nativeSessionId, agentId: target.agentId, address },
+    body: `${ids.length} inbox message${ids.length === 1 ? "" : "s"} could not be read and ${ids.length === 1 ? "was" : "were"} moved to quarantine (${shown.join(", ")}). Other messages were kept.`,
+    createdAt: existing?.notice?.createdAt || stamp(now),
+    state: "queued",
+    evidence: "quarantine",
+    handedToHost: false,
+  };
+  try {
+    if (existing) writeJson(project, existing.file, notice);
+    else enqueue(project, notice);
+  } catch { /* The quarantined bytes remain even if the notice cannot be queued. */ }
+}
+
+export function listQuarantinedConversationItems({ root } = {}) {
+  const project = openProject(root);
+  const directory = path.join(project.messaging, "quarantine");
+  const items = [];
+  for (const name of names(project, directory)) {
+    if (!/^qrn-[a-f0-9]{24}$/u.test(name)) continue;
+    const meta = readJson(project, path.join(directory, name, "meta.json"));
+    let byteLength = meta?.byteLength ?? null;
+    try { byteLength = project.io.statSync(path.join(directory, name, "payload")).size; } catch { /* Meta still names the item. */ }
+    items.push({ id: name, reason: meta?.reason || "unreadable", address: meta?.address || null, byteLength, quarantinedAt: meta?.quarantinedAt || null, sourceName: meta?.sourceName || null });
+  }
+  items.sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+  return { kind: "ConversationQuarantineList", count: items.length, items };
 }
 
 function slotUsage(project, slotName, { skipNotices = false } = {}) {
@@ -649,6 +733,15 @@ function frameBody(body) {
 
 function renderInjection(messages, remaining) {
   const blocks = messages.map(message => {
+    if (message.notice === "unreadable") {
+      return ["Same-project conversation notice.",
+        "notice: unreadable",
+        `quarantine-count: ${message.quarantineCount || 1}`,
+        message.quarantineId ? `quarantine-id: ${message.quarantineId}` : null,
+        Array.isArray(message.quarantineIds) && message.quarantineIds.length > 1 ? `quarantine-ids: ${message.quarantineIds.join(" ")}` : null,
+        "The original bytes were kept in the project quarantine. Other inbox messages were not dropped.",
+        frameBody(message.body)].filter(Boolean).join("\n");
+    }
     if (message.notice === "expired") {
       return ["Same-project conversation notice.",
         "notice: expired",
@@ -760,7 +853,9 @@ function recoverInflight(project, address, now = Date.now) {
   for (const name of entries) {
     if (name.endsWith(".json.owned")) {
       const holding = path.join(directory, name);
-      const message = readJson(project, holding);
+      const read = readInboxRecord(project, holding);
+      if (!read.ok) { quarantineInboxFile(project, holding, address, read.reason, now); continue; }
+      const message = read.message;
       const inflight = path.join(directory, name.slice(0, -".owned".length));
       const action = disposeClaim(project, message, holding, now);
       if (action === "keep") continue;
@@ -773,14 +868,15 @@ function recoverInflight(project, address, now = Date.now) {
     const id = name.slice(0, -5);
     if (!MESSAGE_ID.test(id)) continue;
     const inflight = path.join(directory, name);
-    const message = readJson(project, inflight);
-    if (!message) continue;
+    const read = readInboxRecord(project, inflight);
+    if (!read.ok) { quarantineInboxFile(project, inflight, address, read.reason, now); continue; }
+    const message = read.message;
     applyClaimDisposition(project, message, inflight, now, expired);
   }
   publishExpiryNotices(project, expired, now);
 }
 
-function takeInboxFile(project, source, destination, now = Date.now) {
+function takeInboxFile(project, source, destination, now = Date.now, address = null) {
   const fs = project.io;
   const stamped = new Date();
   try { fs.utimesSync(source, stamped, stamped); } catch { return null; }
@@ -788,8 +884,10 @@ function takeInboxFile(project, source, destination, now = Date.now) {
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     fs.renameSync(source, destination);
   } catch { return null; }
-  const message = readJson(project, destination);
-  if (!message?.id) return null;
+  const read = readInboxRecord(project, destination);
+  if (!read.ok) { quarantineInboxFile(project, destination, address, read.reason, now); return null; }
+  const message = read.message;
+  if (message.id !== path.basename(destination, ".json")) { quarantineInboxFile(project, destination, address, "invalid-schema", now); return null; }
   const owned = claimStamp(message, now);
   try { writeJson(project, destination, owned); fs.utimesSync(destination, stamped, stamped); }
   catch (error) {
@@ -801,7 +899,7 @@ function takeInboxFile(project, source, destination, now = Date.now) {
 }
 
 function claimMessage(project, message, now = Date.now) {
-  return takeInboxFile(project, messageFile(project, "inbox", message.to.address, message.id), messageFile(project, "inflight", message.to.address, message.id), now);
+  return takeInboxFile(project, messageFile(project, "inbox", message.to.address, message.id), messageFile(project, "inflight", message.to.address, message.id), now, message.to.address);
 }
 
 function claimAddress(project, address, now = Date.now) {
@@ -814,7 +912,7 @@ function claimAddressLocked(project, address, now = Date.now) {
   const waiting = names(project, area(project, "inbox", address)).filter(name => MESSAGE_ID.test(name.slice(0, -5))).sort();
   for (const name of waiting.slice(0, CONVERSATION_LIMITS.maxInject)) {
     const id = name.slice(0, -5);
-    const message = takeInboxFile(project, messageFile(project, "inbox", address, id), messageFile(project, "inflight", address, id), now);
+    const message = takeInboxFile(project, messageFile(project, "inbox", address, id), messageFile(project, "inflight", address, id), now, address);
     if (message?.id === id) claimed.push(message);
   }
   return { claimed, remaining: Math.max(0, waiting.length - claimed.length) };
@@ -1017,6 +1115,7 @@ export function listProjectConversations({ root, caller = null, environment = pr
     conversations: rows.slice(0, CONVERSATION_LIMITS.maxList).map(item => publicConversation(item.record, item.live)),
     omitted: Math.max(0, rows.length - CONVERSATION_LIMITS.maxList),
     ...(diagnostics.unverified ? { registrationNotice: { unverified: diagnostics.unverified, message: "Normal Host lifecycle registration can refresh these entries. Listing never creates keys, repairs records or authorizes contact." } } : {}),
+    quarantine: (() => { try { return listQuarantinedConversationItems({ root }); } catch { return { kind: "ConversationQuarantineList", count: 0, items: [], unavailable: true }; } })(),
   };
 }
 

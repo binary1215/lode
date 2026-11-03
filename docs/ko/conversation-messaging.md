@@ -43,6 +43,8 @@ Core·MCP·Hook과 프로토콜 실패는 합성 fixture로 검사하며, 실제
 
 `.lode/messaging/` 또는 선택된 legacy store의 같은 디렉터리는 폐기 가능한 Host 조정 자료입니다. Project·Session 복구 상태가 아니며, 복사·내보내기로 살아있는 우편함·ticket·프로세스 소유권·endpoint binding을 옮기지 않습니다. presence와 등록 잠금은 Project 밖 Host 전용의 Project별 conversation key 옆에 둡니다. 명시 send 또는 이미 대기 중인 메시지의 handoff만 mailbox 상태를 쓰고, 빈 prompt 조회는 파일을 만들지 않습니다. presence 기간 정리는 등록에서, mailbox 기간 정리는 명시 send에서만 수행하며 list는 두 저장소 모두 변경하지 않습니다. 이전 Project-side presence는 미검증 진단으로만 표시하고 자동 이관하지 않습니다. 관측 전용 Hook의 기존 native 관측·prompt reference·이미 queue된 handoff 계약은 유지합니다. 사용자 ignore·추적 중인 중첩 marker·Git/index 상태 불명은 보존합니다. beta75 이전의 정확한 generated ignore 원문은 새 messaging 규칙과 독립적으로 인식하며, retained snapshot은 여전히 보존할 이력입니다.
 
+inbox 또는 in-flight 파일을 읽지 못하거나 JSON이 메시지 스키마와 다르면, 원본 바이트를 다시 쓰지 않고 `.lode/messaging/quarantine/<id>/payload`로 옮깁니다. 수신자에게는 스캔마다 새 안내를 만들지 않고 `unreadable` 안내 하나를 갱신합니다. `lode_conversation_list`의 `quarantine.count`와 항목 id로 격리 목록을 볼 수 있습니다. 손상된 파일 하나가 있어도 나머지 메시지 전달은 계속됩니다. Claude Code, Codex, OpenCode에 같은 규칙을 씁니다.
+
 기존의 수신자별 200개 메시지·1 MiB 용량과 24시간 보존 기간을 유지합니다. 한 수신자가 가득 차도 다른 수신자는 막지 않습니다. 미전달 대기열의 만료는 제한된 안내를 만들 수 있지만, 결과 불명 인계를 확정 미전달로 설명하거나 재주입하지 않습니다. 목록은 최대 256개와 누락 수를 표시합니다. 운영 자원 범위이며 의미적 충분성이나 권한 판정이 아닙니다.
 
 수신자별 claim 복구·접수·attempt 기록·종료·만료는 기존 P5 로컬 잠금의 짧은 동기 구간에서 원래 claim/attempt를 다시 확인합니다. 실제 전송이나 비동기 대기는 이 잠금을 잡지 않습니다. 경쟁하는 prompt 수신은 기다리지 않고 양보하며, 다른 수신자와 읽기 전용 목록을 막지 않습니다. 이는 공유 실행 권한이나 사용자 승인 게이트가 아닙니다.

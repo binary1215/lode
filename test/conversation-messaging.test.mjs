@@ -10,7 +10,7 @@ import { initializeProject } from "../scripts/lib/lode-core.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { runSessionHostHook } from "../scripts/session-host-hook.mjs";
 import {
-  formatAddress, hookConversationIdentity, identityFromCaller, listProjectConversations, prepareHookInjection,
+  formatAddress, hookConversationIdentity, identityFromCaller, listProjectConversations, listQuarantinedConversationItems, prepareHookInjection,
   registerConversationPresence, registerOpenCodePresence, sendProjectConversation, writeOpenCodeCallerTicket,
   deliverQueuedOpenCode as pumpOpenCode,
 } from "../scripts/lib/conversation-messaging.mjs";
@@ -1162,4 +1162,55 @@ test("barrier: stale recovery cannot overwrite another caller's admitted handoff
   const afterDigest = crypto.createHash("sha256").update(fs.readFileSync(archived)).digest("hex");
   t.diagnostic(JSON.stringify({ phase, afterDigest, handedToHost: JSON.parse(fs.readFileSync(archived)).handedToHost }));
   });
+});
+
+test("a corrupt inbox file is quarantined with its original bytes and does not block the other message", async t => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-quarantine-")));
+  const home = path.join(base, "home");
+  const root = path.join(base, "한글 café (team)'s work");
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(root, { recursive: true });
+  const environment = { HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, "codex"), LODE_AGENT_OPERATIONAL_STATE_ROOT: path.join(base, "operational") };
+  fs.mkdirSync(environment.CODEX_HOME, { recursive: true });
+  fs.mkdirSync(environment.LODE_AGENT_OPERATIONAL_STATE_ROOT, { recursive: true });
+  const previous = new Map(Object.keys(environment).map(key => [key, process.env[key]]));
+  for (const [key, value] of Object.entries(environment)) process.env[key] = value;
+  t.after(() => {
+    for (const [key, value] of previous) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  initializeProject({ root, pluginRoot, runtimes: ["codex"] });
+  register(root, environment, caller("codex", "codex-sender"), { kind: "codex-next-prompt" });
+  register(root, environment, caller("codex", "codex-receiver"), { kind: "codex-next-prompt" });
+  const deliver = async () => ({ outcome: "unavailable" });
+  const good = await sendProjectConversation({ root, caller: caller("codex", "codex-sender"), environment, to: "codex:codex-receiver", body: "keep this message", now: fixedNow, waitMs: 0, deliver });
+  const doomed = await sendProjectConversation({ root, caller: caller("codex", "codex-sender"), environment, to: "codex:codex-receiver", body: "this body will be damaged", now: fixedNow, waitMs: 0, deliver });
+  assert.equal(good.state, "queued");
+  assert.equal(doomed.state, "queued");
+  const inbox = path.join(root, ".lode", "messaging", "inbox");
+  const files = fs.readdirSync(inbox).flatMap(slot => fs.readdirSync(path.join(inbox, slot)).filter(name => name.endsWith(".json")).map(name => path.join(inbox, slot, name)));
+  const damagedFile = files.find(file => path.basename(file) === doomed.id + ".json");
+  const original = Buffer.from("{ not json\n한글 café (team)'s bytes\n");
+  fs.writeFileSync(damagedFile, original);
+  const slot = path.dirname(damagedFile);
+  const extraName = "msg-" + "ab".repeat(12) + ".json";
+  fs.writeFileSync(path.join(slot, extraName), Buffer.from("[]"));
+  const first = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-receiver" }, environment });
+  assert.ok(first, "the readable message is still delivered");
+  assert.match(first.text, /keep this message/);
+  assert.doesNotMatch(first.text, /this body will be damaged/);
+  first.commit();
+  const quarantined = listQuarantinedConversationItems({ root });
+  assert.equal(quarantined.count, 2);
+  const payloads = quarantined.items.map(item => fs.readFileSync(path.join(root, ".lode", "messaging", "quarantine", item.id, "payload")));
+  assert.ok(payloads.some(bytes => bytes.equals(original)));
+  assert.ok(payloads.some(bytes => bytes.equals(Buffer.from("[]"))));
+  const second = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-receiver" }, environment });
+  assert.match(second.text, /notice: unreadable/);
+  assert.match(second.text, /quarantine-count: 2/);
+  second.commit();
+  const third = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-receiver" }, environment });
+  assert.equal(third, null, "the unreadable notice is not repeated");
+  const listed = listProjectConversations({ root, caller: caller("codex", "codex-sender"), environment, now: fixedNow });
+  assert.equal(listed.quarantine.count, 2);
 });
