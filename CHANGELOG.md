@@ -11,6 +11,29 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.81 — publication tracked separately
+
+- Quarantine malformed conversation records without rewriting their original
+  bytes or blocking neighboring messages. Revalidate and consume each caller
+  ticket before enqueue; uncertain sends cannot reuse that consumption.
+- Preserve the selected standalone Claude launcher across upgrade/rollback,
+  without a new environment-variable setup step. Keep root instruction/config
+  creation explicitly optional across CLI, MCP and distribution setup, including
+  later opt-in, while retaining independent file-ownership choices.
+- Bind hook trust observations to the same exact state entry; unsupported plugin
+  identities remain unverified and never block ordinary work. Project-local
+  distrust does not imply user/system hooks are disabled.
+- Keep readable graph summaries while restoring complete exact raw diff paging.
+  Respect explicit storage-tracking choices and declared minimum reader versions.
+- Reduce duplicate GC reference calculations and share its existing deadline.
+  Referenced history remains retained; zero reclaimed bytes can be successful.
+  macOS physical GC remains unsupported, with explicit zero-effect coverage.
+- Run the full JavaScript suite on all three CI hosts, isolate synthetic paths
+  and Git configuration, and rebuild automatic Go fixtures from current sources.
+  Keep externally prepared CI fixtures caller-owned. No live Host/MCP reload is implied.
+- These changes correct the audit paths; they do not claim a complete live-app
+  review of historical merge 404d662 or general repository-speed improvement.
+
 ## 0.3.0-beta.80 — publication tracked separately
 
 - Include eligible exact retained source originals cited by the selected Session
