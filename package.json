@@ -10,7 +10,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --test --test-isolation=none --test-concurrency=1 test/*.test.mjs",
+    "test": "node scripts/run-tests.mjs",
     "check": "npm test && npm run benchmark:prepared-traversal -- --iterations 3",
     "measure:context-diagnostics": "node scripts/measure-context-diagnostics.mjs",
     "verify:native-host-smoke": "node scripts/verify-native-host-smoke.mjs",

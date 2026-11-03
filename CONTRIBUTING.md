@@ -8,12 +8,12 @@ approval and execution. Avoid broad rewrites or new gates for ordinary work.
 
 ## Check a change
 
-Use Node.js 24 or later, as declared in package.json. Start with the affected
-tests; retain meaningful case names, failure assertions, skip reasons and
-per-test temporary roots. Shared helpers must create fresh mutable state per
-call. Native subprocess tests still need the verified supervisor fixture; the
-[CI workflow](.github/workflows/go-worker-build-release.yml) contains its build
-and fixture setup. Do not replace process ownership tests with mocks.
+Use Node.js 24 or later, as declared in package.json, and a Go toolchain for
+the native supervisor. `npm test` builds that verified fixture when
+`LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT` is unset, then runs the suite.
+Start with the affected tests; retain meaningful case names, failure assertions,
+skip reasons and per-test temporary roots. Shared helpers must create fresh
+mutable state per call. Do not replace process ownership tests with mocks.
 
 The existing complete JavaScript regression and documentation checks are:
 

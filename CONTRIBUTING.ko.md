@@ -7,11 +7,11 @@
 
 ## 변경 검증
 
-package.json에 명시된 Node.js 24 이상을 사용하세요. 영향을 받는 테스트부터 실행하고,
+package.json에 명시된 Node.js 24 이상과 native supervisor를 빌드할 Go가 필요합니다.
+`LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT`가 없으면 `npm test`가 그 fixture를
+직접 빌드한 뒤 스위트를 실행합니다. 영향을 받는 테스트부터 실행하고,
 의미 있는 검사 이름·실패 조건·skip 사유·테스트별 임시 루트를 유지하세요.
-공용 helper도 호출마다 새로운 가변 상태를 만들어야 합니다. 실제 하위 프로세스
-테스트에는 검증된 supervisor fixture가 필요하며,
-[CI workflow](.github/workflows/go-worker-build-release.yml)에 빌드·fixture 준비 절차가 있습니다.
+공용 helper도 호출마다 새로운 가변 상태를 만들어야 합니다.
 프로세스 소유 검증을 mock으로 대체하지 마세요.
 
 기존 전체 JavaScript 회귀 검사와 문서 검증 명령은 다음과 같습니다.
