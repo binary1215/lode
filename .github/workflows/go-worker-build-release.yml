@@ -203,6 +203,14 @@ jobs:
           node scripts/generate-process-supervisor-manifest.mjs --platform "${platform}" --arch "${arch}" \
             --binary "${binary_root}/${executable}" --output "${binary_root}/SUPERVISOR-MANIFEST.json"
 
+      - name: Diagnose and fail fast on actual Windows query transport
+        if: runner.os == 'Windows'
+        run: node scripts/diagnose-windows-query-transport.mjs
+
+      - name: Verify actual Windows observer contracts before the full suite
+        if: runner.os == 'Windows'
+        run: node --test --test-isolation=none --test-concurrency=1 --test-name-pattern="actual native writer inventory|actual local OS probe|actual owned child birth|host-c.*separate Hook processes|host-c.*actual command stdin" test/native-portability.test.mjs test/native-session-process.test.mjs test/native-session-observations.test.mjs
+
       # The full JavaScript suite, not a smoke subset. npm test builds the
       # supervisor fixture when the prepared root above is absent.
       - name: Run every JavaScript regression test
