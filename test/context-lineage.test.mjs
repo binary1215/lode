@@ -563,6 +563,7 @@ test("local exact Git bytes connect writer, query, typed MCP, CLI and Explorer w
   const saved = f.save({ summary: "Recorded action investigation", judgments: [{ assessment: "Check f, leave g unchanged", reason: "Preserve the independent g behavior; outcome is unverified" }], references: [{ kind: "source", path: "src/action.mjs", digest: sha(oldSource) }] });
   fs.writeFileSync(path.join(f.root, "src/action.mjs"), newSource);
   const before = snapshot(f.base), found = await graph(f.root); assert.deepEqual(snapshot(f.base), before);
+  if (!found.contextLineage.files[0].comparisons[0].before) t.diagnostic(JSON.stringify(found.contextLineage.files[0]).slice(0, 12000));
   const pair = found.contextLineage.files[0].comparisons[0]; assert.equal(pair.before.digest, sha(oldSource)); assert.equal(pair.after.digest, sha(newSource));
   assert.equal(pair.before.basis.kind, "local-git-exact-blob"); assert.equal(symbol(pair, "g").observation, "declaration-bytes-unchanged");
   assert(pair.before.basis.commitAttribution.includes("not-Run")); assert(found.contextLineage.events.some(item => item.nodeId === saved.evidence.evidenceId));
@@ -787,7 +788,8 @@ test("exact requested LFS and opaque assets stay visible without graph nodes and
   fs.mkdirSync(path.dirname(cache), { recursive: true }); fs.writeFileSync(cache, payload);
   assert.equal((await read().read(assetPath)).asset.localPayload.status, "present-unverified");
   fs.writeFileSync(cache, payload.subarray(0, 2)); assert.equal((await read().read(assetPath)).asset.localPayload.status, "size-mismatch");
-  const lstat = fs.lstatSync; t.mock.method(fs, "lstatSync", function(file, ...args) { if (String(file) === cache) throw Object.assign(new Error("Synthetic denied cache"), { code: "EACCES" }); return lstat.call(this, file, ...args); });
+  const cacheNames = new Set([cache, fs.realpathSync.native(cache)]);
+  const lstat = fs.lstatSync; t.mock.method(fs, "lstatSync", function(file, ...args) { if (cacheNames.has(String(file))) throw Object.assign(new Error("Synthetic denied cache"), { code: "EACCES" }); return lstat.call(this, file, ...args); });
   assert.equal((await read().read(assetPath)).asset.localPayload.reasonCode, "EACCES"); t.mock.restoreAll();
   fs.writeFileSync(path.join(f.root, assetPath), payload);
   const historical = await read().read(assetPath, sha(pointer));
@@ -806,7 +808,7 @@ test("normal external linked worktrees retain exact source and World history wit
   const linked = path.join(f.base, "연결 작업 공간"); await git(["worktree", "add", "--quiet", "--detach", linked, "HEAD"]);
   const { initializeProject } = await import("../scripts/lib/lode-core.mjs");
   initializeProject({ root: linked, pluginRoot, runtimes: ["codex"] });
-  const resolved = resolveLocalGitRepository(linked); assert.equal(resolved.kind, "verified-linked-worktree"); assert.equal(resolved.commonDir, fs.realpathSync(path.join(f.root, ".git")));
+  const resolved = resolveLocalGitRepository(linked); assert.equal(resolved.kind, "verified-linked-worktree"); assert.equal(resolved.commonDir, fs.realpathSync.native(path.join(f.root, ".git")));
   assert.equal(fs.readFileSync(path.join(resolved.gitDir, "commondir"), "utf8").trim(), "../..");
   const { inspectProject } = await import("../scripts/lib/lode-core.mjs"), owner = inspectProject(linked);
   fs.writeFileSync(path.join(linked, "src/action.mjs"), newSource);
@@ -828,4 +830,28 @@ test("normal external linked worktrees retain exact source and World history wit
   const nested = path.join(linked, "src"); initializeProject({ root: nested, pluginRoot, runtimes: ["codex"] });
   const nestedOwner = inspectProject(nested), nestedReader = createContextSourceReader(nested, nestedOwner.project.projectId, { storage: nestedOwner.storage });
   assert.equal((await nestedReader.read("action.mjs", sha(oldSource))).text, oldSource, "Existing subdirectory reads retain the exact Git prefix.");
+});
+
+
+test("Windows native 8.3 aliases identify the same exact Git metadata without weakening link checks", { skip: process.platform !== "win32" }, async t => {
+  const f = fixture(t); const git = await localGit(t, f);
+  const script = path.join(f.base, "short-path.ps1");
+  fs.writeFileSync(script, 'param([string]$Folder)\n$ErrorActionPreference="Stop"\n$fso=New-Object -ComObject Scripting.FileSystemObject\n[Console]::Out.Write($fso.GetFolder($Folder).ShortPath)\n');
+  const helper = path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe");
+  let aliasBase;
+  try { aliasBase = (await run(t, helper, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", script, f.base], f.root)).trim(); }
+  catch (error) {
+    if (!/UnauthorizedAccess/.test(error.message) || !/Execution_Policies/.test(error.message)) throw error;
+    t.diagnostic("OS execution-policy denial preserved; no policy change or alternate execution: " + error.message.slice(0, 2500));
+    return t.skip("OS execution policy denied the optional 8.3 discovery helper; no bypass attempted.");
+  }
+  if (aliasBase === f.base) return t.skip("This filesystem does not expose an 8.3 alias; ordinary exact Git cases still execute.");
+  const aliasRoot = path.join(aliasBase, "project");
+  const { LOCAL_GIT_DISCOVERY_ARGS } = await import("../scripts/lib/local-git-repository.mjs");
+  const actual = resolveLocalGitRepository(aliasRoot);
+  const observed = await run(t, "git", [...LOCAL_GIT_DISCOVERY_ARGS], aliasRoot);
+  assert.equal(actual.matchesDiscovery(Buffer.from(observed)), "sha1");
+  assert.equal(actual.projectRoot, fs.realpathSync.native(f.root));
+  actual.assertCurrent();
+  assert.equal(await git(["rev-parse", "--is-inside-work-tree"]), "true\n");
 });

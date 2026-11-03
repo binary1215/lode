@@ -47,9 +47,9 @@ const fixture = ready(process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT)
   : buildFixture();
 const patterns = process.argv.slice(2);
 const files = patterns.length ? patterns : fs.readdirSync(path.join(root, "test")).filter(name => name.endsWith(".test.mjs")).sort().map(name => path.join("test", name));
-const child = spawnSync(process.execPath, ["--test", "--test-isolation=none", "--test-concurrency=1", ...files], {
+const child = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "--test-isolation=none", "--test-concurrency=1", ...files], {
   cwd: root,
-  env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null", GIT_TERMINAL_PROMPT: "0", TMPDIR: fs.realpathSync(os.tmpdir()), TEMP: fs.realpathSync(os.tmpdir()), TMP: fs.realpathSync(os.tmpdir()), LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT: fixture },
+  env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null", GIT_TERMINAL_PROMPT: "0", TMPDIR: fs.realpathSync.native(os.tmpdir()), TEMP: fs.realpathSync.native(os.tmpdir()), TMP: fs.realpathSync.native(os.tmpdir()), LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT: fixture },
   stdio: "inherit",
   shell: false, windowsHide: true,
 });

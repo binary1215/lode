@@ -3,12 +3,15 @@ import fs from "node:fs";
 import path from "node:path";
 
 const fail = code => { throw Object.assign(new Error(code), { code }); };
+// Windows Git expands 8.3 ancestors while Node's JS realpath can retain them.
+// Compare the same native physical paths without relaxing metadata/link checks.
+const canonicalLocalGitPath = file => process.platform === "win32" ? fs.realpathSync.native(file) : fs.realpathSync(file);
 const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 
 // Shared discovery for user-repository readers only, never the private SHA256
 // snapshot store. No commands, registry, binding, remote access or writes here.
 export function resolveLocalGitRepository(root, { allowParent = false } = {}) {
-  const projectRoot = fs.realpathSync(root), proofs = [], directories = [];
+  const projectRoot = canonicalLocalGitPath(root), proofs = [], directories = [];
   function directory(file) {
     const absolute = path.resolve(file);
     let current = path.parse(absolute).root;
@@ -17,7 +20,7 @@ export function resolveLocalGitRepository(root, { allowParent = false } = {}) {
       const stat = fs.lstatSync(current);
       if (!stat.isDirectory() || stat.isSymbolicLink()) fail("LOCAL_GIT_METADATA_PATH_UNSAFE");
     }
-    const stat = fs.statSync(absolute), real = fs.realpathSync(absolute);
+    const stat = fs.statSync(absolute), real = canonicalLocalGitPath(absolute);
     directories.push({ path: absolute, dev: stat.dev, ino: stat.ino, real });
     return real;
   }
@@ -63,7 +66,7 @@ export function resolveLocalGitRepository(root, { allowParent = false } = {}) {
     gitDir = directory(path.resolve(worktreeRoot, directive.slice(8)));
     commonDir = directory(path.resolve(gitDir, singleLine(metadata(path.join(gitDir, "commondir")))));
     if (path.dirname(gitDir) !== path.join(commonDir, "worktrees")
-      || fs.realpathSync(path.resolve(gitDir, singleLine(metadata(path.join(gitDir, "gitdir"))))) !== fs.realpathSync(gitFile)) fail("LOCAL_GIT_MAPPING_NOT_LINKED_WORKTREE");
+      || canonicalLocalGitPath(path.resolve(gitDir, singleLine(metadata(path.join(gitDir, "gitdir"))))) !== canonicalLocalGitPath(gitFile)) fail("LOCAL_GIT_MAPPING_NOT_LINKED_WORKTREE");
     kind = "verified-linked-worktree";
   }
   const prefix = path.relative(worktreeRoot, projectRoot).replaceAll("\\", "/");
@@ -71,7 +74,7 @@ export function resolveLocalGitRepository(root, { allowParent = false } = {}) {
     for (const entry of directories) {
       const stat = fs.lstatSync(entry.path);
       if (!stat.isDirectory() || stat.isSymbolicLink() || stat.dev !== entry.dev || stat.ino !== entry.ino
-        || fs.realpathSync(entry.path) !== entry.real) fail("LOCAL_GIT_MAPPING_DRIFT");
+        || canonicalLocalGitPath(entry.path) !== entry.real) fail("LOCAL_GIT_MAPPING_DRIFT");
     }
     for (const proof of proofs) {
       const { stat, bytes } = physicalMetadata(proof.file);
@@ -86,8 +89,8 @@ export function resolveLocalGitRepository(root, { allowParent = false } = {}) {
       assertCurrent();
       const values = new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/\r?\n$/, "").split(/\r?\n/);
       if (values.length !== 5 || !["sha1", "sha256"].includes(values[4])
-        || fs.realpathSync(values[0]) !== gitDir || fs.realpathSync(values[1]) !== commonDir
-        || fs.realpathSync(values[2]) !== worktreeRoot || values[3] !== (prefix ? prefix + "/" : "")) fail("LOCAL_GIT_DISCOVERY_MISMATCH");
+        || canonicalLocalGitPath(values[0]) !== gitDir || canonicalLocalGitPath(values[1]) !== commonDir
+        || canonicalLocalGitPath(values[2]) !== worktreeRoot || values[3] !== (prefix ? prefix + "/" : "")) fail("LOCAL_GIT_DISCOVERY_MISMATCH");
       return values[4];
     } };
 }

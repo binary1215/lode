@@ -1833,6 +1833,7 @@ test("watches filesystem changes through the bounded debounced refresh adapter",
     clearTimeout(timeout);
     await watcher.close({ flush: false });
   });
+  await new Promise(resolve => setImmediate(resolve)); // Let native watcher startup enter the event loop.
   fs.appendFileSync(path.join(root, "src", "watched.mjs"), "export const changed = 2;\n");
   const result = await delivered;
   clearTimeout(timeout);
