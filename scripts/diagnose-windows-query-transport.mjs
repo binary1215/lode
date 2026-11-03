@@ -65,6 +65,7 @@ let inventory, inventoryError;
 try { inventory = await observeCodexNativeWriters({ onProcess }); } catch (error) { inventoryError = error.code; }
 console.log(JSON.stringify({ event: "actual-current-name-inventory", budgetMs: 10000, status: inventory?.status, error: inventoryError }));
 await compare("argv"); await compare("eof"); await compare("line"); await compare("eof", true);
+await compare("eof"); // Bootstrap -> narrow reverses the earlier pair to expose warm/cache effects.
 for (const event of events.filter(value => value.event === "started")) assert(events.some(value => value.event === "closed" && value.pid === event.pid));
 assert.equal(actual?.rows[0]?.state, "present", "Current production self probe failed; stop before the long suite.");
 assert.equal(inventory?.status, "observed", "Current production inventory failed; stop before the long suite.");
