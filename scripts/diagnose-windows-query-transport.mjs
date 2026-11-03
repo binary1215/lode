@@ -21,10 +21,11 @@ const bootstrapKeys = [...narrowKeys, "SystemDrive", "USERPROFILE", "HOMEDRIVE",
 const environment = keys => Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]]));
 console.log(JSON.stringify({ event: "diagnostic-runtime", node: process.version, arch: process.arch, allowedEnvironmentKeysPresent: bootstrapKeys.filter(key => process.env[key]), scriptBytes: Buffer.byteLength(script), scriptDigest: crypto.createHash("sha256").update(script).digest("hex") }));
 
-async function compare(mode, expanded = false, serialization = "automatic") {
-  const started = performance.now(), deadline = started + 1500;
+async function compare(mode, expanded = false, serialization = "automatic", budgetMs = 1500) {
+  const started = performance.now(), deadline = started + budgetMs;
   const body = serialization === "primitive" ? script.replace("$row|ConvertTo-Json -Compress", "[Console]::Out.Write('primitive-returned')")
-    : serialization === "system-utility" ? script.replace("$row|ConvertTo-Json -Compress", "[Console]::Error.WriteLine('phase:utility-import');Import-Module -Name ([IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Utility')) -ErrorAction Stop;[Console]::Error.WriteLine('phase:utility-loaded');$row|ConvertTo-Json -Compress;[Console]::Error.WriteLine('phase:json-written')") : script;
+    : serialization === "system-utility" ? script.replace("$row|ConvertTo-Json -Compress", "[Console]::Error.WriteLine('phase:utility-import');Import-Module -Name ([IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Utility','Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop;[Console]::Error.WriteLine('phase:utility-loaded');$row|ConvertTo-Json -Compress;[Console]::Error.WriteLine('phase:json-written')")
+    : serialization === "framework-json" ? script.replace("$row|ConvertTo-Json -Compress", "[Console]::Error.WriteLine('phase:framework-load');[void][Reflection.Assembly]::Load('System.Web.Extensions, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35');$json=[Web.Script.Serialization.JavaScriptSerializer]::new();$json.MaxJsonLength=65536;$json.RecursionLimit=8;[Console]::Out.Write($json.Serialize($row));[Console]::Error.WriteLine('phase:json-written')") : script;
   const input = mode === "line" ? Buffer.from(body).toString("base64") + "\n" : body + "\n\n";
   const wrapper = mode === "line"
     ? "[Console]::Error.WriteLine('phase:wrapper-entered');$s=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadLine()));[Console]::Error.WriteLine('phase:input-read');& ([scriptblock]::Create($s))"
@@ -32,7 +33,7 @@ async function compare(mode, expanded = false, serialization = "automatic") {
   const args = [...common, mode === "argv" ? body : wrapper];
   const result = await new Promise(resolve => {
     const child = spawn(executable, args, { windowsHide: true, shell: false, env: environment(expanded ? bootstrapKeys : narrowKeys), stdio: [mode === "argv" ? "ignore" : "pipe", "pipe", "pipe"] });
-    console.log(JSON.stringify({ event: "planned-and-started", mode, expanded, serialization, pid: child.pid, parent: process.pid, ports: [], windowsHide: true, budgetMs: 1500 }));
+    console.log(JSON.stringify({ event: "planned-and-started", mode, expanded, serialization, pid: child.pid, parent: process.pid, ports: [], windowsHide: true, budgetMs }));
     let timedOut = false, bytes = 0, stdout = "", stderr = "", stdinFinished = mode === "argv";
     const stop = () => { timedOut = true; if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM"); };
     const timer = setTimeout(stop, Math.max(0, deadline - performance.now()));
@@ -66,10 +67,11 @@ console.log(JSON.stringify({ event: "actual-current-probe", budgetMs: 1500, pres
 let inventory, inventoryError;
 try { inventory = await observeCodexNativeWriters({ onProcess }); } catch (error) { inventoryError = error.code; }
 console.log(JSON.stringify({ event: "actual-current-name-inventory", budgetMs: 10000, status: inventory?.status, error: inventoryError }));
+await compare("eof", false, "framework-json", 1000); // Before explicit Utility loading; no diagnostic module prewarm.
 await compare("argv"); await compare("eof"); await compare("line"); await compare("eof", true);
 await compare("eof"); // Bootstrap -> narrow reverses the earlier pair to expose warm/cache effects.
 await compare("eof", false, "primitive");
-await compare("eof", false, "system-utility");
+await compare("eof", false, "system-utility", 1000);
 for (const event of events.filter(value => value.event === "started")) assert(events.some(value => value.event === "closed" && value.pid === event.pid));
 assert.equal(actual?.rows[0]?.state, "present", "Current production self probe failed; stop before the long suite.");
 assert.equal(inventory?.status, "observed", "Current production inventory failed; stop before the long suite.");
