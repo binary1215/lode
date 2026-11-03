@@ -145,7 +145,7 @@ function opencodeProjection(pluginRoot, storage, projectRoot) {
 function claudeMcpProjection(pluginRoot, projectRoot) {
   return {
     mcpServers: {
-      [ARTIFACT_COMPOSITION.serverName]: portableMcpDocument({ client: "claude", pluginRoot, projectRoot, projection: "installed-project" }).document,
+      [ARTIFACT_COMPOSITION.serverName]: portableMcpDocument({ client: "claude", pluginRoot, projectRoot, projection: "project-file" }).document,
     },
   };
 }

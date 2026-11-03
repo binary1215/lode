@@ -358,8 +358,9 @@ test("initializes Claude, Codex, and OpenCode projections and verifies managed c
   const claudeMcp = JSON.parse(fs.readFileSync(path.join(root, ".mcp.json"), "utf8"));
   assert.deepEqual(Object.keys(claudeMcp.mcpServers), ["lode"]);
   assert.equal(claudeMcp.mcpServers.lode.command, "node");
-  assert.equal(claudeMcp.mcpServers.lode.args[0], path.join(fs.realpathSync(pluginRoot), "scripts", "mcp-server.mjs"));
-  assert.equal(claudeMcp.mcpServers.lode.cwd, fs.realpathSync(pluginRoot));
+  assert.equal(claudeMcp.mcpServers.lode.args[0], "${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs");
+  assert.equal(claudeMcp.mcpServers.lode.cwd, undefined);
+  assert.equal(JSON.stringify(claudeMcp).includes(fs.realpathSync(pluginRoot)), false);
   const opencode = JSON.parse(fs.readFileSync(path.join(root, "opencode.json"), "utf8"));
   assert.deepEqual(Object.keys(opencode.mcp), ["lode"]);
   assert.deepEqual(opencode.mcp.lode.command, ["node", "{env:LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs"]);

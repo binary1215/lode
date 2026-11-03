@@ -251,7 +251,8 @@ test("host-d: failed marker publication preserves selection; explicit bin/root c
   assert.equal(JSON.parse(fs.readFileSync(markerFile)).binDirectory, secondBin);
   convergeProjectInstallation({ root: projectRoot, pluginRoot: path.join(installRoot, "releases", upgraded.releaseId) });
   const changed = JSON.parse(fs.readFileSync(path.join(projectRoot, ".mcp.json")));
-  assert.equal(changed.mcpServers.lode.args[0], path.join(secondBin, "lode-agent-launcher.mjs"));
+  assert.equal(changed.mcpServers.lode.args[0], "${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs");
+  assert.equal(JSON.stringify(changed).includes(secondBin), false);
   assert.deepEqual(fs.readFileSync(session), sessionBytes); assert.equal(fs.readFileSync(path.join(projectRoot, "CLAUDE.md"), "utf8"), "User-owned instructions\n");
   const moved = path.join(root, "moved install");
   for (const target of [installRoot, moved]) assert(path.resolve(target).startsWith(path.resolve(root) + path.sep), "Recursive move must stay inside the owned fixture");
@@ -260,7 +261,8 @@ test("host-d: failed marker publication preserves selection; explicit bin/root c
   const explicitBin = path.join(root, "explicit replacement bin");
   const replaced = installDistribution({ sourceRoot: nextSource, installRoot: moved, binDirectory: explicitBin });
   convergeProjectInstallation({ root: projectRoot, pluginRoot: path.join(moved, "releases", replaced.releaseId) });
-  assert.equal(JSON.parse(fs.readFileSync(path.join(projectRoot, ".mcp.json"))).mcpServers.lode.args[0], path.join(explicitBin, "lode-agent-launcher.mjs"));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(projectRoot, ".mcp.json"))).mcpServers.lode.args[0], "${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs");
+  assert.equal(fs.readFileSync(path.join(projectRoot, ".mcp.json"), "utf8").includes(explicitBin), false);
   assert.deepEqual(fs.readFileSync(session), sessionBytes); assert.equal(fs.readFileSync(path.join(projectRoot, "CLAUDE.md"), "utf8"), "User-owned instructions\n");
 });
 

@@ -100,24 +100,18 @@ one bounded status map (O(A), not an exact-ID API), never a new SDK/client/auth.
 Experimental code-mode and OpenCode ancestry/P3 entry remain outside this path.
 
 Marketplace client launch lines remain portable. Inside a loaded Claude plugin,
-`${CLAUDE_PLUGIN_ROOT}` is the Host-supplied plugin root. In contrast, explicit
-CLI initialization generates a machine-local Claude project configuration using
-`node` and a verified local entry; it does not assume that plugin-only variable
-exists. For an owned standalone installation with a recorded command address,
-the project configuration names its existing launcher with the internal MCP
-mode. The launcher verifies ownership, `current.json`, the selected release and
-its hashes before executing the ordinary MCP server. The existing installation
-marker records the explicitly selected bin directory; no PATH/default-install or
-latest-cache search chooses another installation. The address follows future
-launches after upgrade or rollback in the same installation root.
+`${CLAUDE_PLUGIN_ROOT}` is the Host-supplied plugin root. A project `.mcp.json`
+uses `node` and `${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs`. Claude Code expands
+that variable in `command` and `args`, so the file can be copied between
+machines and operating systems. Set `LODE_PLUGIN_ROOT` to the Lode install on
+each computer. The file does not store an absolute package path or Node binary.
 
-Packages without a verified stable launcher, including older markers without a
-command address and marketplace caches, keep the selected absolute package MCP
-entry and working directory. A moved/deleted installation root does not repair
-itself: explicit installation selection and resume/convergence reconnect managed
-projections. User-owned configuration stays untouched. Neither pointer changes
-nor configuration convergence reload an already running MCP server. This local
-Claude projection is not a portable file to copy between machines.
+An owned standalone installation can still verify its launcher, `current.json`,
+the selected release and its hashes before executing the MCP server. The
+installation marker records the selected bin directory. A moved or deleted
+install root does not repair itself: set `LODE_PLUGIN_ROOT` or resume after
+selecting the installation. User-owned configuration stays untouched. Neither
+pointer changes nor configuration convergence reload an already running MCP server.
 
 Codex project init writes no MCP path; its plugin `.mcp.json` stays `node` plus
 `scripts/mcp-plugin-server.mjs` with `cwd` `.`, and hooks expand `${PLUGIN_ROOT}`.
