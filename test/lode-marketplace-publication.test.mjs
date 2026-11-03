@@ -148,7 +148,7 @@ test("host-d: actual packaged plugin request omits only its own new MCP file wit
     const bare = path.join(root, "fresh bare project"); fs.mkdirSync(bare);
     const bareValue = await initialize(call, bare);
     assert.equal(bareValue.projectAction, "initialized"); assert.equal(fs.existsSync(path.join(bare, ".mcp.json")), false);
-    assert.equal(fs.existsSync(path.join(bare, "CLAUDE.md")), true);
+    assert.equal(fs.existsSync(path.join(bare, "CLAUDE.md")), false);
 
     const other = path.join(root, "other Hook cwd"); fs.mkdirSync(other);
     for (const variant of ["no-hook", "project-server", "wrong-cwd", "wrong-tool-use", "wrong-arguments", "tampered-config",

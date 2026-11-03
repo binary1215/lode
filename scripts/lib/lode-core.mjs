@@ -376,6 +376,7 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
       // the target manifest, and existing direct installation keeps its flow.
       if (inspected.project.location || manifest.integrationPolicy === "preserve-unowned-root-files") continue;
       if (relative === ".mcp.json" && pluginMcpServesProject(installationContext, projectRoot, inspected.project.projectId)) continue;
+      if (relative === "CLAUDE.md" && !claudePartManaged(inspected.project.integrations.claude, "instruction")) continue;
       assertNoSymlinkAncestors(projectRoot, file);
       additions.set(relative, content);
     }
