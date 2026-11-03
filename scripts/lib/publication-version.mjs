@@ -10,7 +10,7 @@ export const RELEASE_ASSETS = ["darwin-amd64", "darwin-arm64", "linux-amd64", "l
 function fail(message) { throw new Error(`PUBLICATION_VERSION_CONFLICT: ${message}`); }
 function sha(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
 export { comparePublicationVersions } from "./semantic-version.mjs";
-import { comparePublicationVersions } from "./semantic-version.mjs";
+import { comparePublicationVersions, versionParts } from "./semantic-version.mjs";
 
 // This is publication input equivalence, not proof of executable equivalence.
 // Dist bytes may differ after a rebuild. A successful retry MUST keep the old bytes/ref.

@@ -1,5 +1,5 @@
 // Shared pure SemVer ordering, independent of publication or storage effects.
-function versionParts(value) {
+export function versionParts(value) {
   const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(value);
   if (!match || (match[4] || "").split(".").some(part => /^0\d+$/.test(part))) (() => { throw new Error("PUBLICATION_VERSION_CONFLICT: Invalid semantic version."); })();
   return { core: match.slice(1, 4).map(BigInt), pre: match[4]?.split(".") || [] };

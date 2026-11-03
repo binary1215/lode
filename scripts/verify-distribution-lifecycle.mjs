@@ -200,6 +200,7 @@ try {
     "--native", "off",
     "--project", projectRoot,
     "--runtime", "claude,codex,opencode",
+    "--write-root-instructions",
     "--profile", "product",
   ]);
   assert.equal(installed.status, "installed");
@@ -318,6 +319,7 @@ try {
     "--native", "off",
     "--project", projectRoot,
     "--runtime", "claude,codex,opencode",
+    "--write-root-instructions",
     "--profile", "product",
   ]);
   assert.equal(upgraded.status, "upgraded");
