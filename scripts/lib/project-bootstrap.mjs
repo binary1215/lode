@@ -552,7 +552,6 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
       nextAction: { id: action, summary: "Initialize the constitutional Core and one canonical Project/Session before using optional capabilities.", entrypoint: entrypoint(action) },
       capabilities: capabilityGuide({ coreState: "not_initialized", productState: "unavailable", contextState: context }),
       runtime: runtimeProjection(projectInspection),
-      codexHookTrust: inspectCodexHookTrust({ projectRoot: projectInspection.projectRoot, pluginRoot: activePluginRoot }),
       authority: { advisoryOnly: true, persisted: false, mutatesProject: false, activatesCapabilities: false, grantsAuthorization: false },
     }, projectInspection.storage);
   }
@@ -608,7 +607,9 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
     },
     capabilities: capabilityGuide({ coreState, productState: product.state, contextState: context, runtimes: projectInspection.project.runtimes }),
     runtime: runtimeProjection(projectInspection),
-    codexHookTrust: inspectCodexHookTrust({ projectRoot: projectInspection.project.projectRoot, pluginRoot: activePluginRoot }),
+    ...(projectInspection.project.runtimes.includes("codex") ? {
+      codexHookTrust: inspectCodexHookTrust({ projectRoot: projectInspection.project.projectRoot, pluginRoot: activePluginRoot }),
+    } : {}),
     authority: { advisoryOnly: true, persisted: false, mutatesProject: false, activatesCapabilities: false, grantsAuthorization: false },
   }, projectInspection.storage);
 }
