@@ -133,6 +133,18 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
     support: "cooperating-current-local-entrypoints; not universal old/raw/shared-host exclusion",
     physicalScope: "verified orphan whole World/Graph files, private loose Git refs/objects and domain fragments; source/canonical originals retained" };
   if (signal?.aborted) return { ...result, code: "SNAPSHOT_GC_CANCELLED" };
+  try {
+    const { inspectStorageReaderCompatibility } = await import("./snapshot-storage-compatibility.mjs");
+    const { verifyWorldModelPointerOriginal } = await import("./world-model.mjs");
+    const { verifyGraphProjectionPointer } = await import("./graph-projection-adapter.mjs");
+    const compatibility = inspectStorageReaderCompatibility({ root: owner.projectRoot, storage: owner.storage,
+      verifyWorldPointer: pointer => verifyWorldModelPointerOriginal(pointer, owner.project.projectId),
+      verifyGraphPointer: pointer => verifyGraphProjectionPointer(pointer, null, owner.storage) });
+    const mismatch = compatibility.layers.find(layer => layer.reasonCode === "STORAGE_VERSION_MISMATCH");
+    if (mismatch) return { ...result, code: "STORAGE_VERSION_MISMATCH", message: mismatch.message, requiredVersion: mismatch.requiredVersion || null, installedVersion: mismatch.installedVersion || null };
+  } catch (error) {
+    if (error.code === "STORAGE_VERSION_MISMATCH") return { ...result, code: error.code, message: error.message };
+  }
   const attempt = beginSnapshotCollection({ root, storage: owner.storage });
   if (attempt.status !== "active") return { ...result, status: attempt.status === "yielded" ? "gc_yielded" : "gc_preserved", code: attempt.reasonCode };
   let closure;
