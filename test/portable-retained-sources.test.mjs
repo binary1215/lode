@@ -362,7 +362,7 @@ test("duplicate identical citations do not add a new export gate or duplicate ev
   assert.equal(manifest.sourceTransfer.references[0].status, "included-verified-retained-original");
 });
 
-test("export/import lifetime protects originals and releases owned participants on success and failure", async t => {
+test("export/import lifetime protects originals and releases owned participants on success and failure", { skip: process.platform === "darwin" ? "Physical GC collection lease unsupported on macOS; portable original transfer and read-only checks remain covered." : false }, async t => {
   const f = fixture(t); journey(f);
   const attempt = beginSnapshotCollection({ root: f.root }); assert.equal(attempt.status, "active");
   const controller = new AbortController();

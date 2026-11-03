@@ -696,7 +696,7 @@ function bootstrapResponse({ root, profile, before, installation, onboardingActi
 
 export async function initializeOrResumeProject(options = {}) {
   const { root = ".", pluginRoot, runtimes = null, profile: requestedProfile = "core", onboarding = null,
-    instructionIntegration = null, projectSessionRoute = null, copiedProject = null, writeRootInstructionFiles = true } = options;
+    instructionIntegration = null, projectSessionRoute = null, copiedProject = null, writeRootInstructionFiles = false } = options;
   validateInstructionIntegration(instructionIntegration);
   const profile = validateProfile(requestedProfile);
   const onboardingInput = validateOnboardingInput(onboarding);
@@ -739,7 +739,7 @@ export async function initializeOrResumeProject(options = {}) {
 }
 
 async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = null, profile, onboardingInput,
-  instructionIntegration = null, onValidatedSessionSelection = null, location = null, installationContext = null, writeRootInstructionFiles = true }) {
+  instructionIntegration = null, onValidatedSessionSelection = null, location = null, installationContext = null, writeRootInstructionFiles = false }) {
   const before = inspectProject(root);
   let initialization;
   let installation;
@@ -758,7 +758,7 @@ async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = n
       project: before.project,
       integrations: before.project.integrations,
     };
-    installation = convergeProjectInstallation({ root, pluginRoot, runtimes, onValidatedSessionSelection, installationContext });
+    installation = convergeProjectInstallation({ root, pluginRoot, runtimes, onValidatedSessionSelection, installationContext, writeRootInstructionFiles });
   }
   if (location) installation.location = location;
 

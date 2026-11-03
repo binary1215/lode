@@ -310,6 +310,31 @@ function readInboxRecord(project, file) {
   try { parsed = JSON.parse(text); }
   catch { return { ok: false, reason: "invalid-json" }; }
   if (!object(parsed) || parsed.schemaVersion !== 1 || !MESSAGE_ID.test(parsed.id || "")) return { ok: false, reason: "invalid-schema" };
+  const from = object(parsed.from) && parseAddress(parsed.from.address);
+  const to = object(parsed.to) && parseAddress(parsed.to.address);
+  const matches = (value, identity) => identity && value.runtime === identity.runtime
+    && value.nativeSessionId === identity.nativeSessionId && (value.agentId ?? null) === (identity.agentId ?? null);
+  if (!matches(parsed.from, from) || !matches(parsed.to, to) || parsed.projectRoot !== project.root
+    || !validBody(parsed.body) || typeof parsed.createdAt !== "string" || !Number.isFinite(Date.parse(parsed.createdAt))
+    || (parsed.replyTo != null && !MESSAGE_ID.test(parsed.replyTo))
+    || !["queued", "claimed", "inflight", "delivered", "sent", "unknown", "refused"].includes(parsed.state)
+    || (parsed.notice != null && !["expired", "unreadable"].includes(parsed.notice))
+    || path.basename(file).replace(/\.json(?:\.owned)?$/, "") !== parsed.id
+    || path.basename(path.dirname(file)) !== slot(to.address)) return { ok: false, reason: "invalid-schema" };
+  const scalarId = value => typeof value === "string" && /^[A-Za-z0-9._:-]{1,200}$/u.test(value);
+  const validStamp = value => typeof value === "string" && Number.isFinite(Date.parse(value));
+  const validIds = (list, regex) => list === undefined || Array.isArray(list) && list.length <= CONVERSATION_LIMITS.noticeIdPreview && list.every(id => typeof id === "string" && regex.test(id));
+  const validCount = count => count === undefined || Number.isSafeInteger(count) && count > 0;
+  if (parsed.handedToHost !== undefined && typeof parsed.handedToHost !== "boolean"
+    || parsed.claim !== undefined && (!object(parsed.claim) || !scalarId(parsed.claim.token)
+      || !Number.isSafeInteger(parsed.claim.pid) || parsed.claim.pid < 1 || !validStamp(parsed.claim.at)
+      || parsed.claim.start !== undefined && (typeof parsed.claim.start !== "string" || /[\r\n\0]/.test(parsed.claim.start)))
+    || parsed.externalAttempt !== undefined && (!object(parsed.externalAttempt) || !scalarId(parsed.externalAttempt.token) || !validStamp(parsed.externalAttempt.at))) return { ok: false, reason: "invalid-schema" };
+  if (parsed.notice === "unreadable" && (typeof parsed.quarantineId !== "string" || !/^qrn-[a-f0-9]{24}$/.test(parsed.quarantineId || "")
+    || !validIds(parsed.quarantineIds, /^qrn-[a-f0-9]{24}$/) || !validCount(parsed.quarantineCount))) return { ok: false, reason: "invalid-schema" };
+  if (parsed.notice === "expired" && (typeof parsed.expiredId !== "string" || !MESSAGE_ID.test(parsed.expiredId || "")
+    || !validIds(parsed.expiredIds, MESSAGE_ID) || !validCount(parsed.expiredCount)
+    || parsed.originalTo !== undefined && !parseAddress(parsed.originalTo))) return { ok: false, reason: "invalid-schema" };
   return { ok: true, message: parsed };
 }
 
@@ -336,7 +361,8 @@ function publishUnreadableNotice(project, address, quarantineId, reason, now) {
   const directory = area(project, "inbox", address);
   let existing = null;
   for (const entry of jsonFiles(project, directory)) {
-    const notice = readJson(project, entry.file);
+    const read = readInboxRecord(project, entry.file);
+    const notice = read.ok ? read.message : null;
     if (notice?.notice === "unreadable") { existing = { file: entry.file, notice }; break; }
   }
   const prior = Array.isArray(existing?.notice?.quarantineIds) ? existing.notice.quarantineIds : [];
@@ -434,7 +460,8 @@ function publishExpiryNotices(project, messages, now) {
       const directory = area(project, "inbox", group.sender.address);
       let existing = null;
       for (const entry of jsonFiles(project, directory)) {
-        const notice = readJson(project, entry.file);
+        const read = readInboxRecord(project, entry.file);
+        const notice = read.ok ? read.message : null;
         if (notice?.notice === "expired" && notice.originalTo === group.target) { existing = { file: entry.file, notice }; break; }
       }
       const prior = Array.isArray(existing?.notice?.expiredIds) ? existing.notice.expiredIds : (existing?.notice?.expiredId ? [existing.notice.expiredId] : []);
@@ -471,7 +498,11 @@ function expireStored(project, kind, now) {
     if (!/^[a-f0-9]{64}$/u.test(slotName)) continue;
     withMailboxSlot(project, slotName, () => {
       for (const entry of jsonFiles(project, path.join(rootDir, slotName))) {
-        const message = readJson(project, entry.file);
+        const read = readInboxRecord(project, entry.file);
+        // A malformed live record must reach quarantine, never expiry deletion
+        // or recovery based on its unvalidated retry-control fields.
+        if (!read.ok && kind !== "archive") continue;
+        const message = read.ok ? read.message : readJson(project, entry.file);
         if (kind === "inflight" && message) {
           const action = disposeClaim(project, message, entry.file, now);
           if (action === "unknown") { preserveUnknown(project, message, "delivery-owner-lost"); continue; }
@@ -1054,7 +1085,12 @@ export async function sendProjectConversation({ root, caller = null, environment
   const visible = presence && channelLive(presence, environment, now, platform).delivery !== "unreachable";
   if (!visible) return resultOf({ from, to: target, replyTo: replyTo ?? null }, "unreachable", presence ? "presence-stale" : "no-same-project-conversation");
   if (!mailboxAccepts(project, target.address, Buffer.byteLength(body, "utf8") + CONVERSATION_LIMITS.mailboxSlackBytes)) fail("CONVERSATION_MAILBOX_FULL", "That conversation's mailbox is at its size limit.");
-  if (!identityFromCaller(caller)) consumeTicket({ root, hostTicket, args, environment, now });
+  if (!identityFromCaller(caller)) {
+    const consumed = consumeTicket({ root, hostTicket, args, environment, now });
+    if (!consumed || JSON.stringify(consumed) !== JSON.stringify(from)) {
+      fail("CONVERSATION_CALLER_UNAVAILABLE", "The caller ticket changed or expired before enqueue.");
+    }
+  }
   const message = {
     schemaVersion: 1, id: "msg-" + crypto.randomBytes(12).toString("hex"), projectRoot: project.root,
     from, to: { runtime: target.runtime, nativeSessionId: target.nativeSessionId, agentId: target.agentId, address: target.address },

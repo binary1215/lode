@@ -93,17 +93,15 @@ bounded status map(O(A))만 사용하며 새 SDK·인증을 만들지 않습니�
 
 마켓플레이스 실행 줄은 이식성을 유지합니다. 로드된 Claude 플러그인 안의
 `${CLAUDE_PLUGIN_ROOT}`는 Host가 제공하는 정상적인 플러그인 경로입니다.
-프로젝트 `.mcp.json`은 `node`와 `${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs`를
-기록합니다. Claude Code가 `command`와 `args`의 이 변수를 환경에서 풀어 내므로
-파일을 다른 컴퓨터와 OS로 복사할 수 있습니다. 각 컴퓨터에서 `LODE_PLUGIN_ROOT`를
-Lode 설치 경로로 두세요. 파일에는 절대 패키지 경로나 Node 바이너리를 넣지 않습니다.
+선택한 standalone 프로젝트는 검증된 설치 launcher(현재 release와 해시 검사 포함)를
+사용하고, 소유 launcher가 없을 때만 정확한 로컬 패키지 진입점을 사용합니다.
+새 `LODE_PLUGIN_ROOT` 환경 변수 설정을 요구하지 않습니다. 별도로 요청하는
+`project-file` 출력은 이식용 템플릿이며, placeholder 존재만으로 로컬 연결이나
+실행 중인 Host의 로드를 증명하지 않습니다.
 
-소유권이 확인된 standalone 설치는 launcher, `current.json`, 선택한 release와
-hash를 확인한 뒤 MCP server를 실행할 수 있습니다. 설치 marker는 선택한 bin
-디렉터리를 기록합니다. 설치 root가 이동·삭제되어도 자동으로 다른 위치를 찾지
-않습니다. `LODE_PLUGIN_ROOT`를 설정하거나 설치를 선택한 뒤 resume하세요.
-사용자 소유 설정은 보존하며, pointer 변경이나 설정 정합화로 이미 실행 중인 MCP를
-reload하지 않습니다.
+다른 기기로 복사한 뒤에는 해당 기기에서 선택한 설치로 명시적으로 resume합니다.
+관리 중인 실행 프로젝션만 갱신하고 사용자 파일은 보존합니다. upgrade·rollback은
+검증된 설치 launcher를 따르며 이미 연결된 MCP를 재시작하지 않습니다.
 
 Codex 프로젝트 초기화는 MCP 경로를 쓰지 않습니다. 플러그인 `.mcp.json`은
 `node`, `scripts/mcp-plugin-server.mjs`, `cwd` `.`를 유지하고 hook은 `${PLUGIN_ROOT}`를

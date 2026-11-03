@@ -32,6 +32,14 @@ import { classifySnapshotFileSystem } from "../scripts/lib/snapshot-filesystem.m
 import { decodeSnapshotBytes } from "../scripts/lib/snapshot-storage-codec.mjs";
 import { emptyProductModelDocument } from "../scripts/lib/product-model.mjs";
 
+// Only effects requiring the statically unsupported macOS collection lease are
+// inapplicable there. Read-only closure/calculation and public refusal stay tested.
+function collectionTest(name, options, fn) {
+  if (typeof options === "function") { fn = options; options = {}; }
+  return test(name, { ...options, skip: options.skip || (process.platform === "darwin"
+    ? "Physical GC/collection lease unsupported on macOS; Linux/Windows assertions remain mandatory; public refusal and read-only closure are tested separately."
+    : false) }, fn);
+}
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 // Exercise the real verified CI fixture at the internal capability-selection
 // boundary. No copy, source/dist mutation or public Core option is needed.
@@ -83,7 +91,7 @@ async function orphan(f, encoding = "gzip") {
   return { built, files: [w.location, g.location] };
 }
 
-test("zero-write inspection and readers; explicit apply unlinks only verified orphan JSON/gzip", async t => {
+collectionTest("zero-write inspection and readers; explicit apply unlinks only verified orphan JSON/gzip", async t => {
   for (const encoding of ["json", "gzip"]) await t.test(encoding, async t => {
     const f = await fixture(t), extra = await orphan(f, encoding), before = tree(f.root);
     const dry = inspectSnapshotGarbageCollection({ root: f.root });
@@ -98,7 +106,7 @@ test("zero-write inspection and readers; explicit apply unlinks only verified or
   });
 });
 
-test("persisted Capsule and historical lineage remain readable after orphan cleanup", async t => {
+collectionTest("persisted Capsule and historical lineage remain readable after orphan cleanup", async t => {
   const f = await fixture(t);
   const capsule = await compileContext({ root: f.root, task: "inspect add", persist: true, budget: 32768 });
   const capsuleId = capsule.capsule?.capsuleId || capsule.capsuleId;
@@ -116,7 +124,7 @@ test("persisted Capsule and historical lineage remain readable after orphan clea
   assert(diff); assert.equal((await readWorldModel({ root: f.root })).snapshot.worldModelId, next.snapshot.worldModelId);
 });
 
-test("awaited and unawaited nested child lifetime makes GC yield until actual completion", async t => {
+collectionTest("awaited and unawaited nested child lifetime makes GC yield until actual completion", async t => {
   const f = await fixture(t); await orphan(f);
   const gate = deferred(); let child;
   await withSnapshotReferencesAsync({ root: f.root }, async () => {
@@ -128,7 +136,7 @@ test("awaited and unawaited nested child lifetime makes GC yield until actual co
   assert.equal((await applySnapshotGarbageCollection({ root: f.root })).deletedCount, 2);
 });
 
-test("start-and-finish ABA permanently invalidates an exact collection attempt", async t => {
+collectionTest("start-and-finish ABA permanently invalidates an exact collection attempt", async t => {
   const f = await fixture(t); const attempt = beginSnapshotCollection({ root: f.root });
   assert.equal(attempt.status, "active");
   withSnapshotReferences({ root: f.root }, () => {});
@@ -137,7 +145,7 @@ test("start-and-finish ABA permanently invalidates an exact collection attempt",
   finishSnapshotCollection(attempt);
 });
 
-test("real apply scan invalidates when an ordinary operation both starts and finishes", async t => {
+collectionTest("real apply scan invalidates when an ordinary operation both starts and finishes", async t => {
   const f = await fixture(t); const extra = await orphan(f);
   const original = fs.openSync; let once = false;
   t.mock.method(fs, "openSync", function(file, ...args) {
@@ -151,7 +159,7 @@ test("real apply scan invalidates when an ordinary operation both starts and fin
   assert.equal(result.deletedCount, 0); assert(extra.files.every(file => fs.existsSync(file)));
 });
 
-test("expired detached context cannot publish cached references after parent completion and GC", async t => {
+collectionTest("expired detached context cannot publish cached references after parent completion and GC", async t => {
   const f = await fixture(t); await orphan(f); const gate = deferred(); let detached, published = false;
   await withSnapshotReferencesAsync({ root: f.root }, async () => {
     detached = gate.promise.then(() => withSnapshotReferences({ root: f.root }, () => { published = true; }));
@@ -161,7 +169,7 @@ test("expired detached context cannot publish cached references after parent com
   assert.equal(published, false);
 });
 
-test("registration failure never executes an unguarded publication even before a later GC", async t => {
+collectionTest("registration failure never executes an unguarded publication even before a later GC", async t => {
   const f = await fixture(t); await orphan(f); let published = false;
   const original = fs.writeFileSync;
   const mocked = t.mock.method(fs, "writeFileSync", function(file, ...args) {
@@ -173,7 +181,7 @@ test("registration failure never executes an unguarded publication even before a
   assert.equal((await applySnapshotGarbageCollection({ root: f.root })).deletedCount, 2);
 });
 
-test("borrowed refresh lease participates and direct pointer stays sync with missing-target rejection", async t => {
+collectionTest("borrowed refresh lease participates and direct pointer stays sync with missing-target rejection", async t => {
   const f = await fixture(t); await orphan(f);
   await withRefreshWriterLease({ projectRoot: f.root, projectId: f.storage.projectId, storage: f.storage }, async lease => {
     await withRefreshWriterLease({ projectRoot: f.root, projectId: f.storage.projectId, storage: f.storage, lease }, async () => {
@@ -199,7 +207,7 @@ test("unknown schema, retained mixed backend and unsafe storage preserve while o
   });
 });
 
-test("partial I/O failure and cancellation retain exact completed deletion counts", async t => {
+collectionTest("partial I/O failure and cancellation retain exact completed deletion counts", async t => {
   for (const mode of ["io", "cancel"]) await t.test(mode, async t => {
     const f = await fixture(t); const extra = await orphan(f); const controller = new AbortController();
     const original = fs.unlinkSync; let deleted = 0;
@@ -219,7 +227,7 @@ test("partial I/O failure and cancellation retain exact completed deletion count
   });
 });
 
-test("CLI runCommand awaits explicit apply; no new MCP operation is required", async t => {
+collectionTest("CLI runCommand awaits explicit apply; no new MCP operation is required", async t => {
   const f = await fixture(t); await orphan(f);
   const result = await runCommand(["storage-gc", f.root, "--apply"]);
   assert.equal(result.status, "gc_applied", JSON.stringify(result)); assert.equal(result.deletedCount, 2);
@@ -227,7 +235,7 @@ test("CLI runCommand awaits explicit apply; no new MCP operation is required", a
   assert.equal(diagnostic.status, "gc_dry_run"); assert.deepEqual(tree(f.root), before);
 });
 
-test("candidate replacement after typed scan is preserved by final exact file identity", async t => {
+collectionTest("candidate replacement after typed scan is preserved by final exact file identity", async t => {
   const f = await fixture(t); const extra = await orphan(f); let replaced = false;
   const target = extra.files[1], bytes = fs.readFileSync(target);
   const fixedTime = new Date("2026-01-02T03:04:05.000Z");
@@ -250,7 +258,7 @@ test("candidate replacement after typed scan is preserved by final exact file id
   assert.equal(result.deletedCount, 0); assert(extra.files.every(file => fs.existsSync(file)));
 });
 
-test("unknown/crashed owner is not age-reclaimed and ordinary publishers can invalidate it", async t => {
+collectionTest("unknown/crashed owner is not age-reclaimed and ordinary publishers can invalidate it", async t => {
   const f = await fixture(t); const attempt = beginSnapshotCollection({ root: f.root });
   assert.equal(attempt.status, "active");
   const before = fs.readFileSync(attempt.file);
@@ -260,7 +268,7 @@ test("unknown/crashed owner is not age-reclaimed and ordinary publishers can inv
   finishSnapshotCollection(attempt);
 });
 
-test("direct asynchronous snapshot create/reuse holds lifetime through its actual read completion", async t => {
+collectionTest("direct asynchronous snapshot create/reuse holds lifetime through its actual read completion", async t => {
   for (const type of ["world", "graph"]) await t.test(type, async t => {
     const f = await fixture(t); const extra = await orphan(f), gate = deferred(), entered = deferred();
     const adapter = f[type], document = type === "world" ? extra.built.snapshot : extra.built.snapshot.temporalProvenanceGraph;
@@ -275,7 +283,7 @@ test("direct asynchronous snapshot create/reuse holds lifetime through its actua
   });
 });
 
-test("a second process blocks only collection; a crashed participant is preserved without PID guesses", async t => {
+collectionTest("a second process blocks only collection; a crashed participant is preserved without PID guesses", async t => {
   const f = await fixture(t); await orphan(f);
   const moduleUrl = new URL("../scripts/lib/snapshot-reference-lifetime.mjs", import.meta.url).href;
   const source = `import readline from 'node:readline';import {withSnapshotReferencesAsync} from ${JSON.stringify(moduleUrl)};
@@ -312,7 +320,7 @@ test("a second process blocks only collection; a crashed participant is preserve
   }
 });
 
-test("normal SessionWork/Todo, selected Session, reviewed Run and ChangeSet retain exact originals while orphan cleanup works", async t => {
+collectionTest("normal SessionWork/Todo, selected Session, reviewed Run and ChangeSet retain exact originals while orphan cleanup works", async t => {
   const f = await fixture(t);
   const input = { summary: "Same synthetic task", todos: [{ todoId: "todo-retained", task: "Read retained history",
     status: "pending", origin: "head-proposed", nextAction: "Inspect the exact original" }] };
@@ -349,7 +357,7 @@ test("normal SessionWork/Todo, selected Session, reviewed Run and ChangeSet reta
   assert(run);
 });
 
-test("another Session owner substituted into work evidence preserves candidates without merging or selecting it", async t => {
+collectionTest("another Session owner substituted into work evidence preserves candidates without merging or selecting it", async t => {
   const f = await fixture(t); const extra = await orphan(f);
   const selected = createLodeSession({ root: f.root, purpose: "Separate owner" });
   const work = withSessionRoute(f.root, selected.sessionId, () => recordSessionWorkEvidence({ root: f.root, input: { summary: "Exact owner" } }));
@@ -364,7 +372,7 @@ test("another Session owner substituted into work evidence preserves candidates 
   assert.deepEqual(tree(f.root), before); assert(extra.files.every(file => fs.existsSync(file)));
 });
 
-test("lifetime cleanup failure preserves a primary error and discloses an already completed operation", async t => {
+collectionTest("lifetime cleanup failure preserves a primary error and discloses an already completed operation", async t => {
   const f = await fixture(t); const unlink = fs.unlinkSync;
   t.mock.method(fs, "unlinkSync", function(file) {
     if (String(file).includes(path.join(".snapshot-gc", "participants"))) throw Object.assign(new Error("synthetic cleanup failure"), { code: "EIO" });
@@ -415,7 +423,7 @@ test("GC retains reference summaries rather than decoded bodies; small metadata 
   assert.deepEqual(tree(f.root), before); assert(extra.files.every(file => fs.existsSync(file)));
 });
 
-test("a queued same-process operation cancels a multi-file scan before deletion", async t => {
+collectionTest("a queued same-process operation cancels a multi-file scan before deletion", async t => {
   const f = await fixture(t); const extra = await orphan(f); const open = fs.openSync; let queued = false, ordinary;
   t.mock.method(fs, "openSync", function(file, ...args) {
     if (!queued && String(file) === extra.files[0]) {
@@ -429,7 +437,7 @@ test("a queued same-process operation cancels a multi-file scan before deletion"
   assert.equal(result.deletedCount, 0); assert(extra.files.every(file => fs.existsSync(file)));
 });
 
-test("unsupported placeholder retains ordinary bypass; eligible mixed publishers require their lifetime", async t => {
+collectionTest("unsupported placeholder retains ordinary bypass; eligible mixed publishers require their lifetime", async t => {
   for (const relative of ["snapshot-objects.git", "snapshot-bundles", "observations/source-bundles"]) await t.test(relative, async t => {
     const f = await fixture(t), base = path.join(f.root, f.storage.directory);
     // Marker-only fixture, not proof of a valid Git database or bundle.
@@ -446,7 +454,7 @@ test("unsupported placeholder retains ordinary bypass; eligible mixed publishers
   });
 });
 
-test("backend exclusion requires cancellation of an earlier attempt and never bypasses an expired context", async t => {
+collectionTest("backend exclusion requires cancellation of an earlier attempt and never bypasses an expired context", async t => {
   const f = await fixture(t), marker = path.join(f.root, f.storage.directory, "snapshot-objects.git");
   const attempt = beginSnapshotCollection({ root: f.root });
   fs.mkdirSync(marker); // Deliberately uncooperative transition must not authorize fallback.
@@ -463,7 +471,7 @@ test("backend exclusion requires cancellation of an earlier attempt and never by
   gate.resolve(); await assert.rejects(detached, { code: "SNAPSHOT_REFERENCE_LIFETIME_EXPIRED" }); assert.equal(published, false);
 });
 
-test("guarded backend creation keeps its exact cancellation and foreign/tampered attempts cannot bypass", async t => {
+collectionTest("guarded backend creation keeps its exact cancellation and foreign/tampered attempts cannot bypass", async t => {
   const f = await fixture(t), marker = path.join(f.root, f.storage.directory, "snapshot-objects.git");
   const attempt = beginSnapshotCollection({ root: f.root });
   withSnapshotReferences({ root: f.root }, () => fs.mkdirSync(marker));
@@ -508,7 +516,7 @@ test("cancelled Windows filesystem probe closes its owned child and preserves ev
   assert.deepEqual(tree(f.root), before);
 });
 
-test("SessionWork raw-byte reference preserves its exact original, including Windows path case aliases", async t => {
+collectionTest("SessionWork raw-byte reference preserves its exact original, including Windows path case aliases", async t => {
   const f = await fixture(t); const extra = await orphan(f), original = fs.readFileSync(extra.files[0]);
   const relative = path.relative(f.root, extra.files[0]).replaceAll("\\", "/");
   recordSessionWorkEvidence({ root: f.root, input: { summary: "Keep the exact referenced source bytes", references: [{
@@ -519,7 +527,7 @@ test("SessionWork raw-byte reference preserves its exact original, including Win
   assert(fs.readFileSync(extra.files[0]).equals(original));
 });
 
-test("existing Product schema 2 uses its original verifier rather than an unsupported-schema gate", async t => {
+collectionTest("existing Product schema 2 uses its original verifier rather than an unsupported-schema gate", async t => {
   const f = await fixture(t);
   fs.writeFileSync(path.join(f.root, f.storage.directory, "context/product-model.json"), JSON.stringify(emptyProductModelDocument({ schemaVersion: 2 })));
   await orphan(f);
@@ -528,7 +536,7 @@ test("existing Product schema 2 uses its original verifier rather than an unsupp
 });
 
 
-test("mixed GC reclaims actual loose and packed Git objects and shared domain orphans, preserving rooted history and source", async t => {
+collectionTest("mixed GC reclaims actual loose and packed Git objects and shared domain orphans, preserving rooted history and source", async t => {
   const f=await fixture(t), events=[];
   const gitOptions={onProcess:event=>events.push(event)};
   const world=new LocalJsonWorldModelStoreAdapter({projectRoot:f.root,storage:f.storage,snapshotEncoding:"git",snapshotLayout:"domain-bundles-v1",gitOptions});
@@ -579,7 +587,7 @@ async function objectFixture(t, packed = false, syntheticRoot = null) {
  return {...f,store,entry,extra,mixed,refs,attempt,result};
 }
 
-test("isolated staged pack cannot borrow a missing retained object from the old DB",async t=>{
+collectionTest("isolated staged pack cannot borrow a missing retained object from the old DB",async t=>{
  const f=await objectFixture(t),keep=new Set(f.refs[0].objectIds),original=f.mixed.packStream.bind(f.mixed);
  t.mock.method(f.mixed,"packStream",(oids,...args)=>original([f.extra,...oids.slice(1)],...args));
  const before=tree(f.root).filter(([file])=>file.includes("/objects/")||file.includes("\\objects\\"));
@@ -588,7 +596,7 @@ test("isolated staged pack cannot borrow a missing retained object from the old 
  assert.deepEqual(tree(f.root).filter(([file])=>file.includes("/objects/")||file.includes("\\objects\\")),before);
 });
 
-test("bounded native pack stream stops before disk cap and verifies tree cleanup",async t=>{
+collectionTest("bounded native pack stream stops before disk cap and verifies tree cleanup",async t=>{
  const f=await objectFixture(t),events=[];f.mixed.onProcess=e=>events.push(e);
  const file=path.join(f.root,"bounded-stage.pack");
  await assert.rejects(f.mixed.packStream([...f.mixed.objects.keys()],file,1),{code:"GC_STAGING_BYTE_LIMIT"});
@@ -614,7 +622,7 @@ test("GC stop preserves native proof time, original deadline and cancellation wi
  });
 });
 
-test("ordinary work after new pair publication cancels all old object retirement",async t=>{
+collectionTest("ordinary work after new pair publication cancels all old object retirement",async t=>{
  const f=await objectFixture(t), original=fs.renameSync;let entered=false;
  t.mock.method(fs,"renameSync",function(from,to){const value=original.call(this,from,to);if(String(to).endsWith(".idx")&&String(to).includes("snapshot-objects.git")){queueMicrotask(()=>{withSnapshotReferences({root:f.root},()=>{});entered=true;});}return value;});
  await assert.rejects(f.mixed.reclaimObjects({attempt:f.attempt,result:f.result,keepObjects:new Set(f.refs[0].objectIds),pinnedPaths:new Set()}),{code:"SNAPSHOT_COLLECTION_INVALIDATED"});
@@ -623,7 +631,7 @@ test("ordinary work after new pair publication cancels all old object retirement
 });
 
 
-test("standalone successful and failed source originals remain roots without collected records",async t=>{
+collectionTest("standalone successful and failed source originals remain roots without collected records",async t=>{
  const f=await fixture(t),bytes=fs.readFileSync(path.join(f.root,"example.py"));
  const bundle=createSourceObservation({version:1,projectId:f.storage.projectId,kind:"source",query:[{path:"example.py",symbol:""}],sources:[{path:"example.py",digest:sha(bytes),base64:bytes.toString("base64")}],profile:{reader:"exact-utf8-source-1",implementation:{name:"synthetic"}},observedAt:new Date().toISOString(),response:null,envelopeHash:null},f.storage);
  const key=sourceBundleKey(bundle.evidence),dir=path.join(f.root,f.storage.directory,"observations/source-bundles");fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,key+".json"),JSON.stringify(bundle));
@@ -636,7 +644,7 @@ test("standalone successful and failed source originals remain roots without col
  const dry=inspectSnapshotGarbageCollection({root:f.root});assert.equal(typeof dry.then,"undefined");
 });
 
-test("loose ref CAS preserves packed shadows, external locks and changed file identity",async t=>{
+collectionTest("loose ref CAS preserves packed shadows, external locks and changed file identity",async t=>{
  for(const mode of ["packed","lock","identity"])await t.test(mode,async t=>{
   const f=await objectFixture(t),row=f.refs[0],before=fs.readFileSync(row.refFile.file);
   if(mode==="packed")fs.writeFileSync(path.join(f.store.directory,"packed-refs"),"# pack-refs with: peeled fully-peeled sorted\n"+row.oid+" "+row.ref+"\n");
@@ -649,7 +657,7 @@ test("loose ref CAS preserves packed shadows, external locks and changed file id
 });
 
 
-test("rooted read reacquires the same chosen OID across a real pack replacement",async t=>{
+collectionTest("rooted read reacquires the same chosen OID across a real pack replacement",async t=>{
  const f=await objectFixture(t,true),invoke=f.store.invoke.bind(f.store);let replaced=false;
  t.mock.method(f.store,"invoke",async function(args,...rest){
    if(!replaced&&args[0]==="cat-file"&&args[1]==="--batch"&&rest[1]?.input===f.entry.snapshotStorage.treeObjectId+"\n"){
@@ -661,7 +669,7 @@ test("rooted read reacquires the same chosen OID across a real pack replacement"
  const read=await f.store.read(f.built.snapshot.worldModelId);assert(replaced);assert.equal(read.snapshotStorage.treeObjectId,f.entry.snapshotStorage.treeObjectId);assert.equal(read.snapshotStorage.rawSha256,f.entry.snapshotStorage.rawSha256);assert(f.result.deleted.some(row=>row.path.endsWith(".pack")));
 });
 
-test("Windows open pack handle produces honest partial retirement while rooted bytes stay readable",{skip:process.platform!=="win32"},async t=>{
+collectionTest("Windows open pack handle produces honest partial retirement while rooted bytes stay readable",{skip:process.platform!=="win32"},async t=>{
  const f=await objectFixture(t,true),oldPack=[...f.mixed.files.values()].find(row=>row.file.endsWith(".pack"));
  const executablePath=path.join(process.env.SystemRoot,"System32/WindowsPowerShell/v1.0/powershell.exe");
  const script="$f=[IO.File]::Open('"+oldPack.file.replaceAll("'","''")+"',[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite);try{[Console]::WriteLine('held');[Console]::ReadLine()|Out-Null}finally{$f.Dispose()}";
@@ -681,7 +689,7 @@ test("Windows open pack handle produces honest partial retirement while rooted b
 });
 
 
-test("missing native capability and oversized supervisor input defer only physical packing",async t=>{
+collectionTest("missing native capability and oversized supervisor input defer only physical packing",async t=>{
  for(const mode of ["missing","input"])await t.test(mode,async t=>{
   const f=await objectFixture(t),keep=new Set(f.refs[0].objectIds),events=[];f.mixed.onProcess=e=>events.push(e);
   if(mode==="missing"){
@@ -698,7 +706,7 @@ test("missing native capability and oversized supervisor input defer only physic
  });
 });
 
-test("failure between pack and index publication preserves old objects and reports the actual new bytes",async t=>{
+collectionTest("failure between pack and index publication preserves old objects and reports the actual new bytes",async t=>{
  const f=await objectFixture(t,true),rename=fs.renameSync,old=[...f.mixed.files.values()].filter(row=>row.path.includes("/objects/"));
  t.mock.method(fs,"renameSync",function(from,to){if(String(to).endsWith(".idx")&&String(to).includes("snapshot-objects.git"))throw Object.assign(new Error("Synthetic publication I/O failure"),{code:"EIO"});return rename.call(this,from,to);});
  await assert.rejects(f.mixed.reclaimObjects({attempt:f.attempt,result:f.result,keepObjects:new Set(f.refs[0].objectIds),pinnedPaths:new Set()}),{code:"EIO"});
@@ -708,7 +716,7 @@ test("failure between pack and index publication preserves old objects and repor
 });
 
 
-test("pack basis tolerates only known list-to-stat retirement and preserves chosen bytes",async t=>{
+collectionTest("pack basis tolerates only known list-to-stat retirement and preserves chosen bytes",async t=>{
  for(const mode of ["retired","permission","unknown"])await t.test(mode,async t=>{
   const f=await objectFixture(t,true),resolve=f.store.resolve.bind(f.store),lstat=fs.lstatSync,readdir=fs.readdirSync;
   const packDir=path.join(f.store.directory,"objects/pack"),oldIdx=[...f.mixed.files.values()].find(row=>row.file.endsWith(".idx"));let armed=false,injected=false;
@@ -722,14 +730,14 @@ test("pack basis tolerates only known list-to-stat retirement and preserves chos
  });
 });
 
-test("sync Git pointer rejects foreign private owner before changing the original pointer",async t=>{
+collectionTest("sync Git pointer rejects foreign private owner before changing the original pointer",async t=>{
  const f=await objectFixture(t),pointer=f.world.readPointer().document,before=fs.readFileSync(f.world.pointerLocation());
  fs.unlinkSync(f.world.snapshotLocation(f.built.snapshot.worldModelId));
  const ownerFile=path.join(f.store.directory,"lode-owner.json"),owner=JSON.parse(fs.readFileSync(ownerFile));owner.projectId="synthetic-foreign-project";fs.writeFileSync(ownerFile,JSON.stringify(owner));
  assert.throws(()=>f.world.writePointer(pointer),{code:"SNAPSHOT_GIT_OWNER_MISMATCH"});assert.deepEqual(fs.readFileSync(f.world.pointerLocation()),before);
 });
 
-test("next explicit collection inventories pack-only publication without replaying old effects",async t=>{
+collectionTest("next explicit collection inventories pack-only publication without replaying old effects",async t=>{
  const f=await objectFixture(t,true),rename=fs.renameSync,events=[];
  t.mock.method(fs,"renameSync",function(from,to){if(String(to).endsWith(".idx")&&String(to).includes("snapshot-objects.git"))throw Object.assign(new Error("Synthetic publication I/O failure"),{code:"EIO"});return rename.call(this,from,to);});
  await assert.rejects(f.mixed.reclaimObjects({attempt:f.attempt,result:f.result,keepObjects:new Set(f.refs[0].objectIds),pinnedPaths:new Set()}),{code:"EIO"});t.mock.restoreAll();
@@ -745,7 +753,7 @@ test("next explicit collection inventories pack-only publication without replayi
  assert.deepEqual(fs.readdirSync(path.join(f.root,f.storage.directory,".snapshot-gc/staging")),[]);
 });
 
-test("unindexed-only retained lineage makes the whole remaining closure incomplete",async t=>{
+collectionTest("unindexed-only retained lineage makes the whole remaining closure incomplete",async t=>{
  const f=await objectFixture(t,true),idx=[...f.mixed.files.values()].find(row=>row.file.endsWith(".idx"));fs.unlinkSync(idx.file);
  for(const row of f.mixed.files.values())if(/\/objects\/[a-f0-9]{2}\/[a-f0-9]{62}$/.test(row.path))fs.unlinkSync(row.file);
  finishSnapshotCollection(f.attempt);f.attempt.status="finished";const before=tree(f.root);
@@ -753,7 +761,7 @@ test("unindexed-only retained lineage makes the whole remaining closure incomple
  assert.deepEqual(tree(f.root),before);assert(!fs.existsSync(idx.file));
 });
 
-test("multiple unindexed representations use sequential bounded scratch and preserve corrupt residues",async t=>{
+collectionTest("multiple unindexed representations use sequential bounded scratch and preserve corrupt residues",async t=>{
  for(const mode of ["multiple","corrupt"])await t.test(mode,async t=>{
   const f=await objectFixture(t),hashes=[];
   for(let index=0;index<2;index++){const oid=(await f.store.invoke(["hash-object","-w","--stdin"],f.store.context(),{input:"synthetic residue "+index,maxBytes:128})).toString("ascii").trim();const hash=(await f.store.invoke(["-c","pack.writeReverseIndex=false","pack-objects","--threads=1",path.join(f.store.directory,"objects/pack/pack")],f.store.context(),{input:oid+"\n",maxBytes:128})).toString("ascii").trim();hashes.push(hash);fs.unlinkSync(path.join(f.store.directory,"objects/pack/pack-"+hash+".idx"));}
@@ -767,7 +775,7 @@ test("multiple unindexed representations use sequential bounded scratch and pres
 });
 
 
-test("unindexed inventory preserves foreign metadata and preflights space or cancellation",async t=>{
+collectionTest("unindexed inventory preserves foreign metadata and preflights space or cancellation",async t=>{
  for(const mode of ["foreign","schema","reserve","cancel"])await t.test(mode,async t=>{
   const f=await objectFixture(t,true),packDir=path.join(f.store.directory,"objects/pack");let pack=[...f.mixed.files.values()].find(row=>row.file.endsWith(".pack")).file;
   if(mode==="foreign"||mode==="schema"){
@@ -790,7 +798,7 @@ test("unindexed inventory preserves foreign metadata and preflights space or can
 });
 
 
-test("unindexed recovery stays within the existing producer path depth on Windows",{skip:process.platform!=="win32"},async t=>{
+collectionTest("unindexed recovery stays within the existing producer path depth on Windows",{skip:process.platform!=="win32"},async t=>{
  const base=fs.mkdtempSync(path.join(os.tmpdir(),"lode-gc-path-")),target=path.join(base,"p".repeat(Math.max(1,130-base.length-1)));
  const f=await objectFixture(t,true,target);t.after(()=>fs.rmSync(base,{recursive:true,force:true}));assert(f.root.length>=130);
  const rename=fs.renameSync;
@@ -800,7 +808,7 @@ test("unindexed recovery stays within the existing producer path depth on Window
  const result=await applySnapshotGarbageCollection({root:f.root});assert.equal(result.status,"gc_applied",JSON.stringify(result));assert(result.deletedObjectFiles>0);assert.equal((await f.store.read(f.built.snapshot.worldModelId)).snapshotStorage.rawSha256,f.entry.snapshotStorage.rawSha256);
 });
 
-test("scratch creation collision preserves the foreign slot in inventory and production",async t=>{
+collectionTest("scratch creation collision preserves the foreign slot in inventory and production",async t=>{
  for(const mode of ["inventory","producer"])await t.test(mode,async t=>{
   const f=await objectFixture(t,true),staging=path.join(f.attempt.ns.directory,"staging"),slot=path.join(staging,f.attempt.nonce);fs.mkdirSync(slot,{recursive:true});const file=path.join(slot,"foreign.txt");fs.writeFileSync(file,"foreign scratch must remain");const before=tree(slot);
   if(mode==="inventory"){const pack=[...f.mixed.files.values()].find(row=>row.file.endsWith(".pack"));fs.unlinkSync(pack.file.slice(0,-5)+".idx");f.mixed.collectionAttempt=f.attempt;await assert.rejects(f.mixed.inventoryUnindexedPack(pack),{code:"EEXIST"});}
@@ -810,7 +818,7 @@ test("scratch creation collision preserves the foreign slot in inventory and pro
 });
 
 
-test("both ref locks bind the exact verified attempt host and runtime process origin",async t=>{
+collectionTest("both ref locks bind the exact verified attempt host and runtime process origin",async t=>{
  const f=await objectFixture(t),claim=JSON.parse(fs.readFileSync(f.attempt.file)),write=fs.writeFileSync,payloads=[];
  assert.equal(claim.processBirthBasis,"node-runtime-time-origin");assert.equal(typeof claim.processBirth,"number");assert.equal(claim.pid,process.pid);
  t.mock.method(fs,"writeFileSync",function(file,data,...args){if(typeof file==="number"){const value=JSON.parse(String(data));if(value.nonce===f.attempt.nonce)payloads.push(value);}return write.call(this,file,data,...args);});
@@ -819,7 +827,7 @@ test("both ref locks bind the exact verified attempt host and runtime process or
  assert(!fs.existsSync(row.file));assert(!fs.existsSync(row.file+".lock"));assert(!fs.existsSync(path.join(f.store.directory,"packed-refs.lock")));
 });
 
-test("missing or foreign process origin never grants a ref effect or owner cleanup",async t=>{
+collectionTest("missing or foreign process origin never grants a ref effect or owner cleanup",async t=>{
  for(const mode of ["missing","different-birth","basis","host","pid","nonce"])await t.test(mode,async t=>{
   const f=await objectFixture(t),original=fs.readFileSync(f.attempt.file),claim=JSON.parse(original),ref=f.refs[0],before=fs.readFileSync(ref.refFile.file);
   if(mode==="missing")delete claim.processBirth;
@@ -840,19 +848,19 @@ async function v3Orphan(f) {
  const w=await world.writeSnapshot(built.snapshot.worldModelId,built.snapshot),g=await graph.writeSnapshot(built.snapshot.temporalProvenanceGraph.graphSnapshotId,built.snapshot.temporalProvenanceGraph);fs.writeFileSync(file,original);
  return {built,world,files:[w.location,g.location],dependencies:w.snapshotStorage.dependencies};
 }
-test("v3 typed GC reclaims real orphans and preserves exact index or leaf byte pins transitively",async t=>{
+collectionTest("v3 typed GC reclaims real orphans and preserves exact index or leaf byte pins transitively",async t=>{
  for(const pin of ["none","index","leaf"])await t.test(pin,async t=>{
   const f=await fixture(t),protectedWorld=fs.readFileSync(f.built.file),extra=await v3Orphan(f);const ref=pin==="index"?extra.dependencies.find(ref=>ref.domain==="world-code-chunks"):pin==="leaf"?extra.dependencies.find(ref=>ref.domain==="code-bucket-chunk"):null;
   let retained=[];if(ref){const file=path.join(f.root,ref.address),bytes=fs.readFileSync(file);recordSessionWorkEvidence({root:f.root,input:{summary:"Preserve exact synthetic chunk original",references:[{path:ref.address,digest:sha(bytes),kind:"source"}]}});retained=pin==="index"?extra.dependencies.filter(ref=>ref.domain==="world-code-chunks"||ref.domain==="code-bucket-chunk"&&JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(f.root,ref.address)))).payload.group === "world"): [ref];retained=retained.map(ref=>({file:path.join(f.root,ref.address),bytes:fs.readFileSync(path.join(f.root,ref.address))}));}
   const result=await applySnapshotGarbageCollection({root:f.root});assert.equal(result.status,"gc_applied",JSON.stringify(result));assert(extra.files.every(file=>!fs.existsSync(file)));assert(result.deletedDomainBundles>0);for(const row of retained)assert(fs.readFileSync(row.file).equals(row.bytes));assert(fs.readFileSync(f.built.file).equals(protectedWorld));assert.equal((await readWorldModel({root:f.root})).snapshot.worldModelId,f.built.snapshot.worldModelId);assert.deepEqual(fs.readdirSync(path.join(f.root,f.storage.directory,".snapshot-gc/participants")),[]);
  });
 });
-test("failed v3 root unlink preserves remaining roots and all dependent chunk bytes",async t=>{
+collectionTest("failed v3 root unlink preserves remaining roots and all dependent chunk bytes",async t=>{
  const f=await fixture(t),extra=await v3Orphan(f),rootBytes=fs.readFileSync(extra.files[0]),parts=extra.dependencies.map(ref=>({file:path.join(f.root,ref.address),bytes:fs.readFileSync(path.join(f.root,ref.address))}));const unlink=fs.unlinkSync;fs.unlinkSync=function(file,...args){if(path.resolve(file)===extra.files[0])throw Object.assign(new Error("synthetic unlink denied"),{code:"EACCES"});return unlink.call(this,file,...args);};let result;try{result=await applySnapshotGarbageCollection({root:f.root});}finally{fs.unlinkSync=unlink;}
  assert.equal(result.code,"EACCES");assert(["gc_partial","gc_preserved"].includes(result.status));assert(fs.readFileSync(extra.files[0]).equals(rootBytes));for(const row of parts)assert(fs.readFileSync(row.file).equals(row.bytes));assert.equal((await extra.world.readSnapshot(extra.built.snapshot.worldModelId)).document.worldModelId,extra.built.snapshot.worldModelId);
 });
 
-test("v3 Capsule checkpoint history and explicit cancellation preserve original recovery direction",async t=>{
+collectionTest("v3 Capsule checkpoint history and explicit cancellation preserve original recovery direction",async t=>{
  const f=await fixture(t);fs.writeFileSync(path.join(f.root,"example.py"),"def current_chunk(a,b):\n    return a-b\n");const world=new LocalJsonWorldModelStoreAdapter({projectRoot:f.root,storage:f.storage,snapshotLayout:"chunked-code-v3"}),graph=new LocalJsonGraphProjectionAdapter({projectRoot:f.root,storage:f.storage,snapshotLayout:"chunked-code-v3"});const current=await buildWorldModel({root:f.root,storeAdapter:world,graphProjectionAdapter:graph});
  const compiled=await compileContext({root:f.root,task:"inspect current_chunk",budget:32768,persist:true});const checkpoint=createRecoveryCheckpoint({root:f.root,purpose:"Synthetic v3 retained direction",currentPosition:"Retain exact historical source",nextExpectedResult:"Continue the original synthetic task"});const stateFile=path.join(f.root,f.storage.directory,"sessions/current.json"),stateBytes=fs.readFileSync(stateFile),checkpointBytes=fs.readFileSync(checkpoint.file);const extra=await v3Orphan(f);
  const controller=new AbortController();controller.abort();const cancelled=await applySnapshotGarbageCollection({root:f.root,signal:controller.signal});assert.equal(cancelled.code,"SNAPSHOT_GC_CANCELLED");assert(extra.files.every(file=>fs.existsSync(file)));assert(fs.readFileSync(stateFile).equals(stateBytes));
@@ -866,4 +874,20 @@ test("malformed coalesced orphan group or domain types preserve every candidate"
   const raw=Buffer.from(JSON.stringify(doc)+"\n"),bad=path.join(f.root,f.storage.directory,"snapshot-bundles",sha(raw)+".json.gz"),encoded=zlib.gzipSync(raw);fs.writeFileSync(bad,encoded,{flag:"wx"});const protectedTree=()=>tree(f.root).filter(([p])=>!p.replaceAll("\\","/").startsWith(f.storage.directory+"/.snapshot-gc/")&&!p.replaceAll("\\","/").startsWith(f.storage.directory+"/.operations/"));const before=protectedTree();
   const result=await applySnapshotGarbageCollection({root:f.root});assert.equal(result.status,"gc_preserved");assert.equal(result.deletedCount,0);assert.deepEqual(protectedTree(),before);assert(fs.readFileSync(bad).equals(encoded));assert(extra.files.every(file=>fs.existsSync(file)));assert.equal((await readWorldModel({root:f.root})).snapshot.worldModelId,f.built.snapshot.worldModelId);
  });
+});
+
+
+test("macOS public GC reports unsupported with zero effects while typed closure and originals remain readable", { skip: process.platform !== "darwin" }, async t => {
+  const f = await fixture(t); await orphan(f);
+  const before = tree(f.root);
+  const closure = await buildSnapshotDeletionClosure({ root: f.root });
+  assert.equal(closure.certified, true, JSON.stringify(closure.issues));
+  assert(closure.candidates.length >= 2, "read-only eligibility does not grant deletion support");
+  const outcome = await applySnapshotGarbageCollection({ root: f.root });
+  assert.equal(outcome.code, "UNSUPPORTED_GC_PLATFORM"); assert.equal(outcome.status, "gc_preserved");
+  assert.equal(outcome.deletedCount, 0); assert.equal(outcome.reclaimedBytes, 0); assert.equal(outcome.applyPerformed, false);
+  assert.equal(outcome.ordinaryWorkBlocked, false); assert.deepEqual(tree(f.root), before);
+  assert.equal((await readWorldModel({ root: f.root })).snapshot.worldModelId, f.built.snapshot.worldModelId);
+  const cli = await runCommand(["storage-gc", f.root, "--apply"]);
+  assert.equal(cli.code, "UNSUPPORTED_GC_PLATFORM"); assert.equal(cli.applyPerformed, false); assert.deepEqual(tree(f.root), before);
 });

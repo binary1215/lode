@@ -52,10 +52,9 @@ test("only explicit local Claude installation projection names the selected pack
     assert.deepEqual(absoluteLaunchValues(document), []);
   }
   for (const document of [claude, generatedClaude]) {
-    assert.deepEqual(document.mcpServers.lode.args, ["${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs"]);
-    assert.equal(document.mcpServers.lode.cwd, undefined);
-    assert.deepEqual(absoluteLaunchValues(document), []);
-    assert.equal(JSON.stringify(document).includes(fs.realpathSync(pluginRoot)), false);
+    assert.deepEqual(document.mcpServers.lode.args, [path.join(fs.realpathSync(pluginRoot), "scripts", "mcp-server.mjs")]);
+    assert.equal(document.mcpServers.lode.cwd, fs.realpathSync(pluginRoot));
+    assert.equal(JSON.stringify(document).includes("LODE_PLUGIN_ROOT"), false);
   }
   assert.equal(fs.existsSync(path.join(root, "AGENTS.md")), true);
   assert.equal(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8").includes(pluginRoot), false);

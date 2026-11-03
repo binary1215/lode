@@ -572,7 +572,7 @@ test("read-only request snapshots survive caller mutation during initialize", as
 });
 
 test("request snapshots reject accessors, proxies and non-JSON data without executing getters", async t => {
-  const f = fixture(t);
+  const f = fixture(t, "normal", { start: false });
   let getterCalls = 0;
   const getter = { get refreshToken() { getterCalls++; return false; } };
   const cyclic = {}; cyclic.self = cyclic;
@@ -582,6 +582,7 @@ test("request snapshots reject accessors, proxies and non-JSON data without exec
   }
   await assert.rejects(f.transport.request({ requestId: "getter", get method() { getterCalls++; return "account/read"; }, params: { refreshToken: false } }), { code: "CODEX_RPC_INVALID_REQUEST_DATA" });
   assert.equal(getterCalls, 0);
+  assert.equal(f.transport.inspect().started, false, "Malformed data needs no provider process or cleanup race.");
   assert.equal(f.journal.some(event => event.event === "request-sent"), false);
 });
 

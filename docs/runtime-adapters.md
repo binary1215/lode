@@ -100,18 +100,17 @@ one bounded status map (O(A), not an exact-ID API), never a new SDK/client/auth.
 Experimental code-mode and OpenCode ancestry/P3 entry remain outside this path.
 
 Marketplace client launch lines remain portable. Inside a loaded Claude plugin,
-`${CLAUDE_PLUGIN_ROOT}` is the Host-supplied plugin root. A project `.mcp.json`
-uses `node` and `${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs`. Claude Code expands
-that variable in `command` and `args`, so the file can be copied between
-machines and operating systems. Set `LODE_PLUGIN_ROOT` to the Lode install on
-each computer. The file does not store an absolute package path or Node binary.
+`${CLAUDE_PLUGIN_ROOT}` is supplied by the Host. A selected standalone Project
+instead uses the verified installed launcher (including current release/hash
+checks), or an exact local package entry when no owned launcher exists. It does
+not require users to provision a new `LODE_PLUGIN_ROOT` variable. The separately
+requested `project-file` export is a portable template: an external package
+placeholder is not proof of a configured or loaded local connection.
 
-An owned standalone installation can still verify its launcher, `current.json`,
-the selected release and its hashes before executing the MCP server. The
-installation marker records the selected bin directory. A moved or deleted
-install root does not repair itself: set `LODE_PLUGIN_ROOT` or resume after
-selecting the installation. User-owned configuration stays untouched. Neither
-pointer changes nor configuration convergence reload an already running MCP server.
+Moving/copying the Project does not select an installation on the next machine.
+Explicit resume with the selected installation converges only managed launch
+projections; user-owned files remain intact. Upgrade and rollback follow the
+verified installed launcher. No convergence reloads an already running MCP.
 
 Codex project init writes no MCP path; its plugin `.mcp.json` stays `node` plus
 `scripts/mcp-plugin-server.mjs` with `cwd` `.`, and hooks expand `${PLUGIN_ROOT}`.

@@ -162,9 +162,10 @@ Claude Code는 플러그인을 버전별 캐시에 복사하고 `${CLAUDE_PLUGIN
 `--write-root-instructions` 또는 MCP `write_root_instruction_files: true`를
 줬을 때만 만들거나 수정합니다. 그 플래그 없는 비대화형 init은 이 파일을 만들지 않습니다.
 검증된 플러그인 MCP 연결이 있으면 중복 프로젝트 `.mcp.json`을 만들지 않습니다.
-프로젝트 `.mcp.json`은 `node`와 `${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs`를
-기록합니다. Claude Code가 환경 변수로 풀어 내므로 파일에 기기 경로가 없습니다.
-각 컴퓨터에서 `LODE_PLUGIN_ROOT`를 Lode 설치 경로로 두세요. 기존 파일은 보존하고 직접 통합할 때 쓸 생성 파일은 선택된 정본 루트의
+선택한 standalone Claude 설치는 검증된 launcher 또는 정확한 로컬 패키지 진입점을
+사용하며 별도 환경 변수 설정을 요구하지 않습니다. 같은 root 파일 동의는 이후
+init/resume 및 distribution `install --project`에서도 적용됩니다. 동의하지 않은
+OpenCode generated 설정은 안내 자료이며 활성 연결을 뜻하지 않습니다. 기존 파일은 보존하고 직접 통합할 때 쓸 생성 파일은 선택된 정본 루트의
 `.lode/generated/` 또는 기존 `.head/generated/`에 둡니다.
 
 OpenCode 로컬 설정은 절대 Node 바이너리나 설치 경로 대신 `node`와

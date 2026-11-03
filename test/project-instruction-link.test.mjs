@@ -85,8 +85,11 @@ test("init does not create root instruction files unless the flag is set, includ
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const quiet = await runCommand(["init", root, "--runtime", "claude,codex,opencode"]);
   assert.equal(quiet.readiness.core.state, "ready");
+  assert.equal(quiet.opencodeConnection.mcp.status, "missing", "Generated guidance is not an active runtime connection.");
   for (const name of ["CLAUDE.md", "AGENTS.md", "opencode.json"]) assert.equal(fs.existsSync(path.join(root, name)), false, name);
   assert.match(formatProjectBootstrap(quiet), /were not created or modified/);
+  await runCommand(["resume", root, "--write-root-instructions"]);
+  for (const name of ["CLAUDE.md", "AGENTS.md", "opencode.json"]) assert.equal(fs.existsSync(path.join(root, name)), true, name);
   const opted = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-init-opt-")));
   t.after(() => fs.rmSync(opted, { recursive: true, force: true }));
   await runCommand(["init", opted, "--runtime", "claude,codex,opencode", "--write-root-instructions"]);

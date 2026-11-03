@@ -2,6 +2,7 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
@@ -251,6 +252,11 @@ function verifyPreparedReadShape(transportSummary, iterations) {
 }
 
 async function runFixture(iterations, queryText) {
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "lode-prepared-benchmark-"));
+  try { return await runSyntheticFixture(iterations, queryText, root); }
+  finally { fs.rmSync(root, { recursive: true, force: true }); }
+}
+async function runSyntheticFixture(iterations, queryText, projectRoot) {
   const graph = fixtureGraph();
   const query = queryFor(graph, queryText);
   const result = queryTemporalProvenanceGraph(graph, query);
@@ -279,7 +285,7 @@ async function runFixture(iterations, queryText) {
     serverTraversalRequired: true,
     preparedTraversalRequired: true,
   });
-  (await materializeGraphProjection({ projectRoot: ".", graph, adapter }));
+  (await materializeGraphProjection({ projectRoot, graph, adapter }));
   const alternateAnchor = graph.nodes.find((node) => !request.traversalQuery.anchorIds.includes(node.nodeId));
   if (!alternateAnchor) fail("Benchmark requires a second graph anchor for receipt replay rejection.", "BENCHMARK_REPLAY_ANCHOR_MISSING");
   const alternateResult = queryTemporalProvenanceGraph(graph, {
@@ -294,7 +300,7 @@ async function runFixture(iterations, queryText) {
   adapter.queryPrepared = () => replayedVerification;
   let receiptReplayRejected = false;
   try {
-    (await queryGraphProjection({ projectRoot: ".", graph, adapter, query }));
+    (await queryGraphProjection({ projectRoot, graph, adapter, query }));
   } catch (error) {
     if (error.code !== "PREPARED_TRAVERSAL_VERIFICATION_MISMATCH") throw error;
     receiptReplayRejected = true;
@@ -307,7 +313,7 @@ async function runFixture(iterations, queryText) {
   let receiptReuseCount = 0;
   for (let index = 0; index < iterations; index += 1) {
     const started = performance.now();
-    const execution = (await queryGraphProjection({ projectRoot: ".", graph, adapter, query }));
+    const execution = (await queryGraphProjection({ projectRoot, graph, adapter, query }));
     elapsedMs.push(Math.max(0, performance.now() - started));
     if (execution.result.resultId !== result.resultId || execution.result.resultHash !== result.resultHash) {
       fail("Fixture benchmark semantic identity drifted.", "BENCHMARK_SEMANTIC_IDENTITY_DRIFT");

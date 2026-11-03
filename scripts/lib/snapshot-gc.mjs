@@ -140,8 +140,8 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
     const compatibility = inspectStorageReaderCompatibility({ root: owner.projectRoot, storage: owner.storage,
       verifyWorldPointer: pointer => verifyWorldModelPointerOriginal(pointer, owner.project.projectId),
       verifyGraphPointer: pointer => verifyGraphProjectionPointer(pointer, null, owner.storage) });
-    const mismatch = compatibility.layers.find(layer => layer.reasonCode === "STORAGE_VERSION_MISMATCH");
-    if (mismatch) return { ...result, code: "STORAGE_VERSION_MISMATCH", message: mismatch.message, requiredVersion: mismatch.requiredVersion || null, installedVersion: mismatch.installedVersion || null };
+    const mismatch = compatibility.layers.find(layer => ["STORAGE_VERSION_MISMATCH", "INVALID_READER_REQUIREMENTS"].includes(layer.reasonCode));
+    if (mismatch) return { ...result, code: mismatch.reasonCode, message: mismatch.message, requiredVersion: mismatch.requiredVersion || null, installedVersion: mismatch.installedVersion || null };
   } catch (error) {
     if (error.code === "STORAGE_VERSION_MISMATCH") return { ...result, code: error.code, message: error.message };
   }
@@ -149,7 +149,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
   if (attempt.status !== "active") return { ...result, status: attempt.status === "yielded" ? "gc_yielded" : "gc_preserved", code: attempt.reasonCode };
   let closure;
   try {
-    result.filesystem = await qualifySnapshotFileSystem({ root: owner.projectRoot, signal, onProcess });
+    result.filesystem = await qualifySnapshotFileSystem({ root: owner.projectRoot, signal, onProcess, deadline });
     if (result.filesystem.status !== "qualified-local") {
       result.code = signal?.aborted ? "SNAPSHOT_GC_CANCELLED" : result.filesystem.reasonCode;
       return result;
@@ -172,6 +172,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
     result.applyAvailable = true;
     for (const candidate of closure.candidates) {
       if (signal?.aborted) { result.code = "SNAPSHOT_GC_CANCELLED"; break; }
+      if (Date.now() >= deadline) { result.code = "SNAPSHOT_GIT_TIMEOUT"; break; }
       try {
         if(candidate.backend==="git") {
           if(!closure.mixed.physicalEligible){result.deferred.push({path:candidate.path,code:"UNSUPPORTED_GC_PACKED_REFS"});continue;}
@@ -205,6 +206,8 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
       const removed=new Set([...result.deleted.map(item=>item.path),...result.retiredRefs.map(item=>item.path)]);
       await closure.mixed.reclaim({attempt,result,remainingSnapshots:closure.snapshots.filter(row=>!removed.has(row.path)),pinnedOids:closure.pinnedOids,pinnedPaths:closure.pinnedPaths});
     }
+    result.retention = { referencedSnapshots: closure.retained.size, eligibleOrphanSnapshots: closure.candidates.length,
+      policy: "all retained references and ancestry preserved; zero reclaimed bytes can be a complete successful result" };
     result.status = result.code ? result.applyPerformed ? "gc_partial" : "gc_preserved" : result.deferred.length ? result.applyPerformed ? "gc_partial" : "gc_preserved" : "gc_applied";
     return result;
   } catch (error) {

@@ -139,7 +139,7 @@ provider resume/stream과 Host별 pane/socket/TUI 변환은 Core 밖에 둡니�
 
 ## 파일 소유권
 
-`.lode/`는 플러그인이 관리하는 Canon입니다. 루트 `CLAUDE.md`, `.mcp.json`, `AGENTS.md`, `opencode.json`은 독립적으로 소유되는 프로젝션입니다. 없는 파일만 생성할 수 있고 기존 프로젝트 소유 파일은 보존하며 대안은 `.lode/generated/`에 둡니다. 검증된 Claude 플러그인 MCP 연결은 중복 프로젝트 설정을 만들지 않습니다. 패키지 클라이언트는 `node`, 프로젝트 상대 `scripts/mcp-server.mjs` 또는 placeholder(`${CLAUDE_PLUGIN_ROOT}`, `${PLUGIN_ROOT}`, `{env:LODE_PLUGIN_ROOT}`)를 사용합니다. 프로젝트 `.mcp.json`은 `${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs`를 기록하고 Claude Code가 환경 변수로 풀어 내므로 커밋된 파일에 기기 경로가 없습니다. 각 컴퓨터에서 `LODE_PLUGIN_ROOT`를 설정하세요. 절대 Node 바이너리는 넣지 않습니다. [런타임 실행 경로](runtime-adapters.md#시작-안내와-claude-파일-소유권)를 참고하세요.
+`.lode/`는 플러그인이 관리하는 Canon입니다. 루트 `CLAUDE.md`, `.mcp.json`, `AGENTS.md`, `opencode.json`은 독립적으로 소유되는 프로젝션입니다. 없는 파일만 생성할 수 있고 기존 프로젝트 소유 파일은 보존하며 대안은 `.lode/generated/`에 둡니다. 검증된 Claude 플러그인 MCP 연결은 중복 프로젝트 설정을 만들지 않습니다. 패키지 클라이언트는 `node`, 프로젝트 상대 `scripts/mcp-server.mjs` 또는 placeholder(`${CLAUDE_PLUGIN_ROOT}`, `${PLUGIN_ROOT}`, `{env:LODE_PLUGIN_ROOT}`)를 사용합니다. 선택한 standalone 프로젝트의 `.mcp.json`은 검증된 설치 launcher 또는 정확한 로컬 진입점을 사용합니다. 이식용 템플릿은 별도 출력이며 로컬 연결이 작동한다는 증거가 아닙니다. 절대 Node 바이너리는 넣지 않습니다. [런타임 실행 경로](runtime-adapters.md#시작-안내와-claude-파일-소유권)를 참고하세요.
 
 관리되는 매니페스트는 SHA-256 다이제스트를 기록합니다. 관리 대상의 드리프트가 감지되면 정식 변경이 중단됩니다.
 

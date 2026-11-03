@@ -25,7 +25,7 @@ import { sessionWorkPath, readSessionWorkEvidenceOriginalFile } from "./session-
 import { verifyRetainedRunOriginal } from "./run-lineage.mjs";
 
 const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
-const ids = value => [...new Set(JSON.stringify(value).match(/\b(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}\b/g) || [])];
+const ids = encoded => [...new Set(encoded.match(/\b(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}\b/g) || [])];
 const target = /^(world-model|graph-projection)\/snapshots\/((?:world-model|graph-snapshot)-[a-f0-9]{24})\.json(?:\.gz)?$/;
 const failure = code => { throw Object.assign(new Error(code), { code }); };
 // Encoded reference-summary bound, not total V8 RSS or a Context budget.
@@ -138,7 +138,7 @@ function referenceSummary(document) {
     if (typeof value.path === "string" && typeof (value.sha256 || value.digest) === "string") pins.push({ path: value.path, byteLength: value.byteLength ?? null, sha256: value.sha256 || value.digest });
     pending.push(...Object.values(value).filter(child => child && typeof child === "object"));
   }
-  return { references: ids(document), digestReferences: [...new Set(encoded.match(/[a-f0-9]{64}/g) || [])], requiredWorldHashes: [...requiredWorldHashes], pins };
+  return { references: ids(encoded), digestReferences: [...new Set(encoded.match(/[a-f0-9]{64}/g) || [])], requiredWorldHashes: [...requiredWorldHashes], pins };
 }
 
 export async function buildSnapshotDeletionClosure({ root, maxSummaryBytes = SNAPSHOT_GC_SUMMARY_BYTES, shouldContinue = () => true, signal, onProcess, deadline, collectionAttempt } = {}) {
@@ -183,7 +183,6 @@ export async function buildSnapshotDeletionClosure({ root, maxSummaryBytes = SNA
       else { issue(relative, "UNSUPPORTED_GC_REFERENCE_ROOT"); return; }
     }
     const entry = { file, path: storage.directory + "/" + relative, relative, bytes: read.bytes.length, sha256: hash(read.bytes), identity: before };
-    const summary = referenceSummary(document);
     let retainedRow = null;
     try {
       if (match) {
@@ -195,6 +194,7 @@ export async function buildSnapshotDeletionClosure({ root, maxSummaryBytes = SNA
         retainedRow = { ...entry, ...summary, dependencies:hydrated.snapshotStorage?.dependencies||[], id: match[2], identityIds: [match[2], original.sourceSnapshotId, graph?.sourceSnapshotId, graph?.graphSnapshotId].filter(Boolean),
           worldModelHash: original.worldModelHash || null, graphSnapshotHash: original.graphSnapshotHash || graph?.graphSnapshotHash || null };
       } else {
+        const summary = referenceSummary(document);
         if (typeof document !== "string") verifyRoot(relative, document, owner);
         retainedRow = { ...entry, ...summary };
       }

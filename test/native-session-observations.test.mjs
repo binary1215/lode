@@ -331,10 +331,11 @@ test("host-c: separate Hook processes use an actual owned process witness and sy
     fs.writeFileSync(input, JSON.stringify({ runtime: "claude", event: clearEvent(f, id, ending), environment }));
     const output = await localContinuityCommand([script, input], { cwd: pluginRoot }); assert.equal(output.code, 0, output.stderr); t.diagnostic(JSON.stringify({phase:ending?"end":"start",probeEvents:output.stderr.split(/\r?\n/).filter(Boolean).map(line=>{try{const e=JSON.parse(line);return {event:e.event,pid:e.pid,exitCode:e.exitCode,signal:e.signal,elapsedMs:e.elapsedMs,rows:e.rows};}catch{return {unparsed:true};}})})); outputs.push(JSON.parse(output.stdout));
   }
-  assert.deepEqual(outputs[0], {}); assert.equal(JSON.parse(outputs[1].hookSpecificOutput.additionalContext).logicalSessionId, chosen.sessionId);
-  assert.equal(createSessionHostAdapter({ runtime: "claude", nativeSessionId: "new-process-native", environment }).read({ root: f.root }).sessionId, chosen.sessionId);
+  assert.deepEqual(outputs[0], {}); assert.equal(JSON.parse(outputs[1].hookSpecificOutput.additionalContext).logicalSessionId, process.platform === "darwin" ? null : chosen.sessionId);
+  assert.equal(createSessionHostAdapter({ runtime: "claude", nativeSessionId: "new-process-native", environment }).read({ root: f.root }).sessionId, process.platform === "darwin" ? null : chosen.sessionId);
   assert.deepEqual(tree(f.root), before);
   t.diagnostic("Actual owned Node hosting instance + synthetic CLI registry + two new Hook driver processes. Not actual Claude/Host/model delivery.");
+  if (process.platform === "darwin") t.diagnostic("macOS process attestation is unsupported: actual Hook entry remains unbound, without fabricating selection.");
 });
 
 test("host-c: expiry never renews on replay; ambiguous clears and agent/root changes stay unlinked", async t => {
@@ -486,10 +487,11 @@ test("host-c: actual command stdin/stdout preserves clear selection with the exi
     outputs.push(JSON.parse(output.stdout));
   }
   assert.deepEqual(outputs[0], {});
-  assert.equal(JSON.parse(outputs[1].hookSpecificOutput.additionalContext).logicalSessionId, chosen.sessionId);
-  assert.equal(createSessionHostAdapter({ runtime: "claude", nativeSessionId: "new-command-native", environment }).read({ root: f.root }).sessionId, chosen.sessionId);
+  assert.equal(JSON.parse(outputs[1].hookSpecificOutput.additionalContext).logicalSessionId, process.platform === "darwin" ? null : chosen.sessionId);
+  assert.equal(createSessionHostAdapter({ runtime: "claude", nativeSessionId: "new-command-native", environment }).read({ root: f.root }).sessionId, process.platform === "darwin" ? null : chosen.sessionId);
   assert.deepEqual(tree(f.root), before);
   t.diagnostic("Actual packaged command entry + synthetic registry and owned Node host only; no actual Claude/model reception claim.");
+  if (process.platform === "darwin") t.diagnostic("macOS process attestation is unsupported: actual Hook entry remains unbound, without fabricating selection.");
 });
 
 test("host-c: occupied hint or existing Project CAS locks cannot inherit the ordinary ten-second wait", async t => {

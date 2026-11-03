@@ -10,7 +10,7 @@ export function classifySnapshotFileSystem({ platform, type, driveType }) {
   if (platform === "linux") return LINUX_LOCAL.has(Number(type)) ? "qualified-local" : "unsupported-or-unknown";
   return "unsupported-or-unknown";
 }
-async function windowsDriveType(root, { signal, onProcess } = {}) {
+async function windowsDriveType(root, { signal, onProcess, deadline = Date.now() + 3000 } = {}) {
   const drive = /^[a-z]:[\\/]/i.exec(root)?.[0];
   if (!drive) return null;
   const command = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
@@ -29,7 +29,7 @@ async function windowsDriveType(root, { signal, onProcess } = {}) {
     };
     try { child = spawn(command, args, { cwd: root, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }); }
     catch { resolve(null); return; }
-    timer = setTimeout(stop, 3000);
+    timer = setTimeout(stop, Math.max(1, Math.min(3000, deadline - Date.now())));
     signal?.addEventListener?.("abort", stop, { once: true });
     child.once("spawn", () => { event("started", { pid: child.pid }); if (signal?.aborted) stop(); });
     child.stdout.on("data", chunk => { output += chunk; if (Buffer.byteLength(output) > 2048) stop(); });
@@ -43,12 +43,12 @@ async function windowsDriveType(root, { signal, onProcess } = {}) {
     });
   });
 }
-export async function qualifySnapshotFileSystem({ root, signal, onProcess } = {}) {
+export async function qualifySnapshotFileSystem({ root, signal, onProcess, deadline } = {}) {
   try {
     root = fs.realpathSync(root);
     if (/^(?:\\\\|\/\/)/.test(root)) return { status: "unsupported-or-unknown", reasonCode: "UNSUPPORTED_SHARED_STORAGE" };
     const platform = process.platform;
-    const driveType = platform === "win32" ? await windowsDriveType(root, { signal, onProcess }) : undefined;
+    const driveType = platform === "win32" ? await windowsDriveType(root, { signal, onProcess, deadline }) : undefined;
     const type = platform === "linux" ? fs.statfsSync(root).type : undefined;
     const status = classifySnapshotFileSystem({ platform, driveType, type });
     return { status, platform, ...(driveType !== undefined ? { driveType } : {}), ...(type !== undefined ? { type } : {}),

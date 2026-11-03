@@ -145,7 +145,7 @@ function opencodeProjection(pluginRoot, storage, projectRoot) {
 function claudeMcpProjection(pluginRoot, projectRoot) {
   return {
     mcpServers: {
-      [ARTIFACT_COMPOSITION.serverName]: portableMcpDocument({ client: "claude", pluginRoot, projectRoot, projection: "project-file" }).document,
+      [ARTIFACT_COMPOSITION.serverName]: portableMcpDocument({ client: "claude", pluginRoot, projectRoot, projection: "installed-project" }).document,
     },
   };
 }
@@ -345,7 +345,7 @@ export function initializeProject({ root = ".", pluginRoot, runtimes, installati
   }
 }
 
-export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes = null, onValidatedSessionSelection = null, installationContext = null } = {}) {
+export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes = null, onValidatedSessionSelection = null, installationContext = null, writeRootInstructionFiles = false } = {}) {
   const canonicalPluginRoot = fs.realpathSync(path.resolve(pluginRoot));
   const packageVersion = packageVersionAt(canonicalPluginRoot);
   const inspected = inspectProject(root);
@@ -374,9 +374,21 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
       // A moved/imported Project does not make absent root settings ours.
       // Keep its historical integration fields unchanged; current ownership is
       // the target manifest, and existing direct installation keeps its flow.
-      if (inspected.project.location || manifest.integrationPolicy === "preserve-unowned-root-files") continue;
+      if (!writeRootInstructionFiles && (inspected.project.location || manifest.integrationPolicy === "preserve-unowned-root-files")) continue;
       if (relative === ".mcp.json" && pluginMcpServesProject(installationContext, projectRoot, inspected.project.projectId)) continue;
-      if (relative === "CLAUDE.md" && !claudePartManaged(inspected.project.integrations.claude, "instruction")) continue;
+      if (relative === "CLAUDE.md" && !writeRootInstructionFiles && !claudePartManaged(inspected.project.integrations.claude, "instruction")) continue;
+      assertNoSymlinkAncestors(projectRoot, file);
+      additions.set(relative, content);
+    }
+  }
+  if (writeRootInstructionFiles) {
+    for (const [runtime, relative, content] of [["codex", "AGENTS.md", lodeInstructions()],
+      ["opencode", "opencode.json", json(opencodeProjection(canonicalPluginRoot, storage, projectRoot))]]) {
+      if (!inspected.project.runtimes.includes(runtime)) continue;
+      const file = path.join(projectRoot, relative);
+      if (fs.lstatSync(file, { throwIfNoEntry: false })) continue;
+      if (runtime === "opencode" && fs.lstatSync(path.join(projectRoot, "opencode.jsonc"), { throwIfNoEntry: false })) continue;
+      if (manifest.managed.some(item => item.path === relative)) fail("Managed installation projection is missing.", "MANAGED_INSTALLATION_PROJECTION_MISSING");
       assertNoSymlinkAncestors(projectRoot, file);
       additions.set(relative, content);
     }
@@ -428,11 +440,17 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
   }
   if (additions.size) {
     const project = structuredClone(inspected.project), integration = project.integrations.claude;
-    for (const [part, relative] of [["instruction", "CLAUDE.md"], ["mcp", ".mcp.json"]]) {
-      integration[part] = { status: additions.has(relative) || claudePartManaged(integration, part) ? "managed" : "manual", path: relative };
+    if (additions.has("AGENTS.md")) project.integrations.codex = { status: "managed", path: "AGENTS.md" };
+    if (additions.has("opencode.json")) project.integrations.opencode = { status: "managed", path: "opencode.json" };
+    if (integration) for (const [part, relative] of [["instruction", "CLAUDE.md"], ["mcp", ".mcp.json"]]) {
+      if (additions.has(relative)) integration[part] = { status: "managed", path: relative };
+      else if (!integration[part]) integration[part] = {
+        status: claudePartManaged(inspected.project.integrations.claude, part) ? "managed" : "manual", path: relative };
+      // Preserve explicit withheld/manual/provider-owned state and its reasons
+      // when a different part is added. Absence never implies manual setup.
     }
-    integration.paths = [integration.instruction.status === "managed" && "CLAUDE.md", integration.mcp.status === "managed" && ".mcp.json"].filter(Boolean);
-    integration.status = integration.paths.length === 2 ? "managed" : "manual";
+    if (integration) integration.paths = [integration.instruction.status === "managed" && "CLAUDE.md", integration.mcp.status === "managed" && ".mcp.json"].filter(Boolean);
+    if (integration) integration.status = integration.paths.length === 2 ? "managed" : "manual";
     addReplacement(relativeProjectArtifact(storage, "project.json"), json(project));
   }
   assertProjectStorageUnchanged(storage);

@@ -9,7 +9,12 @@ import { atomicCreateArtifact } from "./artifact-storage.mjs";
 export const SNAPSHOT_STORAGE_LIMITS = Object.freeze({ compressedBytes: 256 * 1024 * 1024, decodedBytes: 512 * 1024 * 1024 });
 const fail = (message, code = "INVALID_SNAPSHOT_ENCODING") => { throw Object.assign(new Error(message), { code }); };
 export function safeSnapshotPath(root, file) {
-  const canonical = fs.realpathSync(root), target = path.resolve(file), relative = path.relative(canonical, target);
+  const canonical = fs.realpathSync(root), lexicalRoot = path.resolve(root), named = path.resolve(file);
+  const lexicalRelative = path.relative(lexicalRoot, named);
+  // A Project root may use the OS's own alias (/var -> /private/var). Only
+  // translate that root prefix; never realpath an untrusted descendant link.
+  const underNamedRoot = lexicalRelative && lexicalRelative !== ".." && !lexicalRelative.startsWith(".." + path.sep) && !path.isAbsolute(lexicalRelative);
+  const target = underNamedRoot ? path.resolve(canonical, lexicalRelative) : named, relative = path.relative(canonical, target);
   if (!relative || relative.startsWith('..'+path.sep) || relative === '..' || path.isAbsolute(relative)) fail("Snapshot path escapes Project.", "UNSAFE_SNAPSHOT_PATH");
   let current = canonical;
   for (const part of relative.split(path.sep)) {
