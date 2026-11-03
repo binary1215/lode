@@ -363,6 +363,10 @@ async function diffGraphLineageWithReader({ root = ".", fromWorldModelId, toWorl
   const addedNodes = [...afterNodes.keys()].filter((id) => !beforeNodes.has(id)).sort();
   const removedNodes = [...beforeNodes.keys()].filter((id) => !afterNodes.has(id)).sort();
   const changedNodes = [...afterNodes.keys()].filter((id) => beforeNodes.has(id) && canonicalJson(afterNodes.get(id)) !== canonicalJson(beforeNodes.get(id))).sort();
+  const contentChangedNodes = changedNodes.filter((id) => {
+    const strip = node => { const { sourceSnapshotId, ...record } = node; return canonicalJson(record); };
+    return strip(beforeNodes.get(id)) !== strip(afterNodes.get(id));
+  });
   const addedEdges = [...afterEdges.keys()].filter((id) => !beforeEdges.has(id)).sort();
   const removedEdges = [...beforeEdges.keys()].filter((id) => !afterEdges.has(id)).sort();
   const beforeFiles = selectedPaths ? fromSnapshot.files.filter(f => pathSet.has(f.path)) : fromSnapshot.files;
@@ -378,7 +382,7 @@ async function diffGraphLineageWithReader({ root = ".", fromWorldModelId, toWorl
     return { count: values.length, items, omittedCount: values.length - items.length };
   }
   const changes = { addedNodes: pageValues("addedNodes", addedNodes), removedNodes: pageValues("removedNodes", removedNodes),
-    changedNodes: pageValues("changedNodes", changedNodes), addedEdges: pageValues("addedEdges", addedEdges), removedEdges: pageValues("removedEdges", removedEdges),
+    changedNodes: pageValues("changedNodes", contentChangedNodes), addedEdges: pageValues("addedEdges", addedEdges), removedEdges: pageValues("removedEdges", removedEdges),
     possibleMoves: { count: moves.count, items: moves.items, omittedCount: moves.omittedCount } };
   if (scoped) { ends.possibleMoves = moves.endAfter; remaining.possibleMoves = moves.remainingCount; }
   const nextCursor = scoped && Object.values(remaining).some(n => n > 0) ? Buffer.from(canonicalJson({basis:pageBasis,ends})).toString("base64url") : null;

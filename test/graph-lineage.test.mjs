@@ -158,7 +158,7 @@ test("default whole snapshots distinguish decision changes from unchanged code m
   assert.equal(second.snapshot.temporalProvenanceGraph.protocol.version, "0.16.0");
   const diff = await diffGraphLineage({ root, fromWorldModelId: first.snapshot.worldModelId, toWorldModelId: second.snapshot.worldModelId });
   const codeIds = new Set(first.snapshot.temporalProvenanceGraph.nodes.filter(n => n.path === "src/stable.mjs").map(n => n.nodeId));
-  assert(diff.changes.changedNodes.items.some(id => codeIds.has(id)), "Raw changedNodes keeps membership changes");
+  assert(!diff.changes.changedNodes.items.some(id => codeIds.has(id)), "Primary changedNodes omit snapshot-membership-only churn");
   assert(diff.changeExplanation.changedNodes.observationOnly.items.some(id => codeIds.has(id)));
   assert(!diff.changeExplanation.changedNodes.content.items.some(id => codeIds.has(id)));
   const codeEdges = graph => graph.edges.filter(e => codeIds.has(e.from) && codeIds.has(e.to)).map(e => e.edgeId).sort();
