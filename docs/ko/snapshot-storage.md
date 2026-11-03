@@ -85,7 +85,7 @@ GC만 OS 파일시스템을 확인합니다. Windows는 숨김·기한 제한 Dr
 
 초기화와 명시적 재개는 선택된 `.lode/.gitignore` 또는 기존 `.head/.gitignore`가 없으면 새로 생성합니다. 이전 생성 파일은 전체 내용이 알려진 원문과 LF 또는 CRLF까지 정확히 일치할 때만 갱신합니다. 추가 주석·규칙 순서 변경·사용자 편집이 있으면 보존하며, marker만으로 소유권을 판단하지 않습니다. 링크되었거나 변경 중인 파일은 보존하고 게시 직전 관측한 정책 바이트를 다시 확인합니다. 비협조 외부 편집기에 대한 파일시스템 compare-and-swap을 보장하지는 않습니다.
 
-각 규칙을 루트 예외와 따로 비교합니다. `!docs/`·`!.gitkeep`와 무관한 정확한 index 파일 규칙은 생성하므로 전체 파일 생성을 생략하지 않습니다. 다만 이 basename이 알 수 없는 하위 항목에 닿을 수 있는 디렉터리 규칙은 따로 건너뜁니다. 루트가 고정되어 무관함이 입증된 `!/docs/`는 관련 없는 모든 규칙을 허용합니다. `!.lode/**`처럼 관련된 예외와 모호한 패턴은 영향받는 규칙보다 우선합니다. 결과에는 포함·제외된 규칙을 표시합니다. 선택적 ignore 실패는 준비도나 일반 작업을 막지 않습니다.
+정확한 파일 규칙은 루트 예외와 따로 비교합니다. `/snapshot-bundles/`와 `/world-model/snapshots/` 같은 디렉터리 규칙은 루트 `.gitignore`에 `!.gitkeep`, `!docs/`, `!snapshots`, `!.lode/**` 같은 예외가 있어도 그대로 기록합니다. Git은 `.lode/.gitignore`가 제외한 디렉터리의 자식을 다시 포함하지 않으므로, 그 규칙을 빼는 것이 스냅샷을 노출합니다. 정확한 파일 예외는 그 파일 규칙만 건너뛸 수 있습니다. 결과에는 포함·제외된 규칙을 표시합니다. 선택적 ignore 실패는 준비도나 일반 작업을 막지 않습니다. 사용자의 루트 `.gitignore`는 수정하지 않습니다.
 
 | 저장 루트 내부 상대 패턴 | 재생성·폐기 가능한 이유 |
 | --- | --- |
@@ -130,7 +130,7 @@ reader는 구성·묶음의 Project/type/schema/producer, 관리 영역 내 정�
 
 이 typedClosure는 조회 순서의 관측이며 삭제 안전성 인증이 아닙니다. 명시 apply는 위의 별도 typed 삭제 의존성 검증과 일시 writer 수명을 사용합니다. 이 관측 결과만으로 삭제하지 않으며 Git ref와 원본 묶음은 보존합니다.
 
-private Git 저장은 자기 소유 store/staging 내부에서만 ignore를 새로 만들고, 상위 사용자 예외가 그 영역과 확실히 무관할 때 생성을 허용합니다. 영향을 줄 수 있거나 모호한 예외는 사용자 정책을 보존합니다. 기존 ignore와 tracked 상태를 보존하며 stage/untrack을 수행하지 않습니다. 내부 객체는 복구 가치가 있는 보존 자료이며 disposable cache가 아닙니다.
+private Git 저장은 자기 소유 store/staging 내부에 ignore를 새로 만듭니다. `!.gitkeep` 같은 상위 예외가 있어도 그 파일을 생략하지 않습니다. 중첩된 `*` 제외가 객체를 사용자 index 밖에 두기 때문입니다. 기존 ignore와 tracked 상태를 보존하며 stage/untrack을 수행하지 않습니다. 내부 객체는 복구 가치가 있는 보존 자료이며 disposable cache가 아닙니다.
 
 정확한 source bundle pin은 기존 bundleKey·Project·schema·observation 검증기가 실제로 파싱한 같은 buffer의 raw digest를 사용합니다. 관측한 물리 바이트가 이 digest와 다르면 파일은 보존하되 미검증·부분 상태로 표시합니다. 경로를 전후로 다시 읽는 것만으로는 이 결합이나 ABA 치환 방지를 증명하지 못합니다. 이후 reader/writer 수명까지 인증하는 것은 아닙니다.
 

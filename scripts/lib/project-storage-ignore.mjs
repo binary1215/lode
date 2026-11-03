@@ -35,10 +35,13 @@ const BEGIN = "# BEGIN Lode generated disposable storage rules", END = "# END Lo
 function exceptionMayReach(pattern, targets, exactFile = false) {
   const body = pattern.replace(/ +$/, "").replace(/\/$/, ""), marker = body.search(/[*?\[\]\\]/);
   const literal = marker < 0 ? body : body.slice(0, marker);
+  // Directory rules are published in the descendant .lode/.gitignore. Git will
+  // not re-include a file whose parent directory is excluded there, so a root
+  // exception such as !.gitkeep, !docs/, or !snapshots cannot expose snapshot
+  // storage. Omitting the directory rule is what leaves it untracked.
+  if (!exactFile) return false;
   if (!body.startsWith("/") && !literal.includes("/")) {
-    // An exact basename cannot match a differently named exact file or any
-    // of its known parents. Directory rules also affect unknown descendants.
-    if (exactFile && marker < 0) {
+    if (marker < 0) {
       return targets.some(target => target.toLowerCase().split("/").includes(body.toLowerCase()));
     }
     return true;

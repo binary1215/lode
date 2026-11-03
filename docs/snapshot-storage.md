@@ -87,7 +87,7 @@ Structured apply output separates deleted, failed and preserved paths and report
 
 Initialization and explicit resume create the selected `.lode/.gitignore` or retained `.head/.gitignore` when absent. They upgrade an older generated file only when its entire contents match the known generated body, using LF or CRLF. Additional comments, reordered rules and user edits stay untouched. This is not marker-based ownership. Linked or changing files are preserved; before publication the helper rechecks the observed policy bytes. It does not provide a filesystem compare-and-swap against uncooperating external editors.
 
-Each rule is checked separately against root exceptions. Unrelated literal `!docs/` and `!.gitkeep` permit the exact index-file rule instead of suppressing the entire file. Their basename can still reach unknown descendants, so affected directory rules stay skipped. A rooted disjoint `!/docs/` permits all unrelated rules. Related exceptions such as `!.lode/**` and ambiguous patterns retain precedence for affected rules. Results name included and skipped rules. Optional ignore failure never blocks readiness or ordinary work.
+Each exact file rule is checked separately against root exceptions. Directory rules such as `/snapshot-bundles/` and `/world-model/snapshots/` are still written when the root `.gitignore` has an unanchored exception such as `!.gitkeep`, `!docs/`, or `!snapshots`, including `!.lode/**`. Git does not re-include a child of a directory excluded by `.lode/.gitignore`, so omitting those rules is what exposes the snapshots. An exact-file exception can still skip only that file rule. Results name included and skipped rules. Optional ignore failure never blocks readiness or ordinary work. The user's root `.gitignore` is not modified.
 
 | Relative pattern inside storage | Why disposable |
 | --- | --- |
@@ -132,7 +132,7 @@ Structured `storage-gc` inspection now includes `typedClosure` over actual verif
 
 This projection is an observed read sequence, not a deletion certificate. Explicit apply uses the separate typed deletion closure and transient publisher lifetimes described above. This observation alone never authorizes deletion; Git refs and original bundles remain retained. Do not use a successful inspection to claim cleanup is safe.
 
-The private Git store creates an ignore file only inside its own newly owned store/staging area and only when parent user exceptions are provably unrelated to that area. Potentially overlapping or ambiguous exceptions preserve the user policy. It preserves existing ignore files and tracking; it neither stages nor untracks anything. These retained objects have recovery value and are not disposable cache.
+The private Git store creates an ignore file inside its own newly owned store/staging area. A parent exception such as `!.gitkeep` does not suppress that file, because the nested `*` exclusion is what keeps the objects out of the user's index. It preserves existing ignore files and tracking; it neither stages nor untracks anything. These retained objects have recovery value and are not disposable cache.
 
 An exact source-bundle pin uses the raw digest of the same buffer parsed by the existing bundleKey/Project/schema/observation verifier. Observed physical bytes must match that digest; a mismatch remains retained, unverified and partial. Repeated before/after path reads alone do not prove this binding or prevent ABA substitution. This still does not certify a future reader/writer lifetime.
 

@@ -165,7 +165,7 @@ test("optional ignore problems preserve ordinary readiness and gzip readers pres
 test("generated ignore never overrides explicit user negations in storage or Project rules",t=>{
  for(const where of ["storage","project"]){const f=fixture(t),file=path.join(f.root,f.storage.directory,".gitignore");fs.unlinkSync(file);
  const target=where==="storage"?file:path.join(f.root,".gitignore"),bytes=Buffer.from("!/**/graph-discovery/index.json\n");fs.writeFileSync(target,bytes);
- const result=ensureProjectStorageIgnore({root:f.root,storage:f.storage});assert.equal(result.reasonCode,where==="storage"?"EXISTING_STORAGE_IGNORE":"USER_IGNORE_RULES_TAKE_PRECEDENCE");assert(fs.readFileSync(target).equals(bytes));if(where==="project")assert(!fs.existsSync(file));assert.equal(inspectProject(f.root).status,"ready");}
+ const result=ensureProjectStorageIgnore({root:f.root,storage:f.storage});assert(fs.readFileSync(target).equals(bytes));if(where==="storage"){assert.equal(result.reasonCode,"EXISTING_STORAGE_IGNORE");assert(!fs.readFileSync(file,"utf8").includes("snapshot-bundles"));}else{assert.equal(result.status,"created");assert(fs.readFileSync(file,"utf8").includes("/snapshot-bundles/"));assert(!result.rules.included.includes("/graph-discovery/index.json"));}assert.equal(inspectProject(f.root).status,"ready");}
 });
 
 test("scoped ignore exceptions match Git's oracle and preserve tracking, private stores and policy races",async t=>{
@@ -182,7 +182,7 @@ test("scoped ignore exceptions match Git's oracle and preserve tracking, private
  fs.mkdirSync(path.join(f.root,"docs"));fs.writeFileSync(path.join(f.root,docs),"user document");
  const cases=[
   ["*.tmp\n!/docs/keep.tmp\n",true], ["!docs/keep.tmp\n",true], ["\\!literal\n",true], ["  !literal\n",true],
-  ["\ufeff!docs/keep.tmp\r\n",true], ["!/.lode/graph-discovery/index.json\n",true,false], ["!**/graph-discovery/index.json\n",false],
+  ["\ufeff!docs/keep.tmp\r\n",true], ["!/.lode/graph-discovery/index.json\n",true,false], ["!**/graph-discovery/index.json\n",true,false],
   ["!/.lode/graph-discovery   \n",true,false], ["!/docs/keep.tmp   \n",true],
   ["!keep-this.txt\n",true], ["!docs/\n",true], ["/.lode/\n!/docs/keep.tmp\n",true],
  ];
@@ -192,16 +192,18 @@ test("scoped ignore exceptions match Git's oracle and preserve tracking, private
   const transientResult=await git(["check-ignore","--no-index","-v",transient]);if(created&&indexIncluded)assert.match(transientResult.stdout,/graph-discovery\/index.json|\.lode\//);else assert.deepEqual(transientResult,beforeIndex,text);
   if(!fs.existsSync(file))fs.writeFileSync(file,"# synthetic reset only\n");
  }
- for(const policy of ["!.gitkeep\n","!keep-this.txt\n"]){
+ for(const policy of ["!.gitkeep\n","!keep-this.txt\n","!docs/\n","!snapshots\n","!*.json\n"]){
   fs.unlinkSync(file);fs.writeFileSync(rootIgnore,policy);
   const keep=f.storage.directory+"/.operations/.gitkeep";fs.mkdirSync(path.dirname(path.join(f.root,keep)),{recursive:true});fs.writeFileSync(path.join(f.root,keep),"user keep\n");
-  const before=await git(["check-ignore","--no-index","-v",keep]);
+  const bundle=f.storage.directory+"/snapshot-bundles/blob.json";fs.mkdirSync(path.dirname(path.join(f.root,bundle)),{recursive:true});fs.writeFileSync(path.join(f.root,bundle),"snapshot bytes\n");
   const partial=ensureProjectStorageIgnore({root:f.root,storage:f.storage});
-  assert.equal(partial.status,"created");assert.deepEqual(partial.rules.included,["/graph-discovery/index.json"]);
-  assert.equal(partial.rules.skipped.length,GENERATED_STORAGE_IGNORE_RULES.length+RETAINED_STORAGE_IGNORE_RULES.length-1);
-  assert.deepEqual(await git(["check-ignore","--no-index","-v",keep]),before);
+  assert.equal(partial.status,"created",policy);
+  for(const rule of RETAINED_STORAGE_IGNORE_RULES)assert(partial.rules.included.includes(rule),policy+rule);
+  assert.match((await git(["check-ignore","--no-index","-v",bundle])).stdout,/snapshot-bundles\//,policy);
+  const hangul=f.storage.directory+"/snapshot-bundles/한글 café (team)'s.json";fs.writeFileSync(path.join(f.root,hangul),"한글\n");
+  assert.match((await git(["check-ignore","--no-index","-v",hangul])).stdout,/snapshot-bundles\//,policy);
   assert.equal(fs.readFileSync(rootIgnore,"utf8"),policy);
-  assert.equal((await git(["check-ignore","--no-index",transient])).code,0);
+  assert.equal((await git(["check-ignore","--no-index","-v",docs])).code,1,policy);
  }
  fs.unlinkSync(file);fs.writeFileSync(rootIgnore,"!/docs/keep.tmp\n");assert.equal(ensureProjectStorageIgnore({root:f.root,storage:f.storage}).status,"created");
  const tracked=path.join(f.root,transient);fs.mkdirSync(path.dirname(tracked),{recursive:true});fs.writeFileSync(tracked,"retained tracked bytes\n");
