@@ -2,6 +2,7 @@ import { resolveOperation } from "./lode-operation-contract.mjs";
 import { organizeSelectedWorkBodies, workBodyTuples } from "./session-work-body-organization.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { formatTerminalGraph, inertTerminalText, terminalBlock } from "./terminal-graph.mjs";
+import { formatCodexHookTrust } from "./codex-hook-trust.mjs";
 
 const PRODUCT_LABELS = {
   unavailable: "unavailable until Core initialization",
@@ -184,6 +185,8 @@ export function formatProjectStatus(value, { doctor = false } = {}) {
     lines.push("", "Attention:");
     for (const item of value.attention.items) lines.push(`  - ${item.ownerLabel ?? (item.owner === "HEAD" ? "Lode" : item.owner)}: ${compactText(item.summary, 240)}`);
   }
+  const hookTrust = formatCodexHookTrust(value.codexHookTrust);
+  if (hookTrust && (doctor || value.codexHookTrust.status !== "recorded")) lines.push("", hookTrust);
   lines.push("", "This is read-only guidance; it grants no authority and changes no project state.");
   return `${lines.join("\n")}\n`;
 }
@@ -221,6 +224,7 @@ export function formatProjectBootstrap(value) {
     `User decision: ${needsProductReview ? "required before Product candidates can be approved; ordinary work remains available" : "none"}`,
     ...(instructionNotice ? [instructionNotice] : []),
     ...integrationNotices(value),
+    ...(formatCodexHookTrust(value.codexHookTrust) ? [formatCodexHookTrust(value.codexHookTrust)] : []),
     ...(integrityAttention ? [ready
       ? "Recovery notice: inspect the checkpoint before relying on recovery; ordinary work remains available when independent of it."
       : "Integrity notice: inspect the reported Core boundary before a mutating Lode operation."] : []),

@@ -62,6 +62,15 @@ bundled `lode-agent-core` Skill, which calls the typed `lode` MCP
 operations. Installation alone does not create `.lode/` or `.head/`, infer or approve
 Features, contact GraphDB, or alter project files.
 
+Codex does not run the plugin hooks until you trust that exact definition.
+Open `/hooks` in the CLI, or Review hooks / Settings > Hooks in the desktop app,
+and trust the Lode hooks. Also trust the project, or Codex skips project-local
+`.codex` layers. Installing the plugin does not do either step. If the hooks
+stay untrusted, SessionStart and prompt delivery stay silent. `lode doctor`
+and `lode status` report whether a trust record is present and repeat these steps.
+`codex exec` skips untrusted hooks unless that invocation passes
+`--dangerously-bypass-hook-trust`.
+
 The marketplace snapshot already carries Windows x64, Linux x64/arm64, and
 macOS x64/arm64 native packages. Runtime selection uses only the current host's
 integrity-verified directory and needs no install-time download. Native

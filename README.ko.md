@@ -129,6 +129,10 @@ codex plugin add lode-agent-core@lode-agent-plugin
 
 설치 후 Codex를 재시작하고, 설치된 Skill과 MCP 서버를 불러오도록 새 작업을
 시작한 뒤 [첫 요청 예시](#first-request)에 원하는 작업을 넣어 요청하세요.
+Codex는 Lode hook을 신뢰하기 전에는 실행하지 않습니다. CLI에서는 `/hooks`를,
+데스크톱 앱에서는 Review hooks 또는 Settings > Hooks를 여세요. 프로젝트도
+신뢰해야 프로젝트 로컬 `.codex` 층이 로드됩니다. `lode doctor <project>`가
+그 신뢰 기록 여부를 알려 줍니다.
 
 플러그인을 설치해도 프로젝트 초기화, GraphDB 접속, 모델 선택이나 Product
 Canon 승인이 자동으로 이뤄지지는 않습니다. 해당 작업은 Core의 정해진 경계를

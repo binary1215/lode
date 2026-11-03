@@ -140,6 +140,7 @@ Thumbs.db
 !test/snapshot-storage.test.mjs
 !test/helpers/snapshot-storage-fixture.mjs
 !test/conversation-messaging.test.mjs
+!test/codex-hook-trust.test.mjs
 
 # Local project records stay outside source and distribution.
 .lode/

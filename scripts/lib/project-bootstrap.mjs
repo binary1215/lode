@@ -1,4 +1,5 @@
 import { inspectStorageReaderCompatibility } from "./snapshot-storage-compatibility.mjs";
+import { inspectCodexHookTrust } from "./codex-hook-trust.mjs";
 import { verifyWorldModelPointerOriginal } from "./world-model.mjs";
 import { verifyGraphProjectionPointer } from "./graph-projection-adapter.mjs";
 import fs from "node:fs";
@@ -551,6 +552,7 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
       nextAction: { id: action, summary: "Initialize the constitutional Core and one canonical Project/Session before using optional capabilities.", entrypoint: entrypoint(action) },
       capabilities: capabilityGuide({ coreState: "not_initialized", productState: "unavailable", contextState: context }),
       runtime: runtimeProjection(projectInspection),
+      codexHookTrust: inspectCodexHookTrust({ projectRoot: projectInspection.projectRoot, pluginRoot: activePluginRoot }),
       authority: { advisoryOnly: true, persisted: false, mutatesProject: false, activatesCapabilities: false, grantsAuthorization: false },
     }, projectInspection.storage);
   }
@@ -606,6 +608,7 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
     },
     capabilities: capabilityGuide({ coreState, productState: product.state, contextState: context, runtimes: projectInspection.project.runtimes }),
     runtime: runtimeProjection(projectInspection),
+    codexHookTrust: inspectCodexHookTrust({ projectRoot: projectInspection.project.projectRoot, pluginRoot: activePluginRoot }),
     authority: { advisoryOnly: true, persisted: false, mutatesProject: false, activatesCapabilities: false, grantsAuthorization: false },
   }, projectInspection.storage);
 }

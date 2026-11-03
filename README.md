@@ -129,7 +129,10 @@ codex plugin add lode-agent-core@lode-agent-plugin
 
 Restart Codex after installation, start a new task so the installed Skill and
 MCP server are loaded, then use [the first-request example](#first-request)
-with your own task.
+with your own task. Codex still will not run Lode hooks until you trust them:
+open `/hooks` in the CLI, or Review hooks / Settings > Hooks in the desktop app.
+Trust the project as well, or project-local `.codex` layers stay unloaded.
+`lode doctor <project>` reports whether that trust record is present.
 
 Installing the plugin does not initialize a project, contact GraphDB, choose
 a model or approve Product Canon. Those operations still use the typed Core
