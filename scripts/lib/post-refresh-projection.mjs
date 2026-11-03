@@ -189,7 +189,7 @@ function buildPolicyPointer(policy) {
   return { ...payload, pointerId: pointerIdentity.id, pointerHash: pointerIdentity.hash };
 }
 
-function verifyPolicyPointer(pointer, storage) {
+export function verifyPolicyPointer(pointer, storage) {
   assertFields(pointer, ["schemaVersion", "kind", "projectId", "policyId", "policyHash", "pointerId", "pointerHash"], "Post-refresh projection policy pointer");
   if (pointer.schemaVersion !== SCHEMA_VERSION || pointer.kind !== "PostRefreshProjectionPolicyPointer"
     || !new RegExp(`^${formatForVerifiedOwner(storage).projectPrefix}[a-f0-9]{20}$`).test(pointer.projectId || "") || !POLICY_PATTERN.test(pointer.policyId || "")
@@ -448,7 +448,7 @@ function buildReceiptPointer(receipt) {
   return { ...payload, pointerId: pointerIdentity.id, pointerHash: pointerIdentity.hash };
 }
 
-function verifyReceiptPointer(pointer, storage) {
+export function verifyReceiptPointer(pointer, storage) {
   assertFields(pointer, ["schemaVersion", "kind", "projectId", "postRefreshProjectionReceiptId", "refreshReceiptId", "policyId", "pointerId", "pointerHash"], "Post-refresh projection pointer");
   if (pointer.schemaVersion !== SCHEMA_VERSION || pointer.kind !== "PostRefreshProjectionPointer"
     || !new RegExp(`^${formatForVerifiedOwner(storage).projectPrefix}[a-f0-9]{20}$`).test(pointer.projectId || "") || !RECEIPT_PATTERN.test(pointer.postRefreshProjectionReceiptId || "")
