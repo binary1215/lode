@@ -523,6 +523,9 @@ test("rename, deletion, nested names, unsupported languages, truncated analysis 
 });
 
 async function run(t, command, args, cwd) {
+  // Synthetic writers must settle before whole-fixture immutability snapshots.
+  // Keep every Git file in the assertion; prevent unrelated background actors.
+  if (command === "git") args = ["-c", "gc.auto=0", "-c", "maintenance.auto=false", ...args];
   t.diagnostic(JSON.stringify({ event: "planned-child", command, args, cwd, parent: process.pid, ports: [] }));
   const child = spawn(command, args, { cwd, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null", GIT_TERMINAL_PROMPT: "0" } });

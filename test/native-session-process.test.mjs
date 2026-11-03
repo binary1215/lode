@@ -127,6 +127,10 @@ test("actual owned child birth then normal exit verifies old-instance disappeara
   try {
     const observed = await probeNativeProcesses({ pids: [child.pid], onProcess });
     assert.ok(observed?.rows[0]?.birth);
+    const ancestry = await probeNativeProcesses({ startPid: child.pid, stopPid: process.pid, onProcess });
+    assert.equal(ancestry?.rows[0]?.pid, child.pid);
+    assert.equal(ancestry.rows[0].ppid, process.pid, "Exact child handle must identify the actual owned parent");
+    assert.equal(ancestry.rows[0].birth, observed.rows[0].birth);
     const old = { ...observed.rows[0], environment: observed.environment, platform: process.platform }; delete old.state;
     fs.writeFileSync(path.join(f.sessions, `${child.pid}.json`), JSON.stringify({ pid: child.pid, sessionId: nativeSessionId }));
     child.stdin.end(); assert.equal(await done, 0);
@@ -136,4 +140,32 @@ test("actual owned child birth then normal exit verifies old-instance disappeara
     clearTimeout(timer); child.stdin.end();
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM"); await done;
   }
+});
+
+
+test("Windows exact parent query rejects denied, malformed and mismatched native results", { skip: process.platform !== "win32" }, async t => {
+  for (const fault of ["status", "length", "unique", "parent"]) await t.test(fault, async sub => {
+    const originalSpawn = childProcess.spawn; let injected = false; const records = [];
+    childProcess.spawn = (...args) => {
+      const child = originalSpawn(...args), end = child.stdin?.end;
+      if (end) child.stdin.end = function(chunk, ...rest) {
+        let script = String(chunk);
+        const target = fault === "status" || fault === "length"
+          ? "$taskStatus -ne 0 -or $taskReturned -ne $taskLength"
+          : "$taskUnique -ne $taskId -or $taskParent -lt 0";
+        const bad = fault === "status" ? "-1 -ne 0 -or $taskReturned -ne $taskLength"
+          : fault === "length" ? "$taskStatus -ne 0 -or 0 -ne $taskLength"
+          : fault === "unique" ? "0 -ne $taskId -or $taskParent -lt 0"
+          : "$taskUnique -ne $taskId -or -1 -lt 0";
+        if (script.includes(target)) { script = script.replace(target, bad); injected = true; }
+        return end.call(this, script, ...rest);
+      }; return child;
+    }; syncBuiltinESMExports();
+    try {
+      const result = await probeNativeProcesses({ startPid: process.pid, stopPid: process.ppid, onProcess: value => records.push(value) });
+      assert(injected); assert.equal(result?.rows[0]?.state, "unknown");
+      assert.equal(result.rows[0].birth, undefined);
+      for (const started of records.filter(value => value.event === "started")) { assert(records.some(value => value.event === "closed" && value.pid === started.pid)); assert.throws(() => process.kill(started.pid, 0), { code: "ESRCH" }); }
+    } finally { childProcess.spawn = originalSpawn; syncBuiltinESMExports(); }
+  });
 });

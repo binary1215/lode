@@ -495,3 +495,99 @@ test("privacy regression: oversized legacy files are not injected and caller/age
   assert.equal(freezeUserPromptReference(caller).frozen, false);
   assert.equal(takeUserPromptReference({ ...caller, force: true }), "");
 });
+
+
+test("Windows private creation supplies security at creation and never adopts an existing stage", { skip: process.platform !== "win32" }, t => {
+  const { root, environment } = fixture(t), caller = { root, runtime: "codex", nativeSessionId: "secure-create-collision", environment };
+  const originalSpawn = childProcess.spawnSync, requests = []; let collision, before;
+  t.mock.method(childProcess, "spawnSync", function(executable, args, options) {
+    const batch = options?.input && JSON.parse(options.input);
+    if (Array.isArray(batch)) {
+      requests.push(...batch);
+      const stage = batch.find(item => item.create && item.kind === "file");
+      if (stage && !collision) {
+        collision = stage.path; fs.writeFileSync(collision, "Existing synthetic entry must survive", { flag: "wx" });
+        before = { bytes: fs.readFileSync(collision), ino: fs.statSync(collision).ino };
+      }
+    }
+    return originalSpawn.call(this, executable, args, options);
+  });
+  assert.equal(captureUserPrompt({ ...caller, text: "Must not replace the colliding stage" }).captured, false);
+  assert(requests.some(item => item.kind === "directory" && item.create === true));
+  assert(requests.some(item => item.kind === "file" && item.create === true));
+  assert.equal(fs.statSync(collision).ino, before.ino); assert.deepEqual(fs.readFileSync(collision), before.bytes);
+  assert.equal(fs.readdirSync(promptDirectory(environment)).filter(name => name.endsWith(".json")).length, 0);
+});
+
+test("Windows token-default owner never grants authority over an existing foreign-owner prompt directory", { skip: process.platform !== "win32" }, t => {
+  const { root, environment } = fixture(t), caller = { root, runtime: "codex", nativeSessionId: "foreign-owner", environment };
+  fs.mkdirSync(promptDirectory(environment), { recursive: true });
+  const initial = windowsAclFixture(t, promptDirectory(environment), "inspect");
+  t.diagnostic(JSON.stringify({ syntheticDefaultOwnerIsUser: initial.ownerCurrent }));
+  if (initial.ownerCurrent) {
+    // The non-elevated case has no foreign default owner. Actual secure creation
+    // and the collision test above still run on this host. Elevated CI exercises
+    // the distinct owner rejection without changing a token or foreign object.
+    assert.equal(captureUserPrompt({ ...caller, text: "Current-owner dedicated store" }).captured, true);
+  } else {
+    assert.equal(captureUserPrompt({ ...caller, text: "Do not adopt token-default foreign owner" }).captured, false);
+    assert.equal(windowsAclFixture(t, promptDirectory(environment), "inspect").sddl, initial.sddl);
+    assert.deepEqual(fs.readdirSync(promptDirectory(environment)), []);
+  }
+});
+
+
+test("Windows creation failures and receipts never delete an unproven stage replacement", { skip: process.platform !== "win32" }, async t => {
+  for (const fault of ["before-receipt", "after-receipt", "after-clear", "partial-receipt", "before-first-stat", "after-first-stat", "before-open", "stage-content-change", "before-open-content", "directory-collision"]) await t.test(fault, sub => {
+    const { root, environment } = fixture(sub), caller = { root, runtime: "codex", nativeSessionId: fault, environment };
+    const originalSpawn = childProcess.spawnSync, originalOpen = fs.openSync, originalStat = fs.lstatSync;
+    let stage, backup, replacement, beforeDirectoryAcl, injected = false, helperFailed = false;
+    sub.mock.method(childProcess, "spawnSync", function(executable, args, options) {
+      const batch = options?.input && JSON.parse(options.input);
+      const request = Array.isArray(batch) && batch.find(item => item.create);
+      if (request?.kind === "directory" && fault === "directory-collision") {
+        fs.mkdirSync(request.path); beforeDirectoryAcl = windowsAclFixture(sub, request.path, "inspect").sddl; injected = true;
+      }
+      if (request?.kind === "file") {
+        stage = request.path; args = [...args];
+        if (fault === "before-receipt" || fault === "partial-receipt") {
+          args[args.length - 1] = args.at(-1).replace("$stageAcl=$stage.GetAccessControl()",
+            (fault === "partial-receipt" ? "[Console]::Out.Write('{\"created\":');" : "") + "$stageAcl=$stage.GetAccessControl();throw 'synthetic-before-receipt'"); injected = true;
+        } else if (fault === "after-receipt") {
+          args[args.length - 1] = args.at(-1).replace("[Console]::Out.Flush()", "[Console]::Out.Flush();throw 'synthetic-after-receipt'"); injected = true;
+        } else if (fault === "after-clear") {
+          args[args.length - 1] = args.at(-1).replace("throw 'created-publication'}", "throw 'created-publication'};throw 'synthetic-after-clear'"); injected = true;
+        }
+      }
+      const result = originalSpawn.call(this, executable, args, options);
+      if (request?.kind === "file" && ["before-receipt", "partial-receipt", "after-receipt", "after-clear"].includes(fault)) helperFailed = result.status !== 0;
+      if (request?.kind === "file" && fault === "before-first-stat" && result.status === 0) {
+        backup = stage + ".original-backup"; fs.renameSync(stage, backup); fs.writeFileSync(stage, "Replacement survives", { flag: "wx" }); replacement = fs.statSync(stage, { bigint: true }).ino; injected = true;
+      }
+      if (request?.kind === "file" && fault === "stage-content-change" && result.status === 0) {
+        fs.writeFileSync(stage, "Intervening synthetic content"); injected = true;
+      }
+      return result;
+    });
+    if (["before-open", "before-open-content"].includes(fault)) sub.mock.method(fs, "openSync", function(file, flags, ...rest) {
+      if (file === stage && flags === "r+" && !injected) {
+        if (fault === "before-open-content") fs.writeFileSync(stage, "Intervening synthetic content");
+        else { backup = stage + ".original-backup"; fs.renameSync(stage, backup); fs.writeFileSync(stage, "Replacement survives", { flag: "wx" }); replacement = fs.statSync(stage, { bigint: true }).ino; }
+        injected = true;
+      }
+      return originalOpen.call(this, file, flags, ...rest);
+    });
+    if (fault === "after-first-stat") sub.mock.method(fs, "lstatSync", function(file, options) {
+      const stat = originalStat.call(this, file, options);
+      if (file === stage && options?.bigint && !injected) {
+        backup = stage + ".original-backup"; fs.renameSync(stage, backup); fs.writeFileSync(stage, "Replacement survives", { flag: "wx" }); replacement = fs.statSync(stage, { bigint: true }).ino; injected = true;
+      }
+      return stat;
+    });
+    assert.equal(captureUserPrompt({ ...caller, text: "Never write plaintext after a failed creation handoff" }).captured, false); assert(injected);
+    if (["before-receipt", "partial-receipt", "after-receipt", "after-clear"].includes(fault)) { assert(helperFailed); assert.deepEqual(fs.readdirSync(promptDirectory(environment)), []); }
+    if (replacement) { assert.equal(fs.statSync(stage, { bigint: true }).ino, replacement); assert.equal(fs.readFileSync(stage, "utf8"), "Replacement survives"); assert.equal(fs.statSync(backup).size, 0); }
+    if (["stage-content-change", "before-open-content"].includes(fault)) assert.equal(fs.readFileSync(stage, "utf8"), "Intervening synthetic content");
+    if (fault === "directory-collision") assert.equal(windowsAclFixture(sub, promptDirectory(environment), "inspect").sddl, beforeDirectoryAcl);
+  });
+});
