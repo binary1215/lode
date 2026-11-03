@@ -1,4 +1,5 @@
 import { WINDOWS_EXACT_PROCESS_QUERY } from "./windows-exact-process-query.mjs";
+import { WINDOWS_PROCESS_QUERY_WIRE, decodeWindowsProcessQueryWire } from "./windows-process-query-wire.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -109,6 +110,7 @@ function windowsProbe({ startPid, stopPid, pids, onProcess = () => {}, timeoutMs
   // as the native supervisor's owner observer, not job/lease/kill control.
 
   const script = `$ErrorActionPreference='Stop'; ${WINDOWS_EXACT_PROCESS_QUERY}
+${WINDOWS_PROCESS_QUERY_WIRE}
 $taskMachine=[Microsoft.Win32.Registry]::GetValue('HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography','MachineGuid',$null)
 if($taskMachine -isnot [string] -or !$taskMachine){exit 1}
 $taskRows=@();$taskIds=@(${ids.join(",")});$taskNext=${start}
@@ -122,7 +124,7 @@ for($taskIndex=0;$taskIndex -lt ${start ? NATIVE_PROCESS_LIMITS.depth + 1 : ids.
   $taskRows+=@($taskRow)
   if(${start} -gt 0){if($taskRow.state -ne 'present' -or $taskId -eq ${pidValue(stopPid) ? stopPid : 0}){break};$taskNext=$taskRow.ppid}
 }
-@{machine=$taskMachine;hostName=[Environment]::MachineName;rows=@($taskRows)} | ConvertTo-Json -Compress -Depth 4`;
+Write-TaskProcessQueryWire $taskMachine ([Environment]::MachineName) @($taskRows)`;
   const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   // Same exact query, delivered on stdin rather than a large encoded command
   // line. No script file, policy change, daemon or additional runtime is needed.
@@ -161,7 +163,8 @@ for($taskIndex=0;$taskIndex -lt ${start ? NATIVE_PROCESS_LIMITS.depth + 1 : ids.
       report({ event: "closed", pid: child.pid, parent: process.pid, exitCode: code, signal, ports: [] });
       if (failed || code !== 0) { resolve(null); return; }
       try {
-        const value = JSON.parse(Buffer.concat(chunks).toString("utf8").replace(/^\uFEFF/u, ""));
+        const value = decodeWindowsProcessQueryWire(Buffer.concat(chunks), { startPid: start || null, stopPid, pids: ids,
+          maxRows: start ? NATIVE_PROCESS_LIMITS.depth + 1 : NATIVE_PROCESS_LIMITS.known });
         if (typeof value.machine !== "string" || !value.machine || typeof value.hostName !== "string") { resolve(null); return; }
         report({ event: "identity-projection", pid: child.pid, rows: value.rows, ports: [] });
         resolve({ environment: hash(JSON.stringify(["win32", value.machine, value.hostName])), rows: value.rows });

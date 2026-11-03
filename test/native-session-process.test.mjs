@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import childProcess from "node:child_process";
 import crypto from "node:crypto";
 import { syncBuiltinESMExports } from "node:module";
+import { decodeWindowsProcessQueryWire, decodeWindowsCodexInventoryWire, WINDOWS_PROCESS_QUERY_WIRE } from "../scripts/lib/windows-process-query-wire.mjs";
 import test from "node:test";
 import { observeClaudeProcess, probeClaudeProcesses, probeNativeProcesses } from "../scripts/lib/native-session-process.mjs";
 
@@ -109,7 +110,7 @@ test("actual local OS probe uses owned synthetic registry only, returns birth; h
       const bytes = inputs[index]; assert.equal(bytes.length, planned.inputBytes + 2);
       const script = bytes.subarray(0, planned.inputBytes);
       assert.equal(crypto.createHash("sha256").update(script).digest("hex"), planned.inputDigest);
-      assert.doesNotMatch(script.toString("utf8"), /GetProcessById|GetProcessIds|EnumProcesses|Get-Process\b|Add-Type/iu);
+      assert.doesNotMatch(script.toString("utf8"), /GetProcessById|GetProcessIds|EnumProcesses|Get-Process\b|Add-Type|ConvertTo-Json|ConvertFrom-Json|Import-Module/iu);
       assert.match(script.toString("utf8"), /OpenExact/); assert.match(script.toString("utf8"), /CloseHandle/);
     }
   }
@@ -168,4 +169,55 @@ test("Windows exact parent query rejects denied, malformed and mismatched native
       for (const started of records.filter(value => value.event === "started")) { assert(records.some(value => value.event === "closed" && value.pid === started.pid)); assert.throws(() => process.kill(started.pid, 0), { code: "ESRCH" }); }
     } finally { childProcess.spawn = originalSpawn; syncBuiltinESMExports(); }
   });
+});
+
+
+test("private query wire preserves typed observations and refuses incomplete or foreign evidence", () => {
+  const encode = value => Buffer.from(value).toString("base64"), machine = 'machine\n한글"\\', host = 'host-☃';
+  const make = rows => Buffer.from(["LODE-PROCESS-QUERY\t1", "MACHINE\t" + encode(machine), "HOST\t" + encode(host), "COUNT\t" + rows.length, ...rows, "END", ""].join("\n"));
+  const own = "ROW\t10\tpresent\t0\t18446744073709551615\t-", route = { pids: [10], maxRows: 16 };
+  assert.deepEqual(decodeWindowsProcessQueryWire(make([own]), route), { machine, hostName: host, rows: [{ pid: 10, state: "present", ppid: 0, birth: "windows-filetime-18446744073709551615" }] });
+  assert.deepEqual(decodeWindowsProcessQueryWire(make([]), { pids: [], maxRows: 16 }).rows, []);
+  const unknown = decodeWindowsProcessQueryWire(make(["ROW\t10\tunknown\t-\t-\t5"]), route).rows[0];
+  assert.equal(unknown.state, "unknown"); assert.equal(unknown.birth, undefined);
+  assert.equal(decodeWindowsProcessQueryWire(make(["ROW\t10\tgone\t-\t-\t87"]), route).rows[0].state, "gone");
+  const raw = make([own]).toString();
+  const invalid = [raw.replace("QUERY\t1", "QUERY\t2"), raw.replace("COUNT\t1", "COUNT\t2"), raw.replace("END\n", ""), raw + "extra\n", raw.slice(0, -1), raw.replace("ROW\t10", "ROW\t11"), raw.replace("ROW\t10", "ROW\t010"), raw.replace("present", "succeeded"), raw.replace("\t0\t184", "\t10\t184"), raw.replace("18446744073709551615", "18446744073709551616"), raw.replace("HOST\t" + encode(host), "HOST\tZh=="), raw.replace("HOST\t" + encode(host), "HOST\t/w=="), raw.replace("MACHINE\t" + encode(machine), "MACHINE\t"), raw.replace("LODE-PROCESS-QUERY", "LODE-CODEX-INVENTORY")];
+  for (const bad of invalid) assert.throws(() => decodeWindowsProcessQueryWire(Buffer.from(bad), route));
+  assert.throws(() => decodeWindowsProcessQueryWire(make([own, own]), { pids: [10, 10], maxRows: 16 }));
+  assert.throws(() => decodeWindowsProcessQueryWire(make(["ROW\t10\tgone\t-\t-\t5"]), route));
+  assert.throws(() => decodeWindowsProcessQueryWire(make(["ROW\t10\tpresent\t20\t100\t-"]), { startPid: 10, maxRows: 9 }));
+  assert.throws(() => decodeWindowsProcessQueryWire(Buffer.alloc(65537), route));
+  assert.deepEqual(decodeWindowsProcessQueryWire(make(["ROW\t10\tpresent\t20\t100\t-", "ROW\t20\tpresent\t0\t99\t-"]), { startPid: 10, stopPid: 20, maxRows: 9 }).rows.map(row => row.pid), [10, 20]);
+});
+
+test("private name inventory wire cannot become a PID witness or authorize unknown publication", () => {
+  const birth = "2026-11-03T01:02:03.1234567Z", encoded = Buffer.from(birth).toString("base64");
+  const frame = rows => Buffer.from(["LODE-CODEX-INVENTORY\t1", "COUNT\t" + rows.length, ...rows, "END", ""].join("\r\n"));
+  assert.deepEqual(decodeWindowsCodexInventoryWire(frame([])), { status: "observed", rows: [] });
+  assert.deepEqual(decodeWindowsCodexInventoryWire(frame(["ROW\t10\t0\t" + encoded])), { status: "observed", rows: [{ pid: 10, parentPid: 0, birth, home: "unresolved" }] });
+  for (const rows of [["ROW\t0\t0\t" + encoded], ["ROW\t10\t10\t" + encoded], ["ROW\t10\t0\t" + encoded, "ROW\t10\t0\t" + encoded], ["ROW\t10\t0\t/w=="], ["ROW\t10\t0\t" + Buffer.from("2026-02-31T01:02:03.1234567Z").toString("base64")]]) assert.throws(() => decodeWindowsCodexInventoryWire(frame(rows)));
+  assert.throws(() => decodeWindowsProcessQueryWire(frame([]), { pids: [], maxRows: 16 }));
+});
+
+
+test("actual private wire emitter roundtrips Unicode, empty arrays and exact primitive columns", { skip: process.platform !== "win32" }, async t => {
+  const machine = 'machine\n한글"\\', host = 'host-☃', birth = "2026-11-03T01:02:03.1234567Z";
+  const literal = value => "([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + Buffer.from(value).toString("base64") + "')))";
+  const script = WINDOWS_PROCESS_QUERY_WIRE + "\nWrite-TaskProcessQueryWire " + literal(machine) + " " + literal(host) + " @()\nWrite-TaskProcessQueryWire " + literal(machine) + " " + literal(host) + " @(@{pid=[long]10;ppid=[long]0;state='present';birth='windows-filetime-18446744073709551615'})\nWrite-TaskCodexInventoryWire @(@{pid=[long]10;parentPid=[long]0;birth='" + birth + "'})\n";
+  const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe"), args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "& ([scriptblock]::Create([Console]::In.ReadToEnd()))"];
+  t.diagnostic(JSON.stringify({ event: "planned-wire-emitter", parent: process.pid, ports: [], windowsHide: true, inputBytes: Buffer.byteLength(script), budgetMs: 1500 }));
+  const child = spawn(executable, args, { windowsHide: true, shell: false, env: { SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, TEMP: process.env.TEMP, TMP: process.env.TMP }, stdio: ["pipe", "pipe", "pipe"] });
+  const done = new Promise((resolve, reject) => {
+    let out = "", error = "", size = 0; const timer = setTimeout(() => child.kill("SIGTERM"), 1500);
+    child.once("error", reject); child.stdin.on("error", reject);
+    for (const stream of [child.stdout, child.stderr]) stream.on("data", bytes => { size += bytes.length; if (size > 65536) child.kill("SIGTERM"); else if (stream === child.stdout) out += bytes.toString("utf8"); else error += bytes.toString("utf8"); });
+    child.once("close", (code, signal) => { clearTimeout(timer); child.stdin.destroy(); t.diagnostic(JSON.stringify({ event: "closed-wire-emitter", pid: child.pid, parent: process.pid, code, signal, ports: [] })); if (code !== 0) reject(Error("Owned wire emitter did not complete within its existing budget: " + signal)); else resolve(out); });
+  }); child.stdin.end(script + "\n\n");
+  const output = (await done).replace(/\r\n/g, "\n"), frames = output.match(/LODE-(?:PROCESS-QUERY|CODEX-INVENTORY)[\s\S]*?END\n/g);
+  assert.equal(frames.length, 3);
+  assert.deepEqual(decodeWindowsProcessQueryWire(Buffer.from(frames[0]), { pids: [], maxRows: 16 }), { machine, hostName: host, rows: [] });
+  assert.equal(decodeWindowsProcessQueryWire(Buffer.from(frames[1]), { pids: [10], maxRows: 16 }).rows[0].birth, "windows-filetime-18446744073709551615");
+  assert.deepEqual(decodeWindowsCodexInventoryWire(Buffer.from(frames[2])), { status: "observed", rows: [{ pid: 10, parentPid: 0, birth, home: "unresolved" }] });
+  assert.throws(() => process.kill(child.pid, 0), { code: "ESRCH" });
 });

@@ -6,6 +6,7 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
 import { WINDOWS_EXACT_PROCESS_QUERY } from "./windows-exact-process-query.mjs";
+import { WINDOWS_PROCESS_QUERY_WIRE, decodeWindowsCodexInventoryWire } from "./windows-process-query-wire.mjs";
 
 const witnesses = new WeakMap(),
   children = new Map();
@@ -33,6 +34,7 @@ export async function observeCodexNativeWriters({
   if (signal?.aborted) fail("NATIVE_CODEX_OFFLINE_CANCELLED");
   const script = `$ErrorActionPreference='Stop'
 ${WINDOWS_EXACT_PROCESS_QUERY}
+${WINDOWS_PROCESS_QUERY_WIRE}
 $taskRows=@();$taskStatus='observed'
 # This surface is explicitly a name-only writer inventory. Exact birth and
 # parent evidence still comes from each retained query-only handle, not WMI.
@@ -43,7 +45,7 @@ try{foreach($taskCandidate in $taskCandidates){
   $taskRows+=@(@{pid=$taskRow.pid;parentPid=$taskRow.ppid;birth=[DateTime]::FromFileTimeUtc([long]$taskRow.birth.Substring(17)).ToString('o');home='unresolved'})
 }}finally{foreach($taskCandidate in $taskCandidates){$taskCandidate.Dispose()}}
 if($taskStatus -ne 'observed'){exit 1}
-@{status=$taskStatus;rows=@($taskRows)} | ConvertTo-Json -Depth 4 -Compress
+Write-TaskCodexInventoryWire @($taskRows)
 `;
   const executable = path.join(
     process.env.SystemRoot || "C:\\Windows",
@@ -117,11 +119,7 @@ if($taskStatus -ne 'observed'){exit 1}
         return;
       }
       try {
-        const value = JSON.parse(
-          Buffer.concat(chunks)
-            .toString("utf8")
-            .replace(/^\uFEFF/, ""),
-        );
+        const value = decodeWindowsCodexInventoryWire(Buffer.concat(chunks));
         if (
           value.status !== "observed" ||
           !Array.isArray(value.rows) ||
