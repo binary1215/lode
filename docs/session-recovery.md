@@ -393,7 +393,14 @@ a transcript, an instruction or a P2 recovery source. The reference-only store u
 and rejects unsafe links. Existing references are bounded and re-masked before
 reuse. These are best-effort credential patterns, not a universal secret detector.
 On Windows, the dedicated prompt directory and regular single-link files use a
-protected DACL limited to the current token SID and SYSTEM. A hidden, bounded
+protected DACL limited to the current token User SID and SYSTEM. New dedicated
+directories and empty stages receive this security descriptor at creation;
+an elevated token's default owner does not authorize adoption of an existing
+foreign-owned entry. Creation collisions leave existing entries unchanged.
+An empty stage stays delete-on-close until its open-handle volume/file ID receipt
+is flushed, then Node verifies that exact identity with BigInt before writing
+or cleaning up. Failed or incomplete identity delivery never authorizes deleting
+an unknown path. A hidden, bounded
 Windows PowerShell/.NET check re-reads that ACL before success; POSIX mode flags
 are not used as Windows proof. Verification is reused only for the same filesystem
 entry within one synchronous operation, never across callers/turns. No general

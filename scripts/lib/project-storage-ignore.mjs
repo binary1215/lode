@@ -35,10 +35,13 @@ const BEGIN = "# BEGIN Lode generated disposable storage rules", END = "# END Lo
 function exceptionMayReach(pattern, targets, exactFile = false) {
   const body = pattern.replace(/ +$/, "").replace(/\/$/, ""), marker = body.search(/[*?\[\]\\]/);
   const literal = marker < 0 ? body : body.slice(0, marker);
+  // Directory rules are published in the descendant .lode/.gitignore. Git will
+  // not re-include a file whose parent directory is excluded there, so a root
+  // exception such as !.gitkeep, !docs/, or !snapshots cannot expose snapshot
+  // storage. Omitting the directory rule is what leaves it untracked.
+  if (!exactFile) return false;
   if (!body.startsWith("/") && !literal.includes("/")) {
-    // An exact basename cannot match a differently named exact file or any
-    // of its known parents. Directory rules also affect unknown descendants.
-    if (exactFile && marker < 0) {
+    if (marker < 0) {
       return targets.some(target => target.toLowerCase().split("/").includes(body.toLowerCase()));
     }
     return true;
@@ -67,7 +70,8 @@ function readIgnorePolicy(root, file, targets, collectExceptions = false) {
     // Git recognizes ! only in column zero. Escaped ! and indented text are
     // literal patterns, not exceptions. Retaining spaces is conservative.
     if (line.startsWith("!")) exceptions.push(line.slice(1));
-    if (!collectExceptions && line.startsWith("!") && exceptionMayReach(line.slice(1), targets)) {
+    const explicitPrefix = line.startsWith("!") && /^!?\/?[^*?\[\]\\]+\/\*\*$/.test(line) ? line.slice(1).replace(/^\//, "").slice(0, -2) : null;
+    if (!collectExceptions && line.startsWith("!") && (explicitPrefix && targets.some(target => target.startsWith(explicitPrefix)) || exceptionMayReach(line.slice(1), targets))) {
       throw Object.assign(new Error("User exception may reach generated paths."), { code: "USER_IGNORE_RULES_TAKE_PRECEDENCE" });
     }
   }
@@ -155,7 +159,8 @@ export function ensureProjectStorageIgnore({ root, storage }) {
       for (const rule of [...GENERATED_STORAGE_IGNORE_RULES, ...RETAINED_STORAGE_IGNORE_RULES.map(pattern => ({ pattern }))]) {
         const target = directory + rule.pattern.split(/[*?\[]/, 1)[0];
         const exactFile = !rule.pattern.endsWith("/") && !/[*?\[\]\\]/.test(rule.pattern);
-        if (policy.exceptions.some(pattern => exceptionMayReach(pattern, [target], exactFile))) {
+        const explicitStorageChoice = policy.exceptions.some(pattern => pattern.replace(/^\//, "") === directory + "/**");
+        if (explicitStorageChoice || policy.exceptions.some(pattern => exceptionMayReach(pattern, [target], exactFile))) {
           skipped.push({ pattern: rule.pattern, reasonCode: "USER_IGNORE_RULES_TAKE_PRECEDENCE" });
         } else included.push(rule.pattern);
       }

@@ -115,7 +115,7 @@ async function initializeProjectFromMcp(args, { projectSessionRoute, onValidated
   try {
     return await (await import("./lib/project-bootstrap.mjs")).initializeOrResumeProject({ root: args.project_root, pluginRoot,
       projectSessionRoute, runtimes: args.runtimes || null, profile: args.profile || "core", copiedProject: args.copied_project ?? null,
-      instructionIntegration: args.instruction_integration ?? null, onboarding, onValidatedSessionSelection, installationContext });
+      instructionIntegration: args.instruction_integration ?? null, writeRootInstructionFiles: args.write_root_instruction_files === true, onboarding, onValidatedSessionSelection, installationContext });
   } finally { releasePluginInitializationContext(installationContext); }
 }
 const observationFieldSchema = {
@@ -389,6 +389,7 @@ const allTools = [
         profile: { type: "string", enum: ["core", "product"], default: "core" },
         copied_project: { type: "string", enum: ["verified-copy"], description: "Explicitly adopt this local copied Project when the initial origin cannot be proved. Retains exact originals and an origin-unverified label; does not transfer native bindings or execution permission. Not needed for ordinary proved relocation." },
         instruction_integration: { type: "string", enum: ["link", "preserve"], description: "Optional existing setup choice. Link a bounded host-specific instruction block only when the user chose it; preserve makes no instruction edits. Never a prerequisite for ordinary work." },
+        write_root_instruction_files: { type: "boolean", default: false, description: "Create missing root CLAUDE.md, AGENTS.md, or opencode.json. Omitted or false leaves those files untouched, including in a non-interactive run." },
         runtimes: {
           type: "array", minItems: 1, maxItems: 3, uniqueItems: true,
           items: { type: "string", enum: ["claude", "codex", "opencode"] },

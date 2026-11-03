@@ -127,7 +127,7 @@ test("private Git optionality, Windows lock retry and owned ignore preserve user
  const ignore=path.join(store.directory,".gitignore");assert.match(fs.readFileSync(ignore,"utf8"),/not disposable cache/);
  const user=path.join(f.root,".gitignore"),userText="!keep-this.txt\n";fs.writeFileSync(user,userText);
  const owned=path.join(path.dirname(store.directory),"snapshot-objects.git.00000000-0000-0000-0000-000000000000.staging");fs.mkdirSync(owned);
- assert.equal(ensureOwnedSnapshotStoreIgnore({root:f.root,storage:f.storage,directory:owned}).reasonCode,"USER_IGNORE_RULES_TAKE_PRECEDENCE");assert(!fs.existsSync(path.join(owned,".gitignore")));assert.equal(fs.readFileSync(user,"utf8"),userText);
+ assert.equal(ensureOwnedSnapshotStoreIgnore({root:f.root,storage:f.storage,directory:owned}).status,"created");assert.match(fs.readFileSync(path.join(owned,".gitignore"),"utf8"),/\n\*\n/);assert.equal(fs.readFileSync(user,"utf8"),userText);
  const lock=path.join(store.directory,store.ref(baseline.snapshot.worldModelId)+".lock");fs.mkdirSync(path.dirname(lock),{recursive:true});fs.writeFileSync(lock,"synthetic owned lock");
  await assert.rejects(()=>store.write(baseline.snapshot.worldModelId,baseline.snapshot));assert.equal(fs.readFileSync(lock,"utf8"),"synthetic owned lock");
  fs.unlinkSync(lock);const retained=await store.write(baseline.snapshot.worldModelId,baseline.snapshot);assert.equal(retained.document.worldModelId,baseline.snapshot.worldModelId);
@@ -141,8 +141,8 @@ test("domain composition rejects foreign scope, bad addresses, tamper and recons
  const original=readSnapshotFile(built.file).document;
  for(const [label,mutate,code] of [
   ["Project",m=>{m.projectId="foreign";},"INVALID_SNAPSHOT_COMPOSITION"],
-  ["schema",m=>{m.schemaVersion=99;},"UNSUPPORTED_SNAPSHOT_COMPOSITION"],
-  ["producer",m=>{m.producer.version="other";},"UNSUPPORTED_SNAPSHOT_COMPOSITION"],
+  ["schema",m=>{m.schemaVersion=99;},"STORAGE_VERSION_MISMATCH"],
+  ["producer",m=>{m.producer.version="other";},"STORAGE_VERSION_MISMATCH"],
   ["address",m=>{m.graph.address="../outside.json.gz";},"INVALID_SNAPSHOT_BUNDLE_ADDRESS"],
   ["bundle Project",m=>{m.graph.projectId="foreign";},"INVALID_SNAPSHOT_BUNDLE_REFERENCE"],
   ["bundle schema",m=>{m.graph.schemaVersion=99;},"INVALID_SNAPSHOT_BUNDLE_REFERENCE"],
@@ -230,11 +230,11 @@ test("exact source pin binds the verifier buffer and rejects a deterministic inv
 test("generated ignore respects disjoint exceptions and exact managed upgrade without Git",async t=>{
  for(const exception of ["!docs/", "!/docs/", "!.gitkeep", "# comment\r\n\\!docs/\r\n"]){
   const f=fixture(t),file=path.join(f.root,f.storage.directory,".gitignore");fs.unlinkSync(file);fs.writeFileSync(path.join(f.root,".gitignore"),exception+"\r\n");
-  const r=ensureProjectStorageIgnore({root:f.root,storage:f.storage});assert.equal(r.status,"created",exception);assert(r.rules.included.includes("/graph-discovery/index.json"));if(exception.startsWith("!/docs/"))for(const rule of RETAINED_STORAGE_IGNORE_RULES)assert(r.rules.included.includes(rule));
+  const r=ensureProjectStorageIgnore({root:f.root,storage:f.storage});assert.equal(r.status,"created",exception);assert(r.rules.included.includes("/graph-discovery/index.json"));for(const rule of RETAINED_STORAGE_IGNORE_RULES)assert(r.rules.included.includes(rule),exception+rule);
  }
  for(const suffix of ["\n","\r\n"]){const f=fixture(t),file=path.join(f.root,f.storage.directory,".gitignore");const legacy=["# BEGIN Lode generated disposable storage rules","/graph-discovery/index.json", "/.operations/", "/.snapshot-gc/", "/refresh/writer.lock/", "/refresh/writer.lock.*.staging/","# END Lode generated disposable storage rules",""] .join(suffix);fs.writeFileSync(file,legacy);assert.equal(ensureProjectStorageIgnore({root:f.root,storage:f.storage}).status,"updated");assert.match(fs.readFileSync(file,"utf8"),/Retained history, not disposable cache/);}
  for(const text of ["# user policy\n", "# BEGIN Lode generated disposable storage rules\n# user addition\n", "!snapshot-bundles/**\n"]){const f=fixture(t),file=path.join(f.root,f.storage.directory,".gitignore");fs.writeFileSync(file,text);assert.equal(ensureProjectStorageIgnore({root:f.root,storage:f.storage}).status,"preserved");assert.equal(fs.readFileSync(file,"utf8"),text);}
- for(const exception of ["!.lode/**", "!**/snapshots/**", "!snap*"]){const f=fixture(t),file=path.join(f.root,f.storage.directory,".gitignore");fs.unlinkSync(file);fs.writeFileSync(path.join(f.root,".gitignore"),exception+"\n");const r=ensureProjectStorageIgnore({root:f.root,storage:f.storage});assert(r.rules.skipped.length>0);assert(!r.rules.included.includes("/world-model/snapshots/"));}
+ for(const exception of ["!.lode/**", "!**/snapshots/**", "!snap*","!.gitkeep","!docs/"]){const f=fixture(t),file=path.join(f.root,f.storage.directory,".gitignore");fs.unlinkSync(file);fs.writeFileSync(path.join(f.root,".gitignore"),exception+"\n");const r=ensureProjectStorageIgnore({root:f.root,storage:f.storage});if(exception === "!.lode/**") { assert.equal(r.status,"preserved"); assert.equal(r.reasonCode,"USER_IGNORE_RULES_TAKE_PRECEDENCE"); assert.equal(fs.existsSync(file),false); const nested = path.join(f.root, f.storage.directory, "snapshot-objects.git"); fs.mkdirSync(nested, {recursive:true}); const policy = ensureOwnedSnapshotStoreIgnore({root:f.root,storage:f.storage,directory:nested}); assert.equal(policy.reasonCode,"USER_IGNORE_RULES_TAKE_PRECEDENCE"); assert.equal(fs.existsSync(path.join(nested,".gitignore")),false); continue; }assert(r.rules.included.includes("/world-model/snapshots/"),exception);assert(r.rules.included.includes("/snapshot-bundles/"),exception);}
 });
 
 test("reader requirements are pointer-bound and status uses zero-write bounded reads",async t=>{
@@ -244,8 +244,22 @@ test("reader requirements are pointer-bound and status uses zero-write bounded r
  const open=fs.openSync;fs.openSync=function(file,...args){if(String(file).includes(path.sep+"snapshot-bundles"+path.sep)||String(file).includes(path.sep+"snapshots"+path.sep))assert.fail("status hydrated World/Graph");return open.call(this,file,...args);};let status;try{status=await inspectProjectExperience({root:f.root});}finally{fs.openSync=open;}
  assert(status.readiness.storage.layers.every(l=>l.state==="declared-supported"));assert.equal(status.ordinaryWorkBlocked,false);assert(fs.readFileSync(worldPointer).equals(originalWorld));assert(fs.readFileSync(graphPointer).equals(originalGraph));
  delete wp.readerRequirements;fs.writeFileSync(worldPointer,JSON.stringify(wp));status=await runCommand(["status",f.root]);assert.equal(status.readiness.storage.layers[0].state,"not-inspected");assert.match(formatProjectStatus(status),/Core work continues/);assert.equal(status.ordinaryWorkBlocked,false);assert.equal(status.userDecisionRequired,false);
- wp.readerRequirements={version:1,snapshotId:wp.worldModelId,layout:"future-layout"};fs.writeFileSync(worldPointer,JSON.stringify(wp));const mcp=await dispatch({method:"tools/call",params:{name:"head_project_status",arguments:{project_root:f.root}}});assert.equal(mcp.error,undefined);const displayed=mcp.result.structuredContent;assert.match(mcp.result.content[0].text,/unsupported/);assert.equal(displayed.readiness.storage.layers[0].state,"unsupported");assert.match(formatProjectStatus(displayed),/unsupported/);
+ wp.readerRequirements={version:1,snapshotId:wp.worldModelId,layout:"future-layout",minimumReader:"9.9.9"};fs.writeFileSync(worldPointer,JSON.stringify(wp));const mcp=await dispatch({method:"tools/call",params:{name:"head_project_status",arguments:{project_root:f.root}}});assert.equal(mcp.error,undefined);const displayed=mcp.result.structuredContent;assert.match(mcp.result.content[0].text,/unsupported|9\.9\.9/);assert.equal(displayed.readiness.storage.layers[0].state,"unsupported");assert.equal(displayed.readiness.storage.layers[0].reasonCode,"STORAGE_VERSION_MISMATCH");assert.match(displayed.readiness.storage.layers[0].message,/9\.9\.9/);assert.match(formatProjectStatus(displayed),/unsupported|9\.9\.9/);
+ const beforeBytes=fs.readFileSync(worldPointer);const {applySnapshotGarbageCollection}=await import("../scripts/lib/snapshot-gc.mjs");const gc=await applySnapshotGarbageCollection({root:f.root});assert.equal(gc.code,"STORAGE_VERSION_MISMATCH");assert.equal(gc.deletedCount,0);assert.equal(gc.applyPerformed,false);assert(fs.readFileSync(worldPointer).equals(beforeBytes));await assert.rejects((await import("../scripts/lib/incremental-refresh.mjs")).refreshWorldModel({root:f.root}),{code:"STORAGE_VERSION_MISMATCH"});assert(fs.readFileSync(worldPointer).equals(beforeBytes));
+ for (const minimumReader of ["9.9.9", "bad-version", "0.3.0-beta.999", null, 5]) {
+   const supportedLayout = JSON.parse(originalWorld); supportedLayout.readerRequirements.minimumReader = minimumReader;
+   fs.writeFileSync(worldPointer, JSON.stringify(supportedLayout));
+   const state = await inspectProjectExperience({ root: f.root });
+   assert.equal(state.readiness.storage.layers[0].reasonCode, "STORAGE_VERSION_MISMATCH");
+   assert.equal(state.ordinaryWorkBlocked, false);
+   const before = fs.readFileSync(worldPointer);
+   const outcome = await applySnapshotGarbageCollection({ root: f.root });
+   assert.equal(outcome.deletedCount, 0); assert.equal(outcome.code, "STORAGE_VERSION_MISMATCH");
+   await assert.rejects((await import("../scripts/lib/incremental-refresh.mjs")).refreshWorldModel({root:f.root}),{code:"STORAGE_VERSION_MISMATCH"});
+   assert(fs.readFileSync(worldPointer).equals(before));
+ }
  wp.readerRequirements.snapshotId="world-model-"+"f".repeat(24);fs.writeFileSync(worldPointer,JSON.stringify(wp));status=await inspectProjectExperience({root:f.root});assert.equal(status.readiness.storage.layers[0].reasonCode,"INVALID_READER_REQUIREMENTS");
+ const invalidBytes = fs.readFileSync(worldPointer); const invalidGc = await applySnapshotGarbageCollection({root:f.root}); assert.equal(invalidGc.code,"INVALID_READER_REQUIREMENTS"); assert.equal(invalidGc.deletedCount,0); await assert.rejects((await import("../scripts/lib/incremental-refresh.mjs")).refreshWorldModel({root:f.root}),{code:"INVALID_READER_REQUIREMENTS"}); assert(fs.readFileSync(worldPointer).equals(invalidBytes));
  fs.writeFileSync(worldPointer,originalWorld);fs.writeFileSync(graphPointer,originalGraph);const {buildSnapshotDeletionClosure}=await import("../scripts/lib/snapshot-deletion-closure.mjs");const closure=await buildSnapshotDeletionClosure({root:f.root});assert.equal(closure.certified,true,JSON.stringify(closure.issues));
 });
 

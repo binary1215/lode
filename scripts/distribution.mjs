@@ -13,8 +13,8 @@ function parse(argv) {
     const item = rest[index];
     if (!item.startsWith("--")) throw new Error(`Unexpected argument: ${item}`);
     const key = item.slice(2);
-    if (key === "purge") {
-      options.purge = true;
+    if (key === "purge" || key === "write-root-instructions") {
+      options[key] = true;
       continue;
     }
     const value = rest[++index];
@@ -27,8 +27,8 @@ function parse(argv) {
 function usage() {
   return {
     commands: [
-      "distribution install [--source <plugin-source>] [--install-root <directory>] [--bin-dir <directory>] [--native auto|off|required] [--project <directory> --runtime claude,codex,opencode --profile core|product --onboarding-input <json>]",
-      "distribution upgrade [--source <plugin-source>] [--install-root <directory>] [--bin-dir <directory>] [--native auto|off|required] [--project <directory> --runtime claude,codex,opencode --profile core|product --onboarding-input <json>]",
+      "distribution install [--source <plugin-source>] [--install-root <directory>] [--bin-dir <directory>] [--native auto|off|required] [--project <directory> --runtime claude,codex,opencode --profile core|product --onboarding-input <json> --write-root-instructions]",
+      "distribution upgrade [--source <plugin-source>] [--install-root <directory>] [--bin-dir <directory>] [--native auto|off|required] [--project <directory> --runtime claude,codex,opencode --profile core|product --onboarding-input <json> --write-root-instructions]",
       "distribution status [--install-root <directory>] [--bin-dir <directory>]",
       "distribution doctor [--install-root <directory>] [--bin-dir <directory>]",
       "distribution rollback [--install-root <directory>] [--bin-dir <directory>]",
@@ -71,6 +71,7 @@ export async function runDistributionCommand(argv = process.argv.slice(2)) {
         runtimes: options.runtime?.split(","),
         profile: options.profile || "core",
         onboarding: readOnboardingInput(options["onboarding-input"]),
+        writeRootInstructionFiles: options["write-root-instructions"] === true,
       });
       return { ...distribution, project };
     } finally {

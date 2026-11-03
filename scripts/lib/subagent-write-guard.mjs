@@ -1,6 +1,7 @@
 // Optional Host ingress policy, not malicious-client isolation. Unset protects
-// only supported exact-correlated Claude/OpenCode child state writes. Codex and
-// unproven callers stay off by default; explicit enforce/off retain their scope.
+// exact-correlated Claude and OpenCode child writes and a detected Codex
+// sub-conversation (session and thread differ, or the host marks the child).
+// Explicit off is the opt-out. Unproven callers stay off.
 export const SUBAGENT_WRITE_GUARD_ENV = "LODE_SUBAGENT_WRITE_GUARD";
 export const SUBAGENT_STATE_WRITE_REJECTED = "SUBAGENT_STATE_WRITE_REJECTED";
 export const SUBAGENT_WRITE_GUARD_INVALID = "SUBAGENT_WRITE_GUARD_INVALID";
@@ -12,7 +13,7 @@ export function diagnoseSubagentWriteGuard(environment = process.env) {
   const enabled = value === "enforce";
   const valid = value === undefined || value === null || value === "" || value === "off" || enabled;
   return { enabled, valid, ...(valid ? {} : { code: SUBAGENT_WRITE_GUARD_INVALID,
-    message: `${SUBAGENT_WRITE_GUARD_INVALID}: ${SUBAGENT_WRITE_GUARD_ENV} must be exactly "enforce" or "off". Unset protects supported exact Claude/OpenCode child calls only. Invalid configuration was ignored; subagent write protection is OFF. Ordinary work is not blocked.` }) };
+    message: `${SUBAGENT_WRITE_GUARD_INVALID}: ${SUBAGENT_WRITE_GUARD_ENV} must be exactly "enforce" or "off". Unset protects exact Claude/OpenCode child calls and detected Codex sub-conversations. Invalid configuration was ignored; subagent write protection is OFF. Ordinary work is not blocked.` }) };
 }
 
 // Remember at most the last invalid value, not an unbounded set of environment
@@ -29,9 +30,10 @@ export function subagentWriteGuardEnabled(environment = process.env, { caller = 
   } else lastInvalidValue = undefined;
   if (diagnostic.enabled || !diagnostic.valid) return diagnostic.enabled;
   const value = environment?.[SUBAGENT_WRITE_GUARD_ENV];
-  return (value === undefined || value === null || value === "") && caller?.subagent === true
-    && (caller.runtime === "claude" && caller.correlation === "exact-native-tool-use"
-      || caller.runtime === "opencode" && caller.correlation === "awaited-native-before-hook");
+  if (!(value === undefined || value === null || value === "") || caller?.subagent !== true) return false;
+  return caller.runtime === "claude" && caller.correlation === "exact-native-tool-use"
+    || caller.runtime === "opencode" && caller.correlation === "awaited-native-before-hook"
+    || caller.runtime === "codex" && caller.correlation === "codex-subconversation";
 }
 
 export function assessSubagentStateWrite({ caller = null, readOnly = true } = {}) {

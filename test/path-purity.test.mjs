@@ -54,7 +54,7 @@ test("only explicit local Claude installation projection names the selected pack
   for (const document of [claude, generatedClaude]) {
     assert.deepEqual(document.mcpServers.lode.args, [path.join(fs.realpathSync(pluginRoot), "scripts", "mcp-server.mjs")]);
     assert.equal(document.mcpServers.lode.cwd, fs.realpathSync(pluginRoot));
-    assert.equal(JSON.stringify(document).includes("CLAUDE_PLUGIN_ROOT"), false);
+    assert.equal(JSON.stringify(document).includes("LODE_PLUGIN_ROOT"), false);
   }
   assert.equal(fs.existsSync(path.join(root, "AGENTS.md")), true);
   assert.equal(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8").includes(pluginRoot), false);
@@ -88,6 +88,12 @@ test("installed Claude roots with spaces work without Host environment or cwd/PA
   }
   assert.throws(() => portableMcpDocument({ client: "claude", pluginRoot: path.join(base, "absent"), projection: "installed-project" }), { code: "ENOENT" });
   assert.equal(portableMcpDocument({ client: "claude", pluginRoot: selected }).document.args[0], "${CLAUDE_PLUGIN_ROOT}/scripts/mcp-server.mjs", "Marketplace/portable contract is unchanged.");
+  const hangul = path.join(base, "한글 café (team)'s project");
+  fs.mkdirSync(hangul);
+  const projected = portableMcpDocument({ client: "claude", pluginRoot: selected, projectRoot: hangul, projection: "project-file" });
+  assert.equal(projected.pathForm, "env-placeholder");
+  assert.deepEqual(projected.document.args, ["${LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs"]);
+  assert.equal(JSON.stringify(projected.document).includes(selected), false);
 });
 
 test("Claude initialization preserves existing user-owned MCP bytes", t => {

@@ -35,8 +35,15 @@ export function portableMcpLaunch({ client, pluginRoot, projectRoot, projection 
   if (!PORTABLE_MCP_CLIENTS.includes(client)) {
     throw Object.assign(new Error("Unsupported MCP client."), { code: "UNSUPPORTED_MCP_CLIENT" });
   }
-  if (!["portable", "installed-project"].includes(projection) || projection === "installed-project" && client !== "claude") {
+  if (!["portable", "installed-project", "project-file"].includes(projection) || ["installed-project", "project-file"].includes(projection) && client !== "claude") {
     throw Object.assign(new Error("Unsupported MCP projection."), { code: "UNSUPPORTED_MCP_PROJECTION" });
+  }
+  if (projection === "project-file") {
+    const relative = projectRelativeScript(pluginRoot, projectRoot);
+    if (relative) return { command: "node", args: [relative], env: {}, pathForm: "project-relative" };
+    // Claude Code expands ${LODE_PLUGIN_ROOT} in project .mcp.json command/args.
+    // The file itself stays free of machine paths on Windows, macOS, and Linux.
+    return { command: "node", args: [`\${${LODE_PLUGIN_ROOT_ENV}}/${SCRIPT}`], env: {}, pathForm: "env-placeholder" };
   }
   if (projection === "installed-project") {
     if (typeof pluginRoot !== "string" || !path.isAbsolute(pluginRoot)) {

@@ -158,7 +158,7 @@ test("default whole snapshots distinguish decision changes from unchanged code m
   assert.equal(second.snapshot.temporalProvenanceGraph.protocol.version, "0.16.0");
   const diff = await diffGraphLineage({ root, fromWorldModelId: first.snapshot.worldModelId, toWorldModelId: second.snapshot.worldModelId });
   const codeIds = new Set(first.snapshot.temporalProvenanceGraph.nodes.filter(n => n.path === "src/stable.mjs").map(n => n.nodeId));
-  assert(diff.changes.changedNodes.items.some(id => codeIds.has(id)), "Raw changedNodes keeps membership changes");
+  assert(diff.changes.changedNodes.items.some(id => codeIds.has(id)), "Exact raw changes retain membership-only churn; presentation uses changeExplanation.");
   assert(diff.changeExplanation.changedNodes.observationOnly.items.some(id => codeIds.has(id)));
   assert(!diff.changeExplanation.changedNodes.content.items.some(id => codeIds.has(id)));
   const codeEdges = graph => graph.edges.filter(e => codeIds.has(e.from) && codeIds.has(e.to)).map(e => e.edgeId).sort();
@@ -289,6 +289,22 @@ test("real code and line changes stay visible while unrelated exact code relatio
   const scoped = await diffGraphLineage({ root, fromWorldModelId: first.snapshot.worldModelId, toWorldModelId: second.snapshot.worldModelId, scopePaths: ["src/untouched.mjs"], limit: 1 });
   assert.equal(scoped.changeExplanation.changedNodes.content.count, 0);
   assert.equal(scoped.scope.globalChangeCounts, "not-computed");
+  for (const scopePaths of [["src/untouched.mjs"], ["src/untouched.mjs", "src/change.mjs"]]) {
+    const opts = { root, fromWorldModelId: first.snapshot.worldModelId, toWorldModelId: second.snapshot.worldModelId, ...(scopePaths ? { scopePaths } : {}), limit: 100 };
+    // Existing scoped cursors retain every raw membership/content change.
+    const expected = await diffGraphLineage({ ...opts, cursor: null });
+    const seen = []; let cursor = null, pages = 0;
+    do {
+      const page = await diffGraphLineage({ ...opts, limit: 1, cursor });
+      seen.push(...page.changes.changedNodes.items);
+      cursor = page.page?.nextCursor || null;
+      assert(++pages < 200, "raw cursor must make progress");
+    } while (cursor);
+    assert.deepEqual(seen, expected.changes.changedNodes.items);
+    assert.equal(new Set(seen).size, seen.length);
+    assert.equal(seen.length, expected.changes.changedNodes.count);
+    assert.equal(expected.changeExplanation.rawChangesPreserved, true);
+  }
 });
 
 test("stable relation identity never merges evidence, authority, producer, exact endpoints or continuity", () => {

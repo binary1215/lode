@@ -129,7 +129,10 @@ codex plugin add lode-agent-core@lode-agent-plugin
 
 Restart Codex after installation, start a new task so the installed Skill and
 MCP server are loaded, then use [the first-request example](#first-request)
-with your own task.
+with your own task. Codex still will not run Lode hooks until you trust them:
+open `/hooks` in the CLI, or Review hooks / Settings > Hooks in the desktop app.
+Trust the project as well, or project-local `.codex` layers stay unloaded.
+`lode doctor <project>` reports whether that trust record is present.
 
 Installing the plugin does not initialize a project, contact GraphDB, choose
 a model or approve Product Canon. Those operations still use the typed Core
@@ -158,11 +161,13 @@ When using the user-scoped installation below, initialize the project with
 `--runtime codex` for Codex; combine these only if you want multiple integrations.
 Marketplace-installed Claude Code users can
 request the same initialization through the bundled Skill. Lode creates
-`CLAUDE.md` for Claude Code, `AGENTS.md` for Codex, and `opencode.json` for
-OpenCode only when those project files are absent. A verified plugin MCP
-connection avoids creating a duplicate project `.mcp.json`; standalone Claude
-initialization can create a missing file with a verified local launcher or exact
-absolute package entry. Existing
+`CLAUDE.md`, `AGENTS.md`, and `opencode.json` only when you pass
+`--write-root-instructions` (or MCP `write_root_instruction_files: true`).
+The same opt-in works on later init/resume and distribution `install --project`.
+Without it, generated OpenCode configuration is guidance, not an active connection.
+A verified plugin MCP connection avoids a duplicate project `.mcp.json`.
+Standalone Claude uses the verified selected installation launcher, with an exact
+local package fallback. No new environment-variable setup is required. Existing
 files are preserved and generated manual-integration projections remain under
 the selected root's `.lode/generated/` or existing `.head/generated/` directory.
 
@@ -354,7 +359,7 @@ These labels describe the source distribution. They do not certify that a partic
 | Project | initialization, Source Scope, review-gated Product Canon | Available |
 | Knowledge | graph-first bounded discovery with source fallback, World Model, incremental refresh, optional Context Capsules | Available |
 | Sessions | request-local logical Sessions and current common direction with exact-basis updates | Available |
-| Sessions | supported exact Claude/OpenCode child state writes protected by default; Codex protection is opt-in | Experimental |
+| Sessions | Claude Code, OpenCode, and detected Codex sub-conversation state writes are read-only by default; `LODE_SUBAGENT_WRITE_GUARD=off` is the explicit opt-out | Available |
 | Lineage | Runs, ResultPackets, Fresh Lode review, P2 Session and conversation-entry recovery | Available |
 | Host lifecycle | provider-neutral compaction and at-most-once continuation contract, requiring a trusted Host adapter | Experimental |
 | Host context | packaged Claude Code and Codex SessionStart delivery, including compact | Available |

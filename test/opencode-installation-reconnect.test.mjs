@@ -24,7 +24,7 @@ function fixture(t) {
 }
 test('same canonical Project root reconnects a changed installation root without changing Project or Session',async t=>{
  const {project,nextPlugin}=fixture(t);
- await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode']});
+ await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode'],writeRootInstructionFiles:true});
  const before=inspectProject(project),directory=before.storage.directory;
  const projectBytes=fs.readFileSync(path.join(project,directory,'project.json'));
  const sessionBytes=fs.readFileSync(path.join(project,directory,'sessions/current.json'));
@@ -45,7 +45,7 @@ test('project-owned OpenCode configuration stays byte-identical while the genera
  const {project,nextPlugin}=fixture(t),file=path.join(project,'opencode.json');
  const original='{"mcp":{"custom":{"type":"local","command":["custom-engine"],"enabled":false}}}\n';
  fs.writeFileSync(file,original,{flag:'wx'});
- await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode']});
+ await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode'],writeRootInstructionFiles:true});
  const before=inspectProject(project);
  await initializeOrResumeProject({root:project,pluginRoot:nextPlugin,profile:'core'});
  assert.equal(fs.readFileSync(file,'utf8'),original);
@@ -60,7 +60,7 @@ test('OpenCode local connection observations reach bootstrap, status and MCP wit
  const {project,nextPlugin}=fixture(t),file=path.join(project,'opencode.json');
  const unrelated={model:'user/model',permission:{edit:'ask'},mcp:{custom:{type:'local',command:['custom-engine'],enabled:false}}};
  fs.writeFileSync(file,JSON.stringify(unrelated)+'\n');
- const initialized=await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode']});
+ const initialized=await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode'],writeRootInstructionFiles:true});
  assert.equal(initialized.readiness.core.state,'ready');assert.equal(initialized.opencodeConnection.instructions.status,'missing');assert.equal(initialized.opencodeConnection.mcp.status,'missing');
  assert.match(formatProjectBootstrap(initialized),/OpenCode local configuration: instructions missing; MCP missing/);
  const before=inspectProject(project),id=before.project.projectId,session=before.state.sessionId;
@@ -126,13 +126,13 @@ test('OpenCode local connection observations reach bootstrap, status and MCP wit
 
 test('existing JSONC-only OpenCode settings stay manual without a competing generated root config',async t=>{
  const {project}=fixture(t),file=path.join(project,'opencode.jsonc'),original='// Keep user comments\n{"model":"user/model"}\n';
- fs.writeFileSync(file,original);const result=await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode']});
+ fs.writeFileSync(file,original);const result=await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode'],writeRootInstructionFiles:true});
  assert.equal(result.readiness.core.state,'ready');assert.equal(result.project.integrations.opencode.status,'manual');
  assert.equal(result.opencodeConnection.reasonCode,'JSONC_CONFIG_NOT_INTERPRETED');assert.equal(fs.readFileSync(file,'utf8'),original);assert(!fs.existsSync(path.join(project,'opencode.json')));
 });
 test('copied Project remains unavailable to implicit readers; explicit resume relocates and reconnects its installation',async t=>{
  const {root,project,nextPlugin}=fixture(t);
- await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode']});
+ await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode'],writeRootInstructionFiles:true});
  const moved=path.join(root,'other-pc-project');
  fs.cpSync(project,moved,{recursive:true,errorOnExist:true,force:false});
  const sourceBefore=bytes(project),movedBefore=bytes(moved);
@@ -155,7 +155,7 @@ test('copied Project remains unavailable to implicit readers; explicit resume re
 
 test('review regression: OpenCode config resolves a managed launch after host environment substitution', async t => {
  const {project}=fixture(t);
- await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode']});
+ await initializeOrResumeProject({root:project,pluginRoot:sourceRoot,profile:'core',runtimes:['opencode'],writeRootInstructionFiles:true});
  const {default:plugin}=await import('../scripts/opencode-plugin.mjs');
  const hooks=await plugin.server({client:{},project:{id:'host-project'},directory:project});
  t.after(()=>hooks.dispose());

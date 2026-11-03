@@ -18,13 +18,14 @@ import { readLineageArtifact } from "./execution-lineage.mjs";
 import { readRecoveryCheckpoint } from "./compaction-recovery.mjs";
 import { verifySessionRecord, verifyOnboardingState, verifyStorageSelection } from "./onboarding-contract.mjs";
 import { verifyIncrementalRefreshRequest, verifyIncrementalRefreshReceipt, verifyIncrementalRefreshPointer } from "./incremental-refresh.mjs";
+import { verifyPostRefreshProjectionPolicy, verifyPostRefreshProjectionReceipt, verifyPolicyPointer, verifyReceiptPointer } from "./post-refresh-projection.mjs";
 import { withSessionRoute } from "./session-routing.mjs";
 import { readSessionWorkEvidenceOwner } from "./session-work-context.mjs";
 import { sessionWorkPath, readSessionWorkEvidenceOriginalFile } from "./session-work-evidence-original.mjs";
 import { verifyRetainedRunOriginal } from "./run-lineage.mjs";
 
 const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
-const ids = value => [...new Set(JSON.stringify(value).match(/\b(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}\b/g) || [])];
+const ids = encoded => [...new Set(encoded.match(/\b(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}\b/g) || [])];
 const target = /^(world-model|graph-projection)\/snapshots\/((?:world-model|graph-snapshot)-[a-f0-9]{24})\.json(?:\.gz)?$/;
 const failure = code => { throw Object.assign(new Error(code), { code }); };
 // Encoded reference-summary bound, not total V8 RSS or a Context budget.
@@ -111,8 +112,12 @@ function verifyRoot(relative, document, owner) {
     const sessionId = relative.startsWith("sessions/by-id/") ? relative.split("/")[2] : inspected.state.sessionId;
     withSessionRoute(root, sessionId, () => readRecoveryCheckpoint({ root, checkpointId: id, historical: true, storage }));
   }
-  else if (/^refresh\/requests\/refresh-request-[a-f0-9]{24}\.json$/.test(relative)) verifyIncrementalRefreshRequest(document, storage);
-  else if (/^refresh\/receipts\/refresh-receipt-[a-f0-9]{24}\.json$/.test(relative)) verifyIncrementalRefreshReceipt(document, storage);
+  else if (/^refresh\/requests\/(?:incremental-)?refresh-request-[a-f0-9]{24}\.json$/.test(relative)) verifyIncrementalRefreshRequest(document, storage);
+  else if (/^refresh\/receipts\/(?:incremental-)?refresh-receipt-[a-f0-9]{24}\.json$/.test(relative)) verifyIncrementalRefreshReceipt(document, storage);
+  else if (relative === "document-projection/post-refresh/current-policy.json") verifyPolicyPointer(document, storage);
+  else if (relative === "document-projection/post-refresh/current.json") verifyReceiptPointer(document, storage);
+  else if (/^document-projection\/post-refresh\/policies\/post-refresh-projection-policy-[a-f0-9]{24}\.json$/.test(relative)) verifyPostRefreshProjectionPolicy(document, storage);
+  else if (/^document-projection\/post-refresh\/receipts\/post-refresh-projection-receipt-[a-f0-9]{24}\.json$/.test(relative)) verifyPostRefreshProjectionReceipt(document, storage);
   else if (relative === "refresh/current.json") verifyIncrementalRefreshPointer(document, storage);
   else if (relative === "generated/manifest.json") {
     if (document.schemaVersion !== 1 || !Array.isArray(document.managed)) failure("INVALID_GC_GENERATED_MANIFEST");
@@ -133,7 +138,7 @@ function referenceSummary(document) {
     if (typeof value.path === "string" && typeof (value.sha256 || value.digest) === "string") pins.push({ path: value.path, byteLength: value.byteLength ?? null, sha256: value.sha256 || value.digest });
     pending.push(...Object.values(value).filter(child => child && typeof child === "object"));
   }
-  return { references: ids(document), digestReferences: [...new Set(encoded.match(/[a-f0-9]{64}/g) || [])], requiredWorldHashes: [...requiredWorldHashes], pins };
+  return { references: ids(encoded), digestReferences: [...new Set(encoded.match(/[a-f0-9]{64}/g) || [])], requiredWorldHashes: [...requiredWorldHashes], pins };
 }
 
 export async function buildSnapshotDeletionClosure({ root, maxSummaryBytes = SNAPSHOT_GC_SUMMARY_BYTES, shouldContinue = () => true, signal, onProcess, deadline, collectionAttempt } = {}) {
@@ -157,7 +162,7 @@ export async function buildSnapshotDeletionClosure({ root, maxSummaryBytes = SNA
       if (relative === ".operations") { if (fs.readdirSync(file).length) issue(relative, "ACTIVE_OR_UNKNOWN_WRITER"); return; }
       if (relative === "messaging") return;
       if (relative === "snapshot-objects.git" || relative === "snapshot-bundles" || relative === "observations/source-bundles") { if(relative!=="observations/source-bundles")return; }
-      if (relative && !/^(?:graph-discovery|context(?:\/capsules)?|generated|world-model(?:\/snapshots)?|graph-projection(?:\/snapshots)?|sessions(?:\/(?:records|ledger|work-evidence|runs(?:\/run-[0-9]+-[a-f0-9]{6})?|by-id(?:\/session-[a-f0-9-]{36}(?:\/(?:work-evidence|ledger))?)?))?|onboarding(?:\/storage-selections)?|roles|instructions|lineage(?:\/(?:whole-plans|execution-contracts|result-packets|review-decisions))?|change-sets(?:\/(?:records|vcs-evidence|impact-candidate-sets|impact-review-decisions))?|refresh(?:\/(?:requests|receipts))?|observations(?:\/(?:source-bundles|descriptors|records(?:\/by-source-key)?|derived|receipts))?)$/.test(relative)) { issue(relative, "UNSUPPORTED_GC_STORAGE_DIRECTORY"); return; }
+      if (relative && !/^(?:graph-discovery|context(?:\/capsules)?|generated|world-model(?:\/snapshots)?|graph-projection(?:\/snapshots)?|sessions(?:\/(?:records|ledger|work-evidence|runs(?:\/run-[0-9]+-[a-f0-9]{6})?|by-id(?:\/session-[a-f0-9-]{36}(?:\/(?:work-evidence|ledger))?)?))?|onboarding(?:\/storage-selections)?|roles|instructions|lineage(?:\/(?:whole-plans|execution-contracts|result-packets|review-decisions))?|change-sets(?:\/(?:records|vcs-evidence|impact-candidate-sets|impact-review-decisions))?|refresh(?:\/(?:requests|receipts))?|document-projection(?:\/post-refresh(?:\/(?:policies|receipts))?)?|observations(?:\/(?:source-bundles|descriptors|records(?:\/by-source-key)?|derived|receipts))?)$/.test(relative)) { issue(relative, "UNSUPPORTED_GC_STORAGE_DIRECTORY"); return; }
       for (const name of fs.readdirSync(file).sort()) await walk(relative ? relative + "/" + name : name);
       return;
     }
@@ -178,7 +183,6 @@ export async function buildSnapshotDeletionClosure({ root, maxSummaryBytes = SNA
       else { issue(relative, "UNSUPPORTED_GC_REFERENCE_ROOT"); return; }
     }
     const entry = { file, path: storage.directory + "/" + relative, relative, bytes: read.bytes.length, sha256: hash(read.bytes), identity: before };
-    const summary = referenceSummary(document);
     let retainedRow = null;
     try {
       if (match) {
@@ -190,6 +194,7 @@ export async function buildSnapshotDeletionClosure({ root, maxSummaryBytes = SNA
         retainedRow = { ...entry, ...summary, dependencies:hydrated.snapshotStorage?.dependencies||[], id: match[2], identityIds: [match[2], original.sourceSnapshotId, graph?.sourceSnapshotId, graph?.graphSnapshotId].filter(Boolean),
           worldModelHash: original.worldModelHash || null, graphSnapshotHash: original.graphSnapshotHash || graph?.graphSnapshotHash || null };
       } else {
+        const summary = referenceSummary(document);
         if (typeof document !== "string") verifyRoot(relative, document, owner);
         retainedRow = { ...entry, ...summary };
       }

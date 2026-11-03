@@ -70,10 +70,14 @@ test("host-d: owned stable MCP address follows upgrade/rollback and refuses inva
   fs.mkdirSync(projectRoot);
   const first = installDistribution({ sourceRoot: source, installRoot, binDirectory });
   const selected = path.join(installRoot, "releases", first.releaseId);
+  initializeProject({ root: projectRoot, pluginRoot: selected, runtimes: ["claude"], writeRootInstructionFiles: false });
+  const configured = JSON.parse(fs.readFileSync(path.join(projectRoot, ".mcp.json"), "utf8")).mcpServers.lode;
   const launch = portableMcpLaunch({ client: "claude", pluginRoot: selected, projectRoot, projection: "installed-project" });
   assert.equal(launch.pathForm, "owned-install-launcher"); assert.equal(launch.cwd, fs.realpathSync(projectRoot));
   assert.equal(JSON.parse(fs.readFileSync(path.join(installRoot, "installation.json"))).binDirectory, binDirectory);
-  const version = () => withOwnedMcp(t, launch.args, projectRoot, {}, async call => {
+  assert.deepEqual(configured.args, launch.args);
+  assert.equal(JSON.stringify(configured).includes("${LODE_PLUGIN_ROOT}"), false);
+  const version = () => withOwnedMcp(t, configured.args, projectRoot, { LODE_PLUGIN_ROOT: undefined }, async call => {
     const response = await call("initialize", { clientInfo: { name: "claude-code", version: "synthetic" } });
     assert.equal(response.result.serverInfo.name, "lode"); return response.result.serverInfo.version;
   });
@@ -148,7 +152,16 @@ test("host-d: actual packaged plugin request omits only its own new MCP file wit
     const bare = path.join(root, "fresh bare project"); fs.mkdirSync(bare);
     const bareValue = await initialize(call, bare);
     assert.equal(bareValue.projectAction, "initialized"); assert.equal(fs.existsSync(path.join(bare, ".mcp.json")), false);
-    assert.equal(fs.existsSync(path.join(bare, "CLAUDE.md")), true);
+    assert.equal(fs.existsSync(path.join(bare, "CLAUDE.md")), false);
+    const beforePart = JSON.parse(fs.readFileSync(path.join(bare, ".lode/project.json"))).integrations.claude.instruction;
+    assert.equal(beforePart.status, "withheld");
+    convergeProjectInstallation({ root: bare, pluginRoot });
+    const afterParts = JSON.parse(fs.readFileSync(path.join(bare, ".lode/project.json"))).integrations.claude;
+    assert.deepEqual(afterParts.instruction, beforePart, "Adding standalone MCP cannot reinterpret the withheld instruction choice.");
+    assert.equal(afterParts.mcp.status, "managed");
+    assert.equal(fs.existsSync(path.join(bare, "CLAUDE.md")), false);
+    assert.equal(fs.existsSync(path.join(bare, ".mcp.json")), true);
+
 
     const other = path.join(root, "other Hook cwd"); fs.mkdirSync(other);
     for (const variant of ["no-hook", "project-server", "wrong-cwd", "wrong-tool-use", "wrong-arguments", "tampered-config",
@@ -252,6 +265,7 @@ test("host-d: failed marker publication preserves selection; explicit bin/root c
   convergeProjectInstallation({ root: projectRoot, pluginRoot: path.join(installRoot, "releases", upgraded.releaseId) });
   const changed = JSON.parse(fs.readFileSync(path.join(projectRoot, ".mcp.json")));
   assert.equal(changed.mcpServers.lode.args[0], path.join(secondBin, "lode-agent-launcher.mjs"));
+  assert.equal(JSON.stringify(changed).includes("${LODE_PLUGIN_ROOT}"), false);
   assert.deepEqual(fs.readFileSync(session), sessionBytes); assert.equal(fs.readFileSync(path.join(projectRoot, "CLAUDE.md"), "utf8"), "User-owned instructions\n");
   const moved = path.join(root, "moved install");
   for (const target of [installRoot, moved]) assert(path.resolve(target).startsWith(path.resolve(root) + path.sep), "Recursive move must stay inside the owned fixture");
@@ -261,6 +275,7 @@ test("host-d: failed marker publication preserves selection; explicit bin/root c
   const replaced = installDistribution({ sourceRoot: nextSource, installRoot: moved, binDirectory: explicitBin });
   convergeProjectInstallation({ root: projectRoot, pluginRoot: path.join(moved, "releases", replaced.releaseId) });
   assert.equal(JSON.parse(fs.readFileSync(path.join(projectRoot, ".mcp.json"))).mcpServers.lode.args[0], path.join(explicitBin, "lode-agent-launcher.mjs"));
+  assert.equal(fs.readFileSync(path.join(projectRoot, ".mcp.json"), "utf8").includes("${LODE_PLUGIN_ROOT}"), false);
   assert.deepEqual(fs.readFileSync(session), sessionBytes); assert.equal(fs.readFileSync(path.join(projectRoot, "CLAUDE.md"), "utf8"), "User-owned instructions\n");
 });
 

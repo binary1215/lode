@@ -129,6 +129,10 @@ codex plugin add lode-agent-core@lode-agent-plugin
 
 설치 후 Codex를 재시작하고, 설치된 Skill과 MCP 서버를 불러오도록 새 작업을
 시작한 뒤 [첫 요청 예시](#first-request)에 원하는 작업을 넣어 요청하세요.
+Codex는 Lode hook을 신뢰하기 전에는 실행하지 않습니다. CLI에서는 `/hooks`를,
+데스크톱 앱에서는 Review hooks 또는 Settings > Hooks를 여세요. 프로젝트도
+신뢰해야 프로젝트 로컬 `.codex` 층이 로드됩니다. `lode doctor <project>`가
+그 신뢰 기록 여부를 알려 줍니다.
 
 플러그인을 설치해도 프로젝트 초기화, GraphDB 접속, 모델 선택이나 Product
 Canon 승인이 자동으로 이뤄지지는 않습니다. 해당 작업은 Core의 정해진 경계를
@@ -154,11 +158,14 @@ Claude Code는 플러그인을 버전별 캐시에 복사하고 `${CLAUDE_PLUGIN
 아래 사용자 범위 설치를 쓰는 경우 OpenCode는 `--runtime opencode`, Claude Code는
 `--runtime claude`, Codex는 `--runtime codex`로 선택한 클라이언트만 초기화합니다.
 여러 통합을 원할 때만 쉼표로 조합합니다. 마켓플레이스로 설치한 Claude Code 사용자는 번들 Skill에 같은
-초기화를 요청할 수 있습니다. 프로젝트에 해당 파일이 없을 때만 Claude Code용
-`CLAUDE.md`, Codex용 `AGENTS.md`, OpenCode용 `opencode.json`을 만듭니다.
+초기화를 요청할 수 있습니다. `CLAUDE.md`, `AGENTS.md`, `opencode.json`은
+`--write-root-instructions` 또는 MCP `write_root_instruction_files: true`를
+줬을 때만 만들거나 수정합니다. 그 플래그 없는 비대화형 init은 이 파일을 만들지 않습니다.
 검증된 플러그인 MCP 연결이 있으면 중복 프로젝트 `.mcp.json`을 만들지 않습니다.
-standalone Claude 초기화는 검증된 로컬 launcher나 정확한 절대 패키지 경로로
-누락된 파일을 만들 수 있습니다. 기존 파일은 보존하고 직접 통합할 때 쓸 생성 파일은 선택된 정본 루트의
+선택한 standalone Claude 설치는 검증된 launcher 또는 정확한 로컬 패키지 진입점을
+사용하며 별도 환경 변수 설정을 요구하지 않습니다. 같은 root 파일 동의는 이후
+init/resume 및 distribution `install --project`에서도 적용됩니다. 동의하지 않은
+OpenCode generated 설정은 안내 자료이며 활성 연결을 뜻하지 않습니다. 기존 파일은 보존하고 직접 통합할 때 쓸 생성 파일은 선택된 정본 루트의
 `.lode/generated/` 또는 기존 `.head/generated/`에 둡니다.
 
 OpenCode 로컬 설정은 절대 Node 바이너리나 설치 경로 대신 `node`와
@@ -342,7 +349,7 @@ JSON을 쓰거나 GraphDB를 조작하거나 토큰 단계를 고르거나 MCP �
 | 프로젝트 | 초기화, Source Scope, 검토를 거치는 Product Canon | 사용 가능 |
 | 지식 | 원본 fallback을 갖는 제한된 그래프 우선 탐색, World Model, 증분 갱신, 선택적 Context Capsule | 사용 가능 |
 | Session | 독립 논리 Session 라우팅, 공통 현재 방향과 정확한 기준의 갱신 | 사용 가능 |
-| Session | 정확히 확인된 지원 Claude/OpenCode 자식의 상태 쓰기는 기본 보호, Codex 보호는 선택 적용 | 실험적 |
+| Session | Claude Code, OpenCode, 감지된 Codex 하위 대화의 상태 쓰기는 기본 읽기 전용. `LODE_SUBAGENT_WRITE_GUARD=off`가 명시적 해제 | 사용 가능 |
 | 계보 | Run, ResultPacket, Fresh Lode 검토, P2 Session 및 대화 진입 복구 | 사용 가능 |
 | Host lifecycle | 신뢰하는 Host 어댑터가 필요한 공급자 중립 compaction·최대 1회 continuation 계약 | 실험적 |
 | Host context | compact를 포함한 Claude Code·Codex 패키지의 SessionStart 맥락 전달 | 사용 가능 |

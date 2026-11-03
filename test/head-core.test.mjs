@@ -358,8 +358,9 @@ test("initializes Claude, Codex, and OpenCode projections and verifies managed c
   const claudeMcp = JSON.parse(fs.readFileSync(path.join(root, ".mcp.json"), "utf8"));
   assert.deepEqual(Object.keys(claudeMcp.mcpServers), ["lode"]);
   assert.equal(claudeMcp.mcpServers.lode.command, "node");
-  assert.equal(claudeMcp.mcpServers.lode.args[0], path.join(fs.realpathSync(pluginRoot), "scripts", "mcp-server.mjs"));
-  assert.equal(claudeMcp.mcpServers.lode.cwd, fs.realpathSync(pluginRoot));
+  assert.equal(claudeMcp.mcpServers.lode.args[0], path.join(pluginRoot, "scripts", "mcp-server.mjs"));
+  assert.equal(claudeMcp.mcpServers.lode.cwd, pluginRoot);
+  assert.equal(JSON.stringify(claudeMcp).includes("${LODE_PLUGIN_ROOT}"), false);
   const opencode = JSON.parse(fs.readFileSync(path.join(root, "opencode.json"), "utf8"));
   assert.deepEqual(Object.keys(opencode.mcp), ["lode"]);
   assert.deepEqual(opencode.mcp.lode.command, ["node", "{env:LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs"]);
@@ -1832,6 +1833,7 @@ test("watches filesystem changes through the bounded debounced refresh adapter",
     clearTimeout(timeout);
     await watcher.close({ flush: false });
   });
+  await new Promise(resolve => setImmediate(resolve)); // Let native watcher startup enter the event loop.
   fs.appendFileSync(path.join(root, "src", "watched.mjs"), "export const changed = 2;\n");
   const result = await delivered;
   clearTimeout(timeout);

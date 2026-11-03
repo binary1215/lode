@@ -10,7 +10,7 @@ import { initializeProject } from "../scripts/lib/lode-core.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { runSessionHostHook } from "../scripts/session-host-hook.mjs";
 import {
-  formatAddress, hookConversationIdentity, identityFromCaller, listProjectConversations, prepareHookInjection,
+  formatAddress, hookConversationIdentity, identityFromCaller, listProjectConversations, listQuarantinedConversationItems, prepareHookInjection,
   registerConversationPresence, registerOpenCodePresence, sendProjectConversation, writeOpenCodeCallerTicket,
   deliverQueuedOpenCode as pumpOpenCode,
 } from "../scripts/lib/conversation-messaging.mjs";
@@ -74,6 +74,9 @@ test("three clients are listed with addresses and current reachability inside is
   register(root, environment, opencode, { kind: "opencode-async" });
   const listed = listProjectConversations({ root, caller: claude, environment, now: fixedNow });
   assert.equal(listed.self.address, "claude:claude-live");
+  assert.equal(listed.desktop.codex.delivery, "next-prompt");
+  assert.match(listed.desktop.claude.limitation, /not listed/);
+  assert.equal(listed.desktop.opencode.delivery, "queue");
   assert.deepEqual(listed.conversations.map(row => [row.address, row.runtime, row.reachable, row.delivery]).sort(), [
     ["codex:codex-live", "codex", true, "next-prompt"],
     ["opencode:ses_live", "opencode", true, "async"],
@@ -1000,16 +1003,17 @@ test("a tracked messaging gitignore is not rewritten", t => {
   assert.doesNotMatch(git(["status", "--porcelain"]).stdout, /messaging\/\.gitignore/);
 });
 
-test("darwin process birth uses UTC and caches only its own successful birth", () => {
+test("darwin process birth uses UTC and caches only its own successful birth", async () => {
+  const { processBirth: isolatedBirth } = await import("../scripts/lib/native-session-process.mjs?darwin-cache-fixture");
   const calls = [];
-  const first = processStartId(process.pid, {
+  const first = isolatedBirth(process.pid, {
     platform: "darwin",
     spawnSyncImpl(file, args, options) {
       calls.push({ file, args, env: options.env });
       return { status: 0, stdout: "Thu Jan  1 00:00:00 2026\n" };
     },
   });
-  const second = processStartId(process.pid, { platform: "darwin", spawnSyncImpl() { throw new Error("cache miss"); } });
+  const second = isolatedBirth(process.pid, { platform: "darwin", spawnSyncImpl() { throw new Error("cache miss"); } });
   assert.equal(first, String(Date.parse("Thu Jan  1 00:00:00 2026")));
   assert.equal(second, first);
   assert.equal(calls.length, 1);
@@ -1162,4 +1166,114 @@ test("barrier: stale recovery cannot overwrite another caller's admitted handoff
   const afterDigest = crypto.createHash("sha256").update(fs.readFileSync(archived)).digest("hex");
   t.diagnostic(JSON.stringify({ phase, afterDigest, handedToHost: JSON.parse(fs.readFileSync(archived)).handedToHost }));
   });
+});
+
+test("a corrupt inbox file is quarantined with its original bytes and does not block the other message", async t => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-quarantine-")));
+  const home = path.join(base, "home");
+  const root = path.join(base, "한글 café (team)'s work");
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(root, { recursive: true });
+  const environment = { HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, "codex"), LODE_AGENT_OPERATIONAL_STATE_ROOT: path.join(base, "operational") };
+  fs.mkdirSync(environment.CODEX_HOME, { recursive: true });
+  fs.mkdirSync(environment.LODE_AGENT_OPERATIONAL_STATE_ROOT, { recursive: true });
+  const previous = new Map(Object.keys(environment).map(key => [key, process.env[key]]));
+  for (const [key, value] of Object.entries(environment)) process.env[key] = value;
+  t.after(() => {
+    for (const [key, value] of previous) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  initializeProject({ root, pluginRoot, runtimes: ["codex"] });
+  register(root, environment, caller("codex", "codex-sender"), { kind: "codex-next-prompt" });
+  register(root, environment, caller("codex", "codex-receiver"), { kind: "codex-next-prompt" });
+  const deliver = async () => ({ outcome: "unavailable" });
+  const good = await sendProjectConversation({ root, caller: caller("codex", "codex-sender"), environment, to: "codex:codex-receiver", body: "keep this message", now: fixedNow, waitMs: 0, deliver });
+  const doomed = await sendProjectConversation({ root, caller: caller("codex", "codex-sender"), environment, to: "codex:codex-receiver", body: "this body will be damaged", now: fixedNow, waitMs: 0, deliver });
+  assert.equal(good.state, "queued");
+  assert.equal(doomed.state, "queued");
+  const inbox = path.join(root, ".lode", "messaging", "inbox");
+  const files = fs.readdirSync(inbox).flatMap(slot => fs.readdirSync(path.join(inbox, slot)).filter(name => name.endsWith(".json")).map(name => path.join(inbox, slot, name)));
+  const damagedFile = files.find(file => path.basename(file) === doomed.id + ".json");
+  const original = Buffer.from("{ not json\n한글 café (team)'s bytes\n");
+  fs.writeFileSync(damagedFile, original);
+  const slot = path.dirname(damagedFile);
+  const extraName = "msg-" + "ab".repeat(12) + ".json";
+  fs.writeFileSync(path.join(slot, extraName), Buffer.from("[]"));
+  const template = JSON.parse(fs.readFileSync(files.find(file => path.basename(file) === good.id + ".json")));
+  const invalidOriginals = [
+    { schemaVersion: 1 },
+    { ...template, body: undefined },
+    { ...template, notice: "unreadable", quarantineId: "bad\nforged-header", quarantineCount: 1 },
+    { ...template, notice: "expired", expiredId: template.id, originalTo: "bad\nheader" },
+    { ...template, handedToHost: "false" },
+    { ...template, claim: { token: "safe", pid: "wrong-type", at: template.createdAt } },
+    { ...template, externalAttempt: true },
+    { ...template, projectRoot: path.join(root, "foreign") },
+    { ...template, to: { ...template.to, address: "codex:other-recipient", nativeSessionId: "other-recipient" } },
+  ].map((record, i) => {
+    const id = "msg-" + String(i + 1).repeat(24), raw = Buffer.from(JSON.stringify({ ...record, id, unknownMetadata: { retained: true } }));
+    fs.writeFileSync(path.join(slot, id + ".json"), raw); return raw;
+  });
+  const first = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-receiver" }, environment });
+  assert.ok(first, "the readable message is still delivered");
+  assert.match(first.text, /keep this message/);
+  assert.doesNotMatch(first.text, /this body will be damaged/);
+  first.commit();
+  const quarantined = listQuarantinedConversationItems({ root });
+  const keptPayloads = quarantined.items.map(item => fs.readFileSync(path.join(root, ".lode", "messaging", "quarantine", item.id, "payload")));
+  assert.equal(quarantined.count, 2 + invalidOriginals.length, JSON.stringify(invalidOriginals.filter(raw => !keptPayloads.some(bytes => bytes.equals(raw))).map(raw => JSON.parse(raw))));
+  const payloads = quarantined.items.map(item => fs.readFileSync(path.join(root, ".lode", "messaging", "quarantine", item.id, "payload")));
+  for (const raw of invalidOriginals) assert.ok(payloads.some(bytes => bytes.equals(raw)));
+  assert.ok(payloads.some(bytes => bytes.equals(original)));
+  assert.ok(payloads.some(bytes => bytes.equals(Buffer.from("[]"))));
+  const second = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-receiver" }, environment });
+  assert.match(second.text, /notice: unreadable/);
+  assert.ok(second.text.includes("quarantine-count: " + (2 + invalidOriginals.length)));
+  second.commit();
+  const third = prepareHookInjection({ runtime: "codex", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "codex-receiver" }, environment });
+  assert.equal(third, null, "the unreadable notice is not repeated");
+  const listed = listProjectConversations({ root, caller: caller("codex", "codex-sender"), environment, now: fixedNow });
+  assert.equal(listed.quarantine.count, 2 + invalidOriginals.length);
+});
+
+test("an unreachable send does not consume the caller ticket", async t => {
+  const { root, environment } = isolated(t);
+  register(root, environment, caller("opencode", "ses_sender"), { kind: "opencode-async" });
+  const args = { project_root: root, to: "opencode:ses_missing", body: "keep the ticket", reply_to: null };
+  const ticket = writeOpenCodeCallerTicket({ root, session: { id: "ses_sender", directory: root }, args, environment, now: fixedNow });
+  const first = await sendProjectConversation({ root, environment, hostTicket: ticket, to: args.to, body: args.body, now: fixedNow, waitMs: 0 });
+  assert.equal(first.state, "unreachable");
+  const second = await sendProjectConversation({ root, environment, hostTicket: ticket, to: args.to, body: args.body, now: fixedNow, waitMs: 0 });
+  assert.equal(second.state, "unreachable");
+});
+
+for (const mutation of ["expiry", "deletion", "tamper"]) test("ticket second validation refuses " + mutation + " before enqueue", async t => {
+  const { root, environment } = isolated(t);
+  register(root, environment, caller("opencode", "ses_receiver"), { kind: "opencode-async" }, fixedNow);
+  const args = { project_root: root, to: "opencode:ses_receiver", body: "must not enqueue", reply_to: null };
+  const ticket = writeOpenCodeCallerTicket({ root, session: { id: "ses_sender", directory: root }, args, environment, now: fixedNow });
+  const file = path.join(root, ".lode", "messaging", "tickets", ticket + ".json");
+  let calls = 0;
+  const now = () => {
+    calls++;
+    if (calls === 2 && mutation === "deletion") fs.unlinkSync(file);
+    if (calls === 2 && mutation === "tamper") { const value = JSON.parse(fs.readFileSync(file)); value.mac = "invalid"; fs.writeFileSync(file, JSON.stringify(value)); }
+    return fixedNow() + (calls > 1 && mutation === "expiry" ? 31_000 : 0);
+  };
+  await assert.rejects(sendProjectConversation({ root, environment, ...{ to: args.to, body: args.body }, hostTicket: ticket, now,
+    deliver: async () => ({ outcome: "unavailable" }) }), { code: "CONVERSATION_CALLER_UNAVAILABLE" });
+  const inbox = path.join(root, ".lode", "messaging", "inbox");
+  const files = fs.existsSync(inbox) ? fs.readdirSync(inbox).flatMap(slot => fs.readdirSync(path.join(inbox, slot))) : [];
+  assert.equal(files.length, 0);
+});
+
+test("a host ticket is consumed at most once across competing sends", async t => {
+  const { root, environment } = isolated(t);
+  register(root, environment, caller("opencode", "ses_receiver"), { kind: "opencode-async" }, fixedNow);
+  const args = { project_root: root, to: "opencode:ses_receiver", body: "only once", reply_to: null };
+  const ticket = writeOpenCodeCallerTicket({ root, session: { id: "ses_sender", directory: root }, args, environment, now: fixedNow });
+  const results = await Promise.allSettled([0,1].map(() => sendProjectConversation({ root, environment, to: args.to, body: args.body,
+    hostTicket: ticket, now: fixedNow, deliver: async () => ({ outcome: "unavailable" }) })));
+  assert.equal(results.filter(r => r.status === "fulfilled").length, 1);
+  assert.equal(results.find(r => r.status === "rejected").reason.code, "CONVERSATION_TICKET_CONSUMED_OUTCOME_UNKNOWN");
 });

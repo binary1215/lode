@@ -160,7 +160,7 @@ jobs:
     needs: prepare
     if: ${{ needs.prepare.outputs.enabled == 'true' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -203,9 +203,14 @@ jobs:
           node scripts/generate-process-supervisor-manifest.mjs --platform "${platform}" --arch "${arch}" \
             --binary "${binary_root}/${executable}" --output "${binary_root}/SUPERVISOR-MANIFEST.json"
 
-      # These are executed host binaries; the separate build matrix only cross-builds.
-      - name: Verify smoke cleanup, exact result application, and World workflows on the actual host
-        run: node --test --test-isolation=none --test-concurrency=1 test/native-smoke-cleanup.test.mjs test/compaction-recovery.test.mjs test/runtime-result-application.test.mjs test/onboarding-world-workflow.test.mjs test/context-compiler.test.mjs
+      - name: Verify actual Windows observer contracts before the full suite
+        if: runner.os == 'Windows'
+        run: node --test --test-isolation=none --test-concurrency=1 --test-name-pattern="private.*wire|Windows exact parent query|actual native writer inventory|actual local OS probe|actual owned child birth|host-c.*separate Hook processes|host-c.*actual command stdin" test/native-portability.test.mjs test/native-session-process.test.mjs test/native-session-observations.test.mjs
+
+      # The full JavaScript suite, not a smoke subset. npm test builds the
+      # supervisor fixture when the prepared root above is absent.
+      - name: Run every JavaScript regression test
+        run: npm test
 
       - name: Build, install, doctor, native health, cleanup, rollback, and uninstall
         run: node scripts/verify-native-host-smoke.mjs

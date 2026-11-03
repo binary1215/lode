@@ -177,7 +177,7 @@ See [runtime adapters](runtime-adapters.md).
 
 ## File ownership
 
-`.lode/` is plugin-managed canon. Root `CLAUDE.md`, `.mcp.json`, `AGENTS.md`, and `opencode.json` remain independently owned projections: absent files may be generated, existing project-owned files stay intact and alternatives remain under `.lode/generated/`. A verified Claude plugin MCP connection avoids a duplicate project configuration. Packaged clients use `node`, project-relative `scripts/mcp-server.mjs` or placeholders (`${CLAUDE_PLUGIN_ROOT}`, `${PLUGIN_ROOT}`, `{env:LODE_PLUGIN_ROOT}`). Standalone Claude initialization can use a verified local launcher or exact absolute package entry. These paths are machine-local; they do not embed an absolute Node binary. See [runtime launch paths](runtime-adapters.md#startup-guidance-and-claude-file-ownership).
+`.lode/` is plugin-managed canon. Root `CLAUDE.md`, `.mcp.json`, `AGENTS.md`, and `opencode.json` remain independently owned projections: absent files may be generated, existing project-owned files stay intact and alternatives remain under `.lode/generated/`. A verified Claude plugin MCP connection avoids a duplicate project configuration. Packaged clients use `node`, project-relative `scripts/mcp-server.mjs` or placeholders (`${CLAUDE_PLUGIN_ROOT}`, `${PLUGIN_ROOT}`, `{env:LODE_PLUGIN_ROOT}`). Selected standalone Project `.mcp.json` uses the verified installed launcher or exact local fallback. A portable template is a separate export and does not prove a working local connection. These paths do not embed an absolute Node binary. See [runtime launch paths](runtime-adapters.md#startup-guidance-and-claude-file-ownership).
 
 The managed manifest records SHA-256 digests. Canonical mutation stops when managed drift is detected.
 

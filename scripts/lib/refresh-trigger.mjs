@@ -765,7 +765,7 @@ export function createFileSystemRefreshWatcher({
   };
   let watcher;
   try {
-    watcher = fs.watch(queue.root, { recursive: true, encoding: "utf8" }, async (eventType, filename) => {
+    watcher = fs.watch(fs.realpathSync.native(queue.root), { recursive: true, encoding: "utf8" }, async (eventType, filename) => {
       try {
         (await queue.enqueue(filename == null
           ? { kind: "project-signal", operation: "unknown", path: null, evidenceId: null }

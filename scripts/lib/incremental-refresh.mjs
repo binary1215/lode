@@ -524,6 +524,13 @@ async function refreshWorldModelLocked({
 } = {}) {
   const inspected = readyProject(root);
   const projectRoot = inspected.project.projectRoot;
+  const { inspectStorageReaderCompatibility } = await import("./snapshot-storage-compatibility.mjs");
+  const { verifyWorldModelPointerOriginal } = await import("./world-model.mjs");
+  const { verifyGraphProjectionPointer } = await import("./graph-projection-adapter.mjs");
+  const mismatch = inspectStorageReaderCompatibility({ root: projectRoot, storage: inspected.storage,
+    verifyWorldPointer: pointer => verifyWorldModelPointerOriginal(pointer, inspected.project.projectId),
+    verifyGraphPointer: pointer => verifyGraphProjectionPointer(pointer, null, inspected.storage) }).layers.find(layer => ["STORAGE_VERSION_MISMATCH", "INVALID_READER_REQUIREMENTS"].includes(layer.reasonCode));
+  if (mismatch) throw Object.assign(new Error(mismatch.message), { code: mismatch.reasonCode });
   const stored = (await readWorldModel({ root: projectRoot, storeAdapter }));
   const previousSnapshot = stored.snapshot;
   const request = buildIncrementalRefreshRequest({

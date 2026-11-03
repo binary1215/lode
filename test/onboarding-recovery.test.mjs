@@ -710,10 +710,10 @@ test("physical composition and part damage remain strict Product errors without 
       ["root shape", "INVALID_SNAPSHOT_COMPOSITION", () => {
         const value = structuredClone(physical); value.unrecorded = true; writeFixtureSnapshot(file, value);
       }],
-      ["unsupported schema", "UNSUPPORTED_SNAPSHOT_COMPOSITION", () => {
+      ["unsupported schema", "STORAGE_VERSION_MISMATCH", () => {
         const value = structuredClone(physical); value.schemaVersion = 4; writeFixtureSnapshot(file, value);
       }],
-      ["unsupported producer", "UNSUPPORTED_SNAPSHOT_COMPOSITION", () => {
+      ["unsupported producer", "STORAGE_VERSION_MISMATCH", () => {
         const value = structuredClone(physical); value.producer.version = "9.0.0"; writeFixtureSnapshot(file, value);
       }],
       ["same address conflicting descriptor", "CONFLICTING_SNAPSHOT_BUNDLE_DESCRIPTOR", () => {

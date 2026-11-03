@@ -69,7 +69,9 @@ export function createNativeSessionHostBridge({ environment = process.env, runti
       const subagent = Boolean(hinted) || meta.subagent === true || Boolean(rootSessionId);
       // agentId stays off the Session adapter key. messagingAgentId is only a
       // conversation address, so a child cannot register or send as its parent.
+      // correlation is the write-guard bit for this detected child, not a Session key.
       return { status: "known", runtime: "codex", nativeSessionId: meta.threadId, subagent,
+        ...(subagent ? { correlation: "codex-subconversation" } : {}),
         ...(hinted ? { messagingAgentId: hinted } : {}), ...(rootSessionId ? { rootSessionId } : {}) };
     }
     // This remembers only the transport capability, NEVER the last caller.

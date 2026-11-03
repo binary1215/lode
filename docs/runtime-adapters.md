@@ -100,24 +100,17 @@ one bounded status map (O(A), not an exact-ID API), never a new SDK/client/auth.
 Experimental code-mode and OpenCode ancestry/P3 entry remain outside this path.
 
 Marketplace client launch lines remain portable. Inside a loaded Claude plugin,
-`${CLAUDE_PLUGIN_ROOT}` is the Host-supplied plugin root. In contrast, explicit
-CLI initialization generates a machine-local Claude project configuration using
-`node` and a verified local entry; it does not assume that plugin-only variable
-exists. For an owned standalone installation with a recorded command address,
-the project configuration names its existing launcher with the internal MCP
-mode. The launcher verifies ownership, `current.json`, the selected release and
-its hashes before executing the ordinary MCP server. The existing installation
-marker records the explicitly selected bin directory; no PATH/default-install or
-latest-cache search chooses another installation. The address follows future
-launches after upgrade or rollback in the same installation root.
+`${CLAUDE_PLUGIN_ROOT}` is supplied by the Host. A selected standalone Project
+instead uses the verified installed launcher (including current release/hash
+checks), or an exact local package entry when no owned launcher exists. It does
+not require users to provision a new `LODE_PLUGIN_ROOT` variable. The separately
+requested `project-file` export is a portable template: an external package
+placeholder is not proof of a configured or loaded local connection.
 
-Packages without a verified stable launcher, including older markers without a
-command address and marketplace caches, keep the selected absolute package MCP
-entry and working directory. A moved/deleted installation root does not repair
-itself: explicit installation selection and resume/convergence reconnect managed
-projections. User-owned configuration stays untouched. Neither pointer changes
-nor configuration convergence reload an already running MCP server. This local
-Claude projection is not a portable file to copy between machines.
+Moving/copying the Project does not select an installation on the next machine.
+Explicit resume with the selected installation converges only managed launch
+projections; user-owned files remain intact. Upgrade and rollback follow the
+verified installed launcher. No convergence reloads an already running MCP.
 
 Codex project init writes no MCP path; its plugin `.mcp.json` stays `node` plus
 `scripts/mcp-plugin-server.mjs` with `cwd` `.`, and hooks expand `${PLUGIN_ROOT}`.
@@ -146,10 +139,12 @@ entry/module declarations and exact file tree; outer marketplace repository and
 commit checks remain separate. Local synthetic stdio tests do not establish
 installed Host loading, Hook interpolation or model reception.
 
-With `LODE_SUBAGENT_WRITE_GUARD` unset, only supported exact-correlated
-Claude/OpenCode child state writes are protected by default. Codex and unproven
-callers stay off by default. Explicit `enforce` preserves the existing broader
-known-child policy; `off` disables this optional Host policy and its additional
+With `LODE_SUBAGENT_WRITE_GUARD` unset, exact-correlated Claude Code and
+OpenCode child state writes are protected, and a detected Codex sub-conversation
+is read-only too. Detection is `sessionId` different from `threadId`, a child
+agent id, or `subagent: true` on the Codex tool call. Unproven callers stay off.
+Explicit `enforce` preserves the existing broader known-child policy; `off` is
+the explicit opt-out and disables this Host policy and its additional
 lookup/correlation cost. An invalid value warns once per changed value without
 echoing it, and disables protection rather than blocking ordinary work.
 The catalog's effect metadata determines coverage after router unwrap, once per

@@ -93,21 +93,15 @@ bounded status map(O(A))만 사용하며 새 SDK·인증을 만들지 않습니�
 
 마켓플레이스 실행 줄은 이식성을 유지합니다. 로드된 Claude 플러그인 안의
 `${CLAUDE_PLUGIN_ROOT}`는 Host가 제공하는 정상적인 플러그인 경로입니다.
-반면 명시적인 CLI 초기화가 만드는 Claude 프로젝트 설정은 `node`와 선택한
-로컬 실행 경로를 검증하며, 플러그인 전용 변수가 있다고 가정하지 않습니다.
-소유권이 확인된 standalone 설치에 선택된 command 주소가 기록되어 있으면, 기존
-launcher의 내부 MCP 모드를 사용합니다. launcher는 소유권·`current.json`·선택된
-release·파일 hash를 확인한 뒤 일반 MCP server를 실행합니다. 기존 설치 marker에
-명시적으로 선택한 bin 디렉터리를 기록하며 PATH·기본 설치·최신 cache 검색으로 다른
-설치를 고르지 않습니다. 같은 설치 root의 upgrade/rollback 이후 새 실행도 같은 주소를
-사용합니다.
+선택한 standalone 프로젝트는 검증된 설치 launcher(현재 release와 해시 검사 포함)를
+사용하고, 소유 launcher가 없을 때만 정확한 로컬 패키지 진입점을 사용합니다.
+새 `LODE_PLUGIN_ROOT` 환경 변수 설정을 요구하지 않습니다. 별도로 요청하는
+`project-file` 출력은 이식용 템플릿이며, placeholder 존재만으로 로컬 연결이나
+실행 중인 Host의 로드를 증명하지 않습니다.
 
-command 주소가 없는 구 marker나 marketplace cache처럼 검증된 stable launcher가 없으면
-선택된 패키지의 절대 MCP 경로와 작업 디렉터리를 유지합니다. 설치 root가 이동·삭제되어도
-자동으로 다른 위치를 찾지 않습니다. 살아 있는 설치를 명시적으로 선택하고 resume/설치
-정합화하면 관리 중인 투영을 다시 연결할 수 있습니다. 사용자 소유 설정은 보존하며,
-pointer 변경이나 설정 정합화로 이미 실행 중인 MCP를 reload하지 않습니다. 이 로컬
-Claude 설정을 다른 기계로 복사할 수 있는 이식형 파일로 간주하면 안 됩니다.
+다른 기기로 복사한 뒤에는 해당 기기에서 선택한 설치로 명시적으로 resume합니다.
+관리 중인 실행 프로젝션만 갱신하고 사용자 파일은 보존합니다. upgrade·rollback은
+검증된 설치 launcher를 따르며 이미 연결된 MCP를 재시작하지 않습니다.
 
 Codex 프로젝트 초기화는 MCP 경로를 쓰지 않습니다. 플러그인 `.mcp.json`은
 `node`, `scripts/mcp-plugin-server.mjs`, `cwd` `.`를 유지하고 hook은 `${PLUGIN_ROOT}`를
@@ -133,10 +127,12 @@ ENV·모델 인수·서버명·launch 객체만으로는 증명할 수 없습니
 repository·commit 검사는 별개이며, 로컬 합성 stdio 검사는 실제 설치 Host의 로딩·Hook 변수
 해석·모델 수신을 증명하지 않습니다.
 
-`LODE_SUBAGENT_WRITE_GUARD`가 없으면 정확한 호출 연결이 검증된 지원
-Claude/OpenCode 자식의 상태 쓰기만 기본 보호합니다. Codex와 근거가 없는 caller는
-기본으로 켜지지 않습니다. 명시적 `enforce`는 기존의 더 넓은 확인된 자식 정책을
-유지하고, `off`는 이 선택적 Host 보호와 추가 조회·상관 비용을 끕니다. 잘못된 값은
+`LODE_SUBAGENT_WRITE_GUARD`가 없으면 정확한 호출 연결이 검증된 Claude Code와
+OpenCode 자식의 상태 쓰기를 보호하고, 감지된 Codex 하위 대화도 읽기 전용입니다.
+감지는 `sessionId`와 `threadId`가 다르거나, 자식 agent id, 또는 Codex 도구 호출의
+`subagent: true`입니다. 근거가 없는 caller는 기본으로 켜지지 않습니다. 명시적
+`enforce`는 기존의 더 넓은 확인된 자식 정책을 유지하고, `off`는 명시적 해제이며
+이 Host 보호와 추가 조회·상관 비용을 끕니다. 잘못된 값은
 변경된 값마다 한 번만 값을 노출하지 않고 경고하며, 일반 작업을 막는 대신 보호를
 끕니다. 카탈로그의 effect metadata로 라우터 내부 도구를 확인한 뒤 MCP 호출마다 한 번,
 선택적 Session 연결 안내보다 먼저 판단합니다. 읽기·부모/독립 작업·일반 소스 편집은

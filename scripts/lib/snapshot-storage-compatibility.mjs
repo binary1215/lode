@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
+import { comparePublicationVersions } from "./semantic-version.mjs";
+
+const installedVersion = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
+export const STORAGE_READER_VERSION = Object.freeze({ installed: installedVersion, readsLayouts: ["whole", "domain-bundles-v1", "shared-domains-v2", "chunked-code-v3"], minimumWriterUnderstood: "0.3.0-beta.75" });
 
 // Physical reader capabilities only. A declared-supported hint is neither an
 // integrity check nor evidence that the snapshot is current or semantically fit.
@@ -9,6 +13,7 @@ export function snapshotReaderRequirements(entry) {
   const layout = entry.snapshotStorage?.layout || "whole";
   if (!["whole", "domain-bundles-v1", "shared-domains-v2", "chunked-code-v3"].includes(layout)) return null;
   return { version: 1, snapshotId: entry.document.worldModelId || entry.document.graphSnapshotId,
+    minimumReader: STORAGE_READER_VERSION.minimumWriterUnderstood, writer: installedVersion,
     layout, ...(layout === "whole" ? {} : { composition: { kind: "SnapshotComposition",
       schemaVersion: layout === "chunked-code-v3" ? 3 : layout === "shared-domains-v2" ? 2 : 1,
       producer: { name: "lode-domain-bundle", version: layout === "chunked-code-v3" ? "0.3.0" : layout === "shared-domains-v2" ? "0.2.0" : "0.1.0" } } }) };
@@ -59,8 +64,15 @@ export function inspectStorageReaderCompatibility({ root, storage, verifyWorldPo
         supported = c.kind === "SnapshotComposition" && c.schemaVersion === (chunked ? 3 : flat ? 2 : 1)
           && c.producer.name === "lode-domain-bundle" && c.producer.version === (chunked ? "0.3.0" : flat ? "0.2.0" : "0.1.0");
       }
+      const requiredVersion = requirements.minimumReader ?? null;
+      let versionSupported = false;
+      try { versionSupported = typeof requiredVersion === "string" && comparePublicationVersions(installedVersion, requiredVersion) >= 0; }
+      catch { /* A malformed declaration is not permission to write this storage. */ }
+      supported = supported && versionSupported;
       layers.push({ layer, state: supported ? "declared-supported" : "unsupported", snapshotId: pointer[field],
-        requirements, ...(supported ? {} : { reasonCode: "UNSUPPORTED_SNAPSHOT_READER_REQUIREMENTS" }) });
+        requirements, installedVersion, ...(requiredVersion ? { requiredVersion } : {}),
+        ...(supported ? {} : { reasonCode: "STORAGE_VERSION_MISMATCH",
+          message: `Storage layout ${requirements.layout} needs Lode ${requiredVersion || "a newer reader"} or newer. This installation is ${installedVersion}. No files were changed.` }) });
     } catch (error) { layers.push({ layer, state: "unavailable", reasonCode: error.code || "INVALID_STORAGE_POINTER" }); }
   }
   return { kind: "SnapshotReaderCompatibilityProjection", authorityPlane: "P4", persisted: false,

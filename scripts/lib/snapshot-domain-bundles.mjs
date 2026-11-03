@@ -196,7 +196,7 @@ export function hydrateSnapshotComposition({ root, storage, document, copiedEvid
   if (document.projectId === storage.projectId && (Number.isInteger(document.schemaVersion) && document.schemaVersion > 3
     || [1, 2, 3].includes(document.schemaVersion) && document.producer?.name && document.producer?.version
       && !equal(document.producer, expectedProducer))) {
-    fail("UNSUPPORTED_SNAPSHOT_COMPOSITION", "Snapshot schema/producer is unsupported by this reader; use a reader supporting the stored format. Ordinary Core work remains available.");
+    fail("STORAGE_VERSION_MISMATCH", `Snapshot schema ${document.schemaVersion} from ${document.producer?.name || "unknown"} ${document.producer?.version || "unknown"} is not read by Lode ${JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version}, which reads schema 1-3 and lode-domain-bundle 0.1.0, 0.2.0, or 0.3.0. Use that reader version or newer. No files were changed.`);
   }
   if (![1, 2, 3].includes(document.schemaVersion) || document.projectId !== storage.projectId || !equal(document.producer, expectedProducer)
     || !["world-model", "graph-snapshot"].includes(document.snapshotKind)

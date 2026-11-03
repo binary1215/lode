@@ -1,3 +1,5 @@
+import { WINDOWS_EXACT_PROCESS_QUERY } from "./windows-exact-process-query.mjs";
+import { WINDOWS_PROCESS_QUERY_WIRE, decodeWindowsProcessQueryWire } from "./windows-process-query-wire.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -106,61 +108,9 @@ function windowsProbe({ startPid, stopPid, pids, onProcess = () => {}, timeoutMs
   // Reflection.Emit avoids compiler children and framework GetProcessById's
   // hidden EnumProcesses fallback. This is the same query-only Win32 primitive
   // as the native supervisor's owner observer, not job/lease/kill control.
-  const interop = `
-$taskAssembly=[AppDomain]::CurrentDomain.DefineDynamicAssembly([Reflection.AssemblyName]::new('HeadExactProcessQuery'),[Reflection.Emit.AssemblyBuilderAccess]::Run)
-$taskModule=$taskAssembly.DefineDynamicModule('HeadExactProcessQuery')
-$taskType=$taskModule.DefineType('HeadExactProcessQuery',[Reflection.TypeAttributes]'Public,Sealed,Abstract')
-function Add-TaskQueryMethod([string]$taskName,[Type]$taskReturn,[Type[]]$taskParameters){
-  $taskMethod=$taskType.DefineMethod($taskName,[Reflection.MethodAttributes]'Public,Static,PinvokeImpl',$taskReturn,$taskParameters)
-  $taskConstructor=[Runtime.InteropServices.DllImportAttribute].GetConstructor([Type[]]@([string]))
-  $taskAttribute=[Reflection.Emit.CustomAttributeBuilder]::new($taskConstructor,[object[]]@('kernel32.dll'),[Reflection.FieldInfo[]]@([Runtime.InteropServices.DllImportAttribute].GetField('SetLastError')),[object[]]@($true))
-  $taskMethod.SetCustomAttribute($taskAttribute)
-  $taskMethod.SetImplementationFlags([Reflection.MethodImplAttributes]::PreserveSig)
-  if($taskName -eq 'OpenProcess'){$script:taskOpenMethod=$taskMethod}
-}
-Add-TaskQueryMethod 'OpenProcess' ([IntPtr]) ([Type[]]@([UInt32],[bool],[UInt32]))
-Add-TaskQueryMethod 'GetProcessTimes' ([bool]) ([Type[]]@([IntPtr],[UInt64].MakeByRefType(),[UInt64].MakeByRefType(),[UInt64].MakeByRefType(),[UInt64].MakeByRefType()))
-Add-TaskQueryMethod 'WaitForSingleObject' ([UInt32]) ([Type[]]@([IntPtr],[UInt32]))
-Add-TaskQueryMethod 'CloseHandle' ([bool]) ([Type[]]@([IntPtr]))
-$taskOpenExact=$taskType.DefineMethod('OpenExact',[Reflection.MethodAttributes]'Public,Static',[IntPtr],[Type[]]@([UInt32],[Int32].MakeByRefType()))
-$taskIL=$taskOpenExact.GetILGenerator()
-[void]$taskIL.DeclareLocal([IntPtr])
-$taskIL.Emit([Reflection.Emit.OpCodes]::Ldc_I4,[int]0x00101000)
-$taskIL.Emit([Reflection.Emit.OpCodes]::Ldc_I4_0)
-$taskIL.Emit([Reflection.Emit.OpCodes]::Ldarg_0)
-$taskIL.Emit([Reflection.Emit.OpCodes]::Call,[Reflection.MethodInfo]$script:taskOpenMethod)
-$taskIL.Emit([Reflection.Emit.OpCodes]::Stloc_0)
-$taskIL.Emit([Reflection.Emit.OpCodes]::Ldarg_1)
-$taskIL.Emit([Reflection.Emit.OpCodes]::Call,[Runtime.InteropServices.Marshal].GetMethod('GetLastWin32Error'))
-$taskIL.Emit([Reflection.Emit.OpCodes]::Stind_I4)
-$taskIL.Emit([Reflection.Emit.OpCodes]::Ldloc_0)
-$taskIL.Emit([Reflection.Emit.OpCodes]::Ret)
-[void]$taskType.CreateType()
-function Read-TaskExactProcess([UInt32]$taskId,[bool]$taskNeedParent,[bool]$taskOwn){
-  [int]$taskError=0
-  $taskHandle=[HeadExactProcessQuery]::OpenExact($taskId,[ref]$taskError)
-  if($taskHandle -eq [IntPtr]::Zero){return @{pid=[long]$taskId;state=$(if($taskError -eq 87){'gone'}else{'unknown'});errorCode=$taskError}}
-  try{
-    [UInt64]$taskCreated=0;[UInt64]$taskExited=0;[UInt64]$taskKernel=0;[UInt64]$taskUser=0
-    if(![HeadExactProcessQuery]::GetProcessTimes($taskHandle,[ref]$taskCreated,[ref]$taskExited,[ref]$taskKernel,[ref]$taskUser)){return @{pid=[long]$taskId;state='unknown'}}
-    $taskWait=[HeadExactProcessQuery]::WaitForSingleObject($taskHandle,0)
-    if($taskWait -eq 0){return @{pid=[long]$taskId;state='gone'}}
-    if($taskWait -ne 258){return @{pid=[long]$taskId;state='unknown'}}
-    $taskParent=0
-    if($taskNeedParent){
-      if($taskOwn){$taskParent=${process.ppid}}
-      else{
-        $taskInfo=Get-CimInstance Win32_Process -Filter ('ProcessId = '+$taskId) -Property ProcessId,ParentProcessId,CreationDate
-        if($null -eq $taskInfo -or $taskInfo.ProcessId -ne $taskId -or [DateTime]::FromFileTimeUtc([long]$taskCreated).ToString('yyyy-MM-ddTHH:mm:ss.ffffffZ') -ne $taskInfo.CreationDate.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.ffffffZ')){return @{pid=[long]$taskId;state='unknown'}}
-        $taskParent=[long]$taskInfo.ParentProcessId
-      }
-    }
-    return @{pid=[long]$taskId;ppid=$taskParent;birth=('windows-filetime-'+$taskCreated.ToString([Globalization.CultureInfo]::InvariantCulture));state='present'}
-  }catch{return @{pid=[long]$taskId;state='unknown'}}
-  finally{[void][HeadExactProcessQuery]::CloseHandle($taskHandle)}
-}
-`;
-  const script = `$ErrorActionPreference='Stop'; ${interop}
+
+  const script = `$ErrorActionPreference='Stop'; ${WINDOWS_EXACT_PROCESS_QUERY}
+${WINDOWS_PROCESS_QUERY_WIRE}
 $taskMachine=[Microsoft.Win32.Registry]::GetValue('HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography','MachineGuid',$null)
 if($taskMachine -isnot [string] -or !$taskMachine){exit 1}
 $taskRows=@();$taskIds=@(${ids.join(",")});$taskNext=${start}
@@ -170,11 +120,11 @@ for($taskIndex=0;$taskIndex -lt ${start ? NATIVE_PROCESS_LIMITS.depth + 1 : ids.
   # A terminal registry row needs identity/liveness, not its unused parent.
   # ppid=0 retains the existing unknown/not-requested meaning.
   $taskNeedParent=(${start} -gt 0 -and $taskId -ne ${pidValue(stopPid) ? stopPid : 0})
-  $taskRow=Read-TaskExactProcess $taskId $taskNeedParent $(${start === process.pid ? "$taskIndex -eq 0" : "$false"})
+  $taskRow=Read-TaskExactProcess $taskId $taskNeedParent
   $taskRows+=@($taskRow)
   if(${start} -gt 0){if($taskRow.state -ne 'present' -or $taskId -eq ${pidValue(stopPid) ? stopPid : 0}){break};$taskNext=$taskRow.ppid}
 }
-@{machine=$taskMachine;hostName=[Environment]::MachineName;rows=@($taskRows)} | ConvertTo-Json -Compress -Depth 4`;
+Write-TaskProcessQueryWire $taskMachine ([Environment]::MachineName) @($taskRows)`;
   const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   // Same exact query, delivered on stdin rather than a large encoded command
   // line. No script file, policy change, daemon or additional runtime is needed.
@@ -213,7 +163,8 @@ for($taskIndex=0;$taskIndex -lt ${start ? NATIVE_PROCESS_LIMITS.depth + 1 : ids.
       report({ event: "closed", pid: child.pid, parent: process.pid, exitCode: code, signal, ports: [] });
       if (failed || code !== 0) { resolve(null); return; }
       try {
-        const value = JSON.parse(Buffer.concat(chunks).toString("utf8").replace(/^\uFEFF/u, ""));
+        const value = decodeWindowsProcessQueryWire(Buffer.concat(chunks), { startPid: start || null, stopPid, pids: ids,
+          maxRows: start ? NATIVE_PROCESS_LIMITS.depth + 1 : NATIVE_PROCESS_LIMITS.known });
         if (typeof value.machine !== "string" || !value.machine || typeof value.hostName !== "string") { resolve(null); return; }
         report({ event: "identity-projection", pid: child.pid, rows: value.rows, ports: [] });
         resolve({ environment: hash(JSON.stringify(["win32", value.machine, value.hostName])), rows: value.rows });

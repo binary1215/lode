@@ -1,4 +1,5 @@
 import { inspectStorageReaderCompatibility } from "./snapshot-storage-compatibility.mjs";
+import { inspectCodexHookTrust } from "./codex-hook-trust.mjs";
 import { verifyWorldModelPointerOriginal } from "./world-model.mjs";
 import { verifyGraphProjectionPointer } from "./graph-projection-adapter.mjs";
 import fs from "node:fs";
@@ -606,6 +607,9 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
     },
     capabilities: capabilityGuide({ coreState, productState: product.state, contextState: context, runtimes: projectInspection.project.runtimes }),
     runtime: runtimeProjection(projectInspection),
+    ...(projectInspection.project.runtimes.includes("codex") ? {
+      codexHookTrust: inspectCodexHookTrust({ projectRoot: projectInspection.project.projectRoot, pluginRoot: activePluginRoot }),
+    } : {}),
     authority: { advisoryOnly: true, persisted: false, mutatesProject: false, activatesCapabilities: false, grantsAuthorization: false },
   }, projectInspection.storage);
 }
@@ -693,7 +697,7 @@ function bootstrapResponse({ root, profile, before, installation, onboardingActi
 
 export async function initializeOrResumeProject(options = {}) {
   const { root = ".", pluginRoot, runtimes = null, profile: requestedProfile = "core", onboarding = null,
-    instructionIntegration = null, projectSessionRoute = null, copiedProject = null } = options;
+    instructionIntegration = null, projectSessionRoute = null, copiedProject = null, writeRootInstructionFiles = false } = options;
   validateInstructionIntegration(instructionIntegration);
   const profile = validateProfile(requestedProfile);
   const onboardingInput = validateOnboardingInput(onboarding);
@@ -736,12 +740,12 @@ export async function initializeOrResumeProject(options = {}) {
 }
 
 async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = null, profile, onboardingInput,
-  instructionIntegration = null, onValidatedSessionSelection = null, location = null, installationContext = null }) {
+  instructionIntegration = null, onValidatedSessionSelection = null, location = null, installationContext = null, writeRootInstructionFiles = false }) {
   const before = inspectProject(root);
   let initialization;
   let installation;
   if (before.status === "not_initialized") {
-    initialization = initializeProject({ root, pluginRoot, runtimes: runtimes || undefined, installationContext });
+    initialization = initializeProject({ root, pluginRoot, runtimes: runtimes || undefined, installationContext, writeRootInstructionFiles });
     installation = {
       status: "initialized-current",
       projectId: initialization.project.projectId,
@@ -755,7 +759,7 @@ async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = n
       project: before.project,
       integrations: before.project.integrations,
     };
-    installation = convergeProjectInstallation({ root, pluginRoot, runtimes, onValidatedSessionSelection, installationContext });
+    installation = convergeProjectInstallation({ root, pluginRoot, runtimes, onValidatedSessionSelection, installationContext, writeRootInstructionFiles });
   }
   if (location) installation.location = location;
 

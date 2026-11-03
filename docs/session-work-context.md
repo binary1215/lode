@@ -506,10 +506,10 @@ introduced. Correct explicit requests and independent Project work remain
 available after optional binding loss.
 
 The shared state-write policy runs once after router unwrap, before dependent
-Session diagnostics. Unset protection applies only to exact-supported Claude
-and OpenCode child calls. Codex remains off by default; explicit
+Session diagnostics. Unset protection applies to exact-supported Claude and
+OpenCode child calls and to a detected Codex sub-conversation. Explicit
 `LODE_SUBAGENT_WRITE_GUARD=enforce` preserves its existing known-child behavior,
-and explicit off disables this optional Host policy. Catalog `readOnlyHint`
+and explicit `off` is the opt-out for this Host policy. Catalog `readOnlyHint`
 metadata determines protected state writes. Reads, parent/independent work and
 ordinary source edits stay available; a rejection is
 `SUBAGENT_STATE_WRITE_REJECTED`, never a new user approval ritual or authority

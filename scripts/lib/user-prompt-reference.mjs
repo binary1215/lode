@@ -14,6 +14,8 @@ const LABEL = "Lode user-prompt reference (non-authoritative; earlier excerpts, 
 const preparations = new WeakMap();
 const operations = new WeakMap();
 const require = createRequire(import.meta.url);
+const exactStat = file => fs.lstatSync(file, { bigint: true });
+const exactDescriptorStat = descriptor => fs.fstatSync(descriptor, { bigint: true });
 
 function redact(text) {
   return text
@@ -57,7 +59,10 @@ function callerFile(root, runtime, nativeSessionId, agentId, environment, create
   const directory = path.join(operational, "user-prompt-reference");
   if (!fs.existsSync(directory)) {
     if (!create) return null;
-    try { fs.mkdirSync(directory, { mode: 0o700 }); }
+    try {
+      if (process.platform === "win32") windowsPrivate(directory, "directory", permissions, null, true);
+      else fs.mkdirSync(directory, { mode: 0o700 });
+    }
     catch (error) { if (error.code !== "EEXIST") throw error; }
   }
   const file = path.join(directory, digest + ".json");
@@ -75,10 +80,75 @@ try {
   $requests=[Console]::In.ReadToEnd() | ConvertFrom-Json
   $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
   $system=[Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+  if (@($requests | Where-Object {$_.create -eq $true}).Count -gt 0) {
+    $assembly=[AppDomain]::CurrentDomain.DefineDynamicAssembly([Reflection.AssemblyName]::new('LodePrivateCreation'),[Reflection.Emit.AssemblyBuilderAccess]::Run)
+    $module=$assembly.DefineDynamicModule('LodePrivateCreation')
+    $type=$module.DefineType('LodePrivateCreation',[Reflection.TypeAttributes]'Public,Sealed,Abstract')
+    foreach($spec in @(
+      @{name='CreateDirectoryW';result=[bool];args=[Type[]]@([string],[IntPtr])},
+      @{name='GetFileInformationByHandle';result=[bool];args=[Type[]]@([IntPtr],[IntPtr])},
+      @{name='SetFileInformationByHandle';result=[bool];args=[Type[]]@([IntPtr],[int],[IntPtr],[uint32])}
+    )) {
+      $method=$type.DefinePInvokeMethod($spec.name,'kernel32.dll',$spec.name,[Reflection.MethodAttributes]'Public,Static,PinvokeImpl',[Reflection.CallingConventions]::Standard,$spec.result,$spec.args,[Runtime.InteropServices.CallingConvention]::Winapi,[Runtime.InteropServices.CharSet]::Unicode)
+      $method.SetImplementationFlags([Reflection.MethodImplAttributes]::PreserveSig)
+    }
+    [void]$type.CreateType()
+  }
+  function New-PrivateAcl([bool]$directory) {
+    $next=if($directory){[Security.AccessControl.DirectorySecurity]::new()}else{[Security.AccessControl.FileSecurity]::new()}
+    $next.SetOwner($sid); $next.SetAccessRuleProtection($true,$false)
+    $inherit=if($directory){[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{[Security.AccessControl.InheritanceFlags]::None}
+    foreach ($principal in @($sid,$system)) {
+      $next.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($principal,[Security.AccessControl.FileSystemRights]::FullControl,$inherit,[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow))
+    }
+    return $next
+  }
   foreach ($request in @($requests)) {
+  $directory=$request.kind -eq 'directory'
+  if ($request.create -eq $true) {
+    # Explicit security is supplied to creation itself: an elevated token's
+    # default owner is not necessarily its User SID. Existing owners are never
+    # adopted. Both native create operations refuse collisions unchanged.
+    $security=New-PrivateAcl $directory
+    if($directory){
+      $bytes=$security.GetSecurityDescriptorBinaryForm()
+      $pin=[Runtime.InteropServices.GCHandle]::Alloc($bytes,[Runtime.InteropServices.GCHandleType]::Pinned)
+      $width=[IntPtr]::Size;$length=if($width -eq 8){24}else{12}
+      $attributes=[IntPtr]::Zero
+      try{
+        $attributes=[Runtime.InteropServices.Marshal]::AllocHGlobal($length)
+        [Runtime.InteropServices.Marshal]::Copy([byte[]]::new($length),0,$attributes,$length)
+        [Runtime.InteropServices.Marshal]::WriteInt32($attributes,$length)
+        [Runtime.InteropServices.Marshal]::WriteIntPtr($attributes,$width,$pin.AddrOfPinnedObject())
+        if(-not [LodePrivateCreation]::CreateDirectoryW($request.path,$attributes)){throw 'create-collision-or-denied'}
+      }finally{if($attributes -ne [IntPtr]::Zero){[Runtime.InteropServices.Marshal]::FreeHGlobal($attributes)};$pin.Free()}
+    }
+    else{
+      # Failure closes/deletes this exact empty object, never a path replacement.
+      $stage=[IO.FileStream]::new($request.path,[IO.FileMode]::CreateNew,[Security.AccessControl.FileSystemRights]::FullControl,[IO.FileShare]::None,1,[IO.FileOptions]::DeleteOnClose,$security)
+      $info=[IntPtr]::Zero
+      try{
+        $info=[Runtime.InteropServices.Marshal]::AllocHGlobal(52)
+        $stageAcl=$stage.GetAccessControl()
+        if($stageAcl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value){throw 'created-owner'}
+        if(-not [LodePrivateCreation]::GetFileInformationByHandle($stage.SafeFileHandle.DangerousGetHandle(),$info)){throw 'created-identity'}
+        $volume=[uint32]([Runtime.InteropServices.Marshal]::ReadInt32($info,28) -band [long]4294967295)
+        $high=[uint32]([Runtime.InteropServices.Marshal]::ReadInt32($info,44) -band [long]4294967295)
+        $low=[uint32]([Runtime.InteropServices.Marshal]::ReadInt32($info,48) -band [long]4294967295)
+        $index=([uint64]$high -shl 32) -bor [uint64]$low
+        # Receipt is flushed BEFORE disabling delete-on-close. Even on later
+        # timeout/failure Node can clean only this exact proven file identity.
+        [Console]::Out.WriteLine((@{created=@{dev=$volume.ToString();ino=$index.ToString()}}|ConvertTo-Json -Compress))
+        [Console]::Out.Flush()
+        # FileDispositionInfo cannot cancel FILE_FLAG_DELETE_ON_CLOSE.
+        # FileDispositionInfoEx + ON_CLOSE (without DELETE) clears that flag.
+        [Runtime.InteropServices.Marshal]::WriteInt32($info,8)
+        if(-not [LodePrivateCreation]::SetFileInformationByHandle($stage.SafeFileHandle.DangerousGetHandle(),21,$info,4)){throw 'created-publication'}
+      }finally{if($info -ne [IntPtr]::Zero){[Runtime.InteropServices.Marshal]::FreeHGlobal($info)};$stage.Dispose()}
+    }
+  }
   $item=Get-Item -LiteralPath $request.path -Force
   if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {throw 'reparse'}
-  $directory=$request.kind -eq 'directory'
   if ($directory -ne $item.PSIsContainer) {throw 'type'}
   $acl=$item.GetAccessControl()
   if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) {throw 'owner'}
@@ -96,12 +166,8 @@ try {
     return $true
   }
   if (-not (PrivateAcl $acl)) {
-    $next=if($directory){[Security.AccessControl.DirectorySecurity]::new()}else{[Security.AccessControl.FileSecurity]::new()}
-    $next.SetOwner($sid); $next.SetAccessRuleProtection($true,$false)
-    $inherit=if($directory){[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{[Security.AccessControl.InheritanceFlags]::None}
-    foreach ($principal in @($sid,$system)) {
-      $next.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($principal,[Security.AccessControl.FileSystemRights]::FullControl,$inherit,[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow))
-    }
+    if($request.create -eq $true){throw 'created-acl'}
+    $next=New-PrivateAcl $directory
     $item.SetAccessControl($next)
   }
   $verified=Get-Item -LiteralPath $request.path -Force
@@ -133,19 +199,21 @@ function operationPermissions(operation) {
   checkBudget(permissions); return permissions;
 }
 
-function windowsPrivate(file, kind, permissions, existingFile = null) {
+function windowsPrivate(file, kind, permissions, existingFile = null, create = false, onCreate = null) {
   checkBudget(permissions);
   // Never accept a general artifact path, arbitrary script or caller body.
   if (permissions.failed) throw new Error("Private prompt ACL verification already failed.");
-  const requests = [{ path: file, kind }, ...(existingFile ? [{ path: existingFile, kind: "file" }] : [])];
+  const requests = [{ path: file, kind, ...(create ? { create: true } : {}) }, ...(existingFile ? [{ path: existingFile, kind: "file" }] : [])];
   if (existingFile && (kind !== "directory" || path.dirname(existingFile) !== file)) throw new Error("Unsafe prompt ACL batch.");
   const pending = requests.map(request => {
     const directory = request.kind === "directory", target = request.path;
     if (directory ? path.basename(target) !== "user-prompt-reference"
       : path.basename(path.dirname(target)) !== "user-prompt-reference" || !/^(?:[a-f0-9]{64}\.json|\.[a-f0-9]{64}\.json\.[a-f0-9-]{36}\.tmp)$/.test(path.basename(target))) throw new Error("Unsafe prompt ACL target.");
-    const stat = fs.lstatSync(target);
-    if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile() || stat.nlink !== 1)) throw new Error("Unsafe prompt ACL entry.");
-    return { request, stat, identity: JSON.stringify([request.kind, stat.dev, stat.ino]) };
+    let stat;
+    try { stat = exactStat(target); } catch (error) { if (!request.create || error.code !== "ENOENT") throw error; }
+    if (stat && (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile() || stat.nlink !== 1n))) throw new Error("Unsafe prompt ACL entry.");
+    if (request.create && stat) throw new Error("Prompt creation target already exists.");
+    return { request, stat, identity: stat ? JSON.stringify([request.kind, String(stat.dev), String(stat.ino)]) : null };
   }).filter(item => !permissions.checked.has(item.identity));
   // Local to one synchronous capture/freeze/take. Never cache ACLs across turns
   // or callers. Renaming a verified stage within this directory keeps its DACL;
@@ -158,22 +226,43 @@ function windowsPrivate(file, kind, permissions, existingFile = null) {
     const result = childProcess.spawnSync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", WINDOWS_PRIVATE_ACL], {
       cwd: path.dirname(file), windowsHide: true, shell: false, input: JSON.stringify(pending.map(item => item.request)), encoding: "utf8", timeout: remaining, maxBuffer: 4096,
     });
-    if (result.error || result.status !== 0 || result.stdout.trim() !== "private" || performance.now() > permissions.deadline) throw new Error("Private prompt ACL unavailable.");
+    const output = String(result.stdout || "").trim().split(/\r?\n/);
+    let createdIdentity = null;
+    if (create && kind === "file" && output.length && output[0].startsWith("{")) {
+      const receipt = JSON.parse(output.shift());
+      if (!/^[0-9]{1,20}$/.test(receipt?.created?.dev) || !/^[0-9]{1,20}$/.test(receipt?.created?.ino)
+        || BigInt(receipt.created.dev) > 0xffffffffffffffffn || BigInt(receipt.created.ino) > 0xffffffffffffffffn
+        || BigInt(receipt.created.ino) === 0n) throw new Error("Invalid prompt creation receipt.");
+      createdIdentity = receipt.created;
+      // Do not adopt a path replacement even when it is owned by this user.
+      try {
+        const stat = fs.lstatSync(file, { bigint: true });
+        if (stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1n && stat.size === 0n
+          && String(stat.dev) === createdIdentity.dev && String(stat.ino) === createdIdentity.ino) onCreate?.(stat);
+      } catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+    if (result.error || result.status !== 0 || output.join("\n") !== "private" || performance.now() > permissions.deadline) throw new Error("Private prompt ACL unavailable.");
     for (const item of pending) {
-      const entry = fs.lstatSync(item.request.path);
-      if (!sameEntry(item.stat, entry) || entry.isSymbolicLink()
-        || (item.request.kind === "directory" ? !entry.isDirectory() : !entry.isFile() || entry.nlink !== 1)) throw new Error("Prompt ACL target changed.");
+      const entry = exactStat(item.request.path);
+      if (item.request.create && item.request.kind === "file") {
+        if (!createdIdentity || String(entry.dev) !== createdIdentity.dev || String(entry.ino) !== createdIdentity.ino || entry.size !== 0n) throw new Error("Created prompt identity changed.");
+      }
+      if (item.stat && !sameEntry(item.stat, entry) || entry.isSymbolicLink()
+        || (item.request.kind === "directory" ? !entry.isDirectory() : !entry.isFile() || entry.nlink !== 1n)) throw new Error("Prompt ACL target changed.");
+      item.identity = JSON.stringify([item.request.kind, String(entry.dev), String(entry.ino)]);
+      if (item.request.create) item.createdEntry = entry;
     }
     // Batch success is all-or-nothing; never cache a partly verified request.
     for (const item of pending) permissions.checked.add(item.identity);
+    return pending[0]?.createdEntry;
   } catch (error) { permissions.failed = true; throw error; }
 }
 
 function privateDirectory(directory, permissions, existingFile = null) {
   checkBudget(permissions);
-  const stat = fs.lstatSync(directory);
+  const stat = exactStat(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink()
-    || typeof process.getuid === "function" && stat.uid !== process.getuid()) throw new Error("Unsafe prompt directory.");
+    || typeof process.getuid === "function" && stat.uid !== BigInt(process.getuid())) throw new Error("Unsafe prompt directory.");
   if (process.platform !== "win32") fs.chmodSync(directory, 0o700);
   else windowsPrivate(directory, "directory", permissions, existingFile);
 }
@@ -182,18 +271,18 @@ function sameEntry(a, b) { return a.dev === b.dev && a.ino === b.ino; }
 
 function privateFile(file, descriptor, permissions) {
   checkBudget(permissions);
-  const stat = fs.fstatSync(descriptor), entry = fs.lstatSync(file);
-  if (!stat.isFile() || stat.nlink !== 1 || entry.isSymbolicLink() || !sameEntry(stat, entry)
-    || typeof process.getuid === "function" && stat.uid !== process.getuid()) throw new Error("Unsafe prompt file.");
+  const stat = exactDescriptorStat(descriptor), entry = exactStat(file);
+  if (!stat.isFile() || stat.nlink !== 1n || entry.isSymbolicLink() || !sameEntry(stat, entry)
+    || typeof process.getuid === "function" && stat.uid !== BigInt(process.getuid())) throw new Error("Unsafe prompt file.");
   if (process.platform !== "win32") fs.fchmodSync(descriptor, 0o600);
   else windowsPrivate(file, "file", permissions);
-  if (!sameEntry(stat, fs.lstatSync(file))) throw new Error("Prompt entry changed during permission check.");
+  if (!sameEntry(stat, exactStat(file))) throw new Error("Prompt entry changed during permission check.");
   return stat;
 }
 
 function openPrivate(file) {
-  const entry = fs.lstatSync(file);
-  if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== 1) throw new Error("Unsafe prompt file.");
+  const entry = exactStat(file);
+  if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== 1n) throw new Error("Unsafe prompt file.");
   // Nonblocking also prevents a replaced FIFO from hanging a lifecycle hook.
   return fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0));
 }
@@ -246,11 +335,16 @@ function writePrivate(file, body, permissions, publication = null) {
   const original = existingEntry(file, permissions);
   if (publication?.createOnly && original) throw new Error("Prompt destination already exists.");
   const temporary = path.join(directory, `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  let descriptor, owner;
+  let descriptor, owner, plaintextStarted = false;
   try {
-    descriptor = fs.openSync(temporary, "wx", 0o600);
-    owner = fs.fstatSync(descriptor); // Own the empty stage even if ACL verification fails.
+    if (process.platform === "win32") windowsPrivate(temporary, "file", permissions, null, true, entry => { owner = entry; });
+    descriptor = fs.openSync(temporary, process.platform === "win32" ? "r+" : "wx", 0o600);
+    if (owner && !sameEntry(owner, exactDescriptorStat(descriptor))) throw new Error("New private stage changed before open.");
+    owner = exactDescriptorStat(descriptor); // Own the empty stage even if ACL verification fails.
     owner = privateFile(temporary, descriptor, permissions);
+    const writable = exactDescriptorStat(descriptor);
+    if (!sameEntry(owner, writable) || writable.size !== 0n) throw new Error("Private stage changed before plaintext write.");
+    plaintextStarted = true;
     fs.writeFileSync(descriptor, body);
     fs.closeSync(descriptor); descriptor = undefined;
     privateDirectory(directory, permissions);
@@ -273,7 +367,7 @@ function writePrivate(file, body, permissions, publication = null) {
       catch (error) {
         if (process.platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(error.code) || attempt >= delays.length) throw error;
         privateDirectory(directory, permissions);
-        const destination = existingEntry(file, permissions), stage = fs.lstatSync(temporary);
+        const destination = existingEntry(file, permissions), stage = exactStat(temporary);
         if (!stage.isFile() || stage.isSymbolicLink() || !sameEntry(owner, stage)
           || Boolean(current) !== Boolean(destination) || current && (!sameEntry(current, destination)
             || current.size !== destination.size || current.mtimeMs !== destination.mtimeMs)) throw error;
@@ -285,8 +379,9 @@ function writePrivate(file, body, permissions, publication = null) {
   } finally {
     if (descriptor !== undefined) fs.closeSync(descriptor);
     try {
-      const entry = fs.lstatSync(temporary);
-      if (owner && entry.isFile() && !entry.isSymbolicLink() && sameEntry(owner, entry)) fs.unlinkSync(temporary);
+      const entry = exactStat(temporary);
+      if (owner && entry.isFile() && !entry.isSymbolicLink() && sameEntry(owner, entry)
+        && (plaintextStarted || entry.size === 0n)) fs.unlinkSync(temporary);
     } catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 }
@@ -407,14 +502,14 @@ export function transferNativeClearPromptReference({ handoff, root, caller, envi
         if (fs.lstatSync(destination, { throwIfNoEntry: false })) return { transferred: false, reasonCode: "CLEAR_REFERENCE_DESTINATION_EXISTS" };
         const source = readState(sourceFile, permissions, { withDigest: true });
         if (!source?.prompts.length) return { transferred: false, reasonCode: "CLEAR_REFERENCE_MISSING" };
-        const directory = fs.lstatSync(path.dirname(sourceFile));
+        const directory = exactStat(path.dirname(sourceFile));
         const state = { prompts: source.prompts.map(prompt => ({ ...prompt, previousConversation: true })), reinject: false,
           ...(source.visibleAssistant ? { visibleAssistant: source.visibleAssistant, visibleAssistantFromPreviousConversation: true } : {}) };
         writeState(destination, state, permissions, { createOnly: true, onCreate() { created = true; },
           commit: publish => scope.commit(() => {
             checkBudget(permissions);
-            if (!sameEntry(directory, fs.lstatSync(path.dirname(sourceFile)))
-              || !sameEntry(source.entry, fs.lstatSync(sourceFile)) || fs.lstatSync(destination, { throwIfNoEntry: false })) throw new Error("Prompt transfer source/destination changed.");
+            if (!sameEntry(directory, exactStat(path.dirname(sourceFile)))
+              || !sameEntry(source.entry, exactStat(sourceFile)) || fs.lstatSync(destination, { throwIfNoEntry: false })) throw new Error("Prompt transfer source/destination changed.");
             const current = readState(sourceFile, permissions, { withDigest: true });
             if (!current || current.revision !== source.revision || current.byteDigest !== source.byteDigest) throw new Error("Prompt transfer generation changed.");
             publish();
