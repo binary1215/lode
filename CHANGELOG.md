@@ -11,6 +11,26 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.82 — publication tracked separately
+
+- Prepare human explanations and agent Markdown from the same exact selected work
+  originals, preserving reasons, conditions, actual changes and unknowns. Existing
+  work needs no Product onboarding, World rebuild, Run or Todo adoption.
+- Connect user-selected Notion and Obsidian destinations to scoped task results.
+  Keep stable start links, separate personal notes and immutable reading revisions;
+  current links describe the last verified publication, not task or deployment success.
+- Preserve HEAD's rich evidence, comparison, quotation and related-record selection
+  on exact retries. Keep successful original work saves independent of publication
+  failures and continue missing selection through the existing CLI/MCP conversation.
+- Recover verified synchronous Notion 403 restricted-resource rejections through an
+  explicit identical-request successor, retaining prior attempts and causes. Unknown
+  effects, lost responses, async failures and failed rejection saves never authorize
+  another write. Preserve user edits and keep publication evidence outside P2 direction.
+- Validate 206 affected regression tests, nine independent synthetic review groups
+  and four documentation/distribution validators. Live Notion and Obsidian GUI
+  qualification remain unperformed; the earlier full-suite local timeout remains
+  incomplete. CI and marketplace publication results must be checked separately.
+
 ## 0.3.0-beta.81 — publication tracked separately
 
 - Quarantine malformed conversation records without rewriting their original

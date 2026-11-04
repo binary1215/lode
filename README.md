@@ -383,7 +383,7 @@ These labels describe the source distribution. They do not certify that a partic
 | Distribution | portable Claude Code, Codex, and OpenCode MCP launch paths | Available |
 | Distribution | OpenAI universal plugin directory | Planned |
 | Runtime | general provider-session resume and streaming | Deferred |
-| Documents | Obsidian and Notion adapters | Deferred |
+| Documents | Evidence-backed human/agent views, Obsidian vault and Notion publication | Local/synthetic verification; live Notion qualification pending |
 
 For exact claims and acceptance evidence, use the subsystem documents and source
 verification rather than inferring capability from this summary.
@@ -439,6 +439,7 @@ Additional references:
 - [Ordinary Host delegation and optional attachment](docs/role-coordination.md)
 - [Graph projection adapter](docs/graph-projection-adapter.md)
 - [Document projection adapter](docs/document-projection-adapter.md)
+- [Work documents in Notion and Obsidian](docs/work-document-projection.md)
 - [Codex marketplace distribution](docs/codex-marketplace.md)
 - [Claude Code marketplace distribution](docs/claude-marketplace.md)
 

@@ -21,8 +21,8 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
     skills: { core: "lode-agent-core", onboarding: "lode-agent-onboarding", conversation: "lode-conversation" },
   });
   assert.ok(Object.isFrozen(ARTIFACT_COMPOSITION)); assert.ok(Object.isFrozen(ARTIFACT_COMPOSITION.skills));
-  assert.equal(OPERATION_DESCRIPTORS.length, 140);
-  assert.equal(new Set(OPERATION_DESCRIPTORS.flatMap(item => [item.legacyName, item.canonicalName])).size, 280);
+  assert.equal(OPERATION_DESCRIPTORS.length, 144);
+  assert.equal(new Set(OPERATION_DESCRIPTORS.flatMap(item => [item.legacyName, item.canonicalName])).size, 288);
   for (const item of OPERATION_DESCRIPTORS) {
     assert.equal(resolveOperation(item.legacyName), item); assert.equal(resolveOperation(item.canonicalName), item);
     assert.equal(item.semanticName, item.legacyName);
@@ -35,7 +35,9 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
   assert.ok(tools.every(tool => tool.name.startsWith("lode_")));
   assert.ok(catalogTools.every(tool => tool.name.startsWith("lode_")));
   assert.equal(new Set(catalogTools.map(tool => tool.name)).size, catalogTools.length);
-  assert.equal(catalogTools.length, 137, "Discovery and the two routers are not private operation catalog entries");
+  assert.equal(catalogTools.length, 141, "Discovery and the two routers are not private operation catalog entries");
+  assert.deepEqual(catalogTools.filter(tool => tool.name.startsWith("lode_work_document_")).map(tool => tool.name).sort(),
+    ["lode_work_document_configure", "lode_work_document_prepare", "lode_work_document_publish", "lode_work_document_status"]);
   const routingSurface = new Map([["lode_tools_discover", false], ["lode_tools_read", true], ["lode_tools_call", true]]);
   const stableSurface = toolsForSurface();
   for (const tool of tools) {

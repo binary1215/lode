@@ -1,5 +1,9 @@
 # DocumentProjectionAdapter and deterministic Markdown projection
 
+For task-oriented human/agent views and asynchronous Notion/Obsidian publication,
+see [work document projection](work-document-projection.md). That separate path
+preserves this synchronous GraphSnapshot contract.
+
 Status: active alpha contract
 
 Protocol versions:

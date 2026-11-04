@@ -131,6 +131,56 @@ change does not automatically change another Session's goal.
 
 ## Find context through the graph
 
+When the user wants work documentation, use the optional
+[work document projection](../../docs/work-document-projection.md). Explain the
+useful result, reasons, relevant conditions, actual changes and remaining unknowns
+using the conversation Skill; do not replace explanation with IDs or JSON. Lode
+selects exact originals and supplies typed work-document arguments. Existing work
+needs no Todo, Run, Product, World rebuild or export to be documented. Connect
+only user-chosen destinations/content and automatic task scope. Configuring a
+connection is not publication permission outside that scope. Never inspect
+ambient credentials. An explicitly configured task's meaningful result saved
+through async `session-work-record` can update related documents; reopening,
+partial work and cancellation also matter. Native termination or checkpoint save
+is not completion. A document failure never replays the original work or fails a
+successful original save. Use returned publication identity to continue only its
+bounded pending/reconciliation step; do not create duplicates or add per-turn
+save/report rituals. Local receipt status is not live remote freshness. No
+separate model service is needed for the two reading views.
+
+For an adapter-verified rejected write, explain its retained cause, including a
+possible workspace limit. Cause repair alone does not retry. Within the current
+user-authorized destination/content scope, explicitly pass the returned exact
+attempt reference in `retry_rejected_writes` (CLI `retryRejectedWrites`) for one
+same-request successor. HEAD fills the arguments; no user JSON ritual. Never
+retry from an automatic save hook or bypass a Host denial, switch credentials,
+or change target/content under that reference. A new refusal gets a new reference.
+Response loss, 5xx, malformed errors, async failure or rejection-save failure stay
+unknown and permit readback reconciliation only, not another write.
+
+On an exact saved-result retry, preserve the verified document selection; do not
+replace history, diffs, quotations or graph anchors with just the recent record.
+For a new revision, optionally supply HEAD-authored `document_selection` alongside
+`session-work-record` (CLI `--document-selection`). The request-local `recorded`
+alias refers only to the resulting exact P3 original, not a new authority. Select
+exact related evidence and before/after refs rather than assuming old after bytes
+are the new change. If `head-selection-required` is returned, keep the successful
+work save and the disclosed remote-not-updated state, then use its bounded prior
+selection and recorded result to finish explicit prepare and publish in the same
+turn. Do not ask the user to fill fields, repeat the P3 save or approve a routine
+reading selection. Unresolved evidence limits document publication only; explain
+that limit if it cannot be resolved. Surface a recorded reopen/cancellation even
+while the old remote document remains unchanged.
+
+An analysis result may be entirely in the valid P3 explanation; do not require an
+artificial file, test log or Todo removal to publish it. Bare task/status without
+result content remains unconfirmed. Treat prose as an authored report, not proof
+of execution, semantic sufficiency or user approval. Keep missing/denied sources
+and their precise codes visible; never bypass a denied read or silently discard
+selected evidence. Before an authorized publication, keep secrets, whole
+transcripts and unnecessary absolute machine paths out of the authored content
+and selected excerpts; preserve originals rather than silently rewriting them.
+
 For new project information, call `lode_project_graph` with task/query and only
 useful anchors/filters, or reuse sufficient same-basis results. Read nearby
 relations first and widen when needed. Avoid whole-graph prompt injection and

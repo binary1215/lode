@@ -2,6 +2,9 @@
 
 [영어 원문](../document-projection-adapter.md)
 
+태스크 중심 사람용·에이전트용 문서와 Notion·Obsidian 비동기 게시는
+[작업 문서](work-document-projection.md)를 참고하세요. 기존 동기 계약은 유지합니다.
+
 상태: 활성 알파 계약
 
 프로토콜 버전:

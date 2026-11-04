@@ -201,6 +201,26 @@ function withProjectMutationUncoordinated({ root = ".", scope, storage, timeoutM
   return withLocalMutation({ directory: lockFor(root, scope, storage), timeoutMs }, () => { recheck(); return operation(); });
 }
 
+// Destination-local coordination. It deliberately does not acquire a Project
+// mutation/snapshot lock while an optional remote publication is in flight.
+export async function withLocalMutationAsync({ directory, timeoutMs = WAIT_MS }, operation) {
+  if (typeof directory !== "string" || !path.isAbsolute(directory)
+    || !Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > WAIT_MS) fail("Invalid local mutation lock.", "INVALID_PROJECT_MUTATION_SCOPE");
+  if (nestedOwner(directory)) return operation();
+  cleanInterruptedStaging(directory);
+  const deadline = Date.now() + timeoutMs;
+  let owner;
+  while (!(owner = attempt(directory))) {
+    if (Date.now() >= deadline) fail("This document destination is busy; ordinary work remains available.");
+    await delay(10);
+  }
+  try {
+    const active = new Map(context.getStore() || []);
+    active.set(directory, owner);
+    return await context.run(active, operation);
+  } finally { release(owner); }
+}
+
 async function withProjectMutationAsyncUncoordinated({ root = ".", scope, storage }, operation) {
   if (!/^[a-z][a-z0-9-]{0,63}$/.test(scope)) fail("Invalid mutation scope.", "INVALID_PROJECT_MUTATION_SCOPE");
   storage ??= resolveProjectStorage(root);
