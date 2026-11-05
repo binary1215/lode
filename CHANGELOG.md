@@ -11,8 +11,11 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
-## 0.3.0-beta.85 — publication tracked separately
+## 0.3.0-beta.86 — publication tracked separately
 
+- Add bounded test-only filesystem event and delivery diagnostics without changing
+  the actual write, five-second bound, production watcher or success assertions.
+  Repeated macOS timeout cause remains unestablished.
 - Add Project documentation with linked human and agent views of actual Product,
   nested feature groups and multi-parent feature membership. Keep shared work and
   decisions linked once, unknown membership explicit, and narrative bound to its

@@ -1821,19 +1821,75 @@ test("watches filesystem changes through the bounded debounced refresh adapter",
     resolveDelivery = resolve;
     rejectDelivery = reject;
   });
-  const timeout = setTimeout(() => rejectDelivery(new Error("Filesystem refresh watcher did not deliver within the test bound.")), 5000);
-  const watcher = createFileSystemRefreshWatcher({
+  const startedAt = performance.now();
+  const observations = {
+    rawEventCount: 0, rawEvents: [], appendElapsedMs: null,
+    batchStartedElapsedMs: null, batchReturnedElapsedMs: null, batchErrorElapsedMs: null, batchError: null,
+    deliveryElapsedMs: null, errorElapsedMs: null, error: null,
+  };
+  let watcher;
+  const diagnose = (phase) => t.diagnostic(JSON.stringify({
+    phase,
+    elapsedMs: performance.now() - startedAt,
+    ...observations,
+    queue: watcher?.status() || null,
+    debounceTimerScheduled: watcher ? watcher.queue.timer !== null : null,
+    deliveryState: observations.batchError ? "batch-error-observed"
+      : observations.batchReturnedElapsedMs !== null ? "batch-returned"
+        : observations.batchStartedElapsedMs !== null ? "batch-in-flight" : "batch-not-started",
+  }));
+  const timeout = setTimeout(() => {
+    diagnose("delivery-timeout");
+    rejectDelivery(new Error("Filesystem refresh watcher did not deliver within the test bound."));
+  }, 5000);
+  watcher = createFileSystemRefreshWatcher({
     root,
     debounceMs: 25,
     maxEvents: 32,
-    onDelivery: resolveDelivery,
-    onError: rejectDelivery,
+    onDelivery: (result) => {
+      observations.deliveryElapsedMs = performance.now() - startedAt;
+      resolveDelivery(result);
+    },
+    onError: (error) => {
+      observations.errorElapsedMs = performance.now() - startedAt;
+      observations.error = { code: error.code || null, message: String(error.message).slice(0, 500) };
+      rejectDelivery(error);
+    },
   });
+  const originalDeliverBatch = watcher.queue.deliverBatch;
+  watcher.queue.deliverBatch = function (...args) {
+    observations.batchStartedElapsedMs = performance.now() - startedAt;
+    try {
+      const result = Reflect.apply(originalDeliverBatch, this, args);
+      Promise.resolve(result).then(() => {
+        observations.batchReturnedElapsedMs = performance.now() - startedAt;
+      }, (error) => {
+        observations.batchErrorElapsedMs = performance.now() - startedAt;
+        observations.batchError = { code: error.code || null, message: String(error.message).slice(0, 500) };
+      });
+      return result;
+    } catch (error) {
+      observations.batchErrorElapsedMs = performance.now() - startedAt;
+      observations.batchError = { code: error.code || null, message: String(error.message).slice(0, 500) };
+      throw error;
+    }
+  };
+  const observeRawEvent = (eventType, filename) => {
+    observations.rawEventCount += 1;
+    if (observations.rawEvents.length < 8) observations.rawEvents.push({
+      eventType, filename: filename == null ? null : String(filename).slice(0, 200),
+      elapsedMs: performance.now() - startedAt,
+    });
+  };
+  watcher.watcher.on("change", observeRawEvent);
   t.after(async () => {
     clearTimeout(timeout);
+    diagnose("before-cleanup");
+    watcher.watcher.off("change", observeRawEvent);
     await watcher.close({ flush: false });
   });
   await new Promise(resolve => setImmediate(resolve)); // Let native watcher startup enter the event loop.
+  observations.appendElapsedMs = performance.now() - startedAt;
   fs.appendFileSync(path.join(root, "src", "watched.mjs"), "export const changed = 2;\n");
   const result = await delivered;
   clearTimeout(timeout);
