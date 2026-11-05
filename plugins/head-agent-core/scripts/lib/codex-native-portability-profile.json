@@ -1,0 +1,2505 @@
+{
+  "schemaVersion": 1,
+  "profileId": "codex-win32-x64-0.166.0-alpha.5.1",
+  "engineVersion": "0.166.0-alpha.5.1",
+  "platform": "win32",
+  "architecture": "x64",
+  "authorityPlane": "P5",
+  "nativeImportApi": "not-stable-official-api",
+  "databases": [
+    {
+      "file": "state_5.sqlite",
+      "userVersion": 0,
+      "applicationId": 0,
+      "ddlSha256": "d5f4ec0a6e1e947976e978ad561bb195b93cc28cede84f33dc208c1146dab32c",
+      "schema": [
+        {
+          "type": "index",
+          "name": "idx_projects_position",
+          "tbl_name": "projects",
+          "sql": "CREATE INDEX idx_projects_position\r\n    ON projects(position ASC, id ASC)"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_attachments_identity_thread",
+          "tbl_name": "thread_attachments",
+          "sql": "CREATE INDEX idx_thread_attachments_identity_thread\r\n    ON thread_attachments(attachment_type, identity_key, thread_id)"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_attachments_thread_created_id",
+          "tbl_name": "thread_attachments",
+          "sql": "CREATE INDEX idx_thread_attachments_thread_created_id\r\n    ON thread_attachments(thread_id, created_at, id)"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_dynamic_tools_thread",
+          "tbl_name": "thread_dynamic_tools",
+          "sql": "CREATE INDEX idx_thread_dynamic_tools_thread ON thread_dynamic_tools(thread_id)"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_spawn_edges_parent_status",
+          "tbl_name": "thread_spawn_edges",
+          "sql": "CREATE INDEX idx_thread_spawn_edges_parent_status\r\n    ON thread_spawn_edges(parent_thread_id, status)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_archive_created_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_archive_created_at_ms\r\n    ON threads(archived, created_at_ms DESC, id DESC)\r\n    WHERE archived = 1"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_archive_recency_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_archive_recency_at_ms\r\n    ON threads(archived, recency_at_ms DESC, id DESC)\r\n    WHERE archived = 1"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_archive_updated_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_archive_updated_at_ms\r\n    ON threads(archived, updated_at_ms DESC, id DESC)\r\n    WHERE archived = 1"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_archived",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_archived ON threads(archived)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_archived_cwd_created_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_archived_cwd_created_at_ms ON threads(archived, cwd, created_at_ms DESC, id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_archived_cwd_recency_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_archived_cwd_recency_at_ms\r\n    ON threads(archived, cwd, recency_at_ms DESC, id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_archived_cwd_updated_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_archived_cwd_updated_at_ms ON threads(archived, cwd, updated_at_ms DESC, id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_attached_parent",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_attached_parent ON threads(attached_thread_parent_id)\r\n    WHERE attached_thread_parent_id IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_created_at",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_created_at ON threads(created_at DESC, id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_created_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_created_at_ms ON threads(created_at_ms DESC, id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_pinned_recency_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_pinned_recency_at_ms\r\n    ON threads(archived, recency_at_ms DESC, id DESC)\r\n    WHERE is_pinned = 1 AND preview <> ''"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_project_id",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_project_id\r\n    ON threads(project_id, archived, created_at_ms DESC, id DESC)\r\n    WHERE project_id IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_project_recency",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_project_recency\r\n    ON threads(project_id, recency_at_ms DESC)\r\n    WHERE archived = 0 AND project_id IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_provider",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_provider ON threads(model_provider)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_recency_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_recency_at_ms\r\n    ON threads(recency_at_ms DESC, id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_section_position",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_section_position\r\n    ON threads(archived, thread_section_id, section_position ASC, id ASC)\r\n    WHERE thread_section_id IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_section_recency_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_section_recency_at_ms\r\n    ON threads(archived, thread_section_id, recency_at_ms DESC, id DESC)\r\n    WHERE thread_section_id IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_source",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_source ON threads(source)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_updated_at",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_updated_at ON threads(updated_at DESC, id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_updated_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_updated_at_ms ON threads(updated_at_ms DESC, id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_visible_created_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_visible_created_at_ms\r\n    ON threads(archived, created_at_ms DESC)\r\n    WHERE preview <> ''"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_visible_recency_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_visible_recency_at_ms\r\n    ON threads(archived, recency_at_ms DESC, id DESC)\r\n    WHERE preview <> ''"
+        },
+        {
+          "type": "index",
+          "name": "idx_threads_visible_updated_at_ms",
+          "tbl_name": "threads",
+          "sql": "CREATE INDEX idx_threads_visible_updated_at_ms\r\n    ON threads(archived, updated_at_ms DESC)\r\n    WHERE preview <> ''"
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex__sqlx_migrations_1",
+          "tbl_name": "_sqlx_migrations",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_external_agent_config_imports_1",
+          "tbl_name": "external_agent_config_imports",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_guardian_review_feedback_1",
+          "tbl_name": "guardian_review_feedback",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_project_idempotency_keys_1",
+          "tbl_name": "project_idempotency_keys",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_project_roots_1",
+          "tbl_name": "project_roots",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_projects_1",
+          "tbl_name": "projects",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_remote_control_enrollments_1",
+          "tbl_name": "remote_control_enrollments",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_rollout_migration_skipped_rollouts_1",
+          "tbl_name": "rollout_migration_skipped_rollouts",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_rollout_migration_state_1",
+          "tbl_name": "rollout_migration_state",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_thread_attachments_1",
+          "tbl_name": "thread_attachments",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_thread_attachments_2",
+          "tbl_name": "thread_attachments",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_thread_dynamic_tools_1",
+          "tbl_name": "thread_dynamic_tools",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_thread_read_receipts_1",
+          "tbl_name": "thread_read_receipts",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_thread_sections_1",
+          "tbl_name": "thread_sections",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_thread_spawn_edges_1",
+          "tbl_name": "thread_spawn_edges",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_threads_1",
+          "tbl_name": "threads",
+          "sql": null
+        },
+        {
+          "type": "table",
+          "name": "_sqlx_migrations",
+          "tbl_name": "_sqlx_migrations",
+          "sql": "CREATE TABLE _sqlx_migrations (\n    version BIGINT PRIMARY KEY,\n    description TEXT NOT NULL,\n    installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    success BOOLEAN NOT NULL,\n    checksum BLOB NOT NULL,\n    execution_time BIGINT NOT NULL\n)"
+        },
+        {
+          "type": "table",
+          "name": "backfill_state",
+          "tbl_name": "backfill_state",
+          "sql": "CREATE TABLE backfill_state (\r\n    id INTEGER PRIMARY KEY CHECK (id = 1),\r\n    status TEXT NOT NULL,\r\n    last_watermark TEXT,\r\n    last_success_at INTEGER,\r\n    updated_at INTEGER NOT NULL\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "external_agent_config_imports",
+          "tbl_name": "external_agent_config_imports",
+          "sql": "CREATE TABLE external_agent_config_imports (\r\n    import_id TEXT PRIMARY KEY,\r\n    completed_at_ms INTEGER NOT NULL,\r\n    successes TEXT NOT NULL,\r\n    failures TEXT NOT NULL\r\n, provider_id TEXT)"
+        },
+        {
+          "type": "table",
+          "name": "guardian_review_feedback",
+          "tbl_name": "guardian_review_feedback",
+          "sql": "CREATE TABLE guardian_review_feedback (\r\n    id TEXT PRIMARY KEY NOT NULL,\r\n    thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,\r\n    record BLOB NOT NULL\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "project_idempotency_keys",
+          "tbl_name": "project_idempotency_keys",
+          "sql": "CREATE TABLE project_idempotency_keys (\r\n    key TEXT PRIMARY KEY,\r\n    project_id TEXT NOT NULL,\r\n    created_at_ms INTEGER NOT NULL\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "project_roots",
+          "tbl_name": "project_roots",
+          "sql": "CREATE TABLE project_roots (\r\n    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,\r\n    position INTEGER NOT NULL,\r\n    path TEXT NOT NULL,\r\n    PRIMARY KEY (project_id, position)\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "projects",
+          "tbl_name": "projects",
+          "sql": "CREATE TABLE projects (\r\n    id TEXT PRIMARY KEY,\r\n    name TEXT NOT NULL,\r\n    metadata TEXT NOT NULL DEFAULT '{}',\r\n    position INTEGER NOT NULL,\r\n    created_at_ms INTEGER NOT NULL,\r\n    updated_at_ms INTEGER NOT NULL\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "remote_control_enrollments",
+          "tbl_name": "remote_control_enrollments",
+          "sql": "CREATE TABLE remote_control_enrollments (\r\n    websocket_url TEXT NOT NULL,\r\n    account_id TEXT NOT NULL,\r\n    app_server_client_name TEXT NOT NULL,\r\n    server_id TEXT NOT NULL,\r\n    environment_id TEXT NOT NULL,\r\n    server_name TEXT NOT NULL,\r\n    updated_at INTEGER NOT NULL, remote_control_enabled INTEGER,\r\n    PRIMARY KEY (websocket_url, account_id, app_server_client_name)\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "rollout_migration_skipped_rollouts",
+          "tbl_name": "rollout_migration_skipped_rollouts",
+          "sql": "CREATE TABLE rollout_migration_skipped_rollouts (\r\n    migration_id TEXT NOT NULL,\r\n    rollout_path TEXT NOT NULL,\r\n    rollout_size_bytes INTEGER NOT NULL,\r\n    rollout_modified_at_ns INTEGER NOT NULL,\r\n    skip_reason TEXT NOT NULL,\r\n    skipped_at INTEGER NOT NULL,\r\n    PRIMARY KEY (migration_id, rollout_path)\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "rollout_migration_state",
+          "tbl_name": "rollout_migration_state",
+          "sql": "CREATE TABLE rollout_migration_state (\r\n    migration_id TEXT PRIMARY KEY,\r\n    last_checked_thread_created_at INTEGER,\r\n    last_checked_thread_id TEXT,\r\n    updated_at INTEGER NOT NULL\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "sqlite_sequence",
+          "tbl_name": "sqlite_sequence",
+          "sql": "CREATE TABLE sqlite_sequence(name,seq)"
+        },
+        {
+          "type": "table",
+          "name": "thread_attachments",
+          "tbl_name": "thread_attachments",
+          "sql": "CREATE TABLE \"thread_attachments\" (\r\n    id TEXT PRIMARY KEY,\r\n    thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,\r\n    attachment_type TEXT NOT NULL,\r\n    identity_key TEXT NOT NULL,\r\n    payload TEXT NOT NULL,\r\n    created_at INTEGER NOT NULL,\r\n    UNIQUE (thread_id, attachment_type, identity_key)\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "thread_dynamic_tools",
+          "tbl_name": "thread_dynamic_tools",
+          "sql": "CREATE TABLE thread_dynamic_tools (\r\n    thread_id TEXT NOT NULL,\r\n    position INTEGER NOT NULL,\r\n    name TEXT NOT NULL,\r\n    description TEXT NOT NULL,\r\n    input_schema TEXT NOT NULL, defer_loading INTEGER NOT NULL DEFAULT 0, namespace TEXT,\r\n    PRIMARY KEY(thread_id, position),\r\n    FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "thread_read_receipts",
+          "tbl_name": "thread_read_receipts",
+          "sql": "CREATE TABLE thread_read_receipts (\r\n    thread_id TEXT PRIMARY KEY NOT NULL,\r\n    first_unread_turn TEXT,\r\n    revision TEXT NOT NULL,\r\n    last_published_turn TEXT\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "thread_sections",
+          "tbl_name": "thread_sections",
+          "sql": "CREATE TABLE thread_sections (\r\n    id TEXT PRIMARY KEY,\r\n    name TEXT NOT NULL\r\n, appearance TEXT)"
+        },
+        {
+          "type": "table",
+          "name": "thread_spawn_edges",
+          "tbl_name": "thread_spawn_edges",
+          "sql": "CREATE TABLE thread_spawn_edges (\r\n    parent_thread_id TEXT NOT NULL,\r\n    child_thread_id TEXT NOT NULL PRIMARY KEY,\r\n    status TEXT NOT NULL\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "threads",
+          "tbl_name": "threads",
+          "sql": "CREATE TABLE threads (\r\n    id TEXT PRIMARY KEY,\r\n    rollout_path TEXT NOT NULL,\r\n    created_at INTEGER NOT NULL,\r\n    updated_at INTEGER NOT NULL,\r\n    source TEXT NOT NULL,\r\n    model_provider TEXT NOT NULL,\r\n    cwd TEXT NOT NULL,\r\n    title TEXT NOT NULL,\r\n    sandbox_policy TEXT NOT NULL,\r\n    approval_mode TEXT NOT NULL,\r\n    tokens_used INTEGER NOT NULL DEFAULT 0,\r\n    has_user_event INTEGER NOT NULL DEFAULT 0,\r\n    archived INTEGER NOT NULL DEFAULT 0,\r\n    archived_at INTEGER,\r\n    git_sha TEXT,\r\n    git_branch TEXT,\r\n    git_origin_url TEXT\r\n, cli_version TEXT NOT NULL DEFAULT '', first_user_message TEXT NOT NULL DEFAULT '', agent_nickname TEXT, agent_role TEXT, memory_mode TEXT NOT NULL DEFAULT 'enabled', model TEXT, reasoning_effort TEXT, agent_path TEXT, created_at_ms INTEGER, updated_at_ms INTEGER, thread_source TEXT, preview TEXT NOT NULL DEFAULT '', recency_at INTEGER NOT NULL DEFAULT 0, recency_at_ms INTEGER NOT NULL DEFAULT 0, history_mode TEXT NOT NULL DEFAULT 'legacy', name TEXT, is_pinned INTEGER NOT NULL DEFAULT 0, thread_section_id TEXT\r\n    REFERENCES thread_sections(id) ON DELETE SET NULL, section_position INTEGER, section_entered_at_ms INTEGER, project_id TEXT\r\n    REFERENCES projects(id) ON DELETE SET NULL, originator TEXT, daybreak_enabled BOOLEAN, creator_user_id TEXT, creator_account_id TEXT, attached_thread_parent_id TEXT)"
+        },
+        {
+          "type": "trigger",
+          "name": "threads_created_at_ms_after_insert",
+          "tbl_name": "threads",
+          "sql": "CREATE TRIGGER threads_created_at_ms_after_insert\r\nAFTER INSERT ON threads\r\nWHEN NEW.created_at_ms IS NULL\r\nBEGIN\r\n    UPDATE threads\r\n    SET created_at_ms = NEW.created_at * 1000\r\n    WHERE id = NEW.id;\r\nEND"
+        },
+        {
+          "type": "trigger",
+          "name": "threads_created_at_ms_after_update",
+          "tbl_name": "threads",
+          "sql": "CREATE TRIGGER threads_created_at_ms_after_update\r\nAFTER UPDATE OF created_at ON threads\r\nWHEN NEW.created_at != OLD.created_at\r\n AND NEW.created_at_ms IS OLD.created_at_ms\r\nBEGIN\r\n    UPDATE threads\r\n    SET created_at_ms = NEW.created_at * 1000\r\n    WHERE id = NEW.id;\r\nEND"
+        },
+        {
+          "type": "trigger",
+          "name": "threads_recency_at_after_insert",
+          "tbl_name": "threads",
+          "sql": "CREATE TRIGGER threads_recency_at_after_insert\r\nAFTER INSERT ON threads\r\nWHEN NEW.recency_at_ms = 0\r\nBEGIN\r\n    UPDATE threads\r\n    SET recency_at = NEW.updated_at,\r\n        recency_at_ms = COALESCE(NEW.updated_at_ms, NEW.updated_at * 1000)\r\n    WHERE id = NEW.id;\r\nEND"
+        },
+        {
+          "type": "trigger",
+          "name": "threads_updated_at_ms_after_insert",
+          "tbl_name": "threads",
+          "sql": "CREATE TRIGGER threads_updated_at_ms_after_insert\r\nAFTER INSERT ON threads\r\nWHEN NEW.updated_at_ms IS NULL\r\nBEGIN\r\n    UPDATE threads\r\n    SET updated_at_ms = NEW.updated_at * 1000\r\n    WHERE id = NEW.id;\r\nEND"
+        },
+        {
+          "type": "trigger",
+          "name": "threads_updated_at_ms_after_update",
+          "tbl_name": "threads",
+          "sql": "CREATE TRIGGER threads_updated_at_ms_after_update\r\nAFTER UPDATE OF updated_at ON threads\r\nWHEN NEW.updated_at != OLD.updated_at\r\n AND NEW.updated_at_ms IS OLD.updated_at_ms\r\nBEGIN\r\n    UPDATE threads\r\n    SET updated_at_ms = NEW.updated_at * 1000\r\n    WHERE id = NEW.id;\r\nEND"
+        }
+      ],
+      "tables": [
+        {
+          "name": "_sqlx_migrations",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "version",
+              "type": "BIGINT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "description",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "installed_on",
+              "type": "TIMESTAMP",
+              "notnull": 1,
+              "dflt_value": "CURRENT_TIMESTAMP",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "success",
+              "type": "BOOLEAN",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "checksum",
+              "type": "BLOB",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 5,
+              "name": "execution_time",
+              "type": "BIGINT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "backfill_state",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "id",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "status",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "last_watermark",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "last_success_at",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "updated_at",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "external_agent_config_imports",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "import_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "completed_at_ms",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "successes",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "failures",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "provider_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "guardian_review_feedback",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "thread_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "record",
+              "type": "BLOB",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "project_idempotency_keys",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "key",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "project_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "created_at_ms",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "project_roots",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "project_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "position",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 2,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "path",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "projects",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "name",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "metadata",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": "'{}'",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "position",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "created_at_ms",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 5,
+              "name": "updated_at_ms",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "remote_control_enrollments",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "websocket_url",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "account_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 2,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "app_server_client_name",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 3,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "server_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "environment_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 5,
+              "name": "server_name",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 6,
+              "name": "updated_at",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 7,
+              "name": "remote_control_enabled",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "rollout_migration_skipped_rollouts",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "migration_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "rollout_path",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 2,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "rollout_size_bytes",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "rollout_modified_at_ns",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "skip_reason",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 5,
+              "name": "skipped_at",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "rollout_migration_state",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "migration_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "last_checked_thread_created_at",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "last_checked_thread_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "updated_at",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "sqlite_sequence",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "name",
+              "type": "",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "seq",
+              "type": "",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "thread_attachments",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "thread_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "attachment_type",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "identity_key",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "payload",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 5,
+              "name": "created_at",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "thread_dynamic_tools",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "thread_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "position",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 2,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "name",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "description",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "input_schema",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 5,
+              "name": "defer_loading",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": "0",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 6,
+              "name": "namespace",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "thread_read_receipts",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "thread_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "first_unread_turn",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "revision",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "last_published_turn",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "thread_sections",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "name",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "appearance",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "thread_spawn_edges",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "parent_thread_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "child_thread_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "status",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "threads",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "rollout_path",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "created_at",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "updated_at",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "source",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 5,
+              "name": "model_provider",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 6,
+              "name": "cwd",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 7,
+              "name": "title",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 8,
+              "name": "sandbox_policy",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 9,
+              "name": "approval_mode",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 10,
+              "name": "tokens_used",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": "0",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 11,
+              "name": "has_user_event",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": "0",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 12,
+              "name": "archived",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": "0",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 13,
+              "name": "archived_at",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 14,
+              "name": "git_sha",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 15,
+              "name": "git_branch",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 16,
+              "name": "git_origin_url",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 17,
+              "name": "cli_version",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": "''",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 18,
+              "name": "first_user_message",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": "''",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 19,
+              "name": "agent_nickname",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 20,
+              "name": "agent_role",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 21,
+              "name": "memory_mode",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": "'enabled'",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 22,
+              "name": "model",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 23,
+              "name": "reasoning_effort",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 24,
+              "name": "agent_path",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 25,
+              "name": "created_at_ms",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 26,
+              "name": "updated_at_ms",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 27,
+              "name": "thread_source",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 28,
+              "name": "preview",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": "''",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 29,
+              "name": "recency_at",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": "0",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 30,
+              "name": "recency_at_ms",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": "0",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 31,
+              "name": "history_mode",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": "'legacy'",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 32,
+              "name": "name",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 33,
+              "name": "is_pinned",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": "0",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 34,
+              "name": "thread_section_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 35,
+              "name": "section_position",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 36,
+              "name": "section_entered_at_ms",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 37,
+              "name": "project_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 38,
+              "name": "originator",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 39,
+              "name": "daybreak_enabled",
+              "type": "BOOLEAN",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 40,
+              "name": "creator_user_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 41,
+              "name": "creator_account_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 42,
+              "name": "attached_thread_parent_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        }
+      ],
+      "migrations": [
+        {
+          "version": "1",
+          "description": "threads",
+          "success": "1",
+          "checksum": "54BBD6F47905A4E4C674034575963D82DA7B534E66E9A37A81EC2AFB6A4B56CE6DE9B3ECF3032796A800F650239847D4"
+        },
+        {
+          "version": "2",
+          "description": "logs",
+          "success": "1",
+          "checksum": "4F866D7ECD0E71D3BF2A0E9CF183761BB556DF69E244DBC9FA2ECC1BFD7278F340AAB8C1D31036BC39AACA03F73867DE"
+        },
+        {
+          "version": "3",
+          "description": "logs thread id",
+          "success": "1",
+          "checksum": "5BA8CE5778EB03A8932F9609956E352F2738820E16F5CC7CCA55418CF8782FB566D27FB7AFD9FE9FA701F752A1776B52"
+        },
+        {
+          "version": "4",
+          "description": "thread dynamic tools",
+          "success": "1",
+          "checksum": "EC5413B05D68AEFF6D0F354ED8C3855B7BAB3ABF4EA351A44D34099947E852533AF752CAB919AAAFA3A3A04E46060268"
+        },
+        {
+          "version": "5",
+          "description": "threads cli version",
+          "success": "1",
+          "checksum": "5B9674726067E633A00AD2D22475B355C351D5CE62C617AF736EEA0A2781ACF1B09C9561B62C0BB1A10C7CF86434DF33"
+        },
+        {
+          "version": "6",
+          "description": "memories",
+          "success": "1",
+          "checksum": "DC507991FAC6554A31EED165090D1902F86990BC6BCCB2751E79E0286D3019640071A470C90A781808BEAE53EC2A06E2"
+        },
+        {
+          "version": "7",
+          "description": "threads first user message",
+          "success": "1",
+          "checksum": "D8BFEE50161E8BF71BAD452B2E369E293B8456A89BD480502B42C70F38FF1A561832B5FC50716F2412D5859FC440F4EA"
+        },
+        {
+          "version": "8",
+          "description": "backfill state",
+          "success": "1",
+          "checksum": "E48B6CFDFE480A9B0ACEEA619E1A14DF03AA3852D5572C443CB7F14E5893CDFAA9249074C95201BD49E9495179982EC6"
+        },
+        {
+          "version": "9",
+          "description": "stage1 outputs rollout slug",
+          "success": "1",
+          "checksum": "4ACF556B21F49DFC54B49932BC0907D8C9DB51DA3D8EA2BA96847B8A7C0A3674508F46078961B2BBF3062EA2D1662DE4"
+        },
+        {
+          "version": "10",
+          "description": "logs process id",
+          "success": "1",
+          "checksum": "A132200CF74910DB91B4447880FD500871D75F0B7732AD6C9A44CBB16454D25134B3A3AA8586744CB22830AE642D7537"
+        },
+        {
+          "version": "11",
+          "description": "logs partition prune indexes",
+          "success": "1",
+          "checksum": "4E3237FBAD8D643AD17B6B595D450D3750C1B5CBEE457CDBB9BF101349379FDD5D448DBC5667E8623ECEFE5E5F09134D"
+        },
+        {
+          "version": "12",
+          "description": "logs estimated bytes",
+          "success": "1",
+          "checksum": "39CC998AE8B835A773AD96E374C9909CEE36EC3F21F578DCD0A95C367A15591877DC2C2F9261C32061974AA708F22D01"
+        },
+        {
+          "version": "13",
+          "description": "threads agent nickname",
+          "success": "1",
+          "checksum": "86910312E7931DE468D5BC97F404EF3BFDBEDB5D3C01A8FDE0105D0E2C3C2B109D6859A007E3B485AE9257086768E459"
+        },
+        {
+          "version": "14",
+          "description": "agent jobs",
+          "success": "1",
+          "checksum": "12275BDF6BD1685525DBB54C37DDF62608D10F9F66110D7BB0DE55EE25A8B283E46D97CB8EABED7564F9752E3967BA8A"
+        },
+        {
+          "version": "15",
+          "description": "agent jobs max runtime seconds",
+          "success": "1",
+          "checksum": "8104857BCB63E9665C77DDCB8186BE1BB630D9472FE215A0FADD62566FE33ABDA9CB223602506F2187F2BDD09D01105E"
+        },
+        {
+          "version": "16",
+          "description": "memory usage",
+          "success": "1",
+          "checksum": "A6AA6C86B2594802D6C3075543C358B5C36B789786A715252D5723D2135993F1CBDBBC6965B06559395A487F60B44A47"
+        },
+        {
+          "version": "17",
+          "description": "phase2 selection flag",
+          "success": "1",
+          "checksum": "6FE02A550E205A8D1FB600D1CDA2C889766D9D614737A631EF7444C6824F3D4552F5ABED532E5B740EEDE3C92E058EA0"
+        },
+        {
+          "version": "18",
+          "description": "phase2 selection snapshot",
+          "success": "1",
+          "checksum": "52C982FA4DA6E05C65EE7A501D3AFF95C09CDD16317D05284D1AB424A5A5950CEEF073461C9627387C7B59576A2A71A4"
+        },
+        {
+          "version": "19",
+          "description": "thread dynamic tools defer loading",
+          "success": "1",
+          "checksum": "570F9E6B85368A4AAF6D930FF7360EFBEAD869ADE569D6CADE5578EB93A41C265DA0F76E81CE88AA5FA0374B61570F1D"
+        },
+        {
+          "version": "20",
+          "description": "threads model reasoning effort",
+          "success": "1",
+          "checksum": "F3AE77B21667B4BDCB61D65D53ED053FD3838EDD4DF2856568FFBC74CCC84B153F6BBA30CE01BF92E8479EEAC74CBB3A"
+        },
+        {
+          "version": "21",
+          "description": "thread spawn edges",
+          "success": "1",
+          "checksum": "983C1FCA08DA60B83CDBD39CBB19D3F988ABAFED3FA79E5025B14BCCA89F9AB69CD9798FCDB2A2CE8FD83C0C3CBD4AF2"
+        },
+        {
+          "version": "22",
+          "description": "threads agent path",
+          "success": "1",
+          "checksum": "49DD725DE92864E377C4829A80683F1A4F17C29D1FD94B585DA1A5CDA7DF791C36451B1AE658B0842AE0A52017BDDF6A"
+        },
+        {
+          "version": "23",
+          "description": "drop logs",
+          "success": "1",
+          "checksum": "E84E5DDFA298882814F2528DC83691798CD855270781A3ABFFAF03089915702C9A41FDC3B58D382D53CBD56C0FB5D2DA"
+        },
+        {
+          "version": "24",
+          "description": "remote control enrollments",
+          "success": "1",
+          "checksum": "26F2A3548BFEFA919337017CF0D2DB76803100F50BA088D6CBF18CE268FA7C25F2A8CC965064B26DF262085265F41114"
+        },
+        {
+          "version": "25",
+          "description": "thread timestamps millis",
+          "success": "1",
+          "checksum": "C9B9138A1592B3B7E181B4D6C5F71A19EA6B3149DE367C1FE58F6CE7C30B9283FBD03A617C48B8E10E2F801D1156F188"
+        },
+        {
+          "version": "26",
+          "description": "thread dynamic tools namespace",
+          "success": "1",
+          "checksum": "83CD22369F0B5146DD0E466BF8D9730BE8DBC60F5F865D1EFDD8971D5EC1062E022C403DA42DB5E76108A5115C5744EA"
+        },
+        {
+          "version": "27",
+          "description": "threads cwd sort indexes",
+          "success": "1",
+          "checksum": "08D17426B921F3FFC88D0CFD554A6FC256FBCA67040660436847F8E3E08B84CAA847E12EE8557DB9463EE55C3CF1CE85"
+        },
+        {
+          "version": "28",
+          "description": "device key bindings",
+          "success": "1",
+          "checksum": "DC89CB6011729570C1069210E95398BC73B3F463124DA5FE8F9119EB829CF468C1D36F1CF31DD0F96192FABB9D56A9B7"
+        },
+        {
+          "version": "29",
+          "description": "thread goals",
+          "success": "1",
+          "checksum": "48D0745631D4ED868591A1DA86C0AD71685B88CBD7D7DBE974EEA011C53830A392FF67518659558DC2F4A4210928A3CC"
+        },
+        {
+          "version": "30",
+          "description": "threads thread source",
+          "success": "1",
+          "checksum": "884936A3BBBE9732088886DB238A7BD69F43161FE36ADB3B41BB4D517B64565B74EE437A2803235E3705F6598E6B23C3"
+        },
+        {
+          "version": "31",
+          "description": "drop device key bindings",
+          "success": "1",
+          "checksum": "709A7C7171422075736FE02C65008343B28B90A5CF01A4D12335D510AEAE3DD510D9D3614BAEF5F5AB86BE991DE230C5"
+        },
+        {
+          "version": "32",
+          "description": "threads preview",
+          "success": "1",
+          "checksum": "A1D3A079EB183895924CC4B7A663E71D185B5E4B23F629D7B1B36F3E725AC777667E1123761FBAE67598E070896AC093"
+        },
+        {
+          "version": "33",
+          "description": "thread goal stopped statuses",
+          "success": "1",
+          "checksum": "059D9619558BA112BCD06197F17B52EC7FEC9E55B37DD976E62465822286D7645FC3E49AC191ABBCAF08FDB10CB361CB"
+        },
+        {
+          "version": "34",
+          "description": "drop thread goals",
+          "success": "1",
+          "checksum": "43D68F835032ECBE2C79E131726C6AD4BC7A3B0ECD2DA149177A9B6BD9008DBD5E4F853D6A1386695744B53759D8CD2C"
+        },
+        {
+          "version": "35",
+          "description": "drop memory tables",
+          "success": "1",
+          "checksum": "511CF81620DE449ED4143EEBD3F5AA8BF3077ED61ED5E23CE2468CDC45AB69FC8606643B6D3AF68DFFDED5F4BD46815E"
+        },
+        {
+          "version": "36",
+          "description": "threads visible sort indexes",
+          "success": "1",
+          "checksum": "53369C6F679AE28C0C562BD4AE68B9F0EF3639779A01C3804BE3AFEACE56152D3978E1110B9EFC2E3F376A59CE3538A9"
+        },
+        {
+          "version": "37",
+          "description": "remote control enrollments enabled",
+          "success": "1",
+          "checksum": "438C5AE9CE503C483C72F87B64A9001D683D143976085173652F96BA5810A6B2F2F6BDA5892800E3243479DAC8A27B6D"
+        },
+        {
+          "version": "38",
+          "description": "external agent config imports",
+          "success": "1",
+          "checksum": "C6E28F890545146F3749E29DD9EB5E87B6DFBF754F70B67C6F2D653C2D6D8C950BAAF9C0500BD90F48C9E95F5585239B"
+        },
+        {
+          "version": "39",
+          "description": "threads recency at",
+          "success": "1",
+          "checksum": "1147D36849DDD43BB2FB7335CCB917C86C4299D491582BE541545319A04B7D4870A1844C9405948F4E4B90EB3AC202C9"
+        },
+        {
+          "version": "40",
+          "description": "threads history mode",
+          "success": "1",
+          "checksum": "242209D2A240E8601EF6AB7AD70E8D88F272EEC828D1C72F1716C801EE16759ECD1D29BA79099CFEDFB484E5994EE240"
+        },
+        {
+          "version": "41",
+          "description": "threads name",
+          "success": "1",
+          "checksum": "14FB95715F7E597E410F96A90DB3875B5DBB0D0E124B8E4587C5DD46145F58B218A85A8B9CC42A40C96B0F0E15AC441C"
+        },
+        {
+          "version": "42",
+          "description": "drop agent jobs",
+          "success": "1",
+          "checksum": "815A1F0CBE21AC7F0653FB67C8E9702FD0EBB5F0A54CE644893B66D18614D9C8988510458B68FBD671B8632EF363B36A"
+        },
+        {
+          "version": "43",
+          "description": "threads is pinned",
+          "success": "1",
+          "checksum": "9B2A199A557F5A92B0E27574E8BFC01DCE5EF28F106A3C16DFB3B8A6CD5679F3B8BC26B63E09C461A9A0C1364F0B04BF"
+        },
+        {
+          "version": "44",
+          "description": "external agent config imports provider id",
+          "success": "1",
+          "checksum": "DFA22384943E691A089B9E8A6A8DA988EF1E25FF51DB7975CA42C3EC4BE474370F262CAA77AEB5877EEEABBFF2C3CEB1"
+        },
+        {
+          "version": "45",
+          "description": "threads section",
+          "success": "1",
+          "checksum": "D99495AC371F2F50DACAF4880ABB8317D7D51866D68649B39F73E1307FA119250643CC8E899B8C19A70BEE99ACD9BA59"
+        },
+        {
+          "version": "46",
+          "description": "threads section order",
+          "success": "1",
+          "checksum": "D41BFC128C10E85FFD2E4696723EBDF47360497E39812797D25D740593581DFF10CB6AF7D41826FBBEA6E1663AC04780"
+        },
+        {
+          "version": "47",
+          "description": "rollout migration state",
+          "success": "1",
+          "checksum": "0588F3862C25AF8A6100AF005805D125AA3BE61931F4488C959EAEA59D6CAC906E69089253107AEC9F2B35A3EBB8EED4"
+        },
+        {
+          "version": "48",
+          "description": "thread section appearance",
+          "success": "1",
+          "checksum": "0882FC76871EF5E5D3613CBFD4F5A89166B12956837FB9D22AC91940A8FE63ABEE41EAA9A97FB578A7310B672A989D04"
+        },
+        {
+          "version": "49",
+          "description": "projects",
+          "success": "1",
+          "checksum": "6027CDB383C85014E29C08176A785E0768DC5EA2C3E727E94E3F0A1628D423AF958316CDC1BF77A7062A57EAF3AC0CB8"
+        },
+        {
+          "version": "50",
+          "description": "threads section empty preview indexes",
+          "success": "1",
+          "checksum": "130CAD59F2CD5B326007719DE48C6426E03A4073123995B2886278B627A1D1E50F3BA46B48D079FE795C9F96390E8EAB"
+        },
+        {
+          "version": "51",
+          "description": "thread artifacts",
+          "success": "1",
+          "checksum": "23CD26D16F40CC6B4E4F9F24B44334B5831A30E290D9DF51A4C8D173BFEE8A2F8966E604392777EC4BBE04DE7D472205"
+        },
+        {
+          "version": "52",
+          "description": "projects recency",
+          "success": "1",
+          "checksum": "6F4998DF2C3DE4E43153E99014BDF76B514418724A3B209EE894D4AA738F422F57341A848A58A0BE4A66EB9AC6A4C0E8"
+        },
+        {
+          "version": "53",
+          "description": "threads originator",
+          "success": "1",
+          "checksum": "1A77AF904ABB9581E18B64753002A1C2A66C587B7C02A85039B885B32408176F298867677A371E230729999E9D631712"
+        },
+        {
+          "version": "54",
+          "description": "threads daybreak enabled",
+          "success": "1",
+          "checksum": "BA91EC1AE9E505EC285E38A9B4C95E74A8F4DD42CEB08B66029B9AFD6EB0064FD2D71B8FA03FE9D1C375599D22F1AC12"
+        },
+        {
+          "version": "55",
+          "description": "thread attachments",
+          "success": "1",
+          "checksum": "2EC70C72DBE2C8ADEA84670BD9E8D127F4CEC33FCD2E0852D5B8558C9D81D8DA057B76EEEE2F7CFC54CE4D0DD4B8FCEA"
+        },
+        {
+          "version": "56",
+          "description": "threads creator identity",
+          "success": "1",
+          "checksum": "4EF7100DA8A52D8D536EBD4BD78A1EC41596C8D29987A5EA63652F7CF36DD998F9080E4FC47C4EF5741931608714B829"
+        },
+        {
+          "version": "57",
+          "description": "cleanup guardian thread metadata",
+          "success": "1",
+          "checksum": "F84885B4F2F6649213059BF8DDB23A9335F99F606CC69D95F501E2E7CDDC0F8CB68672BBBD6CCD6F75430FB0EE167E96"
+        },
+        {
+          "version": "58",
+          "description": "threads archive sort indexes",
+          "success": "1",
+          "checksum": "11BA7EF8C0291B94F6475660FEB84DC8C10C513EE82665A1AC8A94F50670028250DDA9A9EC7132F2C76BFA66AF6F0F21"
+        },
+        {
+          "version": "59",
+          "description": "thread attachment reverse lookup",
+          "success": "1",
+          "checksum": "28AC43B18C07B3DA9F930528629AFFB9F4008AD2D63E34C2D4561C660CDE99733AB430F03F0563AB22890892C15B9711"
+        },
+        {
+          "version": "60",
+          "description": "guardian review feedback",
+          "success": "1",
+          "checksum": "4AA9F1CE86AC6741D086FCA017BBD7546AD7DB1FDD7A56C88854566628B9B1DB4F102C4C4366BF016B70BCC91BC09366"
+        },
+        {
+          "version": "61",
+          "description": "thread read state",
+          "success": "1",
+          "checksum": "0E2E8A05ACBE268720436C0874F226CD6CD8783482DC368DFE004CCDD2E241CAE4B1963F483D1A60FE23F8F28BCC3267"
+        },
+        {
+          "version": "62",
+          "description": "threads attached parent",
+          "success": "1",
+          "checksum": "875FFAACAF8D6F3E1ED49628B2B746BDD08CC1B4617C74900729CAA4248AD4BD0A3DDC57F6A122CC50E241D7133D269C"
+        }
+      ]
+    },
+    {
+      "file": "thread_history_1.sqlite",
+      "userVersion": 0,
+      "applicationId": 0,
+      "ddlSha256": "e6edf940f6da4036b0cb76edd796d18c11dd6017fdc7a76e010cfd01c7b92331",
+      "schema": [
+        {
+          "type": "index",
+          "name": "idx_thread_items_by_turn_page",
+          "tbl_name": "thread_items",
+          "sql": "CREATE INDEX idx_thread_items_by_turn_page\r\n    ON thread_items(thread_id, turn_id, rollout_ordinal)"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_items_by_turn_updated_page",
+          "tbl_name": "thread_items",
+          "sql": "CREATE INDEX idx_thread_items_by_turn_updated_page\r\n    ON thread_items(thread_id, turn_id, updated_at_ordinal)"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_items_page",
+          "tbl_name": "thread_items",
+          "sql": "CREATE UNIQUE INDEX idx_thread_items_page\r\n    ON thread_items(thread_id, rollout_ordinal)"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_items_updated_page",
+          "tbl_name": "thread_items",
+          "sql": "CREATE INDEX idx_thread_items_updated_page\r\n    ON thread_items(thread_id, updated_at_ordinal)"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_items_user_messages",
+          "tbl_name": "thread_items",
+          "sql": "CREATE INDEX idx_thread_items_user_messages\r\n    ON thread_items(thread_id, rollout_ordinal)\r\n    WHERE item_type = 'userMessage'"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_realtime_items_boundary",
+          "tbl_name": "thread_realtime_items",
+          "sql": "CREATE INDEX idx_thread_realtime_items_boundary\r\n    ON thread_realtime_items(thread_id, rollout_ordinal)\r\n    WHERE item_type IN ('realtime_session_started', 'realtime_session_closed')"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_realtime_items_page",
+          "tbl_name": "thread_realtime_items",
+          "sql": "CREATE UNIQUE INDEX idx_thread_realtime_items_page\r\n    ON thread_realtime_items(thread_id, rollout_ordinal)"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_turns_end_page",
+          "tbl_name": "thread_turns",
+          "sql": "CREATE INDEX idx_thread_turns_end_page\r\n    ON thread_turns(thread_id, rollout_end_ordinal, turn_id)\r\n    WHERE rollout_end_ordinal IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "idx_thread_turns_page",
+          "tbl_name": "thread_turns",
+          "sql": "CREATE UNIQUE INDEX idx_thread_turns_page\r\n    ON thread_turns(thread_id, rollout_ordinal)"
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex__sqlx_migrations_1",
+          "tbl_name": "_sqlx_migrations",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_thread_history_projection_state_1",
+          "tbl_name": "thread_history_projection_state",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_thread_items_1",
+          "tbl_name": "thread_items",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_thread_realtime_items_1",
+          "tbl_name": "thread_realtime_items",
+          "sql": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_thread_turns_1",
+          "tbl_name": "thread_turns",
+          "sql": null
+        },
+        {
+          "type": "table",
+          "name": "_sqlx_migrations",
+          "tbl_name": "_sqlx_migrations",
+          "sql": "CREATE TABLE _sqlx_migrations (\n    version BIGINT PRIMARY KEY,\n    description TEXT NOT NULL,\n    installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    success BOOLEAN NOT NULL,\n    checksum BLOB NOT NULL,\n    execution_time BIGINT NOT NULL\n)"
+        },
+        {
+          "type": "table",
+          "name": "thread_history_projection_state",
+          "tbl_name": "thread_history_projection_state",
+          "sql": "CREATE TABLE thread_history_projection_state (\r\n    thread_id TEXT PRIMARY KEY,\r\n    next_rollout_byte_offset INTEGER NOT NULL,\r\n    next_rollout_ordinal INTEGER NOT NULL\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "thread_items",
+          "tbl_name": "thread_items",
+          "sql": "CREATE TABLE thread_items (\r\n    thread_id TEXT NOT NULL,\r\n    turn_id TEXT NOT NULL,\r\n    item_id TEXT NOT NULL,\r\n    rollout_ordinal INTEGER NOT NULL,\r\n    created_at_ms INTEGER NOT NULL,\r\n    item_json TEXT NOT NULL, item_type TEXT NOT NULL DEFAULT '', updated_at_ordinal INTEGER NOT NULL DEFAULT 0, started_at_ms INTEGER, completed_at_ms INTEGER,\r\n    PRIMARY KEY (thread_id, turn_id, item_id)\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "thread_realtime_items",
+          "tbl_name": "thread_realtime_items",
+          "sql": "CREATE TABLE thread_realtime_items (\r\n    thread_id TEXT NOT NULL,\r\n    item_id TEXT NOT NULL,\r\n    rollout_ordinal INTEGER NOT NULL,\r\n    created_at_ms INTEGER NOT NULL,\r\n    item_type TEXT NOT NULL,\r\n    item_json TEXT NOT NULL,\r\n    PRIMARY KEY (thread_id, item_id)\r\n)"
+        },
+        {
+          "type": "table",
+          "name": "thread_turns",
+          "tbl_name": "thread_turns",
+          "sql": "CREATE TABLE thread_turns (\r\n    thread_id TEXT NOT NULL,\r\n    turn_id TEXT NOT NULL,\r\n    rollout_ordinal INTEGER NOT NULL,\r\n    status TEXT NOT NULL,\r\n    error_json TEXT,\r\n    started_at INTEGER,\r\n    completed_at INTEGER,\r\n    duration_ms INTEGER,\r\n    first_user_item_id TEXT,\r\n    final_agent_item_id TEXT, rollout_byte_offset INTEGER, rollout_end_ordinal INTEGER, rollout_end_byte_offset INTEGER, root_turn_id TEXT,\r\n    PRIMARY KEY (thread_id, turn_id)\r\n)"
+        },
+        {
+          "type": "trigger",
+          "name": "thread_realtime_items_projection_cleanup",
+          "tbl_name": "thread_history_projection_state",
+          "sql": "CREATE TRIGGER thread_realtime_items_projection_cleanup\r\n    AFTER DELETE ON thread_history_projection_state\r\nBEGIN\r\n    DELETE FROM thread_realtime_items WHERE thread_id = OLD.thread_id;\r\nEND"
+        }
+      ],
+      "tables": [
+        {
+          "name": "_sqlx_migrations",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "version",
+              "type": "BIGINT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "description",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "installed_on",
+              "type": "TIMESTAMP",
+              "notnull": 1,
+              "dflt_value": "CURRENT_TIMESTAMP",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "success",
+              "type": "BOOLEAN",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "checksum",
+              "type": "BLOB",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 5,
+              "name": "execution_time",
+              "type": "BIGINT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "thread_history_projection_state",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "thread_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "next_rollout_byte_offset",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "next_rollout_ordinal",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "thread_items",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "thread_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "turn_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 2,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "item_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 3,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "rollout_ordinal",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "created_at_ms",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 5,
+              "name": "item_json",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 6,
+              "name": "item_type",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": "''",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 7,
+              "name": "updated_at_ordinal",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": "0",
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 8,
+              "name": "started_at_ms",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 9,
+              "name": "completed_at_ms",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "thread_realtime_items",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "thread_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "item_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 2,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "rollout_ordinal",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "created_at_ms",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "item_type",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 5,
+              "name": "item_json",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        },
+        {
+          "name": "thread_turns",
+          "columns": [
+            {
+              "cid": 0,
+              "name": "thread_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 1,
+              "hidden": 0
+            },
+            {
+              "cid": 1,
+              "name": "turn_id",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 2,
+              "hidden": 0
+            },
+            {
+              "cid": 2,
+              "name": "rollout_ordinal",
+              "type": "INTEGER",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 3,
+              "name": "status",
+              "type": "TEXT",
+              "notnull": 1,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 4,
+              "name": "error_json",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 5,
+              "name": "started_at",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 6,
+              "name": "completed_at",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 7,
+              "name": "duration_ms",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 8,
+              "name": "first_user_item_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 9,
+              "name": "final_agent_item_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 10,
+              "name": "rollout_byte_offset",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 11,
+              "name": "rollout_end_ordinal",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 12,
+              "name": "rollout_end_byte_offset",
+              "type": "INTEGER",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            },
+            {
+              "cid": 13,
+              "name": "root_turn_id",
+              "type": "TEXT",
+              "notnull": 0,
+              "dflt_value": null,
+              "pk": 0,
+              "hidden": 0
+            }
+          ]
+        }
+      ],
+      "migrations": [
+        {
+          "version": "1",
+          "description": "thread history",
+          "success": "1",
+          "checksum": "3D81349432ECBF6E5255DBE0A075D27811144FD3C32941AC1CBBA640A83E278FA562309FB3B226964EE4251E97B4B513"
+        },
+        {
+          "version": "2",
+          "description": "thread items item type",
+          "success": "1",
+          "checksum": "1461CFFA3015C335F993C4AFEECB729714FC741D663038EBE18288B968AEF006649EB1EF3A0716CE47FE6D08C06045A5"
+        },
+        {
+          "version": "3",
+          "description": "turn rollout positions",
+          "success": "1",
+          "checksum": "CCE3ADB187490E2822A759C2668337CB277656F1FC1A1713542A4F15D23FD5E7E444328A58BE7906067006FAC870A574"
+        },
+        {
+          "version": "4",
+          "description": "thread items updated at ordinal",
+          "success": "1",
+          "checksum": "6A2824BEE2B0670C6BB3BB5AE990F015863C5F6548540834EDDCDE94C470D6AFFA040A6E1E50AB81D75F0A149D19BB77"
+        },
+        {
+          "version": "5",
+          "description": "thread realtime items",
+          "success": "1",
+          "checksum": "BDFAF405F3B733CF7455CA5AA0AFAE13869FD2AD2CF75245E6E268B9B110F331D3D69B01224BFFA66D1107FF938E9D6B"
+        },
+        {
+          "version": "6",
+          "description": "thread turn ends",
+          "success": "1",
+          "checksum": "7AE052FD42A8AB1E7D0FE33127157B9CF2552AB1C8010A3ADECA49B9DD314163DC19663639A4A6BF479B9F25D1A5A16A"
+        },
+        {
+          "version": "7",
+          "description": "thread item lifecycle timestamps",
+          "success": "1",
+          "checksum": "852814C808C7A62178029739CA41C38B9C86F4C366C6C436DFD9E905031F43FFEF927F5C3DCBB7B17F9E5AC04124FC7C"
+        },
+        {
+          "version": "8",
+          "description": "thread turn root",
+          "success": "1",
+          "checksum": "745E4EE42B02C79C4BC742A5405ACBF460FCDAAA44394367CE93D3A3FF29F3876830F1BBEB44BDC87D7AD9AF060A9587"
+        }
+      ]
+    }
+  ],
+  "historyTables": [
+    "thread_turns",
+    "thread_items",
+    "thread_realtime_items",
+    "thread_history_projection_state"
+  ],
+  "stateOwnership": {
+    "copySelectedHistoryRows": true,
+    "copyStateThreadRow": false,
+    "currentTargetPolicy": [
+      "sandbox_policy",
+      "approval_mode",
+      "model_provider",
+      "model",
+      "reasoning_effort",
+      "memory_mode",
+      "daybreak_enabled"
+    ],
+    "destinationRegistration": "effectful-explicit-current-target-policy-only"
+  }
+}

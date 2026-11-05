@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "kind": "LodeAgentWorkerManifest",
+  "manifestVersion": "0.1.0",
+  "workerProtocolVersion": "0.2.0",
+  "target": {
+    "platform": "linux",
+    "arch": "arm64",
+    "directory": "linux-arm64"
+  },
+  "binary": {
+    "relativePath": "lode-agent-worker",
+    "sha256": "8c8c2f404d3649e00f8fbc69c1886f47e7a90b63975eefb520c2df78435ec63d",
+    "size": 2687138
+  },
+  "operations": [
+    "worker.health.v1"
+  ],
+  "processModel": {
+    "stdio": "single-request-single-response-json",
+    "descendants": "forbidden",
+    "network": "forbidden",
+    "projectWrites": "forbidden"
+  },
+  "authority": {
+    "kind": "computation-only",
+    "instructionAuthority": false,
+    "promotionAuthority": false,
+    "controlAuthority": false,
+    "mutatesProject": false,
+    "mutatesCanon": false
+  },
+  "manifestId": "go-worker-manifest-2fc26899947a2a0299f357ac",
+  "manifestHash": "2fc26899947a2a0299f357ac7d701a95cfc5249d6ec8d13989259bc4ea4d082c"
+}
