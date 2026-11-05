@@ -9,6 +9,19 @@ const normalize = text => text.replaceAll("\r\n", "\n").trimEnd();
 export const sameDocumentText = (a, b) => typeof a === "string" && typeof b === "string" && normalize(a) === normalize(b);
 const safeId = value => typeof value === "string" && /^[a-zA-Z0-9_-]{1,180}$/.test(value);
 const pageId = value => typeof value === "string" && /^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(value);
+const notionPublicationBudgets = new WeakSet();
+
+// Target aliases and Session names are not resource identities. These values
+// describe an operational destination only, never a Project or recovery owner.
+export function documentDestinationIdentity(target) {
+  if (target?.kind === "notion" && pageId(target.parentPageId)) return workDocumentHash(["notion-parent", target.parentPageId.replaceAll("-", "").toLowerCase()]);
+  if (target?.kind === "obsidian") {
+    const directory = fs.realpathSync(target.vaultRoot), stat = fs.lstatSync(directory, { bigint: true });
+    if (!stat.isDirectory() || stat.isSymbolicLink()) documentFailure("Unsafe vault destination.");
+    return workDocumentHash(["obsidian-vault", String(stat.dev), String(stat.ino), String(stat.birthtimeNs)]);
+  }
+  documentFailure("Unknown document destination.");
+}
 
 export function createBoundedNotionRequest({ token, fetchFunction = fetch, maxBytes = 4 * 1024 * 1024 } = {}) {
   if (typeof token !== "string" || !token || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 4 * 1024 * 1024) documentFailure("Explicit transport configuration is required.");
@@ -51,6 +64,11 @@ export function createObsidianWorkDocumentAdapter({ vaultRoot, directory }) {
   };
   return { kind: "obsidian", identity: workDocumentHash(["obsidian", vault, directory]),
     url: id => encodeURIComponent(id),
+    directory,
+    scoped(segment) {
+      if (!/^[a-zA-Z0-9_-]{1,180}$/.test(segment || "")) documentFailure("Invalid child document directory.");
+      return createObsidianWorkDocumentAdapter({ vaultRoot: vault, directory: `${directory}/${segment}` });
+    },
     async read(id) { return read(id); },
     async find({ documentId, markdown }) {
       try { const value = await read(documentId); return { complete: true, matches: sameDocumentText(value.markdown, markdown) ? [value] : [],
@@ -79,10 +97,12 @@ export function createObsidianWorkDocumentAdapter({ vaultRoot, directory }) {
 
 // A request is supplied by the explicitly configured Host. There is no ambient
 // token discovery, arbitrary base URL, remote instruction execution or SDK daemon.
-export function createNotionWorkDocumentAdapter({ parentPageId, request, requestBudget = 64, deadlineMs = 30000, now = Date.now }) {
+export function createNotionWorkDocumentAdapter({ parentPageId, request, requestBudget = 64, deadlineMs = 30000, now = Date.now, _sharedBudget = null }) {
   if (!pageId(parentPageId) || typeof request !== "function") documentFailure("Select an exact parent and authenticated transport.", "WORK_DOCUMENT_UNCONNECTED");
   if (!Number.isInteger(requestBudget) || requestBudget < 1 || requestBudget > 64 || !Number.isInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > 30000) documentFailure("Invalid publication transport budget.");
-  let used = 0, deadline = now() + deadlineMs;
+  if (_sharedBudget && !notionPublicationBudgets.has(_sharedBudget)) documentFailure("Unknown publication budget.");
+  const budget = _sharedBudget || { used: 0, deadline: now() + deadlineMs };
+  notionPublicationBudgets.add(budget);
   const compact = id => id.replaceAll("-", "").toLowerCase();
   const rejections = new WeakMap();
   const intent = (method, endpoint, body) => ({ protocol: "notion-markdown-v2", method, endpoint,
@@ -100,20 +120,21 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
     && value.message.length > 0 && value.message.length <= 4096
     && (value.request_id === undefined || typeof value.request_id === "string" && value.request_id.length <= 180);
   const call = async (method, endpoint, body) => {
-    if (used >= requestBudget || now() >= deadline) documentFailure("Publication/recovery transport budget exhausted.", "WORK_DOCUMENT_TRANSPORT_BUDGET");
-    used++;
-    const remaining = Math.max(1, deadline - now());
+    if (budget.used >= requestBudget || now() >= budget.deadline) documentFailure("Publication/recovery transport budget exhausted.", "WORK_DOCUMENT_TRANSPORT_BUDGET");
+    budget.used++;
+    const remaining = Math.max(1, budget.deadline - now());
     let timer, result;
     try {
       result = await Promise.race([request({ method, url: `https://api.notion.com/v1${endpoint}`, signal: AbortSignal.timeout(remaining),
         headers: { "Notion-Version": "2026-03-11", "Content-Type": "application/json" }, ...(body ? { body } : {}) }),
       new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error("Publication deadline expired."), { code: "WORK_DOCUMENT_TRANSPORT_BUDGET" })), remaining); })]);
     } finally { clearTimeout(timer); }
-    if (now() >= deadline) documentFailure("Publication deadline expired; effects remain unconfirmed.", "WORK_DOCUMENT_TRANSPORT_BUDGET");
+    if (now() >= budget.deadline) documentFailure("Publication deadline expired; effects remain unconfirmed.", "WORK_DOCUMENT_TRANSPORT_BUDGET");
     if (!result || !Number.isInteger(result.status) || result.status < 200 || result.status >= 300) {
       const status = result?.status;
       const error = Object.assign(new Error("Notion request did not verify publication."), {
-        code: status === 401 || status === 403 ? "WORK_DOCUMENT_PERMISSION_DENIED" : "WORK_DOCUMENT_HTTP_UNKNOWN" });
+        code: status === 401 || status === 403 ? "WORK_DOCUMENT_PERMISSION_DENIED" : "WORK_DOCUMENT_HTTP_UNKNOWN",
+        ...(Number.isInteger(status)?{httpStatus:status}:{}) });
       if (status === 403 && isWriteEndpoint(method, endpoint) && validRejection(result.body)) {
         const { object, status: responseStatus, code, message, request_id } = result.body;
         rejections.set(error, { kind: "VerifiedRejectedNotionWrite", intent: intent(method, endpoint, body),
@@ -140,6 +161,12 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
         && value.unknown_block_ids.length === 0 && !/<unknown\b/.test(value.markdown), warnings: value.warnings || [] };
   };
   return { kind: "notion", identity: workDocumentHash(["notion", compact(parentPageId)]),
+  scoped(parentId) {
+    // Core must first verify the exact owned container through its journal and
+    // readback. Every child still enforces one exact parent; no subtree ownership
+    // or workspace-wide search is inferred by this adapter.
+    return createNotionWorkDocumentAdapter({ parentPageId: parentId, request, requestBudget, deadlineMs, now, _sharedBudget: budget });
+  },
   writeIntent(operation, input) {
     if (operation === "create") return intent("POST", "/pages", createBody(input));
     if (operation === "replace-exact-text" && pageId(input.id)) return intent("PATCH", `/pages/${input.id}/markdown`, replaceBody(input));
@@ -155,25 +182,37 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
       && expected.parentPageId === compact(parentPageId)
       && workDocumentHash(proof.intent) === workDocumentHash(expected);
   },
-  beginPublication() { used = 0; deadline = now() + deadlineMs; }, url: id => {
+  beginPublication() { if (!_sharedBudget) { budget.used = 0; budget.deadline = now() + deadlineMs; } }, url: id => {
     if (!pageId(id)) documentFailure("Invalid exact page link."); return `https://www.notion.so/${compact(id)}`;
   }, read,
-  async find({ markdown }) {
-    const matches = []; let cursor = null;
-    // Bounded parent-only recovery, never workspace search or title rebinding.
-    for (let page = 0; page < 3; page++) {
-      const children = await call("GET", `/blocks/${parentPageId}/children?page_size=100${cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : ""}`);
-      if (!Array.isArray(children.results) || children.results.length > 100) documentFailure("Parent enumeration is incomplete.");
-      for (const child of children.results) {
-        if (child.type !== "child_page") continue;
-        const value = await read(child.id);
-        if (value.complete && !value.warnings.length && sameDocumentText(value.markdown, markdown)) matches.push(value);
+  async find({ markdown, cursor = null }) {
+    const matches = [];
+    if (cursor && (typeof cursor!=="object" || !Number.isInteger(cursor.offset) || cursor.offset<0 || cursor.offset>100
+      || cursor.pageCursor!==null && (typeof cursor.pageCursor!=="string" || cursor.pageCursor.length>500)
+      || !/^[a-f0-9]{64}$/.test(cursor.listingDigest||""))) documentFailure("Invalid recovery cursor.","WORK_DOCUMENT_RECORD_TAMPER");
+    let pageCursor=cursor?.pageCursor||null, offset=cursor?.offset||0, inspected=0;
+    // Bounded slices of the exact selected parent. Progress survives calls;
+    // an unfinished prefix never proves uniqueness or authorizes a POST.
+    for (let page=0;page<3;page++) {
+      const children=await call("GET","/blocks/"+parentPageId+"/children?page_size=100"+(pageCursor?"&start_cursor="+encodeURIComponent(pageCursor):""));
+      if (!Array.isArray(children.results)||children.results.length>100) documentFailure("Parent enumeration is incomplete.");
+      const digest=workDocumentHash(children.results.map(child=>[child.id,child.type]));
+      if (cursor && page===0 && cursor.listingDigest!==digest) offset=0;
+      for (let index=offset;index<children.results.length;index++) {
+        const child=children.results[index];
+        if (child.type!=="child_page") continue;
+        if (inspected++>=12) return {complete:false,matches,cursor:{pageCursor,offset:index,listingDigest:digest}};
+        const value=await read(child.id);
+        if (value.complete && !value.warnings.length && sameDocumentText(value.markdown,markdown)) matches.push({id:value.id});
       }
-      if (children.has_more === false) return { complete: true, matches };
-      if (typeof children.next_cursor !== "string" || !children.next_cursor || children.next_cursor.length > 500) break;
-      cursor = children.next_cursor;
+      if (children.has_more===false) return {complete:true,matches};
+      if (typeof children.next_cursor!=="string"||!children.next_cursor||children.next_cursor.length>500) return {complete:false,matches};
+      pageCursor=children.next_cursor;offset=0;cursor=null;
     }
-    return { complete: false, matches };
+    // The next page is read once to bind its listing before saving an offset.
+    const next=await call("GET","/blocks/"+parentPageId+"/children?page_size=100&start_cursor="+encodeURIComponent(pageCursor));
+    if (!Array.isArray(next.results)||next.results.length>100) documentFailure("Parent enumeration is incomplete.");
+    return {complete:false,matches,cursor:{pageCursor,offset:0,listingDigest:workDocumentHash(next.results.map(child=>[child.id,child.type]))}};
   },
   async create({ title, markdown }) {
     const result = await call("POST", "/pages", createBody({ title, markdown }));

@@ -254,6 +254,9 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
       `${cliDisplay} work-document-configure <project> --input <user-selected-destinations.json>`,
       `${cliDisplay} work-document-publish <project> --input <prepared-document-and-targets.json>`,
       `${cliDisplay} work-document-status <project> [--logical-key <key>]`,
+      `${cliDisplay} project-document-prepare <project> --input <HEAD-project-selection.json>`,
+      `${cliDisplay} project-document-publish <project> --input <prepared-project-and-targets.json>`,
+      `${cliDisplay} project-document-status <project>`,
       `${cliDisplay} session-work-read <project> [--scan-evidence] [--after-evidence-id <returned-id>] [--input <read-bounds.json>]`,
       `${cliDisplay} session-restore <project> [--checkpoint <session-run-checkpoint-id>]`,
       `${cliDisplay} session-continue <project> --runtime <claude|codex|opencode> [--checkpoint <session-run-checkpoint-id>] [--binding-env <environment-name>]`,
@@ -840,6 +843,12 @@ async function runRoutedCommand(argv, { observationRegistry = null, compactionLi
       catch (error) { documentSelectionError = error.code || "WORK_DOCUMENT_SELECTION_JSON_INVALID"; }
     }
     return (await import("./lib/session-work-document-workflow.mjs")).recordSessionWorkAndProjectDocuments({ root, input, documentSelection, documentSelectionError });
+  }
+  if (command === "project-document-status") return (await import("./lib/project-document-publication.mjs")).projectDocumentStatus({root});
+  if (["project-document-prepare","project-document-publish"].includes(command)) {
+    const api=await import("./lib/project-document-publication.mjs");
+    const input=inputJson(options,"HEAD-selected Project documents");
+    return api[command==="project-document-prepare"?"prepareProjectDocuments":"publishProjectDocuments"]({...input,root});
   }
   if (command === "work-document-status") return (await import("./lib/work-document-publication.mjs")).workDocumentStatus({ root,
     logicalKey: options["logical-key"] });

@@ -2,9 +2,10 @@ import { recordSessionWorkEvidence } from "./session-work-context.mjs";
 import { workDocumentStore } from "./work-document-store.mjs";
 import { prepareWorkDocuments, publishWorkDocuments, readWorkDocumentSelections } from "./work-document-publication.mjs";
 import { workDocumentHash } from "./work-document-source.mjs";
+import { prepareProjectDocuments, publishProjectDocuments } from "./project-document-publication.mjs";
 
 function authoredSelection(selection, record) {
-  const allowed = ["title", "evidenceIds", "related", "diffs", "excerpts", "graphAnchors"];
+  const allowed = ["title", "evidenceIds", "related", "diffs", "excerpts", "graphAnchors", "featureKeys"];
   if (!selection || typeof selection !== "object" || Array.isArray(selection) || Object.keys(selection).some(key => !allowed.includes(key))) throw Object.assign(new Error("Invalid HEAD document selection."), { code: "WORK_DOCUMENT_SELECTION_INVALID" });
   const id = value => value === "recorded" ? record.evidenceId : value;
   const source = value => ({ ...value, evidenceId: id(value.evidenceId) });
@@ -26,7 +27,7 @@ export async function recordSessionWorkAndProjectDocuments({ root, input, docume
     const record = result.evidence, store = workDocumentStore({ root, sessionId: record.sessionId });
     const targets = store.read("configuration.json")?.targets || [];
     const todo = record.content.todos?.length === 1 ? record.content.todos[0] : null;
-    const chosen = todo ? targets.filter(target => target.automatic && target.todoIds.includes(todo.todoId)) : [];
+    const chosen = todo ? targets.filter(target => target.automatic && !target.projectDocuments && target.todoIds.includes(todo.todoId)) : [];
     if (!targets.length) documentProjection = { status: "unconnected", externalEffects: 0 };
     else if (!todo) documentProjection = { status: "manual-exact-document-available", externalEffects: 0,
       reason: "No unique task result scope; existing work does not require Todos." };
@@ -68,5 +69,38 @@ export async function recordSessionWorkAndProjectDocuments({ root, input, docume
   } catch (error) { documentProjection = { status: "document-update-unconfirmed", reasonCode: error.code || "WORK_DOCUMENT_UNAVAILABLE",
     ...(error.primaryReasonCode ? { primaryReasonCode: error.primaryReasonCode, originalFailures: error.originalFailures } : {}),
     originalWorkSaved: true, ordinaryWorkBlocked: false, executionReplayAllowed: false }; }
+  const record=result.evidence;
+  let store,projectTargets;
+  try {
+    store=workDocumentStore({root,sessionId:record.sessionId});
+    projectTargets=(store.read("configuration.json")?.targets||[]).filter(target=>target.automatic&&target.projectDocuments===true);
+  } catch(error) {return {...result,documentProjection:{status:"document-update-unconfirmed",reasonCode:error.code||"WORK_DOCUMENT_UNAVAILABLE",
+    originalWorkSaved:true,ordinaryWorkBlocked:false,executionReplayAllowed:false}};}
+  if (projectTargets.length) {
+    let projectDocuments;
+    try {
+      if (documentSelectionError) throw Object.assign(new Error("Optional reading selection unavailable."),{code:documentSelectionError});
+      const todo=record.content.todos?.length===1?record.content.todos[0]:null;
+      const logicalKey=workDocumentHash([record.projectId,record.sessionId,todo?.todoId||record.evidenceId,"work-document"]);
+      const prior=store.read("selections",logicalKey+".json");
+      if (!documentSelection && rich(prior?.sourceSelection) && !exact(prior.taskRevision,record)) {
+        projectDocuments={status:"head-selection-required",headActionRequired:true,userActionRequired:false,externalEffects:0,
+          reason:"Retain or deliberately revise the existing exact reading scope for the new result.",previousSelection:prior,
+          recorded:{evidenceId:record.evidenceId,evidenceDigest:record.evidenceDigest}};
+      } else {
+        const selected=documentSelection?authoredSelection(documentSelection,record):prior&&exact(prior.taskRevision,record)?prior.sourceSelection:{evidenceIds:[record.evidenceId]};
+        const pair=await prepareWorkDocuments({...selected,root,sessionId:record.sessionId,title:selected.title||prior?.title||todo?.task.slice(0,160)||"작업 기록",
+          todoId:todo?.todoId||null,taskEvidenceId:todo?null:record.evidenceId});
+        const prepared=await prepareProjectDocuments({root,sessionId:record.sessionId,
+          workEvidence:[{sessionId:record.sessionId,evidenceId:record.evidenceId,evidenceDigest:record.evidenceDigest,featureKeys:selected.featureKeys||[]}],
+          readings:[{sessionId:record.sessionId,projectionId:pair.projectionId}]});
+        projectDocuments=await publishProjectDocuments({root,sessionId:record.sessionId,projectionId:prepared.projectionId,targetIds:projectTargets.map(target=>target.id),adapters});
+        if (projectDocuments.status==="continuation-required") projectDocuments.followUp={action:"continue-project-document-publication",
+          projectionId:prepared.projectionId,targetIds:projectTargets.map(target=>target.id),userActionRequired:false};
+      }
+    } catch(error) { projectDocuments={status:"document-update-unconfirmed",reasonCode:error.code||"WORK_DOCUMENT_UNAVAILABLE",
+      ...(error.primaryReasonCode?{primaryReasonCode:error.primaryReasonCode}:{}),originalWorkSaved:true,ordinaryWorkBlocked:false,executionReplayAllowed:false}; }
+    return {...result,documentProjection:{status:projectDocuments.status,taskDocuments:documentProjection,projectDocuments,ordinaryWorkBlocked:false}};
+  }
   return { ...result, documentProjection };
 }

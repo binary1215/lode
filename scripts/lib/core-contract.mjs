@@ -13,6 +13,8 @@ export function coreContract() {
   contract.activeCapabilities = [
     ...contract.activeCapabilities,
     "source-bound-work-document-human-agent-views",
+    "project-document-membership-dag-human-agent-views",
+    "project-scoped-bounded-document-publication",
     "optional-task-scoped-async-document-publication",
     "obsidian-owned-vault-work-document-projection",
     "notion-work-document-http-contract-synthetic-verification",

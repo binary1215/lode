@@ -148,6 +148,23 @@ bounded pending/reconciliation step; do not create duplicates or add per-turn
 save/report rituals. Local receipt status is not live remote freshness. No
 separate model service is needed for the two reading views.
 
+For Project documentation use lode_project_document_prepare/publish/status
+(CLI project-document-*): the same actual Product → FeatureGroup → Feature DAG
+for both readers, shared originals and unclassified work. HEAD authors exact
+work-to-feature reading links and source-linked explanations, never canonical
+membership from names. Reuse saved task reading selections for actual
+code/diff/graph detail. Keep historical/cancelled/unknown evidence distinct.
+Project publication needs explicitly selected projectDocuments connection scope;
+an existing task-only connection does not acquire it on update. With automatic
+Project scope, meaningful saved work may update documents without a Todo.
+Continue bounded continuation-required calls in the same authorized task,
+without another save, user JSON or approval ritual. Shared destination journals
+retain other Sessions' contributions; missing reads are not deletions. Source
+drift needs fresh preparation, unknown effects only exact reconciliation, and
+an adapter-verified refusal only the explicit same-request retry below.
+Existing documents/notes remain in place. Publication is a last observed reading
+scope, not Product approval, P2 direction, work completion or remote CAS.
+
 For an adapter-verified rejected write, explain its retained cause, including a
 possible workspace limit. Cause repair alone does not retry. Within the current
 user-authorized destination/content scope, explicitly pass the returned exact
