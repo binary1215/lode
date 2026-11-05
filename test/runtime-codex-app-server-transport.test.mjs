@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createCodexAppServerTransport, createCodexAppServerProtocolFixtureTransport } from "../scripts/lib/runtime-codex-app-server-transport.mjs";
 import { resolveVerifiedProcessSupervisor, verifyRuntimeProcessSupervisorHandle } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { finishCodexAppServerFixture } from "./helpers/codex-app-server-fixture-cleanup.mjs";
+import { finishCodexAppServerFixture, waitForFixturePidsAbsent } from "./helpers/codex-app-server-fixture-cleanup.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
 const realTimeout = setTimeout, realClearTimeout = clearTimeout;
@@ -24,6 +24,18 @@ function controlCleanupClock(t) {
   };
   const watchdog = realTimeout(() => advance(2), 5000);
   return () => { realClearTimeout(watchdog); realClearTimeout(escalation); t.mock.timers.reset(); };
+}
+async function assertCleanFixtureExit(f, owner = f.handle) {
+  const closed = f.journal.find(event => event.event === "process-closed");
+  assert.equal(f.config.terminationGraceMs, 200);
+  assert.equal(closed.forced, false);
+  assert.equal(closed.exitCode, 0);
+  assert.equal(closed.exactExitObserved, true);
+  assert.equal(closed.supervision.providerChildExitObserved, true);
+  assert.equal(closed.supervision.treeCleanupVerified, true);
+  assert.equal(closed.cleanupTiming.eofRejected, false);
+  assert.ok(Number.isFinite(closed.cleanupTiming.eofFlushedAtMs));
+  assert.equal(await waitForFixturePidsAbsent([owner.child.pid, closed.providerPid]), true);
 }
 function fixture(t, scenario = "normal", options = {}) {
   const dir = fs.mkdtempSync(path.join(process.env.LODE_AGENT_TEST_TMP || process.env.HEAD_AGENT_TEST_TMP || os.tmpdir(), "codex-rpc-"));
@@ -345,11 +357,17 @@ test("journal-cancelled turn intent is not a model write attempt", async t => {
   const owner = f.start();
   await f.request("thread/fork", { threadId: "source", lastTurnId: "cutoff" });
   const wire = observeWire(owner);
-  await assert.rejects(f.request("turn/start", { threadId: "child", input: [] }), { code: "CODEX_RPC_CANCELLED" });
-  await f.transport.close();
-  assert.equal(wire.writes.filter(frame => frame.method === "turn/start").length, 0);
-  assert.equal(f.transport.inspect().modelCallAttempted, false);
-  assert.equal(f.journal.find(event => event.event === "process-closed").modelCallAttempted, false);
+  // The journal abort starts close synchronously. Control cleanup before that
+  // request, preserving the real cancellation and native no-write evidence.
+  const restoreClock = controlCleanupClock(t);
+  try {
+    await assert.rejects(f.request("turn/start", { threadId: "child", input: [] }), { code: "CODEX_RPC_CANCELLED" });
+    await f.transport.close();
+    assert.equal(wire.writes.filter(frame => frame.method === "turn/start").length, 0);
+    assert.equal(f.transport.inspect().modelCallAttempted, false);
+    assert.equal(f.journal.find(event => event.event === "process-closed").modelCallAttempted, false);
+    await assertCleanFixtureExit(f, owner);
+  } finally { restoreClock(); }
 });
 
 test("concrete subprocess initializes once and preserves partial UTF-8 frames", async t => {
@@ -358,7 +376,11 @@ test("concrete subprocess initializes once and preserves partial UTF-8 frames", 
   assert.equal((await f.request()).thread.id, "source");
   assert.equal(f.journal.filter(event => event.event === "request-sent" && event.method === "initialize").length, 1);
   assert.equal(f.transport.ownedTransport, null);
-  assert.equal((await f.transport.close()).actualProviderInvoked, false);
+  const restoreClock = controlCleanupClock(t);
+  try {
+    assert.equal((await f.transport.close()).actualProviderInvoked, false);
+    await assertCleanFixtureExit(f);
+  } finally { restoreClock(); }
 });
 
 test("fixed actual constructor cannot expose a fixture start or accept another executable", () => {
@@ -589,11 +611,26 @@ test("request snapshots reject accessors, proxies and non-JSON data without exec
 test("late cancellation after clean closure cannot rewrite the observed outcome", async t => {
   const f = fixture(t);
   await f.request();
-  const closed = await f.transport.close();
-  f.controller.abort();
-  assert.equal(f.transport.inspect().failureCode, null);
-  assert.equal(await f.transport.close(), closed);
-  assert.equal(f.journal.find(event => event.event === "process-closed").forced, false);
+  // This checks cancellation after actual clean settlement, not whether an OS
+  // schedules the normal fixture's exit inside the synthetic 66ms phase.
+  const restoreClock = controlCleanupClock(t);
+  try {
+    const closed = await f.transport.close();
+    const observed = f.journal.find(event => event.event === "process-closed");
+    assert.equal(f.config.terminationGraceMs, 200);
+    assert.equal(observed.forced, false);
+    assert.equal(observed.exitCode, 0);
+    assert.equal(observed.exactExitObserved, true);
+    assert.equal(observed.supervision.providerChildExitObserved, true);
+    assert.equal(observed.supervision.treeCleanupVerified, true);
+    assert.equal(observed.cleanupTiming.eofRejected, false);
+    assert.notEqual(observed.cleanupTiming.eofFlushedAtMs, null);
+    assert.equal(await waitForFixturePidsAbsent([f.handle.child.pid, observed.providerPid]), true);
+    f.controller.abort();
+    assert.equal(f.transport.inspect().failureCode, null);
+    assert.equal(await f.transport.close(), closed);
+    assert.equal(f.journal.find(event => event.event === "process-closed").forced, false);
+  } finally { restoreClock(); }
 });
 
 test("failed cleanup assertion preserves its error and still removes the exact stopped fixture", async t => {

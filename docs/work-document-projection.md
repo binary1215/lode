@@ -17,6 +17,62 @@ requires current user authorization for the destination and content scope.
 
 ## Reading the result
 
+### Browse a Project by product and feature
+
+Ask: “Organize this Project's documentation by product, feature group and
+feature, with a human view and an agent view.” Lode copies actual Product Canon
+membership, including nested groups and multiple parents. Product here is a
+reading root for the existing Project, not an invented Canon entity. Shared
+decisions and work link one original from several features; a Session is not
+forced under one feature. Unconfirmed associations remain unclassified.
+
+Both audiences use the same facts. Humans see purpose, flow, conditions, results
+and useful links; agents also see exact IDs, sources and selected code/diff/graph
+evidence. HEAD explains exact selected sources; Core never invents prose or
+implementation mappings. Explanations retain their original source bindings:
+after a Canon change they are historical until HEAD deliberately updates them.
+Missing code, comparisons or execution evidence stays unknown.
+
+Enable optional projectDocuments scope through the existing connection
+conversation; upgrading does not expand a task-only connection. No extra user
+JSON, Todo or onboarding step is needed. Automatic Project scope can document
+meaningful saved analysis without a Todo. A rich prior selection is kept or
+deliberately revised by HEAD, never silently shrunk to the last note.
+
+One Project home is shared across Sessions and aliases for the same actual Notion
+parent or physical vault. Different Projects with the same title remain separate.
+Notion creates an owned Project home under the selected parent, with reader homes
+and linked entity pages; every child still checks its exact parent. Obsidian adds
+Lode/<Project>/ProjectDocuments/. Existing task documents are not moved or deleted.
+Stable page identities survive renames; prior reading bodies remain linked
+history, and personal notes are never rewritten.
+
+Large hierarchies continue in bounded publication calls, including beyond the
+65th page. HEAD follows continuation-required without asking the user to run a
+script or resave work. Publication completion requires observing every selected
+page and required link. This is **not simultaneous remote CAS**: receipts state
+the last verified scope. Source/config changes and user edits preserve prior
+current receipts. A successor update first marks the home as in progress, before
+changing linked child bodies; readers are told that links may span update times.
+Only the fully observed publication clears that notice. Failed or cancelled
+updates do not silently present a mixed scope as completed. Unreadable or unselected Sessions cannot silently delete their
+known contributions. Malformed or denied Canon reads retain their primary failure.
+
+If a lost-create search spans multiple calls, matching pages remain candidate
+observations. Different-time slices cannot establish current global uniqueness.
+The attempt retains that limit across restart, source changes and target aliases.
+Candidate readback reports changed, missing-at-read or unavailable bodies without
+automatically binding a page or repeating POST. Exact provider terminal result
+IDs keep their separate validated recovery path. The existing single bounded
+parent observation is also not an atomic remote snapshot or authorship proof.
+
+Typed MCP: lode_project_document_prepare, lode_project_document_publish,
+lode_project_document_status. CLI: project-document-prepare,
+project-document-publish, project-document-status. HEAD supplies exact work
+references, optional feature reading associations, saved task reading selections
+and source-linked narrative. Project delivery records are P5 under
+document-projection/project/<Project>/; they never combine Session P2 direction.
+
 A stable Lode-owned start document links the last verified human and agent views,
 separate personal notes and the prior published view. “Current” means the last
 basis whose two views and required links were read back successfully. It does not
@@ -108,7 +164,7 @@ effects. There is no daemon; a subsequent request can continue known pending wor
 
 ## Ownership and concurrency
 
-Obsidian writes only the configured `Lode/<Project>/<Session>/<task-key>/` area.
+Task-mode Obsidian writes only the configured `Lode/<Project>/<Session>/<task-key>/` area.
 Revision files use exclusive create. Personal notes are separate. Managed start
 text changes only while exact old text remains. Notion uses one `update_content`
 exact-text edit rather than full-page replacement. Unmanaged content is preserved;

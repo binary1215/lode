@@ -11,6 +11,35 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.87 — publication tracked separately
+
+- Apply the existing controlled cleanup clock to the two remaining semantic
+  clean-close fixture tests. Preserve the real native EOF/exit/tree/PID proof,
+  production grace policy and forced/uncertain/nonzero negative tests.
+- Add bounded test-only filesystem event and delivery diagnostics without changing
+  the actual write, five-second bound, production watcher or success assertions.
+  Repeated macOS timeout cause remains unestablished.
+- Add Project documentation with linked human and agent views of actual Product,
+  nested feature groups and multi-parent feature membership. Keep shared work and
+  decisions linked once, unknown membership explicit, and narrative bound to its
+  original sources.
+- Share destination identity and bounded publication progress across Sessions;
+  preserve existing task documents, personal notes, stable pages and reading history.
+  Project scope is opt-in and meaningful analysis needs no Todo.
+- Continue large hierarchies beyond 65 pages without restarting completed prefixes.
+  Retain unknown effects and exact rejected-write retry boundaries. Multi-call lost-
+  create searches report candidates, never current global uniqueness or auto-binding.
+- Expose the same Project document Core through typed MCP, CLI and Skill.
+  Synthetic vault/HTTP tests do not qualify live Notion or local app loading.
+
+- Reuse exact unchanged reading views and their existing history links across
+  unrelated publications. Preserve source, direction and pending-repair identity;
+  real source changes still create history and user edits remain drift.
+
+- Stabilize the existing post-clean-close cancellation test with its controlled
+  cleanup clock, preserving real EOF, exact exit, PID absence and forced-close
+  rejection. Production grace policies and failure predicates are unchanged.
+
 ## 0.3.0-beta.82 — publication tracked separately
 
 - Prepare human explanations and agent Markdown from the same exact selected work

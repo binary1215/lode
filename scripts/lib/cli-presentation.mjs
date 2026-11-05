@@ -695,6 +695,11 @@ Evidence: ${value?.evidence?.evidenceId || "unknown"}
 No checkpoint, approval or original task effect was created or replayed.\n`;
   const documents = value?.documentProjection;
   if (!documents || ["unconnected", "outside-automatic-scope", "no-confirmed-result-change"].includes(documents.status)) return text;
+  if (documents.projectDocuments) {
+    text += "Project documents: " + inertTerminalText(documents.projectDocuments.status) + ". Publication is not task completion or approval.\n";
+    if (documents.projectDocuments.status !== "published") text += "The original save remains successful. HEAD continues the exact preparation or bounded publication; no user JSON or task replay is needed.\n";
+    return text + originalField("documentProjection", documents);
+  }
   text += `Work documents: ${inertTerminalText(documents.status)}. This reports publication, not task completion or approval.\n`;
   if (documents.status === "published") {
     for (const destination of documents.destinations || []) if (destination.start) text += `Start (${inertTerminalText(destination.id)}): ${inertTerminalText(destination.start)}\n`;

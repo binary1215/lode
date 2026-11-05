@@ -2773,7 +2773,7 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
                 : name === "head_session_work_record"
                   ? await (await import("./lib/session-work-document-workflow.mjs")).recordSessionWorkAndProjectDocuments({ root: args.project_root, input: args.evidence,
                       documentSelection: args.document_selection })
-                : name.startsWith("head_work_document_")
+                : name.startsWith("head_work_document_") || name.startsWith("head_project_document_")
                   ? await workDocumentFromMcp(name, args)
                 : name === "head_session_work_read"
                   ? (await import("./lib/session-work-context.mjs")).readSessionWorkContext({ root: args.project_root,
