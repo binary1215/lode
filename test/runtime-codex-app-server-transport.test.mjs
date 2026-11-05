@@ -25,6 +25,18 @@ function controlCleanupClock(t) {
   const watchdog = realTimeout(() => advance(2), 5000);
   return () => { realClearTimeout(watchdog); realClearTimeout(escalation); t.mock.timers.reset(); };
 }
+async function assertCleanFixtureExit(f, owner = f.handle) {
+  const closed = f.journal.find(event => event.event === "process-closed");
+  assert.equal(f.config.terminationGraceMs, 200);
+  assert.equal(closed.forced, false);
+  assert.equal(closed.exitCode, 0);
+  assert.equal(closed.exactExitObserved, true);
+  assert.equal(closed.supervision.providerChildExitObserved, true);
+  assert.equal(closed.supervision.treeCleanupVerified, true);
+  assert.equal(closed.cleanupTiming.eofRejected, false);
+  assert.ok(Number.isFinite(closed.cleanupTiming.eofFlushedAtMs));
+  assert.equal(await waitForFixturePidsAbsent([owner.child.pid, closed.providerPid]), true);
+}
 function fixture(t, scenario = "normal", options = {}) {
   const dir = fs.mkdtempSync(path.join(process.env.LODE_AGENT_TEST_TMP || process.env.HEAD_AGENT_TEST_TMP || os.tmpdir(), "codex-rpc-"));
   const journal = [];
@@ -345,11 +357,17 @@ test("journal-cancelled turn intent is not a model write attempt", async t => {
   const owner = f.start();
   await f.request("thread/fork", { threadId: "source", lastTurnId: "cutoff" });
   const wire = observeWire(owner);
-  await assert.rejects(f.request("turn/start", { threadId: "child", input: [] }), { code: "CODEX_RPC_CANCELLED" });
-  await f.transport.close();
-  assert.equal(wire.writes.filter(frame => frame.method === "turn/start").length, 0);
-  assert.equal(f.transport.inspect().modelCallAttempted, false);
-  assert.equal(f.journal.find(event => event.event === "process-closed").modelCallAttempted, false);
+  // The journal abort starts close synchronously. Control cleanup before that
+  // request, preserving the real cancellation and native no-write evidence.
+  const restoreClock = controlCleanupClock(t);
+  try {
+    await assert.rejects(f.request("turn/start", { threadId: "child", input: [] }), { code: "CODEX_RPC_CANCELLED" });
+    await f.transport.close();
+    assert.equal(wire.writes.filter(frame => frame.method === "turn/start").length, 0);
+    assert.equal(f.transport.inspect().modelCallAttempted, false);
+    assert.equal(f.journal.find(event => event.event === "process-closed").modelCallAttempted, false);
+    await assertCleanFixtureExit(f, owner);
+  } finally { restoreClock(); }
 });
 
 test("concrete subprocess initializes once and preserves partial UTF-8 frames", async t => {
@@ -358,7 +376,11 @@ test("concrete subprocess initializes once and preserves partial UTF-8 frames", 
   assert.equal((await f.request()).thread.id, "source");
   assert.equal(f.journal.filter(event => event.event === "request-sent" && event.method === "initialize").length, 1);
   assert.equal(f.transport.ownedTransport, null);
-  assert.equal((await f.transport.close()).actualProviderInvoked, false);
+  const restoreClock = controlCleanupClock(t);
+  try {
+    assert.equal((await f.transport.close()).actualProviderInvoked, false);
+    await assertCleanFixtureExit(f);
+  } finally { restoreClock(); }
 });
 
 test("fixed actual constructor cannot expose a fixture start or accept another executable", () => {
