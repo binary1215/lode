@@ -183,6 +183,7 @@ export function renderProjectDocumentPage(basis, { nodeId, audience = "human", r
   if (basis.commonDirection) lines.push("## 공통 작업 조건·취소\n\n제품 설명이나 구현 완료로 추론하지 않는 현재 공통 작업 기록입니다.\n\n" + Object.entries(basis.commonDirection.input)
     .filter(([key, value]) => key !== "goal" && (Array.isArray(value) ? value.length : value))
     .map(([key, value]) => `${text(audience === "human" ? ({ constraints: "유지할 조건", decisions: "기록된 결정", cancelledActions: "취소된 행동" })[key] || key : key)}\n\n${(Array.isArray(value) ? value : [value]).map(quote).join("\n\n")}`).join("\n\n"));
+  if (basis.commonDirection) lines.push("공통 조건 원문: "+text(basis.commonDirection.directionId)+" · "+text(basis.commonDirection.directionHash));
   const sourceKeys = [...new Set([...node.sourceKeys, ...(node.narrative?.sourceKeys || [])])];
   if (audience === "agent") lines.push(`## 신원·출처\n\nProject: ${basis.projectId}\n\nLogical page: ${node.id}\n\nKind/key: ${node.kind} / ${node.key}\n\n` + sourceKeys.map(key => JSON.stringify({ sourceKey: key, ...basis.sources[key] })).join("\n\n"));
   else if (sourceKeys.length) lines.push("## 원문 근거\n\n" + sourceKeys.map(key => {

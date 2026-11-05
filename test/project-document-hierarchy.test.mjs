@@ -17,6 +17,7 @@ import { workDocumentHash } from "../scripts/lib/work-document-source.mjs";
 import { createSourceObservation, retainSourceObservation } from "../scripts/lib/source-observation.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
+import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 function fixture(t) {
@@ -180,6 +181,39 @@ test("project scope is explicit; real vault navigation, rich reading, notes and 
   for(const [file,bytes]of before)assert.deepEqual(fs.readFileSync(file),bytes);
 });
 
+test("unchanged exact view retains its history chain across unrelated work; source and common-direction revisions still make history",async t=>{
+  const f=fixture(t);connect(f);
+  let prepared=await prepareProjectDocuments({root:f.root,sessionId:f.a});await finish(f,prepared);
+  // Two source changes establish a real multi-step history chain.
+  for(const text of ["First change","Second change"]) {
+    f.model.features[0].description=text;f.write();
+    prepared=await prepareProjectDocuments({root:f.root,sessionId:f.a});await finish(f,prepared);
+  }
+  const target=readProjectDocumentBasis({root:f.root,sessionId:f.a}).nodes.find(node=>node.kind==="Feature"&&node.key==="fb").id;
+  const files=()=>vaultFiles(f.vault),current=()=>files().find(file=>file.endsWith(path.sep+"human"+path.sep+target+".md"));
+  const history=()=>files().filter(file=>path.basename(file).startsWith("history-")&&fs.readFileSync(file,"utf8").includes("Feature:fb"));
+  const before=history().length,body=fs.readFileSync(current()),mtime=fs.statSync(current()).mtimeMs;
+  assert.ok(before>=4,"two real changes have both audience histories");
+  for(const summary of ["A-only evidence one","A-only evidence two"]) {
+    const record=f.save(f.a,summary);
+    prepared=await prepareProjectDocuments({root:f.root,sessionId:f.a,workEvidence:[select(record,["fa"])]});await finish(f,prepared);
+    assert.equal(history().length,before);assert.deepEqual(fs.readFileSync(current()),body);
+    assert.equal(fs.statSync(current()).mtimeMs,mtime,"no write to the unchanged current page");
+  }
+  const original=fs.readFileSync(current(),"utf8");fs.appendFileSync(current(),"\nUser change\n");
+  const extra=f.save(f.a,"A-only evidence three");prepared=await prepareProjectDocuments({root:f.root,sessionId:f.a,workEvidence:[select(extra,["fa"])]});
+  const result=await (async()=>{for(let i=0;i<100;i++){const outcome=await publishProjectDocuments({root:f.root,sessionId:f.a,projectionId:prepared.projectionId,targetIds:["docs"]});if(outcome.status!=="continuation-required")return outcome;}throw Error("No result");})();
+  assert.equal(result.destinations[0].reasonCode,"WORK_DOCUMENT_REMOTE_DRIFT");
+  // Restoring the exact same owned file bytes permits a new observation; no
+  // replacement object or same-title rebind is introduced.
+  fs.writeFileSync(current(),original);await finish(f,prepared);
+  const dir=updateProjectDirection({root:f.root,input:{goal:"Synthetic work direction, not Product purpose",constraints:["Keep the quoted source conditions"],decisions:[],cancelledActions:[]}});
+  assert.ok(dir.direction.directionId);
+  prepared=await prepareProjectDocuments({root:f.root,sessionId:f.a});await finish(f,prepared);
+  assert.ok(history().length>before,"a different quoted direction original is not deduplicated");
+  assert.match(fs.readFileSync(current(),"utf8"),/공통 조건 원문: direction-/);
+});
+
 test("shared canonical destination retains A/B contributions; rename keeps page IDs and history and removed membership",async t=>{
   const f=fixture(t), a=f.save(f.a,"A 기록"), b=f.save(f.b,"B 기록");connect(f);connect(f,f.b,"alias");
   const first=await prepareProjectDocuments({root:f.root,sessionId:f.a,workEvidence:[select(a,["fa"])]});await finish(f,first);
@@ -298,7 +332,7 @@ function notionFixture() {
       if (fault.rejectPatch) return {status:403,body:{object:"error",status:403,code:"restricted_resource",message:"Synthetic progress marker refusal"}};
       const {old_str,new_str}=call.body.update_content.content_updates[0];
       assert.equal(page.markdown.split(old_str).length,2);page.markdown=page.markdown.replace(old_str,new_str);
-      if (fault.losePatch) {fault.losePatch=false;throw Object.assign(new Error("Lost update"),{code:"ECONNRESET"});}
+      if (fault.losePatch || fault.losePatchId===page.id) {fault.losePatch=false;fault.losePatchId=null;throw Object.assign(new Error("Lost update"),{code:"ECONNRESET"});}
       if (fault.asyncPatch) {fault.asyncPatch=false;fault.taskPageId=page.id;return {status:202,body:{id:"task_fixture",status:"queued",poll_after_seconds:1}};}
     }
     return {status:200,body:match[2]?{object:"page_markdown",id:page.id,markdown:page.markdown,truncated:false,unknown_block_ids:[]}:page};
@@ -406,6 +440,28 @@ test("unknown creation beyond 65 siblings reaches candidate evidence without cla
   assert.equal(fs.existsSync(store.file("recovered")),false);
 });
 
+test("lost-update readback restores or invalidates pending view identity before exact-view reuse",async t=>{
+  const f=fixture(t),fake=notionFixture(),store=projectDocumentStore({root:f.root,sessionId:f.a});
+  configureWorkDocuments({root:f.root,sessionId:f.a,targets:[{id:"notion",kind:"notion",parentPageId:fake.parent,tokenEnvironment:"LODE_SYNTHETIC_UNUSED",automatic:false,todoIds:[],projectDocuments:true}]});
+  const originalBytes=fs.readFileSync(f.canon),first=await prepareProjectDocuments({root:f.root,sessionId:f.a});
+  await finish(f,first,f.a,"notion",{adapters:{notion:fake.adapter}});
+  const node=readProjectDocumentBasis({root:f.root,sessionId:f.a}).nodes.find(item=>item.kind==="Feature"&&item.key==="fa");
+  const readEntry=()=>fs.readdirSync(store.file("entries")).map(file=>store.read("entries",file)).find(entry=>entry.logical==="human/"+node.id);
+  const original=readEntry();f.model.features[0].description="Uncertain successor body must not survive source restoration";f.write();
+  const successor=await prepareProjectDocuments({root:f.root,sessionId:f.a});fake.fault.losePatchId=original.id;
+  let lost;
+  for(let i=0;i<100;i++) {
+    const result=await publishProjectDocuments({root:f.root,sessionId:f.a,projectionId:successor.projectionId,targetIds:["notion"],adapters:{notion:fake.adapter}});
+    if(result.status!=="continuation-required"){lost=result;break;}
+  }
+  assert.equal(lost.destinations[0].reasonCode,"ECONNRESET");assert.equal(readEntry().viewId,original.viewId);
+  assert.match(fake.pages.get(original.id).markdown,/Uncertain successor body/);
+  fs.writeFileSync(f.canon,originalBytes);
+  const restored=await prepareProjectDocuments({root:f.root,sessionId:f.a});await finish(f,restored,f.a,"notion",{adapters:{notion:fake.adapter}});
+  assert.equal(readEntry().viewId,original.viewId);assert.doesNotMatch(fake.pages.get(original.id).markdown,/Uncertain successor body/);
+  assert.match(fake.pages.get(original.id).markdown,/입력한 계정으로 로그인합니다/);
+});
+
 test("paged prefix body drift and changed/deleted prior candidates never establish binding across restart or new basis",async t=>{
   for(const mode of ["prefix-new-match","old-match-changed","old-match-deleted"])await t.test(mode,async t=>{
     const f=fixture(t),fake=notionFixture(),store=projectDocumentStore({root:f.root,sessionId:f.a});
@@ -443,6 +499,8 @@ test("paged prefix body drift and changed/deleted prior candidates never establi
 
 test("typed MCP and CLI share Project identity; real retained before/after reading is navigable without Product inference",async t=>{
   const f=fixture(t),owner=f.store.caller;connect(f);
+  updateProjectDirection({root:f.root,input:{goal:"Synthetic work direction, not Product purpose",constraints:["External deployment is not authorized by this documentation"],
+    decisions:[],cancelledActions:[]}});
   const retain=(text)=>{const bytes=Buffer.from(text);fs.writeFileSync(path.join(f.root,"login.mjs"),bytes);
     const digest=workDocumentHash(bytes);retainSourceObservation(f.root,createSourceObservation({version:1,projectId:owner.projectId,kind:"source",
       query:[{path:"login.mjs",symbol:""}],sources:[{path:"login.mjs",digest,base64:bytes.toString("base64")}],profile:{},observedAt:"2026-01-01T00:00:00Z",response:null,envelopeHash:null},owner.storage),owner.storage);

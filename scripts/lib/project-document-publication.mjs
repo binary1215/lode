@@ -204,7 +204,7 @@ export async function publishProjectDocuments({root,sessionId,projectionId,targe
           if (!sameDocumentText(observed.markdown,expected)) {
             if (!pending||!sameDocumentText(observed.markdown,pending.desired)) fail("Page was edited or replaced.","WORK_DOCUMENT_REMOTE_DRIFT");
             // Existing bound resource + exact pre-write input, not title/marker.
-            item.entry={...item.entry,markdown:pending.desired};store.write(entryParts(item.entry.logical),item.entry,true);
+            item.entry={...item.entry,markdown:pending.desired,viewId:pending.viewId||null};store.write(entryParts(item.entry.logical),item.entry,true);
           }
           return item.entry.markdown||item.entry.initial;
         };
@@ -257,6 +257,10 @@ export async function publishProjectDocuments({root,sessionId,projectionId,targe
             const view=renderProjectDocumentPage(basis,{nodeId:page.nodeId,audience:page.audience,
               publicationStateUrl:url(where,{id:home.entry.id,raw:rootAdapter}),resolveLink:(id,audience)=>url(where,location(id,audience))});
             let desired=view.markdown+"\nLode document identity: "+item.entry.scope+"\n", old=await observedBody(item);
+            // Same exact source/render identity and the still-verified current
+            // body: retain its existing history link, rather than archive the
+            // link itself on an unrelated Project publication.
+            if(item.entry.viewId===view.viewId && old.startsWith(desired)) desired=old;
             const baseDigest=hash(desired), pending=store.read(...pendingParts(logical));
             if (pending?.projectionId===projectionId && pending.baseDigest===baseDigest) desired=pending.desired;
             if (!sameDocumentText(old,desired)) {
@@ -266,7 +270,7 @@ export async function publishProjectDocuments({root,sessionId,projectionId,targe
                   "# 이전 게시\n\n아래는 이전에 확인한 읽기 본문입니다. 소속·상태·검증은 당시 인용한 근거의 범위이며, 안정 페이지 링크는 현재 읽기 뷰로 이어질 수 있습니다.\n\n"+old);
                 desired+="\n[이전 게시]("+url(where,{id:remoteId,raw:where.raw})+")\n";
               }
-              store.write(pendingParts(logical),{desired,projectionId,baseDigest,oldText:old.trimEnd(),priorDigest:hash(old)},true);
+              store.write(pendingParts(logical),{desired,projectionId,baseDigest,viewId:view.viewId,oldText:old.trimEnd(),priorDigest:hash(old)},true);
               await item.writer.change(item.entry.id,old.trimEnd(),desired.trimEnd());
             }
             await item.writer.verify(item.entry.id,desired);await check();

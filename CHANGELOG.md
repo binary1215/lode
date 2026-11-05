@@ -11,7 +11,7 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
-## 0.3.0-beta.83 — publication tracked separately
+## 0.3.0-beta.84 — publication tracked separately
 
 - Add Project documentation with linked human and agent views of actual Product,
   nested feature groups and multi-parent feature membership. Keep shared work and
@@ -25,6 +25,10 @@ Host/MCP reload.
   create searches report candidates, never current global uniqueness or auto-binding.
 - Expose the same Project document Core through typed MCP, CLI and Skill.
   Synthetic vault/HTTP tests do not qualify live Notion or local app loading.
+
+- Reuse exact unchanged reading views and their existing history links across
+  unrelated publications. Preserve source, direction and pending-repair identity;
+  real source changes still create history and user edits remain drift.
 
 ## 0.3.0-beta.82 — publication tracked separately
 
