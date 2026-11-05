@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createCodexAppServerTransport, createCodexAppServerProtocolFixtureTransport } from "../scripts/lib/runtime-codex-app-server-transport.mjs";
 import { resolveVerifiedProcessSupervisor, verifyRuntimeProcessSupervisorHandle } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { finishCodexAppServerFixture } from "./helpers/codex-app-server-fixture-cleanup.mjs";
+import { finishCodexAppServerFixture, waitForFixturePidsAbsent } from "./helpers/codex-app-server-fixture-cleanup.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
 const realTimeout = setTimeout, realClearTimeout = clearTimeout;
@@ -589,11 +589,26 @@ test("request snapshots reject accessors, proxies and non-JSON data without exec
 test("late cancellation after clean closure cannot rewrite the observed outcome", async t => {
   const f = fixture(t);
   await f.request();
-  const closed = await f.transport.close();
-  f.controller.abort();
-  assert.equal(f.transport.inspect().failureCode, null);
-  assert.equal(await f.transport.close(), closed);
-  assert.equal(f.journal.find(event => event.event === "process-closed").forced, false);
+  // This checks cancellation after actual clean settlement, not whether an OS
+  // schedules the normal fixture's exit inside the synthetic 66ms phase.
+  const restoreClock = controlCleanupClock(t);
+  try {
+    const closed = await f.transport.close();
+    const observed = f.journal.find(event => event.event === "process-closed");
+    assert.equal(f.config.terminationGraceMs, 200);
+    assert.equal(observed.forced, false);
+    assert.equal(observed.exitCode, 0);
+    assert.equal(observed.exactExitObserved, true);
+    assert.equal(observed.supervision.providerChildExitObserved, true);
+    assert.equal(observed.supervision.treeCleanupVerified, true);
+    assert.equal(observed.cleanupTiming.eofRejected, false);
+    assert.notEqual(observed.cleanupTiming.eofFlushedAtMs, null);
+    assert.equal(await waitForFixturePidsAbsent([f.handle.child.pid, observed.providerPid]), true);
+    f.controller.abort();
+    assert.equal(f.transport.inspect().failureCode, null);
+    assert.equal(await f.transport.close(), closed);
+    assert.equal(f.journal.find(event => event.event === "process-closed").forced, false);
+  } finally { restoreClock(); }
 });
 
 test("failed cleanup assertion preserves its error and still removes the exact stopped fixture", async t => {

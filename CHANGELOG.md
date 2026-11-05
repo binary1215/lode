@@ -11,7 +11,7 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
-## 0.3.0-beta.84 — publication tracked separately
+## 0.3.0-beta.85 — publication tracked separately
 
 - Add Project documentation with linked human and agent views of actual Product,
   nested feature groups and multi-parent feature membership. Keep shared work and
@@ -29,6 +29,10 @@ Host/MCP reload.
 - Reuse exact unchanged reading views and their existing history links across
   unrelated publications. Preserve source, direction and pending-repair identity;
   real source changes still create history and user edits remain drift.
+
+- Stabilize the existing post-clean-close cancellation test with its controlled
+  cleanup clock, preserving real EOF, exact exit, PID absence and forced-close
+  rejection. Production grace policies and failure predicates are unchanged.
 
 ## 0.3.0-beta.82 — publication tracked separately
 
