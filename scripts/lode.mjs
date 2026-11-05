@@ -249,7 +249,11 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
       `${cliDisplay} checkpoint-basis <project>`,
       `${cliDisplay} checkpoint-diagnose <project>`,
       `${cliDisplay} checkpoint-sync <project> --input <head-direction.json>`,
-      `${cliDisplay} session-work-record <project> --input <selected-work-evidence.json>`,
+      `${cliDisplay} session-work-record <project> --input <selected-work-evidence.json> [--document-selection <HEAD-selection.json>]`,
+      `${cliDisplay} work-document-prepare <project> --input <HEAD-selected-exact-evidence.json>`,
+      `${cliDisplay} work-document-configure <project> --input <user-selected-destinations.json>`,
+      `${cliDisplay} work-document-publish <project> --input <prepared-document-and-targets.json>`,
+      `${cliDisplay} work-document-status <project> [--logical-key <key>]`,
       `${cliDisplay} session-work-read <project> [--scan-evidence] [--after-evidence-id <returned-id>] [--input <read-bounds.json>]`,
       `${cliDisplay} session-restore <project> [--checkpoint <session-run-checkpoint-id>]`,
       `${cliDisplay} session-continue <project> --runtime <claude|codex|opencode> [--checkpoint <session-run-checkpoint-id>] [--binding-env <environment-name>]`,
@@ -828,7 +832,23 @@ async function runRoutedCommand(argv, { observationRegistry = null, compactionLi
   if (command === "checkpoint-basis") return inspectRecoveryCheckpointBasis({ root });
   if (command === "checkpoint-diagnose") return inspectRecoveryCheckpointDiagnosis({ root });
   if (command === "checkpoint-sync") return syncRecoveryCheckpoint({ ...inputJson(options, "Recovery checkpoint sync"), root });
-  if (command === "session-work-record") return recordSessionWorkEvidence({ root, input: inputJson(options, "Selected Session work evidence") });
+  if (command === "session-work-record") {
+    const input = inputJson(options, "Selected Session work evidence");
+    let documentSelection, documentSelectionError;
+    if (options["document-selection"]) {
+      try { documentSelection = JSON.parse(fs.readFileSync(path.resolve(options["document-selection"]), "utf8")); }
+      catch (error) { documentSelectionError = error.code || "WORK_DOCUMENT_SELECTION_JSON_INVALID"; }
+    }
+    return (await import("./lib/session-work-document-workflow.mjs")).recordSessionWorkAndProjectDocuments({ root, input, documentSelection, documentSelectionError });
+  }
+  if (command === "work-document-status") return (await import("./lib/work-document-publication.mjs")).workDocumentStatus({ root,
+    logicalKey: options["logical-key"] });
+  if (["work-document-prepare", "work-document-configure", "work-document-publish"].includes(command)) {
+    const api = await import("./lib/work-document-publication.mjs");
+    const input = inputJson(options, "HEAD-selected work document operation");
+    const method = { "work-document-prepare": "prepareWorkDocuments", "work-document-configure": "configureWorkDocuments", "work-document-publish": "publishWorkDocuments" }[command];
+    return api[method]({ ...input, root });
+  }
   if (command === "session-work-read") return readSessionWorkContext({ ...(options.input ? inputJson(options, "Session work read") : {}),
     ...(options["scan-evidence"] !== undefined ? { scanEvidence: options["scan-evidence"] === true || options["scan-evidence"] === "true" } : {}),
     ...(options["after-evidence-id"] !== undefined ? { afterEvidenceId: options["after-evidence-id"] } : {}), root });

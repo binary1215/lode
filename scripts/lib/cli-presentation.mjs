@@ -1,4 +1,5 @@
 import { resolveOperation } from "./lode-operation-contract.mjs";
+import { publicToolName } from "./lode-artifact-composition.mjs";
 import { organizeSelectedWorkBodies, workBodyTuples } from "./session-work-body-organization.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { formatTerminalGraph, inertTerminalText, terminalBlock } from "./terminal-graph.mjs";
@@ -689,9 +690,24 @@ export function formatSessionWorkContext(value, { boundaryShown = false } = {}) 
 
 function formatSessionWorkRecord(value) {
   if (value?.status === "session_selection_unresolved") return formatUnavailableSession(value);
-  return `Selected Session work evidence: ${value?.status === "session_work_evidence_reused" ? "already retained; no write" : "retained"}.
+  let text = `Selected Session work evidence: ${value?.status === "session_work_evidence_reused" ? "already retained; no write" : "retained"}.
 Evidence: ${value?.evidence?.evidenceId || "unknown"}
-No checkpoint, approval or effect was created or replayed.\n`;
+No checkpoint, approval or original task effect was created or replayed.\n`;
+  const documents = value?.documentProjection;
+  if (!documents || ["unconnected", "outside-automatic-scope", "no-confirmed-result-change"].includes(documents.status)) return text;
+  text += `Work documents: ${inertTerminalText(documents.status)}. This reports publication, not task completion or approval.\n`;
+  if (documents.status === "published") {
+    for (const destination of documents.destinations || []) if (destination.start) text += `Start (${inertTerminalText(destination.id)}): ${inertTerminalText(destination.start)}\n`;
+    return text;
+  }
+  text += "The original work save remains successful. Do not replay its task effects.\n";
+  if (documents.status === "head-selection-required") {
+    text += `Latest recorded task state: ${inertTerminalText(documents.savedTaskStatus)}. Remote documents are not updated.\n`
+      + `HEAD action required; user action not required. Continue ${publicToolName("head_work_document_prepare")} then ${publicToolName("head_work_document_publish")} using the exact prior selection and saved result below. Do not ask for JSON, a repeated save, or another routine approval.\n`;
+    if (documents.taskStatusReason) text += originalField("documentProjection.taskStatusReason", documents.taskStatusReason);
+    return text + originalField("documentProjection.followUp", documents.followUp);
+  }
+  return text + originalField("documentProjection", documents);
 }
 
 export function formatOnboardingGuide(value) {

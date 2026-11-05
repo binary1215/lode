@@ -373,7 +373,7 @@ JSON을 쓰거나 GraphDB를 조작하거나 토큰 단계를 고르거나 MCP �
 | 배포 | Claude Code, Codex, OpenCode의 이식 가능한 MCP 실행 경로 | 사용 가능 |
 | 배포 | OpenAI 범용 플러그인 디렉터리 | 계획됨 |
 | 런타임 | 일반 공급자 세션 resume과 stream | 보류됨 |
-| 문서 | Obsidian 및 Notion 어댑터 | 보류됨 |
+| 문서 | 근거 기반 사람용·에이전트용 뷰, Obsidian vault·Notion 게시 | 로컬·합성 검증; 실서비스 Notion 검증 대기 |
 
 정확한 주장과 승인 증거는 이 요약에서 추론하지 말고 하위 시스템 문서와
 소스 검증을 사용하세요.
@@ -426,6 +426,7 @@ JSON을 쓰거나 GraphDB를 조작하거나 토큰 단계를 고르거나 MCP �
 - [일반 Host 위임과 선택적 연결](docs/ko/role-coordination.md)
 - [그래프 프로젝션 어댑터](docs/ko/graph-projection-adapter.md)
 - [문서 프로젝션 어댑터](docs/ko/document-projection-adapter.md)
+- [Notion·Obsidian 작업 문서](docs/ko/work-document-projection.md)
 - [Codex 마켓플레이스 배포](docs/ko/codex-marketplace.md)
 - [Claude Code 마켓플레이스 배포](docs/ko/claude-marketplace.md)
 

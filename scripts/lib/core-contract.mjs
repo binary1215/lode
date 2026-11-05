@@ -12,6 +12,10 @@ export function coreContract() {
   };
   contract.activeCapabilities = [
     ...contract.activeCapabilities,
+    "source-bound-work-document-human-agent-views",
+    "optional-task-scoped-async-document-publication",
+    "obsidian-owned-vault-work-document-projection",
+    "notion-work-document-http-contract-synthetic-verification",
     "user-selected-repository-source-scope",
     "head-semantic-product-proposal-verification",
     "bounded-large-project-context-retrieval",
@@ -95,6 +99,7 @@ export function coreContract() {
   ];
   contract.deferredCapabilities = [
     ...contract.deferredCapabilities,
+    "live-notion-work-document-service-qualification",
     "runtime-descendant-tree-supervision",
   ].filter((capability) => !new Set([
     "runtime-descendant-tree-supervision",
@@ -103,6 +108,8 @@ export function coreContract() {
     "actual-provider-session-project-binding",
     "arcadedb-live-prepared-query-performance-evidence",
     "agent-comm",
+    "obsidian-vault-projection-adapter",
+    "notion-projection-adapter",
   ]).has(capability));
   return contract;
 }

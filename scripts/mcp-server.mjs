@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import readline from "node:readline";
+import { workDocumentTools, workDocumentFromMcp, workDocumentCompositionSchema } from "./lib/work-document-surface.mjs";
 import { resolveOperation } from "./lib/lode-operation-contract.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
 import { DISCOVERY_PREFIX_PAIRS } from "../compat/head/public-names.mjs";
@@ -313,6 +314,7 @@ const supplementalReadOnlyHints = {
   head_delivery_observe: false,
 };
 const allTools = [
+  ...workDocumentTools,
   {
     name: "head_core_contract",
     description: "Read the active Lode Agent Core roles, runtimes, and capability boundary.",
@@ -1085,9 +1087,9 @@ const allTools = [
   {
     name: "head_session_work_record",
     description: "Optionally preserve meaningful Run-free work as one create-only P3 Evidence original in the exact selected Session, without a Run, checkpoint, Capsule, user form or save approval. HEAD supplies sparse otherwise-unrepresented context; exact retry does not re-execute work. When checkpoint sync is already useful, use its optional work_evidence instead.",
-    inputSchema: { type: "object", properties: { project_root: workEvidenceText, evidence: sessionWorkEvidenceSchema },
+    inputSchema: { type: "object", properties: { project_root: workEvidenceText, evidence: sessionWorkEvidenceSchema, document_selection: workDocumentCompositionSchema },
       required: ["project_root", "evidence"], additionalProperties: false },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   {
     name: "head_session_work_read",
@@ -2769,7 +2771,10 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
                       ...(args.work_evidence !== undefined ? { workEvidence: args.work_evidence } : {}),
                     })
                 : name === "head_session_work_record"
-                  ? (await import("./lib/session-work-context.mjs")).recordSessionWorkEvidence({ root: args.project_root, input: args.evidence })
+                  ? await (await import("./lib/session-work-document-workflow.mjs")).recordSessionWorkAndProjectDocuments({ root: args.project_root, input: args.evidence,
+                      documentSelection: args.document_selection })
+                : name.startsWith("head_work_document_")
+                  ? await workDocumentFromMcp(name, args)
                 : name === "head_session_work_read"
                   ? (await import("./lib/session-work-context.mjs")).readSessionWorkContext({ root: args.project_root,
                       evidenceIds: args.evidence_ids ?? null, afterEvidenceId: args.after_evidence_id ?? null, scanEvidence: args.scan_evidence ?? false,

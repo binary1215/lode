@@ -68,6 +68,7 @@ work logs are intentionally excluded from the distribution and are not runtime a
 - [ComputeAdapter and WorkerProtocol baseline](compute-adapter.md)
 - [GraphProjectionAdapter contract](graph-projection-adapter.md)
 - [DocumentProjectionAdapter and deterministic Markdown projection](document-projection-adapter.md)
+- [Work documents in Notion and Obsidian](work-document-projection.md)
 - [Document change review and application](document-change-review.md)
 - [Philosophy-preserving fast path](performance-fast-path-design.md)
 

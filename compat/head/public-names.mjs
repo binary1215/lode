@@ -1,5 +1,10 @@
 // Finite compatibility spellings; never rewrite arbitrary prefixes.
 export const OPERATION_NAME_PAIRS = Object.freeze([
+  ...["configure", "prepare", "publish", "status"].map(action => ({
+    legacyName: `head_work_document_${action}`, canonicalName: `lode_work_document_${action}`,
+    semanticName: `head_work_document_${action}`, suffix: `work_document_${action}`,
+    router: false, sessionDependent: true, managedMutation: false, kind: "operation", nativeRole: null,
+  })),
   {
     "legacyName": "head_core_contract",
     "canonicalName": "lode_core_contract",
@@ -1842,5 +1847,9 @@ export const DISCOVERY_PREFIX_PAIRS = Object.freeze([
   {
     "legacy": "head_world_",
     "canonical": "lode_world_"
+  },
+  {
+    "legacy": "head_work_",
+    "canonical": "lode_work_"
   }
 ].map(Object.freeze));

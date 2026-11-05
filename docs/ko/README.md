@@ -67,6 +67,7 @@
 - [ComputeAdapter와 WorkerProtocol 기준](compute-adapter.md)
 - [GraphProjectionAdapter 계약](graph-projection-adapter.md)
 - [DocumentProjectionAdapter와 결정적 Markdown 프로젝션](document-projection-adapter.md)
+- [Notion·Obsidian 작업 문서](work-document-projection.md)
 - [문서 변경 검토와 적용](document-change-review.md)
 - [철학을 보존하는 fast path](performance-fast-path-design.md)
 
