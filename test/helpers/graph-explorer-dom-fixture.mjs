@@ -34,7 +34,7 @@ export function explorerDom(snapshot, { devicePixelRatio = 1, narrow = false, ca
     removeAttribute(name) { this.attributes.delete(name); }
     querySelectorAll(selector) { const found = []; const match = selector.match(/^\[([^\]]+)\]$/); const walk = node => { for (const child of node.children) { if (match && child.attributes.has(match[1])) found.push(child); walk(child); } }; walk(this); return found; }
     addEventListener(name, callback) { if (!this.listeners.has(name)) this.listeners.set(name, []); this.listeners.get(name).push(callback); }
-    dispatch(name, extra = {}) { const event = { target: this, detail: 1, button: 0, preventDefault() {}, stopPropagation() {}, ...extra }; for (const callback of this.listeners.get(name) || []) callback(event); }
+    dispatch(name, extra = {}) { const event = { target: this, detail: 1, button: 0, preventDefault() {}, stopPropagation() {}, ...extra }; for (const callback of this.listeners.get(name) || []) callback(event); this["on" + name]?.(event); }
     focus() { stats.focused = this.id || this.getAttribute("data-node"); stats.focusedElement = this; }
     scrollIntoView() { stats.scrolled = this; }
     setPointerCapture(id) { pointerCaptures.set(id, this); }
@@ -47,14 +47,29 @@ export function explorerDom(snapshot, { devicePixelRatio = 1, narrow = false, ca
       measureText(value) { return { width: Array.from(value).length * 7 }; } }; return this.context; }
   }
   const body = new Element("body"), html = renderGraphExplorer(snapshot);
-  for (const match of html.matchAll(/<([a-z][a-z0-9]*)\b([^>]*\bid="([^"]+)"[^>]*)>/gi)) {
-    const element = new Element(match[1]); element.id = match[3]; element.disabled = /\sdisabled(?:\s|$)/.test(match[2]);
-    element.hidden = /\shidden(?:\s|$)/.test(match[2]); if (match[1] === "details") element.open = /\sopen(?:\s|$)/.test(match[2]); body.append(element);
+  // Keep native disclosure ancestry. A flat ID inventory would falsely expose
+  // collapsed technical text, so it cannot test the default reading surface.
+  // This is deliberately not an HTML/CSS/accessibility implementation.
+  const stack = [{ tag: "body", parent: body }], voidTags = new Set(["input", "meta", "link", "img", "br", "hr", "area", "base", "source", "wbr"]);
+  const markup = html.slice(html.indexOf("<body>") + 6, html.indexOf("<script"));
+  for (const match of markup.matchAll(/<(\/?)([a-z][a-z0-9]*)\b([^>]*)>/gi)) {
+    const [, closing, tag, attributes] = match;
+    if (closing) { const at = stack.findLastIndex(entry => entry.tag === tag); if (at > 0) stack.splice(at); continue; }
+    const id = /\bid="([^"]+)"/.exec(attributes)?.[1];
+    let parent = stack.at(-1).parent;
+    if (id || tag === "details") {
+      const element = new Element(tag); if (id) element.id = id;
+      element.disabled = /\sdisabled(?:\s|$)/.test(attributes); element.hidden = /\shidden(?:\s|$)/.test(attributes);
+      if (tag === "details") element.open = /\sopen(?:\s|$)/.test(attributes);
+      parent.append(element); parent = element;
+    }
+    if (!voidTags.has(tag) && !attributes.endsWith("/")) stack.push({ tag, parent });
   }
+  const snapshotElement = new Element("script"); snapshotElement.id = "snapshot"; body.append(snapshotElement);
   const dataStart = html.indexOf('id="snapshot" type="application/json">') + 'id="snapshot" type="application/json">'.length;
   ids.get("snapshot").textContent = html.slice(dataStart, html.indexOf('</script>', dataStart));
   for (const id of ["layer"]) ids.get(id).value = "project";
-  for (const id of ["axis", "view", "relation-filter", "kind-filter"]) ids.get(id).value = "all";
+  for (const id of ["axis", "view", "relation-filter", "kind-filter", "search-kind"]) ids.get(id).value = "all";
   const document = { body, get activeElement() { return stats.focusedElement || body; }, getElementById: id => ids.get(id) || null, createElement: tag => new Element(tag),
     createElementNS: (_ns, tag) => { stats.svg++; return new Element(tag); }, documentElement: { dataset: {} } };
   if (cardMeasure) document.fonts = { status: "loaded", ready: Promise.resolve(), addEventListener: (name, callback) => fontListeners.set(name, callback) };
@@ -62,11 +77,9 @@ export function explorerDom(snapshot, { devicePixelRatio = 1, narrow = false, ca
     ...(cardMeasure ? { getComputedStyle: () => ({ fontSize: `${modeledFontSize}px`, fontFamily: "system-ui" }) } : {}),
     addEventListener: (name, callback) => { if (!windowListeners.has(name)) windowListeners.set(name, []); windowListeners.get(name).push(callback); },
     requestAnimationFrame: callback => { frames.push(callback); return frames.length; }, matchMedia: () => ({ matches: narrow }) });
-  const source = fs.readFileSync(new URL("../../scripts/graph-explorer/codec.js", import.meta.url), "utf8").replace(/^export const explorerCodec =/m, "const explorerCodec =") + "\n"
-    + fs.readFileSync(new URL("../../scripts/graph-explorer/cards.js", import.meta.url), "utf8") + "\n"
-    + fs.readFileSync(new URL("../../scripts/graph-explorer/exploration.js", import.meta.url), "utf8") + "\n"
-    + fs.readFileSync(new URL("../../scripts/graph-explorer/product-perspectives.js", import.meta.url), "utf8") + "\n"
-    + fs.readFileSync(new URL("../../scripts/graph-explorer/browser.js", import.meta.url), "utf8");
+  // Execute the actual rendered bundle so module additions cannot diverge
+  // from this visibility-only DOM double. No browser/layout proof is implied.
+  const source = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].at(-1)[1];
   const start = performance.now(); new vm.Script(source).runInContext(runtime, { timeout: 10000 });
   return { ids, stats, document, initialMs: performance.now() - start, html,
     windowEvent(name, event = {}) { for (const callback of windowListeners.get(name) || []) callback(event); },

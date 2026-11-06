@@ -68,6 +68,12 @@ export async function buildGraphExplorerSnapshot({ root = ".", query = "", ancho
   const inventory = await collectGraphExplorerInventory({ root: projectRoot, query, anchorIds, paths, layer, storeAdapter: worldAdapter });
   const { structural, detailSelection = inventory, codeSelection, ...navigation } = inventory;
   const selected = new Map((detailSelection?.nodes || []).map(node => [node.nodeId, node]));
+  const activityQuery = String(query).normalize("NFKC").trim().toLocaleLowerCase();
+  const activityMatches = activityQuery ? inventory.nodes.filter(node => node.kind === "UserActivity"
+    && node.projectId === owner.project?.projectId && node.currentTraversalEligible !== false
+    && node.claimEvidence?.state === "exact-current-source-bytes"
+    && String(node.name || "").normalize("NFKC").trim().toLocaleLowerCase() === activityQuery) : [];
+  const activityFocus = activityMatches.length === 1 ? activityMatches[0] : null;
   const graph = { ...navigation, query: detailSelection.query,
     nodes: inventory.nodes.map(node => {
       if (selected.has(node.nodeId)) return { ...selected.get(node.nodeId), detailCoverage: "selected-detail" };
@@ -76,10 +82,12 @@ export async function buildGraphExplorerSnapshot({ root = ".", query = "", ancho
       return { ...node,
         detailCoverage: "metadata-only", detailReasonCode: "DETAIL_NOT_INCLUDED_FOR_THIS_SELECTION" };
     }), contextLineage: detailSelection?.contextLineage || null,
-    initialNodeId: layer === "code" ? null : detailSelection.query.anchorIds.find(id => selected.has(id)) || detailSelection?.nodes[0]?.nodeId || null,
+    initialNodeId: layer === "code" ? null : detailSelection.query.anchorIds.find(id => selected.has(id))
+      || (!anchorIds.length ? activityFocus?.nodeId : null) || detailSelection?.nodes[0]?.nodeId || null,
     detailSelection: { anchorIds: detailSelection.query.anchorIds, paths: detailSelection.query.paths,
       unmatchedAnchorIds: detailSelection.unmatchedAnchorIds, truncated: detailSelection.truncated,
-      omittedMatchCount: detailSelection.omittedMatchCount, basis: navigation.basis },
+      omittedMatchCount: detailSelection.omittedMatchCount, citationScope: detailSelection.citationScope || null,
+      basis: navigation.basis },
     detailScope: "Bounded exact comparisons/originals for the export selection; missing detail is not proof of no change." };
   const queryMs = performance.now() - queryStarted;
   if (owner.project && graph.basis?.projectId && graph.basis.projectId !== owner.project.projectId) fail("GRAPH_EXPLORER_PROJECT_MISMATCH");

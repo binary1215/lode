@@ -4,6 +4,22 @@ Graph Explorer makes a local, read-only picture of existing Lode evidence. Use i
 to follow a purpose or recorded judgment to sources, relationships, results and
 remaining questions. It is optional: ordinary work and recovery do not depend on it.
 
+## Readable information first
+
+The default view shows names, recorded descriptions and reasons, readable directed
+relationships, relative source paths and lines, and actual source differences.
+Historical, unreviewed, cancelled, uncertain and partial/missing states stay next
+to the affected content. A source description is not an invented approval queue.
+
+Generated hashes, opaque IDs, internal origin paths, exact excerpt selectors and
+machine metadata are in native, initially closed **Technical information**
+disclosures. This applies to default accessible descriptions and tooltips too.
+Open a disclosure with the keyboard or pointer when you need exact references.
+Original/API identities, metadata search and source/diff bindings stay unchanged;
+same-named records remain separate. Authored names, prose and code containing
+checksums stay verbatim. Hiding metadata is presentation, not redaction or
+anonymization: the exported report still contains the original values.
+
 ## Open a snapshot
 
 Ask Lode: “Create a local graph snapshot for this project.” In a distribution
@@ -72,6 +88,53 @@ recorded claims, not checks re-run by this view or fresh effect permission.
 Navigation excerpts and structured originals disclose truncation; raw originals
 remain separately bounded and can themselves be omitted.
 
+## Read without managing panels
+
+An unanchored export opens **Overview**: cards count the actual kinds in this
+export and current filters. Choose a kind to open its complete **Records** list,
+then Read a record. Exact anchors, source paths and a query retain their requested
+reading focus instead of being replaced by the overview. Counts describe only
+retained evidence; filtered, missing-endpoint and unknown omitted relations stay
+separate. Counting yields to input, can be cancelled, and never gates Records.
+
+**Reading** opens one document: its title and authored description come first,
+with actual connected records alongside on desktop and below on narrow screens.
+Choose a connected record to keep reading; its recorded relation and direction
+remain visible. Section links jump to the description, all connections, exact
+sources/changes, or selected-record tools without hiding the other content.
+
+Only explicit paragraphs, headings, list markers and fenced code are formatted.
+Authored numbering, uncertainty and code remain unchanged; unknown or incomplete
+syntax stays literal. Long descriptions have Previous/Continue controls. A single
+text unit too large for a display page is explicitly qualified, with access to the
+full exported record. Rendering never creates a purpose, procedure or conclusion.
+
+The short next-record preview does not replace all connections. Parallel and self
+relations, references, later pages, known filtered targets and missing endpoints
+remain distinguishable. Source references are not inferred approval or causality.
+Map tools, detailed perspectives and diagnostics are secondary disclosures;
+Records and Map retain search and filters.
+
+The **Map** remains an independent exploration view. On a wide desktop it can sit
+beside the reader; narrow screens show one active content view. Native buttons,
+disclosures, keyboard focus and the same light theme apply to maps and comparisons.
+Read opens the visible reader; checkbox or Space changes selection in the list.
+
+Source reading retains Project, graph layer/basis, exact originating record,
+path/digest, recorded span and chosen comparison side. A path match alone is
+only a candidate. Several exact comparison choices remain individually selectable;
+a missing source or span explains its coverage without blocking other records.
+Only an included exact span is highlighted. Bounded regions stay separate and
+truncated text is qualified; source availability does not prove execution or cause.
+
+Record lists, kind/type groups, relation members, facts, source lines and exact
+comparison choices have continuation, rather than silently dropping later entries.
+Display pages do not enlarge the export's original detail/source coverage.
+Back and Forward restore the same selected records, filters, camera, pins,
+disclosures and exact source reading address. A later navigation or cancellation
+invalidates pending restoration. These choices are in-memory P4 display state:
+no new graph nodes, authority records, storage, service or runtime calls are created.
+
 ## Explore the evidence
 
 The Project layer shows recorded purposes, decisions, work and retained lineage.
@@ -113,7 +176,7 @@ earlier view stages. These are temporary display choices, not saved product know
 New automatic placements reserve the card rectangle, including
 when starting from a disconnected record. Manual dragging can intentionally place
 nodes together; expanding another node does not undo your positioning.
-The initial record and a starting neighborhood open automatically. Focus selection
+For an export with a requested reading focus, its initial record and a starting neighborhood open automatically. Focus selection
 explicitly centers the reading focus; off-screen connections remain in the complete
 paged list. A direct relationship's **Show on map: endpoint** action moves to that
 record at readable card scale, retaining other selections and pinned coordinates.
@@ -160,8 +223,7 @@ the others. Adding or removing another selection, changing focus/filters,
 Back/Forward, and paging away and back preserve unaffected cards' expansion and
 scroll state within this HTML. State is isolated by Project, layer and revision;
 an item without enough identity starts its own reading state afresh, without
-blocking reading. Widen reading area opens a broader reading flow; narrow screens
-stack it vertically. Card/record/reference pages are display batches, never a
+blocking reading. Reading uses the available content width; narrow screens show the active view in one column. Card/record/reference pages are display batches, never a
 selection or evidence cap. Read actual directed relationships in each card or the
 focused connection list. Exact originals, unknown fields and IDs remain optional
 details. Partial/missing/cancelled and unreviewed conditions are retained next to
@@ -467,3 +529,31 @@ snapshots. There is no cross-request cache, caller-supplied verification bypass,
 new state artifact or freshness/approval gate. Ordinary separate history/diff
 operations keep full verification; unsupported copy extensions use that existing
 path. This does not establish physical selective IO or an atomic live view.
+
+### Read an activity and its related implementation
+
+For a recorded activity, select **Follow activity/output**. For exact code,
+select **Related entrypoints/activities** to walk back through retained parser
+links, entrypoints, elements and owning surfaces. Each row names one actual
+directed relation; cycles and parallel edges remain visible. A shared helper
+does not merge activities or establish product cause.
+
+The reader returns bounded batches, displays 20 rows per page, and offers
+continuation and cancellation. Completing a selected traversal means only that
+those exported links were visited. Missing mappings and omitted source bytes
+remain unknown. Related work uses exact source path/digest citations; current
+and historical work retain their identities and source availability. Titles and
+short basis/source status stay visible; longer evidence and conditions are under
+**Evidence and conditions**. An exact activity label is the initial focus only
+when it uniquely matches eligible same-Project evidence; explicit anchors keep
+priority and revisions are never merged by label.
+
+**Read source / recorded changes** uses the existing source panel. The focused
+export includes bounded exact work citations for explicitly requested paths and
+selected entrypoint source paths, even when the work uses different words from
+the activity query. These are detail candidates, not new activity/work edges.
+Only the exact source reader can establish a before/after byte pair. Existing
+detail node and source-byte limits remain separate from the complete metadata
+inventory. Omitted comparisons are labelled as not included in this export, not
+as unchanged or nonexistent. Regenerate for an exact record when useful; the
+offline file makes no new calls or canonical writes.

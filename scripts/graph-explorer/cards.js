@@ -2,18 +2,69 @@
 const explorerCards = (() => {
   const string = value => typeof value === "string" ? value : "";
   const first = (...values) => values.find(value => typeof value === "string" && value.trim()) || "";
+  const label = (values, key, fallback) => typeof key === "string" && Object.hasOwn(values, key) ? values[key] : fallback;
   const historical = value => value.currentTraversalEligible === false || value.snapshotState === "historical" || value.historical === true
     || /^(?:historical|domain-not-current|unavailable)/.test(value.freshness || "");
   const kindName = value => value?.origin?.layer === "sessionWork" ? "Agent-authored work record"
-    : ({ ProjectDirection: "Recorded project direction", FileRevision: "Source file revision", SymbolRevision: "Source symbol revision",
+    : label({ ProjectDirection: "Recorded project direction", FileRevision: "Source file revision", SymbolRevision: "Source symbol revision",
       File: "Source file", Symbol: "Source declaration", HeadSessionStateReference: "Logical Session record", LodeSessionStateReference: "Logical Session record",
       Run: "Recorded execution Run", ResultPacket: "Recorded result", ReviewDecision: "Recorded review", ChangeSet: "Recorded source changes",
       FeatureGroup: "Product feature group", Feature: "Product feature", Requirement: "Product requirement", Constraint: "Product constraint",
-      ProductModelRevision: "Recorded Product Model revision" })[value?.kind] || value?.kind || "Recorded relationship";
+      UserActivity:"User activity", ProductSurface:"Screen / output", SurfaceElement:"Screen element", ExecutionEntrypoint:"Entrypoint", DataResource:"Data contact", ExternalConnection:"External contact", SymbolRevisionReference:"Referenced symbol version",
+      Evidence:"Recorded evidence", FileRevisionReference:"Referenced file version", LodeSession:"Work session", SourceSnapshot:"Source version", ObservationCollectionReceipt:"Collection record", ObservationRecord:"Observation", ObservationTypeDescriptor:"Observation type",
+      Repository:"Repository", ProductModelRevision: "Product definition version" }, value?.kind, string(value?.kind) || "Recorded relationship");
   const title = value => first(value?.name, value?.title, value?.qualifiedName, value?.objective, value?.purpose,
     value?.semantic?.name, value?.semantic?.statement, value?.directionEvidence?.goal, value?.workContent?.summary, value?.workContent?.todos?.[0]?.task, value?.summary, value?.proposedPolicy?.name,
-    value?.planDelta, value?.outcome, value?.path, value?.statement, value?.assessment, value?.rationale)
-    || (value?.kind === "ChangeSet" ? "Recorded source revision changes" : `${kindName(value)} · ${string(value?.nodeId).slice(-12) || "unnamed"}`);
+    value?.planDelta, value?.outcome, sourcePath(value?.path), value?.statement, value?.assessment, value?.rationale)
+    || (value?.kind === "ChangeSet" ? "Recorded source changes" : `Unnamed ${kindName(value).toLocaleLowerCase()}`);
+  // Typed presentation only. Never scrub authored text or change binding identity.
+  const statusLabels = {
+    "unknown-boundary": "Source range uncertain", "unmatched-declaration-not-proven-rename-or-continuity": "No matching declaration",
+    "comment-text-only-difference": "Only comment text differs", "trailing-layout-only-difference": "Trailing whitespace differs",
+    "declaration-bytes-changed": "Source changed", "declaration-bytes-unchanged": "Source unchanged",
+    "retained-evidence": "Retained record", "pointer-snapshot": "Recorded snapshot",
+    authored: "Recorded description", declared: "Declared connection", inferred: "Inferred description", "runtime-recorded": "Recorded execution", unknown: "Uncertain",
+    "non-canonical-source-claim": "Source description", unreviewed: "Not reviewed", pending: "Pending", proposed: "Proposed", accepted: "Review accepted", rejected: "Review rejected",
+    cancelled: "Cancelled", canceled: "Cancelled", failed: "Failed", succeeded: "Succeeded", completed: "Completed", paused: "Paused", running: "Running",
+    "exact-current-source-bytes": "Source matches", "historical-or-unavailable-source": "Current source not confirmed", "cited-range-differs-from-claim": "Quoted text differs",
+    unavailable: "Source unavailable", "not-inspected": "Source not checked", "file-reference-only": "Symbol not confirmed", "exact-symbol-in-retained-world": "Linked symbol",
+    "historical-source-bytes": "Earlier source version", "domain-not-current": "Outdated source", historical: "Historical", "intact-historical-work-evidence": "Recorded work",
+    "source-not-included": "Source text not included", "span-not-included": "Requested lines not included", "span-outside-source": "Requested lines are outside the source",
+    "partial-source": "Partial source text", "choose-exact-comparison": "Choose a source version", "stale-or-unbound-address": "Source reference unavailable",
+    "ambiguous-or-unbound-pair": "Comparison reference unavailable", "verified-exact-bytes": "Source text included",
+  };
+  const ordinary = new Set(["available", "current", "snapshot-evidence", "current-canon-bytes", "current-source-bytes", "not-applicable", "observed", "observed-evidence", "parsed-structural-evidence"]);
+  const statusLabel = state => ordinary.has(state) ? "" : label(statusLabels, state, state ? "Unrecognized recorded state" : "");
+  const sourcePath = value => /^(?:\.lode|\.head|\.git)(?:[\\/]|$)/i.test(string(value)) ? "" : string(value);
+  const kindLabel = kind => kindName({ kind });
+  const relationLabel = type => label({
+    CALLS: "Calls", IMPORTS: "Imports", ACTIVITY_NEXT: "Next recorded activity", ACTIVITY_USES_ELEMENT: "Uses element", SURFACE_CONTAINS_ELEMENT: "Contains element",
+    ELEMENT_INVOKES_ENTRYPOINT: "Links to entrypoint", ENTRYPOINT_RETURNS_ELEMENT: "Returns output", CITES_EXECUTION_SOURCE: "References implementation",
+    OBSERVES_EXACT_REVISION: "References source version", SURFACE_FACT_FROM_OBSERVATION: "Recorded in observation", CITES_EXACT_REVISION: "Cites source version",
+    CITES_WORK_EVIDENCE: "Cites work record", CITES_ARTIFACT: "Cites document", DECLARES_WORK_ROOT: "Work starting point", FOLLOWS_WORK_EVIDENCE: "Follows work record",
+    RECORDED_RESULT: "Recorded result", RECORDED_REVIEW: "Recorded review", OBSERVES_BEFORE_REVISION: "Before change", OBSERVES_AFTER_REVISION: "After change",
+    REFERS_TO_PREVIOUS_CANON: "Previous product definition", REFERS_TO_BASE_CANON: "Base product definition", REFERS_TO_RESULT_CANON: "Resulting product definition",
+    CONFORMS_TO: "Conforms to", CONTAINS: "Contains", CURRENT_REVISION: "Current version", DECLARES: "Declares", HAS_REVISION: "Has version", IDENTIFIES_SESSION: "Session record",
+    EVIDENCED_BY: "Supported by", RECORDED_FOR_SESSION: "Recorded for session", IMPLEMENTS: "Implements", VERIFIED_BY: "Verified by",
+  }, type, string(type) || "Relationship");
+  const comparisonSide = (pair, side) => pair.scope === "recorded-changeset-snapshot-pair" ? side === "before" ? "Before change" : "After change"
+    : pair.scope === "explicit-work-chain-citation-pair-not-request-boundary" ? side === "before" ? "Cited version A" : "Cited version B"
+      : pair.scope === "cited-revision-versus-observed-current-bytes" ? side === "before" ? "Recorded source" : "Current at export"
+        : side === "before" ? "Version A" : "Version B";
+  const factText = value => typeof value === "string" ? value : first(value?.task, value?.assessment, value?.summary, value?.title, value?.name, value?.description, value?.reason) || "Additional recorded detail";
+  const technicalFields = value => Object.fromEntries([
+    "nodeId", "edgeId", "projectId", "sessionId", "revisionId", "fileRevisionId", "sourceSnapshotId", "worldModelId", "graphSnapshotId", "semanticGraphId", "productModelId",
+    "kind", "type", "key", "digest", "fileDigest", "evidenceDigest", "basis", "producer", "schema", "schemaVersion", "analysisVersion", "status", "state", "reviewState", "claimBasis",
+    "freshness", "sourceCurrentness", "viewerCurrentness", "snapshotState", "currentTraversalEligible", "sourceReference", "provenance", "origin", "referenceEvidence", "executionSource", "claimReference", "claimEvidence", "executionBinding", "executionEvidence",
+    "path", "reasonCode", "detailReasonCode", "detailCoverage", "contentCoverage", "workContentCoverage", "directionContentCoverage", "workContentExcerpts",
+  ].filter(key => value && Object.hasOwn(value, key)).map(key => [key, value[key]]));
+  const humanTitle = value => {
+    // Authored names remain verbatim, even when they happen to equal an ID.
+    // The renderer itself never synthesizes a title from an identifier.
+    const name = value?.name;
+    return first(name, value?.title, value?.qualifiedName, value?.semantic?.name, value?.semantic?.statement)
+      || title({ ...value, name: "", nodeId: "", edgeId: "" });
+  };
   function create(snapshot, graph, layer) {
     const owner = snapshot.project?.projectId || graph.basis?.projectId || null;
     const nodes = new Map(graph.nodes.map(node => [node.nodeId, node])), groups = new Map(), memberships = new Map(), descriptions = new WeakMap();
@@ -73,7 +124,7 @@ const explorerCards = (() => {
       const work = value.workContent, semantic = value.semantic || revisionSemantics.get(value);
       const body = first(work?.summary, value.directionEvidence?.goal, value.description, value.summary,
         value.objective, value.purpose, value.outcome, value.assessment, value.rationale, value.statement, value.explanation,
-        semantic?.description, semantic?.statement, value.proposedPolicy?.statement, value.path, value.qualifiedName);
+        semantic?.description, semantic?.statement, value.proposedPolicy?.statement, sourcePath(value.path), value.qualifiedName);
       const facts = [["Recorded judgments", work?.judgments], ["Observed work", work?.observedWork], ["Pending", work?.pending],
         ["Unknown", work?.unknowns || value.unknowns], ["Constraints", value.directionEvidence?.constraints],
         ["Cancelled actions", value.directionEvidence?.cancelledActions], ["Recorded decisions", value.directionEvidence?.decisions],
@@ -88,23 +139,27 @@ const explorerCards = (() => {
             + (entry.subfield ? `.${entry.subfield}` : "") + (entry.alternativeIndex == null ? "" : `[${entry.alternativeIndex}]`);
           const todo = entry.field === "todos" ? ` · ${entry.todoId} [${entry.status}; ${entry.origin}]`
             + ["prior", "resolves", "relatedEvidence"].filter(key => Object.hasOwn(entry, key)).map(key => ` · recorded ${key}: ${JSON.stringify(entry[key])}`).join("") : "";
-          return { text: entry.text, heading: `Exact recorded excerpt · ${location}${todo} · [${entry.start}, ${entry.end}) / ${entry.totalCharacters}` };
+          return { text: entry.text, heading: ({ summary: "Recorded description", judgments: "Recorded judgment", todos: "Recorded task", observedWork: "Observed work", pending: "Pending", unknowns: "Uncertainty" })[entry.field] || "Recorded text", technicalLocation: { location, todo, start: entry.start, end: entry.end, totalCharacters: entry.totalCharacters } };
         });
       const hasDisplayText = Boolean(body || facts.length || excerpts.length);
       const firstFact = facts[0]?.[1]?.[0];
       const factPreview = firstFact && (typeof firstFact === "string" ? firstFact : first(firstFact.task, firstFact.assessment, firstFact.reason));
       const rawPreview = body || (factPreview ? `${facts[0][0]}: ${factPreview}` : "")
         || (excerpts[0] ? `${excerpts[0].heading}: ${excerpts[0].text}` : "");
-      const displayTitle = first(value.name, value.title, value.qualifiedName, semantic?.name, semantic?.statement) || title(value);
+      const displayTitle = humanTitle({ ...value, semantic });
       const sameText = text => String(text || "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
       // Presentation deduplication only; source, digest and authority stay separate.
       const preview = sameText(rawPreview) === sameText(displayTitle) || rawPreview === value.path && displayTitle === value.path ? "" : rawPreview;
       const emptyNotice = value.kind === "ProductPolicyEvidence" && value.evidenceKind === "user-request" && value.reference
         ? "Reference-only evidence in this projection; no summary is included. This does not establish whether request text exists elsewhere."
         : value.detailCoverage === "metadata-only"
-          ? `No readable text in this metadata-only projection${value.detailReasonCode ? ` (${value.detailReasonCode})` : ""}; this does not establish original absence.`
+          ? "No readable text in this metadata-only projection; more may exist in the original."
           : "No supported display text is included in this projection; original availability is reported separately.";
       const conditions = [];
+      if(value.claimBasis)conditions.push(`Claim basis: ${value.claimBasis}; not Canon or execution proof`);
+      if(value.claimEvidence)conditions.push(`Quoted source: ${value.claimEvidence.state}${value.claimEvidence.reasonCode ? ` (${value.claimEvidence.reasonCode})` : ""}`);
+      if(value.executionBinding)conditions.push(`Code binding: ${value.executionBinding.state}`);
+      if(value.executionEvidence?.state!==undefined)conditions.push(`Code source: ${value.executionEvidence.state}`);
       for (const name of ["Cancelled actions", "Pending", "Unknown", "Constraints"]) {
         const items = facts.find(([heading]) => heading === name)?.[1]; if (items) conditions.push(`${name}: ${items.length}`);
       }
@@ -136,26 +191,32 @@ const explorerCards = (() => {
       // Compact typed conditions, not a semantic summary. Long originals remain
       // in the independent reader; these material qualifiers never line-clamp.
       const summaryConditions = [];
+      if (value.claimBasis) summaryConditions.push(statusLabel(value.claimBasis));
+      
+      for (const [label, observation] of [["Claim", value.claimEvidence], ["Code", value.executionEvidence]]) {
+        if (observation?.state && observation.state !== "exact-current-source-bytes") {
+          summaryConditions.push(label + ": " + statusLabel(observation.state));
+        }
+      }
+      if (value.executionBinding?.state === "file-reference-only") summaryConditions.push("Symbol not confirmed");
       for (const [heading, label] of [["Cancelled actions", "Cancelled"], ["Pending", "Pending"], ["Unknown", "Unknown"], ["Constraints", "Constraints"]]) {
         const items = facts.find(([name]) => name === heading)?.[1]; if (items) summaryConditions.push(label + ": " + items.length);
       }
       for (const [label, field] of [["Status", "status"], ["State", "state"], ["Review", "reviewState"]])
-        if (typeof value[field] === "string" && value[field] && value[field] !== "not-applicable") summaryConditions.push(label + ": " + value[field]);
-      const compactFreshness = state => {
-        const labels = { "snapshot-evidence": "Snapshot", "current-canon-bytes": "Canon at export", "current-source-bytes": "Bytes match at export",
-          "historical-source-bytes": "Historical source bytes", unavailable: "Source unavailable", "domain-not-current": "Non-current domain", historical: "Historical", "intact-historical-work-evidence": "Retained work" };
-        return Object.hasOwn(labels, state) ? labels[state] : "Currentness: " + state;
-      };
+        if (typeof value[field] === "string" && value[field] && value[field] !== "not-applicable" && value[field] !== "non-canonical-source-claim") summaryConditions.push(statusLabel(value[field]));
       for (const state of new Set([value.freshness, value.sourceCurrentness?.freshness, value.viewerCurrentness, value.snapshotState].filter(state => typeof state === "string" && state))) {
-        if (!["snapshot-evidence", "current-canon-bytes", "current-source-bytes", "current", "not-applicable"].includes(state)) summaryConditions.push(compactFreshness(state));
+        if (!["snapshot-evidence", "current-canon-bytes", "current-source-bytes", "current", "not-applicable"].includes(state)) summaryConditions.push(statusLabel(state));
       }
-      if (value.currentTraversalEligible === false) summaryConditions.push("Not current traversal");
-      if (historical(value) || value.origin?.layer === "sessionWork") summaryConditions.push("Historical record", "Not live / no permission");
+      if (value.currentTraversalEligible === false) summaryConditions.push("Historical or unavailable");
+      if (historical(value) || value.origin?.layer === "sessionWork") summaryConditions.push("Historical record");
       if (value.contentPartial || value.workContentCoverage?.partial || value.directionContentCoverage?.partial) summaryConditions.push("Partial content");
-      if (todos.length || todoExcerpts.length || value.workContentCoverage?.fieldItems?.todos?.originalItems) summaryConditions.push("Historical Todo states: " + (todoStates.join(", ") || "not included"));
-      if (todoCoverageText) summaryConditions.push("Todo coverage: " + todoCoverageText);
-      const result = { title: displayTitle, kind: kindName(value), body, facts, excerpts, preview, hasDisplayText, emptyNotice, conditions, summaryConditions: [...new Set(summaryConditions)], notes,
-        source: first(value.sourceReference?.path, value.path, value.provenance?.path, value.origin?.path),
+      if (todos.length || todoExcerpts.length || value.workContentCoverage?.fieldItems?.todos?.originalItems) summaryConditions.push("Recorded tasks: " + (todoStates.map(statusLabel).filter(Boolean).join(", ") || "State not included"));
+      if (todoCoverage && (!Number.isSafeInteger(todoCoverage.completeItems) || !Number.isSafeInteger(todoCoverage.partialItems) || !Number.isSafeInteger(todoCoverage.omittedItems))) summaryConditions.push("Task coverage unknown");
+      else if (todoCoverage && (todoCoverage.partialItems > 0 || todoCoverage.omittedItems > 0)) summaryConditions.push("Some task details missing");
+      const technicalSource = first(value.sourceReference?.path, value.path, value.provenance?.path, value.origin?.path);
+      const result = { title: displayTitle, kind: kindName(value), body, facts, excerpts, preview, hasDisplayText, emptyNotice,
+        technical: { ...technicalFields(value), conditions, notes }, technicalConditions: conditions, conditions: [...new Set(summaryConditions.filter(Boolean))], summaryConditions: [...new Set(summaryConditions.filter(Boolean))], notes: [], technicalNotes: notes,
+        source: sourcePath(technicalSource), technicalSource,
         groups: [...(memberships.get(value.nodeId) || [])].map(key => groups.get(key)),
         excerptNotice: hasDisplayText ? "Excerpt, not a complete summary. Read the record for all wording and conditions." : "" };
       descriptions.set(value, result); return result;
@@ -218,5 +279,5 @@ const explorerCards = (() => {
     }
     return result;
   }
-  return { create, title, kindName, historical, bounds, intersects, endpoint, edgeGeometry, groupGeometry };
+  return { create, title, humanTitle, kindName, kindLabel, statusLabel, sourcePath, relationLabel, comparisonSide, factText, technicalFields, historical, bounds, intersects, endpoint, edgeGeometry, groupGeometry };
 })();

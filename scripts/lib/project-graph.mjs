@@ -1,3 +1,5 @@
+import {projectSurfaceCodeReferences} from "./product-surface-code.mjs";
+import { projectProductSurfaceFacts, bindSurfaceExecutionSources, inspectSurfaceClaimSources } from "./product-surface-graph.mjs";
 import fs from "node:fs";
 import { formatForVerifiedOwner, relativeProjectArtifact, projectOwnsRecordedRecord, projectLocationBasis } from "./project-storage-format.mjs";
 import { publicToolName } from "./lode-artifact-composition.mjs";
@@ -140,6 +142,7 @@ async function verifiedLayer(inventory, layer, entries, model) {
     return { ...read, path: entry.path };
   });
   const recordsByIdentity = firstBy(records, item => recordIdentity(item.document));
+  let surfaceCoverage = null;
   if (layer === "product") {
     if (model) {
       const origin = { layer, path: relativeProjectArtifact(storage, "context/product-model.json"), digest: entries[0]?.sha256 || model.productModelHash };
@@ -165,6 +168,9 @@ async function verifiedLayer(inventory, layer, entries, model) {
       if (document.kind === "ObservationCollectionReceipt") edges.push(relation("EVIDENCED_BY", document.observationId, node.nodeId, node.origin));
       if (document.payload?.path && document.payload?.sourceDigest) sources.push({ path: document.payload.path, digest: document.payload.sourceDigest, nodeId: node.nodeId, origin: node.origin });
     }
+    const projected = projectProductSurfaceFacts({projectId,storage,artifacts:verified,
+      origins:new Map(verified.observations.map(document=>{const entry=recordsByIdentity.get(document.observationId);return [document.observationId,entry?{layer:"observations",path:entry.path,digest:entry.digest}:null];}))});
+    nodes.push(...projected.nodes);edges.push(...projected.edges);sources.push(...projected.sources);surfaceCoverage=projected.coverage.entityCount||projected.coverage.issueCount||projected.coverage.batches.length?projected.coverage:null;
   } else if (layer === "source-bundles") {
     const { verifySourceObservation, readSourceFailure } = await import("./source-observation.mjs");
     for (const record of records) {
@@ -356,7 +362,7 @@ async function verifiedLayer(inventory, layer, entries, model) {
   } else {
     for (const record of records) skipped.push({ path: record.path, reasonCode: "PROJECT_GRAPH_UNSUPPORTED_RECORD" });
   }
-  const result = { nodes, edges, sources, skipped, reused: false };
+  const result = { nodes, edges, sources, skipped, reused: false, ...(surfaceCoverage ? {surfaceCoverage} : {}) };
   if (!inventory.scope) boundedCache(layerCache, key, clone(result), 32);
   return result;
 }
@@ -554,6 +560,7 @@ function compactNode(node) {
   if (isWorkNode(node)) return { ...node, contentScope: "verified-work-original-display", contentPartial: Boolean(node.workContentCoverage?.partial),
     detail: { anchorIds: [node.nodeId], ...(sessionWorkPath(node.sourceReference?.path) ? { paths: [node.sourceReference.path] } : {}), details: true, depth: 0 }, ...authority };
   const fields = ["nodeId", "kind", "name", "key", "path", "digest", "revisionId", "views", "reviewState", "freshness", "integrity", "sourceAuthority", "sourceReference", "sourceCurrentness", "snapshotState", "policyKey", "baseProductModelId", "resultingProductModelId",
+    "claimBasis", "claimEvidence", "claimReference", "executionSource", "executionBinding", "executionEvidence", "mapKey", "mapRevision", "surfaceKind",
     "status", "disposition", "applicationStatus", "mode", "activeRunId", "sessionId", "runId", "latestCheckpoint", "originalExpansion"];
   const compact = Object.fromEntries(fields.filter(key => node[key] !== undefined).map(key => [key, node[key]]));
   const text = searchText(node);
@@ -578,7 +585,8 @@ function compactTraversal(traversed) {
   return { ...traversed, nodes: traversed.nodes.map(compactNode),
     edges: traversed.edges.map(edge => ({ edgeId: edge.edgeId, type: edge.type, from: edge.from, to: edge.to,
       endpointStates: edge.endpointStates.map(({ proposedPolicy, ...state }) => state), provenance: edge.provenance,
-      ...(edge.referenceEvidence ? { referenceEvidence: edge.referenceEvidence } : {}), ...authority })),
+      ...(edge.referenceEvidence ? { referenceEvidence: edge.referenceEvidence } : {}),
+      ...(edge.claimReference?{claimReference:edge.claimReference,claimBasis:edge.claimBasis,claimEvidence:edge.claimEvidence,...(edge.recordedTextComparison?{recordedTextComparison:edge.recordedTextComparison}:{}),interpretation:edge.interpretation}:{}), ...authority })),
     boundary: { items: traversed.boundary.items.slice(0, 8),
       omittedCount: traversed.boundary.omittedCount + Math.max(0, traversed.boundary.items.length - 8),
       nextAnchorIds: traversed.boundary.nextAnchorIds.slice(0, 16),
@@ -619,6 +627,7 @@ export async function queryProjectGraph(options = {}) {
   let temporalVerificationScope = null;
   try {
   const grouped = new Map(), nodes = [], edges = [], sources = [], unavailable = [...inventory.unavailable], layers = [];
+  let surfaceCoverage = null;
   for (const entry of inventory.entries.filter((item) => item.path !== relativeProjectArtifact(storage, "world-model/current.json"))) {
     const layer = layerFor(entry.path, storage); if (!grouped.has(layer)) grouped.set(layer, []); grouped.get(layer).push(entry);
   }
@@ -629,6 +638,7 @@ export async function queryProjectGraph(options = {}) {
     try {
       const result = await verifiedLayer(inventory, layer, entries, model);
       nodes.push(...result.nodes); edges.push(...result.edges); sources.push(...result.sources);
+      if (result.surfaceCoverage) surfaceCoverage=result.surfaceCoverage;
       unavailable.push(...result.skipped); layers.push({ layer, status: "verified", reused: result.reused, recordCount: entries.length });
     } catch (error) { unavailable.push({ layer, reasonCode: reason(error) }); layers.push({ layer, status: "excluded", reasonCode: reason(error) }); }
   }
@@ -694,6 +704,15 @@ export async function queryProjectGraph(options = {}) {
   } catch (error) {
     if (reason(error) !== "WORLD_MODEL_NOT_BUILT") unavailable.push({ layer: "world", reasonCode: reason(error) });
     layers.push({ layer: "world", status: reason(error) === "WORLD_MODEL_NOT_BUILT" ? "absent" : "excluded", reasonCode: reason(error) });
+  }
+  if(surfaceCoverage?.entityCount){const structural=projectSurfaceCodeReferences({projectId,world,includeNonCurrent:collecting});nodes.push(...structural.nodes);edges.push(...structural.edges);sources.push(...structural.sources);surfaceCoverage={...surfaceCoverage,structural:structural.coverage};}
+  const surfaceBindings=bindSurfaceExecutionSources({projectId,nodes,relation});
+  nodes.push(...surfaceBindings.nodes);edges.push(...surfaceBindings.edges);sources.push(...surfaceBindings.sources);
+  if(surfaceCoverage){
+    const connected=new Map();for(const edge of edges){for(const key of [edge.from,edge.to]){if(!connected.has(key))connected.set(key,[]);connected.get(key).push(edge);}}
+    surfaceCoverage={...surfaceCoverage,unmappedActivities:nodes.filter(n=>n.kind==="UserActivity"&&!connected.get(n.nodeId)?.some(e=>e.type==="ACTIVITY_USES_ELEMENT")).length,
+      unmappedElements:nodes.filter(n=>n.kind==="SurfaceElement"&&!connected.get(n.nodeId)?.some(e=>["ELEMENT_INVOKES_ENTRYPOINT","ENTRYPOINT_RETURNS_ELEMENT"].includes(e.type))).length,
+      entrypointsWithoutExactSymbol:nodes.filter(n=>n.kind==="ExecutionEntrypoint"&&n.executionBinding?.state!=="exact-symbol-in-retained-world").length};
   }
   // A shared original identity is one node in two views, not two decisions.
   // More direct verified live records override an older graph projection's
@@ -796,7 +815,10 @@ export async function queryProjectGraph(options = {}) {
   const noProjectBinding = codeSelection?.requestedIds.length && !detailQuery.anchorIds.length;
   const traversed = viewTraversal(noProjectBinding ? [] : allNodes, noProjectBinding ? [] : collecting ? graphEdges.filter(edge => edge.currentTraversalEligible !== false) : graphEdges, detailQuery);
   const selectedIds = new Set((collecting ? allNodes : traversed.nodes).map(node => node.nodeId));
-  const sourceCurrentness = sourceFacts(root, currentnessSources.filter(source => selectedIds.has(source.nodeId)), collecting ? allNodes : traversed.nodes);
+  const selectedSourceIds=new Set([...selectedIds,...(collecting?graphEdges:traversed.edges).map(edge=>edge.edgeId)]);
+  const sourceCurrentness = sourceFacts(root, currentnessSources.filter(source => selectedSourceIds.has(source.nodeId)), collecting ? allNodes : traversed.nodes);
+  const sourceInspection=inspectSurfaceClaimSources({root,nodes:collecting?allNodes:traversed.nodes,edges:collecting?graphEdges:traversed.edges});
+  if(surfaceCoverage)surfaceCoverage={...surfaceCoverage,sourceInspection};
   for (const node of allNodes) delete node[sourcePathAlias];
   // Traversal uses evidence/review eligibility, not live-byte freshness. Rebuild
   // endpoint state only after the returned nodes' current bytes were observed.
@@ -807,7 +829,31 @@ export async function queryProjectGraph(options = {}) {
     worldModelId: world?.snapshot.worldModelId || null, graphSnapshotId: world?.snapshot.temporalProvenanceGraph?.graphSnapshotId || null,
     sourceCurrentnessDigest: projectGraphDigest(sourceCurrentness), sourceCurrentnessScope: collecting ? "whole-returned-inventory" : "selected-nodes-and-edge-endpoints",
     layerDigest: projectGraphDigest(layers.map(({ reused, ...layer }) => layer)), readConsistency: "observed-sequence-not-atomic-filesystem-snapshot" };
-  const withWorkContent = { ...traversed, nodes: presentSessionWorkContent(traversed.nodes, normalized) };
+  let detailTraversal = traversed;
+  let viewerCitationScope = null;
+  if (collecting && surfaceCoverage?.entityCount) {
+    // A natural-language activity query is not a lexical eligibility test for
+    // an explicitly requested file's recorded citations. Reuse only this
+    // inventory's verified originals, within the existing detail node budget.
+    // This adds reading detail, never inferred activity/work graph edges.
+    const sourcePaths = [...new Set([...detailQuery.paths,
+      ...traversed.nodes.map(node => node.executionSource?.path).filter(Boolean)])];
+    const detailIds = new Set(traversed.nodes.map(node => node.nodeId));
+    const citedWork = sourcePaths.length ? allNodes.filter(node => isWorkNode(node)
+      && node.origin?.layer === "sessionWork" && matchesExplicitPaths(node, sourcePaths)) : [];
+    const added = [];
+    for (const node of citedWork) {
+      if (detailIds.has(node.nodeId) || detailIds.size >= normalized.maxNodes) continue;
+      detailIds.add(node.nodeId);
+      added.push({ ...node, inclusionReason: "viewer-exact-source-citation-detail" });
+    }
+    viewerCitationScope = { paths: sourcePaths, includedCount: added.length,
+      omittedCount: citedWork.filter(node => !detailIds.has(node.nodeId)).length,
+      interpretation: "Bounded detail from exact recorded source citations; not activity causality, fulfillment or authority." };
+    detailQuery = { ...detailQuery, paths: sourcePaths };
+    detailTraversal = { ...traversed, nodes: [...traversed.nodes, ...added] };
+  }
+  const withWorkContent = { ...detailTraversal, nodes: presentSessionWorkContent(detailTraversal.nodes, normalized) };
   let contextLineage = null;
   if (normalized.details) {
     const { explainContextLineage } = await import("./context-lineage.mjs");
@@ -823,10 +869,11 @@ export async function queryProjectGraph(options = {}) {
     nodes: allNodes, edges: graphEdges.map(edge => ({ ...edge,
       endpointStates: [edge.from, edge.to].map(nodeId => ({ nodeId, ...(unique.has(nodeId) ? navigationState(unique.get(nodeId))
         : { reviewState: "unknown-outside-inventory", freshness: "unknown", revisionId: null }) })) })), authority,
-    detailSelection: { ...withWorkContent, query: detailQuery, ...(contextLineage ? { contextLineage } : {}) },
+    detailSelection: { ...withWorkContent, query: detailQuery, ...(viewerCitationScope ? { citationScope: viewerCitationScope } : {}),
+      ...(contextLineage ? { contextLineage } : {}) },
     ...(codeSelection ? { codeSelection } : {}),
     coverage: { state: inventory.complete && !unavailable.length ? "verified-available-layers" : "partial",
-      inventoryBoundReached: !inventory.complete, layers, verifiedNodeCount: allNodes.length, emptyResultProvesAbsence: false },
+      inventoryBoundReached: !inventory.complete, layers, verifiedNodeCount: allNodes.length, emptyResultProvesAbsence: false, ...(surfaceCoverage ? {productSurfaces:surfaceCoverage} : {}) },
     integrity: { verifiedLayers: layers.filter(layer => layer.status === "verified").map(layer => layer.layer), excluded: unavailable },
     sourceFallback: { available: true, needed: !inventory.complete || unavailable.length > 0, excludedInputs: unavailable },
     structural: world ? { worldModelId: world.snapshot.worldModelId, graph: world.snapshot.semanticGraph || null, freshness: world.freshness } : null,
@@ -860,7 +907,7 @@ export async function queryProjectGraph(options = {}) {
       ...(world ? { domains: world.freshness.domains } : {}) },
     coverage: { state: "partial", inventoryBoundReached: inventory.scope ? inventory.scope.inventoryBoundReached : !inventory.complete,
       ...(inventory.scope ? { inventoryScope: inventory.scope } : {}), layers: layers.map(({ reused, ...layer }) => layer), verifiedNodeCount: allNodes.length, matchedNodeCount: traversed.nodes.length,
-      emptyResultProvesAbsence: false, semanticSufficiency: "HEAD-owned" },
+      emptyResultProvesAbsence: false, semanticSufficiency: "HEAD-owned", ...(surfaceCoverage?{productSurfaces:surfaceCoverage}:{}) },
     sourceFallback: { available: true, needed: !traversed.nodes.length || traversed.truncated || unavailable.length > 0 || !inventory.complete && !inventory.scope || partialDirection || partialContent,
       action: exactWork ? "Reuse delivered originals. Follow the selected node's originalExpansion or exact detail path only when useful; read its named original file for remaining partial content. Uninspected incoming relations do not require a wider query."
         : "Read current original files or the referenced records; expand anchors when useful.", reasonCodes: [...unavailable.map((entry) => entry.reasonCode), ...(partialDirection ? ["PROJECT_DIRECTION_EXCERPT_PARTIAL"] : []), ...(partialContent ? ["PROJECT_GRAPH_COMPACT_CONTENT_PARTIAL"] : [])],

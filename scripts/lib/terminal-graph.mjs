@@ -107,6 +107,9 @@ export function formatTerminalGraph(value, { columns, diagnostics = false } = {}
     const states = [node.origin?.layer ? `layer ${inline(node.origin.layer)}` : null, node.historical ? "historical" : null, node.status, node.state, node.disposition, node.applicationStatus, node.snapshotState, node.sourceCurrentness, node.reviewState, node.freshness,
       node.contentPartial || node.workContentCoverage?.partial || node.directionContentCoverage?.partial ? "partial text" : null].filter(item => typeof item === "string" && item.length);
     if (states.length) row(`  ${states.map(inline).join("; ")}`);
+    if(node.claimBasis)block("Source claim basis",node.claimBasis+"; record integrity is not accepted meaning or execution proof");
+    if(node.claimEvidence)block("Quoted source",node.claimEvidence.state+(node.claimEvidence.reasonCode?"; "+node.claimEvidence.reasonCode:""));
+    if(node.executionBinding)block("Code binding",node.executionBinding.state);
     if (node.projectId && node.projectId !== value.basis?.projectId) block("Record Project", node.projectId);
     const session = node.sessionId || node.ownerSessionId;
     if (session) row(`  Logical Session ${sessionRef(session)}`);
