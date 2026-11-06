@@ -185,7 +185,8 @@ export function rememberScopedDiscovery({ options, normalized, inventory, result
     if ([...paths].some(relative => !entries.has(relative))) return;
     const proof = [...workProofPaths(normalized, result, inventory, nodes, requiredIds, paths)].sort().map(relative => entries.get(relative));
     const selectedSourcePaths = new Set(nodes.filter(node => requiredIds.has(node.nodeId))
-      .flatMap(node => [node.sourceCurrentness?.path, node.sourceReference?.path]).filter(relative => relative && !relative.startsWith(`${formatForVerifiedOwner(inventory.storage).directory}/`)));
+      .flatMap(node => [node.sourceCurrentness?.path, node.sourceReference?.path,node.claimReference?.path,node.executionSource?.path]).filter(relative => relative && !relative.startsWith(`${formatForVerifiedOwner(inventory.storage).directory}/`)));
+    for(const edge of result.edges)if(edge.claimReference?.path)selectedSourcePaths.add(edge.claimReference.path);
     const sources = sourceCurrentness.filter(source => selectedSourcePaths.has(source.path));
     const retained = structuredClone(result);
     const scopedPayload = { ...retained, basis: { ...retained.basis,

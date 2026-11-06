@@ -492,3 +492,46 @@ Project/storage root/query/scope에 묶인 신뢰하지 않는 사전식 탐색 
 자동 반복·저장·Run·승인·영속 아티팩트를 선행 조건으로 요구하지 않으며 독립 작업은
 계속할 수 있습니다.
 
+
+## 제품 활동에서 구현까지 따라가기
+
+Lode에게 “메모 저장이 사용자 동작에서 출력과 코드까지 어떻게 이어지는지 보여줘”
+또는 “이 공통 함수를 사용하는 기록된 활동은?”이라고 요청합니다. Lode가 프로젝트의
+인용 자료를 읽고 기존 Observation 입력으로 연결을 제안합니다. 사용자가 맵이나 JSON,
+새 온보딩 양식을 작성할 필요는 없습니다. Product Canon과 World는 선택 사항이며,
+없어도 정확한 소스 참조를 읽을 수 있습니다.
+
+읽기 전용 그래프는 UserActivity, ProductSurface(웹·CLI·MCP·hook 출력),
+SurfaceElement, ExecutionEntrypoint, DataResource, ExternalConnection을 구분합니다.
+이들은 근거에 담긴 주장이지 승인된 Product Feature나 Policy가 아닙니다.
+authored·inferred·declared·runtime-recorded·unknown의 근거 구분을 유지합니다.
+digest·인용 구간 검증은 인용한 바이트를 식별할 뿐, 주장 자체의 참이나 코드 실행을
+증명하지 않습니다.
+
+활동은 요소를 사용하고, 요소는 실행 입구를 호출할 수 있습니다. 실행 입구가 다른 요소를
+반환하거나 데이터를 읽고 쓰거나 외부 접점을 호출하는 연결도 표현합니다. 정확한 경로·
+digest·심볼·구간이 일치하면 기존 파서의 CALLS/IMPORTS 관계를 이어 읽습니다.
+정적 호출은 런타임 증명이 아닙니다. 파일 참조만 있는 경우, 모호함·오래된 근거·누락·
+지원되지 않는 동적 대상은 그대로 표시합니다. 공통 함수를 사용하는 두 활동은 별개이며,
+코드 공유가 인과·충족·의미 일치·권한을 만들지 않습니다.
+
+기존 `lode_observation_ingest`는 `scripts/lib/product-surface-graph.mjs`의
+`productSurfaceProfile("entities") / productSurfaceProfile("relations")`가 반환하는 두 폐쇄형 descriptor를
+받습니다. 사용자 양식이 아니라 에이전트·어댑터 계약입니다. 열 방식 묶음에는 길이가
+같은 배열, 고유 row key, mapKey, mapRevision, 정확한 mapBasisPaths/mapBasisDigests,
+batchIndex, batchCount(0은 열린 집합)를 넣습니다. map revision은 Project·map key와
+정렬된 정확 소스 경로/digest 쌍의 해시입니다. 관계 끝점은 같은 map revision의 정확한
+entity Observation ID·hash·row key를 가리킵니다. 이름이나 경로만으로 다른 Project·
+묶음·revision을 합치지 않습니다.
+
+기존 payload 256 KiB 안에서 묶음당 최대 1,024행을 사용하고, 더 필요하면 명시적인
+다음 묶음을 보냅니다. 노드·관계마다 별도 아티팩트를 만들지 않습니다. descriptor 불일치,
+열 길이 오류, 끝점 누락, 열린/미완성 묶음은 의미 연결의 coverage gap으로 표시하며
+원래 Observation과 일반 작업은 계속 사용할 수 있습니다. 조회는 맵 아티팩트를
+만들지 않습니다. 소스 검사는 별도의 총 64 MiB 바이트 상한을 사용하며, 검사하지 않은
+참조를 검증됐거나 존재하지 않는 것으로 취급하지 않습니다.
+
+정확 anchor와 필요한 소스 경로는 기존 `lode_project_graph` / `graph-query`로,
+방향별 탐색은 Graph Explorer로 읽습니다. 기록된 작업 인용과 소스 diff는 기존 정확
+reader의 검증을 거칩니다. 기록 출력 비교는 인용된 텍스트의 같음/다름만 나타내며,
+동작과 의미의 일치는 적절한 근거와 해석이 따로 필요합니다.

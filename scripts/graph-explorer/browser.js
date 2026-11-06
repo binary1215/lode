@@ -15,6 +15,9 @@
   let cameraIntent = 0;
   const layerStates = new Map();
   let contextSelection = null;
+  let readingView = null, displayView = "graph", readingTab = "explanation";
+  const typeSummaryCache = new WeakMap();
+  let typeSummarySerial = 0, typeSummaryJob = null, typeSummaryResult = null, typeKindPage = 0, typeRelationPage = 0, typePageRestore = null;
   let mapMode = "focus", listPage = 0, relationPage = 0, relationSelection = null, foundIds = new Set(), visibleMatches = [], cameraFrame = null;
   const canvasMode = () => mapMode === "overview" || mapMode === "explored-overview";
   const overviewStates = new WeakMap(), PAGE_SIZE = 100;
@@ -26,27 +29,30 @@
   const productIndexes = new WeakMap(), featureViews = new WeakMap(), featureReadingStates = new WeakMap();
   let featureRenderKey = null, renderedFeatureState = null, featureJob = null;
   function productIndex() { if (!productIndexes.has(activeGraph)) productIndexes.set(activeGraph, explorerProduct.create(data, activeGraph)); return productIndexes.get(activeGraph); }
+  const surfaceGraphAvailable=Boolean(data.graph.coverage?.productSurfaces?.entityCount);
+  const surfaceIndexes=new WeakMap(),surfaceReadingStates=new Map();let currentSurfaceState=null,surfaceJob=null,surfaceRenderKey=null;
+  function surfaceIndex(){if(!surfaceIndexes.has(data.graph))surfaceIndexes.set(data.graph,explorerSurfacePaths.create(data,data.graph));return surfaceIndexes.get(data.graph);}
   const documentPanels = new WeakMap();
   const comparisonFileNavigation = new WeakMap();
   let comparisonGraph = null, comparisonNavigationSerial = 0;
-  const filterIds = ["search", "hide-nonmatches", "axis", "view", "include-history", "relation-filter", "kind-filter"];
+  const filterIds = ["search", "search-kind", "hide-nonmatches", "axis", "view", "include-history", "relation-filter", "kind-filter"];
   // Yield to input without paying a whole display frame for every 512 edges.
   // The first paint/disclosure still uses requestAnimationFrame separately.
   const yieldWork = () => typeof globalThis.scheduler?.yield === "function" ? globalThis.scheduler.yield() : new Promise(resolve => requestAnimationFrame(resolve));
+  const sourceProblem = code => ["SOURCE_READ_PERMISSION_DENIED", "EACCES", "EPERM"].includes(code) ? "Source access denied" : "Source details unavailable";
   const label = node => displayText(node ? cardIndex().describe(node).title : "Endpoint not exported");
   const isCode = node => $("layer").value === "code" || /^(File|Symbol|Source|Directory|Dependency|ExternalDependency)/.test(node.kind || "");
-  const relation = edge => {
-    const code = edge.type || edge.relation;
-    return displayText(({ CITES_EXACT_REVISION: "Mentioned source version", CITES_WORK_EVIDENCE: "Cited work record", CITES_ARTIFACT: "Cited original document (not every contained decision)", DECLARES_WORK_ROOT: "Declared work starting point",
-      FOLLOWS_WORK_EVIDENCE: "Previous work record", RECORDED_RESULT: "Recorded result", RECORDED_REVIEW: "Recorded review",
-      OBSERVES_BEFORE_REVISION: "Recorded before revision", OBSERVES_AFTER_REVISION: "Recorded after revision",
-      REFERS_TO_PREVIOUS_CANON: "Previous recorded Canon", REFERS_TO_BASE_CANON: "Base recorded Canon", REFERS_TO_RESULT_CANON: "Resulting recorded Canon",
-      CALLS: "Calls", IMPORTS: "Imports" })[code] || code || "Relationship");
-  };
+  const relation = edge => displayText(explorerCards.relationLabel(edge.type || edge.relation));
   const key = reference => JSON.stringify([reference?.path || null, reference?.digest || null]);
   const displayText = value => String(value ?? "").replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/gu, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
   const text = (tag, value, className) => { const el = document.createElement(tag); el.textContent = displayText(value); if (className) el.className = className; return el; };
   const button = (value, action) => { const el = text("button", value); el.type = "button"; el.addEventListener("click", action); return el; };
+  const technicalInfo = (value, heading = "Technical information") => {
+    const panel = text("details", "", "technical-info"); panel.setAttribute("data-technical-info", "");
+    panel.append(text("summary", heading), text("pre", JSON.stringify(value, null, 2))); return panel;
+  };
+  const technicalRecord = value => ({ ...explorerCards.technicalFields(value), conditions: cardIndex().describe(value).technicalConditions, notes: cardIndex().describe(value).technicalNotes });
+  const humanProject = () => data.project?.name || String(data.project?.root || "").split(/[\\/]/).filter(Boolean).at(-1) || "Project";
   const svg = (tag, attributes) => { const el = document.createElementNS(ns, tag); for (const [name, value] of Object.entries(attributes)) el.setAttribute(name, displayText(value)); return el; };
   const graphemes = typeof Intl?.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
   const shorten = (value, length) => {
@@ -93,13 +99,13 @@
     header.append(heading, control);
     const content = text("div", "", "map-card-body"); content.setAttribute("data-card-body", "");
     content.append(text("p", descriptor.kind, "map-card-kind"));
-    if (descriptor.preview) content.append(text("p", shorten(descriptor.preview, 420), "map-card-excerpt"));
+    if (descriptor.preview) { content.append(text("p", shorten(descriptor.preview, 420), "map-card-excerpt")); if (shorten(descriptor.preview, 420) !== descriptor.preview) content.append(text("p", "Excerpt · open the full record for the remaining text.", "map-card-notice")); }
     else if (!descriptor.hasDisplayText) content.append(text("p", descriptor.emptyNotice, "map-card-notice"));
     if (descriptor.conditions.length) content.append(text("p", descriptor.conditions.join(" · "), "map-card-conditions"));
     if (descriptor.groups.length) content.append(text("p", descriptor.groups.slice(0, 2).map(group => `${group.type}: ${group.title}`).join(" · ")
       + (descriptor.groups.length > 2 ? ` · +${descriptor.groups.length - 2} memberships in the reading card` : ""), "map-card-memberships"));
     if (descriptor.source) content.append(text("p", descriptor.source, "map-card-source"));
-    if (descriptor.excerptNotice) content.append(text("p", descriptor.excerptNotice, "map-card-notice"));
+    if (descriptor.technical) content.append(technicalInfo(descriptor.technical));
     const full = button("Read full record", event => { event.stopPropagation(); read(); }); full.setAttribute("data-card-control", ""); content.append(full);
     hide(content, !expanded);
     body.append(header, content); return body;
@@ -241,19 +247,39 @@
   function selectionValues() { return [...model.chosen].map(id => model.nodes.get(id)).concat([...chosenEdges]); }
   function filterState() { return Object.fromEntries(filterIds.map(id => [id, $(id).type === "checkbox" || ["include-history", "hide-nonmatches"].includes(id) ? $(id).checked : $(id).value])); }
   function restoreFilters(state) { for (const id of filterIds) { if (typeof state[id] === "boolean") $(id).checked = state[id]; else $(id).value = state[id]; } scopeCache = null; }
-  function viewState(title) { return { title, model: model.capture(), selected, chosenEdges: [...chosenEdges], box: [...box], mapMode, cardPage, filters: filterState(), connectionResult, connectionKey, operationStatus: $("operation-status").textContent }; }
+  function saveReadingBeforeNavigation() {
+    typePageRestore = null;
+    const current = viewHistory[viewCursor];
+    if (!current) return;
+    if (readingView) current.reading = readingView.capture();
+    current.displayView = displayView; current.readingTab = readingTab;
+    current.recordStart = visibleMatches[listPage * PAGE_SIZE]?.nodeId || null;
+    current.typeKindStart = typeSummaryResult?.kinds[typeKindPage * 20]?.kind || null;
+    current.typeRelationStart = typeSummaryResult?.types[typeRelationPage * 20]?.type || null;
+  }
+  function viewState(title) { return { title, model: model.capture(), selected, chosenEdges: [...chosenEdges], box: [...box], mapMode, cardPage,
+    recordStart: visibleMatches[listPage * PAGE_SIZE]?.nodeId || null, displayView, readingTab, reading: readingView?.capture(),
+    filters: filterState(), connectionResult, connectionKey, operationStatus: $("operation-status").textContent }; }
   function remember(title) { viewHistory.splice(viewCursor + 1); viewHistory.push(viewState(title)); viewCursor = viewHistory.length - 1; renderTrail(); }
   function travelView(index) {
     const state = viewHistory[index]; if (!state) return;
+    saveReadingBeforeNavigation(); readingView?.invalidate();
     cancelWork(false); viewCursor = index; model.restore(state.model); selected = state.selected; chosenEdges = new Set(state.chosenEdges); edgeVersion++;
     box = [...state.box]; mapMode = state.mapMode; restoreFilters(state.filters); connectionResult = state.connectionResult; connectionKey = state.connectionKey;
     $("operation-status").textContent = state.operationStatus;
-    cardPage = state.cardPage || 0; comparisonsCache = null; render();
+    displayView = state.displayView || "graph"; readingTab = state.readingTab || "explanation";
+    typePageRestore = { key: summaryScopeKey(), kind: state.typeKindStart, type: state.typeRelationStart };
+    const recordAt = matches().findIndex(node => node.nodeId === state.recordStart);
+    listPage = Math.floor(Math.max(0, recordAt) / PAGE_SIZE);
+    cardPage = state.cardPage || 0; comparisonsCache = null; render(); readingView?.restore(state.reading);
   }
   function cancelWork(announce = true, keepDisclosures = false) {
+    readingView?.invalidate(); cancelTypeSummary();
     if (!keepDisclosures) mapDisclosures.get(activeGraph)?.clear();
+    if(surfaceJob){surfaceJob.state.loading=false;surfaceJob.state.cancelled=true;surfaceJob=null;surfaceRenderKey=null;}
     if (featureJob) { featureJob.state.loading = false; featureJob.state.cancelled = true; featureJob = null; featureRenderKey = null; }
     if (jobKind === "geometry" && announce) suppressedMetrics.set(model, metrics().key);
+    if (announce && (busy || jobKind)) $("reading-tools").open = true;
     jobSerial++; if (announce && (busy || jobKind)) $("operation-status").textContent = jobKind === "initial"
       ? "Cancelled neighbor preparation; previous committed positions retained. Unplaced neighbors remain searchable/readable, not a completed layout."
       : "Cancelled calculation; previous committed view and selection retained."; busy = false; jobKind = null; $("cancel-work").disabled = true;
@@ -287,7 +313,9 @@
     const scopeKey = JSON.stringify(filterState());
     if (scopeCache?.graph === activeGraph && scopeCache.key === scopeKey) return scopeCache.found;
     document.documentElement.dataset.explorerSearchPasses = String(Number(document.documentElement.dataset.explorerSearchPasses || 0) + 1);
-    const eligible = activeGraph.nodes.filter(inEvidenceScope), found = model.search($("search").value.trim().toLocaleLowerCase(), eligible);
+    const type = $("search-kind").value || "all";
+    const eligible = activeGraph.nodes.filter(inEvidenceScope);
+    const found = model.search($("search").value.trim().toLocaleLowerCase(), eligible.filter(node => type === "all" || (node.kind || "Unknown") === type));
     scopeCache = { graph: activeGraph, key: scopeKey, found, foundIds: new Set(found.map(node => node.nodeId)), eligible,
       shown: $("hide-nonmatches").checked ? found : eligible };
     scopeCache.shownIds = new Set(scopeCache.shown.map(node => node.nodeId)); return found;
@@ -355,7 +383,9 @@
     canvas.width = Math.max(1, Math.round(rect.width * dpr)); canvas.height = Math.max(1, Math.round(rect.height * dpr));
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr * camera.scale, 0, 0, dpr * camera.scale, dpr * (camera.left - box[0] * camera.scale), dpr * (camera.top - box[1] * camera.scale));
-    ctx.strokeStyle = "#627b9e"; ctx.globalAlpha = .22; ctx.beginPath();
+    const theme = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
+    const color = (name, fallback) => theme?.getPropertyValue?.(name)?.trim() || fallback;
+    ctx.strokeStyle = color("--edge", "#617c9b"); ctx.globalAlpha = .22; ctx.beginPath();
     let edges = 0; const included = overviewIncluded();
     const window = overview.window(box);
     for (const edge of window.edges) {
@@ -369,12 +399,12 @@
       const node = model.nodes.get(id);
       const point = overview.points.get(node.nodeId); if (!point) continue;
       if (point.x < box[0] || point.x > box[0] + box[2] || point.y < box[1] || point.y > box[1] + box[3]) continue;
-      ctx.fillStyle = model.chosen.has(node.nodeId) ? "#ffffff" : connectionResult?.nodes.has(node.nodeId) ? "#96e4c0" : $("search").value && foundIds.has(node.nodeId) ? "#f2d674" : historical(node) ? "#a38baa" : isCode(node) ? "#80baff" : "#eabd87";
+      ctx.fillStyle = model.chosen.has(node.nodeId) ? color("--selected", "#153e70") : connectionResult?.nodes.has(node.nodeId) ? color("--path", "#167a51") : $("search").value && foundIds.has(node.nodeId) ? color("--match", "#926500") : historical(node) ? color("--historical", "#766383") : isCode(node) ? color("--code", "#235fa9") : color("--context", "#945200");
       const radius = (model.chosen.has(node.nodeId) ? 3 : 1) / camera.scale;
       ctx.fillRect(point.x - radius, point.y - radius, radius * 2, radius * 2);
     }
     // Highlight actual directed relationships without reversing their stored ends.
-    ctx.strokeStyle = "#96e4c0"; ctx.lineWidth = 2 / camera.scale; ctx.beginPath();
+    ctx.strokeStyle = color("--path", "#167a51"); ctx.lineWidth = 2 / camera.scale; ctx.beginPath();
     const highlighted = new Set([...(connectionResult?.edges || []), ...chosenEdges]);
     for (const id of model.chosen) for (const edge of model.links(id)) if (model.chosen.has(edge.from) && model.chosen.has(edge.to)) highlighted.add(edge);
     for (const edge of highlighted) if (included.has(edge.from) && included.has(edge.to) && edgeInScope(edge)) {
@@ -397,11 +427,14 @@
   }
   function selectNode(node, keyboard = false, event = {}) {
     if (!node) return;
+    if (event.recordHistory !== false) saveReadingBeforeNavigation(); readingView?.invalidate();
     const before = model.selectionVersion, previous = selected?.value;
     if (!model.choose(node.nodeId, { toggle: Boolean(event.ctrlKey || event.metaKey || event.key === " " || event.toggle), only: event.only === true, position: !canvasMode() })) return;
     if (event.only) { chosenEdges.clear(); edgeVersion++; }
     if (before !== model.selectionVersion) cancelWork();
     selected = model.focus ? { kind: "node", value: model.nodes.get(model.focus) } : chosenEdges.size ? { kind: "edge", value: [...chosenEdges][0] } : null;
+    displayView = event.mapNavigation ? "graph" : "reading";
+    if (!event.keepReadingTab && event.recordHistory !== false) readingTab = "explanation";
     if (event.mapNavigation) {
       // Explicit endpoint navigation is one history step, not the ordinary
       // read/selection path. Center one card; never fit or reposition its peers.
@@ -409,13 +442,14 @@
       if (inDisplayScope(node)) { model.place(node.nodeId); mapMode = "focus"; focusCamera(); }
       else $("operation-status").textContent = "Selected connection is outside current filters. Selection and camera retained; use Show selected scope, then Focus selection to see it.";
     }
-    if (event.mapNavigation || before !== model.selectionVersion || previous !== selected?.value)
+    if (event.recordHistory !== false && (event.mapNavigation || before !== model.selectionVersion || previous !== selected?.value))
       remember(`${event.mapNavigation ? "Show on map" : "Read"} ${shorten(label(node), 32)}`);
     render();
     if (keyboard || event.mapNavigation) {
       const target = [...$("graph").children].find(el => el.getAttribute("data-node") === node.nodeId);
       if (event.mapNavigation && target) target.scrollIntoView({ block: "center", inline: "nearest" });
-      target?.focus({ preventScroll: Boolean(event.mapNavigation) });
+      if (displayView === "graph") target?.focus({ preventScroll: Boolean(event.mapNavigation) });
+      else $("reading-flow-title").focus({ preventScroll: true });
     }
   }
   function mapNeighborButton(node) {
@@ -448,7 +482,7 @@
     cardPage = Math.floor((selectedIndex < 0 ? model.chosen.size : selectedIndex) / PAGE_SIZE);
     selectNode(node);
     const card = cardsCache?.entries.get(recordKey(node))?.card;
-    if (card) { card.open = true; card.scrollIntoView({ block: "nearest" }); card.children[0].focus(); }
+    if (card) { activateReadingTab("selection"); card.open = true; card.scrollIntoView({ block: "nearest" }); card.children[0].focus(); }
   }
   function appendCitingWork(body, file, pair) {
     const rows = new Map();
@@ -457,12 +491,12 @@
       if (!digest) continue;
       for (const node of citingWork(file.path, digest)) {
         if (!rows.has(node.nodeId)) rows.set(node.nodeId, { node, sides: [] });
-        rows.get(node.nodeId).sides.push(`${side} · ${digest}`);
+        rows.get(node.nodeId).sides.push(side);
       }
     }
     if (!rows.size) return;
     const section = text("section", "", "exact-citations"), list = text("ul", ""), controls = text("nav", "", "list-pages"), count = text("span", "");
-    section.append(text("h4", "Exact citing work — not proven change causes"), list, controls); body.append(section);
+    section.append(text("h4", "Work citing this source"), list, controls); body.append(section);
     const values = [...rows.values()]; let page = 0;
     const update = () => {
       list.replaceChildren();
@@ -471,7 +505,7 @@
         control.setAttribute("data-citing-work", node.nodeId); row.append(control);
         row.append(text("p", node.detailCoverage === "metadata-only"
           ? "Original / comparison detail was not included for this work. Read its available recorded judgments, or request a separate exact-detail report."
-          : "A recorded citation is not proof that this work caused the byte change.", "hint")); list.append(row);
+          : "", "hint")); list.append(row);
       }
       count.textContent = `${page * 20 + 1}–${Math.min(values.length, (page + 1) * 20)} / ${values.length} exact citing records`;
       previous.disabled = page === 0; next.disabled = (page + 1) * 20 >= values.length;
@@ -480,11 +514,12 @@
     controls.append(count, previous, next); update();
   }
   function selectEdge(edge, keyboard = false, event = {}) {
+    if (event.recordHistory !== false) saveReadingBeforeNavigation(); readingView?.invalidate(); displayView = "reading";
     const toggle = event.ctrlKey || event.metaKey || event.key === " ";
     const changed = toggle || !chosenEdges.has(edge);
     if (toggle && chosenEdges.has(edge)) chosenEdges.delete(edge); else chosenEdges.add(edge);
     if (changed) { edgeVersion++; cancelWork(); } selected = chosenEdges.has(edge) ? { kind: "edge", value: edge } : model.focus ? { kind: "node", value: model.nodes.get(model.focus) } : null;
-    remember(`Read ${relation(edge)}`); render(); if (keyboard) $("selected-title").focus();
+    if (event.recordHistory !== false) remember(`Read ${relation(edge)}`); render(); if (keyboard) $("reading-flow-title").focus();
   }
   function accessibleActivate(el, action) {
     el.addEventListener("click", event => { if (!suppressClick) action(event.detail === 0, event); });
@@ -499,9 +534,12 @@
     listPage = Math.min(listPage, Math.max(0, Math.ceil(found.length / PAGE_SIZE) - 1));
     for (const node of found.slice(listPage * PAGE_SIZE, (listPage + 1) * PAGE_SIZE)) {
       const activate = (event, toggle = false) => {
-        selectNode(node, false, toggle ? { toggle: true } : event);
-        // Rendering replaces the list. Keep keyboard/checkbox work in that
-        // list instead of moving focus to a different map control.
+        const toggling = toggle || event?.toggle;
+        const previousView = displayView;
+        selectNode(node, false, toggling ? { toggle: true } : event);
+        if (!toggling) { $("reading-flow-title").scrollIntoView({ block: "nearest" }); $("reading-flow-title").focus({ preventScroll: true }); return; }
+        displayView = previousView; renderViewMode();
+        // Checkbox/Space changes selection in place; Read enters the visible reader.
         const attribute = toggle ? "data-record-toggle" : "data-record-entry";
         for (const row of $("records").children) for (const control of row.children)
           if (control.getAttribute(attribute) === node.nodeId) control.focus();
@@ -509,7 +547,7 @@
       const entry = button(label(node), event => activate(event)), item = text("li", "");
       entry.setAttribute("data-record-entry", node.nodeId);
       entry.addEventListener("keydown", event => { if (event.key === " ") { event.preventDefault(); activate({ toggle: true }); } });
-      entry.append(text("span", `${node.kind} · ${node.freshness || "freshness unknown"}`, "record-kind"));
+      entry.append(text("span", [explorerCards.kindLabel(node.kind), explorerCards.statusLabel(node.freshness)].filter(Boolean).join(" · "), "record-kind"));
       entry.setAttribute("aria-pressed", String(model.chosen.has(node.nodeId)));
       const toggle = document.createElement("input"); toggle.type = "checkbox"; toggle.checked = model.chosen.has(node.nodeId);
       toggle.setAttribute("data-record-toggle", node.nodeId);
@@ -518,9 +556,9 @@
     }
     if (!historyCounts.has(activeGraph)) historyCounts.set(activeGraph, activeGraph.nodes.reduce((count, node) => count + Number(historical(node)), 0));
     const past = historyCounts.get(activeGraph);
-    $("count").textContent = `${found.length} matching / ${activeGraph.nodes.length} exported (${activeGraph.nodes.length - past} current/retained, ${past} historical/non-current). Page ${listPage + 1} of ${Math.max(1, Math.ceil(found.length / PAGE_SIZE))}. All exported metadata is searchable; page size is not an export limit.`;
+    $("count").textContent = `${found.length} matching / ${activeGraph.nodes.length} records · Page ${listPage + 1} of ${Math.max(1, Math.ceil(found.length / PAGE_SIZE))}${past ? ` · ${past} earlier or unavailable records` : ""}`;
     const exclusions = activeGraph.integrity?.excluded || [], omittedOriginals = Object.values(data.originals).filter(original => original.status !== "verified-exact-bytes").length;
-    $("inventory-gaps").textContent = `${activeGraph.coverage?.state || activeGraph.status || "Coverage unknown"}. ${exclusions.length} excluded metadata inputs/layers; unavailable-node totals may be unknown. ${omittedOriginals} omitted/unavailable references in the focused original bundle. See snapshot basis for exact reasons.`;
+    $("inventory-gaps").textContent = exclusions.length || omittedOriginals || activeGraph.coverage?.state === "partial" ? "Some source details are not included in this view." : "";
     $("records-prev").disabled = listPage === 0; $("records-next").disabled = (listPage + 1) * PAGE_SIZE >= found.length;
   }
   function renderTrail() {
@@ -529,6 +567,9 @@
     viewHistory.slice(start, start + PAGE_SIZE).forEach((state, offset) => {
       const index = start + offset;
       const entry = button(shorten(state.title, 28), () => travelView(index));
+      const value = state.selected?.value;
+      entry.title = state.title;
+      if (value?.kind || value?.type) entry.append(text("span", value.kind ? explorerCards.kindLabel(value.kind) : relation(value), "trail-kind"));
       if (index === viewCursor) entry.setAttribute("aria-current", "step"); $("trail").append(entry);
     });
     $("back").disabled = viewCursor <= 0; $("forward").disabled = viewCursor >= viewHistory.length - 1;
@@ -557,7 +598,7 @@
       children.push(cache.guides);
     }
     if (!cache.defs) { cache.defs = svg("defs", {}); const marker = svg("marker", { id: "edge-arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto" });
-      marker.append(svg("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "#8ca6c9" })); cache.defs.append(marker); }
+      marker.append(svg("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "#617c9b" })); cache.defs.append(marker); }
     children.push(cache.defs);
     const index = cardIndex(), rectangles = new Map(shown.map(node => [node.nodeId, explorerCards.bounds(model.positions.get(node.nodeId), model.extent(node.nodeId))]));
     const visibleGroups = new Set();
@@ -603,7 +644,7 @@
         const group = svg("g", { tabindex: 0, role: "group", "data-node": node.nodeId }), rectangle = svg("rect", { rx: 12, class: "card-frame" }), content = svg("foreignObject", { class: "card-content" }), title = svg("title", {});
         const graph = activeGraph, body = mapContent(descriptor, openedMap(graph).has(node.nodeId),
           () => { toggleMapCard(node).catch(calculationFailed); },
-          () => { if (activeGraph !== graph) return; selectNode(node); const card = cardsCache?.entries.get(recordKey(node))?.card; if (card) { card.open = true; card.scrollIntoView({ block: "nearest" }); card.children[0].focus(); } });
+          () => { if (activeGraph !== graph) return; selectNode(node); const card = cardsCache?.entries.get(recordKey(node))?.card; if (card) { activateReadingTab("selection"); card.open = true; card.scrollIntoView({ block: "nearest" }); card.children[0].focus(); } });
         body.children[1].addEventListener("scroll", () => { if (openedMap(graph).has(node.nodeId)) mapScroll(graph).set(node.nodeId, { top: body.children[1].scrollTop || 0, left: body.children[1].scrollLeft || 0 }); });
         title.textContent = label(node); content.append(body); group.append(rectangle, content, title);
         accessibleActivate(group, (keyboard, event) => { if (!event.target.closest?.("[data-card-body]") && !event.target.closest?.("[data-card-control]")) selectNode(node, keyboard, event); });
@@ -668,6 +709,7 @@
         if (retained && retained.value === value && retained.scopeIdentity === scopeIdentity) { entries.set(identity, retained); children.push(retained.card); continue; }
         const descriptor = index.describe(value), node = Boolean(value.nodeId), entryModel = model, card = text("details", "", "selection-card");
         card.setAttribute("data-record", identity);
+        card.setAttribute("data-reading-key", JSON.stringify([readingView.model().basis, "record", identity]));
         const summary = text("summary", node ? label(value) : relation(value));
         summary.append(text("span", descriptor.kind, "record-kind"));
         if (descriptor.preview) summary.append(text("span", shorten(descriptor.preview, 220), "selection-preview"));
@@ -676,7 +718,7 @@
         const conditions = [...descriptor.conditions,
           node && !inDisplayScope(value) || !node && !edgeInScope(value) ? "outside evidence scope — selection retained" : null].filter(item => typeof item === "string" && item);
         const conditionsElement = text("p", conditions.join(" · "), "card-conditions"); card.append(conditionsElement);
-        for (const note of descriptor.notes) card.append(text("p", note, "hint"));
+        
         if (descriptor.body) card.append(text("p", descriptor.body));
         else if (!descriptor.hasDisplayText) card.append(text("p", descriptor.emptyNotice, "hint"));
         if (!descriptor.hasDisplayText && !node) card.append(text("p", `${label(model.nodes.get(value.from))} → ${label(model.nodes.get(value.to))}`));
@@ -684,14 +726,16 @@
           card.append(text("strong", heading)); const list = text("ul", "", "record-facts");
           for (const fact of facts) {
             if (heading === "Recorded Todo revisions (historical)" && fact && typeof fact.todoId === "string") {
-              const row = text("li", `${fact.todoId} [${fact.status}; ${fact.origin}]: ${fact.task}`);
-              for (const key of ["nextAction", "reason", "progress", "priority", "prior", "resolves", "relatedEvidence"]) if (Object.hasOwn(fact, key)) {
-                row.append(text("p", `${key}: ${typeof fact[key] === "string" ? fact[key] : JSON.stringify(fact[key])}`));
+              const row = text("li", fact.task);
+              const state = explorerCards.statusLabel(fact.status); if (state) row.append(text("p", state));
+              for (const [key, label] of [["nextAction", "Next action"], ["reason", "Reason"], ["progress", "Progress"], ["priority", "Priority"]]) if (Object.hasOwn(fact, key)) {
+                row.append(text("p", label + ": " + (typeof fact[key] === "string" ? fact[key] : explorerCards.factText(fact[key]))));
               }
+              row.append(technicalInfo(fact));
               list.append(row); continue;
             }
-            const row = text("li", typeof fact === "string" ? fact : fact.assessment || "Recorded judgment");
-            if (fact && typeof fact === "object") { row.append(text("p", fact.reason || "No recorded reason included.")); for (const alternative of fact.alternatives || []) row.append(text("p", alternative, "hint")); }
+            const row = text("li", explorerCards.factText(fact));
+            if (fact && typeof fact === "object") { if (fact.reason) row.append(text("p", fact.reason)); for (const alternative of fact.alternatives || []) row.append(text("p", alternative, "hint")); }
             list.append(row);
           } card.append(list);
         }
@@ -706,7 +750,7 @@
             else { model.clearSelection(); chosenEdges = new Set([value]); edgeVersion++; selected = { kind: "edge", value }; cancelWork(); remember("Select one relationship"); render(); }
           }), button("Remove", () => node ? selectNode(value, false, { toggle: true }) : selectEdge(value, false, { ctrlKey: true })));
         if (node && (activeGraph.contextLineage?.files || []).some(file => fileMatches(value, file))) actions.append(button("Recorded code context", () => {
-          selectNode(value); $("context-lineage").open = true;
+          selectNode(value); activateReadingTab("source"); $("context-lineage").open = true;
           const at = comparisonFiles.findIndex(section => section.dataset.sourcePath === (value.path || value.sourceReference?.path));
           if (at >= 0) { fileCursor = at; comparisonFiles[at].scrollIntoView({ block: "nearest" }); comparisonFiles[at].focus(); comparisonPosition("file"); }
           else $("context-lineage").scrollIntoView({ block: "nearest" });
@@ -714,7 +758,7 @@
         if (node && value.detailCoverage === "metadata-only") {
           card.append(text("p", "Exact original / comparison detail is not included for this record. Available metadata and explicit connections remain readable.", "hint"));
           const options = button("Exact detail options", () => {
-            selectNode(value); $("focus-inspector").open = true; $("detail-scope").setAttribute("tabindex", "-1");
+            selectNode(value); activateReadingTab("selection"); $("focus-inspector").open = true; $("detail-scope").setAttribute("tabindex", "-1");
             $("detail-scope").scrollIntoView({ block: "nearest" }); $("detail-scope").focus();
           }); options.setAttribute("data-detail-options", value.nodeId); actions.append(options);
         }
@@ -724,6 +768,7 @@
         card.append(actions);
         const links = node ? model.links(value.nodeId) : [value];
         const connections = text("details", ""); connections.append(text("summary", `${links.length} actual relationships (direction and type)`));
+        connections.setAttribute("data-reading-key", JSON.stringify([readingView.model().basis, "record-connections", identity]));
         const rows = text("ul", ""), pages = text("nav", "", "list-pages"), range = text("span", ""); let page = 0;
         const previousPage = button("Previous", () => { page--; listConnections(); }), nextPage = button("Next", () => { page++; listConnections(); });
         pages.append(range, previousPage, nextPage);
@@ -761,11 +806,12 @@
           groupReaders.push({ update, get page() { return page; }, set page(value) { page = value; } });
         }
         const original = data.originals[key(value.sourceReference || value.provenance)], detail = text("details", "");
-        detail.append(text("summary", "Exact original & identity"));
+        detail.setAttribute("data-reading-key", JSON.stringify([readingView.model().basis, "original", identity, value.sourceReference || value.provenance]));
+        detail.append(text("summary", "Source record & technical information"));
         detail.append(text("p", original?.status || "Exact original not included", "hint"));
         if (original?.reasonCode) detail.append(text("p", original.reasonCode, "hint"));
         if (original?.text) detail.append(text("pre", readableOriginal(original.text, value) ?? original.text));
-        const raw = text("details", ""); raw.append(text("summary", "Raw original / unknown fields / identifiers"), text("pre", original?.text || "Original not included"), text("pre", JSON.stringify(value, null, 2))); detail.append(raw); card.append(detail);
+        const raw = text("details", ""); raw.append(text("summary", "Raw record and identifiers"), text("pre", original?.text || "Original not included"), text("pre", JSON.stringify(value, null, 2))); detail.append(raw); card.append(detail);
         const entry = { card, value, descriptor, scopeIdentity, conditionsElement, refreshConnections: listConnections, refreshGroups: () => groupReaders.forEach(reader => reader.update()),
           get groupPages() { return groupReaders.map(reader => reader.page); }, set groupPages(values) { groupReaders.forEach((reader, index) => { reader.page = values[index] || 0; }); },
           get connectionPage() { return page; }, set connectionPage(value) { page = value; } };
@@ -899,7 +945,7 @@
       if (safePaths.length !== detailPaths.length) $("detail-scope").append(text("p", "Some paths cannot be listed in this CLI option; the exact work anchor retains its citations. Use the typed graph query for explicit path arrays.", "hint"));
     }
     $("selected-title").textContent = displayText(node ? label(value) : relation(value));
-    $("selected-caption").textContent = displayText(node ? [value.kind, value.freshness || "freshness unknown", value.reviewState || "review unknown", value.status, value.state, value.historical ? "historical" : null].filter(item => typeof item === "string").join(" · ") : `Existing relationship · ${value.viewerCurrentness || value.freshness || "currentness unknown"} · not an execution permission`);
+    $("selected-caption").textContent = displayText([node ? explorerCards.kindLabel(value.kind) : relation(value), ...cardIndex().describe(value).conditions].filter(Boolean).join(" · "));
     const summary = $("selected-summary"); summary.replaceChildren();
     summary.append(text("p", String(value.description || value.workContent?.summary || value.summary || value.proposedPolicy?.statement || value.statement || value.purpose || value.objective || value.directionEvidence?.goal || value.rationale || value.planDelta || value.outcome || value.assessment || (node ? "Follow a connection below, or open its exact original." : `${label(model.nodes.get(value.from))} → ${label(model.nodes.get(value.to))}`))));
     if (value.contentPartial) summary.append(text("p", `Partial navigation excerpt; exact originals remain separate. ${JSON.stringify(value.contentCoverage || {})}`, "hint"));
@@ -998,11 +1044,15 @@
     if (activeGraph === data.graph && productIndex().fileMatches(value, file, pair)) return true;
     const digests = new Set([pair.before?.digest, pair.after?.digest, pair.citedReference?.digest, pair.gap?.expectedDigest,
       ...(pair.gaps || []).map(gap => gap.expectedDigest)].filter(Boolean));
+    if ([value.executionSource, value.claimReference].some(ref => ref?.path === file.path && digests.has(ref.digest))) return true;
     if ((value.path === file.path || value.sourceReference?.path === file.path) && digests.has(value.digest || value.fileDigest || value.sourceReference?.digest)) return true;
     if (activeGraph === data.graph && (value.referenceEvidence || []).some(ref => ref.kind === "source" && ref.path === file.path && digests.has(ref.digest))) return true;
     return activeGraph === data.graph && (file.associations || []).some(item => item.nodeId === value.nodeId && digests.has(item.source?.digest));
   }
   function fileMatches(value, file) {
+    // Candidate discovery only. Exact source highlighting uses reading-model's
+    // Project/basis/origin/digest/pair-side/span resolver, never this predicate.
+    if ([value.executionSource, value.claimReference].some(ref => ref?.path === file.path)) return true;
     if (activeGraph === data.graph && productIndex().fileMatches(value, file)) return true;
     if (activeGraph !== data.graph) {
       const digest = value.digest || value.fileDigest || value.sourceReference?.digest;
@@ -1043,7 +1093,7 @@
     if (asset.currentWorkingPayload) body.append(text("p", `Current requested working payload: ${asset.currentWorkingPayload.status}. This is not a historical after-version or cache proof.`, "hint"));
     body.append(text("p", "Remote: not checked · payload comparison: not performed", "hint"));
     const identities = text("details", "");
-    identities.append(text("summary", "Exact asset identities and observation limits"), text("pre", JSON.stringify(asset, null, 2)));
+    identities.append(text("summary", "Technical information"), text("pre", JSON.stringify(asset, null, 2)));
     body.append(identities);
   }
 
@@ -1069,19 +1119,22 @@
     comparisonFiles = []; changeHunks = []; fileCursor = 0; changeCursor = -1; $("comparison-files").replaceChildren(); comparisonPosition();
     $("show-code-diff").hidden = true; $("jump-diff").disabled = true;
     if (!context) return;
-    body.append(text("p", "Recorded reasons, byte changes and associations are different evidence. No historical cause or current permission is inferred.", "hint"));
-    if (context.status === "unavailable") { body.append(text("p", context.reasonCode || "Context unavailable", "hint")); return; }
+    
+    const omittedCitations = data.graph.detailSelection?.citationScope?.omittedCount || 0;
+    if (omittedCitations) body.append(text("p", omittedCitations
+      + " further exact source citations were not included in this export's comparison bundle. This is not evidence of no change; regenerate with an exact selected record when useful.", "hint"));
+    if (context.status === "unavailable") { body.append(text("p", "Source context unavailable", "hint"), technicalInfo({ status: context.status, reasonCode: context.reasonCode })); return; }
     const values = selectionValues(), selectedIds = new Set(activeGraph === data.graph ? values.map(value => value.nodeId).filter(Boolean) : []);
     const selectionKey = JSON.stringify(values.map(recordKey));
     if (contextSelection !== selectionKey) contextSelection = selectionKey;
     for (const event of (context.events || []).filter(item => selectedIds.has(item.nodeId))) {
       body.append(text("p", event.sourceRole === "HEAD-authored-P3-work-evidence-not-user-transcript"
-        ? "Agent-authored work evidence; not a captured user transcript" : event.sourceRole, "hint"));
+        ? "Agent-authored work record" : "Related record", "hint"), technicalInfo(event));
       for (const connection of event.connections) {
         const other = connection.from === event.nodeId ? connection.to : connection.from, target = model.nodes.get(other);
         const entry = button(`${relation({ type: connection.relation })} · ${target ? label(target) : "Not included in this layer"}`, () => selectNode(target)); entry.disabled = !target; body.append(entry);
       }
-      if (event.missingLink) body.append(text("p", event.missingLink, "hint"));
+      if (event.missingLink) body.append(text("p", "Some related records are not included", "hint"));
     }
     const navigation = context.documentNavigation;
     if (navigation) {
@@ -1098,18 +1151,20 @@
         if (!cached) {
           const panel = text("details", "", "file-comparison"), readers = [], openTargets = [];
           panel.setAttribute("data-document-id", identity);
-          panel.append(text("summary", `Document links · ${document.path} · ${(document.digest || document.expectedDigest || "unknown").slice(0, 12)}`));
-          panel.append(text("p", "Exact document bytes; linked targets are current files unless their version is separately proven. Links do not prove implementation or approval.", "hint"));
-          if (document.status !== "available") panel.append(text("p", `Exact document unavailable: ${document.reasonCode}. Today's document was not substituted.`, "hint"));
+          panel.append(text("summary", "Document links · " + document.path));
+          panel.append(technicalInfo({ digest: document.digest, expectedDigest: document.expectedDigest, status: document.status, reference: document.reference }));
+          
+          if (document.status !== "available") panel.append(text("p", sourceProblem(document.reasonCode), "hint"));
           for (const link of document.links || []) {
             const section = text("details", "");
             section.setAttribute("data-document-link", `${document.path}:${link.line}:${link.column}`);
             section.append(text("summary", `${link.label} → ${link.path || link.href} · ${link.status}`));
-            section.append(text("p", `${document.path}@${document.digest} · line ${link.line}, column ${link.column}${link.reasonCode ? " · " + link.reasonCode : ""}`, "hint"));
+            section.append(text("p", document.path + " · line " + link.line + ", column " + link.column, "hint"));
+            section.append(technicalInfo({ document: { path: document.path, digest: document.digest }, link }));
             if (link.versionScope) section.append(text("p", link.versionScope, "hint"));
             if (link.excerpt !== undefined) {
               const excerpt = text("pre", link.excerpt, "record-excerpt"); readers.push(excerpt); section.append(excerpt);
-              if (link.omittedCharacters) section.append(text("p", `${link.omittedCharacters} characters omitted from this excerpt; exact path and digest remain above.`, "hint"));
+              if (link.omittedCharacters) section.append(text("p", `${link.omittedCharacters} characters omitted from this excerpt; Full source reference is in Technical information.`, "hint"));
             }
             const target = [...model.nodes.values()].find(node => (node.path || node.sourceReference?.path) === link.path
               && (node.digest || node.fileDigest || node.sourceReference?.digest) === link.digest);
@@ -1154,7 +1209,7 @@
       body.append(text("p", owners.length ? `Selected references: ${owners.map(value => value.nodeId ? label(value) : relation(value)).join(" · ")}`
         : "Exact requested path exported without a graph node or an assumed relationship.", "hint"));
       appendAssetObservation(body, file.current?.asset, "Current asset observation");
-      if (file.currentObservation && !file.current?.asset) body.append(text("p", [file.currentObservation.reasonCode, file.currentObservation.explanation].filter(Boolean).join(" · "), "hint"));
+      if (file.currentObservation && !file.current?.asset) body.append(text("p", sourceProblem(file.currentObservation.reasonCode), "hint"), technicalInfo(file.currentObservation));
       for (const candidate of file.renameEvidence?.candidates || []) body.append(text("p", `Historical rename candidate — not confirmed continuity: ${candidate.path}. Current identity and cause remain unverified.`, "hint"));
       if (file.renameEvidence) body.append(text("p", file.renameEvidence.status === "observed-most-recent-path-change-only"
         ? "Move lookup checked only the most recent recorded path change; other moves remain unknown."
@@ -1173,11 +1228,11 @@
           ? `Source ${gap.sourceSnapshotId} · Graph ${gap.graphSnapshotId} · World ID not recorded` : `Recorded reference ${gap.nodeId}`;
         const budget = Number.isInteger(gap.inspectedSnapshotCount) && Number.isInteger(gap.retainedSnapshotCount)
           ? ` · ${gap.inspectedSnapshotCount} inspected / ${gap.retainedSnapshotCount} retained${Number.isInteger(gap.uninspectedSnapshotCount) ? ` · ${gap.uninspectedSnapshotCount} uninspected` : ""}` : "";
-        body.append(text("p", `Source lookup: ${gap.reasonCode || "CONTEXT_SOURCE_UNAVAILABLE"} · ${identity}${budget}${gap.absenceEstablished === false ? " · absence not established" : ""}`, "comparison-gap"));
+        body.append(text("p", "A recorded source version is not available.", "comparison-gap"), technicalInfo(gap, "Source lookup technical information"));
       }
       if (!pairs.length) body.append(text("p", file.current?.asset ? "Export-time asset observation; no recorded before/after payload pair."
         : "No exact source comparison for these selected references. Same path alone does not establish a revision pair; unavailable data is not an empty diff.", "hint"));
-      if (!file.current?.asset) body.append(text("p", "File-level context; not automatically the reason for each symbol."));
+      if (!file.current?.asset) body.append(text("p", "File context"));
       for (const association of file.associations || []) if (selectedIds.has(association.nodeId)) relatedIds.add(association.nodeId);
       for (const pair of pairs) {
         // The decoded exact pair object is immutable snapshot identity. A path,
@@ -1203,7 +1258,12 @@
         parent.append(...partialNotices);
         {
         const body = text("details", "", "comparison-pair");
-        body.append(text("summary", `${pair.status} · ${pair.scope} · ${file.path}`)); parent.append(body);
+        const exactPairKey = readingView.model().pairKey(file, pair);
+        body.setAttribute("data-reading-pair", exactPairKey);
+        body.setAttribute("data-reading-key", exactPairKey);
+        body.append(text("summary", explorerCards.comparisonSide(pair, "before") + " → " + explorerCards.comparisonSide(pair, "after") + " · " + file.path)); parent.append(body);
+        const returnToReading = button("Return to reading record", () => {});
+        readingView.bindPairReturn(returnToReading, file, pair); body.append(returnToReading);
         body.setAttribute("data-comparison-before", pair.before?.digest || ""); body.setAttribute("data-comparison-after", pair.after?.digest || "");
         appendCitingWork(body, file, pair);
         const firstHunk = changeHunks.length;
@@ -1212,24 +1272,21 @@
           body.append(text("h4", "Exact cited historical source — current path unavailable, not an after-version"), text("pre", original.text));
           if (original.omittedLines || original.textTruncated) body.append(text("p", `Partial historical excerpt: ${original.omittedLines} omitted lines; text truncated ${Boolean(original.textTruncated)}.`, "hint"));
         }
-        body.append(text("p", `${pair.status} · file bytes ${pair.fileBytes || "unknown"} · ${pair.scope}`));
+        body.append(text("p", pair.fileBytes === "changed" ? "Source text changed" : pair.fileBytes === "unchanged" ? "No source text difference" : "Change status not confirmed"));
         appendAssetObservation(body, pair.before?.asset, "Recorded/cited asset A");
         appendAssetObservation(body, pair.after?.asset, "Compared asset B — scope shown below");
-        const scopeLabel = pair.scope === "recorded-changeset-snapshot-pair" ? "Recorded snapshot before / after — not request fulfillment"
-          : pair.scope === "explicit-work-chain-citation-pair-not-request-boundary" ? "Cited version A / B — not a request boundary"
-            : "Cited revision / export-observed current — not live";
-        const linked = text("p", linkedText, "hint"); body.append(text("h4", scopeLabel), linked);
-        for (const side of ["before", "after"]) body.append(text("p", `${side}: ${pair[side]?.revisionId || pair[side]?.digest || "Version bytes unavailable"} · time not retained in this comparison`, "comparison-basis"));
-        const provenance = text("details", ""); provenance.append(text("summary", "Exact comparison provenance"), text("pre", JSON.stringify({ scope: pair.scope, retainedOriginal: pair.retainedOriginal ? { ...pair.retainedOriginal, text: undefined } : undefined, renameEvidence: file.renameEvidence, before: pair.before, after: pair.after, snapshotLookup: pair.snapshotLookup, citedReference: pair.citedReference, changeSet: pair.changeSet, leftRecord: pair.leftRecord, rightRecord: pair.rightRecord, recordedResultPacketId: pair.recordedResultPacketId, recordedReviewDecisionId: pair.recordedReviewDecisionId }, null, 2))); body.append(provenance);
+        const linked = text("p", linkedText, "hint"); body.append(linked);
+        for (const side of ["before", "after"]) body.append(text("p", explorerCards.comparisonSide(pair, side), "comparison-basis"));
+        const provenance = text("details", ""); provenance.append(text("summary", "Technical information"), text("pre", JSON.stringify({ scope: pair.scope, symbols: pair.symbols, retainedOriginal: pair.retainedOriginal ? { ...pair.retainedOriginal, text: undefined } : undefined, renameEvidence: file.renameEvidence, before: pair.before, after: pair.after, snapshotLookup: pair.snapshotLookup, citedReference: pair.citedReference, changeSet: pair.changeSet, leftRecord: pair.leftRecord, rightRecord: pair.rightRecord, recordedResultPacketId: pair.recordedResultPacketId, recordedReviewDecisionId: pair.recordedReviewDecisionId }, null, 2))); body.append(provenance);
         const list = text("ul", ""); list.className = "record-facts";
-        for (const symbol of pair.symbols || []) list.append(text("li", `${symbol.after?.qualifiedName || symbol.before?.qualifiedName}: ${symbol.observation}${symbol.locationChanged ? " · line location changed" : ""}`));
+        for (const symbol of pair.symbols || []) list.append(text("li", `${symbol.after?.qualifiedName || symbol.before?.qualifiedName}: ${explorerCards.statusLabel(symbol.observation)}${symbol.locationChanged ? " · line location changed" : ""}`));
         body.append(list);
         if (pair.currentMatchesRecordedAfter === false) body.append(text("p", "Recorded after differs from current. Later changes remain separate.", "hint"));
         if (pair.diff && !pair.diff.changed) body.append(text("p", "No byte differences in this included comparison. Other versions or intervals may differ.", "hint"));
         const regions = pair.diff?.regions || (pair.diff?.before && pair.diff?.after ? [{ before: pair.diff.before, after: pair.diff.after }] : []);
         if (pair.diff?.changed && regions.length) {
           $("show-code-diff").hidden = false; $("jump-diff").disabled = false;
-          body.append(text("h3", "Bounded excerpt changes"), text("p", "− removed / + added. Line numbers belong to their respective exact excerpts; not a full-file or semantic comparison.", "hint"));
+          body.append(text("h3", "Changed lines"), text("p", "− removed / + added. Line numbers refer to the recorded source versions.", "hint"));
           if (pair.diff.coverage) body.append(text("p", `Included ${pair.diff.coverage.includedRegionCount}/${pair.diff.coverage.changedRegionCount} changed regions; ${pair.diff.coverage.omittedRegionCount} regions omitted. Excerpts are separate source-contiguous regions, not joined file text.`, "comparison-partial"));
           for (const region of regions) {
           if (typeof region.before?.text !== "string" || typeof region.after?.text !== "string") continue;
@@ -1243,10 +1300,14 @@
             if (line.kind === "context") hunk = null;
             else if (!hunk) { hunk = text("span", "", "change-hunk"); hunk.tabIndex = -1; changeHunks.push({ element: hunk, file: fileIndex, pair }); pre.append(hunk); }
             const row = text("span", `${line.kind === "removed" ? "−" : line.kind === "added" ? "+" : " "} ${line.beforeLine ?? "·"}/${line.afterLine ?? "·"} ${line.text}`, `diff-line ${line.kind}`);
+            if (line.beforeLine !== undefined && line.beforeLine !== null) row.setAttribute("data-source-before-line", String(line.beforeLine));
+            if (line.afterLine !== undefined && line.afterLine !== null) row.setAttribute("data-source-after-line", String(line.afterLine));
             (hunk || pre).append(row);
           }
-          if (delta.reasonCode) body.append(text("p", delta.reasonCode, "hint")); else body.append(pre);
-          const excerpts = text("details", ""); excerpts.append(text("summary", "Exact before / after excerpts"));
+          if (delta.reasonCode) body.append(text("p", sourceProblem(delta.reasonCode), "hint"), technicalInfo(delta)); else body.append(pre);
+          const excerpts = text("details", "");
+          excerpts.setAttribute("data-reading-key", JSON.stringify([exactPairKey, "excerpts", region.before?.startLine, region.after?.startLine]));
+          excerpts.append(text("summary", "Exact before / after excerpts"));
           for (const [side, title] of [["before", "Recorded/cited source"], ["after", pair.scope === "recorded-changeset-snapshot-pair" ? "Recorded after — not necessarily current" : pair.scope === "explicit-work-chain-citation-pair-not-request-boundary" ? "Cited version B — not necessarily current" : "Export-observed current source — not live"]]) {
             const excerpt = region[side]; excerpts.append(text("h3", `${pair.labels?.[side] || title} · line ${excerpt.startLine}`), text("pre", excerpt.text));
             if (excerpt.omittedLines || excerpt.textTruncated) excerpts.append(text("p", "Partial comparison excerpt; more remains in the exact source.", "hint"));
@@ -1254,26 +1315,27 @@
           body.append(excerpts);
           }
         }
-        if (pair.reasonCode || pair.gap) body.append(text("p", pair.reasonCode || pair.gap.reasonCode, "hint"));
-        for (const gap of pair.gaps || []) body.append(text("p", gap.reasonCode || "Source bytes unavailable", "hint"));
+        if (pair.reasonCode || pair.gap) body.append(text("p", sourceProblem(pair.reasonCode || pair.gap.reasonCode), "hint"), technicalInfo({ reasonCode: pair.reasonCode, gap: pair.gap }));
+        for (const gap of pair.gaps || []) body.append(text("p", sourceProblem(gap.reasonCode), "hint"), technicalInfo(gap));
         entries.set(file.path, { body, linked, notices: partialNotices, hunks: changeHunks.slice(firstHunk).map(item => item.element) });
         }
       }
       if (!file.current?.asset || pairs.length) body.append(text("p", file.unrecordedIntervals, "hint"));
     }
     for (const reason of context.recordedReasons || []) if (relatedIds.has(reason.nodeId)) {
-      body.append(text("h3", "Recorded reason (not proven cause)"));
+      body.append(text("h3", "Recorded reason"));
       body.append(text("p", reason.reason || reason.rationale || reason.assessment));
       if (reason.contentPartial) body.append(text("p", `Partial recorded reason; see the exact original. ${JSON.stringify(reason.contentCoverage || {})}`, "hint"));
-      body.append(text("p", `${reason.reviewState} · ${reason.reference?.path || reason.nodeId}`, "hint"));
+      const reasonState = explorerCards.statusLabel(reason.reviewState); if (reasonState) body.append(text("p", reasonState, "hint"));
+      body.append(technicalInfo({ reference: reason.reference, nodeId: reason.nodeId, reviewState: reason.reviewState }));
     }
     for (const delta of context.canonChanges || []) if ([delta.review.nodeId, delta.before.nodeId, delta.after.nodeId].some(id => selectedIds.has(id))
       || values.some(value => productIndex().canonPairs(value).some(entry => entry.pair === delta))) {
-      body.append(text("h3", "Recorded Canon comparison")); body.append(text("p", delta.status));
+      body.append(text("h3", "Recorded Canon comparison")); body.append(text("p", explorerCards.statusLabel(delta.status)));
       if (delta.rationale) body.append(text("p", delta.rationale));
       const wholeModelSelected = [delta.review.nodeId, delta.before.nodeId, delta.after.nodeId].some(id => selectedIds.has(id));
       const exactChanges = wholeModelSelected ? delta.changes : delta.changes.filter(change => values.some(value => productIndex().canonPairs(value).some(entry => entry.pair === delta && entry.changes.includes(change))));
-      body.append(text("p", `${delta.before.nodeId || delta.before.productModelId} → ${delta.after.nodeId || delta.after.productModelId} · compared after is not necessarily current`, "comparison-basis"));
+      body.append(text("p", "Recorded before → after", "comparison-basis"), technicalInfo({ before: delta.before, after: delta.after, review: delta.review }));
       for (const change of exactChanges) {
         body.append(text("h3", `${change.field} · ${change.key}`));
         const describe = value => value === undefined || value === null ? "Not present" : Array.isArray(value)
@@ -1323,14 +1385,15 @@
     if (renderedFeatureState && featureRenderKey) renderedFeatureState.scrolls.set(featureRenderKey, $("feature-body").scrollTop || 0);
     featureRenderKey = renderKey; renderedFeatureState = state; panel.dataset.graph = String(activeGraph === data.graph);
     $("feature-title").textContent = label(state.anchor);
-    $("feature-identity").textContent = view.entity.kind + " · " + view.entity.key + " · exact model " + view.entity.model + ". Same Feature; perspective changes keep selection, map and independent readers.";
+    $("feature-identity").textContent = explorerCards.kindLabel(view.entity.kind);
     const body = $("feature-body"); body.replaceChildren();
+    body.append(technicalInfo({ entity: view.entity }));
     const rows = state.mode === "structure" ? view.structure : state.mode === "work" ? view.work : view.impact;
     const pageSize = 20, page = Math.min(state.pages[state.mode], Math.max(0, Math.ceil(rows.length / pageSize) - 1)); state.pages[state.mode] = page;
     $("feature-range").textContent = (rows.length ? page * pageSize + 1 : 0) + "–" + Math.min(rows.length, (page + 1) * pageSize) + " / " + rows.length + " recorded relationships. All exported records remain searchable; this is a rendered page, not an export cutoff.";
     $("feature-first").disabled = $("feature-prev").disabled = page === 0; $("feature-last").disabled = $("feature-next").disabled = (page + 1) * pageSize >= rows.length;
     if (state.mode === "work") {
-      body.append(text("p", "Recorded judgments, pending and unknowns are historical evidence, not current Todo or permission. Shared exact source citations establish related evidence only.", "hint"));
+      
       if (!view.workReady) {
         body.append(text("p", state.loading ? "Reading exact work connections; other navigation remains available. Cancel stops calculation without presenting partial results as complete." : "Work connection calculation is not complete; no absence or completion is inferred.", "hint"));
         if (!state.loading) body.append(button("Read recorded work", () => prepareFeatureWork(state).catch(calculationFailed)));
@@ -1339,24 +1402,24 @@
     const list = text("ul", "", "feature-evidence"); body.append(list);
     for (const row of rows.slice(page * pageSize, (page + 1) * pageSize)) {
       const entry = text("li", ""), descriptor = cardIndex().describe(row.node);
-      entry.append(button(descriptor.title, () => selectNode(row.node)), text("p", descriptor.kind + " · " + row.classification, "record-kind"),
+      entry.append(button(descriptor.title, () => selectNode(row.node)), text("p", descriptor.kind, "record-kind"),
         text("p", shorten(descriptor.preview || descriptor.emptyNotice, 280), "selection-preview"));
       if (descriptor.conditions.length) entry.append(text("p", descriptor.conditions.join(" · "), "card-conditions"));
-      if (row.edge) entry.append(text("p", row.edge.from + " → " + row.edge.to + " · " + relation(row.edge), "comparison-basis"));
-      if (row.via.length) entry.append(text("p", "Via exact evidence: " + row.via.map(node => node.nodeId).join(" → "), "comparison-basis"));
-      if (row.sourceReference) entry.append(text("p", row.sourceReference.path + " @ " + row.sourceReference.digest + " · " + (row.sourceReference.status || "recorded citation; byte availability separate"), "comparison-basis"));
+      if (row.edge) entry.append(text("p", label(model.nodes.get(row.edge.from)) + " → " + label(model.nodes.get(row.edge.to)) + " · " + relation(row.edge), "comparison-basis"));
+      if (row.via.length) entry.append(text("p", "Related records: " + row.via.map(label).join(" → "), "comparison-basis"));
+      if (row.sourceReference) { entry.append(text("p", explorerCards.sourcePath(row.sourceReference.path) || "Referenced record", "comparison-basis")); entry.append(technicalInfo({ source: row.sourceReference })); }
       list.append(entry);
     }
     if (state.mode === "changes") {
       const pairs = view.canonPairs, chooser = document.createElement("select"); chooser.setAttribute("aria-label", "Exact recorded Canon comparison"); chooser.setAttribute("data-feature-pair", "");
-      pairs.forEach((entry, i) => { const option = text("option", (entry.pair.before.nodeId || entry.pair.before.productModelId) + " → " + (entry.pair.after.nodeId || entry.pair.after.productModelId) + " · " + entry.pair.review.nodeId); option.value = String(i); chooser.append(option); });
+      pairs.forEach((entry, i) => { const option = text("option", "Comparison " + (i + 1) + " · recorded before → after"); option.value = String(i); chooser.append(option); });
       chooser.value = String(Math.min(state.pair, Math.max(0, pairs.length - 1))); chooser.disabled = !pairs.length;
       chooser.addEventListener("change", () => { state.pair = Number(chooser.value); renderFeaturePerspective(); }); body.append(chooser);
       const entry = pairs[Number(chooser.value)];
       if (entry) {
-        body.append(text("h4", "Exact recorded Canon comparison"), text("p", entry.pair.status, "hint"));
+        body.append(text("h4", "Exact recorded Canon comparison"), text("p", explorerCards.statusLabel(entry.pair.status), "hint"));
         if (entry.pair.rationale) body.append(text("p", entry.pair.rationale));
-        body.append(text("p", "Compared after is the recorded pair endpoint, not necessarily current Canon. Review rationale is historical evidence, not current approval.", "hint"));
+        body.append(text("p", "Recorded product-definition comparison", "hint"));
         for (const change of entry.changes) { body.append(text("h4", change.field + " · " + change.key));
           for (const field of new Set([...Object.keys(change.before || {}), ...Object.keys(change.after || {})])) if (JSON.stringify(change.before?.[field]) !== JSON.stringify(change.after?.[field]))
             body.append(text("strong", field), text("pre", "Before: " + JSON.stringify(change.before?.[field] ?? null) + "\nAfter: " + JSON.stringify(change.after?.[field] ?? null)));
@@ -1364,10 +1427,10 @@
         if (!entry.changes.length) body.append(text("p", "No matching entity field delta is included in this pair; omitted coverage remains unknown.", "hint"));
         if (entry.pair.omittedChangeCount) body.append(text("p", entry.pair.omittedChangeCount + " additional field deltas omitted from the exported bundle.", "hint"));
       } else body.append(text("p", "No exact Canon pair is included for this model identity. Choose its recorded review / Exact detail options or regenerate a focused report; no before/after is inferred.", "hint"));
-      body.append(button("Read exact code comparisons", () => { selectNode(state.anchor); $("context-lineage").open = true; $("context-lineage").scrollIntoView({ block: "nearest" }); }));
+      body.append(button("Read exact code comparisons", () => { selectNode(state.anchor); activateReadingTab("source"); $("context-lineage").open = true; $("context-lineage").scrollIntoView({ block: "nearest" }); }));
     }
     if (!rows.length && state.mode !== "changes" && (state.mode !== "work" || view.workReady)) body.append(text("p", "No matching relationship is included for this exact Feature in the export. This does not establish absence; use exact details or regenerate a focused report.", "hint"));
-    body.append(text("p", view.coverage, "hint"));
+    body.append(technicalInfo({ coverage: view.coverage }));
     body.scrollTop = state.scrolls.get(renderKey) || 0;
   }
   async function prepareFeatureWork(state) {
@@ -1392,16 +1455,272 @@
     const rows = state.mode === "structure" ? view.structure : state.mode === "work" ? view.work : view.impact;
     state.pages[state.mode] = last ? Math.max(0, Math.ceil(rows.length / 20) - 1) : 0; renderFeaturePerspective();
   });
+  function surfaceNavigate(node, mapNavigation = false) {
+    if (currentSurfaceState) currentSurfaceState.scroll = $("surface-path-body").scrollTop;
+    if (activeGraph !== data.graph) { $("layer").value = "project"; changeLayer(); }
+    const exact = model.nodes.get(node.nodeId);
+    if (exact) selectNode(exact, mapNavigation, { mapNavigation });
+  }
+  function renderSurfacePaths() {
+    if (!surfaceGraphAvailable) { hide($("surface-paths"), true); return; }
+    const index = surfaceIndex();
+    const anchor = selected?.kind === "node" && index.supports(selected.value) ? index.resolve(selected.value) : null;
+    if (anchor) {
+      const key = JSON.stringify([anchor.nodeId, $("include-history").checked]);
+      if (!surfaceReadingStates.has(key)) surfaceReadingStates.set(key, {
+        key, anchor, direction: anchor.origin?.layer === "surface-code" ? "reverse" : "forward",
+        rows: [], page: 0, reader: null, loading: false, cancelled: false, scroll: 0, work: false,
+      });
+      currentSurfaceState = surfaceReadingStates.get(key);
+    }
+    const state = currentSurfaceState;
+    hide($("surface-paths"), !state);
+    if (!state) return;
+    const renderKey = JSON.stringify([state.key, state.direction, state.rows.length, state.page,
+      state.loading, state.cancelled, state.reader?.complete, state.work]);
+    if (surfaceRenderKey === renderKey) return;
+    surfaceRenderKey = renderKey;
+    $("surface-path-title").textContent = label(state.anchor);
+    const codeAnchor = ["surface-code", "product-surface-source"].includes(state.anchor.origin?.layer);
+    $("surface-forward").textContent = codeAnchor ? "Follow source calls" : "Follow activity / output";
+    $("surface-reverse").textContent = codeAnchor ? "Activities using this code" : "Related activities / inputs";
+    $("surface-work").textContent = "Work & recorded changes";
+    $("surface-path-basis").textContent = "Follow recorded connections";
+    $("surface-more").disabled = state.loading || !state.reader || state.reader.complete || state.work;
+    const pageSize = 20, page = Math.max(0, Math.min(state.page, Math.ceil(state.rows.length / pageSize) - 1));
+    state.page = page;
+    $("surface-prev").disabled = page === 0;
+    $("surface-next").disabled = (page + 1) * pageSize >= state.rows.length;
+    const progress = state.loading ? "Reading a bounded batch… "
+      : state.cancelled ? "Cancelled; partial rows are not completion. "
+        : state.reader?.complete ? "Selected directional traversal finished. "
+          : state.reader ? "More connections remain. " : "Choose a direction. ";
+    $("surface-path-state").textContent = progress + (state.rows.length ? page * pageSize + 1 : 0)
+      + "–" + Math.min(state.rows.length, (page + 1) * pageSize) + " / " + state.rows.length
+      + " links; " + (state.reader?.excluded || 0) + " non-current links outside scope. Missing mappings remain unknown.";
+    const body = $("surface-path-body");
+    body.replaceChildren();
+    for (const row of state.rows.slice(page * pageSize, (page + 1) * pageSize)) {
+      const entry = text("div", "", "surface-path-entry"), description = cardIndex(data.graph).describe(row.node);
+      entry.append(button(description.title, () => surfaceNavigate(row.node)),
+        text("p", [description.kind, explorerCards.statusLabel(row.node.claimBasis)].filter(Boolean).join(" · "), "hint"));
+      const onMap = button("Show on map", () => surfaceNavigate(row.node, true));
+      onMap.setAttribute("data-surface-map", row.node.nodeId);
+      entry.append(onMap);
+      if (row.edge) entry.append(text("p", relation(row.edge)
+        + (row.cycle ? " · already reached; edge retained" : ""), "comparison-basis"));
+      // Keep source status visible, without repeating a long authority paragraph
+      // on every route row. Full conditions remain one disclosure away.
+      const sourceState = row.node.claimEvidence?.state || row.node.executionBinding?.state;
+      const sourceHeading = row.node.claimEvidence?.state ? "Description source: " : "Code: ";
+      const materialStates = [...description.summaryConditions, ...(sourceState ? [sourceHeading + explorerCards.statusLabel(sourceState)].filter(Boolean) : [])];
+      if (materialStates.length) entry.append(text("p", [...new Set(materialStates)].join(" · "), "card-conditions"));
+      if (row.edge?.recordedTextComparison) entry.append(text("p", "Recorded source comparison; behavior not verified", "card-conditions"), technicalInfo(row.edge.recordedTextComparison));
+      if (description.preview || description.conditions.length) {
+        const details = document.createElement("details");
+        details.append(text("summary", "Evidence and conditions"));
+        if (description.preview) details.append(text("p", shorten(description.preview, 280)));
+        if (description.conditions.length) details.append(text("p", description.conditions.join(" · "), "card-conditions"));
+        entry.append(details);
+      }
+      body.append(entry);
+    }
+    body.append(button("Read source / recorded changes", () => {
+      activateReadingTab("source"); $("context-lineage").open = true;
+      $("context-lineage").scrollIntoView({ block: "nearest" });
+    }));
+    body.scrollTop = state.scroll;
+  }
+  async function readSurfacePaths(direction = null, work = false) {
+    const state = currentSurfaceState;
+    if (!state || state.loading) return;
+    cancelWork(false);
+    const serial = ++jobSerial;
+    if (direction || !state.reader || work !== state.work) {
+      state.direction = direction || state.direction;
+      state.reader = surfaceIndex().begin(state.anchor, state.direction, $("include-history").checked);
+      state.rows = []; state.page = 0; state.work = work;
+    }
+    state.loading = true; state.cancelled = false; surfaceJob = { state, serial }; jobKind = "surface";
+    $("cancel-work").disabled = false; surfaceRenderKey = null; renderSurfacePaths();
+    const cancelled = () => serial !== jobSerial || currentSurfaceState !== state;
+    if (work) {
+      // Visit source-bound neighbors in yielded batches, then exact citations.
+      // There is no all-path enumeration or inferred product cause.
+      while (!state.reader.complete && !cancelled()) {
+        const result = await surfaceIndex().next(state.reader, { cancelled, yieldWork });
+        if (result.cancelled) break;
+      }
+      const rows = cancelled() ? null : await surfaceIndex().relatedWork(state.reader, { cancelled, yieldWork });
+      if (rows) state.rows = rows;
+    } else {
+      const result = await surfaceIndex().next(state.reader, { cancelled, yieldWork });
+      if (!result.cancelled) state.rows.push(...result.rows);
+    }
+    if (cancelled()) return;
+    state.loading = false; surfaceJob = null; jobKind = null;
+    $("cancel-work").disabled = true; surfaceRenderKey = null; renderSurfacePaths();
+  }
+  for (const [name, direction] of [["surface-forward", "forward"], ["surface-reverse", "reverse"]]) {
+    $(name).addEventListener("click", () => readSurfacePaths(direction, false).catch(calculationFailed));
+  }
+  $("surface-more").addEventListener("click", () => readSurfacePaths().catch(calculationFailed));
+  $("surface-work").addEventListener("click", () => readSurfacePaths(null, true).catch(calculationFailed));
+  for (const [name, delta] of [["surface-prev", -1], ["surface-next", 1]]) {
+    $(name).addEventListener("click", () => {
+      if (!currentSurfaceState) return;
+      currentSurfaceState.scroll = $("surface-path-body").scrollTop;
+      currentSurfaceState.page += delta; surfaceRenderKey = null; renderSurfacePaths();
+    });
+  }
+  function setDisplayView(next, record = true) {
+    if (!["types", "records", "graph", "reading"].includes(next)) return;
+    if (record) saveReadingBeforeNavigation();
+    readingView?.invalidate();
+    if (next !== "types") cancelTypeSummary();
+    else typeSummaryPausedKey = null;
+    displayView = next;
+    render();
+    if (record) remember("View: " + next);
+  }
+  function activateReadingTab(next) { displayView = "reading"; readingTab = next; renderViewMode(); }
+  function setReadingTab(next, record = true) {
+    if (!["explanation", "connections", "source", "selection"].includes(next)) return;
+    if (record) saveReadingBeforeNavigation();
+    readingView?.invalidate(); displayView = "reading"; readingTab = next;
+    render();
+    if (record) remember("Read: " + next);
+  }
+  function cancelTypeSummary() {
+    if (!typeSummaryJob) return;
+    typeSummaryPausedKey = typeSummaryJob.key;
+    typeSummaryJob.cancelled = true; typeSummarySerial++; typeSummaryJob = null;
+    $("type-summary-status").textContent = "Counting cancelled. Partial observations are not complete totals; existing records remain available.";
+    $("type-summary-cancel").hidden = true; $("type-summary-retry").hidden = false;
+  }
+  let typeSummaryPausedKey = null;
+  function summaryScopeKey() { return JSON.stringify([explorerReadingModel.basisFor(data, activeGraph), filterState()]); }
+  function renderTypeSummary() {
+    if (displayView !== "types") return;
+    const graph = activeGraph, basis = summaryScopeKey();
+    const cached = typeSummaryCache.get(graph);
+    if (cached?.key === basis) { typeSummaryResult = cached.result; showTypeSummary(); return; }
+    if (typeSummaryJob?.key === basis || typeSummaryPausedKey === basis) return;
+    cancelTypeSummary(); typeSummaryResult = null;
+    $("type-summary-kinds").replaceChildren(); $("type-summary-relations").replaceChildren();
+    $("type-summary-status").textContent = "Counting this export and current filters… No complete count yet.";
+    $("type-summary-cancel").hidden = false; $("type-summary-retry").hidden = true;
+    const ticket = ++typeSummarySerial, included = new Set(foundIds);
+    const includeHistory = $("include-history").checked, relationScope = $("relation-filter").value;
+    const job = { key: basis, ticket, cancelled: false }; typeSummaryJob = job;
+    const began = performance.now();
+    explorerTypeSummary.count(graph, {
+      includeNode: node => included.has(node.nodeId),
+      includeEdge: edge => (includeHistory || !historical(edge))
+        && (!relationScope || relationScope === "all" || (edge.type || edge.relation) === relationScope),
+      cancelled: () => job.cancelled || ticket !== typeSummarySerial || graph !== activeGraph || displayView !== "types",
+      yieldWork,
+    }).then(result => {
+      if (ticket !== typeSummarySerial || graph !== activeGraph || summaryScopeKey() !== basis || displayView !== "types") return;
+      typeSummaryJob = null;
+      if (!result.complete) { typeSummaryPausedKey = basis; $("type-summary-status").textContent = "Partial count cancelled; not a complete total."; return; }
+      typeSummaryResult = result; typeKindPage = typeRelationPage = 0;
+      typeSummaryCache.set(graph, { key: basis, result });
+      document.documentElement.dataset.explorerTypeSummaryMs = String(performance.now() - began);
+      showTypeSummary();
+    }).catch(error => {
+      if (ticket !== typeSummarySerial || graph !== activeGraph) return;
+      typeSummaryJob = null; typeSummaryPausedKey = basis;
+      $("type-summary-status").textContent = "Count unavailable (" + (error?.name || "unknown") + "). Existing records remain readable.";
+      $("type-summary-cancel").hidden = true; $("type-summary-retry").hidden = false;
+    });
+  }
+  function showTypeSummary() {
+    const result = typeSummaryResult;
+    if (!result?.complete) return;
+    if (typePageRestore?.key === summaryScopeKey()) {
+      typeKindPage = Math.floor(Math.max(0, result.kinds.findIndex(row => row.kind === typePageRestore.kind)) / 20);
+      typeRelationPage = Math.floor(Math.max(0, result.types.findIndex(row => row.type === typePageRestore.type)) / 20);
+      typePageRestore = null;
+    }
+    $("type-summary-cancel").hidden = $("type-summary-retry").hidden = true;
+    $("type-summary-status").textContent = result.includedNodes + " shown / " + result.exportedNodes + " records · "
+      + result.eligibleEdges + " connections" + (result.filteredEdges ? " · " + result.filteredEdges + " hidden by filters" : "")
+      + (result.missingEndpointEdges ? " · some connection targets are not included" : "")
+      + (result.coverage === "partial" ? " · partial view" : "");
+    const countsInfo = $("type-summary-technical");
+    countsInfo.replaceChildren(text("summary", "Technical information"), text("pre", JSON.stringify({ project: data.project, basis: activeGraph.basis, counts: result }, null, 2)));
+    const kinds = result.kinds;
+    typeKindPage = Math.max(0, Math.min(typeKindPage, Math.ceil(kinds.length / 20) - 1));
+    const target = $("type-summary-kinds"); target.replaceChildren();
+    for (const row of kinds.slice(typeKindPage * 20, (typeKindPage + 1) * 20)) {
+      const entry = button(explorerCards.kindLabel(row.kind), () => {
+        saveReadingBeforeNavigation(); cancelWork(false);
+        $("search-kind").value = row.kind; scopeCache = null; listPage = 0;
+        displayView = "records"; render(); remember("Browse type: " + row.kind);
+      });
+      entry.append(text("strong", String(row.included), "type-count"), text("span", row.exported + " in export", "hint"));
+      entry.setAttribute("data-export-kind", row.kind); target.append(entry);
+    }
+    $("type-kinds-range").textContent = (kinds.length ? typeKindPage * 20 + 1 : 0) + "–"
+      + Math.min(kinds.length, (typeKindPage + 1) * 20) + " / " + kinds.length + " actual kinds";
+    $("type-kinds-prev").disabled = typeKindPage === 0; $("type-kinds-next").disabled = (typeKindPage + 1) * 20 >= kinds.length;
+    const types = result.types;
+    typeRelationPage = Math.max(0, Math.min(typeRelationPage, Math.ceil(types.length / 20) - 1));
+    const relations = $("type-summary-relations"); relations.replaceChildren();
+    for (const row of types.slice(typeRelationPage * 20, (typeRelationPage + 1) * 20)) {
+      relations.append(text("p", relation({ type: row.type }) + " · " + row.included + " shown / " + row.exported
+        + " exported" + (row.missing ? " · " + row.missing + " missing-endpoint edges" : "")));
+    }
+    $("type-relations-prev").disabled = typeRelationPage === 0; $("type-relations-next").disabled = (typeRelationPage + 1) * 20 >= types.length;
+  }
+  function renderViewMode() {
+    document.documentElement.dataset.explorerView = displayView;
+    document.documentElement.dataset.readingTab = readingTab;
+    for (const name of ["types", "records", "map", "reading"]) $("view-" + name).setAttribute("aria-pressed", String(displayView === (name === "map" ? "graph" : name)));
+    for (const name of ["explanation", "connections", "source", "selection"]) $("read-" + name).setAttribute("aria-pressed", String(readingTab === name));
+    const value = selected?.value, kind = value?.kind || value?.type;
+    const breadcrumb = $("reading-breadcrumb"); breadcrumb.replaceChildren();
+    breadcrumb.append(text("span", "Project"), text("span", " › " + (value?.kind ? explorerCards.kindLabel(value.kind) : kind ? relation(value) : "Evidence kinds") + (value ? " › " + label(value) : "")));
+    breadcrumb.title = value ? label(value) : humanProject();
+  }
+  function openExactComparison(choice, address) {
+    const verified = readingView.model().read(address, { key: choice.key, side: choice.side });
+    if (!verified.selected) return { spanIncluded: false };
+    readingTab = "source"; displayView = "reading"; renderViewMode(); activateReadingTab("source"); $("context-lineage").open = true;
+    const pair = [...document.body.querySelectorAll("[data-reading-pair]")]
+      .find(el => el.getAttribute("data-reading-pair") === choice.key);
+    if (!pair) return { spanIncluded: false };
+    pair.open = true;
+    for (const old of document.body.querySelectorAll("[data-reading-pair-highlight]")) {
+      old.removeAttribute("data-reading-pair-highlight"); old.className = old.className.replace(/\s*reading-highlight/g, "");
+    }
+    let target = null;
+    if (address.span) for (const line of pair.querySelectorAll("[data-source-" + choice.side + "-line]")) {
+      const number = Number(line.getAttribute("data-source-" + choice.side + "-line"));
+      if (number >= address.span.startLine && number <= address.span.endLine) {
+        line.className += " reading-highlight"; line.setAttribute("data-reading-pair-highlight", address.key);
+        target ||= line;
+      }
+    }
+    const focus = target || pair;
+    focus.setAttribute("tabindex", "-1"); focus.setAttribute("data-reading-focus", JSON.stringify([address.key, choice.key, choice.side]));
+    focus.scrollIntoView({ block: "nearest" }); focus.focus({ preventScroll: true });
+    return { spanIncluded: Boolean(target) };
+  }
   function render() {
+    renderViewMode();
     setBox();
     const started = performance.now(), found = matches(); visibleMatches = found; foundIds = scopeCache.foundIds;
     hide($("graph"), canvasMode()); hide($("overview"), !canvasMode()); hide($("overview-note"), !canvasMode());
-    renderList(found); renderTrail(); if (canvasMode()) renderOverview(scopeCache.shown); else renderGraph(found); renderSelectionCards(); renderDetail(); renderFeaturePerspective();
+    renderList(found); renderTrail(); if (canvasMode()) renderOverview(scopeCache.shown); else renderGraph(found); renderSelectionCards(); renderDetail(); renderFeaturePerspective(); renderSurfacePaths();
+    readingView?.render(); renderTypeSummary();
     document.documentElement.dataset.explorerLastRenderMs = String(performance.now() - started);
   }
-  $("project").textContent = data.project ? `${data.project.projectId} · ${data.initialLayer === "code" ? "Source" : "Project"} view` : "No initialized Project. Ordinary work can continue.";
+  $("project").textContent = data.project ? humanProject() + " · " + (data.initialLayer === "code" ? "Source" : "Project") + " view" : "Project records unavailable";
+  $("project-technical").textContent = JSON.stringify({ project: data.project, generatedAt: data.generatedAt, basis: activeGraph.basis }, null, 2);
   $("generated").textContent = `Generated ${data.generatedAt}`;
-  $("coverage").textContent = `${activeGraph.coverage?.state || activeGraph.status || "unavailable"} · snapshot, not live`;
+  $("coverage").textContent = activeGraph.coverage?.state === "partial" ? "Some evidence is not included" : "Read-only snapshot";
   $("layer-info").textContent = activeGraph === data.graph ? "Project purpose, work and retained lineage. No Session is selected by this map."
     : "Complete verified structural metadata; no synthetic Project joins. Non-current evidence is labelled separately.";
   if (activeGraph !== data.graph) {
@@ -1430,16 +1749,24 @@
   function populateRelationships() {
     const target = $("relation-filter"); target.replaceChildren();
     const option = (value, title) => { const entry = text("option", title); entry.value = value; target.append(entry); };
-    option("all", "All relationship types"); for (const type of [...new Set(activeGraph.edges.map(edge => edge.type || edge.relation).filter(Boolean))].sort()) option(type, type);
+    option("all", "All relationship types"); for (const type of [...new Set(activeGraph.edges.map(edge => edge.type || edge.relation).filter(Boolean))].sort()) option(type, explorerCards.relationLabel(type));
     target.value = "all";
+    const kinds = $("search-kind"), previousKind = kinds.value || "all";
+    kinds.replaceChildren();
+    const kindOption = (value, title) => { const entry = text("option", title); entry.value = value; kinds.append(entry); };
+    kindOption("all", "All record types");
+    for (const kind of [...new Set(activeGraph.nodes.map(node => node.kind || "Unknown"))].sort()) kindOption(kind, explorerCards.kindLabel(kind));
+    kinds.value = [...kinds.children].some(option => option.value === previousKind) ? previousKind : "all";
   }
   for (const id of filterIds) $(id).addEventListener(id === "search" ? "input" : "change", () => {
+    saveReadingBeforeNavigation(); readingView?.invalidate(); cancelTypeSummary();
     listPage = 0; scopeCache = null; if (id !== "search" || $("hide-nonmatches").checked) cancelWork();
     remember(`Scope: ${id}`); render();
   });
   $("records-prev").addEventListener("click", () => { listPage--; renderList(visibleMatches); });
   $("records-next").addEventListener("click", () => { listPage++; renderList(visibleMatches); });
   function changeLayer() {
+    saveReadingBeforeNavigation(); readingView?.invalidate();
     const previousSelection = selected?.kind === "node" ? selected.value : null;
     if (cardsCache?.graph) {
       if (!readingStates.has(cardsCache.graph)) readingStates.set(cardsCache.graph, new Map());
@@ -1447,7 +1774,7 @@
     }
     const operationStatus = jobKind ? "Earlier calculation not completed; committed state retained. Unplaced records remain available." : $("operation-status").textContent;
     cancelWork(false); const next = $("layer").value;
-    layerStates.set(activeGraph === data.graph ? "project" : "code", { model, selected, chosenEdges, box: [...box], mapMode, listPage, cardPage, viewHistory, viewCursor, filters: filterState(), connectionResult, connectionKey, operationStatus, comparisonOpen: $("context-lineage").open });
+    layerStates.set(activeGraph === data.graph ? "project" : "code", { model, selected, chosenEdges, box: [...box], mapMode, listPage, cardPage, viewHistory, viewCursor, displayView, readingTab, reading: readingView?.capture(), filters: filterState(), connectionResult, connectionKey, operationStatus, comparisonOpen: $("context-lineage").open });
     activeGraph = next === "code" ? data.codeGraph : data.graph;
     const retained = layerStates.get(next); model = retained?.model || newModel(activeGraph); selected = retained?.selected || null; box = retained?.box || [0, 0, 1000, 700];
     $("operation-status").textContent = retained?.operationStatus || "";
@@ -1456,7 +1783,8 @@
     connectionResult = retained?.connectionResult || null; connectionKey = retained?.connectionKey || null; cardPage = retained?.cardPage || 0;
     mapMode = retained?.mapMode || "focus"; listPage = retained?.listPage || 0; populateRelationships();
     $("view").value = "all"; $("axis").value = "all"; $("view").disabled = $("axis").disabled = next === "code";
-    restoreFilters(retained?.filters || { search: "", "hide-nonmatches": false, axis: "all", view: "all", "include-history": false, "relation-filter": "all", "kind-filter": "all" });
+    restoreFilters(retained?.filters || { search: "", "search-kind": "all", "hide-nonmatches": false, axis: "all", view: "all", "include-history": false, "relation-filter": "all", "kind-filter": "all" });
+    displayView = retained?.displayView || "graph"; readingTab = retained?.readingTab || "explanation";
     scopeCache = cardsCache = comparisonsCache = null;
     $("legend-left").textContent = next === "code" ? "Structural evidence" : "Code & sources"; $("legend-right").textContent = next === "code" ? "Existing imports & calls" : "Purpose & work";
     $("layer-info").textContent = next === "code" ? "Complete verified structural metadata; no synthetic Project joins. Non-current evidence is labelled separately." : "Project purpose, work and retained lineage. No Session is selected by this map.";
@@ -1474,10 +1802,11 @@
     if (!retained && first) { startNeighborhood(first); model.choose(first.nodeId); selected = { kind: "node", value: first }; focusCamera(true); remember(`Exact source ${shorten(label(first), 24)}`); }
     else if (!retained) $("layer-info").append(text("p", "No unique exact source identity matches the previous selection in this layer. Choose a record below; names, paths alone and coincident IDs are not an automatic link.", "hint"));
     render();
+    if (retained?.reading) readingView.restore(retained.reading);
     if (!retained && first) prepareNeighborhood().catch(calculationFailed); geometryChanged();
   }
   $("layer").addEventListener("change", changeLayer);
-  const calculationFailed = error => { cancelWork(false); $("operation-status").textContent = `Calculation failed (${error?.name || "unknown"}); no partial result is presented as complete.`; render(); };
+  const calculationFailed = error => { cancelWork(false); $("reading-tools").open = true; $("operation-status").textContent = `Calculation failed (${error?.name || "unknown"}); no partial result is presented as complete.`; render(); };
   $("expand").addEventListener("click", () => { runExpansion().catch(calculationFailed); });
   $("expand-direct").addEventListener("click", () => { runDirect().catch(calculationFailed); });
   $("connect-selection").addEventListener("click", () => { runConnections().catch(calculationFailed); });
@@ -1500,21 +1829,21 @@
   $("restore-scope").addEventListener("click", () => { cancelWork(); $("axis").value = $("view").value = $("relation-filter").value = $("kind-filter").value = "all"; $("hide-nonmatches").checked = false;
     if (selectionValues().some(historical)) $("include-history").checked = true; scopeCache = null; remember("Show selected scope"); render(); });
   $("wide-reading").addEventListener("click", () => { const wide = document.documentElement.dataset.readingWide !== "true"; document.documentElement.dataset.readingWide = String(wide); $("wide-reading").setAttribute("aria-pressed", String(wide)); $("wide-reading").textContent = wide ? "Compact reading area" : "Widen reading area"; redrawCamera(); });
-  $("jump-reading").addEventListener("click", () => { $("reading-heading").scrollIntoView({ block: "start" }); $("reading-heading").focus(); });
-  $("jump-map").addEventListener("click", () => { const map = canvasMode() ? $("overview") : $("graph"); map.scrollIntoView({ block: "start" }); map.focus(); });
+  $("jump-reading").addEventListener("click", () => { setReadingTab("explanation"); $("reading-flow-title").scrollIntoView({ block: "start" }); $("reading-flow-title").focus(); });
+  $("jump-map").addEventListener("click", () => { setDisplayView("graph"); const map = canvasMode() ? $("overview") : $("graph"); map.scrollIntoView({ block: "start" }); map.focus(); });
   $("cards-prev").addEventListener("click", () => { cardPage--; renderSelectionCards(); }); $("cards-next").addEventListener("click", () => { cardPage++; renderSelectionCards(); });
   $("roots-prev").addEventListener("click", () => { rootPage--; renderSelectionCards(); }); $("roots-next").addEventListener("click", () => { rootPage++; renderSelectionCards(); });
   for (const [id, delta] of [["file-prev", -1], ["file-next", 1]]) $(id).addEventListener("click", () => {
-    $("context-lineage").open = true;
+    activateReadingTab("source"); $("context-lineage").open = true;
     fileCursor = Math.max(0, Math.min(comparisonFiles.length - 1, fileCursor + delta)); const target = comparisonFiles[fileCursor]; if (target) { target.scrollIntoView({ block: "nearest" }); target.focus(); } comparisonPosition("file");
   });
   for (const [id, delta] of [["change-prev", -1], ["change-next", 1]]) $(id).addEventListener("click", () => {
-    $("context-lineage").open = true;
+    activateReadingTab("source"); $("context-lineage").open = true;
     changeCursor = Math.max(0, Math.min(changeHunks.length - 1, changeCursor + delta)); const target = changeHunks[changeCursor]; if (target) { fileCursor = target.file; for (let parent = target.element.parentNode; parent; parent = parent.parentNode) if (String(parent.tagName).toLowerCase() === "details") parent.open = true;
       target.element.scrollIntoView({ block: "nearest" }); target.element.focus(); } comparisonPosition("hunk");
   });
-  $("show-code-diff").addEventListener("click", () => { $("context-lineage").open = true; $("context-lineage").scrollIntoView({ block: "nearest" }); });
-  $("jump-diff").addEventListener("click", () => { $("context-lineage").open = true; $("context-lineage").setAttribute("tabindex", "-1"); $("context-lineage").scrollIntoView({ block: "start" }); $("context-lineage").focus(); });
+  $("show-code-diff").addEventListener("click", () => { activateReadingTab("source"); $("context-lineage").open = true; $("context-lineage").scrollIntoView({ block: "nearest" }); });
+  $("jump-diff").addEventListener("click", () => { setReadingTab("source"); activateReadingTab("source"); $("context-lineage").open = true; $("context-lineage").setAttribute("tabindex", "-1"); $("context-lineage").scrollIntoView({ block: "start" }); $("context-lineage").focus(); });
   function cancelGesture() {
     if (drag) { box = [...drag.box]; if (drag.id && drag.original) { if (drag.overview) overviewModel().move(drag.id, drag.original.x, drag.original.y); else model.move(drag.id, drag.original.x, drag.original.y); if (!drag.wasPinned) model.pinned.delete(drag.id); } }
     drag = null; hide($("selection-box"), true); suppressClick = false; setBox(); redrawCamera();
@@ -1581,7 +1910,10 @@
   canvas.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); cancelGesture(); cancelWork(); render(); } });
   }
   bindMap($("graph"), false); bindMap($("overview"), true);
-  if (typeof globalThis.addEventListener === "function") { globalThis.addEventListener("resize", () => { geometryChanged(); redrawCamera(); }); globalThis.addEventListener("keydown", event => { if (event.key === "Escape") { cancelGesture(); cancelWork(); render(); } }); }
+  if (typeof globalThis.addEventListener === "function") { globalThis.addEventListener("resize", () => { geometryChanged(); redrawCamera(); }); globalThis.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !event.defaultPrevented) { cancelGesture(); if (busy || jobKind || typeSummaryJob) { cancelWork(); render(); }
+      else if (!readingView?.escape()) { cancelWork(); render(); } }
+  }); }
   if (typeof ResizeObserver === "function") new ResizeObserver(geometryChanged).observe(document.documentElement);
   if (document.fonts) {
     const loaded = () => { fontEpoch++; geometryChanged(); };
@@ -1593,13 +1925,43 @@
   if (typeof matchMedia === "function") {
     const narrow = matchMedia("(max-width:650px)").matches;
     $("selection-tools").open = !narrow;
+    $("reading-tools").open = !narrow;
+    $("snapshot-meta").open = false;
     if (narrow) $("display-options").open = false;
   }
+  readingView = explorerReadingView.create({
+    snapshot: data, getGraph: () => activeGraph, getSelected: () => selected?.value,
+    describe: value => cardIndex().describe(value), label, relation, technicalInfo,
+    eligible: edge => edgeInScope(edge) && inEvidenceScope(model.nodes.get(edge.from)) && inEvidenceScope(model.nodes.get(edge.to)),
+    scopeKey: () => JSON.stringify(filterState()),
+    beforeNavigate: saveReadingBeforeNavigation,
+    select: value => value?.nodeId ? selectNode(value, false, { recordHistory: false }) : selectEdge(value, false, { recordHistory: false }),
+    navigateNode: node => { selectNode(node, false, { keepReadingTab: true }); $("reading-flow-title").focus({ preventScroll: true }); },
+    selectRelation: edge => { selectEdge(edge); $("reading-flow-title").focus({ preventScroll: true }); },
+    remember, renderAll: render, openComparison: openExactComparison,
+    activateSource: () => { displayView = "reading"; readingTab = "source"; },
+    getReadingTab: () => readingTab,
+    activateRecord: tab => { displayView = "reading"; readingTab = ["explanation", "connections", "selection"].includes(tab) ? tab : "explanation"; },
+    afterNavigate: () => { if (viewHistory[viewCursor]) viewHistory[viewCursor].reading = readingView.capture(); },
+  });
+  for (const [id, view] of [["types", "types"], ["records", "records"], ["map", "graph"], ["reading", "reading"]]) $("view-" + id).addEventListener("click", () => setDisplayView(view));
+  for (const tab of ["explanation", "connections", "source", "selection"]) $("read-" + tab).addEventListener("click", () => setReadingTab(tab));
+  $("type-summary-cancel").addEventListener("click", () => { typePageRestore = null; cancelTypeSummary(); });
+  $("type-summary-retry").addEventListener("click", () => { typeSummaryPausedKey = null; renderTypeSummary(); });
+  for (const [id, delta] of [["type-kinds-prev", -1], ["type-kinds-next", 1]]) $(id).addEventListener("click", () => { typePageRestore = null; typeKindPage += delta; showTypeSummary(); });
+  for (const [id, delta] of [["type-relations-prev", -1], ["type-relations-next", 1]]) $(id).addEventListener("click", () => { typePageRestore = null; typeRelationPage += delta; showTypeSummary(); });
   populateRelationships();
   const initialMatches = matches(), explicitFocus = (activeGraph === data.graph ? data.graph.detailSelection?.anchorIds : activeGraph.focusSelection?.requestedIds)?.length > 0;
-  const first = explicitFocus ? model.nodes.get(activeGraph.initialNodeId) : initialMatches.find(node => node.nodeId === activeGraph.initialNodeId) || initialMatches[0];
+  const queryScope = data.graph.query;
+  const startWithKinds = Boolean(queryScope && !explicitFocus && !queryScope.query && !queryScope.paths?.length && !queryScope.anchorIds?.length);
+  displayView = startWithKinds ? "types" : queryScope ? "reading" : "graph";
+  const first = startWithKinds ? null : explicitFocus ? model.nodes.get(activeGraph.initialNodeId) : initialMatches.find(node => node.nodeId === activeGraph.initialNodeId) || initialMatches[0];
   if (first) { startNeighborhood(first); model.choose(first.nodeId); selected = { kind: "node", value: first }; if (inDisplayScope(first)) focusCamera(true); remember(`Start ${shorten(label(first), 24)}`); }
-  else if (explicitFocus) $("operation-status").textContent = "The exact requested record was not retained in this layer. No different record was selected; choose available evidence or regenerate at a new basis.";
+  else if (explicitFocus) {
+    const missing = "The exact requested record was not retained in this layer. No different record was selected; choose available evidence or regenerate at a new basis.";
+    $("operation-status").textContent = $("reading-empty").textContent = missing;
+  }
+  if (!first) remember(startWithKinds ? "Start with evidence kinds" : "Start available evidence");
   render();
   if (first) prepareNeighborhood().catch(calculationFailed);
   document.documentElement.dataset.explorerReady = "true"; document.documentElement.dataset.explorerInitialRenderMs = String(performance.now() - initialTime);

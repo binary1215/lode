@@ -545,3 +545,50 @@ in that request only: earlier insertions and previous-page currentness remain
 unknown, with no invented remaining count. There is no automatic loop, save,
 Run, approval or durable artifact prerequisite; independent work continues.
 
+
+## Follow product activities into implementation
+
+Ask Lode: “Follow saving a note from the user's action to its output and code,”
+or “Which recorded activities use this helper?” Lode reads cited project material
+and proposes connections through the existing observation input. Users do not
+need to write a map, JSON or a new onboarding form. Product Canon and World are
+optional; exact source references remain useful without them.
+
+The read-only graph distinguishes UserActivity, ProductSurface (web, CLI, MCP
+and hook outputs), SurfaceElement, ExecutionEntrypoint, DataResource and
+ExternalConnection. These are evidence claims, not approved Product Features or
+Policy. The bases authored, inferred, declared, runtime-recorded and unknown
+remain separate. Digest and quote verification identify the cited bytes; they
+do not prove the claim is true or code executed.
+
+An activity can use an element that invokes an entrypoint. An entrypoint can
+return another element, read/write data or call an external connection. Existing
+parser CALLS/IMPORTS links extend the route where exact path, digest, symbol
+and span agree. Static calls are not runtime proof. File-only, ambiguous, stale,
+missing and unsupported dynamic destinations remain labelled. Two activities
+sharing a helper remain separate; shared code is not cause, fulfillment,
+semantic agreement or permission.
+
+The existing `lode_observation_ingest` accepts the two closed descriptor profiles
+returned by `productSurfaceProfile("entities") / productSurfaceProfile("relations")` in
+`scripts/lib/product-surface-graph.mjs`. This is an agent/adapter contract, not
+a user form. Each columnar batch has aligned arrays, unique row keys, mapKey,
+mapRevision, exact mapBasisPaths/mapBasisDigests, batchIndex and batchCount
+(zero means an open set). Map revision hashes the Project, map key and sorted
+exact source path/digest pairs. Relation endpoints name the exact entity
+Observation ID, hash and row key under the same map revision. Names and paths
+alone never merge Projects, batches or revisions.
+
+Use at most 1,024 rows per batch within the existing 256 KiB payload bound;
+continue with another explicit batch when needed. This avoids an artifact per
+node or edge. Descriptor mismatch, inconsistent columns, missing endpoints and
+open/incomplete batches disclose semantic coverage gaps while the original
+observation stays readable and ordinary work continues. Queries create no map
+artifacts. Source inspection has a separate 64 MiB total byte bound; uninspected
+references do not become verified or absent.
+
+Use existing `lode_project_graph` / `graph-query` for exact anchors and useful
+source paths, or Graph Explorer for directional reading. Recorded work citations
+and source diffs stay under the original exact reader. A recorded-output
+comparison reports equal/different cited text only; behavior and semantic
+agreement still require interpretation and appropriate evidence.

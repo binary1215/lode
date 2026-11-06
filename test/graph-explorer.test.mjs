@@ -139,7 +139,7 @@ test("actual code reader imports/calls reach exact cited/current diff in the Sou
   ui.event("change-next"); // Navigation explicitly opens only the selected diff disclosure.
   const body = visibleText(ui.ids.get("context-lineage-body"));
   assert(body.includes(f.sourcePath)); assert.match(body, /− .*before/); assert.match(body, /\+ .*after/);
-  assert.match(body, /Cited revision \/ export-observed current/); assert.match(ui.ids.get("comparison-position").textContent, /changed region 1\//);
+  assert.match(body, /Recorded source → Current at export/); assert.match(ui.ids.get("comparison-position").textContent, /changed region 1\//);
   const retained = result.graph.contextLineage.files.find(file => file.path === "src/missing-later.mjs"); assert(retained.currentObservation); assert.equal(retained.currentObservation.deletionEstablished, false);
   const renamed = result.graph.contextLineage.files.find(file => file.path === "src/rename-before.mjs"); assert(renamed.currentObservation); assert.equal(renamed.currentObservation.renameEstablished, false);
   assert(!result.codeGraph.nodes.some(node => node.path === "src/missing-later.mjs"));
@@ -148,7 +148,7 @@ test("actual code reader imports/calls reach exact cited/current diff in the Sou
   wrong.nodeId = file.comparisons.find(pair => pair.leftRecord?.nodeId)?.leftRecord.nodeId || "source-with-review-id";
   const noJoin = explorerDom(mismatched); noJoin.ids.get("layer").value = "code"; noJoin.event("layer", "change");
   noJoin.event(noJoin.ids.get("records").children.find(row => row.children[0].getAttribute("data-record-entry") === wrong.nodeId).children[0]); noJoin.event("only-focus");
-  assert(!noJoin.ids.get("context-lineage-body").textContent.includes("Bounded excerpt changes"), "Matching paths cannot connect another exact revision");
+  assert(!noJoin.ids.get("context-lineage-body").textContent.includes("Changed lines"), "Matching paths cannot connect another exact revision");
 });
 
 test("exact original drift is unavailable rather than silently replaced by current bytes", async t => {

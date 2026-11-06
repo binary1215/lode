@@ -183,3 +183,33 @@ the same failure indefinitely, or make graph success a general completion gate.
 The [graph-discovery guide](../../../docs/graph-discovery.md#maintain-evidence-after-integrated-changes)
 describes the current APIs and representative checks. This is Lode completion
 guidance, not a newly implemented automatic Host lifecycle hook.
+
+### Activity, surface and entrypoint evidence
+
+For an activity-to-code or reverse-impact question, reuse the existing graph and
+original sources. Lode authors cited activity/surface/element/entrypoint claims
+through existing lode_observation_ingest, using the batched profiles described in
+[graph discovery](../../../docs/graph-discovery.md#follow-product-activities-into-implementation).
+Do not ask the user for JSON, Product onboarding, a new Run, a map-save ceremony
+or a provider service. Exact parser links, source citations and runtime output
+claims have different evidential force; no entrypoint becomes Product Canon.
+
+Read directional paths, then exact source/work/diff when useful. Keep shared
+implementation distinct from purpose or cause. Open batches, unsupported dynamic
+crossings, source mismatches and omitted comparisons remain unknown; they do not
+block independent work or authorize a repair. Read-only queries and HTML export
+do not save map artifacts. Use existing bounded readers and their exact identity
+and source-byte checks. See [Explorer](../../../docs/graph-explorer.md#read-an-activity-and-its-related-implementation)
+for pages, continuation, cancellation and focused comparison coverage.
+
+For a standalone Explorer, use Overview → complete Records → Reading, keeping
+explicit anchors/query/path intent first. Explanation, Connections, Sources & changes
+and Selected records share selection without duplicating authority. Read exact
+source addresses and pair sides; a path match, unavailable span or grouped count
+is not source proof or a gate on ordinary reading. Map, page continuation and
+Back/Forward retain in-memory display choices. No new setup, service or user JSON.
+
+Graph Explorer keeps readable content and material uncertainty visible by default.
+Generated identifiers and source digests remain in initially closed Technical
+information; authored prose/code is unchanged. Metadata hiding is not redaction,
+and does not change exact source navigation or create a review gate.
