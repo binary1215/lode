@@ -10,7 +10,7 @@ const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex"
 // Data-file paths only. Historical absolute roots inside a record are never
 // resolved through this function. Reject Windows alternate streams on every
 // platform so an imported inventory cannot name another view of the same file.
-export function copiedProjectFile(root, relative) {
+export function assertCopiedProjectRelativePath(relative) {
   if (
     typeof relative !== "string" ||
     !relative ||
@@ -28,7 +28,14 @@ export function copiedProjectFile(root, relative) {
       )
   )
     fail("PROJECT_COPY_PATH_INVALID");
-  const base = fs.realpathSync(root);
+}
+
+export function copiedProjectFile(root, relative) {
+  assertCopiedProjectRelativePath(relative);
+  // Windows namespace volumes need the OS resolver; retain the same root
+  // resolution policy, child link checks and original native errors.
+  const rootSpelling = process.platform === "win32" && typeof root === "string" && /^\\\\\?\\[A-Za-z]:\\$/u.test(root) ? root.slice(4) : root;
+  const base = process.platform === "win32" ? fs.realpathSync.native(rootSpelling) : fs.realpathSync(root);
   let file = base;
   for (const part of relative.split("/")) {
     file = path.join(file, part);
@@ -238,12 +245,14 @@ export function copyOriginal(
   {
     signal,
     onObject,
+    onTemporary = null,
     sourceRelative = entry.path,
     targetRelative = "objects/" + entry.sha256 + ".bin",
     stagingDirectory = null,
     assertCurrentAuthority = null,
   } = {},
 ) {
+  if (onTemporary !== null && typeof onTemporary !== "function") fail("PROJECT_COPY_TEMPORARY_OBSERVER_INVALID");
   const check = () => {
     checkCopySignal(signal);
     checkCopyAuthority(assertCurrentAuthority);
@@ -263,9 +272,10 @@ export function copyOriginal(
   verifyCopiedProjectFile(sourceRoot, sourceEntry, { signal, assertCurrentAuthority });
   const source = copiedProjectFile(sourceRoot, sourceRelative),
     before = fs.lstatSync(source, { bigint: true });
+  const stageParent = stagingDirectory ?? path.posix.dirname(relative);
   const tmpRelative =
-      (stagingDirectory ?? path.posix.dirname(relative)) +
-      "/." +
+      (stageParent === "." || stageParent === "" ? "" : stageParent + "/") +
+      "." +
       entry.sha256 +
       "-" +
       crypto.randomUUID() +
@@ -279,6 +289,11 @@ export function copyOriginal(
   try {
     check();
     output = fs.openSync(temporary, "wx");
+    if (onTemporary !== null) {
+      const owned = fs.fstatSync(output, { bigint: true });
+      onTemporary({ path: tmpRelative, dev: String(owned.dev), ino: String(owned.ino),
+        birthtimeNs: String(owned.birthtimeNs), nlink: String(owned.nlink) });
+    }
     const opened = fs.fstatSync(input, { bigint: true });
     if (opened.ino !== before.ino || opened.dev !== before.dev || opened.nlink !== 1n)
       fail("PROJECT_COPY_SOURCE_CHANGED");
@@ -312,7 +327,13 @@ export function copyOriginal(
       if (error.code !== "EEXIST") throw error;
       verifyCopiedProjectFile(bundleRoot, { ...entry, path: relative });
     }
-    fs.unlinkSync(temporary);
+    try { fs.unlinkSync(temporary); }
+    catch (error) {
+      // A caller may clean only its proved private stage, never bypass an
+      // explicit refusal of this same cleanup effect by retrying elsewhere.
+      error.copyStageUnlinkDenied = ["EACCES", "EPERM"].includes(error.code);
+      throw error;
+    }
     onObject?.(entry.path);
   } catch (error) {
     error.incompleteObject = tmpRelative;

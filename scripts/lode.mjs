@@ -89,7 +89,8 @@ export function parse(argv) {
     if (command === "storage-gc" && ["apply", "diagnostics"].includes(key)) { options[key] = true; continue; }
     if (["init", "resume"].includes(command) && key === "write-root-instructions") { options[key] = true; continue; }
     if (command === "graph-explorer" && ["history", "share"].includes(key)) { options[key] = true; continue; }
-    if (key === "details" || command === "session-work-read" && key === "scan-evidence" || command === "graph-query" && key === "inventory-page") {
+    if (key === "details" || command === "session-work-read" && key === "scan-evidence" || command === "graph-query" && key === "inventory-page"
+      || command === "project-native-history" && key === "source-sync-files") {
       const value = rest[index + 1];
       options[key] = value === "false" ? false : true;
       if (value === "true" || value === "false") index += 1;
@@ -122,7 +123,14 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
       `${cliDisplay} project-export <project> --destination <bundle-folder> [--provenance project-proof-metadata|selected-only] [--sources selected-retained-sources|refs-only] [--session <logical-session>] (default: project-proof-metadata)`,
       `${cliDisplay} project-bundle-inspect <bundle-folder-or-HANDOFF.md> [--expected-bundle <bundle-id>] [--handoff-offset <bytes> --handoff-max-bytes <bytes>]`,
       `${cliDisplay} project-import <target-project> --bundle <bundle-folder> [--expected-bundle <bundle-id>]`,
-      `${cliDisplay} project-native-history <bundle-folder> --action read|capture|restore|register [--provider codex|claude|opencode] [--native-home <exact-data-home> --executable <exact-client>] [--threads <exact-native-id,...>] [--runtime-root <current-workspace>]`,
+      `${cliDisplay} project-native-history <bundle-folder> --action read|capture|capture-project|restore|register|derive|publish-derived|verify-derived|open-derived [--provider codex|claude|opencode] [--native-home <exact-data-home> --executable <exact-client>] [--threads <exact-native-id,...>] [--source-project <exact-codex-project-id>] [--runtime-root <current-workspace>] [--derivation <exact-derived-id> --expected-derivation <sha256>] [--cutoff-item <exact-source-item>]`,
+      `${cliDisplay} project-native-history <capture-or-collection> --action prepare-workspaces|copy-workspaces|derive-project|read-project|publish-project|verify-project|attach-project-lode [--collection-root <archive>] [--collection <id> --expected-collection <sha256>] [--workspace-map <Host-JSON> | --workspace-transfers <Host-JSON> | --lode-bundles <Host-JSON>]`,
+      `${cliDisplay} project-native-history <new-physical-archive> --action capture-physical --provider codex --threads <exact-native-id> --physical-source-root <captured-files> --physical-rollout <id> --physical-files <Host-prefix-descriptor-JSON> [--selected-state-evidence <captured-file> --expected-selected-state <sha256>]`,
+      `${cliDisplay} project-native-history <reference-collection-root> --action assemble-project --catalog-file <captured-file> --expected-catalog <sha256> --physical-sources <Host-JSON> --workspace-map <Host-JSON>  # source bodies stay in original stores; publish-project/verify-project carry --retained-derivation-sources <current-Host-JSON>`,
+      `${cliDisplay} project-native-history <portable-evidence-root> --action export-project-evidence|read-project-evidence|stage-project-session [--catalog-file <captured-file> --expected-catalog <sha256> --physical-sources <Host-JSON> --lode-bundles <Host-JSON>] [--archive <id> --expected-archive <sha256>] [--session-bundle <exact-common-bundle> --output-directory <current-staging-root>]  # P3 evidence/staging only; no provider, native publication or automatic import`,
+      `${cliDisplay} project-native-history <portable-evidence-root> --action capture-live-project --provider codex --native-home <current-source> --source-project <exact-id> --source-sync-files [--threads <subset>] [--ancestor-files <Host-inventory>]  # agreed synchronization sidecars only; selected Windows source to portable P3, no source client or executable clone`,
+      `${cliDisplay} project-native-history <portable-evidence-root> --action restore-portable-workspaces --archive <id> --expected-archive <sha256> --workspace-targets <current-Host-copy-or-reuse-mapping>  # optional --workspace-sources <current-Host-path-inventory> at capture/export; streamed code/docs, no original-PC access or overwrite`,
+      `${cliDisplay} project-native-history <portable-evidence-root> --action read-portable-project|derive-portable-project|admit-portable-targets|publish-portable-project|verify-portable-project --archive <id> --expected-archive <sha256> [--runtime-root <explicit-shared-target>|--workspace-map <Host-mapping>] [--native-home <current-target> --executable <qualified-Claude>]  # Host-owned target-PC journal; separate conversations, no automatic GUI/model/P2`,
       `${cliDisplay} session-create <project> [--purpose <text>] [--new-session <session-id>]`,
       `${cliDisplay} session-list <project> [--session <id>] [--max-sessions <1..64>] [--after-session <cursor>] [--conversation-candidates <json-file>]  # read-only preview and optional stored mappings; preserves selection`,
       `${cliDisplay} project-direction-read <project>`,
@@ -297,7 +305,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
   ];
   return {
     ...((all || surface === "managed-maintenance") ? { commandNotes: {
-      "project-native-history": "capture requires --provider; read/restore/register derive it only from a verified companion link. Claude/OpenCode effects also require --runtime-root; optional Claude --companions <selected-id/relative-file,...>. OpenCode source capture requires a registered Host export capability; its default CLI bootstrap remains unavailable pending qualification. A pinned Windows x64 baseline 1.19.5 binary can restore/register through an existing qualified isolated DB and current Project mapping, with whole-batch atomic publication and no app startup or automatic migration. The isolated destination workflow never switches the default profile.",
+      "project-native-history": "capture requires --provider and a selected-Session bundle. capture-project uses --provider codex and --source-project to write a standalone native capture without Lode initialization, preserving offline checks. read/restore/register derive it only from a verified companion link and preserve same-platform guards. derive separately converts one captured Codex thread to Claude without native profile access. publish-derived creates only the absent exact new-ID transcript; verify-derived compares all official SDK roles/bodies/IDs/order, independently of Desktop/model visibility. Derived native operations require --derivation, --expected-derivation, exact --native-home/--executable and --runtime-root; the derivative qualifies Claude 2.1.317 and optional SDK0.3.234 separately from old restore. open-derived never publishes or sends a prompt: an unavailable qualified GUI handoff returns the exact Desktop local /resume alternative. Unknown effects are not replayed. Claude/OpenCode effects also require --runtime-root; optional same-platform Claude --companions <selected-id/relative-file,...>. OpenCode source capture requires a registered Host export capability; its default CLI bootstrap remains unavailable pending qualification. A pinned Windows x64 baseline 1.19.5 binary can restore/register through an existing qualified isolated DB and current Project mapping, with whole-batch atomic publication and no app startup or automatic migration. The isolated destination workflow never switches the default profile.",
     } } : {}),
     surface: surface === "managed-maintenance" ? surface : all ? "ordinary-complete" : "light-default",
     commands: surface === "managed-maintenance"
@@ -423,12 +431,28 @@ async function runRoutedCommand(argv, { observationRegistry = null, compactionLi
     onboarding: options.input ? inputJson(options, "Project onboarding") : null,
   }));
   if (command === "project-native-history") {
-    const allowed=new Set(["action","provider","native-home","executable","threads","runtime-root","expected-bundle","companions"]);
+    const allowed=new Set(["action","provider","native-home","executable","threads","source-project","runtime-root","expected-bundle","companions","derivation","expected-derivation","cutoff-item","collection-root","collection","expected-collection","workspace-map","workspace-transfers","lode-bundles","physical-source-root","physical-rollout","physical-files","selected-state-evidence","expected-selected-state","catalog-file","expected-catalog","physical-sources","retained-derivation-sources","archive","expected-archive","session-bundle","output-directory","source-sync-files","ancestor-files","workspace-sources","workspace-targets","source-selection-file","expected-source-selection","source-project-root"]);
     if(Object.keys(options).some(key=>!allowed.has(key))) throw new Error("Unsupported native history arguments.");
     return (await import("./lib/project-native-history.mjs")).operateProjectNativeHistory({action:options.action,provider:options.provider,bundleRoot:root,
       expectedBundleId:options["expected-bundle"]??null,nativeHome:options["native-home"],executable:options.executable,
       threadIds:options.threads===undefined?undefined:String(options.threads).split(",").map(value=>value.trim()),
+      sourceProjectId:options["source-project"],
+      sourceSyncFiles:options["source-sync-files"],ancestorFiles:options["ancestor-files"]===undefined?undefined:JSON.parse(options["ancestor-files"]),
+      sourceSelectionFile:options["source-selection-file"],expectedSourceSelectionDigest:options["expected-source-selection"],sourceProjectRoot:options["source-project-root"],
+      workspaceSources:options["workspace-sources"]===undefined?undefined:JSON.parse(options["workspace-sources"]),workspaceTargets:options["workspace-targets"]===undefined?undefined:JSON.parse(options["workspace-targets"]),
+      collectionRoot:options["collection-root"],collectionId:options.collection,expectedCollectionDigest:options["expected-collection"],
+      workspaceMappings:options["workspace-map"]===undefined?undefined:JSON.parse(options["workspace-map"]),
+      workspaceTransfers:options["workspace-transfers"]===undefined?undefined:JSON.parse(options["workspace-transfers"]),
+      lodeBundles:options["lode-bundles"]===undefined?undefined:JSON.parse(options["lode-bundles"]),
+      physicalSourceRoot:options["physical-source-root"],physicalRolloutId:options["physical-rollout"],
+      physicalFiles:options["physical-files"]===undefined?undefined:JSON.parse(options["physical-files"]),
+      selectedStateEvidenceFile:options["selected-state-evidence"],expectedSelectedStateDigest:options["expected-selected-state"],
+      catalogFile:options["catalog-file"],expectedCatalogDigest:options["expected-catalog"],
+      physicalSources:options["physical-sources"]===undefined?undefined:JSON.parse(options["physical-sources"]),
+      retainedDerivationSources:options["retained-derivation-sources"]===undefined?undefined:JSON.parse(options["retained-derivation-sources"]),
+      archiveId:options.archive,expectedArchiveDigest:options["expected-archive"],sessionBundleId:options["session-bundle"],outputDirectory:options["output-directory"],
       companionPaths:options.companions===undefined?[]:String(options.companions).split(",").map(value=>value.trim()),
+      derivationId:options.derivation??null,expectedDerivationDigest:options["expected-derivation"]??null,cutoffItemId:options["cutoff-item"]??null,
       root:options["runtime-root"],pluginRoot,nativeHistoryHost,signal,onProcess});
   }
   if (command === "project-export") return (await import("./lib/project-portability.mjs")).exportProjectBundle({root,destination:options.destination,provenanceScope:options.provenance,sourceMode:options.sources,signal,onExportScope});
@@ -902,7 +926,9 @@ async function runRoutedCommand(argv, { observationRegistry = null, compactionLi
   throw new Error(`Unknown command: ${command}`);
 }
 
-export function runCliMain(directArgs = process.argv.slice(2)) {
+// Optional current trusted Host seam, as in runCommand/MCP. Never populated
+// from argv, source artifacts or retained conversation data.
+export function runCliMain(directArgs = process.argv.slice(2), { nativeHistoryHost = null } = {}) {
   const jsonOutput = directArgs.includes("--json");
   const withoutJson = directArgs.filter((item) => item !== "--json");
   const directCommand = commandEntry(withoutJson).argv[0] || "help";
@@ -912,7 +938,7 @@ export function runCliMain(directArgs = process.argv.slice(2)) {
   if (["source-context", "worker-execute", "runtime-invocation-execute"].includes(directCommand) || directCommand === "storage-gc" && directArgs.includes("--apply")) {
     process.on("SIGINT", abortSource); process.on("SIGTERM", abortSource);
   }
-  return Promise.resolve().then(async () => (await runCommand(normalizedArgs, { signal: sourceController.signal,
+  return Promise.resolve().then(async () => (await runCommand(normalizedArgs, { signal: sourceController.signal, nativeHistoryHost,
     onExportScope: notice => fs.writeSync(process.stderr.fd, jsonOutput ? `${JSON.stringify({ projectExportScope: notice })}\n` : `${notice.message}\n${notice.sourceNotice || ""}\n`),
     onProcess: (event) => {
       if(directCommand === "storage-gc" && !directArgs.includes("--diagnostics")) return;
@@ -922,8 +948,15 @@ export function runCliMain(directArgs = process.argv.slice(2)) {
     if (directCommand === "storage-gc" && result?.requestedApply && result.status !== "gc_applied") process.exitCode = 1;
     process.stdout.write(jsonOutput ? `${JSON.stringify(result, null, 2)}\n` : formatCliResult(directCommand, result, { diagnostics: directArgs.includes("--diagnostics") }));
   }).catch((error) => {
-    const failure = { status: "failed", code: error.code || "HEAD_CLI_ERROR", error: error.message };
-    process.stdout.write(jsonOutput ? `${JSON.stringify(failure, null, 2)}\n` : formatCliError(error));
+    const partialNativeOperation = error.collectionOperationResult?.kind === "ProjectConversationCollectionPartialOutcome" ? error.collectionOperationResult : null;
+    const partialPortableEvidence = error.portableEvidenceObservation ?? null;
+    const partialWorkspaceRestore = error.portableWorkspaceObservation ?? null;
+    const failure = { status: "failed", code: error.code || "HEAD_CLI_ERROR", error: error.message,
+      ...(partialNativeOperation ? { partialNativeOperation } : {}), ...(partialPortableEvidence ? { partialPortableEvidence } : {}),
+      ...(partialWorkspaceRestore ? { partialWorkspaceRestore } : {}) };
+    process.stdout.write(jsonOutput ? `${JSON.stringify(failure, null, 2)}\n` : formatCliError(error)
+      + (partialNativeOperation ? `Retained native observations: ${partialNativeOperation.results.length} rows; ${partialNativeOperation.activeRow ? "one active outcome unconfirmed; " : ""}${partialNativeOperation.unvisitedThreadIds.length} rows unvisited. No retry or rollback.\n` : "")
+      + (partialPortableEvidence ? `Retained evidence state: ${partialPortableEvidence.manifestPublicationOutcome ?? partialPortableEvidence.status}. No native publication, rollback or post-failure observation.\n` : ""));
     process.exitCode = 1;
   }).finally(() => {
     process.removeListener("SIGINT", abortSource); process.removeListener("SIGTERM", abortSource);

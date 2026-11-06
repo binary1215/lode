@@ -69,7 +69,37 @@ export async function operateProjectNativeHistory({
   nativeHome,
   executable,
   threadIds,
+  sourceProjectId,
   companionPaths = [],
+  derivationId = null,
+  expectedDerivationDigest = null,
+  cutoffItemId = null,
+  collectionRoot,
+  collectionId,
+  expectedCollectionDigest,
+  workspaceMappings,
+  workspaceTransfers,
+  lodeBundles,
+  physicalSourceRoot,
+  physicalRolloutId,
+  physicalFiles,
+  selectedStateEvidenceFile,
+  expectedSelectedStateDigest,
+  catalogFile,
+  expectedCatalogDigest,
+  physicalSources,
+  retainedDerivationSources,
+  archiveId,
+  expectedArchiveDigest,
+  sessionBundleId,
+  outputDirectory,
+  sourceSyncFiles,
+  ancestorFiles,
+  sourceSelectionFile,
+  expectedSourceSelectionDigest,
+  sourceProjectRoot,
+  workspaceSources,
+  workspaceTargets,
   nativeHistoryHost = null,
   root,
   pluginRoot,
@@ -77,6 +107,180 @@ export async function operateProjectNativeHistory({
   onProcess,
   assertCurrentAuthority = () => {},
 } = {}) {
+  if (workspaceSources !== undefined && !["capture-live-project", "export-project-evidence"].includes(action)) fail("PORTABLE_WORKSPACE_SOURCE_ARGUMENTS_ON_OTHER_ACTION");
+  if (workspaceTargets !== undefined && action !== "restore-portable-workspaces") fail("PORTABLE_WORKSPACE_TARGET_ARGUMENTS_ON_OTHER_ACTION");
+  if (action === "capture-live-project") {
+    if (provider !== "codex" || expectedBundleId !== null || executable !== undefined || root !== undefined
+      || derivationId !== null || expectedDerivationDigest !== null || cutoffItemId !== null || companionPaths.length
+      || [collectionRoot,collectionId,expectedCollectionDigest,workspaceMappings,workspaceTransfers,physicalSourceRoot,physicalRolloutId,physicalFiles,
+        selectedStateEvidenceFile,expectedSelectedStateDigest,catalogFile,expectedCatalogDigest,physicalSources,retainedDerivationSources,archiveId,expectedArchiveDigest,sessionBundleId,outputDirectory].some(value=>value!==undefined))
+      fail("LIVE_PROJECT_CAPTURE_ARGUMENTS_INVALID");
+    return (await import("./portable-project-evidence.mjs")).exportCodexLiveProjectEvidence({ directory: bundleRoot, home: nativeHome, sourceProjectId, threadIds,
+      ancestorFiles, sourceSelectionFile, expectedSourceSelectionDigest, sourceProjectRoot, lodeBundles, workspaceSources,
+      allowSynchronizationFiles: sourceSyncFiles, signal, onProcess, assertCurrentAuthority });
+  }
+  if ([sourceSyncFiles,ancestorFiles,sourceSelectionFile,expectedSourceSelectionDigest,sourceProjectRoot].some(value=>value!==undefined)) fail("LIVE_PROJECT_CAPTURE_ARGUMENTS_ON_OTHER_ACTION");
+  if (action === "restore-portable-workspaces") {
+    if (provider !== undefined || expectedBundleId !== null || nativeHome !== undefined || executable !== undefined || sourceProjectId !== undefined || threadIds !== undefined
+      || root !== undefined || derivationId !== null || expectedDerivationDigest !== null || cutoffItemId !== null || companionPaths.length
+      || [collectionRoot,collectionId,expectedCollectionDigest,workspaceMappings,workspaceTransfers,lodeBundles,physicalSourceRoot,physicalRolloutId,physicalFiles,
+        selectedStateEvidenceFile,expectedSelectedStateDigest,catalogFile,expectedCatalogDigest,physicalSources,retainedDerivationSources,sessionBundleId,outputDirectory].some(value=>value!==undefined)) fail("PORTABLE_WORKSPACE_RESTORE_ARGUMENTS_INVALID");
+    return (await import("./portable-workspace-evidence.mjs")).restorePortableWorkspaces({ directory: bundleRoot, archiveId, expectedArchiveDigest, workspaceTargets, signal, assertCurrentAuthority });
+  }
+  if (workspaceTargets !== undefined) fail("PORTABLE_WORKSPACE_TARGET_ARGUMENTS_ON_OTHER_ACTION");
+  if (["read-portable-project", "derive-portable-project", "admit-portable-targets", "publish-portable-project", "verify-portable-project"].includes(action)) {
+    if (provider !== undefined && provider !== "claude" || expectedBundleId !== null || sourceProjectId !== undefined || derivationId !== null
+      || expectedDerivationDigest !== null || cutoffItemId !== null || companionPaths.length
+      || [collectionRoot,collectionId,expectedCollectionDigest,workspaceTransfers,lodeBundles,physicalSourceRoot,physicalRolloutId,physicalFiles,
+        selectedStateEvidenceFile,expectedSelectedStateDigest,catalogFile,expectedCatalogDigest,physicalSources,retainedDerivationSources,sessionBundleId,outputDirectory].some(value=>value!==undefined))
+      fail("PORTABLE_PROJECT_NATIVE_ARGUMENTS_INVALID");
+    let host = nativeHistoryHost;
+    if (["read-portable-project","derive-portable-project"].includes(action)) {
+      if (nativeHome !== undefined || executable !== undefined) fail("PORTABLE_PROJECT_NATIVE_READ_ARGUMENTS_INVALID");
+      host = null;
+    } else if (action !== "admit-portable-targets" && !host && executable !== undefined) host = createProviderNativeHost({ provider: "claude", executable, pluginRoot, signal, onProcess });
+    return (await import("./portable-project-native.mjs")).operatePortableProjectNative({ action, directory: bundleRoot, archiveId, expectedArchiveDigest,
+      threadIds, root, workspaceMappings, nativeHome, host, destinationHost: host?.destinationImportHost, signal, assertCurrentAuthority });
+  }
+  if (["export-project-evidence", "read-project-evidence", "stage-project-session"].includes(action)) {
+    // Portable evidence is independent of target provider, native lifecycle and
+    // target-journal policy. A supplied capability is never an implied effect.
+    if (provider !== undefined || expectedBundleId !== null || nativeHome !== undefined || executable !== undefined || sourceProjectId !== undefined
+      || threadIds !== undefined || root !== undefined || derivationId !== null || expectedDerivationDigest !== null || cutoffItemId !== null || companionPaths.length
+      || [collectionRoot,collectionId,expectedCollectionDigest,workspaceMappings,workspaceTransfers,physicalSourceRoot,physicalRolloutId,physicalFiles,selectedStateEvidenceFile,expectedSelectedStateDigest,retainedDerivationSources].some(value=>value!==undefined))
+      fail("PORTABLE_EVIDENCE_ARGUMENTS_INVALID");
+    const portable = await import("./portable-project-evidence.mjs");
+    if (action === "export-project-evidence") {
+      if ([archiveId,expectedArchiveDigest,sessionBundleId,outputDirectory].some(value=>value!==undefined)) fail("PORTABLE_EVIDENCE_ARGUMENTS_INVALID");
+      return portable.exportPortableProjectEvidence({ directory: bundleRoot, catalogFile, expectedCatalogDigest, physicalSources, lodeBundles, workspaceSources, signal, assertCurrentAuthority });
+    }
+    if ([catalogFile,expectedCatalogDigest,physicalSources,lodeBundles].some(value=>value!==undefined)) fail("PORTABLE_EVIDENCE_ARGUMENTS_INVALID");
+    if (action === "read-project-evidence") {
+      if ([sessionBundleId,outputDirectory].some(value=>value!==undefined)) fail("PORTABLE_EVIDENCE_ARGUMENTS_INVALID");
+      return portable.readPortableProjectEvidence({ directory: bundleRoot, archiveId, expectedArchiveDigest, signal, assertCurrentAuthority });
+    }
+    return portable.materializePortableProjectSessionBundle({ directory: bundleRoot, archiveId, expectedArchiveDigest, bundleId: sessionBundleId, outputDirectory, signal, assertCurrentAuthority });
+  }
+  if ([archiveId,expectedArchiveDigest,sessionBundleId,outputDirectory].some(value=>value!==undefined)) fail("PORTABLE_EVIDENCE_ARGUMENTS_ON_OTHER_ACTION");
+  if (action === "assemble-project") {
+    if (provider !== undefined && provider !== "claude") fail("DERIVED_TARGET_PROVIDER_MUST_BE_CLAUDE");
+    if (expectedBundleId !== null || nativeHome !== undefined || executable !== undefined || sourceProjectId !== undefined || threadIds !== undefined
+      || root !== undefined || derivationId !== null || expectedDerivationDigest !== null || cutoffItemId !== null || companionPaths.length
+      || [collectionRoot,collectionId,expectedCollectionDigest,workspaceTransfers,lodeBundles,physicalSourceRoot,physicalRolloutId,physicalFiles,selectedStateEvidenceFile,expectedSelectedStateDigest,retainedDerivationSources].some(value=>value!==undefined))
+      fail("CAPTURED_PROJECT_ASSEMBLY_ARGUMENTS_INVALID");
+    const created = (await import("./captured-project-collection.mjs")).assembleCapturedProjectCollection({ catalogFile, expectedCatalogDigest,
+      collectionRoot: bundleRoot, physicalSources, workspaceMappings, signal, assertCurrentAuthority });
+    return (await import("./project-conversation-collection.mjs")).readProjectConversationCollection({ ...created, expectedCollectionDigest: created.collectionDigest, signal, assertCurrentAuthority });
+  }
+  if (physicalSources !== undefined || !["prepare-workspaces","copy-workspaces"].includes(action)
+    && [catalogFile, expectedCatalogDigest].some(value=>value!==undefined)) fail("CAPTURED_PROJECT_ARGUMENTS_ON_OTHER_ACTION");
+  if (retainedDerivationSources !== undefined && !["publish-project","verify-project"].includes(action)) fail("COLLECTION_RETAINED_SOURCE_ARGUMENTS_ON_OTHER_ACTION");
+  if (action === "capture-physical") {
+    if (provider !== "codex" || !Array.isArray(threadIds) || threadIds.length !== 1
+      || expectedBundleId !== null || sourceProjectId !== undefined || root !== undefined || nativeHome !== undefined || executable !== undefined
+      || derivationId !== null || expectedDerivationDigest !== null || cutoffItemId !== null || companionPaths.length
+      || [collectionRoot, collectionId, expectedCollectionDigest, workspaceMappings, workspaceTransfers, lodeBundles].some(value => value !== undefined))
+      fail("PHYSICAL_SOURCE_CAPTURE_ARGUMENTS_INVALID");
+    return (await import("./codex-captured-physical-source.mjs")).captureCodexPhysicalSourceFiles({ sourceRoot: physicalSourceRoot,
+      directory: bundleRoot, threadId: threadIds[0], rolloutId: physicalRolloutId, files: physicalFiles,
+      selectedStateEvidenceFile, expectedSelectedStateDigest, signal, assertCurrentAuthority });
+  }
+  if ([physicalSourceRoot, physicalRolloutId, physicalFiles, selectedStateEvidenceFile, expectedSelectedStateDigest].some(value => value !== undefined)) fail("PHYSICAL_SOURCE_ARGUMENTS_ON_OTHER_ACTION");
+  if (["prepare-workspaces", "copy-workspaces", "attach-project-lode"].includes(action)) {
+    if (provider !== undefined && provider !== "claude") fail("DERIVED_TARGET_PROVIDER_MUST_BE_CLAUDE");
+    if (expectedBundleId !== null || sourceProjectId !== undefined || threadIds !== undefined || root !== undefined
+      || derivationId !== null || expectedDerivationDigest !== null || cutoffItemId !== null || companionPaths.length
+      || nativeHome !== undefined || executable !== undefined || collectionRoot !== undefined || workspaceMappings !== undefined)
+      fail("COLLECTION_COMPANION_ARGUMENTS_INVALID");
+    const companions = await import("./project-collection-companions.mjs");
+    if (action === "attach-project-lode") {
+      if (workspaceTransfers !== undefined) fail("COLLECTION_COMPANION_ARGUMENTS_INVALID");
+      return companions.attachProjectCollectionLode({ collectionRoot: bundleRoot, collectionId, expectedCollectionDigest,
+        lodeBundles, signal, assertCurrentAuthority });
+    }
+    if (collectionId !== undefined || expectedCollectionDigest !== undefined || lodeBundles !== undefined) fail("COLLECTION_COMPANION_ARGUMENTS_INVALID");
+    return companions.transferProjectCollectionWorkspaces({ action, bundleRoot, workspaceTransfers, catalogFile, expectedCatalogDigest, signal, assertCurrentAuthority });
+  }
+  if (workspaceTransfers !== undefined || lodeBundles !== undefined) fail("COLLECTION_COMPANION_ARGUMENTS_ON_OTHER_ACTION");
+  if (["derive-project", "read-project", "publish-project", "verify-project"].includes(action)) {
+    if (provider !== undefined && provider !== "claude") fail("DERIVED_TARGET_PROVIDER_MUST_BE_CLAUDE");
+    if (expectedBundleId !== null || sourceProjectId !== undefined || threadIds !== undefined || root !== undefined
+      || derivationId !== null || expectedDerivationDigest !== null || cutoffItemId !== null || companionPaths.length)
+      fail("COLLECTION_ARGUMENTS_INVALID");
+    const core = await import("./project-conversation-collection.mjs");
+    if (action === "derive-project") {
+      if (nativeHome !== undefined || executable !== undefined || collectionId !== undefined || expectedCollectionDigest !== undefined)
+        fail("COLLECTION_PREPARATION_HAS_EFFECT_ARGUMENTS");
+      return core.deriveProjectConversationCollection({ bundleRoot, collectionRoot, workspaceMappings, signal, assertCurrentAuthority });
+    }
+    if (collectionRoot !== undefined) fail("COLLECTION_READ_USES_BUNDLE_ROOT");
+    if (action === "read-project") {
+      if (nativeHome !== undefined || executable !== undefined || workspaceMappings !== undefined) fail("COLLECTION_READ_HAS_EFFECT_ARGUMENTS");
+      return core.readProjectConversationCollection({ collectionRoot: bundleRoot, collectionId, expectedCollectionDigest, signal, assertCurrentAuthority });
+    }
+    if (!nativeHistoryHost && (typeof executable !== "string" || !path.isAbsolute(executable))) fail("DERIVED_EXACT_TARGET_HOST_REQUIRED");
+    const host = nativeHistoryHost ?? createProviderNativeHost({ provider: "claude", executable, pluginRoot, signal, onProcess });
+    return core.operateProjectConversationCollection({ action, collectionRoot: bundleRoot, collectionId, expectedCollectionDigest,
+      workspaceMappings, retainedDerivationSources, nativeHome, host, signal, assertCurrentAuthority });
+  }
+  if ([collectionRoot, collectionId, expectedCollectionDigest, workspaceMappings].some(value => value !== undefined)) fail("COLLECTION_ARGUMENTS_ON_OTHER_ACTION");
+  if (sourceProjectId !== undefined && (!["capture", "capture-project"].includes(action) || provider !== "codex"))
+    fail("PROJECT_NATIVE_PROJECT_SELECTION_IS_CODEX_CAPTURE_ONLY");
+  if (sourceProjectId !== undefined && (typeof sourceProjectId !== "string" || !sourceProjectId.trim() || sourceProjectId.trim() !== sourceProjectId))
+    fail("NATIVE_CODEX_PROJECT_ID_REQUIRED");
+  // A Codex app Project is not a canonical Lode Project. Standalone capture
+  // preserves native originals without initialization, fake Session IDs or a
+  // common-bundle prerequisite. Workspace/file copying is a separate scope.
+  if (action === "capture-project") {
+    if (provider !== "codex" || sourceProjectId === undefined) fail("PROJECT_NATIVE_EXACT_CODEX_PROJECT_REQUIRED");
+    if (expectedBundleId !== null || root !== undefined || derivationId !== null || expectedDerivationDigest !== null
+      || cutoffItemId !== null || !Array.isArray(companionPaths) || companionPaths.length)
+      fail("PROJECT_NATIVE_STANDALONE_CAPTURE_ARGUMENTS_INVALID");
+    if (![nativeHome, executable, bundleRoot].every(value => typeof value === "string" && path.isAbsolute(value)))
+      fail("PROJECT_NATIVE_HOST_REQUIRED");
+    if (threadIds !== undefined && (!Array.isArray(threadIds) || !threadIds.length || new Set(threadIds).size !== threadIds.length
+      || threadIds.some(id => typeof id !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id))))
+      fail("PROJECT_NATIVE_EXACT_SELECTION_REQUIRED");
+    if (typeof assertCurrentAuthority !== "function") fail("NATIVE_HISTORY_AUTHORITY_CHECK_REQUIRED");
+    const current = () => {
+      if (signal?.aborted) fail("PROJECT_NATIVE_ACTION_CANCELLED");
+      const value = assertCurrentAuthority();
+      if (value && typeof value.then === "function") {
+        Promise.resolve(value).catch(() => {}); fail("NATIVE_HISTORY_SYNCHRONOUS_AUTHORITY_REQUIRED");
+      }
+    };
+    current();
+    const offline = await prepareCodexNativeOffline({ home: nativeHome, executable, signal, onProcess });
+    current();
+    if (!offline.witness) return unavailable(offline);
+    return captureCodexNativeHistory({ witness: offline.witness, sourceProjectId, threadIds,
+      destination: bundleRoot, signal, onProcess, assertCurrentAuthority: current });
+  }
+  if (["derive", "publish-derived", "verify-derived", "open-derived"].includes(action)) {
+    if (provider !== undefined && provider !== "claude") fail("DERIVED_TARGET_PROVIDER_MUST_BE_CLAUDE");
+    if (!Array.isArray(companionPaths) || companionPaths.length) fail("DERIVED_COMPANIONS_NOT_READ_FROM_LIVE_PATHS");
+    const derived = await import("./project-native-derivation.mjs");
+    if (action === "derive") {
+      if (nativeHome !== undefined || executable !== undefined || derivationId !== null || expectedDerivationDigest !== null)
+        fail("DERIVED_CREATE_HAS_PROFILE_EFFECT_ARGUMENTS");
+      return derived.deriveProjectNativeHistory({ bundleRoot, expectedBundleId, root, threadIds, cutoffItemId, signal, assertCurrentAuthority });
+    }
+    if (threadIds !== undefined || cutoffItemId !== null) fail("DERIVED_SELECTION_IS_IN_ARTIFACT");
+    if (expectedDerivationDigest !== null && !/^[a-f0-9]{64}$/u.test(expectedDerivationDigest)) fail("DERIVED_EXPECTED_DIGEST_INVALID");
+    const artifact = derived.inspectProjectNativeDerivation({ bundleRoot, expectedBundleId, derivationId, expectedDerivationDigest, signal, assertCurrentAuthority });
+    if (action === "verify-derived" && nativeHome === undefined && executable === undefined && root === undefined)
+      return derived.projectNativeDerivationSummary(artifact);
+    if (expectedDerivationDigest === null) fail("DERIVED_EXPECTED_DIGEST_REQUIRED_FOR_NATIVE_EFFECT");
+    if (typeof nativeHome !== "string" || !path.isAbsolute(nativeHome) || typeof root !== "string" || !path.isAbsolute(root)
+      || !nativeHistoryHost && (typeof executable !== "string" || !path.isAbsolute(executable))) fail("DERIVED_EXACT_TARGET_HOST_REQUIRED");
+    const host = nativeHistoryHost ?? createProviderNativeHost({ provider: "claude", executable, pluginRoot, signal, onProcess });
+    if (host.provider !== "claude" || !["synthetic-test", "external-client-command-unqualified", "host-metadata-capability"].includes(host.evidenceKind))
+      fail("NATIVE_HISTORY_PROVIDER_HOST_INVALID");
+    const publication = await import("./claude-derived-publication.mjs");
+    const method = action === "publish-derived" ? publication.publishClaudeDerived : action === "open-derived" ? publication.openClaudeDerived : publication.verifyClaudeDerived;
+    return method({ artifact, nativeHome, root, host, signal, assertCurrentAuthority });
+  }
+  if (derivationId !== null || expectedDerivationDigest !== null || cutoffItemId !== null) fail("PROJECT_NATIVE_DERIVATION_ARGUMENTS_ON_SAME_PLATFORM_ACTION");
   if (!["capture", "read", "restore", "register"].includes(action))
     fail("PROJECT_NATIVE_ACTION_INVALID");
   if (!Array.isArray(companionPaths)) fail("NATIVE_CLAUDE_COMPANION_SCOPE_UNSUPPORTED");
@@ -171,7 +375,7 @@ export async function operateProjectNativeHistory({
     fail("PROJECT_NATIVE_HOST_REQUIRED");
   if (
     action === "capture" &&
-    (!Array.isArray(threadIds) ||
+    !(threadIds === undefined && sourceProjectId !== undefined) && (!Array.isArray(threadIds) ||
       !threadIds.length ||
       new Set(threadIds).size !== threadIds.length ||
       threadIds.some(
@@ -238,6 +442,7 @@ export async function operateProjectNativeHistory({
     const captured = await captureCodexNativeHistory({
       witness: offline.witness,
       threadIds,
+      sourceProjectId,
       destination,
       signal,
       onProcess,

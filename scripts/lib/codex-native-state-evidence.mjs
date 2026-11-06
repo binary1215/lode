@@ -23,6 +23,10 @@ export function readSelectedCodexStateEvidence(database, threadIds) {
       parameters: [id],
     }),
   );
+  return selectedEvidence(rows, threadIds);
+}
+
+function selectedEvidence(rows, threadIds) {
   const evidence = {
     schemaVersion: 1,
     kind: "SelectedCodexStateEvidence",
@@ -39,6 +43,8 @@ export function readSelectedCodexStateEvidence(database, threadIds) {
   return evidence;
 }
 export function verifySelectedCodexStateEvidence(evidence, threadIds) {
+  if (!Array.isArray(threadIds) || new Set(threadIds).size !== threadIds.length) fail();
+  const requested = new Set(threadIds);
   if (
     evidence?.schemaVersion !== 1 ||
     evidence.kind !== "SelectedCodexStateEvidence" ||
@@ -57,7 +63,7 @@ export function verifySelectedCodexStateEvidence(evidence, threadIds) {
       const record = Object.fromEntries(
         columns.map((column, index) => [column, decodeSqliteCell(row[index])]),
       );
-      if (typeof record.id !== "string" || !threadIds.includes(record.id) || seen.has(record.id))
+      if (typeof record.id !== "string" || !requested.has(record.id) || seen.has(record.id))
         fail();
       seen.add(record.id);
       return record;
