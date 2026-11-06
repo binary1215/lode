@@ -32,7 +32,10 @@ export function assertCopiedProjectRelativePath(relative) {
 
 export function copiedProjectFile(root, relative) {
   assertCopiedProjectRelativePath(relative);
-  const base = fs.realpathSync(root);
+  // Windows namespace volumes need the OS resolver; retain the same root
+  // resolution policy, child link checks and original native errors.
+  const rootSpelling = process.platform === "win32" && typeof root === "string" && /^\\\\\?\\[A-Za-z]:\\$/u.test(root) ? root.slice(4) : root;
+  const base = process.platform === "win32" ? fs.realpathSync.native(rootSpelling) : fs.realpathSync(root);
   let file = base;
   for (const part of relative.split("/")) {
     file = path.join(file, part);
