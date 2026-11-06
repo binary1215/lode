@@ -328,3 +328,459 @@ digest가 다르다는 사실만으로 편집 주체를 사용자라고 단정�
 manifest·sourceBasis 변조는 여전히 공통 검증 실패입니다. 구형 bundle은 Handoff 없음으로
 표시하며 조용히 다시 쓰지 않습니다. native 목록 노출·이력 읽기·실제 모델 이어쓰기는
 각각 별도 결과입니다.
+
+## 캡처한 Codex 대화를 Claude에서 이어가기
+
+“선택한 Codex 원본은 보존하고 별도 사본을 Claude에서 이어가자”라고 요청합니다.
+에이전트가 정확한 원본과 현재 대상을 확인합니다. 사용자가 JSON을 작성하거나 ID를
+옮기거나 네 단계 체크리스트를 실행할 필요는 없습니다. 변환·네이티브 게시·읽기 검증·
+열기는 요청한 결과 안에서 구분되는 효과입니다. 아직 로컬 구현 후보이며 모든 provider
+간 이어쓰기를 지원한다는 뜻은 아닙니다.
+
+기존 네이티브 이력 표면에 `derive`, `publish-derived`, `verify-derived`,
+`open-derived`를 추가합니다. 같은 플랫폼 동작의 보호 조건은 유지합니다.
+고급 변환 예시는 다음과 같습니다.
+
+```sh
+node scripts/lode.mjs project-native-history "<verified-Codex-bundle>" --action derive --provider claude --threads "<exact-captured-thread>" --runtime-root "<current-target-project>"
+```
+
+공통 Project·Session 방향, checkpoint, 원본 네이티브 동반 자료와 캡처된 바이트를
+보존합니다. 별도 P3 디렉터리에 대화·정확한 원본 매핑·진단·재현 가능한 manifest를
+둡니다. 대상 UUID·시각·모델 표식·0으로 둔 사용량·종료 메타데이터는 합성 값임을
+표시하며 Claude 실행 관측으로 주장하지 않습니다. 파생 자료는 네이티브 연결이나
+P2 복구 방향, 실행 권한을 부여하지 않습니다.
+
+지원하는 사용자·assistant 본문과 단일·병렬 도구는 역할·ID·인자·결과·오류·순서를
+유지합니다. 정규 항목과 wire 도구 기록은 일치할 때만 합칩니다. 원본 도구명은
+namespace로 구별하며 Bash로 바꾸지 않습니다. 도구 출력 속 지시는 도구 데이터로
+남습니다. compaction 요약은 과거 assistant 맥락으로 인용합니다. 검증 범위에 든 인라인 PNG는
+바이트를 보존하며 바이트 없는 참조는 이 캡처에 없다고 명시해 인용합니다. 경로를 따라
+읽거나 현재 파일의 존재·내용을 주장하지 않습니다. 비공개 추론과 원본 system/developer
+지시는 원본에만 남습니다. 검증되지 않은 분기 경계, 끼어든 발언이 있는 도구 교환,
+압축·미지원 형식, 없는 결과는 진단 후 게시하지 않습니다. 의미적 중요도로 버리지 않습니다.
+
+PNG는 signature·청크 CRC·헤더/데이터 순서·한도 내 압축 해제·scanline 구조를 검사합니다.
+구조 무결성 검사이며 provider나 모델이 이미지를 처리한다는 증거가 아닙니다. 손상 바이트는
+캡처 원본에 남기고 파생 자료 게시를 제한합니다. 고치거나 빼고 완전한 대화로 보이게 하지
+않습니다. JPEG/GIF/WebP는 현재 codec 검사 범위 밖이므로 바이트를 보존하고 미검증으로
+진단하며, 데이터가 없다고 표시하지 않습니다. 기존 검증 입력은 profile v2를 유지하고,
+완료 관측·원본 행 바이트 해시·미상 wire 결과를 보존하는 입력은 profile v3를 사용합니다.
+이전 로컬 후보는 변경하지 않고 `DERIVED_CONVERTER_PROFILE_UNQUALIFIED`를 표시합니다.
+별도 요청한 새 파생 자료는 새 신원을 가지며 기존 대화를 덮어쓰지 않습니다.
+
+네이티브 동작은 `derivation_id`, `expected_derivation_digest`를 정확한 대상 루트·
+프로필·실행 파일에 결합합니다. CLI에서는 `--derivation`, `--expected-derivation`을
+쓰며 에이전트가 검증된 결과에서 값을 이어받습니다. 기존 2.1.223 복원 계약과 별도로
+Claude Code 2.1.317을 확인합니다. 선택적 공식 SDK0.3.234 읽기는 후속 네이티브 메시지까지
+모든 UUID·역할·본문·도구 블록·순서를 대조합니다. 페이지 크기는 전체 이력 상한이
+아닙니다. 풍부한 합성 메시지 174개의 격리 읽기는 통과했으며 실제 Desktop·모델 검증은
+남았습니다. SDK가 없어도 변환·게시는 가능합니다.
+
+네이티브 이어쓰기 후에도 `rawCoverageComplete`는 모든 raw 사용자·assistant 기록을
+뜻합니다. `readerProjectionCoverageComplete`는 관측된 Desktop2.1.317/SDK0.3.234의 후속
+local-command-caveat envelope만 명시된 reader 생략으로 분리합니다.
+`derivedPrefixCoverageComplete`는 최초 파생 부분을 확인합니다. 모든 누락 UUID를 표시하며
+raw coverage는 계속 false입니다. 임의의 metadata flag나 비슷한 문구로 사용자·도구 메시지
+누락을 허용하지 않습니다. UUID로 정렬·본문을 대조하므로 한 건의 생략 때문에 이후 전부를
+변경됐다고 표시하지 않습니다. reader 투영은 증거이며 권위가 아닙니다.
+
+게시는 완전한 새 ID JSONL 하나만 없는 위치에 원자적으로 만듭니다. 공용 인덱스·설정·
+DB를 쓰거나 기존 Desktop 쓰기 프로세스를 종료하지 않습니다. 동일한 바이트는 다시 쓰지
+않고 관측하며 충돌·부분 append·불명확한 시도는 보존합니다. 불확실한 시도 후 대상이
+삭제되어도 자동 재생성하지 않습니다. 모델 호출·과거 도구 실행·인증정보 이동·프로필
+전환·설치·재시작은 발생하지 않습니다.
+
+열기는 게시나 질문 전송을 숨겨 수행하지 않습니다. 기본 실행기는 자식 트리 전체를
+정리하므로 외부 GUI 인계로 검증되지 않았습니다.
+`DERIVED_DESKTOP_HANDOFF_LIFETIME_UNQUALIFIED`와 정확한 샘플의 공식 Desktop 로컬
+`/resume` 대안을 반환합니다. 별도 검증된 신뢰 Host 기능은 고정된 공식 resume 인자만
+사용할 수 있으며 shell 문자열이나 prompt는 받지 않습니다. callback·CLI 반환은 화면
+표시 증거가 아니며 지정한 프로필을 이미 실행 중인 Desktop이 읽는다는 증거도 아닙니다.
+미완료 원본·네이티브 작업은 열기만 제한합니다. 불명확한 열기는 자동 반복하지 않습니다.
+독립적인 변환·검토는 계속 가능하며 정리를 약화하거나 비공개 Desktop 메타데이터를 써서
+열기를 강제하지 않습니다. 화면 표시·모델의 맥락 활용·답변 저장은 각각 관측해야 합니다.
+
+관측된 Desktop 로컬 선택기에서는 UUID 검색에 결과가 없었지만 화면 제목으로 정확한
+샘플을 열었습니다. 검증된 원본이나 공식 reader 메타데이터에서 제목·첫 질문 힌트를
+확인하고 Project와 최신 조건을 대조합니다. 정확한 UUID는 신원의 근거이며 선택기에서
+검색된다는 보장은 아닙니다.
+
+## Codex 캡처의 정확한 프로젝트 소속 확인
+
+Codex `capture`에는 Host가 확인한 정확한 `source_project_id`
+(CLI `--source-project`)를 전달할 수 있습니다. `thread_ids`/`--threads`를
+생략하면 네이티브 `threads.project_id`가 해당 ID와 일치하는 모든 행을
+선택하며, 보관 대화·자식 worker·서로 다른 작업 폴더도 포함합니다.
+대화를 직접 선택했다면 모두 해당 프로젝트 소속인지 확인하고, 일부만
+선택한 결과에는 부분 선택임을 표시합니다. 제목·작업 경로·Git 원격 주소는
+소속 근거가 아닙니다. 검증된 선택은 HEAD가 제공하며 사용자가 ID나 JSON을
+직접 작성할 필요는 없습니다. 다른 provider나 작업에 이 인자를 사용하면
+네이티브 프로필에 접근하기 전에 거부합니다.
+
+`CodexProjectCatalog`는 고정된 `projects`·`threads` 스키마에서 얻는 P3
+증거입니다. 선택된 프로젝트의 헤더에는 이관 색인에 표시할 ID·이름만
+보존합니다. 전체 대화 목록에는 ID·소속·cwd·보관/source 상태·attached
+parent ID만 포함합니다. 미선택 대화의 제목·첫 발화·preview·정책·원격 URL·
+계정과 임의의 프로젝트 metadata는 제외합니다. 두 조회는 같은 SQLite
+읽기 스냅샷을 사용합니다. 전체 state 행은 실제 선택된 대화만 수집하고,
+payload는 해당 행의 최소 목록 투영이 정확하게 일치하는지 검증합니다. 빈 프로젝트의 목록도 유효하지만, 대화가
+없는 이력 캡처는 payload를 생성하지 않고
+`NATIVE_CODEX_PROJECT_HAS_NO_THREADS`를 알립니다. 목록은 네이티브 DB의
+해당 스냅샷 범위만 증명합니다. Host 화면 목록·로그에만 남은 대화·임시
+대화는 미관측입니다. 기존 쓰기 프로세스 검사도 유지하며 앱을 종료하지
+않습니다.
+
+이는 기존의 선택된 Lode 논리 Session 번들에 프로젝트 소속 증거를 더한
+단계입니다. 코드·worktree 파일이나 첨부를 복사하거나, 모든 Lode 논리
+Session을 열거하거나, 네이티브 대화의 논리 Session 소유권을 만들거나,
+프로젝트 전체 이관을 완료하는 기능은 아닙니다. 변환된 대화는 P2 방향을
+작성하지 않습니다.
+
+같은 native-history 표면의 `capture-project`는 정확한 `source_project_id`·
+`native_home`·`executable`로 `bundle_root` 위치에 독립적인 Codex 프로젝트
+이력 캡처를 만듭니다. Lode 초기화나 공통 번들이 필요하지 않습니다. 기존
+쓰기 프로세스·버전 검사는 유지하며 앱 종료나 provider 자동 시작은 없습니다.
+`derive`는 기존 공통 번들뿐 아니라 검증된 독립 Codex 네이티브 payload도
+읽습니다. 이 경우 원본 연결에는 네이티브 신원만 기록하며, Lode 정본
+Project나 논리 Session을 만들어내지 않습니다. 이는 후속 연결의 기반이며
+다중 대화·파일 복사 이관 UX 전체의 완료를 뜻하지 않습니다.
+
+목록의 전수 조회는 캡처 당시의 관측입니다. 나중의 payload 검사는 저장된
+목록의 구조와 선택 행의 연결을 검증하며 원본 DB 질의를 다시 수행하지
+않습니다. 수정된 외부 목록의 누락 여부까지 독립 증명하거나 Host 전체
+조회 완료를 인증하지 않습니다. 원본 payload ID·digest를 유지하고 이
+검증 범위도 결과에 표시합니다.
+
+## 프로젝트를 여러 개의 독립 대화로 옮기기
+
+선택한 Codex 프로젝트를 Claude로 옮기되 대화를 각각 유지하고, 코드 폴더는
+재사용할지 새 폴더로 코드·문서를 복사할지 말하면 됩니다. 정확한 네이티브
+Project·대화 목록·현재 작업 폴더 선택은 HEAD가 전달합니다. 사용자가 ID·
+매핑·plan JSON을 작성하지 않습니다. 코드, 네이티브 대화, 선택적인 Lode
+기록은 서로 다른 범위입니다.
+
+기존 `project-native-history` CLI / `lode_project_native_history` typed 표면에
+다음 흐름을 연결했습니다.
+
+1. `capture-project`로 검증된 네이티브 프로젝트 원본을 보관합니다. 기존
+   버전·쓰기 프로세스 검사를 유지합니다. 원본 앱이 실행 중이면 사용 불가를
+   알리며 캡처를 위해 앱이나 MCP를 종료하지 않습니다.
+2. 선택적인 `prepare-workspaces` / `copy-workspaces`는 현재 Host가 선택한
+   저장소 소유 코드·문서 경로를 사용합니다. HEAD가 반환된 plan·digest를
+   복사 호출에 전달하므로 별도의 사용자 승인 의식은 없습니다. digest는
+   무결성 근거이며 권한이 아닙니다. 재사용은 복사하지 않고, 복사는 대상의
+   수정본을 보존하며 충돌을 알립니다. 모든 깊이의 클라이언트 전용 폴더,
+   `.git`, `.lode`/`.head`, 자격증명과 `.env`는 내용을 읽지 않고 제외합니다.
+   `.env.example`, `.env.sample`, `.env.template`은 선택할 수 있습니다.
+   같은 원래 plan으로 이미 복사된 파일을 안전하게 관찰할 수 있습니다.
+   의존성 설치·프로그램 실행 가능성 검증·외부 첨부 탐색·전체 worktree를
+   빠짐없이 선택했다는 주장은 하지 않습니다.
+3. `derive-project`는 현재 호출자가 지정한 `collection_root`에 불변 P3
+   대화 모음을 만듭니다. 각 대화에는 독립된 단일 대화 원본 capsule과
+   Claude 변환본이 있습니다. 전체 목록이 바뀌어도 대화별 입력과 대상
+   폴더 신원이 같으면 이전 변환본·네이티브 ID를 재사용합니다. 대화를
+   이어 붙이지 않습니다. 사용자가 선택한 같은 작업 폴더에 독립 대화를
+   모을 수 있지만 코드 트리나 P2 소유자를 병합하지는 않습니다. 실제 코드·
+   문서 복사에서는 서로 다른 원본 worktree를 한 대상에 합치지 않습니다.
+   폴더 매핑이 없으면 해당 대화만 대기하고, 미지원 표현은 원본을 보존한
+   채 대화별로 표시합니다. 권한·신원·무결성 실패는 원래 실패를 유지하며
+   성공한 미지원 형식 처리로 바꾸지 않습니다.
+4. `read-project`는 읽기 전용입니다. `publish-project`·`verify-project`에는
+   정확한 모음 digest와 현재 호출자가 별도로 지정한 작업 폴더 매핑·
+   프로필이 필요합니다. 각 대화의 기존 게시 journal을 사용하므로 대상에서
+   이어 쓴 내용은 보존하고, 불확실한 효과를 재시도하거나 되돌리지 않습니다.
+   게시, 공식 reader coverage, Desktop 표시와 모델 사용은 별개 결과입니다.
+   대화 모음은 공유 실행 권한이 아닙니다.
+   batch의 `nativePublication`·`officialReader`는 실제 관측한 대화를 집계하며
+   archive reader의 쓰기 없음 표시를 재사용하지 않습니다. 실패하면 원래
+   오류와 이미 관측했거나 불확실한 대화·미방문 ID를 CLI JSON 또는 MCP
+   오류 data의 `partialNativeOperation`에 함께 전달합니다. 권한 거절 뒤에는
+   원본·프로필 추가 관찰, 재시도나 rollback을 하지 않습니다.
+5. 선택적인 `attach-project-lode`는 이미 내보내 검증한 Lode Session 번들과
+   명시적인 연결 증거를 보관합니다. 정본 Project·Session 신원은 네이티브
+   ID와 구분합니다. 초기화·import·소유자 병합·checkpoint 통합을 하지 않고,
+   모든 논리 Session을 포함했다고 주장하지 않습니다. 네이티브 대화만
+   옮겨도 됩니다. 연결 증거는 기본 모음을 덮어쓰지 않는 별도 기록입니다.
+   기존 `lode_project_bundle_import`와 정확한 Session의
+   `lode_conversation_enter` 후속 경로도 반환합니다. 실제 현재 이관 범위에서만
+   import하고 복구된 P2·현재 대상의 공통 제약을 확인합니다. 기존 import는
+   대상의 더 최근 취소와 독립 소유자를 보존합니다. 연결 기록·대상 추천만으로
+   효과 권한이나 Session 선택이 생기지 않습니다.
+
+CLI에는 `--collection-root`, `--collection`, `--expected-collection`,
+`--workspace-map`, `--workspace-transfers`, `--lode-bundles`를 추가했습니다.
+마지막 세 인자는 Host가 구조화해 전달하며 일반 사용자는 대화·typed MCP를
+사용합니다. P3 모음·번들은 보관 증거, P4 조회는 뷰, 게시·파일 작업은 P5이며
+어느 것도 P2 방향을 만들지 않습니다.
+
+완료 기록의 ordinal과 실제 도구 호출 순서가 다를 수 있어, 해당 입력은
+별도 변환 profile v3에서 같은 turn의 고유한 호출·인자·결과를 대조합니다.
+기존 검증 입력의 v2 신원은 유지합니다. wire 결과의 오류 여부가 없으면
+네이티브 오류 필드도 생략하고 미상 근거를 남깁니다. `ok` 같은 텍스트를
+성공으로 추론하지 않으며, 수치 정밀도가 소실되는 입력은 원본을 보존하고
+미지원으로 표시합니다.
+
+### 별도로 캡처된 물리적 대화 이력 연결
+
+`capture-physical`은 명시적으로 선택한 기존 JSONL 캡처의 prefix를 읽습니다.
+물리 rollout ID, 안정적인 native thread ID, 배타적 byte 경계와 원본 digest는
+검증된 캡처 근거에서 HEAD가 전달합니다. 사용자가 작성하는 입력이 아닙니다.
+선택한 leaf와 명시된 `history_base` 조상만 읽고, 부모의 이후 내용·형제 대화는
+읽지 않습니다. 복사된 상속 prefix는 한 번만 포함합니다. 안정적인 thread,
+물리 rollout, 루트 Session의 신원은 구분합니다. raw `ItemCompleted`와 같은
+turn의 정확한 도구 호출·결과를 의미 변환하며 가상의 canonical DB 행은
+만들지 않습니다. 미지원 수정·rollback 표현은 원본을 보존하고 해당 변환본의
+게시만 보류합니다.
+
+선택적으로 정확한 selected-state 캡처 파일·digest를 전달하면 그 안의
+`rollout_path`와 실제 캡처 파일 신원을 대조합니다. ID만 같으면 연결 제안입니다.
+오래됐거나 사라진 경로는 제안으로 남기되 권한·digest 실패는 원래 오류를
+유지합니다. 이는 기록된 캡처의 정합성이며 생산자 진위·현재 목록·여러 원본이
+동일 시점의 snapshot이라는 증명은 아닙니다.
+
+물리 변환 profile v2는 새 완성 JSONL에 공식 `custom-title` 기록을 포함합니다.
+captured selected-state의 대화명이 있으면 표시용으로 길이를 줄여 유지하고,
+안정적인 native ID·기록된 분기 부모를 함께 넣어 첫 문장이 같은 대화를
+구분합니다. 대화명이 없으면 의미를 추측하지 않고 기록된 신원으로 표시합니다.
+인용·합성한 부분의 출처는 manifest에 남습니다. 이는 목록 메타데이터이지
+새 사용자 발화·모델 지시·P2가 아닙니다. 이미 게시했거나 이어 쓴 대화의
+이름은 바꾸지 않습니다. 공식 SDK 제목·목록 확인과 실제 Desktop 표시·검색·
+모델 사용의 검증은 구분합니다.
+이미 있는 physical-v1 변환본은 기록된 형식으로 정확히 재현하고 원래 native
+ID·게시 시도 journal을 재사용합니다. 제목을 추가하려고 두 번째 대화를 자동
+생성하지 않습니다. 현재의 turn 검사는 계속 적용합니다. 기존 profile intent가
+충돌하면 효과를 임의로 선택하거나 다른 ID를 만들지 않고 충돌을 보존합니다.
+
+`assemble-project`는 캡처한 프로젝트 목록과 선택한 물리 대화 원본·현재 폴더
+매핑을 연결합니다. 원본 또는 연결 근거가 없으면 해당 대화만 대기합니다.
+변환본은 **원래 캡처 저장소**에 생성하거나 재사용하며 별도 게시 journal을 가진
+복제본은 만들지 않습니다. 모음에는 목록·정확한 원본 manifest 메타데이터와
+변환본·저장소 참조만 들어가고 **물리 원문 본문은 포함되지 않습니다**.
+`read-project`는 저장된 경로를 따라가지 않고 기록된 메타데이터만 대조합니다.
+원래 저장소 없이 이 모음만 다른 PC로 옮겨 복구할 수 있다고 주장하지 않습니다.
+
+`publish-project`·`verify-project`에서 HEAD는 현재 허용된 정확한 원래 저장소를
+`retained_derivation_sources`로 전달합니다. 기록된 경로는 접근 권한이 아닙니다.
+범위나 저장소가 없으면 해당 대화만 대기합니다. 교체·복제된 저장소와 변경된
+아티팩트는 검증에 실패하며 작업 내내 원래 저장소 신원을 재확인합니다.
+모음 생성 후 단독 게시가 시작되거나 모음 요청과 경합해도 원래 시도 journal을
+공유합니다. 불확실한 효과는 재실행하지 않고 대상에서 이어 쓴 내용을 보존합니다.
+이는 알려진 로컬 저장소 조정이지 독립 재캡처·유실 journal·다른 PC 전체의
+전역적인 단 한 번 실행 보장은 아닙니다.
+
+CLI 인자는 `--physical-source-root`, `--physical-rollout`, `--physical-files`,
+`--selected-state-evidence`, `--expected-selected-state`, `--catalog-file`,
+`--expected-catalog`, `--physical-sources`, `--retained-derivation-sources`입니다.
+HEAD·Host가 현재 범위를 구성하며 사용자는 여전히 대화로 이관을 요청합니다.
+코드·문서 준비에는 전체 구형 payload 대신 정확한 catalog 파일·digest도
+사용할 수 있습니다.
+
+남은 범위도 명시합니다. 프로젝트 캡처는 기존 payload·offline 어댑터이며
+실행 중인 원본의 snapshot backend가 아닙니다. WAL DB의 `readOnly` 열기만으로
+공유 메모리 sidecar 생성이 방지되지는 않아 원본 무쓰기 live backend의 증거로
+쓰지 않습니다. 다른 시작·migration·scan/repair·launcher로 이를 우회하지 않습니다.
+물리 대화 의미 변환은 소스 형식을 따른 합성 시험이며 실제 모든 Codex fork·
+rollback·compaction 형식의 인증이 아닙니다. 기존 Lode 번들은
+선택한 Session만 포함하며 전체 Session 자동 수집이 아닙니다. 합성 시험과
+공식 SDK 읽기는 새 Desktop 화면·모델 동작의 검증이 아닙니다. 자동 GUI
+전달은 여전히 미검증이며 보안 정책의 거부를 우회하지 않습니다.
+
+### 이동용 증거 묶음
+
+`portable-project-evidence.mjs` 모듈은 선택한 물리 대화 원문, 추출한
+프로젝트 목록 값, 명시적으로 선택한 기존 Lode Session 번들 원본을 P3로
+내보내고 검증합니다. 객체는 내용 digest로 보관하며 각 Session·Project의
+신원을 유지합니다. 조회는 묶음 안의 객체와 물리 prefix 계보만 검증하고
+기록된 원본 경로 접근·Project 초기화·복구 방향 import를 하지 않습니다.
+묶음 루트에는 실행 가능한 네이티브 원본 manifest를 만들지 않습니다.
+`materializePortableProjectSessionBundle`은 명시적으로 선택한 common Session
+번들 하나만 별도의 P3 임시 폴더로 재구성하고 기존 typed bundle 검사기로
+재검증합니다. 기존 import 경로를 반환하되 실행·Session 선택·네이티브 원본
+저장소나 효과 journal 생성은 하지 않습니다. 현재 범위에서 별도로 import하고
+정확한 Session으로 진입한 뒤에야 원래 P2를 복구하며, 더 최근 대상 제약을
+보호하는 기존 import 검사를 유지합니다.
+
+알려진 변환본 본문과 원본 저장소의 P5 시도·결과 기록도 관측 범위·digest와
+함께 원문으로 보관합니다. 관측은 제한된 비원자적 범위이며 기록이 없거나
+건너뛰었거나 수집하지 못했다고 해서 이전 시도가 없었다고 증명하지 않습니다.
+기록된 대상 경로는 기기 신원이나 권한이 아닙니다. 대상 어댑터는 새로운
+기기로의 의도된 이관과 이미 알려진 불확실한 재실행을 구분해야 하며,
+묶음 복사본을 빈 게시 journal로 취급해서는 안 됩니다.
+0바이트나 형식이 깨진 과거 작업 기록도 정확한 해시와 함께 해석되지 않은
+원본으로 보존합니다. 바이트 보존이 유효한 JSON이나 확정된 결과를 뜻하지는
+않습니다. 객체·묶음 구조를 검증한 뒤 create-only manifest를 게시합니다.
+게시 중·게시 후 실패하면 복사된 객체 관측을 유지하고, 게시 결과가 미확정인
+경우와 manifest가 확인된 뒤 최종 조회만 실패한 경우를 구분합니다. 권한 실패
+후에는 rollback이나 추가 파일 관찰을 하지 않으며 후속 조회에는 현재 범위가
+필요합니다.
+
+기존 native-history CLI·typed MCP의 `export-project-evidence`,
+`read-project-evidence`, `stage-project-session`으로 사용합니다. 사용자가
+보관할 Project·대화와 선택적인 Session 기록을 말하면 HEAD가 현재 원본 범위·
+archive digest·선택 번들을 전달하며 사용자가 descriptor JSON을 쓰지 않습니다.
+이 P3 작업에는 provider·네이티브 home·실행 파일 인자를 넣지 않고, Host에
+실행 기능이 있어도 호출하지 않습니다. CLI의 조회·임시 복원 범위는
+`--archive`, `--expected-archive`, `--session-bundle`, `--output-directory`입니다.
+실패하면 원래 오류와 관측된 부분 결과를 CLI JSON·MCP error data의
+`partialPortableEvidence`에 유지합니다. 증거 작업에 Project·Canon·Run 초기화나
+새로운 승인 의식을 추가하지 않습니다.
+
+위 세 작업은 계속 증거만 다룹니다. 아래의 실행 중 원본 수집·대상 PC 게시 흐름은
+이 증거를 실제 전달과 연결하되, 묶음 자체를 실행 권한으로 취급하지 않습니다.
+
+### Codex 프로젝트를 독립된 Claude 대화로 옮기기
+
+“이 Codex 프로젝트와 대화들을 Claude로 옮기고, 각 대화와 이력을 따로 보존해줘”라고
+요청합니다. HEAD가 확인한 프로젝트·물리적 원본 ID, archive digest와 현재 대상 매핑을
+이어받습니다. 사용자가 descriptor JSON을 쓰거나 Product·Run·Canon을 초기화할 필요는
+없습니다. 선택적인 코드·문서 복사와 기존 공통 Session import는 별도 범위입니다.
+대화들을 같은 폴더에 표시해도 코드 트리·소유자·P2 방향성을 합치지는 않습니다.
+
+1. `capture-live-project`가 선택한 Codex 프로젝트를 이동용 P3 묶음으로 수집합니다.
+   `provider: codex`, 현재 명시적으로 선택한 `native_home`, `source_project_id`와
+   사용자가 동의한 `source_sync_files` 설정을 전달합니다. `thread_ids`는 선택적인
+   부분 집합입니다. 선택한 부모의 현재 경로는 자동으로 연결합니다. 물리 의존 파일의
+   위치가 없으면 같은 프로젝트의 현재 위치 메타데이터와 그 행이 직접 참조한 폴더의
+   파일명만 비재귀로 확인합니다. 유일한 후보의 헤더가 현재 프로젝트 소속임을 확인한
+   뒤에만 정확한 상속 cutoff까지 본문을 읽고 보존합니다. 후보 중복이나 탐색 범위 밖의
+   위치는 `unresolvedLineageConversations`를 포함한 대화별 부분 결과로 남깁니다.
+   `ancestor_files`는 현재 접근 권한을 확인한 Host가 전달하는 선택적 의존 원본 목록이며,
+   사용자에게 JSON 작성을 요구하거나 대화 본문의 경로를 따라가지 않습니다. 전체 이력을
+   스캔하거나 원본 접근 범위를 조용히 넓히지 않습니다. 지원하는 Windows 형식에서
+   독립적인 SQLite 읽기 전용 스냅샷과 기존 DB·WAL의 삭제·이름 변경 방지를 사용합니다.
+   동기화 보조 파일은 합의한 범위에서만 허용합니다. WAL이 없으면 이 수집 경로만
+   미지원으로 표시하며, WAL 생성·무시·수리·복사는 하지 않습니다. 기존 writer의
+   append·checkpoint·truncate는 허용하며 전체의 단일 시점이나 writer 중지를
+   주장하지 않습니다. 읽기 연결과 소유한 숨김 보호 프로세스가 종료된 뒤에만 저장
+   성공을 반환합니다.
+
+   실시간 선택 읽기는 정확한 스키마·마이그레이션, 선택한 typed 행과 원본 주소를
+   검증하며 `wholeDatabaseIntegrity`는 `not-observed`로 남깁니다. DB 전체의
+   `quick_check`·`foreign_key_check`를 선행 조건으로 실행하지 않습니다.
+   오프라인 DB 무결성 검사는 두 검사를 유지합니다. 스키마·선택 읽기·파일 식별자·
+   권한·원본 prefix 오류는 그대로 주된 실패로 보존합니다.
+
+   기록된 사용자 fork는 부모 prefix를 상속하면서 새 논리 root를 시작할 수 있습니다.
+   root 변경은 자식 Session ID가 자기 thread ID와 같고, 명시된 fork 부모가 보관한
+   부모 헤더와 일치하며, fork ordinal이 정확한 물리 base cutoff와 같을 때만 허용합니다.
+   같은 thread의 물리 continuation에서 root를 바꾸는 것은 계속 거부합니다.
+   각 구간의 root를 별도로 보존하며, 선택한 root가 논리 Session 소유권을 합치거나
+   실행 권한을 부여하지 않습니다.
+
+   앱 사이드바의 Project ID와 네이티브 DB Project ID는 다를 수 있습니다. 현재 요청의
+   정확한 선택에는 HEAD가 `source_selection_file`, `expected_source_selection_digest`와
+   별도로 허용된 `source_project_root`, 명시적인 native home를 전달할 수 있습니다.
+   `CodexExplicitProjectSelection`은 P3 선택자이며 Host 인증·권한·검증된 앱 소속·P2
+   방향성이 아닙니다. 별도 종류인 `CodexExplicitConversationCatalog`는 앱 참조와 실제
+   네이티브 `project_id`의 `null`을 포함한 값을 그대로 보존하며 같은 cwd 대화를 추가하지
+   않습니다. 이 경로는 호출자가 허용한 한 소스 작업 폴더로 한정하며 선택한 모든 cwd가
+   같은 물리적 root로 연결돼야 합니다. Windows 일반·확장 표기는 원시 문자열을 보존하고
+   실제 containment와 열린 파일 identity를 검사합니다. 파일 identity의 null은 관측 시
+   부재를 뜻하며 미검증 identity가 아닙니다. 이후 파일이 생겨도 새 명시 관측 전까지 부분
+   결과로 남기며 다른 선택 대화의 조상으로 참조돼도 동일합니다. 현재 호출자의 권한은
+   선택자 바이트와 별개입니다. 파일과 digest는
+   HEAD가 처리하므로 사용자가 JSON을 작성하거나 ID를 수동 연결하지 않습니다.
+
+   과거 생성 버전 `0.158.0-alpha.2.1`, `0.159.2`, `0.160.0`, `0.163.0-alpha.10.2`,
+   `0.165.0-alpha.1.2`, `0.166.0-alpha.5.1`은 제한된 paginated 물리 parser로 검증했습니다.
+   현재 DB와 대상 runtime의 고정 버전은 유지합니다. ordinal·base·root·cutoff·hash와
+   엄격한 event 변환 검사는 계속 적용하며, 미지원 생성 형식은 원문을 보존한 부분 증거로
+   남고 게시 가능으로 승격하지 않습니다. `stateHeaderAgreement`는 원문을 바꾸지 않고
+   metadata 불일치를 기록합니다. 물리 범위 검증은 의미 변환이나 모델 맥락 동일성 판정이
+   아닙니다.
+2. 묶음을 옮긴 뒤 `read-project-evidence`로 원래 PC·DB·원본 경로·네이티브 실행 파일
+   없이 검증합니다. typed state/history, 조상 원문의 정확한 범위, raw-only 완료 기록,
+   미완성 끝부분과 대화별 원본 누락·미지원 상태를 구분해 보존합니다. 대화 하나가
+   없다고 나머지를 버리지 않습니다. 권한 거부·취소·신원·해시 실패는 원래 오류를
+   유지하며 종속 효과를 중단합니다.
+3. `read-portable-project`는 읽기 전용 조회입니다. `derive-portable-project`는 공통
+   재현 코덱으로 독립된 Claude 변환본을 준비하고 기존 P3 intent와 ID를 재사용합니다.
+   정확한 archive/digest와 현재 대상 폴더 매핑 또는 명시적으로 공유할 `runtime_root`를
+   전달합니다. 이 두 작업은 네이티브 클라이언트를 시작하거나 프로필에 쓰지 않습니다.
+   실행 가능한 원본 복제본이나 새 공통 Session도 만들지 않습니다.
+4. `admit-portable-targets`가 현재 지정한 대상을 대상 PC Host 소유 P5 저장소에 한 번
+   기록합니다. 이미 승인된 정확한 대상 요청 안에서 HEAD가 수행하는 준비이며,
+   추가 Product 검토나 대화마다 반복하는 승인 절차가 아닙니다. 기본 Host가 저장 위치와
+   host identity를 소유하며 묶음·일반 호출자의 JSON이 이를 정하지 않습니다. Windows는
+   `%LOCALAPPDATA%/Lode/native-imports`, 다른 Host는 로컬 상태 폴더를 사용합니다.
+   조회나 게시가 없는 Host·대상 기록을 초기화하지 않습니다. 유실·교체·복제·부분 기록을
+   자동으로 새 대상이라고 취급하지 않습니다.
+5. `publish-portable-project`는 검증한 현재 Claude Host와 대화별로 독립적인 로컬
+   claim·lease를 사용합니다. 활성 상태의 정확한 lease 안에서만 일회성 파일쓰기 권한을
+   발급합니다. 없던 완전한 JSONL만 생성하며 이어쓴 파일·충돌 파일 덮어쓰기, 공용
+   네이티브 메타데이터 변경, 앱 종료, GUI 열기나 모델 프롬프트 전송은 하지 않습니다.
+   반복·복제 요청은 현재 대상과 보존된 결과를 관측하며 불확실하거나 완료된 게시를
+   재실행하지 않습니다.
+6. `verify-portable-project`는 검증된 설치 SDK로 현재 출력한 prefix의 역할·본문·UUID·
+   순서·도구를 대조합니다. 기계적 일치는 의미적 충분성·Desktop 표시·모델 이어쓰기와
+   별개입니다. transcript나 CLI exit0만으로 뒤의 결과까지 입증하지 않습니다.
+
+미완성 원문 끝부분은 P3에 그대로 남기고 `remainingSourceUncertainties`로 설명합니다.
+이를 prefix 게시의 자동 게이트로 삼지 않습니다. `pendingThreadIds`는 요청한 작업에서
+남은 일을 뜻합니다. 같은 native ID 또는 범위를 확인할 수 없는 이전 작업은 해당 대화의
+네이티브 효과만 제한합니다. 처음 확인한 불확실성은 로컬 P5 저장소에 한 번 보존하므로
+뒤의 묶음에서 그 이력을 빼도 지워지지 않습니다. 예전 경로·inode로 다른 PC라고
+단정하거나 시도를 초기화하지 않습니다. 모든 증거가 지워진 뒤의 전역 exactly-once
+재구성은 불가능하며 보장하지 않습니다.
+
+묶음과 변환 증거는 실행 권한이나 P2 복구 권위가 아닙니다. Host 저장소·저널 결과·
+원본 대화는 ReviewDecision·Product Canon·현재 Session 선택·작업 완료가 되지 않습니다.
+로컬 후보에 위 경로를 연결한 상태이며, 실제 사용자 이관·Desktop 표시·모델 이어쓰기는
+별도로 승인된 검증 범위에서 확인해야 합니다.
+
+코드·문서도 요청했다면 HEAD가 live 수집이나 증거 내보내기에 `workspace_sources`로
+현재 프로젝트 작업 폴더와 승인된 저장소 소유 파일 목록을 전달합니다. 각 작업 폴더의
+범위는 따로 유지합니다. 바이너리·빈 파일도 스트리밍한 content-addressed 객체로
+저장하며, 검증하려고 전체 코드 파일을 Context에 넣거나 네이티브 transcript decoder의
+바이트 상한을 적용하지 않습니다. 명시적으로 선택한 범위이며 모든 저장소 파일·빌드
+의존성이 포함됐다는 뜻은 아닙니다. 선택 파일의 누락과 제외 항목도 표시합니다.
+
+같은 묶음을 옮긴 뒤 `restore-portable-workspaces`가 현재 `workspace_targets`의
+`copy` 또는 `reuse` 선택을 사용합니다. 원래 PC 경로를 열지 않습니다. 현재 범위에
+따라 새 폴더를 만들 수 있으며 이미 동일한 파일은 다시 쓰지 않습니다. 충돌한 작업
+폴더는 그대로 두고 독립적인 다른 폴더는 진행할 수 있습니다. 서로 다른 원본 폴더를
+대상 하나로 몰래 합치지 않습니다. `nextConversationMappings`가 이미 합의한 복원·재사용
+폴더를 대화 이관으로 이어주므로 다시 승인하거나 ID·JSON을 직접 작성할 필요가 없습니다.
+
+규칙으로 식별한 Git·자격증명·환경 파일·개인 클라이언트/사용자 경로·Host 연결 설정은 중첩
+경로에서도 제외합니다. 에이전트 지시 파일은 수동적인 증거로 보존하며 대상 작업
+폴더에서 자동 활성화하지 않습니다. 원본 ACL·소유권·실행 비트는 가져오지 않습니다.
+관측할 수 있는 실행 비트도 증거로만 기록하고 새 파일은 현재 대상 기본값을 사용합니다.
+선택 코드·문서의 바이트를 옮기는 것이며 실행 환경·의존성까지 완성됐다는 뜻은 아닙니다.
+재사용하면 현재 파일·권한을 그대로 유지하고 과거 버전과 같다고 주장하지 않습니다.
+
+이름으로 식별하는 키·자격증명 저장소인 `.key`, `.p12`, `.pfx`, `.jks`, `.keystore` 등은
+제외합니다. `.pem`과 `.asc`는 스트리밍 중 식별한 개인키 헤더를 거부하며 일반 공개
+인증서 데이터는 보존합니다. 이 경로·형식 검사는 “비밀이 전혀 없다”는 인증이 아닙니다.
+일반 선택 소스·문서와 `.env.example`에도 민감한 내용이 있을 수 있습니다. 사용자가
+합의한 저장소 범위에서 파일을 선택하며 새로운 승인 양식을 요구하지 않습니다.
+
+복사 대상을 묶음 자신이나 내부로 지정할 수 없으며 식별된 물리적 별칭도 보호합니다.
+상위 폴더는 선택한 모든 출력과 임시 쓰기 부모가 보호한 묶음 밖일 때만 허용합니다.
+명시적 재사용은 쓰지 않습니다. 대화 전달·재사용이 무관한 작업 폴더 객체를 다시
+해시하거나 필수로 요구하지 않으며, 실제 복사할 captured 파일의 정확한 바이트만
+검증합니다. 복사하지 않는 수동 증거인 지시 파일 객체는 복원을 막지 않습니다.
+`workspaceObjectCoverage`가 검증·미검증 root와 객체 수를 표시합니다.
+복사 시 `objectSelection`은 `restore-captured-only`이며, 검사하지 않은 지시 객체가 있는
+root는 전체 검증 대신 `partiallyVerifiedSourceRoots`에 표시합니다.
+그 호출에서 검사하지 않은 무결성은 미상이며 이전 실패를 해결한 것이 아닙니다.
+일반 전체 묶음 조회는 계속 선언된 모든 작업 폴더 객체를 검증합니다.
+
+실패의 `partialWorkspaceRestore`에는 원래 오류, 완료한 경로, 결과가 확정되지 않은
+현재 경로와 아직 방문하지 않은 범위를 남깁니다. 권한 거부 후 덮어쓰기·rollback·
+다른 쓰기 수단·추가 관찰을 하지 않습니다. 이 작업은 공통 Session을 import하거나
+Project·에이전트 연동 지시를 재생성하지 않습니다. 원래 P2 복구에는 기존의 명시적인
+공통 Session staging/import를 사용합니다.
+
+### 캡처된 대화의 표시 이름
+
+새 physical-v3·hybrid-v2 변환은 캡처된 selected-state의 name을 목록 제목으로 사용하고 공식 SDK와 동일하게 앞뒤 공백만 제거합니다. 긴 이름이나 중복 이름도 허용합니다. 이름이 없으면 일반 제목과 원본 ID를 사용합니다. 첫 질문에는 민감한 입력이 있을 수 있으므로 대체 제목으로 사용하지 않습니다. Native ID와 기록된 fork 계보는 별도 출처 정보로 유지합니다.
+
+기존 physical-v1/v2·hybrid-v1은 원래 바이트와 재현 규칙을 유지합니다. 제목 정책이 바뀌어도 이미 전달한 대화를 새 ID로 다시 게시하지 않습니다. 기본 변환은 기존의 정확한 프로필을 재사용하며, 여러 프로필이 존재해 불명확한 경우에만 정확한 기존 대상을 선택해야 합니다.
+
+명시적으로 승인된 보정에서 proposeClaudeDerivedTitle은 재현 검증된 아티팩트와 typed 원본 증거에서 이름을 가져옵니다. 비공개 P3 계획은 권한이 아닙니다. correctClaudeDerivedTitle은 현재 Host 권한과 기존 목적지 admission을 확인하고 목적지 전역 P5 create-only 명령 기록과 일회용 실행 증표를 사용합니다. 공식 SDK 0.3.234 renameSession으로 같은 대화에 제목 메타데이터를 덧붙입니다. 이관된 구간·호출 전 전체 구간·파일 동일성·메시지·현재 제목을 검증합니다. 앱의 일반 메타데이터 추가는 허용하고 다른 작성자가 제목이나 본문을 바꿨다면 덮어쓰지 않습니다. 실행 시도 후 완료 결과가 없으면 불확실하게 남기고 자동으로 재실행하지 않습니다.
+
+보정 후 SDK 제목은 원본 이름 보정 영수증과, 본문은 기존 불변 변환본과 각각 비교합니다. 모델 대화를 시작하거나 Product·Session/P2·실행·복구 권한을 만들지 않습니다.
+
+SDK는 비협조 작성자에 대한 compare-and-swap을 제공하지 않습니다. 변경 구간에 경쟁 제목 기록이 끼어들면 성공으로 보고하지 않고 불확실하게 남깁니다. 실행 기록 없는 결과 기록은 실제 변경 전에 거부합니다.

@@ -1,3 +1,4 @@
+import { consumeClaudeTitleCapability } from "./claude-derived-title.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -14,6 +15,10 @@ export const nativeJson = value => Buffer.from(JSON.stringify(value, null, 2) + 
 export function nativeCheck(signal, check = () => {}) {
   if (signal?.aborted) nativeFail("NATIVE_HISTORY_OPERATION_CANCELLED");
   const result = check();
+  // A current Host check may synchronously cancel this operation. Do not touch
+  // the next source/profile path after that cancellation has been observed.
+  if (signal?.aborted) nativeFail("NATIVE_HISTORY_OPERATION_CANCELLED");
+  if (result === false) nativeFail("NATIVE_HISTORY_AUTHORITY_DENIED");
   if (result && typeof result.then === "function") {
     Promise.resolve(result).catch(() => {}); nativeFail("NATIVE_HISTORY_SYNCHRONOUS_AUTHORITY_REQUIRED");
   }
@@ -76,7 +81,7 @@ export function nativeEnvironment(provider, home) {
 
 // Finite command adapter. No prompt/run/resume/server command is accepted.
 // Native Job Object/process-group supervision owns cleanup, including failure.
-export function createProviderNativeHost({ provider, executable, pluginRoot, signal, onProcess = () => {} }) {
+export function createProviderNativeHost({ provider, executable, pluginRoot, signal, onProcess = () => {}, claudeSdkEntry = null }) {
   if (!["claude", "opencode"].includes(provider)) nativeFail("NATIVE_HISTORY_PROVIDER_UNSUPPORTED");
   const selectedExe = path.resolve(executable || "");
   const parent = nativeRoot(path.dirname(selectedExe));
@@ -87,9 +92,12 @@ export function createProviderNativeHost({ provider, executable, pluginRoot, sig
   };
   let selection;
   const sdkReaderFile = fileURLToPath(new URL("../read-claude-native-history.mjs", import.meta.url));
+  const titleUpdaterFile = fileURLToPath(new URL("../update-claude-derived-title.mjs", import.meta.url));
+  const derivedReaderFile = fileURLToPath(new URL("../read-claude-derived-history.mjs", import.meta.url));
   let sdkEntry = null, sdkDiscoveryFailure = null;
   try {
-    const require = createRequire(import.meta.url), entry = require.resolve("@anthropic-ai/claude-agent-sdk");
+    const require = createRequire(import.meta.url), entry = claudeSdkEntry === null ? require.resolve("@anthropic-ai/claude-agent-sdk") : claudeSdkEntry;
+    if (typeof entry !== "string" || !path.isAbsolute(entry)) nativeFail("DERIVED_SDK_EXACT_ENTRY_REQUIRED");
     let directory = path.dirname(entry);
     for (let index = 0; index < 4; index++, directory = path.dirname(directory)) {
       const file = path.join(directory, "package.json");
@@ -98,13 +106,21 @@ export function createProviderNativeHost({ provider, executable, pluginRoot, sig
       if (pkg.name === "@anthropic-ai/claude-agent-sdk" && pkg.version === "0.3.234") sdkEntry = entry;
       break;
     }
+    if (claudeSdkEntry !== null && !sdkEntry) nativeFail("DERIVED_SDK_VERSION_UNQUALIFIED");
   } catch (error) {
-    if (error.code !== "MODULE_NOT_FOUND") sdkDiscoveryFailure = error;
+    if (claudeSdkEntry !== null || error.code !== "MODULE_NOT_FOUND") sdkDiscoveryFailure = error;
     // Optional SDK absence is distinct from malformed/denied installed content.
   }
-  const run = async ({ args, cwd, home, observer = false, sdkReader = false }) => {
+  let sdkIdentity = null, derivedSdkFailure = null;
+  try { if (sdkEntry) sdkIdentity = inspectCopiedProjectFile(nativeRoot(path.dirname(sdkEntry)), path.basename(sdkEntry)); }
+  catch (error) { derivedSdkFailure = error; }
+  const run = async ({ args, cwd, home, observer = false, sdkReader = false, derivedReader = false, titleUpdater = false }) => {
     nativeCheck(signal); verifyExe(); nativeRoot(cwd); nativeRoot(home);
-    if (sdkReader && (provider !== "claude" || !sdkEntry || args[0] !== sdkReaderFile || args[1] !== sdkEntry)) nativeFail("NATIVE_HISTORY_COMMAND_NOT_ALLOWED");
+    if ((derivedReader || titleUpdater) && !sdkReader) nativeFail("NATIVE_HISTORY_COMMAND_NOT_ALLOWED");
+    if (sdkReader && (provider !== "claude" || !sdkEntry || args[0] !== (titleUpdater ? titleUpdaterFile : derivedReader ? derivedReaderFile : sdkReaderFile) || args[1] !== sdkEntry)) nativeFail("NATIVE_HISTORY_COMMAND_NOT_ALLOWED");
+    if ((derivedReader || titleUpdater) && derivedSdkFailure) throw derivedSdkFailure;
+    if ((derivedReader || titleUpdater) && path.basename(sdkEntry) !== "sdk.mjs") nativeFail("DERIVED_SDK_READER_ENTRY_UNQUALIFIED");
+    if ((derivedReader || titleUpdater) && (!sdkIdentity || inspectCopiedProjectFile(nativeRoot(path.dirname(sdkEntry)), path.basename(sdkEntry)).sha256 !== sdkIdentity.sha256)) nativeFail("DERIVED_SDK_ENTRY_CHANGED");
     if (!observer && !sdkReader && !(args.length === 1 && args[0] === "--version")
       && !(provider === "opencode" && (args.length === 2 && ["import", "export"].includes(args[0])
         || args.join(" ") === "session list --format json"))) nativeFail("NATIVE_HISTORY_COMMAND_NOT_ALLOWED");
@@ -117,7 +133,10 @@ export function createProviderNativeHost({ provider, executable, pluginRoot, sig
     const stdout = [], stderr = []; let total = 0, exitCode = null;
     try {
       handle = spawnSupervisedProcess({ selection, executablePath: command, args, cwd,
-        providerEnvironment: observer ? Object.fromEntries(["SystemRoot", "WINDIR", "TEMP", "TMP"].filter(k => process.env[k]).map(k => [k, process.env[k]])) : nativeEnvironment(provider, home),
+        providerEnvironment: observer ? Object.fromEntries(["SystemRoot", "WINDIR", "TEMP", "TMP"].filter(k => process.env[k]).map(k => [k, process.env[k]]))
+          : (derivedReader || titleUpdater) ? { ...nativeEnvironment(provider, home), HOME: home, USERPROFILE: home, APPDATA: home, LOCALAPPDATA: home,
+            DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", ANTHROPIC_BASE_URL: "http://127.0.0.1:9" }
+          : nativeEnvironment(provider, home),
         input: Buffer.alloc(0), controlFile: copiedProjectFile(controlRoot, "control.jsonl"), terminationGraceMs: 1500,
         onControlEvent: control => report({ event: "supervision", control }) });
       report({ event: "started", pid: handle.child.pid, parentPid: process.pid, startedAt: new Date().toISOString(), command, args, cwd });
@@ -145,7 +164,7 @@ export function createProviderNativeHost({ provider, executable, pluginRoot, sig
       if (failure) throw failure;
       verifyExe();
       if (exitCode !== 0) nativeFail("NATIVE_HISTORY_CLIENT_COMMAND_FAILED");
-      return { stdout: Buffer.concat(stdout), stderrBytes: Buffer.concat(stderr).length, exitCode, supervision };
+      return { stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr), stderrBytes: Buffer.concat(stderr).length, exitCode, supervision };
     } catch (error) { failure = error; throw error; }
     finally {
       if (handle && !exited) { try { handle.terminate(true); } catch (error) { if (failure) failure.nativeCleanupFailure = error.code; } }
@@ -182,8 +201,20 @@ export function createProviderNativeHost({ provider, executable, pluginRoot, sig
       }
     },
     ...(sdkDiscoveryFailure ? { async readClaude() { throw sdkDiscoveryFailure; } } : {}),
+    ...(sdkDiscoveryFailure ? { async readDerivedClaude() { throw sdkDiscoveryFailure; } } : {}),
     ...(sdkEntry ? { async readClaude({ home, cwd, nativeIds }) {
       const result = await run({ args: [sdkReaderFile, sdkEntry, cwd, JSON.stringify(nativeIds)], cwd, home, sdkReader: true });
+      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(result.stdout));
+    } } : {}),
+    ...(sdkEntry ? { async correctDerivedClaudeTitle({ home, cwd, planFile, planSha256, capability }) {
+      consumeClaudeTitleCapability(capability, { home, cwd, planFile, planSha256 });
+      if (!path.isAbsolute(planFile || "") || !/^[a-f0-9]{64}$/u.test(planSha256 || "")) nativeFail("TITLE_PLAN_SELECTION_INVALID");
+      const result = await run({ args: [titleUpdaterFile, sdkEntry, cwd, planFile, planSha256], cwd, home, sdkReader: true, titleUpdater: true });
+      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(result.stdout));
+    } } : {}),
+    ...(sdkEntry ? { async readDerivedClaude({ home, cwd, nativeId, maximumMessages, digestObservation = false }) {
+      if (!/^[a-f0-9-]{36}$/iu.test(nativeId || "") || !Number.isSafeInteger(maximumMessages) || maximumMessages < 1) nativeFail("DERIVED_READER_SELECTION_INVALID");
+      const result = await run({ args: [derivedReaderFile, sdkEntry, cwd, nativeId, String(maximumMessages), ...(digestObservation ? ["claude-sdk-message-digest-v1"] : [])], cwd, home, sdkReader: true, derivedReader: true });
       return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(result.stdout));
     } } : {}),
     async writers({ cwd, home }) {

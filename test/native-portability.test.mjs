@@ -37,6 +37,10 @@ import path from "node:path";
 import { fixture, snapshot } from "./helpers/session-work-linkage-fixture.mjs";
 import { inspectProject } from "../scripts/lib/lode-core.mjs";
 import crypto from "node:crypto";
+import os from "node:os";
+import { readCodexProjectCatalog, verifyCodexProjectCatalog } from "../scripts/lib/codex-project-catalog.mjs";
+import { resolveCodexPhysicalLineage } from "../scripts/lib/codex-physical-lineage.mjs";
+
 import {
   createCodexRolloutVerifier,
   verifyCodexRollout,
@@ -1185,4 +1189,154 @@ test("native companion binds selected transfer data without becoming a Core impo
   assert.throws(() => readProjectNativeTransfer({ bundleRoot }));
   assert.equal(inspectProjectBundle({ bundleRoot }).projectAdmissionReady, true);
   fs.writeFileSync(rawObject, originalObject);
+});
+
+test("exact project catalog includes over one page, archives and multiple worktrees without leaking accounts or sibling projects", t => {
+  const f = syntheticNativeDatabase(t, "state_5.sqlite"), queries = [];
+  f.row("projects", { id: "project-a", name: "Same title", metadata: '{"root":"X:/shared","private":"DO_NOT_READ_PROJECT_METADATA"}' });
+  f.row("projects", { id: "project-b", name: "Same title", metadata: '{"root":"X:/shared"}' });
+  const ids = Array.from({ length: 137 }, (_, i) => `01900000-0000-7000-8000-${String(i).padStart(12, "0")}`);
+  ids.forEach((id, i) => f.row("threads", { id, project_id: "project-a", title: "DO_NOT_READ_TITLE",
+    archived: BigInt(i % 2), cwd: i % 2 ? "X:/worktree" : "X:/shared", source: i % 3 ? "cli" : "subagent",
+    creator_user_id: "DO_NOT_READ_USER", creator_account_id: "DO_NOT_READ_ACCOUNT",
+    first_user_message: "DO_NOT_READ_FIRST_MESSAGE", preview: "DO_NOT_READ_PREVIEW",
+    sandbox_policy: "DO_NOT_READ_POLICY", git_origin_url: "DO_NOT_READ_REMOTE" }));
+  f.row("threads", { id: "foreign", project_id: "project-b", title: "Same title", cwd: "X:/shared" });
+  f.row("threads", { id: "unassigned", project_id: null, title: "Same title", cwd: "X:/shared" });
+  const wrapper = { exec: sql => f.db.exec(sql), prepare: sql => { queries.push(sql); return f.db.prepare(sql); } };
+  const catalog = readCodexProjectCatalog(wrapper, "project-a"), decoded = verifyCodexProjectCatalog(catalog);
+  assert.deepEqual(catalog.threadIds, ids);
+  assert.equal(decoded.records.filter(row => row.archived === 1n).length, 68);
+  assert.equal(new Set(decoded.records.map(row => row.cwd)).size, 2);
+  assert.equal(new Set(decoded.records.map(row => row.source)).size, 2);
+  assert.equal(queries.length, 2);
+  for (const column of ["creator_user_id", "creator_account_id", "first_user_message", "preview", "title", "sandbox_policy", "git_origin_url", "metadata"])
+    assert.ok(queries.every(sql => !sql.includes('"' + column + '"')), column + " was queried");
+  assert.ok(!JSON.stringify(catalog).includes("DO_NOT_READ"));
+  assert.equal(catalog.coverage.hostInventory, "not-observed");
+  assert.equal(catalog.grantsRecoveryAuthority, false);
+  assert.equal(catalog.establishesLogicalSessionOwnership, false);
+  assert.equal(readCodexProjectCatalog(f.db, "project-b").threadIds.length, 1);
+});
+
+test("catalog empty/unknown selection and altered membership or authority remain distinct", t => {
+  const f = syntheticNativeDatabase(t, "state_5.sqlite");
+  f.row("projects", { id: "empty" });
+  const empty = readCodexProjectCatalog(f.db, "empty");
+  assert.deepEqual(empty.threadIds, []);
+  for (const id of [null, undefined, "", " "]) assert.throws(() => readCodexProjectCatalog(f.db, id), { code: "NATIVE_CODEX_PROJECT_ID_REQUIRED" });
+  assert.throws(() => readCodexProjectCatalog(f.db, "unknown"), { code: "NATIVE_CODEX_PROJECT_NOT_FOUND" });
+  assert.throws(() => readCodexProjectCatalog(f.db, "empty' OR 1=1 --"), { code: "NATIVE_CODEX_PROJECT_NOT_FOUND" });
+  for (const alter of [c => { c.projectId = "other"; }, c => { c.grantsRecoveryAuthority = true; },
+    c => { c.coverage.hostInventory = "complete"; }, c => { c.establishesLogicalSessionOwnership = true; }]) {
+    const c = structuredClone(empty); alter(c); assert.throws(() => verifyCodexProjectCatalog(c));
+  }
+  f.row("threads", { id: "a", project_id: "empty" });
+  const one = readCodexProjectCatalog(f.db, "empty");
+  const foreign = structuredClone(one);
+  const index = foreign.membershipEvidence.columns.indexOf("project_id");
+  foreign.membershipEvidence.rows[0][index] = { type: "text", value: "other", utf8: Buffer.from("other").toString("base64") };
+  assert.throws(() => verifyCodexProjectCatalog(foreign));
+  const duplicate = structuredClone(one); duplicate.threadIds.push("a"); duplicate.membershipEvidence.rows.push(duplicate.membershipEvidence.rows[0]);
+  assert.throws(() => verifyCodexProjectCatalog(duplicate));
+  assert.equal(f.db.isTransaction, false);
+});
+
+test("catalog uses one WAL snapshot, preserves the caller transaction and exposes later changes only on a later read", t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lode-project-catalog-"));
+  const location = path.join(dir, "synthetic.sqlite");
+  const f = syntheticNativeDatabase(t, "state_5.sqlite", location);
+  f.db.exec("PRAGMA journal_mode=WAL");
+  f.row("projects", { id: "p", name: "Before" });
+  f.row("threads", { id: "before", project_id: "p" });
+  const writer = new DatabaseSync(location);
+  t.after(() => { writer.close(); f.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  let changed = false;
+  const wrapper = { exec: sql => f.db.exec(sql), prepare: sql => {
+    if (!changed && sql.includes('FROM "threads"')) {
+      changed = true;
+      writer.exec("UPDATE projects SET name='After' WHERE id='p'; UPDATE threads SET project_id=NULL WHERE id='before'");
+    }
+    return f.db.prepare(sql);
+  } };
+  f.db.exec("BEGIN");
+  const snapshot = readCodexProjectCatalog(wrapper, "p");
+  assert.deepEqual(snapshot.threadIds, ["before"]);
+  assert.equal(verifyCodexProjectCatalog(snapshot).project.name, "Before");
+  assert.equal(f.db.isTransaction, true);
+  assert.deepEqual(readCodexProjectCatalog(f.db, "p").threadIds, ["before"]);
+  f.db.exec("COMMIT");
+  const next = readCodexProjectCatalog(f.db, "p");
+  assert.deepEqual(next.threadIds, []);
+  assert.equal(verifyCodexProjectCatalog(next).project.name, "After");
+});
+
+
+// Authored from pinned public Rust helper shapes, not actual engine output.
+const lineageId = n => "01900000-0000-7000-8000-" + String(n).padStart(12, "0");
+function lineageOriginal(id, texts, { physicalId = id, root = id, base = null, meta = {} } = {}) {
+  const at = base?.end_ordinal_exclusive ?? 0;
+  const documents = [{ ordinal: at, timestamp: "2026-07-16T00:00:00.000Z", type: "session_meta", payload: { id, session_id: root,
+    cli_version: nativeProfile.engineVersion, history_mode: "paginated", ...(base ? { history_base: base } : {}), ...meta } },
+    ...texts.map((text, i) => ({ ordinal: at+i+1, type: "event_msg", payload: { type: "user_message", message: text } }))];
+  const lines = documents.map(row => JSON.stringify(row) + "\n"), raw = Buffer.from(lines.join(""));
+  return { rolloutId: physicalId, threadId: id, raw, sha256: crypto.createHash("sha256").update(raw).digest("hex"), documents, lines };
+}
+function lineageCut(original, end) { return { thread_id: original.rolloutId, end_ordinal_exclusive: end,
+  end_byte_offset: original.lines.filter((_, i) => original.documents[i].ordinal < end).reduce((sum, line) => sum+Buffer.byteLength(line),0) }; }
+
+test("pinned reference lineage uses exclusive UTF-8 bounds, skips parent later/sibling records and does not claim semantic context", () => {
+  const parent = lineageOriginal(lineageId(301), ["Inherited 한글", "PARENT_LATER_EXCLUDED"]);
+  const child = lineageOriginal(lineageId(302), ["Child local"], { root: parent.threadId, base: lineageCut(parent, 2), meta: { forked_from_id: parent.threadId, forked_from_ordinal_exclusive: 2 } });
+  const sibling = { rolloutId: lineageId(303), raw: Buffer.from("Not parsed: unrelated unsupported sibling") };
+  const result = resolveCodexPhysicalLineage({ originals: [child,parent,sibling], rolloutId: child.rolloutId });
+  assert.deepEqual(result.frames.map(frame => frame.document.payload.message), ["Inherited 한글", "Child local"]);
+  assert.equal(result.segments[1].startOrdinal, 2); assert.equal(result.frames[1].source.ordinal, 3);
+  assert.equal(result.semanticHistoryReconstructed, false); assert.equal(result.modelContextEquivalent, false); assert.equal(result.historyPageEquivalent, false);
+  assert.equal(result.grantsRecoveryAuthority, false);
+  // A bad future tail is outside the declared prefix and cannot gate this child.
+  const future = { ...parent, raw: Buffer.concat([Buffer.from(parent.lines.slice(0,2).join("")), Buffer.from("invalid future tail")]) };
+  future.sha256 = crypto.createHash("sha256").update(future.raw).digest("hex");
+  assert.deepEqual(resolveCodexPhysicalLineage({ originals: [child,future], rolloutId: child.rolloutId }).frames.map(frame => frame.document.payload.message), ["Inherited 한글", "Child local"]);
+});
+
+test("copied subagent prefix absent from DB is retained once without fetching a parent or deduplicating repeated text", () => {
+  const child = lineageOriginal(lineageId(312), ["Repeated source text", "Inherited tail", "Repeated source text", "Child local"],
+    { root: lineageId(311), meta: { parent_thread_id: lineageId(311), subagent_history_start_ordinal: 3 } });
+  const result = resolveCodexPhysicalLineage({ originals: [child], rolloutId: child.rolloutId });
+  assert.equal(result.segments.length, 1); assert.equal(result.frames.length, 4);
+  assert.deepEqual(result.frames.slice(0,2).map(frame => frame.source.origin), ["copied-inherited-prefix", "copied-inherited-prefix"]);
+  assert.equal(result.frames.filter(frame => frame.document.payload.message === "Repeated source text").length, 2);
+});
+
+test("physical generation IDs differ from stable thread IDs without conflating the logical fork cutoff", () => {
+  const stable = lineageId(321), oldPhysical = lineageId(322), newPhysical = lineageId(323);
+  const old = lineageOriginal(stable, ["Before revert", "EXCLUDED_LATER"], { physicalId: oldPhysical });
+  const current = lineageOriginal(stable, ["After revert"], { physicalId: newPhysical, base: lineageCut(old,2),
+    meta: { forked_from_id: lineageId(324), forked_from_ordinal_exclusive: 73 } });
+  const result = resolveCodexPhysicalLineage({ originals: [old,current], rolloutId: newPhysical });
+  assert.deepEqual(result.segments.map(segment => segment.rolloutId), [oldPhysical,newPhysical]);
+  assert.equal(new Set(result.segments.map(segment => segment.threadId)).size, 1);
+  assert.equal(result.segments[1].logicalForkOrdinalExclusive, 73);
+  assert.deepEqual(result.frames.map(frame => frame.document.payload.message), ["Before revert", "After revert"]);
+});
+
+test("lineage missing/cycle/ambiguous generation and malformed byte/ordinal/root/digest/compression remain distinct failures", () => {
+  const parent = lineageOriginal(lineageId(331), ["Inherited 한글", "Later"]), cut = lineageCut(parent,2);
+  const make = base => lineageOriginal(lineageId(332), ["Local"], { root: parent.threadId, base });
+  const child = make(cut);
+  assert.throws(() => resolveCodexPhysicalLineage({ originals: [child], rolloutId: child.rolloutId }), { code: "CODEX_LINEAGE_ANCESTOR_MISSING" });
+  assert.throws(() => resolveCodexPhysicalLineage({ originals: [child,parent,parent], rolloutId: child.rolloutId }), { code: "CODEX_LINEAGE_PHYSICAL_ID_AMBIGUOUS" });
+  for (const [base, code] of [[{ ...cut, end_byte_offset: cut.end_byte_offset-1 }, "CODEX_LINEAGE_CUTOFF_MISMATCH"],
+    [{ ...cut, end_byte_offset: parent.raw.length+1 }, "CODEX_LINEAGE_CUTOFF_OUT_OF_BOUNDS"],
+    [{ ...cut, end_ordinal_exclusive: 9 }, "CODEX_LINEAGE_CUTOFF_OUT_OF_BOUNDS"]]) {
+    const broken = make(base); assert.throws(() => resolveCodexPhysicalLineage({ originals: [broken,parent], rolloutId: broken.rolloutId }), { code });
+  }
+  assert.throws(() => resolveCodexPhysicalLineage({ originals: [{ ...child, sha256: "0".repeat(64) },parent], rolloutId: child.rolloutId }), { code: "CODEX_LINEAGE_ORIGINAL_DIGEST_MISMATCH" });
+  assert.throws(() => resolveCodexPhysicalLineage({ originals: [{ ...child, compressed: true },parent], rolloutId: child.rolloutId }), { code: "CODEX_LINEAGE_COMPRESSION_UNQUALIFIED" });
+  const mismatch = lineageOriginal(child.threadId, ["Local"], { root: lineageId(339), base: cut });
+  assert.throws(() => resolveCodexPhysicalLineage({ originals: [mismatch,parent], rolloutId: mismatch.rolloutId }), { code: "CODEX_LINEAGE_ROOT_SESSION_MISMATCH" });
+  const a = lineageOriginal(lineageId(341), [], { root: lineageId(340), base: { thread_id: lineageId(342), end_ordinal_exclusive: 1, end_byte_offset: 0 } });
+  const b = lineageOriginal(lineageId(342), [], { root: lineageId(340), base: { thread_id: lineageId(341), end_ordinal_exclusive: 1, end_byte_offset: 0 } });
+  assert.throws(() => resolveCodexPhysicalLineage({ originals: [a,b], rolloutId: a.rolloutId }), { code: "CODEX_LINEAGE_CYCLE" });
 });

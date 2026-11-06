@@ -24,8 +24,10 @@ export function codexNativePortabilityProfile() {
 // Unknown versions still permit common Project preservation/inspection.
 export function inspectCodexNativeDatabase(
   database,
-  { file, engineVersion, platform, architecture } = {},
+  { file, engineVersion, platform, architecture, inspectionScope = "database-integrity" } = {},
 ) {
+  if (!["database-integrity", "selected-live-read-schema"].includes(inspectionScope))
+    fail("NATIVE_CODEX_INSPECTION_SCOPE_INVALID");
   if (
     engineVersion !== profile.engineVersion ||
     platform !== profile.platform ||
@@ -67,10 +69,15 @@ export function inspectCodexNativeDatabase(
       checksum: row.checksum,
     }));
   if (!equal(migrations, expected.migrations)) fail("NATIVE_CODEX_MIGRATIONS_UNSUPPORTED");
-  if (database.prepare("PRAGMA quick_check").get().quick_check !== "ok")
-    fail("NATIVE_CODEX_DATABASE_CORRUPT");
-  if (database.prepare("PRAGMA foreign_key_check").all().length)
-    fail("NATIVE_CODEX_DATABASE_CORRUPT");
+  // A selected live read verifies schema and its selected typed rows/raw
+  // addresses. Whole-database scans are an offline integrity operation, not
+  // evidence required to read a bounded selection from a running provider.
+  if (inspectionScope === "database-integrity") {
+    if (database.prepare("PRAGMA quick_check").get().quick_check !== "ok")
+      fail("NATIVE_CODEX_DATABASE_CORRUPT");
+    if (database.prepare("PRAGMA foreign_key_check").all().length)
+      fail("NATIVE_CODEX_DATABASE_CORRUPT");
+  }
   return {
     profileId: profile.profileId,
     file,
@@ -78,6 +85,8 @@ export function inspectCodexNativeDatabase(
     nativeWriteAuthorized: false,
     quiescence: "not-observed",
     coherentRawCutoff: "not-verified",
+    inspectionScope,
+    wholeDatabaseIntegrity: inspectionScope === "database-integrity" ? "checked" : "not-observed",
   };
 }
 

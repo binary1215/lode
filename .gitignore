@@ -149,3 +149,12 @@ Thumbs.db
 # Local project records stay outside source and distribution.
 .lode/
 !test/project-document-hierarchy.test.mjs
+!test/native-derived-history.test.mjs
+!test/helpers/derived-history-fixture.mjs
+
+# Synthetic Codex-to-Claude portability regressions.
+!test/claude-authored-message-audit.test.mjs
+!test/claude-derived-title.test.mjs
+!test/codex-claude-hybrid.test.mjs
+!test/explicit-project-selection.test.mjs
+!test/helpers/claude-authored-message-fixture.mjs

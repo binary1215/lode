@@ -111,7 +111,7 @@ function* iterateEncodedSqliteRows(
     .join(",");
   // Only the profile-owned selection shape is supported, not caller SQL.
   if (
-    !["", 'WHERE "thread_id" = ?', 'WHERE "id" = ?'].includes(where) ||
+    !["", 'WHERE "thread_id" = ?', 'WHERE "id" = ?', 'WHERE "project_id" = ?'].includes(where) ||
     parameters.length !== (where ? 1 : 0)
   )
     fail("NATIVE_SQLITE_SELECTION_INVALID");
