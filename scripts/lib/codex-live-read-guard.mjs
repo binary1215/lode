@@ -37,11 +37,16 @@ $guardMethod.SetCustomAttribute($guardAttribute)
 $guardMethod.SetImplementationFlags([Reflection.MethodImplAttributes]::PreserveSig)
 [void]$guardNativeBuilder.CreateType()
 [Console]::Error.WriteLine("[lode-guard-startup-v1] type-ready")
+# Fixed .NET Framework serializer, with no custom converters/type resolver,
+# module discovery, downloaded dependency or caller-selected assembly path.
+[void][Reflection.Assembly]::Load('System.Web.Extensions, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35')
+$guardJson=[System.Web.Script.Serialization.JavaScriptSerializer]::new()
+[Console]::Error.WriteLine("[lode-guard-startup-v1] json-ready")
 $streams=[Collections.Generic.List[IO.FileStream]]::new()
 try {
  $requestLine=[Console]::In.ReadLine()
  [Console]::Error.WriteLine("[lode-guard-startup-v1] request-read")
- $request=$requestLine | ConvertFrom-Json
+ $request=$guardJson.DeserializeObject($requestLine)
  [Console]::Error.WriteLine("[lode-guard-startup-v1] request-decoded")
  if($request.version -ne 1 -or @($request.files).Count -ne 4){throw 'Invalid guard request'}
  $files=@()
@@ -54,17 +59,17 @@ try {
   $files+=@{volume=$info.Volume;fileIndex=('{0:x8}{1:x8}' -f $info.IndexHigh,$info.IndexLow);links=$info.Links;length=$stream.Length.ToString()}
  }
  [Console]::Error.WriteLine("[lode-guard-startup-v1] handles-open")
- @{version=1;ready=$true;pid=$PID;files=$files;share='ReadWrite-no-Delete';powershell=$PSVersionTable.PSVersion.ToString()} | ConvertTo-Json -Depth 6 -Compress
+ [Console]::Out.WriteLine($guardJson.Serialize(@{version=1;ready=$true;pid=$PID;files=$files;share='ReadWrite-no-Delete';powershell=$PSVersionTable.PSVersion.ToString()}))
  [Console]::Out.Flush()
  [Console]::Error.WriteLine("[lode-guard-startup-v1] ready-encoded")
  $null=[Console]::In.ReadLine()
 } catch {
- @{version=1;ready=$false;pid=$PID;exception=$_.Exception.GetType().FullName;hresult=$_.Exception.HResult;message=$_.Exception.Message} | ConvertTo-Json -Compress
+ [Console]::Out.WriteLine($guardJson.Serialize(@{version=1;ready=$false;pid=$PID;exception=$_.Exception.GetType().FullName;hresult=$_.Exception.HResult;message=$_.Exception.Message}))
  [Console]::Out.Flush()
  exit 2
 } finally {
  foreach($stream in $streams){$stream.Dispose()}
- @{version=1;released=$true;pid=$PID} | ConvertTo-Json -Compress
+ [Console]::Out.WriteLine($guardJson.Serialize(@{version=1;released=$true;pid=$PID}))
  [Console]::Out.Flush()
 }`;
 export const CODEX_LIVE_GUARD_SCRIPT_SHA256 = crypto.createHash("sha256").update(SCRIPT).digest("hex");
@@ -98,7 +103,7 @@ export async function openCodexLiveReadGuard({ home, allowSynchronizationFiles, 
   const child = spawn(executable, ["-NoProfile", "-NonInteractive", "-Command", SCRIPT], { windowsHide: true, shell: false,
     cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"], env: Object.fromEntries(["SystemRoot", "WINDIR", "TEMP", "TMP", "PATH", "Path"].filter(key => process.env[key]).map(key => [key, process.env[key]])) });
   const startupObservation = () => {
-    const phases = new Set(["script-started", "priority-ready", "type-bootstrap", "type-ready", "request-read", "request-decoded", "handles-open", "ready-encoded"]);
+    const phases = new Set(["script-started", "priority-ready", "type-bootstrap", "type-ready", "json-ready", "request-read", "request-decoded", "handles-open", "ready-encoded"]);
     const observed = [...stderr.matchAll(/^\[lode-guard-startup-v1\] ([a-z-]+)\r?$/gmu)].map(match => match[1]).filter(phase => phases.has(phase));
     return { phase: observed.at(-1) ?? null, elapsedMs: Math.max(0, Date.now() - startedAt), scriptSha256: CODEX_LIVE_GUARD_SCRIPT_SHA256 };
   };
