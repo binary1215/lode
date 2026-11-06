@@ -10,6 +10,78 @@ import { attachProjectNativeTransfer } from "../../scripts/lib/project-native-tr
 import { createRecoveryCheckpoint } from "../../scripts/lib/compaction-recovery.mjs";
 import { updateProjectDirection } from "../../scripts/lib/project-direction.mjs";
 
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { nativeSqlitePath } from "../../scripts/lib/codex-native-backup.mjs";
+import { assertCodexNativeOffline } from "../../scripts/lib/codex-native-offline.mjs";
+import { inspectCodexNativeDatabase, readSelectedCodexHistory } from "../../scripts/lib/codex-native-portability.mjs";
+import { readSelectedCodexStateEvidence, verifySelectedCodexStateEvidence } from "../../scripts/lib/codex-native-state-evidence.mjs";
+import { readCodexProjectCatalog } from "../../scripts/lib/codex-project-catalog.mjs";
+import { inspectCodexRolloutOriginal } from "../../scripts/lib/codex-native-rollout.mjs";
+import { inspectCodexNativePayload } from "../../scripts/lib/codex-native-payload.mjs";
+
+// Source format and execution Host are distinct. Native capture remains exactly
+// qualified by production; non-native consumers use authored P3 source evidence,
+// not a fake platform, a skipped assertion or a new native permission.
+export async function captureSyntheticHistory(options, { sourceEvidenceOnly = false } = {}) {
+  const qualifiedHost = process.platform === nativeProfile.platform && process.arch === nativeProfile.architecture;
+  if (qualifiedHost && !sourceEvidenceOnly) return captureCodexNativeHistory(options);
+  if (!qualifiedHost) {
+    await assert.rejects(captureCodexNativeHistory(options), { code: "NATIVE_CODEX_PROFILE_UNSUPPORTED" });
+    assert.equal(fs.existsSync(options.destination), false, "unsupported native capture must not create a result");
+  }
+  const offline = await assertCodexNativeOffline(options.witness), home = offline.home;
+  const basis = { engineVersion: nativeProfile.engineVersion, platform: nativeProfile.platform, architecture: nativeProfile.architecture };
+  const state = new DatabaseSync(nativeSqlitePath(path.join(home, "state_5.sqlite")), { readOnly: true });
+  let historyDb;
+  const reject = code => { throw Object.assign(new Error(code), { code }); };
+  try {
+    historyDb = new DatabaseSync(nativeSqlitePath(path.join(home, "thread_history_1.sqlite")), { readOnly: true });
+    inspectCodexNativeDatabase(state, { ...basis, file: "state_5.sqlite" });
+    inspectCodexNativeDatabase(historyDb, { ...basis, file: "thread_history_1.sqlite" });
+    const projectCatalog = options.sourceProjectId === undefined ? null : readCodexProjectCatalog(state, options.sourceProjectId);
+    const threadIds = options.threadIds ?? projectCatalog?.threadIds;
+    if (projectCatalog) {
+      if (!projectCatalog.threadIds.length) reject("NATIVE_CODEX_PROJECT_HAS_NO_THREADS");
+      if (threadIds.some(id => !projectCatalog.threadIds.includes(id))) reject("NATIVE_CODEX_THREAD_OUTSIDE_PROJECT");
+    }
+    const stateEvidence = readSelectedCodexStateEvidence(state, threadIds);
+    const records = verifySelectedCodexStateEvidence(stateEvidence, threadIds);
+    const history = readSelectedCodexHistory(historyDb, { ...basis, threadIds });
+    const originals = records.map(record => {
+      const relative = path.relative(nativeSqlitePath(home), nativeSqlitePath(record.rollout_path)).replaceAll("\\", "/");
+      return { record, verified: inspectCodexRolloutOriginal({ root: home, relative, threadId: record.id, history }) };
+    });
+    const payload = { schemaVersion: 1, kind: "CodexNativeHistoryPayload", authorityPlane: "P3",
+      profileId: nativeProfile.profileId, ...basis, threadIds: [...threadIds], history,
+      files: originals.map(({ record, verified }) => ({ ...verified.raw, threadId: record.id })),
+      coverage: originals.map(({ record, verified }) => ({ threadId: record.id,
+        rawFormat: verified.formatAndAddressReady ? "verified" : "partial",
+        unresolvedClosure: verified.unresolvedClosure || ["compressed-format-unverified"],
+        parentClosure: record.attached_thread_parent_id == null || threadIds.includes(record.attached_thread_parent_id) ? "selected-or-none" : "not-selected",
+        archived: record.archived === 1n })),
+      sourceState: "authored synthetic pinned-schema projection; not a live engine capture",
+      stateEvidence, ...(projectCatalog ? { projectCatalog } : {}),
+      sourceHomeDigest: crypto.createHash("sha256").update(home).digest("hex"),
+      sourceCutoff: "authored synthetic fixture; no stopped-writer or actual native capture claim",
+      officialEffectiveHistory: "not-queried-by-fixture", nativeRegistration: "not-performed",
+      nativePublicationReady: false, grantsRecoveryAuthority: false, restoresExecutionPermission: false };
+    const raw = Buffer.from(JSON.stringify(payload, null, 2) + "\n");
+    const payloadDigest = crypto.createHash("sha256").update(raw).digest("hex"), payloadId = "native-history-" + payloadDigest.slice(0, 24);
+    fs.mkdirSync(options.destination);fs.mkdirSync(path.join(options.destination, "objects"));
+    for (const { record, verified } of originals) fs.copyFileSync(record.rollout_path, path.join(options.destination, "objects", verified.raw.sha256 + ".bin"), fs.constants.COPYFILE_EXCL);
+    fs.writeFileSync(path.join(options.destination, "manifest.json"), raw, { flag: "wx" });
+    fs.writeFileSync(path.join(options.destination, "capture-intent.json"), JSON.stringify({ schemaVersion: 1, kind: "NativeHistoryCaptureIntent", payloadId, payloadDigest }, null, 2) + "\n", { flag: "wx" });
+    inspectCodexNativePayload({ directory: options.destination, expectedPayloadId: payloadId });
+    return { status: "synthetic-source-originals", directory: options.destination, payloadId, payloadDigest,
+      threadCount: threadIds.length, rawFileCount: originals.length, authorityPlane: "P3",
+      ...(projectCatalog ? { sourceProjectId: options.sourceProjectId, projectCatalogThreadCount: projectCatalog.threadIds.length,
+        projectSelection: threadIds.length === projectCatalog.threadIds.length ? "all-observed-native-project-threads" : "explicit-subset" } : {}),
+      fixtureSource: "authored-pinned-source-evidence", actualNativeCaptureClaimed: false };
+  } finally { try { historyDb?.close(); } finally { state.close(); } }
+}
+
 export const sourceThread = "01900000-0000-7000-8000-000000000041";
 export const branchThread = "01900000-0000-7000-8000-000000000042";
 // Authored 1x1 opaque white grayscale/alpha PNG, independently checked using
@@ -21,7 +93,7 @@ export const damagedPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQ
 // freezes it; no live user history, provider, account or model is accessed.
 export async function derivedFixture(t, { interleaved = false, missingResult = false, unknownInput = false, trailingUser = false, many = 0,
   divergentWire = false, sourceTurnStatus = "completed", partialError = false, failedWithoutError = false, wireWithoutErrorFlag = false,
-  imageUrl = "data:image/png;base64," + png } = {}) {
+  imageUrl = "data:image/png;base64," + png, sourceEvidenceOnly = false } = {}) {
   const f = fixture(t, "Synthetic continuity; preserve the current no-deploy instruction");
   updateProjectDirection({ root: f.root, input: { goal: "Inspect the synthetic inventory cache", constraints: ["Read only; deployment is cancelled"], cancelledActions: ["provisional deployment"] } });
   const checkpoint = f.route(() => createRecoveryCheckpoint({ root: f.root, purpose: "Inspect synthetic cache",
@@ -99,7 +171,7 @@ export async function derivedFixture(t, { interleaved = false, missingResult = f
     writeThread(sourceThread); writeThread(branchThread, true);
     const offline = await prepareCodexNativeOffline({ home, executable: exe, probe: async () => ({ status: "observed", rows: [] }),
       versionProbe: async () => ({ status: "verified", version: nativeProfile.engineVersion }) });
-    const captured = await captureCodexNativeHistory({ witness: offline.witness, threadIds: [sourceThread, branchThread], destination: path.join(f.base, "native-payload") });
+    const captured = await captureSyntheticHistory({ witness: offline.witness, threadIds: [sourceThread, branchThread], destination: path.join(f.base, "native-payload") }, { sourceEvidenceOnly });
     const bundle = f.route(() => exportProjectBundle({ root: f.root, destination: path.join(f.base, "bundle") }));
     attachProjectNativeTransfer({ bundleRoot: bundle.bundleRoot, directory: captured.directory });
     return { f, originals, bundleRoot: bundle.bundleRoot, bundle, sourceThread, branchThread, checkpoint, nativePayload: captured.directory };
@@ -181,7 +253,7 @@ export async function completionProjectionFixture(t, { unknownWire = false, dupl
     history.row("thread_history_projection_state", { thread_id: threadId, next_rollout_byte_offset: BigInt(raw.length), next_rollout_ordinal: BigInt(frames.length) });
     const offline = await prepareCodexNativeOffline({ home, executable, probe: async () => ({ status: "observed", rows: [] }),
       versionProbe: async () => ({ status: "verified", version: nativeProfile.engineVersion }) });
-    const captured = await captureCodexNativeHistory({ witness: offline.witness, sourceProjectId: "source-completion-project", destination: path.join(base, "captured") });
+    const captured = await captureSyntheticHistory({ witness: offline.witness, sourceProjectId: "source-completion-project", destination: path.join(base, "captured") });
     return { base, root, home, threadId, captured, frames, raw, wireStarts, wireEnds, items,
       sourceQualification: "authored from pinned source types; no actual engine/model generation" };
   } finally { state.close(); history.close(); }

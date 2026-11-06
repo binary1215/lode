@@ -61,7 +61,7 @@ function fixture(t) {
 }
 
 test("Windows namespace spelling comparison keeps DOS/extended/UNC equivalence separate from access and rejects device namespaces", () => {
-  assert.equal(codexSourcePathKey(String.raw`C:\Users\example\source`, "win32"), codexSourcePathKey(String.raw`\\?\C:\Users\example\source`, "win32"));
+  assert.equal(codexSourcePathKey(String.raw`C:\lode-fixture\source`, "win32"), codexSourcePathKey(String.raw`\\?\C:\lode-fixture\source`, "win32"));
   assert.equal(codexSourcePathKey(String.raw`\\server\share\source`, "win32"), codexSourcePathKey(String.raw`\\?\UNC\server\share\source`, "win32"));
   assert.equal(codexSourcePathKey(String.raw`\\.\pipe\source`, "win32"), null);
   assert.equal(codexSourcePathKey(String.raw`\\?\GLOBALROOT\Device\HarddiskVolume1\source`, "win32"), null);
@@ -71,7 +71,7 @@ test("Windows namespace spelling comparison keeps DOS/extended/UNC equivalence s
 test("selected live schema inspection avoids whole-database scans while default integrity and selected-row failures remain primary", t => {
   const f = fixture(t), queries = [];
   const database = { prepare(sql) { queries.push(sql); return f.history.db.prepare(sql); } };
-  const basis = { file: "thread_history_1.sqlite", engineVersion: nativeProfile.engineVersion, platform: process.platform, architecture: process.arch };
+  const basis = { file: "thread_history_1.sqlite", engineVersion: nativeProfile.engineVersion, platform: nativeProfile.platform, architecture: nativeProfile.architecture };
   const schema = inspectCodexNativeDatabase(database, { ...basis, inspectionScope: "selected-live-read-schema" });
   assert.equal(schema.wholeDatabaseIntegrity, "not-observed");
   assert.ok(!queries.some(sql => /quick_check|foreign_key_check/u.test(sql)));

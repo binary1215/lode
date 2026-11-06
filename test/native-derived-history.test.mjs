@@ -19,7 +19,7 @@ import { inspectDerivedInlineImage } from "../scripts/lib/derived-inline-image.m
 import { encodeClaudeDerived } from "../scripts/lib/claude-derived-encoder.mjs";
 import { DatabaseSync } from "node:sqlite";
 import { prepareCodexNativeOffline } from "../scripts/lib/codex-native-offline.mjs";
-import { captureCodexNativeHistory } from "../scripts/lib/codex-native-capture.mjs";
+import { captureSyntheticHistory } from "./helpers/derived-history-fixture.mjs";
 import { inspectCodexNativePayload, codexNativePayloadSummary } from "../scripts/lib/codex-native-payload.mjs";
 import { nativeProfile, syntheticNativeDatabase } from "./helpers/native-portability-fixture.mjs";
 import { prepareProjectWorkspaceTransfer, applyProjectWorkspaceTransfer } from "../scripts/lib/project-workspace-transfer.mjs";
@@ -36,7 +36,9 @@ import { openCodexLiveReadGuard, withLiveCodexReadSnapshots, codexLiveReadGuardP
 import { readCodexLiveProjectSource } from "../scripts/lib/codex-live-project-source.mjs";
 import { createLocalDestinationImportHost } from "../scripts/lib/local-destination-import-host.mjs";
 
-test("project catalog capture distinguishes the full native-state roster from explicit subsets and rejects foreign membership before copying", async t => {
+// Qualified Hosts exercise production capture; other Hosts prove its rejection
+// and consume verified retained-source inputs through production readers.
+test("project catalog selection preserves all/subset membership through qualified capture or verified synthetic retained evidence", async t => {
   const f = await derivedFixture(t), sourceHome = path.join(f.f.base, "source-home");
   const state = new DatabaseSync(path.join(sourceHome, "state_5.sqlite"));
   const foreignId = "01900000-0000-7000-8000-000000000099";
@@ -56,13 +58,13 @@ test("project catalog capture distinguishes the full native-state roster from ex
   const offline = await prepareCodexNativeOffline({ home: sourceHome, executable: path.join(f.f.base, "codex.exe"),
     probe: async () => ({ status: "observed", rows: [] }), versionProbe: async () => ({ status: "verified", version: nativeProfile.engineVersion }) });
   const originals = snapshot(sourceHome);
-  const all = await captureCodexNativeHistory({ witness: offline.witness, sourceProjectId: "p-a", destination: path.join(f.f.base, "project-all") });
+  const all = await captureSyntheticHistory({ witness: offline.witness, sourceProjectId: "p-a", destination: path.join(f.f.base, "project-all") });
   assert.equal(all.threadCount, 2); assert.equal(all.projectSelection, "all-observed-native-project-threads");
   const inspected = inspectCodexNativePayload({ directory: all.directory });
   assert.deepEqual(inspected.payload.threadIds, [sourceThread, branchThread]);
   assert.equal(codexNativePayloadSummary(inspected).projectInventoryCoverage.hostInventory, "not-observed");
   assert.equal(inspected.payload.projectCatalog.membershipEvidence.rows.length, 2);
-  const subset = await captureCodexNativeHistory({ witness: offline.witness, sourceProjectId: "p-a", threadIds: [sourceThread], destination: path.join(f.f.base, "project-subset") });
+  const subset = await captureSyntheticHistory({ witness: offline.witness, sourceProjectId: "p-a", threadIds: [sourceThread], destination: path.join(f.f.base, "project-subset") });
   assert.equal(subset.projectSelection, "explicit-subset");
   const subsetManifestBytes = fs.readFileSync(path.join(subset.directory, "manifest.json"));
   for (const sentinel of ["UNSELECTED_FIRST_MESSAGE_SENTINEL", "UNSELECTED_PREVIEW_SENTINEL", "UNSELECTED_TITLE_SENTINEL", "UNSELECTED_POLICY_SENTINEL", "UNSELECTED_REMOTE_SENTINEL", "UNSELECTED_METADATA_SENTINEL", "OTHER_PROJECT_NAME_SENTINEL"])
@@ -71,7 +73,7 @@ test("project catalog capture distinguishes the full native-state roster from ex
     .some(row => row.some(cell => cell?.value === "UNSELECTED_FIRST_MESSAGE_SENTINEL")), true);
   assert.equal(codexNativePayloadSummary(inspectCodexNativePayload({ directory: subset.directory })).projectCatalogThreadCount, 2);
   const emptyDestination = path.join(f.f.base, "empty-capture");
-  await assert.rejects(captureCodexNativeHistory({ witness: offline.witness, sourceProjectId: "p-empty", destination: emptyDestination }), { code: "NATIVE_CODEX_PROJECT_HAS_NO_THREADS" });
+  await assert.rejects(captureSyntheticHistory({ witness: offline.witness, sourceProjectId: "p-empty", destination: emptyDestination }), { code: "NATIVE_CODEX_PROJECT_HAS_NO_THREADS" });
   assert.equal(fs.existsSync(emptyDestination), false);
   const tampered = path.join(f.f.base, "tampered-project-capture"); fs.cpSync(subset.directory, tampered, { recursive: true });
   const payloadFile = path.join(tampered, "manifest.json"), altered = JSON.parse(fs.readFileSync(payloadFile));
@@ -82,7 +84,7 @@ test("project catalog capture distinguishes the full native-state roster from ex
   fs.writeFileSync(path.join(tampered, "capture-intent.json"), JSON.stringify({ schemaVersion: 1, kind: "NativeHistoryCaptureIntent", payloadId: "native-history-" + alteredDigest.slice(0, 24), payloadDigest: alteredDigest }));
   assert.throws(() => inspectCodexNativePayload({ directory: tampered }), { code: "NATIVE_CODEX_PROJECT_MEMBERSHIP_MISMATCH" });
   const rejected = path.join(f.f.base, "foreign-capture");
-  await assert.rejects(captureCodexNativeHistory({ witness: offline.witness, sourceProjectId: "p-a", threadIds: [foreignId], destination: rejected }), { code: "NATIVE_CODEX_THREAD_OUTSIDE_PROJECT" });
+  await assert.rejects(captureSyntheticHistory({ witness: offline.witness, sourceProjectId: "p-a", threadIds: [foreignId], destination: rejected }), { code: "NATIVE_CODEX_THREAD_OUTSIDE_PROJECT" });
   assert.equal(fs.existsSync(rejected), false);
   assert.deepEqual(snapshot(sourceHome), originals);
   const replays = path.join(f.f.base, "no-profile-effects");
@@ -519,7 +521,7 @@ test("streaming or unknown assistant termination prevents open; a later explicit
 });
 
 
-test("standalone native capture derives without creating or inventing a Lode Project or logical Session", async t => {
+test("standalone native source evidence derives without creating or inventing a Lode Project or logical Session", async t => {
   const f = await derivedFixture(t), target = path.join(f.f.base, "native-only-workspace"); fs.mkdirSync(target);
   const manifestBefore = fs.readFileSync(path.join(f.nativePayload, "manifest.json"));
   const rawBefore = new Map(fs.readdirSync(path.join(f.nativePayload, "objects")).map(name => [name, fs.readFileSync(path.join(f.nativePayload, "objects", name))]));
@@ -684,7 +686,7 @@ test("project collection reuses exact row IDs across roster changes, isolates un
     state.prepare("UPDATE threads SET project_id='collection-p',cwd=?").run(f.f.root);
   } finally { state.close(); }
   const offline = await prepareCodexNativeOffline({home:sourceHome,executable:path.join(f.f.base,"codex.exe"),probe:async()=>({status:"observed",rows:[]}),versionProbe:async()=>({status:"verified",version:nativeProfile.engineVersion})});
-  const capture = destination => captureCodexNativeHistory({witness:offline.witness,sourceProjectId:"collection-p",threadIds:[sourceThread,branchThread],destination:path.join(f.f.base,destination)});
+  const capture = destination => captureSyntheticHistory({witness:offline.witness,sourceProjectId:"collection-p",threadIds:[sourceThread,branchThread],destination:path.join(f.f.base,destination)});
   const captured = await capture("collection-source-first"), archive = path.join(f.f.base,"collection-archive"), target = path.join(f.f.base,"collection-workspace");
   fs.mkdirSync(archive);fs.mkdirSync(target);
   const workspaceMappings = [{sourceRoot:f.f.root,targetRoot:target}], sourceBefore=snapshot(sourceHome), p2Before=snapshot(f.f.root);
@@ -790,7 +792,7 @@ test("project entry archives selected existing Lode Session originals without me
   const f=await derivedFixture(t), sourceHome=path.join(f.f.base,"source-home"), state=new DatabaseSync(path.join(sourceHome,"state_5.sqlite"));
   try {state.prepare("INSERT INTO projects(id,name,metadata,position,created_at_ms,updated_at_ms) VALUES('lode-companion-p','Synthetic native project','{}',0,0,0)").run();state.prepare("UPDATE threads SET project_id='lode-companion-p',cwd=?").run(f.f.root);} finally{state.close();}
   const offline=await prepareCodexNativeOffline({home:sourceHome,executable:path.join(f.f.base,"codex.exe"),probe:async()=>({status:"observed",rows:[]}),versionProbe:async()=>({status:"verified",version:nativeProfile.engineVersion})});
-  const captured=await captureCodexNativeHistory({witness:offline.witness,sourceProjectId:"lode-companion-p",threadIds:[sourceThread],destination:path.join(f.f.base,"lode-companion-capture")});
+  const captured=await captureSyntheticHistory({witness:offline.witness,sourceProjectId:"lode-companion-p",threadIds:[sourceThread],destination:path.join(f.f.base,"lode-companion-capture")});
   const archive=path.join(f.f.base,"lode-companion-collection"), target=path.join(f.f.base,"lode-companion-target");fs.mkdirSync(archive);fs.mkdirSync(target);
   const collection=await operateProjectNativeHistory({action:"derive-project",bundleRoot:captured.directory,collectionRoot:archive,workspaceMappings:[{sourceRoot:f.f.root,targetRoot:target}]});
   const originals=snapshot(f.f.root), bundleBefore=snapshot(f.bundleRoot);
@@ -1408,4 +1410,25 @@ test("portable optional workspaces restore streamed binary/code/docs with the so
   const reuseAfterCorruption=await operateProjectNativeHistory({...scope,workspaceTargets:[{sourceRoot:codeA,targetRoot:targetA,mode:"reuse"}]});assert.equal(reuseAfterCorruption.results[0].status,"existing-workspace-reused");assert.equal(reuseAfterCorruption.results[0].filesWritten,0);
   const nativeAfterCodeCorruption=await operateProjectNativeHistory({action:"read-portable-project",bundleRoot:moved,archiveId:captured.archiveId,expectedArchiveDigest:captured.archiveDigest});assert.equal(nativeAfterCodeCorruption.results.length,2);assert.ok(nativeAfterCodeCorruption.workspaceObjectCoverage.unverifiedSourceRoots.includes(codeA));
   for(const root of [targetA,targetB,cliTarget,mcpTarget]){assert.equal(fs.existsSync(path.join(root,".lode")),false);assert.equal(fs.existsSync(path.join(root,".head")),false);}
+});
+
+test("authored pinned source fixture verifies evidence without claiming native capture or weakening Host qualification", async t => {
+  const f = await derivedFixture(t, { sourceEvidenceOnly: true });
+  const inspected = inspectCodexNativePayload({ directory: f.nativePayload });
+  assert.equal(inspected.payload.platform, nativeProfile.platform);
+  assert.equal(inspected.payload.architecture, nativeProfile.architecture);
+  // The branch intentionally has unresolved source representation; keep that unknown.
+  assert.equal(inspected.mechanicalOriginalsReady, false);
+  for (const original of f.originals) {
+    const entry = inspected.payload.files.find(row => row.threadId === original.threadId);
+    assert.ok(fs.readFileSync(path.join(f.nativePayload, "objects", entry.sha256 + ".bin")).equals(original.raw));
+  }
+  assert.match(inspected.payload.sourceCutoff, /synthetic fixture; no stopped-writer/u);
+  assert.equal(inspected.nativePublicationReady, false);
+  assert.equal(inspected.grantsRecoveryAuthority, false);
+  const target = path.join(f.f.base, "pinned-evidence-target");fs.mkdirSync(target);
+  const derived = await operateProjectNativeHistory({ action: "derive", provider: "claude", bundleRoot: f.nativePayload, root: target, threadIds: [sourceThread] });
+  const artifact = inspectProjectNativeDerivation({ bundleRoot: f.nativePayload, derivationId: derived.derivationId });
+  assert.ok(artifact.rows.length > 0);
+  assert.equal(artifact.manifest.grantsRecoveryAuthority, false);
 });
