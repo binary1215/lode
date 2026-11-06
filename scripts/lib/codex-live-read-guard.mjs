@@ -16,19 +16,26 @@ const SCRIPT = String.raw`$ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
 [Console]::Error.WriteLine("[lode-guard-startup-v1] script-started")
 [Diagnostics.Process]::GetCurrentProcess().PriorityClass=[Diagnostics.ProcessPriorityClass]::BelowNormal
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
-public static class LodeGuardFileIdentity {
- [StructLayout(LayoutKind.Sequential)] public struct Info {
-  public uint Attributes; public System.Runtime.InteropServices.ComTypes.FILETIME Creation;
-  public System.Runtime.InteropServices.ComTypes.FILETIME Access; public System.Runtime.InteropServices.ComTypes.FILETIME Write;
-  public uint Volume; public uint SizeHigh; public uint SizeLow; public uint Links; public uint IndexHigh; public uint IndexLow;
- }
- [DllImport("kernel32.dll",SetLastError=true)] public static extern bool GetFileInformationByHandle(SafeFileHandle h,out Info info);
-}
-'@
+[Console]::Error.WriteLine("[lode-guard-startup-v1] priority-ready")
+# Bind the same fixed read-only WinAPI in memory. No compiler/module discovery,
+# executable, external assembly or request-controlled native method is involved.
+[Console]::Error.WriteLine("[lode-guard-startup-v1] type-bootstrap")
+$guardAssembly=[AppDomain]::CurrentDomain.DefineDynamicAssembly([Reflection.AssemblyName]::new('LodeGuardNative'),[Reflection.Emit.AssemblyBuilderAccess]::Run)
+$guardModule=$guardAssembly.DefineDynamicModule('LodeGuardNative')
+# BY_HANDLE_FILE_INFORMATION is exactly thirteen unsigned DWORDs on both ABIs.
+$guardFields=@('Attributes','CreationLow','CreationHigh','AccessLow','AccessHigh','WriteLow','WriteHigh','Volume','SizeHigh','SizeLow','Links','IndexHigh','IndexLow')
+$guardInfoBuilder=$guardModule.DefineType('LodeGuardFileInformation',[Reflection.TypeAttributes]'Public,Sealed,SequentialLayout,BeforeFieldInit',[ValueType])
+foreach($field in $guardFields){[void]$guardInfoBuilder.DefineField($field,[UInt32],[Reflection.FieldAttributes]::Public)}
+$guardInfoType=$guardInfoBuilder.CreateType()
+if([Runtime.InteropServices.Marshal]::SizeOf([Activator]::CreateInstance($guardInfoType)) -ne 52){throw 'Invalid native file information size'}
+for($i=0;$i -lt $guardFields.Count;$i++){if([Runtime.InteropServices.Marshal]::OffsetOf($guardInfoType,$guardFields[$i]).ToInt32() -ne 4*$i){throw 'Invalid native file information offset'}}
+$guardNativeBuilder=$guardModule.DefineType('LodeGuardFileIdentity',[Reflection.TypeAttributes]'Public,Sealed,Abstract')
+$guardMethod=$guardNativeBuilder.DefineMethod('GetFileInformationByHandle',[Reflection.MethodAttributes]'Public,Static,PinvokeImpl',[bool],[Type[]]@([Microsoft.Win32.SafeHandles.SafeFileHandle],$guardInfoType.MakeByRefType()))
+$guardConstructor=[Runtime.InteropServices.DllImportAttribute].GetConstructor([Type[]]@([string]))
+$guardAttribute=[Reflection.Emit.CustomAttributeBuilder]::new($guardConstructor,[object[]]@('kernel32.dll'),[Reflection.FieldInfo[]]@([Runtime.InteropServices.DllImportAttribute].GetField('SetLastError')),[object[]]@($true))
+$guardMethod.SetCustomAttribute($guardAttribute)
+$guardMethod.SetImplementationFlags([Reflection.MethodImplAttributes]::PreserveSig)
+[void]$guardNativeBuilder.CreateType()
 [Console]::Error.WriteLine("[lode-guard-startup-v1] type-ready")
 $streams=[Collections.Generic.List[IO.FileStream]]::new()
 try {
@@ -41,7 +48,7 @@ try {
  foreach($name in $request.files){
   $stream=[IO.FileStream]::new([string]$name,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
   $streams.Add($stream)
-  $info=[LodeGuardFileIdentity+Info]::new()
+  $info=[Activator]::CreateInstance($guardInfoType)
   if(-not [LodeGuardFileIdentity]::GetFileInformationByHandle($stream.SafeFileHandle,[ref]$info)){throw 'GetFileInformationByHandle failed'}
   if($info.Links -ne 1 -or ($info.Attributes -band 1024) -ne 0){throw 'Unsafe guarded file'}
   $files+=@{volume=$info.Volume;fileIndex=('{0:x8}{1:x8}' -f $info.IndexHigh,$info.IndexLow);links=$info.Links;length=$stream.Length.ToString()}
@@ -91,7 +98,7 @@ export async function openCodexLiveReadGuard({ home, allowSynchronizationFiles, 
   const child = spawn(executable, ["-NoProfile", "-NonInteractive", "-Command", SCRIPT], { windowsHide: true, shell: false,
     cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"], env: Object.fromEntries(["SystemRoot", "WINDIR", "TEMP", "TMP", "PATH", "Path"].filter(key => process.env[key]).map(key => [key, process.env[key]])) });
   const startupObservation = () => {
-    const phases = new Set(["script-started", "type-ready", "request-read", "request-decoded", "handles-open", "ready-encoded"]);
+    const phases = new Set(["script-started", "priority-ready", "type-bootstrap", "type-ready", "request-read", "request-decoded", "handles-open", "ready-encoded"]);
     const observed = [...stderr.matchAll(/^\[lode-guard-startup-v1\] ([a-z-]+)\r?$/gmu)].map(match => match[1]).filter(phase => phases.has(phase));
     return { phase: observed.at(-1) ?? null, elapsedMs: Math.max(0, Date.now() - startedAt), scriptSha256: CODEX_LIVE_GUARD_SCRIPT_SHA256 };
   };

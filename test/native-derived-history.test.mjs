@@ -1216,7 +1216,7 @@ test("Windows live read guard preserves reader DB/WAL effects, separates snapsho
   assert.deepEqual(quiet.value,[1,1]);assert.equal(quiet.cleanup,"reader-connections-closed-before-owned-guard-release");assert.equal(quiet.globalAtomicSnapshotClaimed,false);assert.deepEqual(dbWalSnapshot(home),before);
   const live=await withLiveCodexReadSnapshots(options,({connections,check})=>{const s=connections[dbNames[0]].prepare("SELECT count(*) n FROM sample").get().n;writers[0].exec("INSERT INTO sample(value)VALUES('new state')");writers[1].exec("INSERT INTO sample(value)VALUES('new history')");check();const h=connections[dbNames[1]].prepare("SELECT count(*) n FROM sample").get().n;const stillS=connections[dbNames[0]].prepare("SELECT count(*) n FROM sample").get().n;return {s,h,stillS};});
   assert.deepEqual(live.value,{s:1,h:2,stillS:1});assert.equal(live.evidence.namespaceGuard,"delete-rename-only-not-byte-freeze");
-  const namespace=await openCodexLiveReadGuard(options);try{for(const name of [dbNames[0],dbNames[0]+"-wal"]){assert.throws(()=>fs.renameSync(path.join(home,name),path.join(home,name+".renamed")),{code:"EBUSY"});assert.throws(()=>fs.unlinkSync(path.join(home,name)),{code:"EBUSY"});}const result=writers[0].prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();assert.equal(result.busy,0);assert.equal(fs.statSync(path.join(home,dbNames[0]+"-wal")).size,0);namespace.check();}finally{await namespace.release();}
+  const namespace=await openCodexLiveReadGuard(options);try{for(const name of dbNames.flatMap(name=>[name,name+"-wal"])){assert.throws(()=>fs.renameSync(path.join(home,name),path.join(home,name+".renamed")),{code:"EBUSY"});assert.throws(()=>fs.unlinkSync(path.join(home,name)),{code:"EBUSY"});}const result=writers[0].prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();assert.equal(result.busy,0);assert.equal(fs.statSync(path.join(home,dbNames[0]+"-wal")).size,0);namespace.check();}finally{await namespace.release();}
   const clone=path.join(base,"source-without-shm");fs.mkdirSync(clone);
   for(const name of dbNames)for(const suffix of ["","-wal"])fs.copyFileSync(path.join(home,name+suffix),path.join(clone,name+suffix)); // synthetic fixture setup only, never capture implementation
   const clonedBefore=dbWalSnapshot(clone),copied=await withLiveCodexReadSnapshots({...options,home:clone},({connections})=>dbNames.map(name=>connections[name].prepare("SELECT count(*) n FROM sample").get().n));assert.deepEqual(copied.value,[2,2]);assert.deepEqual(dbWalSnapshot(clone),clonedBefore);
@@ -1228,6 +1228,9 @@ test("Windows live read guard preserves reader DB/WAL effects, separates snapsho
   let replaced=false,replaceReaderCalled=false;await assert.rejects(withLiveCodexReadSnapshots({...options,home:replace,onProcess:event=>{if(event.event==="planned"){const old=path.join(replace,dbNames[0]+"-wal");fs.renameSync(old,old+".saved");fs.copyFileSync(old+".saved",old);replaced=true;}}},()=>{replaceReaderCalled=true;}),{code:"CODEX_LIVE_SOURCE_IDENTITY_CHANGED"});assert.equal(replaced,true);assert.equal(replaceReaderCalled,false);
   const cleanupError=Object.assign(new Error("Synthetic current reader permission denied"),{code:"EACCES"});const beforeDenial=dbWalSnapshot(clone);
   await assert.rejects(withLiveCodexReadSnapshots({...options,home:clone},()=>{throw cleanupError;}),error=>error===cleanupError);assert.deepEqual(dbWalSnapshot(clone),beforeDenial);
+  const hardlinked=path.join(base,"hardlinked");fs.mkdirSync(hardlinked);for(const name of dbNames)for(const suffix of ["","-wal"])fs.copyFileSync(path.join(clone,name+suffix),path.join(hardlinked,name+suffix));
+  const hardlink=path.join(hardlinked,"other-name");fs.linkSync(path.join(hardlinked,dbNames[1]+"-wal"),hardlink);
+  let hardlinkSpawns=0;try{await assert.rejects(openCodexLiveReadGuard({...options,home:hardlinked,onProcess:()=>hardlinkSpawns++}),{code:"CODEX_LIVE_SOURCE_FILE_UNSAFE"});}finally{fs.unlinkSync(hardlink);}assert.equal(hardlinkSpawns,0);
   assert.equal(codexLiveReadGuardProcessStatus().length,0);assert.equal(events.filter(event=>event.event==="started").length,events.filter(event=>event.event==="closed").length);assert.ok(events.every(event=>event.windowsHide));
 });
 
@@ -1447,7 +1450,7 @@ test("Windows live guard startup diagnostics preserve cancellation and omit sour
     assert.equal(error.code,"CODEX_LIVE_SOURCE_CANCELLED");
     const observation=error.guardStartupObservation;
     assert.deepEqual(Object.keys(observation).sort(),["elapsedMs","phase","scriptSha256"]);
-    assert.ok(observation.phase===null||["script-started","type-ready","request-read","request-decoded","handles-open","ready-encoded"].includes(observation.phase));
+    assert.ok(observation.phase===null||["script-started","priority-ready","type-bootstrap","type-ready","request-read","request-decoded","handles-open","ready-encoded"].includes(observation.phase));
     assert.ok(Number.isFinite(observation.elapsedMs)&&observation.elapsedMs>=0);
     assert.equal(observation.scriptSha256,CODEX_LIVE_GUARD_SCRIPT_SHA256);
     assert.equal(JSON.stringify(observation).includes(home),false);
