@@ -97,13 +97,23 @@ reading focus instead of being replaced by the overview. Counts describe only
 retained evidence; filtered, missing-endpoint and unknown omitted relations stay
 separate. Counting yields to input, can be cancelled, and never gates Records.
 
-**Reading** has one focused title and four perspectives:
+**Reading** opens one document: its title and authored description come first,
+with actual connected records alongside on desktop and below on narrow screens.
+Choose a connected record to keep reading; its recorded relation and direction
+remain visible. Section links jump to the description, all connections, exact
+sources/changes, or selected-record tools without hiding the other content.
 
-- **Explanation** reads included recorded text and facts, with exact source references.
-- **Connections** groups actual incoming, outgoing and self relations by their
-  recorded type, then offers activity paths and Feature perspectives when present.
-- **Sources & changes** reads an exact cited source and its retained comparisons.
-- **Selected records** keeps independent multi-record readers, map tools and diagnostics.
+Only explicit paragraphs, headings, list markers and fenced code are formatted.
+Authored numbering, uncertainty and code remain unchanged; unknown or incomplete
+syntax stays literal. Long descriptions have Previous/Continue controls. A single
+text unit too large for a display page is explicitly qualified, with access to the
+full exported record. Rendering never creates a purpose, procedure or conclusion.
+
+The short next-record preview does not replace all connections. Parallel and self
+relations, references, later pages, known filtered targets and missing endpoints
+remain distinguishable. Source references are not inferred approval or causality.
+Map tools, detailed perspectives and diagnostics are secondary disclosures;
+Records and Map retain search and filters.
 
 The **Map** remains an independent exploration view. On a wide desktop it can sit
 beside the reader; narrow screens show one active content view. Native buttons,

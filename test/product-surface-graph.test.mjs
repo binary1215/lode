@@ -179,3 +179,17 @@ test("large activity routes keep DOM bounded, reach the last page, cancel and re
   t.diagnostic(JSON.stringify({ scope: "Synthetic bundled DOM double, not actual GUI timing", nodes: nodes.length,
     edges: edges.length, batches, initialMs: ui.initialMs, createdElements: ui.stats.created }));
 });
+
+test("existing surface observation producer delivers explicit authored paragraphs into the connected reader", async t => {
+  const f = surfaceFixture(t), rich = "# Recorded purpose\n\nKeep the note local; do not deploy.\n\n3. Inspect the input\n7. Read the saved result";
+  fs.appendFileSync(path.join(f.root, "flows.md"), rich + "\n");
+  const common = mapBasis(f), rows = entityRows(f);
+  rows[0] = { ...rows[0], startLines: 9, endLines: 9 + rich.split("\n").length - 1, excerpts: rich };
+  const entity = await publicSurfaceIngest(f, "entities", rows, common); await publicSurfaceIngest(f, "relations", relationRows(f, entity.observation), common);
+  const before = tree(f.root), report = await buildGraphExplorerSnapshot({ root: f.root, query: "Write a note" });
+  const activity = report.graph.nodes.find(n => n.kind === "UserActivity" && n.key === "write"); assert.equal(activity.statement, rich);
+  report.graph.initialNodeId = activity.nodeId;
+  const { explorerDom, visibleText } = await import("./helpers/graph-explorer-dom-fixture.mjs"); const supplied = JSON.stringify(report), ui = explorerDom(report); await ui.settle();
+  assert(visibleText(ui.ids.get("reading-flow-description")).includes("do not deploy")); assert(visibleText(ui.ids.get("reading-next")).includes("Save button"));
+  assert.equal(JSON.stringify(report), supplied); assert.deepEqual(tree(f.root), before);
+});

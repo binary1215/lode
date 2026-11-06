@@ -21,20 +21,44 @@ const explorerReadingModel = (() => {
     function groups(value, eligible = () => true) {
       const exact = origin(value), list = exact?.nodeId ? adjacency.get(exact.nodeId) || [] : exact ? [exact] : [];
       const grouped = new Map();
-      let filtered = 0, unknownEndpoints = 0;
+      let filtered = 0, unknownEndpoints = 0, filteredKnown = 0;
       for (const edge of list) {
         const direction = !exact.nodeId ? "selected" : edge.from === edge.to ? "self" : edge.from === exact.nodeId ? "outgoing" : "incoming";
         const groupKey = key([basis, exact.nodeId || exact.edgeId, direction, edge.type || edge.relation]);
         if (!grouped.has(groupKey)) grouped.set(groupKey, { key: groupKey, direction, type: edge.type || edge.relation, edges: [], included: 0, filtered: 0 });
         const group = grouped.get(groupKey);
         group.included++;
-        if (!nodes.has(edge.from) || !nodes.has(edge.to)) unknownEndpoints++;
+        const missingEndpoint = !nodes.has(edge.from) || !nodes.has(edge.to);
+        if (missingEndpoint) unknownEndpoints++;
         if (eligible(edge)) group.edges.push(edge);
-        else { group.filtered++; filtered++; }
+        else { group.filtered++; filtered++; if (!missingEndpoint) filteredKnown++; }
       }
       return { groups: [...grouped.values()].sort((a, b) => a.direction.localeCompare(b.direction) || String(a.type).localeCompare(String(b.type))),
-        included: list.length, filtered, unknownEndpoints,
+        included: list.length, filtered, filteredKnown, unknownEndpoints,
         omitted: graph.omittedEdgeCount ?? null, coverage: graph.coverage?.state || graph.status || "unknown" };
+    }
+    // A small target preview, grouped for display only. Parallel edge identities
+    // remain in each row and in the complete paged relationship reader.
+    function nextRead(value, eligible = () => true, limit = 4) {
+      const exact = origin(value), grouped = groups(value, eligible), rows = [], byKey = new Map();
+      const provenance = new Set(["SURFACE_FACT_FROM_OBSERVATION", "OBSERVES_EXACT_REVISION", "CURRENT_REVISION", "HAS_REVISION"]);
+      // Provenance stays in the complete reader. Prefer actual navigation links
+      // for this small preview; this is presentation, never evidence admission.
+      const navigation = grouped.groups.filter(group => !provenance.has(group.type) && group.edges.some(edge => [edge.from, edge.to].some(id => id !== exact?.nodeId && nodes.has(id))));
+      const ordered = navigation.length ? navigation : grouped.groups;
+      for (const group of ordered) for (const edge of group.edges) {
+        const targets = exact?.nodeId ? [edge.from === exact.nodeId ? edge.to : edge.from] : [...new Set([edge.from, edge.to])];
+        for (const targetId of targets) {
+          const node = nodes.get(targetId);
+          if (!node || node.nodeId === exact?.nodeId) continue;
+          const token = key([basis, group.direction, group.type, node.nodeId]);
+          if (byKey.has(token)) { byKey.get(token).edges.push(edge); continue; }
+          if (rows.length >= limit) continue;
+          const row = { key: token, node, direction: group.direction, type: group.type, edges: [edge] };
+          byKey.set(token, row); rows.push(row);
+        }
+      }
+      return { rows, included: grouped.included, filtered: grouped.filtered, filteredKnown: grouped.filteredKnown, unknownEndpoints: grouped.unknownEndpoints };
     }
     function addresses(value) {
       const exact = origin(value);
@@ -112,7 +136,7 @@ const explorerReadingModel = (() => {
       return { status: !chunks.length ? "source-not-included" : chunks.some(chunk => chunk.textTruncated) ? "partial-source" : exact.span && !covered ? "span-not-included" : "available",
         address: exact, choices, chunks, selected };
     }
-    return { basis, projectId, nodes, edges, origin, groups, addresses, resolve, pairKey, comparisons, read };
+    return { basis, projectId, nodes, edges, origin, groups, nextRead, addresses, resolve, pairKey, comparisons, read };
   }
   return { create, basisFor };
 })();

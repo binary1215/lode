@@ -1197,7 +1197,7 @@
     }
     const requestedPaths = new Set(data.graph.detailSelection?.paths || data.graph.query?.paths || []);
     const candidates = (context.files || []).filter(file => requestedPaths.has(file.path) || values.some(value => fileMatches(value, file))), relatedIds = new Set(selectedIds);
-    if (candidates.some(file => requestedPaths.has(file.path) && !values.some(value => fileMatches(value, file)))) panel.open = true;
+    if (readingTab === "source" && candidates.some(file => requestedPaths.has(file.path) && !values.some(value => fileMatches(value, file)))) panel.open = true;
     for (const value of values) if (!candidates.some(file => fileMatches(value, file)) && (!requestedPaths.size || value.path || value.referenceEvidence?.some(ref => ref.kind === "source"))) body.append(text("p", `${value.nodeId ? label(value) : relation(value)}: No exact code comparison included. This does not mean unchanged.`, "hint"));
     const outerBody = body;
     for (const file of candidates) {
@@ -1583,12 +1583,17 @@
     render();
     if (record) remember("View: " + next);
   }
-  function activateReadingTab(next) { displayView = "reading"; readingTab = next; renderViewMode(); }
+  function activateReadingTab(next) { displayView = "reading"; readingTab = next; renderViewMode(); if (next === "selection") $("reading-selection").open = true; }
   function setReadingTab(next, record = true) {
     if (!["explanation", "connections", "source", "selection"].includes(next)) return;
     if (record) saveReadingBeforeNavigation();
     readingView?.invalidate(); displayView = "reading"; readingTab = next;
     render();
+    if (next === "connections") $("reading-all-relations").open = true;
+    if (next === "selection") $("reading-selection").open = true;
+    if (next === "source" && !$("context-lineage").hidden) $("context-lineage").open = true;
+    const target = next === "connections" ? $("reading-related") : next === "selection" ? $("reading-selection") : next === "source" ? !$("reading-source").hidden ? $("reading-source") : !$("context-lineage").hidden ? $("context-lineage") : $("reading-sources") : $("reading-flow-title");
+    target.setAttribute("tabindex", "-1"); target.scrollIntoView({ block: "start" }); target.focus({ preventScroll: true });
     if (record) remember("Read: " + next);
   }
   function cancelTypeSummary() {
@@ -1678,7 +1683,7 @@
     document.documentElement.dataset.explorerView = displayView;
     document.documentElement.dataset.readingTab = readingTab;
     for (const name of ["types", "records", "map", "reading"]) $("view-" + name).setAttribute("aria-pressed", String(displayView === (name === "map" ? "graph" : name)));
-    for (const name of ["explanation", "connections", "source", "selection"]) $("read-" + name).setAttribute("aria-pressed", String(readingTab === name));
+    for (const name of ["explanation", "connections", "source", "selection"]) $("read-" + name).setAttribute("aria-current", readingTab === name ? "location" : "false");
     const value = selected?.value, kind = value?.kind || value?.type;
     const breadcrumb = $("reading-breadcrumb"); breadcrumb.replaceChildren();
     breadcrumb.append(text("span", "Project"), text("span", " › " + (value?.kind ? explorerCards.kindLabel(value.kind) : kind ? relation(value) : "Evidence kinds") + (value ? " › " + label(value) : "")));
@@ -1925,7 +1930,7 @@
   if (typeof matchMedia === "function") {
     const narrow = matchMedia("(max-width:650px)").matches;
     $("selection-tools").open = !narrow;
-    $("reading-tools").open = !narrow;
+    $("reading-tools").open = false;
     $("snapshot-meta").open = false;
     if (narrow) $("display-options").open = false;
   }
@@ -1936,11 +1941,12 @@
     scopeKey: () => JSON.stringify(filterState()),
     beforeNavigate: saveReadingBeforeNavigation,
     select: value => value?.nodeId ? selectNode(value, false, { recordHistory: false }) : selectEdge(value, false, { recordHistory: false }),
-    navigateNode: node => { selectNode(node, false, { keepReadingTab: true }); $("reading-flow-title").focus({ preventScroll: true }); },
+    navigateNode: node => { selectNode(node, false, { keepReadingTab: true }); const title = $("reading-flow-title"); title.scrollIntoView({ block: "start" }); title.focus({ preventScroll: true }); if (viewHistory[viewCursor]) viewHistory[viewCursor].reading = readingView.capture(); },
     selectRelation: edge => { selectEdge(edge); $("reading-flow-title").focus({ preventScroll: true }); },
     remember, renderAll: render, openComparison: openExactComparison,
     activateSource: () => { displayView = "reading"; readingTab = "source"; },
     getReadingTab: () => readingTab,
+    openExportedRecord: () => { activateReadingTab("selection"); for (let el = $("evidence").parentNode; el; el = el.parentNode) if (el.tagName?.toLowerCase() === "details") el.open = true; $("evidence").scrollIntoView({ block: "nearest" }); $("evidence").setAttribute("tabindex", "-1"); $("evidence").focus(); },
     activateRecord: tab => { displayView = "reading"; readingTab = ["explanation", "connections", "selection"].includes(tab) ? tab : "explanation"; },
     afterNavigate: () => { if (viewHistory[viewCursor]) viewHistory[viewCursor].reading = readingView.capture(); },
   });

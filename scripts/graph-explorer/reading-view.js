@@ -13,7 +13,7 @@ const explorerReadingView = (() => {
     };
     const state = () => {
       const graph = getGraph();
-      if (!states.has(graph)) states.set(graph, { source: null, groups: new Map(), groupStart: null, factStart: 0, cached: null });
+      if (!states.has(graph)) states.set(graph, { source: null, groups: new Map(), groupStart: null, factStart: 0, bodyCursor: { block: 0, offset: 0 }, bodyHistory: [], cached: null });
       return states.get(graph);
     };
     let serial = 0, renderKey = null;
@@ -21,7 +21,7 @@ const explorerReadingView = (() => {
     function capture() {
       const basis = explorerReadingModel.basisFor(snapshot, getGraph()), current = state();
       return { basis, focusKey: current.focusKey, source: current.source ? JSON.parse(JSON.stringify(current.source)) : null,
-        groups: [...current.groups].map(([key, value]) => [key, { ...value }]), groupStart: current.groupStart, factStart: current.factStart,
+        groups: [...current.groups].map(([key, value]) => [key, { ...value }]), groupStart: current.groupStart, factStart: current.factStart, bodyCursor: { ...current.bodyCursor }, bodyHistory: current.bodyHistory.map(item => ({ ...item })),
         panels: [...document.body.querySelectorAll("[data-reading-key]")].map(el => ({
           key: el.getAttribute("data-reading-key"), open: typeof el.open === "boolean" ? el.open : undefined,
           top: el.scrollTop || 0, left: el.scrollLeft || 0,
@@ -35,6 +35,7 @@ const explorerReadingView = (() => {
       const ticket = ++serial, current = state();
       current.source = saved.source && model.resolve(saved.source.address) ? JSON.parse(JSON.stringify(saved.source)) : null;
       current.groups = new Map((saved.groups || []).map(([key, value]) => [key, { ...value }])); current.groupStart = saved.groupStart; current.factStart = saved.factStart || 0;
+      current.bodyCursor = { ...(saved.bodyCursor || { block: 0, offset: 0 }) }; current.bodyHistory = (saved.bodyHistory || []).map(item => ({ ...item }));
       current.focusKey = saved.focusKey; current.cached = null;
       $("reading-neighbors").removeAttribute("data-group-render");
       renderKey = null; renderAll();
@@ -160,16 +161,65 @@ const explorerReadingView = (() => {
         renderSource();
       };
     }
+    function renderDocument(descriptor, current, identity) {
+      const target = $("reading-flow-description"); target.replaceChildren();
+      const authored = descriptor.body && descriptor.body !== descriptor.title ? descriptor.body : "";
+      if (current.documentText !== authored) { current.documentText = authored; current.documentModel = explorerDocument.create(authored); }
+      const page = current.documentModel.page(current.bodyCursor);
+      let list = null;
+      for (const block of page.blocks) {
+        if (block.omittedTextUnitLength) {
+          list = null;
+          const note = text("div", "A single text unit exceeds this display page. Its full retained text is available in the exported record.", "reading-text-partial");
+          note.append(button("Read full exported record", () => options.openExportedRecord?.())); target.append(note); continue;
+        }
+        let node;
+        if (block.kind === "item") {
+          if (!list) { list = text("ul", "", "reading-authored-list"); target.append(list); }
+          node = text("li", ""); node.append(text("span", block.marker, "reading-list-marker"), text("span", block.text)); list.append(node);
+        } else {
+          list = null; node = text(block.kind === "heading" ? "h" + Math.min(6, block.level + 2) : block.kind === "code" || block.kind === "literal" ? "pre" : "p", block.text, "reading-authored-" + block.kind); target.append(node);
+        }
+        if (block.partial || block.continued) node.append(text("span", block.partial ? "\nMore of this text continues on the next page." : "\nContinued from the previous page.", "reading-text-partial"));
+      }
+      if (!authored && !descriptor.facts.length && !descriptor.excerpts.length) target.append(text("p", "No recorded description is included. Follow a connected record or source.", "hint"));
+      const nav = $("reading-document-pages"); nav.hidden = !current.bodyHistory.length && !page.next;
+      nav.setAttribute("data-reading-key", identity + ":document-page");
+      $("reading-document-range").textContent = "Text part " + (current.bodyHistory.length + 1) + (page.next ? " · more recorded text remains" : "");
+      $("reading-document-prev").disabled = !current.bodyHistory.length; $("reading-document-next").disabled = !page.next;
+      const move = next => { beforeNavigate(); invalidate(); if (next) { current.bodyHistory.push({ ...current.bodyCursor }); current.bodyCursor = page.next; } else current.bodyCursor = current.bodyHistory.pop(); renderKey = null; render(); remember("Read recorded text"); target.scrollIntoView({ block: "nearest" }); target.setAttribute("tabindex", "-1"); target.focus(); options.afterNavigate?.(); };
+      $("reading-document-prev").onclick = () => { if (current.bodyHistory.length) move(false); };
+      $("reading-document-next").onclick = () => { if (page.next) move(true); };
+    }
+    function renderNext(value, current, cacheKey) {
+      if (current.nextKey === cacheKey) return;
+      current.nextKey = cacheKey;
+      const target = $("reading-next"); target.replaceChildren();
+      const preview = exactModel().nextRead(value, eligible);
+      for (const row of preview.rows) {
+        const descriptor = describe(row.node), card = text("div", "", "reading-next-card");
+        const direction = row.direction === "incoming" ? "← " : "→ ";
+        card.append(text("p", direction + relation({ type: row.type }) + (row.edges.length > 1 ? " · " + row.edges.length + " recorded links" : ""), "reading-next-relation"));
+        const control = button(descriptor.title, () => options.navigateNode(row.node)); control.setAttribute("data-next-record", row.node.nodeId); control.setAttribute("data-reading-focus", JSON.stringify([cacheKey, "next-record", row.direction, row.type, row.node.nodeId])); card.append(control);
+        card.append(text("p", descriptor.kind, "hint"));
+        if (descriptor.summaryConditions.length) card.append(text("p", descriptor.summaryConditions.join(" · "), "card-conditions"));
+        target.append(card);
+      }
+      if (!preview.rows.length) target.append(text("p", "No other connected record is included in this scope. Self-links and available references remain in all recorded connections.", "hint"));
+      $("reading-all-relations-label").textContent = "All recorded connections · " + preview.included;
+      const all = $("reading-all-relations"); if (all.getAttribute("data-reading-key") !== cacheKey + ":all-relations") all.open = false; all.setAttribute("data-reading-key", cacheKey + ":all-relations");
+    }
     function render() {
       if (!getSelected()) { $("reading-flow").hidden = $("reading-source").hidden = true; $("reading-empty").hidden = false; state().source = null; return; }
       const model = exactModel(), value = model.origin(getSelected()), current = state();
+      const selectionPanel = $("reading-selection"); if (selectionPanel.getAttribute("data-reading-key") !== model.basis + ":selection") selectionPanel.open = false; selectionPanel.setAttribute("data-reading-key", model.basis + ":selection");
       const panel = $("reading-flow"); panel.hidden = !value; $("reading-empty").hidden = Boolean(value);
-      $("reading-source-empty").hidden = Boolean(current.source);
+      $("reading-source-empty").hidden = Boolean(current.source) || options.getReadingTab?.() !== "source";
       if (value) {
         const descriptor = describe(value), id = value.nodeId || value.edgeId;
         const focusKey = JSON.stringify([model.basis, id]);
         if (current.focusKey !== focusKey) {
-          current.focusKey = focusKey; current.factStart = 0;
+          current.focusKey = focusKey; current.factStart = 0; current.bodyCursor = { block: 0, offset: 0 }; current.bodyHistory = [];
           if (current.source && (current.source.address.nodeId || current.source.address.edgeId) !== id) current.source = null;
         }
         const identity = JSON.stringify([model.basis, id, scopeKey()]);
@@ -182,10 +232,7 @@ const explorerReadingView = (() => {
         $("reading-technical-body").textContent = JSON.stringify({ record: descriptor.technical, graph: { basis: getGraph().basis, coverage: getGraph().coverage, omittedEdgeCount: getGraph().omittedEdgeCount } }, null, 2);
         if (renderKey !== identity) {
           renderKey = identity;
-          const description = $("reading-flow-description"); description.replaceChildren();
-          if (descriptor.body && descriptor.body !== descriptor.title) description.append(text("p", descriptor.body));
-          else if (descriptor.preview && descriptor.preview !== descriptor.title) description.append(text("p", descriptor.preview));
-          else description.append(text("p", "No additional recorded explanation is included. Follow the exact source references or related evidence.", "hint"));
+          renderDocument(descriptor, current, identity);
           const facts = descriptor.facts.flatMap(([heading, items]) => items.map((item, index) => ({ heading, item, index })));
           const factsBox = $("reading-explanation");
           factsBox.hidden = !facts.length && !descriptor.excerpts.length;
@@ -222,10 +269,11 @@ const explorerReadingView = (() => {
         const cacheKey = JSON.stringify([model.basis, id, scopeKey()]);
         if (current.cached?.key !== cacheKey) current.cached = { key: cacheKey, ...model.groups(value, eligible) };
         const grouped = current.cached, groups = grouped.groups;
-        $("reading-relations-status").textContent = grouped.included + " recorded connections"
-          + (grouped.filtered ? " · " + grouped.filtered + " hidden by filters" : "")
-          + (grouped.unknownEndpoints ? " · " + grouped.unknownEndpoints + " targets not included" : "")
-          + (grouped.omitted > 0 ? " · " + grouped.omitted + " further connections not included" : "");
+        renderNext(value, current, cacheKey);
+        $("reading-relations-status").textContent = grouped.included + " retained links"
+          + (grouped.filteredKnown ? " · " + grouped.filteredKnown + " outside the current scope" : "")
+          + (grouped.unknownEndpoints ? " · " + grouped.unknownEndpoints + " links have targets not included" : "")
+          + (grouped.omitted ? " · the export omits " + grouped.omitted + " relationships" : grouped.omitted == null ? " · links outside the export are unknown" : "");
         const first = Math.max(0, groups.findIndex(group => group.key === current.groupStart));
         const page = Math.floor(first / 20), target = $("reading-neighbors");
         const groupRenderKey = JSON.stringify([cacheKey, page]);
@@ -241,20 +289,25 @@ const explorerReadingView = (() => {
             const range = text("span", ""), previous = button("Previous members", () => move(-1)), next = button("More members", () => move(1));
             nav.append(range, previous, next); details.append(rows, nav);
             let memberPage = Math.floor(Math.max(0, group.edges.findIndex(edge => edge.edgeId === state.firstEdge)) / 20);
+            let filledPage = null;
             const fill = () => {
-              rows.replaceChildren();
-              if (!details.open) return;
+              if (!details.open) { rows.replaceChildren(); filledPage = null; return; }
+              // Native toggle can arrive after history restored focus. Do not
+              // replace an already rendered exact page and detach its trigger.
+              if (filledPage === memberPage) return;
+              filledPage = memberPage; rows.replaceChildren();
               for (const edge of group.edges.slice(memberPage * 20, (memberPage + 1) * 20)) {
                 const row = text("div", "", "reading-neighbor");
                 const from = model.nodes.get(edge.from), to = model.nodes.get(edge.to);
                 row.append(text("p", (from ? label(from) : "Not exported") + " → " + (to ? label(to) : "Not exported") + " · " + relation(edge)));
-                row.append(button("Read relation", () => options.selectRelation(edge)));
+                const relationButton = button("Read relation", () => options.selectRelation(edge));
+                relationButton.setAttribute("data-reading-focus", JSON.stringify([cacheKey, group.key, edge.edgeId, "relation"])); row.append(relationButton);
                 const targets = value.nodeId ? [edge.from === value.nodeId ? edge.to : edge.from] : [...new Set([edge.from, edge.to])];
                 for (const targetId of targets) {
                   const node = model.nodes.get(targetId);
                   if (node) {
                     const targetButton = button("Read " + label(node), () => options.navigateNode(node));
-                    row.append(targetButton);
+                    targetButton.setAttribute("data-reading-focus", JSON.stringify([cacheKey, group.key, edge.edgeId, "target", targetId])); row.append(targetButton);
                     const conditions = describe(node).summaryConditions;
                     if (conditions.length) row.append(text("p", conditions.join(" · "), "card-conditions"));
                   }

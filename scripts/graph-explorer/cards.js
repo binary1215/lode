@@ -22,6 +22,7 @@ const explorerCards = (() => {
     "unknown-boundary": "Source range uncertain", "unmatched-declaration-not-proven-rename-or-continuity": "No matching declaration",
     "comment-text-only-difference": "Only comment text differs", "trailing-layout-only-difference": "Trailing whitespace differs",
     "declaration-bytes-changed": "Source changed", "declaration-bytes-unchanged": "Source unchanged",
+    "retained-evidence": "Retained record", "pointer-snapshot": "Recorded snapshot",
     authored: "Recorded description", declared: "Declared connection", inferred: "Inferred description", "runtime-recorded": "Recorded execution", unknown: "Uncertain",
     "non-canonical-source-claim": "Source description", unreviewed: "Not reviewed", pending: "Pending", proposed: "Proposed", accepted: "Review accepted", rejected: "Review rejected",
     cancelled: "Cancelled", canceled: "Cancelled", failed: "Failed", succeeded: "Succeeded", completed: "Completed", paused: "Paused", running: "Running",
@@ -32,7 +33,7 @@ const explorerCards = (() => {
     "partial-source": "Partial source text", "choose-exact-comparison": "Choose a source version", "stale-or-unbound-address": "Source reference unavailable",
     "ambiguous-or-unbound-pair": "Comparison reference unavailable", "verified-exact-bytes": "Source text included",
   };
-  const ordinary = new Set(["available", "current", "snapshot-evidence", "current-canon-bytes", "current-source-bytes", "not-applicable", "observed"]);
+  const ordinary = new Set(["available", "current", "snapshot-evidence", "current-canon-bytes", "current-source-bytes", "not-applicable", "observed", "observed-evidence", "parsed-structural-evidence"]);
   const statusLabel = state => ordinary.has(state) ? "" : label(statusLabels, state, state ? "Unrecognized recorded state" : "");
   const sourcePath = value => /^(?:\.lode|\.head|\.git)(?:[\\/]|$)/i.test(string(value)) ? "" : string(value);
   const kindLabel = kind => kindName({ kind });

@@ -247,3 +247,67 @@ test("authored names remain intact even when a checksum happens to equal the nod
   const original = JSON.stringify(data), ui = explorerDom(data); await ui.settle();
   assert.equal(ui.ids.get("reading-flow-title").textContent, name); assert.equal(JSON.stringify(data), original);
 });
+
+test("authored structures stay literal and bounded, preserving numbering, negation, code and oversized grapheme gaps", () => {
+  const document = load("reading-document", "explorerDocument");
+  const text = ["# 목적", "", "배포하지 않는다. 판단은 아직 불확실하다.", "", "3. 기록된 세 번째 항목", "7. 원문은 7번이다.", "", "~~~js", "<script>not executed</script>", "const checksum = \"keep\";", "~~~"].join("\n");
+  const model = document.create(text), page = model.page();
+  assert.equal(model.original, text); assert.equal(page.complete, true);
+  assert.equal(model.blocks.filter(b => b.kind === "item").map(b => b.marker).join(","), "3.,7.");
+  assert(model.blocks.some(b => b.kind === "code" && b.text.includes("<script>")));
+  for (const unsupported of ["~~~js\nunfinished", "| a | b |\n| - | - |", "[Run](javascript:unsafe)"]) { const m = document.create(unsupported); assert.equal(m.original, unsupported); assert.equal(m.blocks.map(b => b.text).join("\n"), unsupported); }
+  const source = "한글 가́ 나👨‍👩‍👧‍👦다", normal = document.create(source); let cursor, joined = "", parts = 0;
+  do { const p = normal.page(cursor, { maxCharacters: 12 }); joined += p.blocks.map(b => b.text).join(""); assert(p.blocks.every(b => b.text.length <= 12 && !b.omittedTextUnitLength)); cursor = p.next; assert(++parts < 20); } while (cursor);
+  assert.equal(joined, source);
+  const huge = "a" + "\u0301".repeat(24000), g = document.create(huge).page();
+  assert.equal(g.original, huge); assert.equal(g.complete, false); assert.equal(g.blocks[0].omittedTextUnitLength, huge.length); assert(g.blocks.every(b => b.text.length <= 12000));
+});
+
+test("one reading page exposes authored content and a real next target without a prerequisite perspective", async () => {
+  const data = fixture(), original = JSON.stringify(data); data.graph.nodes[0].description = "# Recorded purpose\n\nDo not deploy.\n\n3. Inspect\n7. Keep the exception";
+  const supplied = JSON.stringify(data), ui = explorerDom(data); await ui.settle();
+  assert(visibleText(ui.ids.get("reading-flow-description")).includes("Do not deploy."));
+  assert(visibleText(ui.ids.get("reading-next")).includes("Record 1"));
+  assert.equal(ui.ids.get("reading-all-relations").open, false); assert.equal(ui.ids.get("reading-technical").open, false);
+  const next = ui.ids.get("reading-next").querySelectorAll("[data-next-record]")[0]; next.focus(); const nextFocus = next.getAttribute("data-reading-focus"); assert(nextFocus); ui.event(next); ui.flush();
+  assert.equal(ui.ids.get("reading-flow-title").textContent, "Record 1"); assert.equal(ui.stats.scrolled, ui.ids.get("reading-flow-title")); ui.event("back"); ui.flush();
+  assert.equal(ui.ids.get("reading-flow-title").textContent, "Record 0"); assert(visibleText(ui.ids.get("reading-flow-description")).includes("7.")); assert.equal(ui.stats.focusedElement.getAttribute("data-reading-focus"), nextFocus);
+  assert.equal(JSON.stringify(data), supplied); assert.notEqual(original, supplied);
+});
+
+test("document continuation and explicit oversized-unit disclosure keep complete exported text reachable", async () => {
+  const data = fixture(); data.graph.nodes[0].description = "One complete paragraph.\n\n".repeat(40) + "Do NOT infer approval.";
+  const supplied = JSON.stringify(data), ui = explorerDom(data); await ui.settle();
+  assert.equal(ui.ids.get("reading-document-pages").hidden, false);
+  ui.event("reading-document-next"); assert(visibleText(ui.ids.get("reading-flow-description")).includes("Do NOT infer approval."));
+  ui.event("reading-document-prev"); assert(!visibleText(ui.ids.get("reading-flow-description")).includes("Do NOT infer approval.")); assert.equal(JSON.stringify(data), supplied);
+  const oversized = fixture(); oversized.graph.nodes[0].description = "a" + "\u0301".repeat(24000); const u = explorerDom(oversized); await u.settle();
+  assert.match(visibleText(u.ids.get("reading-flow-description")), /exceeds this display page/);
+  const action = buttons(u.ids.get("reading-flow-description").children[0])[0]; u.event(action);
+  assert.equal(u.ids.get("reading-selection").open, true); assert.equal(u.ids.get("focus-inspector").open, true); assert(u.ids.get("evidence").textContent.includes(oversized.graph.nodes[0].description));
+});
+
+test("next reading keeps self, parallel and missing relationships exact with visible scope and bounded previews", async () => {
+  const data = fixture(1201); data.graph.edges.push({ edgeId: "parallel", from: "N0", to: "N1", type: "CALLS" }, { edgeId: "self", from: "N0", to: "N0", type: "CALLS" }, { edgeId: "gap", from: "N0", to: "missing", type: "CALLS" });
+  const model = factory.create(data, data.graph), original = JSON.stringify(data), next = model.nextRead(data.graph.nodes[0]);
+  assert.equal(next.rows.length, 4); assert.equal(next.rows[0].edges.length, 2); assert.equal(model.groups(data.graph.nodes[0]).included, 1203);
+  const ui = explorerDom(data); await ui.settle(); assert.match(visibleText(ui.ids.get("reading-related")), /1 links have targets not included/);
+  assert.equal(ui.ids.get("reading-next").querySelectorAll("[data-next-record]").length, 4); assert.equal(JSON.stringify(data), original);
+  const only = fixture(1); only.graph.edges = [{ edgeId: "self", from: "N0", to: "N0", type: "CALLS" }];
+  const selfUi = explorerDom(only); await selfUi.settle(); assert.match(visibleText(selfUi.ids.get("reading-next")), /No other connected record/);
+  assert.match(selfUi.ids.get("reading-all-relations-label").textContent, /1/);
+});
+
+
+test("Back retains the exact later relation trigger after a delayed native details toggle", async () => {
+  const data = fixture(85), supplied = JSON.stringify(data), ui = explorerDom(data); await ui.settle();
+  let group = ui.ids.get("reading-neighbors").children[0]; group.open = true; ui.event(group, "toggle");
+  ui.event(buttons(group.children[2]).find(b => b.textContent === "More members"));
+  const trigger = buttons(group.children[1].children[0]).find(b => b.textContent.startsWith("Read Record ")); assert(trigger); trigger.focus();
+  const key = trigger.getAttribute("data-reading-focus"); assert(key); ui.event(trigger); ui.flush();
+  ui.event("back"); ui.flush(); group = ui.ids.get("reading-neighbors").children[0];
+  const restored = group.querySelectorAll("[data-reading-focus]").find(b => b.getAttribute("data-reading-focus") === key); assert(restored);
+  assert.equal(ui.stats.focusedElement, restored); assert.match(visibleText(group), /21–40/);
+  ui.event(group, "toggle"); assert.equal(ui.stats.focusedElement, restored); assert(ui.document.body.contains(restored));
+  assert.equal(JSON.stringify(data), supplied);
+});

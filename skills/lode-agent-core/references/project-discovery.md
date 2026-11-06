@@ -203,8 +203,11 @@ and source-byte checks. See [Explorer](../../../docs/graph-explorer.md#read-an-a
 for pages, continuation, cancellation and focused comparison coverage.
 
 For a standalone Explorer, use Overview → complete Records → Reading, keeping
-explicit anchors/query/path intent first. Explanation, Connections, Sources & changes
-and Selected records share selection without duplicating authority. Read exact
+explicit anchors/query/path intent first. Reading shows the authored document and
+actual connected targets together; section links move within it without prerequisite
+perspective changes. Long text and all connections retain continuation; unknown
+syntax stays literal and missing coverage remains qualified. Selected-record tools
+stay available in secondary disclosures without duplicating authority. Read exact
 source addresses and pair sides; a path match, unavailable span or grouped count
 is not source proof or a gate on ordinary reading. Map, page continuation and
 Back/Forward retain in-memory display choices. No new setup, service or user JSON.
