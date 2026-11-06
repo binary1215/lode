@@ -14,6 +14,7 @@ const databaseNames = ["state_5.sqlite", "thread_history_1.sqlite"];
 const SCRIPT = String.raw`$ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
+[Console]::Error.WriteLine("[lode-guard-startup-v1] script-started")
 [Diagnostics.Process]::GetCurrentProcess().PriorityClass=[Diagnostics.ProcessPriorityClass]::BelowNormal
 Add-Type -TypeDefinition @'
 using System;
@@ -28,9 +29,13 @@ public static class LodeGuardFileIdentity {
  [DllImport("kernel32.dll",SetLastError=true)] public static extern bool GetFileInformationByHandle(SafeFileHandle h,out Info info);
 }
 '@
+[Console]::Error.WriteLine("[lode-guard-startup-v1] type-ready")
 $streams=[Collections.Generic.List[IO.FileStream]]::new()
 try {
- $request=[Console]::In.ReadLine() | ConvertFrom-Json
+ $requestLine=[Console]::In.ReadLine()
+ [Console]::Error.WriteLine("[lode-guard-startup-v1] request-read")
+ $request=$requestLine | ConvertFrom-Json
+ [Console]::Error.WriteLine("[lode-guard-startup-v1] request-decoded")
  if($request.version -ne 1 -or @($request.files).Count -ne 4){throw 'Invalid guard request'}
  $files=@()
  foreach($name in $request.files){
@@ -41,8 +46,10 @@ try {
   if($info.Links -ne 1 -or ($info.Attributes -band 1024) -ne 0){throw 'Unsafe guarded file'}
   $files+=@{volume=$info.Volume;fileIndex=('{0:x8}{1:x8}' -f $info.IndexHigh,$info.IndexLow);links=$info.Links;length=$stream.Length.ToString()}
  }
+ [Console]::Error.WriteLine("[lode-guard-startup-v1] handles-open")
  @{version=1;ready=$true;pid=$PID;files=$files;share='ReadWrite-no-Delete';powershell=$PSVersionTable.PSVersion.ToString()} | ConvertTo-Json -Depth 6 -Compress
  [Console]::Out.Flush()
+ [Console]::Error.WriteLine("[lode-guard-startup-v1] ready-encoded")
  $null=[Console]::In.ReadLine()
 } catch {
  @{version=1;ready=$false;pid=$PID;exception=$_.Exception.GetType().FullName;hresult=$_.Exception.HResult;message=$_.Exception.Message} | ConvertTo-Json -Compress
@@ -77,12 +84,17 @@ export async function openCodexLiveReadGuard({ home, allowSynchronizationFiles, 
   }
   const executable = powershellExecutable ?? path.join(process.env.SystemRoot || "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe");
   if (typeof executable !== "string" || !path.isAbsolute(executable)) fail("CODEX_LIVE_GUARD_HOST_EXECUTABLE_REQUIRED");
-  const deadline = Date.now() + timeoutMs, lines = [], decoder = new StringDecoder("utf8"); let output = "", stderr = "", bytes = 0, primary = null, closed = null, readyConfirmed = false;
+  const startedAt = Date.now(), deadline = startedAt + timeoutMs, lines = [], decoder = new StringDecoder("utf8"); let output = "", stderr = "", bytes = 0, primary = null, closed = null, readyConfirmed = false;
   const report = event => { try { onProcess({ purpose: "codex-live-read-guard", scriptSha256: CODEX_LIVE_GUARD_SCRIPT_SHA256,
     windowsHide: true, ports: [], parentPid: process.pid, ...event }); } catch { /* Telemetry is not effect authority. */ } };
   report({ event: "planned", command: executable, args: ["-NoProfile", "-NonInteractive", "-Command", "<fixed-script-by-sha256>"], argumentBody: "fixed script in codex-live-read-guard.mjs" });
   const child = spawn(executable, ["-NoProfile", "-NonInteractive", "-Command", SCRIPT], { windowsHide: true, shell: false,
     cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"], env: Object.fromEntries(["SystemRoot", "WINDIR", "TEMP", "TMP", "PATH", "Path"].filter(key => process.env[key]).map(key => [key, process.env[key]])) });
+  const startupObservation = () => {
+    const phases = new Set(["script-started", "type-ready", "request-read", "request-decoded", "handles-open", "ready-encoded"]);
+    const observed = [...stderr.matchAll(/^\[lode-guard-startup-v1\] ([a-z-]+)\r?$/gmu)].map(match => match[1]).filter(phase => phases.has(phase));
+    return { phase: observed.at(-1) ?? null, elapsedMs: Math.max(0, Date.now() - startedAt), scriptSha256: CODEX_LIVE_GUARD_SCRIPT_SHA256 };
+  };
   let resolveReady, rejectReady;
   const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
   const complete = new Promise(resolve => child.once("close", (code, processSignal) => {
@@ -148,6 +160,11 @@ export async function openCodexLiveReadGuard({ home, allowSynchronizationFiles, 
   } catch (error) {
     clearTimeout(timer); signal?.removeEventListener("abort", abort);
     primary ??= error;
+    if (!readyConfirmed) {
+      const observation = startupObservation();
+      try { primary.guardStartupObservation ??= observation; } catch { /* Preserve a frozen original error. */ }
+      report({ event: "startup-failed", observation });
+    }
     try { await release(); } catch (cleanup) { primary.guardCleanupFailure = cleanup.code || cleanup.message; }
     throw primary;
   }

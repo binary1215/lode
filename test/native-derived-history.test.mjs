@@ -32,7 +32,7 @@ import { readSelectedCodexStateEvidence } from "../scripts/lib/codex-native-stat
 import { readCodexProjectCatalog } from "../scripts/lib/codex-project-catalog.mjs";
 import { exportPortableProjectEvidence, inspectPortableProjectEvidence, readPortableProjectEvidence, materializePortableProjectSessionBundle, exportCodexLiveProjectEvidence } from "../scripts/lib/portable-project-evidence.mjs";
 import { admitDestinationImportTarget, openDestinationImportTarget, reserveDestinationImportEffect, readDestinationImportEffect, executeDestinationImportEffect, consumeDestinationNativeWriteCapability } from "../scripts/lib/destination-import-journal.mjs";
-import { openCodexLiveReadGuard, withLiveCodexReadSnapshots, codexLiveReadGuardProcessStatus } from "../scripts/lib/codex-live-read-guard.mjs";
+import { openCodexLiveReadGuard, withLiveCodexReadSnapshots, codexLiveReadGuardProcessStatus, CODEX_LIVE_GUARD_SCRIPT_SHA256 } from "../scripts/lib/codex-live-read-guard.mjs";
 import { readCodexLiveProjectSource } from "../scripts/lib/codex-live-project-source.mjs";
 import { createLocalDestinationImportHost } from "../scripts/lib/local-destination-import-host.mjs";
 
@@ -1210,7 +1210,7 @@ test("Windows live read guard preserves reader DB/WAL effects, separates snapsho
   const home=path.join(base,"source"),dbNames=["state_5.sqlite","thread_history_1.sqlite"];fs.mkdirSync(home);
   for(const name of dbNames){const db=new DatabaseSync(path.join(home,name));writers.push(db);db.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; PRAGMA busy_timeout=0; CREATE TABLE sample(id INTEGER PRIMARY KEY,value TEXT); INSERT INTO sample(value)VALUES('initial')");}
   const dbWalSnapshot=root=>Object.fromEntries(dbNames.flatMap(name=>[name,name+"-wal"]).map(name=>{const file=path.join(root,name);return [name,hash(fs.readFileSync(file))];}));
-  const before=dbWalSnapshot(home),events=[],options={home,allowSynchronizationFiles:true,assertCurrentAuthority:()=>{},onProcess:event=>events.push(event)};
+  const before=dbWalSnapshot(home),events=[],options={home,allowSynchronizationFiles:true,assertCurrentAuthority:()=>{},onProcess:event=>{events.push(event);if(event.event==="startup-failed")t.diagnostic(JSON.stringify(event.observation));}};
   await assert.rejects(openCodexLiveReadGuard({...options,allowSynchronizationFiles:false}),{code:"CODEX_LIVE_SOURCE_SYNC_POLICY_REQUIRED"});assert.equal(events.length,0);
   const quiet=await withLiveCodexReadSnapshots(options,({connections,check})=>{check();return dbNames.map(name=>connections[name].prepare("SELECT count(*) n FROM sample").get().n);});
   assert.deepEqual(quiet.value,[1,1]);assert.equal(quiet.cleanup,"reader-connections-closed-before-owned-guard-release");assert.equal(quiet.globalAtomicSnapshotClaimed,false);assert.deepEqual(dbWalSnapshot(home),before);
@@ -1253,7 +1253,7 @@ test("live Project intake joins selected logical state to physical history witho
   // A tempting logical-ID join returns different rows. They must not leak into
   // the selected physical leaf, and current ancestor canonical rows aren't read.
   for(const id of [sourceThread,parentId]){history.row("thread_turns",{thread_id:id,turn_id:"poison-turn",rollout_ordinal:1n,rollout_byte_offset:0n});history.row("thread_items",{thread_id:id,turn_id:"poison-turn",item_id:"poison",rollout_ordinal:2n,updated_at_ordinal:99n,item_type:"userMessage",item_json:'{"text":"UNSELECTED_CANONICAL_SENTINEL"}'});}
-  const events=[],args={home,sourceProjectId:"live-project",threadIds:[sourceThread],ancestorFiles:[{rolloutId:parentId,path:parentRelative}],allowSynchronizationFiles:true,assertCurrentAuthority:()=>{},onProcess:event=>events.push(event)};
+  const events=[],args={home,sourceProjectId:"live-project",threadIds:[sourceThread],ancestorFiles:[{rolloutId:parentId,path:parentRelative}],allowSynchronizationFiles:true,assertCurrentAuthority:()=>{},onProcess:event=>{events.push(event);if(event.event==="startup-failed")t.diagnostic(JSON.stringify(event.observation));}};
   const observed=await readCodexLiveProjectSource({...args,onBoundary:phase=>{if(phase==="state-read")state.db.prepare("UPDATE threads SET title=? WHERE id=?").run("Unrelated title edit",branchThread);if(phase==="raw-read"){fs.appendFileSync(leafFile," ");fs.appendFileSync(parentFile,"excluded later suffix");}}});
   assert.equal(observed.status,"live-project-source-observed");assert.equal(observed.sourceBytesPersisted,false);assert.equal(observed.nativePublicationAttempted,false);assert.equal(observed.globalAtomicSnapshotClaimed,false);assert.equal(observed.cleanup,"reader-connections-closed-before-owned-guard-release");
   const selected=observed.value.conversations[0];assert.equal(selected.threadId,sourceThread);assert.equal(selected.rolloutId,leafId);assert.equal(selected.history.threadIds[0],leafId);assert.equal(selected.lineage.status,"physical-lineage-ranges-verified");assert.equal(selected.historyCoverage.addressCoverageComplete,true);assert.equal(selected.historyCoverage.canonicalRowContentsEquivalent,false);assert.equal(selected.historyCoverage.rawOnlyTailBytes,rawOnly.length+incomplete.length);assert.ok(selected.incompleteTail.raw.equals(incomplete));assert.ok(selected.originals.find(row=>row.rolloutId===parentId).raw.equals(parentPrefix));
@@ -1431,4 +1431,29 @@ test("authored pinned source fixture verifies evidence without claiming native c
   const artifact = inspectProjectNativeDerivation({ bundleRoot: f.nativePayload, derivationId: derived.derivationId });
   assert.ok(artifact.rows.length > 0);
   assert.equal(artifact.manifest.grantsRecoveryAuthority, false);
+});
+
+test("Windows live guard startup diagnostics preserve cancellation and omit source contents", async t => {
+  if(process.platform!=="win32")return;
+  const parent=fs.realpathSync(os.tmpdir()),home=fs.mkdtempSync(path.join(parent,"lode-guard-diagnostic-"));
+  t.after(()=>{assert.equal(path.dirname(fs.realpathSync(home)),parent);fs.rmSync(home,{recursive:true,force:true});});
+  const names=["state_5.sqlite","state_5.sqlite-wal","thread_history_1.sqlite","thread_history_1.sqlite-wal"];
+  for(const name of names)fs.writeFileSync(path.join(home,name),"SYNTHETIC_PRIVATE_GUARD_SOURCE");
+  const before=snapshot(home),controller=new AbortController(),events=[];
+  const operation=openCodexLiveReadGuard({home,allowSynchronizationFiles:true,assertCurrentAuthority:()=>{},
+    signal:controller.signal,onProcess:event=>events.push(event)});
+  controller.abort();
+  await assert.rejects(operation,error=>{
+    assert.equal(error.code,"CODEX_LIVE_SOURCE_CANCELLED");
+    const observation=error.guardStartupObservation;
+    assert.deepEqual(Object.keys(observation).sort(),["elapsedMs","phase","scriptSha256"]);
+    assert.ok(observation.phase===null||["script-started","type-ready","request-read","request-decoded","handles-open","ready-encoded"].includes(observation.phase));
+    assert.ok(Number.isFinite(observation.elapsedMs)&&observation.elapsedMs>=0);
+    assert.equal(observation.scriptSha256,CODEX_LIVE_GUARD_SCRIPT_SHA256);
+    assert.equal(JSON.stringify(observation).includes(home),false);
+    assert.equal(JSON.stringify(observation).includes("SYNTHETIC_PRIVATE_GUARD_SOURCE"),false);
+    return true;
+  });
+  assert.equal(events.filter(event=>event.event==="startup-failed").length,1);
+  assert.equal(codexLiveReadGuardProcessStatus().length,0);assert.deepEqual(snapshot(home),before);
 });

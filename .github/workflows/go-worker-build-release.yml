@@ -205,7 +205,7 @@ jobs:
 
       - name: Verify actual Windows observer contracts before the full suite
         if: runner.os == 'Windows'
-        run: node --test --test-isolation=none --test-concurrency=1 --test-name-pattern="private.*wire|Windows exact parent query|actual native writer inventory|actual local OS probe|actual owned child birth|host-c.*separate Hook processes|host-c.*actual command stdin" test/native-portability.test.mjs test/native-session-process.test.mjs test/native-session-observations.test.mjs
+        run: node --test --test-isolation=none --test-concurrency=1 --test-name-pattern="private.*wire|Windows exact parent query|actual native writer inventory|actual local OS probe|actual owned child birth|host-c.*separate Hook processes|host-c.*actual command stdin|native roots preserve Windows namespace|Windows live read guard|live Project intake|Windows live guard startup diagnostics" test/native-portability.test.mjs test/native-session-process.test.mjs test/native-session-observations.test.mjs test/explicit-project-selection.test.mjs test/native-derived-history.test.mjs
 
       # The full JavaScript suite, not a smoke subset. npm test builds the
       # supervisor fixture when the prepared root above is absent.

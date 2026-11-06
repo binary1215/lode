@@ -32,7 +32,9 @@ export function nativeRoot(root) {
     const stat = fs.lstatSync(current);
     if (!stat.isDirectory() || stat.isSymbolicLink()) nativeFail("NATIVE_HISTORY_UNSAFE_ROOT");
   }
-  return fs.realpathSync(absolute);
+  // Use the Windows OS resolver for verbatim paths; keep the component checks
+  // above and propagate native permission failures without a JS fallback.
+  return process.platform === "win32" ? fs.realpathSync.native(absolute) : fs.realpathSync(absolute);
 }
 export function pinNativeRoot(root) {
   const selected = nativeRoot(root), original = fs.lstatSync(selected);

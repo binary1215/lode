@@ -1,3 +1,4 @@
+import { nativeRoot, pinNativeRoot } from "../scripts/lib/provider-native-history-host.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -286,4 +287,31 @@ test("explicit user fork permits a new root only at the exact captured parent an
   assert.deepEqual([parent, child, sibling].map(row => hash(row.raw)), before);
   assert.ok(read.events.every(row => row.source));
   assert.equal(read.events.some(row => JSON.stringify(row).includes("PARENT_FUTURE")), false);
+});
+
+test("native roots preserve Windows namespace resolution, link rejection, physical pins and primary resolver errors", t => {
+  const parent=fs.realpathSync(os.tmpdir()),base=fs.mkdtempSync(path.join(parent,"lode-native-root-"));
+  t.after(()=>{assert.equal(path.dirname(fs.realpathSync(base)),parent);fs.rmSync(base,{recursive:true,force:true});});
+  const root=path.join(base,"root"),moved=path.join(base,"old-root"),alias=path.join(base,"alias");fs.mkdirSync(root);
+  const js=fs.realpathSync,native=js.native,expected=native(root);
+  assert.equal(nativeRoot(root),expected);
+  if(process.platform==="win32"){
+    const namespaced=path.toNamespacedPath(root);
+    const affected=function(value,...args){if(String(value).startsWith("\\\\?\\"))
+      throw Object.assign(Error("Synthetic Node verbatim-path JS walk failure"),{code:"EISDIR"});
+      return js.call(fs,value,...args);};
+    affected.native=native;fs.realpathSync=affected;
+    try{assert.equal(nativeRoot(namespaced),expected);assert.equal(nativeRoot(root),expected);}finally{fs.realpathSync=js;}
+  }
+  const denied=Object.assign(Error("Synthetic resolver permission denial"),{code:"EACCES"});let fallback=0;
+  const selected=process.platform==="win32"?function(...args){fallback++;return js.apply(fs,args);}:function(){throw denied;};
+  selected.native=process.platform==="win32"?function(){throw denied;}:function(...args){fallback++;return native(...args);};
+  fs.realpathSync=selected;
+  try{assert.throws(()=>nativeRoot(root),error=>error===denied);assert.equal(fallback,0);}finally{fs.realpathSync=js;js.native=native;}
+  fs.symlinkSync(root,alias,process.platform==="win32"?"junction":"dir");
+  assert.throws(()=>nativeRoot(alias),{code:"NATIVE_HISTORY_UNSAFE_ROOT"});
+  const pin=pinNativeRoot(root);
+  assert.equal(path.dirname(path.resolve(root)),base);assert.equal(path.dirname(path.resolve(moved)),base);
+  fs.renameSync(root,moved);fs.mkdirSync(root);
+  assert.throws(()=>pin.verify(),{code:"NATIVE_HISTORY_ROOT_CHANGED"});
 });
