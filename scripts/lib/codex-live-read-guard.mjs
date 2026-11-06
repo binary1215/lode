@@ -80,7 +80,7 @@ export async function openCodexLiveReadGuard({ home, allowSynchronizationFiles, 
   const scope = () => nativeCheck(signal, () => assertCurrentAuthority({ action: "read-live-codex-source", home, authorityPlane: "P3" }));
   scope();
   if (process.platform !== "win32") return { status: "unsupported-live-source-platform", ordinaryCoreBlocked: false, sqliteOpened: false };
-  const root = nativeRoot(home), rootPin = pinNativeRoot(root), paths = [], expected = [];
+  const root = nativeRoot(home), inputRoot = path.resolve(home), rootPin = pinNativeRoot(root), paths = [], expected = [];
   for (const database of databaseNames) for (const name of [database, database + "-wal"]) {
     scope(); rootPin.verify();
     const filename = copiedProjectFile(root, name), stat = fs.lstatSync(filename, { bigint: true, throwIfNoEntry: false });
@@ -138,6 +138,9 @@ export async function openCodexLiveReadGuard({ home, allowSynchronizationFiles, 
     if (primary) throw primary;
     try {
       scope(); rootPin.verify();
+      // A caller spelling (including an 8.3 name) must still resolve to the
+      // exact directory pinned when these four handles were acquired.
+      if (inputRoot !== root && nativeRoot(inputRoot) !== root) fail("CODEX_LIVE_SOURCE_IDENTITY_CHANGED");
       if (closed || released) fail("CODEX_LIVE_GUARD_NOT_HELD");
       if (Date.now() > deadline) fail("CODEX_LIVE_SOURCE_DEADLINE_EXCEEDED");
       for (const [index, filename] of paths.entries()) {
@@ -189,7 +192,7 @@ export async function withLiveCodexReadSnapshots(options, consume) {
       const entry = { name, db, transaction: false }; connections.push(entry);
       db.exec("BEGIN"); entry.transaction = true;
     }
-    value = await consume({ connections: Object.fromEntries(connections.map(entry => [entry.name, entry.db])), check: guard.check,
+    value = await consume({ root: guard.root, connections: Object.fromEntries(connections.map(entry => [entry.name, entry.db])), check: guard.check,
       evidence: guard.evidence, sourceSnapshotScope: "independent-DB-read-transactions-first-read-establishes-each-snapshot-not-global-atomic" });
     guard.check();
   } catch (error) { primary = error; }

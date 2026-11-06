@@ -8,7 +8,7 @@ import { readSelectedCodexStateEvidence, verifySelectedCodexStateEvidence } from
 import { readCodexProjectCatalog, readCodexExplicitProjectCatalog } from "./codex-project-catalog.mjs";
 import { readCodexExplicitProjectSelection, codexSourcePathKey } from "./codex-explicit-project-selection.mjs";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
-import { nativeRoot, pinNativeRoot } from "./provider-native-history-host.mjs";
+import { pinNativeRoot } from "./provider-native-history-host.mjs";
 import { decodeSqliteCell, readTypedSqliteRows } from "./native-sqlite-values.mjs";
 import { parseCodexSourceJson } from "./codex-source-json.mjs";
 import { resolveCodexPhysicalLineage, isCodexPaginatedCreationVersion } from "./codex-physical-lineage.mjs";
@@ -34,12 +34,23 @@ const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-
 const filenameId = relative => /-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\.jsonl$/u.exec(path.posix.basename(relative))?.[1];
 const identity = stat => ({ dev: String(stat.dev), ino: String(stat.ino) });
 const parse = bytes => parseCodexSourceJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
-function sourceRelative(root, absolute, inspectPath = true) {
+function sourceRelative(root, absolute, inspectPath = true, observedRoot = root) {
   if (typeof absolute !== "string" || !path.isAbsolute(absolute)) fail("CODEX_LIVE_SELECTED_PATH_INVALID");
   if (codexSourcePathKey(absolute) === null) fail("CODEX_LIVE_SELECTED_PATH_UNQUALIFIED");
   const namespaced = value => process.platform === "win32" ? path.toNamespacedPath(value) : value;
-  const relative = path.relative(namespaced(root), namespaced(absolute)).split(path.sep).join("/");
-  if (!/^(?:sessions|archived_sessions)\/.+\.jsonl$/u.test(relative) || !filenameId(relative)) fail("CODEX_LIVE_SELECTED_PATH_UNQUALIFIED");
+  // Both spellings belong to the one home already validated and held by the
+  // live guard. Native Windows realpath can expand its 8.3 ancestors while
+  // existing state rows retain the caller's spelling. Never resolve an
+  // arbitrary selected path to discover additional roots or follow aliases.
+  const relatives = new Set();
+  for (const spelling of new Set([root, observedRoot])) {
+    const relative = path.relative(namespaced(spelling), namespaced(absolute)).split(path.sep).join("/");
+    if (!/^(?:sessions|archived_sessions)\/.+\.jsonl$/u.test(relative) || !filenameId(relative)) continue;
+    relatives.add(relative);
+  }
+  if (!relatives.size) fail("CODEX_LIVE_SELECTED_PATH_UNQUALIFIED");
+  if (relatives.size !== 1) fail("CODEX_LIVE_PHYSICAL_ID_AMBIGUOUS");
+  const [relative] = relatives;
   if (inspectPath) copiedProjectFile(root, relative); return relative;
 }
 function readRange(root, relative, check, { length = null, expectedIdentity = null, expectedDigest = null, firstFrameOnly = false } = {}) {
@@ -98,7 +109,7 @@ function header(original) {
 // Missing physical dependencies only: current Project location metadata and
 // its directly referenced directories, never recursive history discovery.
 // Names are observed first; ambiguous candidates have no header/body read.
-function projectAncestorLocator(state, projectId, root, check, exactLocations = null) {
+function projectAncestorLocator(state, projectId, root, check, exactLocations = null, observedRoot = root) {
   let locations = null;
   return rolloutId => {
     if (locations === null) {
@@ -107,7 +118,7 @@ function projectAncestorLocator(state, projectId, root, check, exactLocations = 
         .map(row => ({ id: decodeSqliteCell(row[0]), rollout_path: decodeSqliteCell(row[1]) }));
       for (const row of candidates) {
         const threadId = row.id, absolute = row.rollout_path;
-        try { locations.push({ threadId, relative: sourceRelative(root, absolute, false) }); }
+        try { locations.push({ threadId, relative: sourceRelative(root, absolute, false, observedRoot) }); }
         catch (error) { if (!["CODEX_LIVE_SELECTED_PATH_INVALID", "CODEX_LIVE_SELECTED_PATH_UNQUALIFIED"].includes(error.code)) throw error; }
       }
     }
@@ -178,8 +189,8 @@ export async function readCodexLiveProjectSource({ home, sourceProjectId, thread
   const selectionRequested = [sourceSelectionFile, expectedSourceSelectionDigest, sourceProjectRoot].some(value => value !== undefined);
   const selection = selectionRequested ? readCodexExplicitProjectSelection({ file: sourceSelectionFile, expectedDigest: expectedSourceSelectionDigest,
     home, projectRoot: sourceProjectRoot, projectId: sourceProjectId, signal: guardOptions.signal, assertCurrentAuthority: guardOptions.assertCurrentAuthority }) : null;
-  const result = await withLiveCodexReadSnapshots({ ...guardOptions, home }, ({ connections, check, evidence }) => {
-    const root = nativeRoot(home), state = connections["state_5.sqlite"], historyDb = connections["thread_history_1.sqlite"];
+  const result = await withLiveCodexReadSnapshots({ ...guardOptions, home }, ({ root, connections, check, evidence }) => {
+    const observedRoot = path.resolve(home), state = connections["state_5.sqlite"], historyDb = connections["thread_history_1.sqlite"];
     const inspect = (db, file) => { check(); return inspectCodexNativeDatabase(db, { file, engineVersion: profile.engineVersion, platform: process.platform, architecture: process.arch,
       inspectionScope: "selected-live-read-schema" }); };
     const startedAt = new Date().toISOString(); inspect(state, "state_5.sqlite");
@@ -195,7 +206,7 @@ export async function readCodexLiveProjectSource({ home, sourceProjectId, thread
     }
     const selections = records.map(row => {
       let relative;
-      try { relative = sourceRelative(root, row.rollout_path); }
+      try { relative = sourceRelative(root, row.rollout_path, true, observedRoot); }
       catch (error) {
         if (!["CODEX_LIVE_SELECTED_PATH_INVALID", "CODEX_LIVE_SELECTED_PATH_UNQUALIFIED"].includes(error.code)) throw error;
         return { threadId: row.id, status: "selected-source-unavailable", reasonCode: error.code };
@@ -208,11 +219,11 @@ export async function readCodexLiveProjectSource({ home, sourceProjectId, thread
     const located = selections.filter(row => row.rolloutId);
     if (new Set(located.map(row => row.rolloutId)).size !== located.length) fail("CODEX_LIVE_PHYSICAL_ID_AMBIGUOUS");
     const locateAncestor = projectAncestorLocator(state, sourceProjectId, root, check,
-      selection ? selection.document.members.map(member => ({ id: member.id, rollout_path: member.rolloutPath })) : null);
+      selection ? selection.document.members.map(member => ({ id: member.id, rollout_path: member.rolloutPath })) : null, observedRoot);
     const explicitPins = new Map();
     for (const member of selection?.document.members ?? []) {
       let relative;
-      try { relative = sourceRelative(root, member.rolloutPath, false); }
+      try { relative = sourceRelative(root, member.rolloutPath, false, observedRoot); }
       catch (error) { if (!["CODEX_LIVE_SELECTED_PATH_INVALID", "CODEX_LIVE_SELECTED_PATH_UNQUALIFIED"].includes(error.code)) throw error; continue; }
       const physicalId = filenameId(relative), pin = { relative, fileIdentity: member.fileIdentity };
       if (explicitPins.has(physicalId) && !equal(explicitPins.get(physicalId), pin)) fail("CODEX_LIVE_PHYSICAL_ID_AMBIGUOUS");
