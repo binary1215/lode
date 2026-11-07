@@ -94,6 +94,18 @@ test("copied byte inventory excludes active owners but retains consumption evide
   for (const relative of ["../escape", ".lode/project.json::$DATA", ".lode/../outside", ".lode\\project.json"]) {
     assert.throws(() => copiedProjectFile(root, relative), { code: "PROJECT_COPY_PATH_INVALID" });
   }
+  if(process.platform==="win32"){
+    const namespaceRoot=path.toNamespacedPath(root),namespaceFile=path.join(namespaceRoot,".lode/project.json"),volume=path.parse(namespaceRoot).root,relativeFromVolume=path.relative(volume,namespaceFile).split(path.sep).join("/");
+    const byVolume=copiedProjectFile(volume,relativeFromVolume),byRoot=copiedProjectFile(namespaceRoot,".lode/project.json"),expected=path.join(root,".lode/project.json");
+    assert.ok(fs.readFileSync(byVolume).equals(fs.readFileSync(expected)));assert.ok(fs.readFileSync(byRoot).equals(fs.readFileSync(expected)));
+    for(const file of [byVolume,byRoot]){const stat=fs.lstatSync(file,{bigint:true}),same=fs.lstatSync(expected,{bigint:true});assert.equal(stat.dev,same.dev);assert.equal(stat.ino,same.ino);}
+    const originalRealpath=fs.realpathSync,originalNative=originalRealpath.native,denied=Object.assign(new Error("Synthetic native copy root denied"),{code:"EACCES"});let jsFallbacks=0;
+    fs.realpathSync=function(...args){jsFallbacks++;return originalRealpath(...args);};fs.realpathSync.native=function(file,...args){if(file===volume.slice(4))throw denied;return originalNative(file,...args);};
+    try{assert.throws(()=>copiedProjectFile(volume,relativeFromVolume),error=>error===denied);assert.equal(jsFallbacks,0);}finally{fs.realpathSync=originalRealpath;}
+    const linked=path.join(root,"linked-child");fs.symlinkSync(path.join(root,".lode"),linked,"junction");
+    try{assert.throws(()=>copiedProjectFile(namespaceRoot,"linked-child/project.json"),{code:"PROJECT_COPY_UNSAFE_PATH"});}finally{fs.unlinkSync(linked);}
+    for(const relative of [namespaceFile,path.resolve(expected)])assert.throws(()=>copiedProjectFile(namespaceRoot,relative),{code:"PROJECT_COPY_PATH_INVALID"});
+  }
   const entry = inventory.files[0];
   assert.throws(() => verifyCopiedProjectFile(root, { ...entry, sha256: [entry.sha256] }), { code: "PROJECT_COPY_INVENTORY_INVALID" });
   fs.writeFileSync(path.join(root, entry.path), "{\"raw\":true}\n");

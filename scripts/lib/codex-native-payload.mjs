@@ -2,6 +2,8 @@ import { verifySelectedCodexStateEvidence } from "./codex-native-state-evidence.
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { verifyCodexProjectCatalog } from "./codex-project-catalog.mjs";
 import { copiedProjectFile, inspectCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { readSnapshotFile, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 import {
@@ -68,6 +70,14 @@ export function inspectCodexNativePayload({ directory, expectedPayloadId = null,
     fail("NATIVE_CODEX_PAYLOAD_INVALID");
   verifySelectedCodexHistory(payload.history);
   const sourceState = verifySelectedCodexStateEvidence(payload.stateEvidence, payload.threadIds);
+  if (Object.hasOwn(payload, "projectCatalog")) {
+    const catalog = verifyCodexProjectCatalog(payload.projectCatalog);
+    const catalogRows = new Map(catalog.records.map(record => [record.id, record]));
+    const memberColumns = payload.projectCatalog.membershipEvidence.columns;
+    if (sourceState.some(record => !isDeepStrictEqual(catalogRows.get(record.id),
+      Object.fromEntries(memberColumns.map(name => [name, record[name]])))))
+      fail("NATIVE_CODEX_PROJECT_MEMBERSHIP_MISMATCH");
+  }
   const names = new Set(),
     ids = new Set(),
     coverage = [];
@@ -158,6 +168,12 @@ export function codexNativePayloadSummary(inspected) {
     payloadDigest: inspected.payloadDigest,
     threadCount: inspected.payload.threadIds.length,
     rawFileCount: inspected.payload.files.length,
+    ...(inspected.payload.projectCatalog ? { sourceProjectId: inspected.payload.projectCatalog.projectId,
+      projectCatalogThreadCount: inspected.payload.projectCatalog.threadIds.length,
+      projectSelection: inspected.payload.threadIds.length === inspected.payload.projectCatalog.threadIds.length
+        ? "all-observed-native-project-threads" : "explicit-subset",
+      projectCatalogVerification: "structure-and-selected-membership; source-query-not-independently-replayed",
+      projectInventoryCoverage: inspected.payload.projectCatalog.coverage } : {}),
     coverage: inspected.coverage,
     mechanicalOriginalsReady: inspected.mechanicalOriginalsReady,
     nativePublicationReady: false,

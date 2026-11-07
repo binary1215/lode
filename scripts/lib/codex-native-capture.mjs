@@ -21,6 +21,7 @@ import {
   copyOriginal,
 } from "./project-copy-evidence.mjs";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { readCodexProjectCatalog } from "./codex-project-catalog.mjs";
 
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const json = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
@@ -63,6 +64,7 @@ function destinationRoot(destination, home) {
 export async function captureCodexNativeHistory({
   witness,
   threadIds,
+  sourceProjectId,
   destination,
   signal,
   onBoundary = null,
@@ -79,11 +81,13 @@ export async function captureCodexNativeHistory({
     }
   };
 
+  if (sourceProjectId !== undefined && (typeof sourceProjectId !== "string" || !sourceProjectId.trim() || sourceProjectId.trim() !== sourceProjectId))
+    fail("NATIVE_CODEX_PROJECT_ID_REQUIRED");
   if (
-    !Array.isArray(threadIds) ||
+    !(threadIds === undefined && sourceProjectId !== undefined) && (!Array.isArray(threadIds) ||
     !threadIds.length ||
     new Set(threadIds).size !== threadIds.length ||
-    threadIds.some((id) => typeof id !== "string" || !idPattern.test(id))
+    threadIds.some((id) => typeof id !== "string" || !idPattern.test(id)))
   )
     fail("NATIVE_CODEX_THREAD_SELECTION_INVALID");
   checkAuthority();
@@ -113,6 +117,14 @@ export async function captureCodexNativeHistory({
       return selected;
     };
     const state = open("state_5.sqlite");
+    const projectCatalog = sourceProjectId === undefined ? null : readCodexProjectCatalog(state.db, sourceProjectId);
+    if (projectCatalog) {
+      if (threadIds === undefined) threadIds = [...projectCatalog.threadIds];
+      const members = new Set(projectCatalog.threadIds);
+      if (threadIds.some(id => !members.has(id))) fail("NATIVE_CODEX_THREAD_OUTSIDE_PROJECT");
+      if (!threadIds.length) fail("NATIVE_CODEX_PROJECT_HAS_NO_THREADS");
+      if (threadIds.some(id => !idPattern.test(id))) fail("NATIVE_CODEX_THREAD_SELECTION_INVALID");
+    }
     const stateEvidence = readSelectedCodexStateEvidence(state.db, threadIds);
     const stateRecords = verifySelectedCodexStateEvidence(stateEvidence, threadIds);
     const selected = threadIds.map((threadId) => {
@@ -197,6 +209,7 @@ export async function captureCodexNativeHistory({
       })),
       sourceState: "historical selected typed projection only; never inserted into target state",
       stateEvidence,
+      ...(projectCatalog ? { projectCatalog } : {}),
       sourceHomeDigest: hash(offline.home),
       sourceCutoff: raw.every((item) => item.coverage.formatAndAddressReady)
         ? "stopped-at-check; independent SQLite read snapshots and stable raw addresses"
@@ -272,6 +285,8 @@ export async function captureCodexNativeHistory({
       directory: root,
       threadCount: threadIds.length,
       rawFileCount: raw.length,
+      ...(projectCatalog ? { sourceProjectId, projectCatalogThreadCount: projectCatalog.threadIds.length,
+        projectSelection: threadIds.length === projectCatalog.threadIds.length ? "all-observed-native-project-threads" : "explicit-subset" } : {}),
       authorityPlane: "P3",
       nativePublicationReady: false,
       nativeRegistration: "not-performed",

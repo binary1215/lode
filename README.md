@@ -57,7 +57,9 @@ P5 context. They are neither a full transcript nor proof of current approval. Ho
 
 ### Continue in a new folder or on another computer
 
-Ask Lode to move the selected project records with you. It preserves the chosen Session and current shared constraints, keeps destination settings, and leaves completed effects alone. Optional Codex native history has a separate, narrowly measured restore path; see [Project portability](docs/project-portability.md).
+Ask Lode to move the selected project records with you. It preserves the chosen Session and current shared constraints, keeps destination settings, and leaves completed effects alone.
+
+You can also ask: **“Move these selected Codex conversations to Claude and keep the originals.”** For supported histories, Lode creates a separate Claude conversation for each selected source and reports unsupported or incomplete material. Claude Desktop's local `/resume` picker is the verified way to find migrated conversations by name. Opening them there also made them visible in the sidebar in the qualified check. Transfer does not automatically continue archived tasks or carry over source execution permissions. See [Project portability](docs/project-portability.md) for supported profiles and verification limits.
 
 ### Give each task bounded, reviewable context
 

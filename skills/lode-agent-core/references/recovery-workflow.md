@@ -46,6 +46,42 @@ Raw/history restoration, observed listing and model continuation are distinct.
 Do not infer current target permissions/model/agent from historical messages or
 resume a pending tool, compaction or subtask while importing/reading history.
 
+For an explicitly requested Codex-to-Claude continuation, use the separate
+`derive`, `publish-derived`, `verify-derived`, `open-derived` actions on the
+existing native-history surface; do not weaken same-platform restore/register.
+Resolve the exact captured source and target paths yourself. The user asks for
+the outcome, not an ID/digest/JSON workflow. Derive preserves the original
+companion and creates separate P3 mappings, diagnostics and a new-ID transcript.
+Unsupported input, divergent canonical/wire tool facts or ambiguous/interleaved
+tool order stay diagnosed and unpublished; never turn tool data into instructions
+or invent missing attachment bytes. Native publication creates only the absent
+exact new-ID complete file, without stopping Desktop or changing its metadata.
+The derivative currently qualifies Claude 2.1.317 and optional SDK0.3.234
+independently of old same-platform restore. Read-only verification checks every
+returned role/body/UUID/tool block and order, including native continuation;
+a matching subset is not full coverage or model possession.
+After continuation, keep full raw coverage separate from the official reader
+projection. The qualified Desktop2.1.317 local-command-caveat omission remains
+listed by UUID and keeps rawCoverageComplete=false; a metadata flag or similar
+text cannot excuse missing user/tool evidence. PNG integrity validation and a
+valid fixture are not proof of model image processing. Other codecs currently
+remain preserved but unqualified for publication. Keep older candidate artifacts
+unchanged; a changed converter profile needs a separate requested derivative,
+not a rewritten old manifest, source image or continued native file.
+Opening is a distinct requested effect, without implicit publication or prompt.
+The default finite process runner is not a qualified external GUI handoff:
+report `DERIVED_DESKTOP_HANDOFF_LIFETIME_UNQUALIFIED` and offer official Desktop
+local `/resume` for the exact published sample.
+The observed local picker searches display titles, not reliably UUIDs. Use a
+verified source/official-reader title hint and confirm Project/latest conditions;
+an exact UUID identifies the sample but does not establish picker searchability.
+Do not relax process cleanup, force-close apps, write private metadata or treat a launcher return as display.
+Pending source/native work limits open only. Preserve unknown publish/open
+attempts without automatic replay. Desktop display, actual model use and later
+answer persistence each require their own observations. See the portability
+guide for mappings and current limits; none of these artifacts grants P2 or
+execution permission.
+
 Startup, resume and fork labels, matching IDs/digests, a bound route or a local
 stdout callback do not prove the model currently holds the needed context.
 Keep existing recovery and the provider's normal compaction summary when that
@@ -180,3 +216,202 @@ edit provenance; preserve them and do not silently regenerate them. Missing or
 unsafe Handoff limits that reading path, not independently verified common
 import. Manifest or source-basis verification errors retain their primary code.
 Native history visibility and actual model continuation are separate claims.
+
+For explicit Codex project-history capture, supply verified Host `source_project_id`
+(CLI `--source-project`) rather than inferring membership from title/path. Omit
+thread selection only for the agreed full native-state project scope; otherwise
+keep the explicit subset. Include archived/multi-worktree members, disclose
+Host/ephemeral coverage as unobserved, and retain the existing offline checks.
+The catalog adds P3 evidence to the selected-Session bundle: it neither copies
+workspace files nor completes whole-project migration or creates P2 ownership.
+
+For a Codex app Project without Lode, `capture-project` on native-history creates
+a standalone native capture; `derive` accepts that verified payload directly.
+Do not initialize or invent a logical Session for transcript conversion. The
+roster preserves only structural membership metadata; unselected titles, first
+messages, previews and policies are not an export scope extension. A selected
+project display name is retained for the migration index, not as direction.
+
+For a whole Codex app Project move, keep native conversations separate. Agree
+the destination workspace(s), same-folder reuse versus optional code/docs copy,
+and optional existing Lode records using normal conversation. Supply current
+Host paths/mappings to native-history; never ask the user to write JSON. Use
+`prepare-workspaces` then `copy-workspaces` with the exact returned plan/digest
+for requested code/docs scopes; these are integrity checks, not extra approval.
+Keep excluded private metadata, conflicts and runnable-code uncertainty visible.
+Use `derive-project` to build the collection, `read-project` to inspect it, and
+separately authorized `publish-project` / `verify-project` for exact current
+target profiles. Each row keeps its independent source, ID and attempt journal.
+Preserve continued targets; do not retry an unknown effect or concatenate chats.
+Missing mappings/unsupported representation affect those rows; identity,
+permission and digest failures retain their primary failure.
+
+Optional `attach-project-lode` archives already-exported selected Session bundles
+and returns existing bundle-import / exact Session conversation-entry steps.
+Archived is not imported or recovered. Under the actual current migration scope,
+use the existing `lode_project_bundle_import` and then read-only
+`lode_conversation_enter` with that exact imported Session; verify original P2
+and current target common constraints before continuing authorized work. A
+suggested target/step is evidence, not permission or Session selection. Native
+and logical identities stay distinct; native transcript never authors P2. If
+all logical Sessions were requested, use the existing paged Session inventory
+and export each selected owner independently, preserving partial/unavailable
+coverage instead of claiming that one bundle includes everyone. Do not silently
+switch the default Session, initialize native-only moves or overwrite a newer
+target cancellation. Existing import guards handle new/existing target Projects;
+do not catch a conflict and initialize an empty replacement.
+
+The source capture still requires its qualified offline window. Preserve running
+apps/MCP and continue independent preparation when that window is unavailable.
+For already-captured physical JSONL, use `capture-physical` with HEAD/Host-authored
+exact prefix descriptors and optional captured selected-state file/digest. Read
+only the selected leaf/history_base ancestors, never siblings or parent futures.
+Keep stable native thread, physical rollout and root Session IDs distinct. ID
+equality alone remains an association proposal; selected state path/file identity
+is captured coherence, not current/global snapshot or producer authenticity.
+`assemble-project` connects that catalog/source evidence without making an
+executable clone: derivatives and attempt journals stay in their original source
+stores. The reference collection contains metadata, not physical bodies, and
+alone is not portable recovery on another PC. `read-project` never follows a
+stored source path. For publish/verify carry the currently allowed original store
+scopes in `retained_derivation_sources`; do not ask users for JSON or infer scope
+from archived hints. Missing scope/store is row-local pending; changed store,
+digest or permission failure remains primary. Pin the source throughout the
+operation; preserve unknown attempts and target continuations. Explicitly shared
+conversation workspaces do not merge code worktrees or P2 owners. Optional
+workspace preparation can use an exact captured catalog file/digest.
+Report source format limits per conversation. Physical semantic conversion is
+profiled separately: v2 adds a source-evidenced display title and native/fork
+identity only in the new complete JSONL's official custom-title metadata. Do not
+turn it into transcript instructions, infer a missing title, or rename an
+existing/continued target. SDK list evidence is not actual Desktop GUI evidence.
+Reuse an existing physical-v1 identity and journal by exact reproduction; do not
+create a title-upgraded native ID for the same already-derived source/target.
+Preserve competing profile intents as a conflict, not a guessed effect outcome.
+Physical semantic conversion remains
+source-shaped synthetic qualification, not all actual forks/compactions. A WAL
+database opened readOnly can still create sidecars; do not start/repair a live
+provider or use another policy path to claim a source-write-free capture.
+Publication, SDK coverage, actual Desktop display
+and model continuation require separate observations; automatic GUI handoff is
+not qualified, and a refused launcher is never retried through another shell.
+
+The portable evidence path archives selected original bodies/catalog and
+explicit exported Session originals with exact known historical operation files.
+It is P3 only; reading verifies archive-local bytes without source-path access,
+initialization or P2 import. Bounded/unavailable history is not no-prior-attempt
+proof. Never treat an archive copy as a blank destination journal, infer device
+identity from old paths, or promote archived P5 observations into new permission.
+Destination journal/publication uses the separate target-PC P5 Host workflow;
+an archive itself is never a current target scope or new execution permission.
+Use native-history `export-project-evidence` / `read-project-evidence` /
+`stage-project-session` for this independent evidence work; omit provider,
+native-home and executable. Carry current scopes and returned exact digests as
+HEAD-authored typed arguments, never user JSON or extra initialization/approval.
+Read/stage never starts a provider or follows recorded source paths. Retain
+`partialPortableEvidence` and its original error; confirmed artifact bytes do
+not imply an imported Session, native publication, model use or task completion.
+Materializing an explicit common Session bundle is P3 staging only. It can return
+the existing bundle-import step, never execute import or change selection. Use
+current import scope and exact Session entry before claiming original P2 recovery;
+preserve newer target constraints and do not materialize native effect stores.
+
+For the requested whole Codex Project→Claude migration, use `capture-live-project`
+with the current exact Project/home and agreed `source_sync_files`, then move the
+portable archive. Existing DB/WAL are required by the supported Windows live
+reader; no app start, WAL creation/ignore, private-DB clone or policy workaround.
+Current selected parent paths are automatic. Missing physical ancestors use only
+the same Project's current location metadata and directly referenced directory
+names, without recursion. Resolve a unique exact filename ID, validate its header
+against Project membership before reading any body, and retain only the inherited
+cutoff. Ambiguous, foreign or unlocated dependencies stay per-row partial; do not
+turn them into a manual bind/ID/JSON prerequisite or claim full migration.
+HEAD can carry an additional explicitly permitted physical ancestor inventory. Preserve
+per-row unknowns, raw-only records and incomplete trailing bytes. Independent
+snapshots and protected file names are not a global instant or a byte freeze.
+
+App/native Project IDs need not share a namespace. For a current explicitly
+selected app roster, HEAD can carry the bounded P3 `source_selection_file` and
+`expected_source_selection_digest`, with separately authorized `native_home` and
+`source_project_root`. This one-workspace route verifies actual root identities
+and each selected native association/path (including null) without asserting
+Host authentication, app-membership completeness or P2 direction. Do not add
+cwd-only threads. An observed-absent file that appears requires a new source
+observation, not automatic adoption. Preserve missing/unsupported rows as pending.
+The normal native Project route retains its original membership protection.
+Known historical creation metadata is kept verbatim; current DB/runtime pins and
+physical/semantic checks remain separate. Never relabel unsupported source or an
+app display projection as lossless raw history. Users do not author the selector.
+
+For a missing referenced physical ancestor, reuse exact current location evidence
+first. Within the already-authorized source home, a bounded names-only lookup of
+the exact dependency UUID may supply `ancestorFiles`; never search unrelated
+bodies, follow links or use dates/titles as identity. Report the searched scope
+and ambiguity. `.jsonl.zst` ancestors use the explicit Zstd prefix adapter, not
+renaming or in-place decompression. Preserve its P3 encoding/consumed-range and
+checksum limitations. Store only the requested decoded cutoff; a decoded prefix
+does not claim the compressed container is stored or fully verified. Missing or
+unsupported dependencies remain pending, without a user JSON/ID ritual.
+Combined live export releases its private large-prefix captures on success or
+failure. Direct intake callers use `releaseCodexLiveProjectObservation` in
+`finally` after consuming the observation. Subsequent work reuses the archive.
+Lode streams its own bytes; the pinned official SDK still loads the selected
+conversation internally. Qualify actual output separately in a supervised
+process and preserve an SDK resource/format failure without claiming complete
+reader verification or replaying publication.
+
+On the destination, `read-portable-project` creates nothing.
+`derive-portable-project` prepares separate P3 representations with the exact
+archive/digest and current target workspace mapping (or an explicitly shared
+runtime root). `admit-portable-targets` performs one-time target-PC operational
+setup within the already-authorized exact target request, not a new Product or
+per-conversation review. The Host owns local storage/identity; no ordinary caller
+or archived JSON supplies a journal path, host ID or historical disposition.
+Read/status/publish never bootstrap missing target history. A cloned or lost
+journal is not fresh. Keep known same-ID/opaque prior effects unresolved rather
+than replacing their evidence with an empty packet or a new attempt.
+
+Use `publish-portable-project` for absent-file delivery through each target's
+independent one-use claim/lease, and `verify-portable-project` for the qualified
+SDK's current emitted-prefix read. Retain primary errors and
+`partialNativeOperation`: completed, active/unknown and unvisited rows differ.
+Do not replay unknown native effects, overwrite continued conversations, open a
+GUI, send a prompt or turn publication into P2. Explain source-tail uncertainty
+as a nonblocking qualifier (`remainingSourceUncertainties`); it does not require
+the user to author JSON or repeatedly approve the same target. Mechanical
+prefix coverage, semantic sufficiency, actual Desktop display and model use
+remain distinct. Optional code/docs copy and exact common Session import keep
+their existing user scopes and independently routed Session ownership.
+
+If the user also requested code/docs, carry the current approved Project-member
+repository path inventory as `workspace_sources` during capture/export. The
+portable archive stores selected file bytes as streamed objects, explicit missing
+paths and exclusions. On the destination, use `restore-portable-workspaces` with
+current `workspace_targets` and `copy` or `reuse`; carry its
+`nextConversationMappings` into the conversation workflow. Source-PC paths are
+labels, never opened at restore. Avoid an extra source catalogue file or manual
+user JSON. Existing target conflicts are per-workspace observations, not authority
+to overwrite, merge distinct code roots or block independent conversation work.
+
+Preserve private/Git/client/credential/connection exclusions. Agent instruction
+files remain passive P3 originals rather than automatically activated policy;
+current integration has its existing owner/scope. Do not import source ACLs,
+ownership, executable permission or common P2 as code data. Executable-bit facts
+are recorded only; selected bytes do not establish a runnable environment. Retain
+`partialWorkspaceRestore`, including completed/active/unvisited paths and the
+original primary error; no alternate effect or extra FS access follows denial.
+
+Keep the archive itself and its interior immutable during code copy, including
+recognized physical aliases; an ancestor destination needs disjoint selected
+output/staging paths. Reuse is a separate no-write choice. Source paths/formats
+only protect recognized private/key containers, not every possible secret in
+ordinary source or templates. Retain visible exclusions and the user's agreed
+content scope without an additional approval form. Public certificate data is
+not a blanket exclusion. Root and nested agent instruction files remain passive
+evidence rather than activating old policy; connection settings are excluded.
+Native work/reuse verifies its required evidence and reports unexamined code
+bodies in `workspaceObjectCoverage`; that projection cannot erase a prior known
+failure. Exact captured files being restored are checked before copy; passive
+instruction objects are unexamined and cannot block unrelated code restoration.
+Copy reports `objectSelection: restore-captured-only` and partially verified roots
+separately. The ordinary full archive read still checks all workspace objects.
