@@ -1,14 +1,21 @@
 import { isDeepStrictEqual as equal } from "node:util";
+import { releaseHistoryBytes, historyLines, historyScopeCheck } from "./native-history-bytes.mjs";
 import { resolveCodexPhysicalLineage } from "./codex-physical-lineage.mjs";
 import { CODEX_PHYSICAL_CONVERTER, CODEX_PHYSICAL_TITLE_CONVERTER, readCodexCapturedPhysicalEvents } from "./codex-captured-physical-source.mjs";
 import { readCapturedAuthoredText, compareAuthoredNativeText } from "./claude-authored-message-audit.mjs";
 import { encodeClaudeDerived, derivedHash as hash, derivedFail as fail } from "./claude-derived-encoder.mjs";
 import { parseCodexSourceJson } from "./codex-source-json.mjs";
 import { recordedContextualUserMessage, exactWireAuthoredProjection, canonicalUserBodyKey, knownAgentRoutingRecord, exactMcpModelProjection } from "./codex-hybrid-projections.mjs";
+import { legacyHybridVersion, legacyUserTransmission, legacyAssistantTransmission, legacyWorldConfiguration, historicalDynamicToolCall,
+  unconfirmedTransmissionText, recordedPluginContextEnvelope } from "./codex-legacy-hybrid-shapes.mjs";
 
-export const CODEX_HYBRID_CONVERTER = "codex-claude-physical-hybrid-v2";
+export const CODEX_HYBRID_CONVERTER = "codex-claude-physical-hybrid-v6";
+export const CODEX_HYBRID_CONTEXT_CONVERTER = "codex-claude-physical-hybrid-v5";
+export const CODEX_HYBRID_LEGACY_CONVERTER = "codex-claude-physical-hybrid-v4";
+export const CODEX_HYBRID_IMAGE_CONVERTER = "codex-claude-physical-hybrid-v3";
+export const CODEX_HYBRID_TEXT_CONVERTER = "codex-claude-physical-hybrid-v2";
 export const CODEX_HYBRID_PRIOR_CONVERTER = "codex-claude-physical-hybrid-v1";
-export const CODEX_HYBRID_PROFILES = [CODEX_HYBRID_CONVERTER, CODEX_HYBRID_PRIOR_CONVERTER];
+export const CODEX_HYBRID_PROFILES = [CODEX_HYBRID_CONVERTER, CODEX_HYBRID_CONTEXT_CONVERTER, CODEX_HYBRID_LEGACY_CONVERTER, CODEX_HYBRID_IMAGE_CONVERTER, CODEX_HYBRID_TEXT_CONVERTER, CODEX_HYBRID_PRIOR_CONVERTER];
 const privateItems = new Set(["Reasoning", "SystemMessage", "DeveloperMessage"]);
 const activities = new Set(["CommandExecution", "FileChange", "McpToolCall", "FunctionCallOutput", "SubAgentActivity", "Extension", "ImageView", "CollabAgentToolCall", "ContextCompaction", "Plan", "WebSearch", "ImageGeneration"]);
 const telemetryEvents = new Set(["token_count", "rate_limits", "token_usage"]);
@@ -20,19 +27,83 @@ const turnFields = new Set(["turn_id", "root_turn_id", "disabled_plugin_ids", "c
 const wireCalls = new Set(["function_call", "custom_tool_call"]), wireResults = new Set(["function_call_output", "custom_tool_call_output"]);
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu.test(value);
 const key = source => source.physicalRolloutId + ":" + source.rawOrdinal + ":" + source.rawFrameSha256;
+const capturedReadAudits = new WeakMap();
+
+function retainRecordAudit(read, selectedOriginals, check) {
+  const records = read.records.map(record => ({ record, source: Object.freeze({ ...record.source }),
+    classification: record.classification, rawText: Object.getOwnPropertyDescriptor(record, "rawText"),
+    document: Object.getOwnPropertyDescriptor(record, "document") }));
+  capturedReadAudits.set(read, { check: historyScopeCheck(check), records,
+    originals: selectedOriginals.map(original => ({ original, raw: original.raw, rolloutId: original.rolloutId,
+      threadId: original.threadId, bytes: original.raw.length, sha256: original.sha256 })), failed: false });
+}
+
+function auditCapturedRecords(read) {
+  const audit = capturedReadAudits.get(read);
+  if (!audit) {
+    // Existing pure callers without a retained source read keep their original
+    // check. A JSON/display object never acquires the same-process fast path.
+    for (const record of read.records) if (hash(Buffer.from(record.rawText)) !== record.source.rawFrameSha256)
+      fail("HYBRID_SOURCE_RECORD_CHANGED");
+    return;
+  }
+  if (audit.failed) throw audit.failure;
+  try {
+    audit.check();
+    if (read.records.length !== audit.records.length) fail("HYBRID_SOURCE_RECORD_CHANGED");
+    const addresses = new Map();
+    for (const [index, expected] of audit.records.entries()) {
+      const record = read.records[index];
+      if (record !== expected.record || !equal(record.source, expected.source) || record.classification !== expected.classification
+        || !equal(Object.getOwnPropertyDescriptor(record, "rawText"), expected.rawText)
+        || !equal(Object.getOwnPropertyDescriptor(record, "document"), expected.document)) fail("HYBRID_SOURCE_RECORD_CHANGED");
+      const address = expected.source.physicalRolloutId + ":" + expected.source.startByteOffset;
+      if (addresses.has(address)) fail("HYBRID_SOURCE_RECORD_CHANGED");
+      addresses.set(address, expected.source);
+    }
+    let seen = 0;
+    for (const file of audit.originals) {
+      if (file.original.raw !== file.raw || file.original.rolloutId !== file.rolloutId || file.original.threadId !== file.threadId
+        || file.original.sha256 !== file.sha256
+        || file.raw.length !== file.bytes) fail("HYBRID_SOURCE_RECORD_CHANGED");
+      let offset = 0;
+      for (const line of historyLines(file.raw)) {
+        audit.check();
+        const expected = addresses.get(file.rolloutId + ":" + offset), end = offset + line.length + 1;
+        // The exact raw hash also binds the previously parsed ordinal/header.
+        // LF/CRLF bytes are not normalized or decoded/re-encoded here.
+        if (!expected || expected.endByteOffset !== end || hash(line) !== expected.rawFrameSha256)
+          fail("HYBRID_SOURCE_RECORD_CHANGED");
+        offset = end; seen++;
+      }
+      if (offset !== file.bytes) fail("HYBRID_SOURCE_RECORD_CHANGED");
+    }
+    audit.check();
+    if (seen !== audit.records.length) fail("HYBRID_SOURCE_RECORD_CHANGED");
+    // Re-read actual bytes after callbacks, including an earlier frame changed
+    // while the final frame was being checked. No cached digest is accepted.
+    for (const file of audit.originals) if (hash(file.raw) !== file.sha256) fail("HYBRID_SOURCE_RECORD_CHANGED");
+  } catch (error) {
+    audit.failed = true; audit.failure = error; throw error;
+  }
+}
 const toolName = event => event.namespace ? event.namespace + "__" + event.name : event.name;
 const instructionFields = new Set(["instructions", "base_instructions", "user_instructions", "developer_instructions", "system_message", "skills", "approval_policy", "sandbox_policy", "permissions", "tools", "mcp_servers"]);
 const contentFields = new Set(["text", "content", "message", "messages", "user_message", "agent_message", "input"]);
+// Index by a bounded digest instead of retaining every complete user body in
+// a Map key. A hit still requires exactWireAuthoredProjection below: this is
+// only an index, never semantic equivalence or permission.
+const userBodyIndexKey = item => { const text = canonicalUserBodyKey(item); return text === null ? null : hash(text); };
 
-function fieldInventory(value, path = "payload", result = []) {
+function fieldInventory(value, path = "payload", result = [], legacy = false) {
   if (value && typeof value === "object") {
     for (const [field, child] of Object.entries(value)) {
       const sourcePath = path + "." + field;
       result.push({ path: sourcePath, type: Array.isArray(child) ? "array" : child === null ? "null" : typeof child,
-        disposition: instructionFields.has(field) ? "source-instruction-or-configuration-original-only"
+        disposition: instructionFields.has(field) || legacy && ["personality", "orchestrator_skills"].includes(field) ? "source-instruction-or-configuration-original-only"
           : contentFields.has(field) ? "provider-envelope-content-original-only; not treated as a canonical authored message"
           : "provider-data-original-only; semantic authority not inferred" });
-      fieldInventory(child, sourcePath, result);
+      fieldInventory(child, sourcePath, result, legacy);
     }
   }
   return result;
@@ -75,7 +146,11 @@ export function readCodexHybridPhysical({ native, threadId, cutoffItemId = null,
   if (cutoffItemId !== null || native.payload.threadIds?.length !== 1 || native.payload.threadIds[0] !== threadId) fail("HYBRID_SOURCE_SELECTION_INVALID");
   const proof = resolveCodexPhysicalLineage({ originals: native.originals, rolloutId: native.payload.selectedRolloutId, check });
   const originals = new Map(native.originals.map(row => [row.rolloutId, row]));
-  const original = readCapturedAuthoredText({ native, check });
+  const legacyRepresentations = [CODEX_HYBRID_CONVERTER, CODEX_HYBRID_CONTEXT_CONVERTER, CODEX_HYBRID_LEGACY_CONVERTER].includes(converter);
+  const richImages = legacyRepresentations || converter === CODEX_HYBRID_IMAGE_CONVERTER;
+  const creationVersions = new Map(proof.segments.map(segment => [segment.rolloutId, segment.creationCliVersion]));
+  const original = readCapturedAuthoredText({ native, check, ...(richImages ? { representationProfile: "captured-local-images-v1" } : {}) });
+  const imageWireBindings = new Map((original.wireImageBindings ?? []).filter(binding => binding.unique).map(binding => [key(binding.wireSource), binding]));
   const records = [], diagnostics = [...original.diagnostics], unresolvedProjections = [];
   // Include each captured header as a classified original too; proof.frames
   // intentionally contains only the selected non-header history prefixes.
@@ -87,27 +162,40 @@ export function readCodexHybridPhysical({ native, threadId, cutoffItemId = null,
   }
   for (const frame of proof.frames) {
     check(); const object = originals.get(frame.source.rolloutId), raw = object.raw.subarray(frame.source.startByteOffset, frame.source.endByteOffset - 1);
+    const pluginContext = [CODEX_HYBRID_CONVERTER, CODEX_HYBRID_CONTEXT_CONVERTER].includes(converter)
+      && recordedPluginContextEnvelope(frame.document, creationVersions.get(frame.source.rolloutId), converter === CODEX_HYBRID_CONVERTER);
     records.push({ source: { nativeId: frame.source.threadId, physicalRolloutId: frame.source.rolloutId, rawOrdinal: frame.source.ordinal,
       rawFrameSha256: hash(raw), startByteOffset: frame.source.startByteOffset, endByteOffset: frame.source.endByteOffset, originalObjectSha256: object.sha256 },
-      rawText: raw.toString("utf8"), document: frame.document, classification: classification(frame.document) });
+      get rawText() { return object.raw.subarray(frame.source.startByteOffset, frame.source.endByteOffset - 1).toString("utf8"); },
+      get document() { return frame.document; }, classification: pluginContext ? "provider-envelope-original-only" : legacyRepresentations
+        && frame.document.type === "event_msg" && historicalDynamicToolCall(frame.document.payload, creationVersions.get(frame.source.rolloutId))
+        ? "historical-activity" : classification(frame.document) });
+    if (pluginContext) diagnostics.push({ code: "HYBRID_RECORDED_PLUGIN_CONTEXT_ORIGINAL_ONLY", source: records.at(-1).source,
+      recordedProviderRole: "user", canonicalAuthoredMessageClaimed: false, providerInstructionsReplayed: false, blocksPublication: false });
   }
   records.sort((a, b) => a.source.rawOrdinal - b.source.rawOrdinal);
   const unique = new Set();
   const canonicalAuthored = new Map(), inheritedFrames = new Set(proof.frames.filter(frame => frame.source.origin === "copied-inherited-prefix").map(frame => frame.source.rolloutId + ":" + frame.source.ordinal));
-  const callsById = new Map(), resultsById = new Map(), usersByTurnBody = new Map();
+  const callsById = new Map(), resultsById = new Map(), usersByTurnBody = new Map(), assistantsByTurnPhase = new Map();
   const indexRecord = (index, id, record) => { if (!index.has(id)) index.set(id, []); index.get(id).push(record); };
-  const replayTargets = new Set(), previousUserReplay = new Map();
+  const replayTargets = new Set(), previousUserReplay = new Map(), previousAssistantReplay = new Map();
+  const assistantKey = (record, turn, phase) => JSON.stringify([record.source.physicalRolloutId, record.source.nativeId, turn, phase]);
   for (const record of records) {
     const p = record.document.payload;
     if (record.classification === "authored-message") indexRecord(canonicalAuthored, JSON.stringify([p.item.id, p.item.type === "UserMessage" ? "user" : "assistant"]), record);
-    if (record.classification === "authored-message" && p.item.type === "UserMessage" && canonicalUserBodyKey(p.item) !== null)
-      indexRecord(usersByTurnBody, JSON.stringify([record.source.nativeId, p.turn_id, canonicalUserBodyKey(p.item)]), record);
+    if (record.classification === "authored-message" && p.item.type === "UserMessage") {
+      const bodyKey = userBodyIndexKey(p.item);
+      if (bodyKey !== null) indexRecord(usersByTurnBody, JSON.stringify([record.source.nativeId, p.turn_id, bodyKey]), record);
+    }
+    if (legacyRepresentations && record.classification === "authored-message" && p.item.type === "AgentMessage"
+      && p.thread_id === record.source.nativeId && ["commentary", "final_answer"].includes(p.item.phase))
+      indexRecord(assistantsByTurnPhase, assistantKey(record, p.turn_id, p.item.phase), record);
     if (record.classification === "wire-activity") {
       if (wireCalls.has(p?.type)) indexRecord(callsById, p.call_id, record);
       if (wireResults.has(p?.type)) indexRecord(resultsById, p.call_id, record);
     }
   }
-  for (const record of records) {
+  for (const [recordIndex, record] of records.entries()) {
     if (unique.has(key(record.source))) fail("HYBRID_DUPLICATE_SOURCE_RECORD"); unique.add(key(record.source));
     const p = record.document.payload;
     if (record.document.type === "event_msg" && p?.type === "item_completed"
@@ -122,30 +210,76 @@ export function readCodexHybridPhysical({ native, threadId, cutoffItemId = null,
         diagnostics.push({ code: "HYBRID_WIRE_MESSAGE_FIELDS_UNQUALIFIED", source: record.source, blocksPublication: true });
     }
     if (record.classification === "wire-authored-replay-unqualified") {
+      const imageBinding = imageWireBindings.get(key(record.source));
+      if (imageBinding) {
+        record.classification = "corroborated-provider-replay-original-only";
+        record.corroborationSource = imageBinding.canonicalSource;
+        record.capturedImageEvidence = imageBinding.evidence;
+        replayTargets.add(key(imageBinding.canonicalSource));
+        continue;
+      }
       const role = p.role ?? (p.type === "agent_message" ? "assistant" : null);
       let matching = canonicalAuthored.get(JSON.stringify([p.id, role])) ?? [];
       const metadataTurn = p.internal_chat_message_metadata_passthrough?.turn_id;
-      if (role === "user" && typeof metadataTurn === "string" && metadataTurn && canonicalUserBodyKey(p) !== null)
-        matching = usersByTurnBody.get(JSON.stringify([record.source.nativeId, metadataTurn, canonicalUserBodyKey(p)])) ?? [];
+      if (role === "user" && typeof metadataTurn === "string" && metadataTurn) {
+        const bodyKey = userBodyIndexKey(p);
+        if (bodyKey !== null) matching = usersByTurnBody.get(JSON.stringify([record.source.nativeId, metadataTurn, bodyKey])) ?? [];
+      }
+      let legacyAssociation = false;
+      if (legacyRepresentations && role === "assistant" && matching.length === 0
+        && legacyHybridVersion(creationVersions.get(record.source.physicalRolloutId))
+        && typeof metadataTurn === "string" && metadataTurn && ["commentary", "final_answer"].includes(p.phase)) {
+        matching = (assistantsByTurnPhase.get(assistantKey(record, metadataTurn, p.phase)) ?? [])
+          .filter(candidate => exactWireAuthoredProjection(p, candidate.document.payload.item));
+        legacyAssociation = true;
+      }
       const target = matching.length === 1 ? matching[0] : null;
       const priorUser = previousUserReplay.get(record.source.nativeId) ?? -1;
+      const priorAssistant = previousAssistantReplay.get(record.source.physicalRolloutId) ?? -1;
       if (typeof p.id === "string" && target && exactWireAuthoredProjection(p, target.document.payload.item)
-        && !replayTargets.has(key(target.source)) && (role !== "user" || target.source.rawOrdinal > priorUser)) {
+        && !replayTargets.has(key(target.source)) && (role !== "user" || target.source.rawOrdinal > priorUser)
+        && (!legacyAssociation || target.source.rawOrdinal + 1 === record.source.rawOrdinal
+          && target.source.endByteOffset === record.source.startByteOffset && target.source.rawOrdinal > priorAssistant)) {
         record.classification = "corroborated-provider-replay-original-only";
         record.corroborationSource = target.source;
         replayTargets.add(key(target.source));
         if (role === "user") previousUserReplay.set(record.source.nativeId, target.source.rawOrdinal);
+        if (legacyRepresentations && role === "assistant") previousAssistantReplay.set(record.source.physicalRolloutId, target.source.rawOrdinal);
+        if (legacyAssociation) {
+          record.legacyAssociation = { profile: "legacy-owner-turn-phase-exact-projection-v1", messageIdEquivalenceClaimed: false };
+          diagnostics.push({ code: "HYBRID_LEGACY_ASSISTANT_EXACT_PROJECTION", source: record.source,
+            canonicalSource: target.source, messageIdEquivalenceClaimed: false, blocksPublication: false });
+        }
+      } else if (legacyRepresentations && (legacyUserTransmission(p, creationVersions.get(record.source.physicalRolloutId))
+        || matching.length === 0 && legacyAssistantTransmission(p, creationVersions.get(record.source.physicalRolloutId))
+          && records[recordIndex - 1]?.classification === "private-original-only"
+          && records[recordIndex - 1].document.type === "response_item" && records[recordIndex - 1].document.payload?.type === "reasoning"
+          && records[recordIndex - 1].source.physicalRolloutId === record.source.physicalRolloutId
+          && records[recordIndex - 1].source.nativeId === record.source.nativeId
+          && records[recordIndex - 1].source.rawOrdinal + 1 === record.source.rawOrdinal
+          && records[recordIndex - 1].source.endByteOffset === record.source.startByteOffset)) {
+        record.classification = "unconfirmed-historical-provider-transmission";
+        diagnostics.push({ code: "HYBRID_LEGACY_PROVIDER_TRANSMISSION_UNCONFIRMED", source: record.source, recordedProviderRole: role,
+          relationshipToCanonicalAuthoredMessage: "unconfirmed", reconstructedUserMessage: false, reconstructedAssistantMessage: false,
+          historicalInstructionStringsMayBePresent: true, bodyImportedAsInstruction: false, blocksPublication: false });
       } else diagnostics.push({ code: "HYBRID_WIRE_AUTHORED_REPLAY_UNCORROBORATED", source: record.source, blocksPublication: true });
     }
     if (record.document.type === "world_state") {
       const invalid = !p || typeof p.full !== "boolean" || !p.state || typeof p.state !== "object" || Array.isArray(p.state)
-        || Object.keys(p).some(field => !["full", "state"].includes(field)) || Object.keys(p.state).some(field => !worldFields.has(field));
+        || Object.keys(p).some(field => !["full", "state"].includes(field)) || Object.keys(p.state).some(field => !worldFields.has(field)
+          && !(legacyRepresentations && legacyWorldConfiguration(field, p.state[field], creationVersions.get(record.source.physicalRolloutId))));
       if (invalid) diagnostics.push({ code: "HYBRID_PROVIDER_STATE_FIELDS_UNQUALIFIED", source: record.source, blocksPublication: true });
     }
     if (record.document.type === "turn_context" && Object.keys(p ?? {}).some(field => !turnFields.has(field)))
       diagnostics.push({ code: "HYBRID_PROVIDER_CONTEXT_FIELDS_UNQUALIFIED", source: record.source, blocksPublication: true });
     if (record.document.type === "event_msg" && p?.type === "thread_settings_applied") {
-      if (!uuid(p.thread_id) || p.thread_id !== record.source.nativeId && !inheritedFrames.has(record.source.physicalRolloutId + ":" + record.source.rawOrdinal)) fail("PHYSICAL_ITEM_NATIVE_IDENTITY_MISMATCH");
+      const legacyAbsent = richImages && ["0.148.0-alpha.15", "0.149.0-alpha.4.3"].includes(creationVersions.get(record.source.physicalRolloutId))
+        && !Object.hasOwn(p, "thread_id");
+      if (!legacyAbsent && (!uuid(p.thread_id) || p.thread_id !== record.source.nativeId && !inheritedFrames.has(record.source.physicalRolloutId + ":" + record.source.rawOrdinal)))
+        fail("PHYSICAL_ITEM_NATIVE_IDENTITY_MISMATCH", { source: record.source, recordType: "thread_settings_applied" });
+      if (legacyAbsent) diagnostics.push({ code: "HYBRID_LEGACY_SETTINGS_THREAD_ID_NOT_RECORDED", source: record.source,
+        sourceCreationVersion: creationVersions.get(record.source.physicalRolloutId), threadIdentityInferred: false,
+        representation: "provider-envelope-original-only", blocksPublication: false });
       const settingsFields = ["model", "model_provider_id", "service_tier", "approval_policy", "approvals_reviewer", "permission_profile", "active_permission_profile", "cwd", "runtime_workspace_roots", "reasoning_effort", "reasoning_summary", "personality", "collaboration_mode", "disabled_plugin_ids"];
       if (Object.keys(p).some(field => !["type", "thread_id", "thread_settings"].includes(field)) || !p.thread_settings || Array.isArray(p.thread_settings)
         || typeof p.thread_settings !== "object" || Object.keys(p.thread_settings).some(field => !settingsFields.includes(field)))
@@ -159,7 +293,9 @@ export function readCodexHybridPhysical({ native, threadId, cutoffItemId = null,
     if (record.classification === "unqualified-original-only") diagnostics.push({ code: "HYBRID_RECORD_CLASS_UNQUALIFIED", source: record.source, blocksPublication: true });
   }
   let strict;
-  try { strict = readCodexCapturedPhysicalEvents({ native, threadId, check, converter: converter === CODEX_HYBRID_PRIOR_CONVERTER ? CODEX_PHYSICAL_TITLE_CONVERTER : CODEX_PHYSICAL_CONVERTER }); }
+  try { strict = readCodexCapturedPhysicalEvents({ native, threadId, check,
+    converter: converter === CODEX_HYBRID_PRIOR_CONVERTER ? CODEX_PHYSICAL_TITLE_CONVERTER : CODEX_PHYSICAL_CONVERTER,
+    ...(converter === CODEX_HYBRID_CONVERTER ? { diagnoseMalformedWireArguments: true } : {}) }); }
   catch (error) {
     if (error.code !== "CODEX_SOURCE_NUMERIC_PRECISION_UNQUALIFIED") throw error;
     strict = { events: [], diagnostics: [], sourceLifecycle: { terminalAtCapture: false, lastTurnStatus: "unknown" } };
@@ -180,8 +316,18 @@ export function readCodexHybridPhysical({ native, threadId, cutoffItemId = null,
   for (const record of records.filter(record => record.classification === "wire-activity" && wireCalls.has(record.document.payload?.type))) {
     const p = record.document.payload, results = resultsById.get(p.call_id) ?? [];
     let input; try { input = p.type === "function_call" ? typeof p.arguments === "string" ? parseCodexSourceJson(p.arguments) : p.arguments : { input: p.input }; }
-    catch (error) { if (error.code !== "CODEX_SOURCE_NUMERIC_PRECISION_UNQUALIFIED" && !(error instanceof SyntaxError)) throw error; continue; }
-    const call = { kind: "tool-call", callId: p.call_id, name: p.name, namespace: p.namespace ?? null, input, source: record.source };
+    catch (error) {
+      if (error.code !== "CODEX_SOURCE_NUMERIC_PRECISION_UNQUALIFIED" && !(error instanceof SyntaxError)) throw error;
+      // Record this at the actual hybrid input parse, independently of the
+      // strict reader's existing whole-read numeric-precision fallback.
+      if (converter === CODEX_HYBRID_CONVERTER && error instanceof SyntaxError)
+        diagnostics.push({ code: "HYBRID_MALFORMED_TOOL_ARGUMENTS_RAW_PRESERVED", source: record.source,
+          argumentBytes: Buffer.byteLength(p.arguments), argumentSha256: hash(Buffer.from(p.arguments)),
+          nativeToolQualified: false, outcomeInferred: false, blocksPublication: false });
+      continue;
+    }
+    const call = { kind: "tool-call", callId: p.call_id, name: p.name, namespace: p.namespace ?? null,
+      get input() { const p = record.document.payload; return p.type === "function_call" ? typeof p.arguments === "string" ? parseCodexSourceJson(p.arguments) : p.arguments : { input: p.input }; }, source: record.source };
     strictEvents.set(key(record.source), [call]);
     if (results.length !== 1 || typeof p.call_id !== "string" || !p.call_id) continue;
     if (callsById.get(p.call_id)?.length !== 1) continue;
@@ -229,7 +375,7 @@ export function readCodexHybridPhysical({ native, threadId, cutoffItemId = null,
     if (Object.hasOwn(r, "is_error") && typeof r.is_error !== "boolean") continue;
     if (!callTurn || !resultTurn || callTurn.id !== resultTurn.id || callTurn.nativeId !== resultTurn.nativeId
       || callTurn.nativeId !== record.source.nativeId || resultTurn.nativeId !== result.source.nativeId) continue;
-    strictEvents.set(key(result.source), [{ kind: "tool-result", callId: p.call_id, output: r.output, isError, source: result.source }]);
+    strictEvents.set(key(result.source), [{ kind: "tool-result", callId: p.call_id, get output() { return result.document.payload.output; }, isError, source: result.source }]);
   }
   const callCounts = new Map(), resultCounts = new Map(), nameOwners = new Map();
   for (const record of records) {
@@ -282,29 +428,41 @@ export function readCodexHybridPhysical({ native, threadId, cutoffItemId = null,
     let representation = record.classification;
     if (record.classification === "authored-message") events.push(...(authoredByFrame.get(id) ?? []));
     else if (nativeEvent) { events.push(nativeEvent); representation = "native-exact-tool"; }
-    else if (["historical-activity", "wire-activity"].includes(record.classification)) {
-      const event = { kind: "historical-activity", text: historicalActivityText(record), source: record.source, at: record.source.rawOrdinal, sub: 0,
+    else if (["historical-activity", "wire-activity", "unconfirmed-historical-provider-transmission"].includes(record.classification)) {
+      const event = { kind: "historical-activity", get text() { return record.classification === "unconfirmed-historical-provider-transmission"
+        ? unconfirmedTransmissionText(record) : historicalActivityText(record); }, source: record.source, at: record.source.rawOrdinal, sub: 0,
         ...(bridgedCanonical.has(id) ? { joinVerifiedToolCallGroup: true, callId: record.document.payload.item.id } : {}) };
       events.push(event); historical.push(event); representation = "quoted-historical-codex-activity";
     }
-    const providerFields = record.classification === "provider-envelope-original-only" ? fieldInventory(record.document.payload) : undefined;
+    const providerFields = record.classification === "provider-envelope-original-only" ? fieldInventory(record.document.payload, "payload", [], legacyRepresentations) : undefined;
     if (providerFields) diagnostics.push({ code: "HYBRID_PROVIDER_ENVELOPE_CLASSIFIED_ORIGINAL_ONLY", source: record.source,
       fieldInventory: providerFields, bodyImportedAsInstruction: false, blocksPublication: false });
     inventory.push({ source: record.source, recordType: record.document.type, itemType: record.document.payload?.item?.type ?? record.document.payload?.type ?? null,
       classification: record.classification, representation, originalAllFieldsPreserved: true, nativeInstructionAuthority: false,
       ...(record.corroborationSource ? { corroborationSource: record.corroborationSource } : {}),
+      ...(record.legacyAssociation ? { legacyAssociation: record.legacyAssociation } : {}),
+      ...(record.classification === "unconfirmed-historical-provider-transmission" ? { recordedProviderRole: record.document.payload.role,
+        relationshipToCanonicalAuthoredMessage: "unconfirmed", reconstructedUserMessage: false, reconstructedAssistantMessage: false } : {}),
+      ...(record.capturedImageEvidence ? { capturedImageEvidence: record.capturedImageEvidence } : {}),
       ...(canonicalEvidence.has(id) ? { canonicalWireEvidence: canonicalEvidence.get(id) } : {}) });
   }
-  return { converter, events, diagnostics, inventory, original, historical, records, unresolvedProjections, nativeEvents: [...nativeEvents.values()],
+  const read = { converter, events, diagnostics, inventory, original, historical, records, unresolvedProjections, nativeEvents: [...nativeEvents.values()],
     sourceSelection: { threadId, physicalRolloutId: native.payload.selectedRolloutId, selectedPhysicalPrefixesVerified: true,
       canonicalDatabaseRowsClaimed: false, modelContextEquivalent: false }, sourceLifecycle: strict.sourceLifecycle,
     displayMetadata: strict.displayMetadata, originalRuntimeInstructionsImported: false };
+  const selectedOriginals = proof.segments.map(segment => originals.get(segment.rolloutId));
+  // Real captured stores contain exact selected prefixes. Keep the old path
+  // for callers supplying a longer ancestor; never hash or merge its future.
+  if (proof.segments.every((segment, index) => selectedOriginals[index].raw.length === segment.endByteOffset))
+    retainRecordAudit(read, selectedOriginals, check);
+  return read;
 }
 
 export function encodeCodexHybrid({ read, targetId, cwd, createdAt }) {
-  for (const record of read.records) if (hash(Buffer.from(record.rawText)) !== record.source.rawFrameSha256) fail("HYBRID_SOURCE_RECORD_CHANGED");
+  auditCapturedRecords(read);
   const encoded = encodeClaudeDerived({ events: read.events, diagnostics: read.diagnostics, targetId, cwd, createdAt,
-    displayMetadata: read.displayMetadata ?? null, authoredMessagePolicy: "hybrid-preserve-source-v1" });
+    displayMetadata: read.displayMetadata ?? null, authoredMessagePolicy: [CODEX_HYBRID_CONVERTER, CODEX_HYBRID_CONTEXT_CONVERTER, CODEX_HYBRID_LEGACY_CONVERTER, CODEX_HYBRID_IMAGE_CONVERTER].includes(read.converter) ? "hybrid-preserve-source-v2" : "hybrid-preserve-source-v1" });
+  try {
   const allowances = [], activityProblems = [], mappingsBySource = new Map();
   for (const mapping of encoded.mappings) {
     const id = mapping.sourceRole + ":" + key(mapping.source);
@@ -317,7 +475,7 @@ export function encodeCodexHybrid({ read, targetId, cwd, createdAt }) {
     const mapping = matches[0], block = encoded.rows[mapping.targetMessageIndex]?.message?.content[mapping.targetContentIndex];
     if (block?.type !== "text" || block.text !== event.text || mapping.representation !== "quoted-historical-codex-activity")
       activityProblems.push({ code: "HYBRID_ACTIVITY_BODY_MISMATCH", source: event.source });
-    else allowances.push({ targetMessageIndex: mapping.targetMessageIndex, targetContentIndex: mapping.targetContentIndex, text: event.text });
+    else allowances.push({ targetMessageIndex: mapping.targetMessageIndex, targetContentIndex: mapping.targetContentIndex, get text() { return event.text; } });
   }
   const nativeSlots = new Set();
   for (const event of read.nativeEvents) {
@@ -341,6 +499,11 @@ export function encodeCodexHybrid({ read, targetId, cwd, createdAt }) {
     allToolSemanticEquivalenceClaimed: false,
     authored, originalAllFieldsPreserved: true, providerInstructionsReplayed: false, activityRepresentation: "explicit-current-user-hybrid-choice",
     semanticSufficiencyClaimed: false, grantsRecoveryAuthority: false, restoresExecutionPermission: false };
+  if ([CODEX_HYBRID_CONVERTER, CODEX_HYBRID_CONTEXT_CONVERTER, CODEX_HYBRID_LEGACY_CONVERTER].includes(read.converter)) Object.assign(coverage, {
+    unconfirmedHistoricalProviderTransmissions: read.inventory.filter(entry => entry.classification === "unconfirmed-historical-provider-transmission").length,
+    historicalInstructionStringsMayBePresent: true, historicalInstructionStringsApplied: false,
+    canonicalAuthoredRelationshipOfUnconfirmedTransmissions: "unconfirmed; not reconstructed, deduplicated or attributed as canonical authored messages",
+  });
   const complete = coverage.exactRecordLedger && activityProblems.length === 0 && authored.completeAuthoredMessageCoverage
     && !encoded.diagnostics.some(diagnostic => diagnostic.blocksPublication);
   if (!complete) encoded.diagnostics.push({ code: "HYBRID_RECORD_COVERAGE_INCOMPLETE", blocksPublication: true });
@@ -351,4 +514,5 @@ export function encodeCodexHybrid({ read, targetId, cwd, createdAt }) {
   encoded.openSafety.trailingUserMessage ||= lastAuthored?.role === "user";
   encoded.openSafety.structurallySettled &&= read.sourceLifecycle?.terminalAtCapture === true && lastAuthored?.role === "assistant";
   return { ...encoded, hybridCoverage: coverage, activityCoverageComplete: complete };
+  } catch (error) { try { releaseHistoryBytes(encoded.raw); } catch (cleanup) { error.captureCleanup = { code: cleanup.code }; } throw error; }
 }

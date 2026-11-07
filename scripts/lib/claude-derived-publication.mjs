@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { readHistoryRaw, historyEquals, createHistoryArtifact, historyLines } from "./native-history-bytes.mjs";
+import { iterateClaudeHistoryRecords } from "./provider-native-history-format.mjs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
@@ -6,9 +8,10 @@ import { copiedProjectFile } from "./project-copy-evidence.mjs";
 import { claudeNativeProjectName } from "./claude-native-history.mjs";
 import { nativeRoot, pinNativeRoot, nativeSeparate, nativeRaw, nativeCheck, nativeOutcome } from "./provider-native-history-host.mjs";
 import { CLAUDE_DERIVED_FORMAT as format, derivedHash as hash, derivedJson as json, derivedFail as fail } from "./claude-derived-encoder.mjs";
-import { compareClaudeDerivedReader } from "./claude-derived-reader-coverage.mjs";
+import { compareClaudeDerivedReader, CLAUDE_LOCAL_COMMAND_CAVEAT } from "./claude-derived-reader-coverage.mjs";
+import { claudeMessageDigest } from "./claude-message-digest.mjs";
 import { CODEX_HYBRID_CONVERTER, CODEX_HYBRID_PROFILES } from "./codex-claude-hybrid.mjs";
-import { physicalDerivationAlternatives } from "./project-native-derivation.mjs";
+import { physicalDerivationAlternatives, assertInspectedProjectNativeDerivation } from "./project-native-derivation.mjs";
 import { readDestinationImportEffect, reserveDestinationImportEffect, executeDestinationImportEffect, consumeDestinationNativeWriteCapability } from "./destination-import-journal.mjs";
 
 const regular = (root, relative) => {
@@ -21,6 +24,7 @@ function rootIdentity(root) {
   return { path: root, dev: String(stat.dev), ino: String(stat.ino) };
 }
 function targetContext({ artifact, nativeHome, root, signal, assertCurrentAuthority }) {
+  assertInspectedProjectNativeDerivation(artifact);
   nativeCheck(signal, () => { const value = assertCurrentAuthority(); if (value === false) fail("NATIVE_HISTORY_AUTHORITY_DENIED"); return value; });
   const home = nativeRoot(nativeHome), project = nativeRoot(root), hp = pinNativeRoot(home), pp = pinNativeRoot(project);
   const expected = artifact.manifest.input.targetRoot;
@@ -57,13 +61,13 @@ function retainNativeFailure(error, artifact, extra) {
 function observeTarget(artifact, context, signal) {
   context.check(); const named = regular(context.home, context.relative);
   if (!named.stat) return { state: "absent", file: named.file, transcriptBytes: 0 };
-  const raw = nativeRaw(context.home, context.relative, signal, context.check).raw;
-  if (raw.length < artifact.raw.length || !raw.subarray(0, artifact.raw.length).equals(artifact.raw))
+  const raw = readHistoryRaw(context.home, context.relative, signal, context.check).raw;
+  if (raw.length < artifact.raw.length || !historyEquals(raw.subarray(0, artifact.raw.length), artifact.raw))
     return { state: "diverged", file: named.file, transcriptBytes: raw.length, targetSha256: hash(raw) };
   const tail = raw.subarray(artifact.raw.length);
   if (tail.length) {
     if (tail.at(-1) !== 10) return { state: "continued-partial-append", file: named.file, transcriptBytes: raw.length, prefixVerified: true };
-    try { for (const line of new TextDecoder("utf-8", { fatal: true }).decode(tail).trimEnd().split(/\r?\n/u)) if (line) JSON.parse(line); }
+    try { for (const bytes of historyLines(tail)) { const line = new TextDecoder("utf-8", { fatal: true }).decode(bytes); if (line.trim()) JSON.parse(line); } }
     catch { return { state: "continued-invalid-append", file: named.file, transcriptBytes: raw.length, prefixVerified: true }; }
   }
   return { state: tail.length ? "continued" : "matches", file: named.file, transcriptBytes: raw.length, targetSha256: hash(raw),
@@ -120,14 +124,14 @@ function publishNewDerivedFile({ artifact, context, signal, publishFile, writeSc
   fs.mkdirSync(path.dirname(file), { recursive: true }); check(); context.recheckArtifact(); check();
   const expected = artifact.manifest.files.find(entry => entry.file === "conversation.jsonl");
   if (!expected || artifact.raw.length !== expected.bytes || hash(artifact.raw) !== expected.sha256) fail("DERIVED_ARTIFACT_TAMPER");
-  publishFile(file, artifact.raw);
+  publishFile(file, artifact.raw, check);
 }
 
 // Target-PC journal consumer. The current trusted Host supplies target scope
 // and derives history assessment from verified originals/current user intent.
 // Ordinary JSON flags, a portable archive and old P5 records cannot supply it.
 export async function publishClaudeDerivedWithDestinationJournal({ artifact, nativeHome, root, host, destinationHost,
-  signal, assertCurrentAuthority, publishFile = atomicCreateArtifact }) {
+  signal, assertCurrentAuthority, publishFile = createHistoryArtifact }) {
   if (typeof assertCurrentAuthority !== "function" || typeof destinationHost?.currentImportScope !== "function") fail("DESTINATION_IMPORT_CURRENT_HOST_REQUIRED");
   if (!artifact.manifest.publicationReady) return outcome(artifact, { status: "native-derived-representation-incomplete", filesWritten: 0 });
   const context = targetContext({ artifact, nativeHome, root, signal, assertCurrentAuthority });
@@ -182,7 +186,7 @@ export async function publishClaudeDerivedWithDestinationJournal({ artifact, nat
 // Different from same-platform restore: one complete new-ID JSONL is exposed
 // by atomic no-clobber link. Never change that adapter's stopped-writer guard.
 export async function publishClaudeDerived({ artifact, nativeHome, root, host, signal, assertCurrentAuthority = () => {},
-  publishFile = atomicCreateArtifact, destinationHost = null }) {
+  publishFile = createHistoryArtifact, destinationHost = null }) {
   if (CODEX_HYBRID_PROFILES.includes(artifact.manifest.input.converter))
     return publishClaudeDerivedWithDestinationJournal({ artifact, nativeHome, root, host, signal, assertCurrentAuthority, publishFile, destinationHost });
   if (!artifact.manifest.publicationReady) return outcome(artifact, { status: "native-derived-representation-incomplete", filesWritten: 0 });
@@ -259,18 +263,30 @@ export async function verifyClaudeDerived({ artifact, nativeHome, root, host, si
   if (!["matches", "continued"].includes(before.state)) return outcome(artifact, { status: "native-derived-target-not-readable", targetObservation: visible(before), client });
   if (typeof host.readDerivedClaude !== "function") return outcome(artifact, { status: "native-derived-reader-unavailable",
     initialPrefixVerified: true, targetObservation: visible(before), client, reasonCode: "DERIVED_QUALIFIED_SDK_READER_UNAVAILABLE" });
-  const rawRows = new TextDecoder("utf-8", { fatal: true }).decode(before.raw).trimEnd().split(/\r?\n/u).filter(Boolean).map(line => JSON.parse(line));
   const digestObservation = CODEX_HYBRID_PROFILES.includes(artifact.manifest.input.converter);
+  const nativeMessages = [], nativeMessageDigests = digestObservation ? new Map() : null; let rawRecordCount = 0;
+  for (const { record: row } of iterateClaudeHistoryRecords(before.raw)) {
+    rawRecordCount++;
+    if (!["user", "assistant"].includes(row.type)) continue;
+    if (!digestObservation) { nativeMessages.push(row); continue; }
+    // Hash one verified emitted message at a time. Keep only identity, content
+    // kinds and exact omission-envelope metadata alongside the SDK digests.
+    if (nativeMessageDigests.has(row.uuid)) fail("DERIVED_TARGET_DUPLICATE_MESSAGE");
+    nativeMessageDigests.set(row.uuid, claudeMessageDigest(row.message));
+    nativeMessages.push({ ...row, message: { role: row.message?.role,
+      content: row.message?.content === CLAUDE_LOCAL_COMMAND_CAVEAT ? CLAUDE_LOCAL_COMMAND_CAVEAT
+        : Array.isArray(row.message?.content) ? row.message.content.map(block => ({ type: block?.type })) : "" } });
+  }
   const result = await host.readDerivedClaude({ home: context.home, cwd: context.project, nativeId: artifact.manifest.target.nativeId,
-    maximumMessages: rawRows.length + 1, ...(digestObservation ? { digestObservation: true } : {}) }); context.check();
+    maximumMessages: rawRecordCount + 1, ...(digestObservation ? { digestObservation: true } : {}) }); context.check();
   context.recheckArtifact();
   const after = observeTarget(artifact, context, signal);
   if (after.targetSha256 !== before.targetSha256) fail("DERIVED_TARGET_CHANGED_DURING_READER");
   if (result.sdkVersion !== format.sdkVersion || !Array.isArray(result.messages)) fail("DERIVED_READER_OBSERVATION_INVALID");
   if (digestObservation && result.observationProfile !== "claude-sdk-message-digest-v1") fail("DERIVED_READER_OBSERVATION_INVALID");
-  const expected = artifact.rows, nativeMessages = rawRows.filter(row => ["user", "assistant"].includes(row.type)), returned = result.messages;
+  const expected = artifact.rows, returned = result.messages;
   const coverage = compareClaudeDerivedReader({ nativeMessages, returned, nativeId: artifact.manifest.target.nativeId,
-    prefixCount: expected.length, exactSessionObserved: result.sessionInfo?.sessionId === artifact.manifest.target.nativeId, digestObservation });
+    prefixCount: expected.length, exactSessionObserved: result.sessionInfo?.sessionId === artifact.manifest.target.nativeId, digestObservation, nativeMessageDigests });
   const { missing, mismatches, rawCoverageComplete: complete } = coverage;
   const sourceRepresentationComplete = artifact.manifest.publicationReady;
   return outcome(artifact, { status: complete && sourceRepresentationComplete ? "native-derived-official-reader-prefix-verified"
@@ -304,9 +320,8 @@ export async function verifyClaudeDerived({ artifact, nativeHome, root, host, si
 }
 
 function settledNativeTail(raw, nativeId) {
-  const records = new TextDecoder("utf-8", { fatal: true }).decode(raw).trimEnd().split(/\r?\n/u).filter(Boolean).map(line => JSON.parse(line));
   const pending = new Set(); let last = null;
-  for (const row of records) {
+  for (const { record: row } of iterateClaudeHistoryRecords(raw)) {
     if (!["user", "assistant"].includes(row.type)) continue;
     if (row.sessionId !== nativeId || row.message?.role !== row.type) return false;
     last = row;

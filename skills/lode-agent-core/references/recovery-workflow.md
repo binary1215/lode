@@ -343,6 +343,23 @@ Known historical creation metadata is kept verbatim; current DB/runtime pins and
 physical/semantic checks remain separate. Never relabel unsupported source or an
 app display projection as lossless raw history. Users do not author the selector.
 
+For a missing referenced physical ancestor, reuse exact current location evidence
+first. Within the already-authorized source home, a bounded names-only lookup of
+the exact dependency UUID may supply `ancestorFiles`; never search unrelated
+bodies, follow links or use dates/titles as identity. Report the searched scope
+and ambiguity. `.jsonl.zst` ancestors use the explicit Zstd prefix adapter, not
+renaming or in-place decompression. Preserve its P3 encoding/consumed-range and
+checksum limitations. Store only the requested decoded cutoff; a decoded prefix
+does not claim the compressed container is stored or fully verified. Missing or
+unsupported dependencies remain pending, without a user JSON/ID ritual.
+Combined live export releases its private large-prefix captures on success or
+failure. Direct intake callers use `releaseCodexLiveProjectObservation` in
+`finally` after consuming the observation. Subsequent work reuses the archive.
+Lode streams its own bytes; the pinned official SDK still loads the selected
+conversation internally. Qualify actual output separately in a supervised
+process and preserve an SDK resource/format failure without claiming complete
+reader verification or replaying publication.
+
 On the destination, `read-portable-project` creates nothing.
 `derive-portable-project` prepares separate P3 representations with the exact
 archive/digest and current target workspace mapping (or an explicitly shared

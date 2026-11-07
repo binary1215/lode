@@ -1,12 +1,12 @@
 import { inspectPortableProjectEvidence } from "./portable-project-evidence.mjs";
 import { verifyCodexProjectCatalog } from "./codex-project-catalog.mjs";
 import { projectConversationWorkspaceMappings } from "./project-conversation-collection.mjs";
-import { derivePortableProjectNativeHistory, inspectPortableProjectNativeDerivation, locatePortableProjectNativeDerivation, projectNativeDerivationSummary } from "./project-native-derivation.mjs";
+import { preparePortableProjectNativeHistory, locatePortableProjectNativeDerivation, projectNativeDerivationSummary } from "./project-native-derivation.mjs";
 import { publishClaudeDerivedWithDestinationJournal, verifyClaudeDerived } from "./claude-derived-publication.mjs";
 import { nativeRoot, pinNativeRoot, nativeCheck, nativeRaw } from "./provider-native-history-host.mjs";
 import { derivedFail as fail, derivedHash as hash, derivedJson as json } from "./claude-derived-encoder.mjs";
 import { createLocalDestinationImportHost } from "./local-destination-import-host.mjs";
-import { parseCodexSourceJson } from "./codex-source-json.mjs";
+import { classifyDerivedPublicationHistory } from "./derived-publication-history.mjs";
 
 // One archive, separate native conversations. Missing originals/mappings stay
 // row-local. A primary source/permission/effect error stops further observations
@@ -24,17 +24,31 @@ export async function operatePortableProjectNative({ action, directory, archiveI
       check(); const current = inspectPortableProjectEvidence({ directory, archiveId, expectedArchiveDigest, workspaceSourceRoots: [], signal, assertCurrentAuthority: check });
       const source = current.sources.find(row => row.native.payloadDigest === request.operation.sourceDigest);
       if (!source) fail("DESTINATION_LOCAL_VERIFIED_HISTORY_REQUIRED");
+      const evidenceCache = new Map();
+      const originalEvidence = entry => {
+        if (!entry) return null;
+        if (!evidenceCache.has(entry.path)) {
+          const original = nativeRaw(current.directory, "objects/" + entry.original.sha256 + ".bin", signal, check);
+          if (original.entry.sha256 !== entry.original.sha256 || original.entry.bytes !== entry.original.bytes) fail("DERIVED_SOURCE_PAYLOAD_CHANGED");
+          evidenceCache.set(entry.path, { raw: original.raw, sha256: original.entry.sha256, bytes: original.entry.bytes });
+        }
+        return evidenceCache.get(entry.path);
+      };
       const records = source.history.entries.filter(entry => entry.kind === "historical-P5-observation-not-new-authority").map(entry => {
-        const original = nativeRaw(current.directory, "objects/" + entry.original.sha256 + ".bin", signal, check);
-        if (original.entry.sha256 !== entry.original.sha256 || original.entry.bytes !== entry.original.bytes) fail("DERIVED_SOURCE_PAYLOAD_CHANGED");
-        let document;
-        try { document = parseCodexSourceJson(new TextDecoder("utf-8", { fatal: true }).decode(original.raw)); }
-        catch { return { sha256: original.entry.sha256, nativeId: null, interpretation: "unparsed-original" }; }
-        const nativeId = ["ClaudeDerivedPublicationAttempt", "ClaudeDerivedPublicationReceipt"].includes(document.kind)
-          && document.authorityPlane === "P5" && document.grantsRecoveryAuthority === false && document.restoresExecutionPermission === false
-          ? document.operation?.targetNativeId : null;
-        return { sha256: original.entry.sha256, nativeId: nativeId ?? null, interpretation: "operational-history-evidence-not-authority" };
+        const prefix = /^(native\/derived\/claude\/derived-claude-[a-f0-9]{24})\/effects\//u.exec(entry.path)?.[1];
+        if (!prefix || !/\/(?:publication-attempt|publication-receipt)\.json$/u.test(entry.path)) return {
+          sha256: entry.original.sha256, bytes: entry.original.bytes, nativeId: null,
+          interpretation: "unqualified-operational-original-not-authority" };
+        const identity = name => source.history.entries.find(item => item.kind === "derivative-identity-original" && item.path === prefix + "/" + name);
+        return classifyDerivedPublicationHistory({ record: originalEvidence(entry), manifest: originalEvidence(identity("manifest.json")),
+          intent: originalEvidence(identity("intent.json")), sourceDigest: source.native.payloadDigest, threadId: source.threadId, relativePath: entry.path });
       });
+      for (const entry of source.history.unqualifiedOperationalEntries ?? []) if (entry.rawOriginalPreserved !== true) records.push({
+        sha256: hash(json(entry)), digestBasis: "verified-archive-operational-namespace-metadata", nativeId: null,
+        interpretation: "unqualified-operational-namespace-entry; occurrence-or-outcome-not-inferred" });
+      if (source.history.skippedUnknownEntries > 0 && source.history.classificationProfile !== "known-operational-namespaces-v2") records.push({
+        sha256: hash(json(source.history)), digestBasis: "verified-archive-history-coverage-metadata", nativeId: null,
+        interpretation: "legacy-unclassified-history-coverage; not-proof-that-an-effect-occurred" });
       return { sourceVerified: true, sourceDigest: source.native.payloadDigest,
         evidenceDigest: hash(json({ archiveDigest: current.archiveDigest, threadId: source.threadId, history: source.history })),
         records };
@@ -66,8 +80,7 @@ export async function operatePortableProjectNative({ action, directory, archiveI
       const args = { directory, archiveId, expectedArchiveDigest, threadId, root: targetRoot, signal, assertCurrentAuthority: check, ...(converter ? { converter } : {}) };
       let artifact;
       if (["derive-portable-project", "publish-portable-project"].includes(action)) {
-        const prepared = await derivePortableProjectNativeHistory(args); check(); mapping.pin.verify();
-        artifact = await inspectPortableProjectNativeDerivation({ ...args, derivationId: prepared.derivationId, expectedDerivationDigest: prepared.derivationDigest });
+        artifact = await preparePortableProjectNativeHistory(args); check(); mapping.pin.verify();
       } else artifact = await locatePortableProjectNativeDerivation(args);
       if (!artifact) { results.push({ threadId, status: "representation-not-prepared", sourceCoverage, nativeEffectAttempted: false }); activeRow = null; continue; }
       let result = projectNativeDerivationSummary(artifact);

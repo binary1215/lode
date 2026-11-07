@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { readHistoryRaw, historyEquals, createHistoryArtifact, releaseHistoryBytes } from "./native-history-bytes.mjs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -13,6 +14,20 @@ import { CLAUDE_DERIVED_FORMAT, CODEX_COMPLETION_CONVERTER, encodeClaudeDerived,
 import { CODEX_HYBRID_CONVERTER, CODEX_HYBRID_PROFILES, readCodexHybridPhysical, encodeCodexHybrid } from "./codex-claude-hybrid.mjs";
 
 const format = CLAUDE_DERIVED_FORMAT;
+const inspectedArtifacts = new WeakSet();
+function freezeArtifactData(value, seen = new WeakSet()) {
+  if (!value || typeof value !== "object" || ArrayBuffer.isView(value) || seen.has(value)) return value;
+  const prototype = Object.getPrototypeOf(value);
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return value;
+  seen.add(value);
+  // Do not invoke lazy source/body getters or retain another body copy.
+  for (const property of Object.values(Object.getOwnPropertyDescriptors(value)))
+    if (Object.hasOwn(property, "value")) freezeArtifactData(property.value, seen);
+  return Object.freeze(value);
+}
+export function assertInspectedProjectNativeDerivation(artifact) {
+  if (!inspectedArtifacts.has(artifact)) fail("DERIVED_INSPECTED_ARTIFACT_REQUIRED");
+}
 const sourceOrder = read => physicalProfiles.includes(read.converter)
   ? "selected physical prefix frame ordinals and explicit wire call/result order; computed raw semantic IR, not canonical DB rows"
   : "canonical item ordinals and explicit wire call/result order; not token-stream replay";
@@ -91,14 +106,14 @@ function manifestFor({ derivationId, inputDigest, input, source, intent, encoded
 function createExact(root, relative, raw, check) {
   check(); const file = copiedProjectFile(root, relative);
   if (fs.existsSync(file)) {
-    const actual = nativeRaw(root, relative, null, check);
-    if (!actual.raw.equals(raw)) fail("DERIVED_ARTIFACT_CONFLICT", { relative });
+    const actual = readHistoryRaw(root, relative, null, check);
+    if (!historyEquals(actual.raw, raw)) fail("DERIVED_ARTIFACT_CONFLICT", { relative });
     return false;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true }); copiedProjectFile(root, relative); check();
-  try { atomicCreateArtifact(file, raw); }
+  try { createHistoryArtifact(file, raw, check); }
   catch (error) { if (error.code !== "EEXIST") throw error; }
-  if (!nativeRaw(root, relative, null, check).raw.equals(raw)) fail("DERIVED_ARTIFACT_CONFLICT", { relative });
+  if (!historyEquals(readHistoryRaw(root, relative, null, check).raw, raw)) fail("DERIVED_ARTIFACT_CONFLICT", { relative });
   return true;
 }
 function summary(result) {
@@ -119,7 +134,14 @@ function summary(result) {
 
 // New P3 evidence under the common bundle. No original native link, Project,
 // Session, checkpoint, source object or current provider route is rewritten.
-export function deriveProjectNativeHistory({ bundleRoot, expectedBundleId = null, root, threadIds, cutoffItemId = null, converter,
+export function deriveProjectNativeHistory(options) {
+  return summary(prepareProjectNativeHistory(options));
+}
+
+// Same-process use only: this is the artifact returned by the final exact
+// inspection, not a serialized verification token or permission to publish.
+// Consumers still call .check/.recheck under their current effect scope.
+export function prepareProjectNativeHistory({ bundleRoot, expectedBundleId = null, root, threadIds, cutoffItemId = null, converter,
   signal, assertCurrentAuthority = () => {} }) {
   if (!Array.isArray(threadIds) || threadIds.length !== 1) fail("DERIVED_ONE_EXACT_SOURCE_THREAD_REQUIRED");
   if (cutoffItemId !== null && (typeof cutoffItemId !== "string" || !cutoffItemId || cutoffItemId.length > 256)) fail("DERIVED_CUTOFF_ITEM_INVALID");
@@ -167,6 +189,7 @@ function deriveSelectedNativeHistory({ root, threadIds, cutoffItemId = null, sig
     verifyIntent(intent, input, inputDigest, nativeId);
   }
   const encoded = encodeRead(read, { targetId: nativeId, cwd: targetRoot, createdAt: intent.createdAt });
+  try {
   encoded.openSafety.sourceLifecycle = read.sourceLifecycle;
   encoded.openSafety.structurallySettled &&= read.sourceLifecycle.terminalAtCapture;
   const bodies = { "conversation.jsonl": encoded.raw, "mapping.json": json(mappingFor(read, encoded)),
@@ -175,7 +198,8 @@ function deriveSelectedNativeHistory({ root, threadIds, cutoffItemId = null, sig
   for (const [name, raw] of Object.entries(bodies)) createExact(bundle, relative + "/" + name, raw, current);
   recheck();
   createExact(bundle, relative + "/manifest.json", json(manifest), current);
-  return summary(inspectSelectedNativeDerivation({ derivationId, expectedDerivationDigest: hash(json(manifest)), signal }, sourceContext));
+  } finally { releaseHistoryBytes(encoded.raw); }
+  return inspectSelectedNativeDerivation({ derivationId, signal }, sourceContext);
 }
 
 export function inspectProjectNativeDerivation({ bundleRoot, expectedBundleId = null, derivationId, expectedDerivationDigest = null,
@@ -212,20 +236,21 @@ function inspectSelectedNativeDerivation({ derivationId, expectedDerivationDiges
   if (!Array.isArray(m.files) || m.files.length !== 3) fail("DERIVED_MANIFEST_FILES_INVALID");
   for (const file of m.files) {
     if (!["conversation.jsonl", "mapping.json", "diagnostics.json"].includes(file?.file) || files.has(file.file)) fail("DERIVED_MANIFEST_FILES_INVALID");
-    const body = nativeRaw(bundle, relative + "/" + file.file, signal, check);
+    const body = file.file === "conversation.jsonl" ? readHistoryRaw(bundle, relative + "/" + file.file, signal, check) : nativeRaw(bundle, relative + "/" + file.file, signal, check);
     if (body.entry.sha256 !== file.sha256 || body.entry.bytes !== file.bytes) fail("DERIVED_ARTIFACT_TAMPER", { relative: file.file });
     files.set(file.file, body.raw);
   }
   // Reproduce the exact supported representation from current verified source,
   // rather than trusting mutually editable JSON claims about item coverage.
   const encoded = encodeRead(read, { targetId: m.target.nativeId, cwd: m.target.cwd, createdAt: i.createdAt });
+  try {
   encoded.openSafety.sourceLifecycle = read.sourceLifecycle;
   encoded.openSafety.structurallySettled &&= read.sourceLifecycle.terminalAtCapture;
   const mapping = JSON.parse(files.get("mapping.json").toString("utf8")), diagnostics = JSON.parse(files.get("diagnostics.json").toString("utf8"));
   const expectedMapping = mappingFor(read, encoded);
   const bodies = { "conversation.jsonl": encoded.raw, "mapping.json": json(expectedMapping), "diagnostics.json": json(encoded.diagnostics) };
   const expectedManifest = manifestFor({ derivationId, inputDigest: m.inputDigest, input, source: input.source, intent: i, encoded, bodies });
-  if (!files.get("conversation.jsonl").equals(encoded.raw) || !isDeepStrictEqual(mapping, expectedMapping)
+  if (!historyEquals(files.get("conversation.jsonl"), encoded.raw) || !isDeepStrictEqual(mapping, expectedMapping)
     || !isDeepStrictEqual(diagnostics, encoded.diagnostics)
     || !isDeepStrictEqual(m, expectedManifest)) fail("DERIVED_REPRODUCTION_MISMATCH");
   recheck();
@@ -238,10 +263,20 @@ function inspectSelectedNativeDerivation({ derivationId, expectedDerivationDiges
       const body = inspectCopiedProjectFile(directory, file.file, { signal, assertCurrentAuthority: check });
       if (body.sha256 !== file.sha256 || body.bytes !== file.bytes) fail("DERIVED_ARTIFACT_TAMPER");
     }
+    // Small captures/transcripts may be Buffers detached from their files.
+    // Disk integrity alone cannot prove those in-memory bytes stayed intact.
+    if (Buffer.isBuffer(files.get("conversation.jsonl"))
+      && hash(files.get("conversation.jsonl")) !== m.files.find(file => file.file === "conversation.jsonl").sha256)
+      fail("DERIVED_ARTIFACT_TAMPER");
+    for (const original of selected.native.originals ?? []) if (Buffer.isBuffer(original.raw) && hash(original.raw) !== original.sha256)
+      fail("DERIVED_SOURCE_PAYLOAD_CHANGED");
   };
-  return { bundleRoot: bundle, directory: copiedProjectFile(bundle, relative), digest: entry.entry.sha256, manifest: m,
-    raw: encoded.raw, rows: encoded.rows, mapping: encoded.mappings, diagnostics, selected, check, ...(encoded.hybridCoverage ? { hybridCoverage: encoded.hybridCoverage } : {}),
-    recheck: recheckArtifact };
+  const artifact = freezeArtifactData({ bundleRoot: bundle, directory: copiedProjectFile(bundle, relative), digest: entry.entry.sha256, manifest: m,
+    raw: files.get("conversation.jsonl"), rows: encoded.rows, mapping: encoded.mappings, diagnostics, selected, check, ...(encoded.hybridCoverage ? { hybridCoverage: encoded.hybridCoverage } : {}),
+    recheck: recheckArtifact });
+  inspectedArtifacts.add(artifact);
+  return artifact;
+  } finally { releaseHistoryBytes(encoded.raw); }
 }
 
 async function portableSourceContext({ directory, archiveId, expectedArchiveDigest, threadId, signal, assertCurrentAuthority }) {
@@ -263,12 +298,18 @@ async function portableSourceContext({ directory, archiveId, expectedArchiveDige
 // Reuse the exact supported derivation/inspection codec without recreating a
 // native source store. Existing P3 intent/body originals can be resumed; old P5
 // publication records stay archive observations and never become local leases.
-export async function derivePortableProjectNativeHistory({ directory, archiveId, expectedArchiveDigest, root, threadId, signal, assertCurrentAuthority, converter }) {
+export async function derivePortableProjectNativeHistory(options) {
+  return summary(await preparePortableProjectNativeHistory(options));
+}
+export async function preparePortableProjectNativeHistory({ directory, archiveId, expectedArchiveDigest, root, threadId, signal, assertCurrentAuthority, converter }) {
   const source = await portableSourceContext({ directory, archiveId, expectedArchiveDigest, threadId, signal, assertCurrentAuthority });
   for (const entry of source.source.history.entries) {
     if (!["derivative-identity-original", "derivative-payload-original"].includes(entry.kind)) continue;
     if (!/^native\/derived\/claude\/derived-claude-[a-f0-9]{24}\/(?:intent\.json|manifest\.json|conversation\.jsonl|mapping\.json|diagnostics\.json)$/u.test(entry.path)) fail("PORTABLE_DERIVED_HISTORY_PATH_INVALID");
-    source.check(); const original = nativeRaw(source.root, "objects/" + entry.original.sha256 + ".bin", signal, source.check);
+    source.check(); const objectPath = "objects/" + entry.original.sha256 + ".bin";
+    const original = entry.path.endsWith("/conversation.jsonl")
+      ? readHistoryRaw(source.root, objectPath, signal, source.check)
+      : nativeRaw(source.root, objectPath, signal, source.check);
     if (original.entry.sha256 !== entry.original.sha256 || original.entry.bytes !== entry.original.bytes) fail("DERIVED_SOURCE_PAYLOAD_CHANGED");
     createExact(source.root, entry.path, original.raw, source.check);
   }

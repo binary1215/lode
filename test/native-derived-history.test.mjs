@@ -4,11 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import zlib from "node:zlib";
 import { Worker } from "node:worker_threads";
 import { derivedFixture, completionProjectionFixture, sourceThread, branchThread, png, damagedPng } from "./helpers/derived-history-fixture.mjs";
 import { snapshot, pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 import { operateProjectNativeHistory } from "../scripts/lib/project-native-history.mjs";
-import { inspectProjectNativeDerivation, derivePortableProjectNativeHistory, inspectPortableProjectNativeDerivation } from "../scripts/lib/project-native-derivation.mjs";
+import { inspectProjectNativeDerivation, derivePortableProjectNativeHistory, inspectPortableProjectNativeDerivation,
+  prepareProjectNativeHistory, deriveProjectNativeHistory, projectNativeDerivationSummary } from "../scripts/lib/project-native-derivation.mjs";
 import { publishClaudeDerived, openClaudeDerived, publishClaudeDerivedWithDestinationJournal, verifyClaudeDerived } from "../scripts/lib/claude-derived-publication.mjs";
 import { readProjectNativeTransfer } from "../scripts/lib/project-native-transfer.mjs";
 import { readProjectDirection } from "../scripts/lib/project-direction.mjs";
@@ -16,6 +18,10 @@ import { runCommand } from "../scripts/lode.mjs";
 import { dispatch, catalogTools } from "../scripts/mcp-server.mjs";
 import { compareClaudeDerivedReader, CLAUDE_LOCAL_COMMAND_CAVEAT } from "../scripts/lib/claude-derived-reader-coverage.mjs";
 import { inspectDerivedInlineImage } from "../scripts/lib/derived-inline-image.mjs";
+import { inspectDerivedBaselineJpeg } from "../scripts/lib/derived-baseline-jpeg.mjs";
+import { readCodexHybridPhysical, encodeCodexHybrid, CODEX_HYBRID_CONVERTER, CODEX_HYBRID_IMAGE_CONVERTER, CODEX_HYBRID_TEXT_CONVERTER } from "../scripts/lib/codex-claude-hybrid.mjs";
+import { historyHash, releaseHistoryBytes } from "../scripts/lib/native-history-bytes.mjs";
+import { resolveCodexPhysicalLineage } from "../scripts/lib/codex-physical-lineage.mjs";
 import { encodeClaudeDerived } from "../scripts/lib/claude-derived-encoder.mjs";
 import { DatabaseSync } from "node:sqlite";
 import { prepareCodexNativeOffline } from "../scripts/lib/codex-native-offline.mjs";
@@ -27,7 +33,7 @@ import { parseCodexSourceJson } from "../scripts/lib/codex-source-json.mjs";
 import { deriveProjectConversationCollection, readProjectConversationCollection } from "../scripts/lib/project-conversation-collection.mjs";
 import { withSessionRoute } from "../scripts/lib/session-routing.mjs";
 import { readRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import { archiveCodexCapturedPhysicalSource, inspectCodexCapturedPhysicalSource } from "../scripts/lib/codex-captured-physical-source.mjs";
+import { archiveCodexCapturedPhysicalSource, inspectCodexCapturedPhysicalSource, encodeCodexObservedLivePhysicalSource, encodeCodexObservedLivePhysicalSources } from "../scripts/lib/codex-captured-physical-source.mjs";
 import { readSelectedCodexStateEvidence } from "../scripts/lib/codex-native-state-evidence.mjs";
 import { readCodexProjectCatalog } from "../scripts/lib/codex-project-catalog.mjs";
 import { exportPortableProjectEvidence, inspectPortableProjectEvidence, readPortableProjectEvidence, materializePortableProjectSessionBundle, exportCodexLiveProjectEvidence } from "../scripts/lib/portable-project-evidence.mjs";
@@ -1383,10 +1389,37 @@ test("live Project intake joins selected logical state to physical history witho
   fs.renameSync(parentFile,parentFile+".not-in-discovery");try{const missing=await readCodexLiveProjectSource({...args,ancestorFiles:[]});assert.equal(missing.value.conversations[0].lineage.status,"ancestor-not-in-current-project-location-scope");assert.equal(missing.value.conversations[0].nativePublicationReady,false);}finally{fs.renameSync(parentFile+".not-in-discovery",parentFile);}
   const missingSibling=path.join(home,"sessions/2026/11/06/rollout-missing-"+branchThread+".jsonl");state.db.prepare("UPDATE threads SET rollout_path=? WHERE id=?").run(missingSibling,branchThread);
   const whole=await readCodexLiveProjectSource({...args,threadIds:undefined});assert.equal(whole.value.sourceCoverage.selectedConversations,2);assert.equal(whole.value.sourceCoverage.rawRetainedConversations,1);assert.equal(whole.value.sourceCoverage.unavailableConversations,1);assert.equal(whole.value.conversations.find(row=>row.threadId===branchThread).reasonCode,"CODEX_LIVE_SELECTED_FILE_NOT_FOUND");assert.equal(whole.value.conversations.find(row=>row.threadId===branchThread).primarySourceFailure.code,"ENOENT");assert.ok(whole.value.conversations.find(row=>row.threadId===sourceThread).originals.length>0);assert.equal(whole.value.sourceCoverage.completeNativeInventoryClaimed,false);
+  const secondFile=path.join(home,"sessions/2026/11/06/rollout-batch-"+branchThread+".jsonl");
+  fs.writeFileSync(secondFile,encode([frame(0,"session_meta",{id:branchThread,session_id:branchThread,cli_version:nativeProfile.engineVersion,history_mode:"paginated",history_base:null})]));
+  state.db.prepare("UPDATE threads SET rollout_path=? WHERE id=?").run(secondFile,branchThread);
+  try {
+    const both=await readCodexLiveProjectSource({...args,threadIds:undefined}),batch=encodeCodexObservedLivePhysicalSources({observation:both});
+    assert.equal(batch.encoded.size,2);
+    for(const row of both.value.conversations)assert.equal(batch.encoded.get(row.threadId).payloadDigest,encodeCodexObservedLivePhysicalSource({observation:both,threadId:row.threadId}).payloadDigest);
+    let returned=null,checks=0;
+    try{assert.throws(()=>{returned=encodeCodexObservedLivePhysicalSources({observation:both,check(){if(++checks===2)both.value.sourceCoverage.semanticHistoryEquivalent=true;}});},{code:"CODEX_LIVE_OBSERVATION_CHANGED_OR_NOT_CURRENT_INTAKE"});assert.equal(returned,null);}finally{both.value.sourceCoverage.semanticHistoryEquivalent=false;}
+    let cutoffChecks=0;const denied=Object.assign(new Error("batch denied"),{code:"EACCES"});
+    assert.throws(()=>{returned=encodeCodexObservedLivePhysicalSources({observation:both,check(){if(++cutoffChecks>=4)throw denied;}});},error=>error===denied);assert.equal(returned,null);
+    const changed=both.value.conversations[0].originals[0].raw,first=changed[changed.length-2];
+    try{changed[changed.length-2]^=1;assert.throws(()=>encodeCodexObservedLivePhysicalSources({observation:both}),{code:"CODEX_LIVE_OBSERVATION_CHANGED_OR_NOT_CURRENT_INTAKE"});}finally{changed[changed.length-2]=first;}
+  } finally {state.db.prepare("UPDATE threads SET rollout_path=? WHERE id=?").run(missingSibling,branchThread);}
   const onlyMissing=await readCodexLiveProjectSource({...args,threadIds:[branchThread]});assert.equal(onlyMissing.value.sourceCoverage.rawRetainedConversations,0);assert.equal(onlyMissing.value.sourceCoverage.unavailableConversations,1);
   state.db.prepare("UPDATE threads SET rollout_path=? WHERE id=?").run("X:/synthetic-outside/not-authorized.jsonl",branchThread);
   const unsupported=await readCodexLiveProjectSource({...args,threadIds:undefined});assert.equal(unsupported.value.sourceCoverage.rawRetainedConversations,1);assert.equal(unsupported.value.conversations.find(row=>row.threadId===branchThread).reasonCode,"CODEX_LIVE_SELECTED_PATH_UNQUALIFIED");
   const combinedRoot=path.join(base,"combined-live-portable");fs.mkdirSync(combinedRoot);const combined=await exportCodexLiveProjectEvidence({...args,directory:combinedRoot,threadIds:undefined});assert.equal(combined.liveSource.sourceCoverage.selectedConversations,2);assert.equal(combined.liveSource.sourceCoverage.unavailableConversations,1);assert.equal(combined.sources.length,1);assert.equal(combined.nativePublicationAttempted,false);assert.equal(combined.targetJournalSelected,false);assert.equal(combined.liveSource.rows.find(row=>row.threadId===branchThread).representation,"partial-live-evidence-only");
+  const compressedRelative=parentRelative+".zst",compressedPath=path.join(home,compressedRelative);
+  const compressedOriginal=zlib.zstdCompressSync(Buffer.concat([parentPrefix,Buffer.from("unselected parent future")]),{params:{[zlib.constants.ZSTD_c_checksumFlag]:1}});
+  fs.writeFileSync(compressedPath,compressedOriginal);
+  const compressedRoot=path.join(base,"compressed-live-portable");fs.mkdirSync(compressedRoot);
+  const compressedArchive=await exportCodexLiveProjectEvidence({...args,directory:compressedRoot,ancestorFiles:[{rolloutId:parentId,path:compressedRelative}]});
+  const compressedRead=inspectPortableProjectEvidence({directory:compressedRoot,archiveId:compressedArchive.archiveId,expectedArchiveDigest:compressedArchive.archiveDigest,assertCurrentAuthority:()=>{}});
+  const compressedRow=compressedRead.manifest.liveCapture.rows.find(row=>row.threadId===sourceThread).originals.find(row=>row.rolloutId===parentId);
+  assert.equal(compressedRow.sourceEncoding,"zstd-decoded-selected-prefix");
+  assert.equal(compressedRow.compressionEvidence.fullContainerChecksumVerified,false);
+  assert.equal(compressedRow.compressionEvidence.compressedOriginalStored,false);
+  assert.equal(compressedRow.original.sha256,hash(parentPrefix));
+  assert.equal(compressedRead.sources[0].native.payload.files.find(row=>row.rolloutId===parentId).sourceEncoding,"zstd-decoded-selected-prefix");
+  assert.deepEqual(fs.readFileSync(compressedPath),compressedOriginal);assert.equal(compressedRead.sources[0].native.proof.status,"physical-lineage-ranges-verified");
   const publicRoots=["core","cli","mcp"].map(name=>path.join(base,"public-live-"+name));for(const directory of publicRoots)fs.mkdirSync(directory);let publicNativeCalls=0;
   const noSourceClient={provider:"codex",version:()=>{publicNativeCalls++;throw Error("Live SQLite capture must not launch the source client");}};
   const publicCore=await operateProjectNativeHistory({action:"capture-live-project",provider:"codex",bundleRoot:publicRoots[0],nativeHome:home,sourceProjectId:"live-project",sourceSyncFiles:true,ancestorFiles:args.ancestorFiles,nativeHistoryHost:noSourceClient});
@@ -1527,4 +1560,313 @@ test("Windows live guard startup diagnostics preserve cancellation and omit sour
   });
   assert.equal(events.filter(event=>event.event==="startup-failed").length,1);
   assert.equal(codexLiveReadGuardProcessStatus().length,0);assert.deepEqual(snapshot(home),before);
+});
+
+
+function tinyBaselineJpeg({ color = false, width = color ? 16 : 8, height = color ? 16 : 8 } = {}) {
+  const segment = (marker, payload) => Buffer.concat([Buffer.from([255, marker, (payload.length + 2) >>> 8, (payload.length + 2) & 255]), payload]);
+  const components = color ? [1, 0x22, 0, 2, 0x11, 0, 3, 0x11, 0] : [1, 0x11, 0];
+  const table = selector => Buffer.from([selector, 1, ...Array(15).fill(0), 0]);
+  return Buffer.concat([Buffer.from([255, 216]), segment(219, Buffer.from([0, ...Array(64).fill(1)])),
+    segment(192, Buffer.from([8, height >>> 8, height & 255, width >>> 8, width & 255, color ? 3 : 1, ...components])),
+    segment(196, Buffer.concat([table(0), table(16)])),
+    segment(218, Buffer.from(color ? [3, 1, 0, 2, 0, 3, 0, 0, 63, 0] : [1, 1, 0, 0, 63, 0])),
+    Buffer.from(color ? [0, 15] : [63]), Buffer.from([255, 217])]);
+}
+function richImageNative({ version = "0.163.0-alpha.10.2", settings = { thread_id: sourceThread }, images = ["data:image/png;base64," + png], modify = () => {} } = {}) {
+  const turn = "synthetic-image-turn", text = "Synthetic captured image message";
+  const canonical = { id: "canonical-user", type: "UserMessage", content: [{ type: "text", text, text_elements: [] },
+    ...images.map((_, index) => ({ type: "local_image", path: "C:/synthetic/captured-" + index + ".image" }))] };
+  const content = [{ type: "input_text", text }], kinds = ["user.text"];
+  for (const [index, image] of images.entries()) {
+    content.push({ type: "input_text", text: '<image name=[Image #' + (index + 1) + '] path="' + canonical.content[index + 1].path + '">' },
+      { type: "input_image", image_url: image, detail: "high" }, { type: "input_text", text: "</image>" });
+    kinds.push("user.text", "user.image", "user.text");
+  }
+  const frames = [{ type: "session_meta", payload: { id: sourceThread, session_id: sourceThread, cli_version: version, history_mode: "paginated", history_base: null } },
+    { type: "event_msg", payload: { type: "task_started", turn_id: turn } },
+    { type: "event_msg", payload: { type: "thread_settings_applied", thread_settings: { model: "synthetic-model" }, ...settings } },
+    { type: "response_item", payload: { type: "message", id: "wire-user-different-recorded-id", role: "user", content,
+      internal_chat_message_metadata_passthrough: { turn_id: turn, create_time: 0, content_item_kinds: kinds } } },
+    { type: "event_msg", payload: { type: "item_completed", thread_id: sourceThread, turn_id: turn, item: canonical } },
+    { type: "event_msg", payload: { type: "item_completed", thread_id: sourceThread, turn_id: turn,
+      item: { type: "AgentMessage", id: "canonical-answer", phase: "final_answer", content: [{ type: "Text", text: "Synthetic historical answer" }] } } },
+    { type: "event_msg", payload: { type: "task_complete", turn_id: turn } }];
+  modify(frames);
+  const raw = Buffer.from(frames.map((frame, ordinal) => JSON.stringify({ ordinal, ...frame }) + "\n").join(""));
+  const originals = [{ rolloutId: sourceThread, threadId: sourceThread, raw, sha256: historyHash(raw) }];
+  return { payload: { threadIds: [sourceThread], selectedRolloutId: sourceThread }, originals,
+    proof: resolveCodexPhysicalLineage({ originals, rolloutId: sourceThread }) };
+}
+function encodeRichImageNative(native, converter = CODEX_HYBRID_IMAGE_CONVERTER) {
+  return encodeCodexHybrid({ read: readCodexHybridPhysical({ native, threadId: sourceThread, converter }),
+    targetId: "01900000-0000-7000-8000-000000000073", cwd: "C:/synthetic", createdAt: "2026-11-07T00:00:00.000Z" });
+}
+
+test("baseline JPEG qualification reads coefficients, bounds geometry, and preserves prior codec profiles", () => {
+  for (const color of [false, true]) {
+    const bytes = tinyBaselineJpeg({ color }), before = Buffer.from(bytes), valid = inspectDerivedBaselineJpeg(bytes);
+    assert.equal(valid.valid, true); assert.equal(valid.coefficientBlocks, color ? 6 : 1);
+    assert.equal(valid.rasterDecoded, false); assert.equal(valid.providerImageProcessingVerified, false);
+    assert.equal(inspectDerivedInlineImage("image/jpeg", bytes).code, "DERIVED_IMAGE_CODEC_VALIDATION_UNQUALIFIED");
+    assert.equal(inspectDerivedInlineImage("image/jpeg", bytes, "png-and-baseline-jpeg-v1").valid, true);
+    for (const invalid of [bytes.subarray(0, bytes.length - 1), Buffer.concat([bytes, Buffer.from([0])]),
+      Buffer.concat([Buffer.from([0, 0]), bytes.subarray(2)])]) assert.equal(inspectDerivedBaselineJpeg(invalid).valid, false);
+    const earlyMarker = Buffer.from(bytes); earlyMarker[earlyMarker.length - 3] = 255;
+    assert.equal(inspectDerivedBaselineJpeg(earlyMarker).valid, false);
+    const badTable = Buffer.from(bytes), dht = badTable.indexOf(Buffer.from([255, 196])); badTable[dht + 5] = 255;
+    assert.equal(inspectDerivedBaselineJpeg(badTable).valid, false);
+    const progressive = Buffer.from(bytes), sof = progressive.indexOf(Buffer.from([255, 192])); progressive[sof + 1] = 194;
+    assert.equal(inspectDerivedBaselineJpeg(progressive).code, "DERIVED_JPEG_MARKER_UNQUALIFIED");
+    const geometry = Buffer.from(bytes); geometry[sof + 5] = 255; geometry[sof + 6] = 255; geometry[sof + 7] = 255; geometry[sof + 8] = 255;
+    assert.equal(inspectDerivedBaselineJpeg(geometry).code, "DERIVED_JPEG_DECODE_STORAGE_LIMIT");
+    assert.deepEqual(bytes, before);
+  }
+  assert.equal(inspectDerivedInlineImage("image/jpeg", Buffer.from(png, "base64"), "png-and-baseline-jpeg-v1").code, "DERIVED_JPEG_SIGNATURE_INVALID");
+});
+
+test("hybrid v3 accepts only exactly recorded legacy settings omissions without author inference", () => {
+  for (const version of ["0.148.0-alpha.15", "0.149.0-alpha.4.3"]) {
+    const native = richImageNative({ version, settings: {}, images: [] });
+    const encoded = encodeRichImageNative(native);
+    try { assert.equal(encoded.publicationReady, true);
+      assert.ok(encoded.diagnostics.some(row => row.code === "HYBRID_LEGACY_SETTINGS_THREAD_ID_NOT_RECORDED" && row.threadIdentityInferred === false));
+    } finally { releaseHistoryBytes(encoded.raw); }
+    for (const converter of ["codex-claude-physical-hybrid-v1", CODEX_HYBRID_TEXT_CONVERTER])
+      assert.throws(() => encodeRichImageNative(native, converter), { code: "PHYSICAL_ITEM_NATIVE_IDENTITY_MISMATCH" });
+    for (const id of [null, "malformed", branchThread]) assert.throws(() => encodeRichImageNative(richImageNative({ version,
+      settings: { thread_id: id }, images: [] })), { code: "PHYSICAL_ITEM_NATIVE_IDENTITY_MISMATCH" });
+  }
+  assert.throws(() => encodeRichImageNative(richImageNative({ settings: {}, images: [] })), { code: "PHYSICAL_ITEM_NATIVE_IDENTITY_MISMATCH" });
+  const unknown = encodeRichImageNative(richImageNative({ version: "0.148.0-alpha.15", settings: { thread_settings: { unknown_policy: "not authority" } }, images: [] }));
+  try { assert.equal(unknown.publicationReady, false); assert.ok(unknown.diagnostics.some(row => row.code === "HYBRID_PROVIDER_SETTINGS_FIELDS_UNQUALIFIED")); }
+  finally { releaseHistoryBytes(unknown.raw); }
+  assert.throws(() => encodeRichImageNative(richImageNative({ images: [], modify: frames => { frames[4].payload.thread_id = branchThread; } })), { code: "AUTHORED_SOURCE_IDENTITY_UNQUALIFIED" });
+});
+
+test("hybrid v3 proves canonical image references against exact unique wire bytes without file access", () => {
+  const jpeg = "data:image/jpeg;base64," + tinyBaselineJpeg().toString("base64"), urls = ["data:image/png;base64," + png, jpeg];
+  const native = richImageNative({ images: urls }), before = historyHash(native.originals[0].raw), encoded = encodeRichImageNative(native);
+  try {
+    assert.equal(encoded.publicationReady, true, JSON.stringify(encoded.diagnostics.filter(row => row.blocksPublication)));
+    const user = encoded.rows.find(row => row.type === "user"); assert.equal(user.type, "user");
+    assert.deepEqual(user.message.content.map(part => part.type), ["text", "text", "image", "text", "image"]);
+    assert.deepEqual(user.message.content.filter(part => part.type === "image").map(part => "data:" + part.source.media_type + ";base64," + part.source.data), urls);
+    assert.equal(encoded.hybridCoverage.authored.completeAuthoredMessageCoverage, true);
+    assert.equal(encoded.hybridCoverage.authored.allSourceContentPartsAreText, false);
+    assert.equal(encoded.hybridCoverage.authored.sourceImageParts, 2);
+    assert.equal(encoded.hybridCoverage.authored.imageByteTransportVerified, true);
+    assert.ok(encoded.hybridCoverage.authored.imageSourceAssociations.every(link => link.unique));
+    assert.equal(historyHash(native.originals[0].raw), before);
+  } finally { releaseHistoryBytes(encoded.raw); }
+  const old = encodeRichImageNative(native, CODEX_HYBRID_TEXT_CONVERTER);
+  try { assert.equal(old.publicationReady, false); } finally { releaseHistoryBytes(old.raw); }
+  const failures = [frames => { frames[3].payload.content[1].text += "mismatch"; },
+    frames => { frames[3].payload.content[3].text = "wrong closing wrapper"; },
+    frames => { frames[3].payload.content[2].detail = "low"; },
+    frames => { frames[3].payload.internal_chat_message_metadata_passthrough.content_item_kinds[2] = "harness"; },
+    frames => { frames[3].payload.internal_chat_message_metadata_passthrough.turn_id = "different-turn"; },
+    frames => { frames[4].payload.item.content[0].text_elements = [{ unsupported: true }]; },
+    frames => { frames[3].payload.content[2].image_url = "data:image/png;base64," + tinyBaselineJpeg().toString("base64"); },
+    frames => { frames.splice(3, 0, structuredClone(frames[3])); }];
+  for (const modify of failures) {
+    const source = richImageNative({ modify }), digest = historyHash(source.originals[0].raw), bad = encodeRichImageNative(source);
+    try { assert.equal(bad.publicationReady, false); assert.equal(historyHash(source.originals[0].raw), digest); }
+    finally { releaseHistoryBytes(bad.raw); }
+  }
+  const distinct = encodeRichImageNative(richImageNative({ modify: frames => {
+    const wire = structuredClone(frames[3]), user = structuredClone(frames[4]);
+    wire.payload.id += "-distinct"; user.payload.item.id += "-distinct";
+    wire.payload.content[0].text = user.payload.item.content[0].text = "Distinct same-turn authored message";
+    frames.splice(5, 0, wire, user);
+  } }));
+  try { assert.equal(distinct.publicationReady, true); assert.equal(distinct.hybridCoverage.authored.sourceImageParts, 2); }
+  finally { releaseHistoryBytes(distinct.raw); }
+});
+
+
+test("same-process preparation returns the final inspected artifact while public derive stays bounded", async t => {
+  const f = await derivedFixture(t), args = { bundleRoot: f.bundleRoot, root: f.f.root, threadIds: [sourceThread] };
+  const artifact = prepareProjectNativeHistory(args), result = deriveProjectNativeHistory(args);
+  assert.deepEqual(projectNativeDerivationSummary(artifact), result);
+  assert.ok(!("raw" in result) && !("rows" in result) && !("check" in result) && !("recheck" in result));
+  artifact.check(); artifact.recheck();
+  const file = path.join(artifact.directory, "conversation.jsonl"); fs.appendFileSync(file, " ");
+  assert.throws(() => artifact.recheck(), { code: "DERIVED_ARTIFACT_TAMPER" });
+});
+
+test("prepared artifact never waives current source, target, authority or cancellation checks", async t => {
+  for (const mode of ["source", "target", "authority", "cancel"]) {
+    const f = await derivedFixture(t); let allowed = true; const abort = new AbortController();
+    const artifact = prepareProjectNativeHistory({ bundleRoot: f.bundleRoot, root: f.f.root, threadIds: [sourceThread],
+      signal: abort.signal, assertCurrentAuthority: () => allowed });
+    const nativeHome = home(f);
+    if (mode === "source") {
+      const entry = artifact.selected.native.payload.files[0]; fs.writeFileSync(path.join(artifact.selected.native.directory, "objects", entry.sha256 + ".bin"), "changed source");
+      assert.throws(() => artifact.recheck());
+    } else if (mode === "target") {
+      fs.renameSync(f.f.root, f.f.root + ".prior"); fs.mkdirSync(f.f.root);
+      await assert.rejects(publishClaudeDerived({ artifact, nativeHome, root: f.f.root, host: host(artifact) }), { code: "DERIVED_TARGET_PROJECT_ROOT_CHANGED" });
+    } else if (mode === "authority") {
+      allowed = false; assert.throws(() => artifact.check(), { code: "NATIVE_HISTORY_AUTHORITY_DENIED" });
+    } else {
+      abort.abort(); assert.throws(() => artifact.check(), { code: "NATIVE_HISTORY_OPERATION_CANCELLED" });
+    }
+    assert.deepEqual(fs.readdirSync(nativeHome), []);
+  }
+});
+
+function legacyHybridNative({ version = "0.149.0-alpha.4.3", modify = () => {} } = {}) {
+  const frames = [
+    { type: "session_meta", payload: { id: sourceThread, session_id: sourceThread, cli_version: version, history_mode: "paginated", history_base: null } },
+    { type: "event_msg", payload: { type: "task_started", turn_id: "legacy-turn" } },
+    { type: "event_msg", payload: { type: "item_completed", thread_id: sourceThread, turn_id: "legacy-turn",
+      item: { type: "UserMessage", id: "canonical-user", content: [{ type: "text", text: "Synthetic original user input" }] } } },
+    { type: "event_msg", payload: { type: "item_completed", thread_id: sourceThread, turn_id: "legacy-turn",
+      item: { type: "AgentMessage", id: "canonical-assistant", phase: "final_answer", content: [{ type: "Text", text: "Synthetic canonical response" }] } } },
+    { type: "response_item", payload: { type: "message", id: "distinct-wire-assistant", role: "assistant", phase: "final_answer",
+      content: [{ type: "output_text", text: "Synthetic canonical response" }], internal_chat_message_metadata_passthrough: { turn_id: "legacy-turn" } } },
+    { type: "event_msg", payload: { type: "task_complete", turn_id: "legacy-turn" } },
+  ];
+  modify(frames);
+  const raw = Buffer.from(frames.map((frame, ordinal) => JSON.stringify({ ordinal, ...frame }) + "\n").join(""));
+  const originals = [{ rolloutId: sourceThread, threadId: sourceThread, raw, sha256: historyHash(raw) }];
+  return { payload: { threadIds: [sourceThread], selectedRolloutId: sourceThread }, originals,
+    proof: resolveCodexPhysicalLineage({ originals, rolloutId: sourceThread }) };
+}
+function encodeLegacyHybridNative(native, converter = CODEX_HYBRID_CONVERTER) {
+  const read = readCodexHybridPhysical({ native, threadId: sourceThread, converter });
+  return { read, encoded: encodeCodexHybrid({ read, targetId: "01900000-0000-7000-8000-000000000073",
+    cwd: "C:/synthetic", createdAt: "2026-11-07T00:00:00.000Z" }) };
+}
+
+test("hybrid v4 binds only adjacent unique legacy assistant projections without changing original IDs or v3", () => {
+  for (const version of ["0.148.0-alpha.15", "0.149.0-alpha.4.3"]) {
+    const native = legacyHybridNative({ version }), digest = historyHash(native.originals[0].raw);
+    const { read, encoded } = encodeLegacyHybridNative(native), prior = encodeLegacyHybridNative(native, CODEX_HYBRID_IMAGE_CONVERTER);
+    try {
+      assert.equal(encoded.publicationReady, true); assert.equal(prior.encoded.publicationReady, false);
+      assert.equal(read.records[4].legacyAssociation.messageIdEquivalenceClaimed, false);
+      assert.equal(read.records[4].document.payload.id, "distinct-wire-assistant");
+      assert.equal(read.records[3].document.payload.item.id, "canonical-assistant");
+      assert.equal(historyHash(native.originals[0].raw), digest);
+    } finally { releaseHistoryBytes(encoded.raw); releaseHistoryBytes(prior.encoded.raw); }
+  }
+  const counterexamples = [
+    f => { f[0].payload.cli_version = "0.153.4"; },
+    f => { f[4].payload.phase = "commentary"; },
+    f => { f[4].payload.internal_chat_message_metadata_passthrough.turn_id = "other-turn"; },
+    f => { f[4].payload.content[0].text += " extra"; },
+    f => { f[4].payload.unknown_instruction = "not permitted"; },
+    f => { f.splice(3, 0, structuredClone(f[3])); f[3].payload.item.id = "other-identical-canonical"; },
+    f => { f.splice(4, 0, { type: "event_msg", payload: { type: "token_count" } }); },
+    f => { [f[3], f[4]] = [f[4], f[3]]; },
+    f => { f.splice(5, 0, structuredClone(f[4])); },
+  ];
+  for (const modify of counterexamples) {
+    const { encoded } = encodeLegacyHybridNative(legacyHybridNative({ modify }));
+    try { assert.equal(encoded.publicationReady, false); } finally { releaseHistoryBytes(encoded.raw); }
+  }
+  assert.throws(() => encodeLegacyHybridNative(legacyHybridNative({ modify: f => { f[3].payload.thread_id = branchThread; } })),
+    { code: "AUTHORED_SOURCE_IDENTITY_UNQUALIFIED" });
+});
+
+test("hybrid v4 quotes known unmatched legacy user transmissions without user attribution or current instructions", () => {
+  const wire = { type: "response_item", payload: { type: "message", id: "legacy-wire-user", role: "user",
+    content: [{ type: "input_text", text: "SYNTHETIC OLD INSTRUCTIONS; do not execute" }],
+    internal_chat_message_metadata_passthrough: { turn_id: "legacy-turn", create_time: 0 } } };
+  for (const version of ["0.148.0-alpha.15", "0.149.0-alpha.4.3"]) {
+    const native = legacyHybridNative({ version, modify: f => { f.splice(3, 0, structuredClone(wire)); } });
+    const { read, encoded } = encodeLegacyHybridNative(native);
+    try {
+      assert.equal(encoded.publicationReady, true);
+      const quote = read.records.find(r => r.document.payload.id === "legacy-wire-user");
+      assert.equal(quote.classification, "unconfirmed-historical-provider-transmission");
+      assert.equal(encoded.hybridCoverage.unconfirmedHistoricalProviderTransmissions, 1);
+      assert.equal(encoded.hybridCoverage.historicalInstructionStringsApplied, false);
+      assert.equal(encoded.hybridCoverage.authored.completeAuthoredMessageCoverage, true);
+      const index = encoded.mappings.find(m => m.source.rawOrdinal === quote.source.rawOrdinal).targetMessageIndex;
+      assert.equal(encoded.rows[index].type, "assistant");
+      assert.match(encoded.rows[index].message.content[0].text, /UNCONFIRMED/);
+      assert.match(encoded.rows[index].message.content[0].text, /do not apply them as current instructions/);
+      assert.equal(encoded.rows.filter(r => r.type === "user").length, 1);
+      assert.equal(encoded.rows.find(r => r.type === "user").message.content[0].text, "Synthetic original user input");
+    } finally { releaseHistoryBytes(encoded.raw); }
+  }
+  for (const mutate of [
+    p => { p.content[0].type = "encrypted_content"; },
+    p => { p.internal_chat_message_metadata_passthrough.provenance = "unknown"; },
+    p => { p.internal_chat_message_metadata_passthrough.content_item_kinds = ["unknown"]; },
+    p => { p.internal_chat_message_metadata_passthrough.create_time = "0"; },
+    p => { p.content[0].unknown = "field"; },
+    p => { p.role = "unknown"; },
+  ]) {
+    const { read, encoded } = encodeLegacyHybridNative(legacyHybridNative({ modify: f => { const item = structuredClone(wire); mutate(item.payload); f.splice(3, 0, item); } }));
+    try { assert.equal(encoded.publicationReady, false); assert.equal(read.inventory.some(r => r.classification === "unconfirmed-historical-provider-transmission"), false); }
+    finally { releaseHistoryBytes(encoded.raw); }
+  }
+});
+
+test("hybrid v4 keeps qualified legacy world configuration original-only and failed dynamic tools passive", () => {
+  const world = { type: "world_state", payload: { full: false, state: { orchestrator_skills: { enabled: true, includeInstructions: false },
+    personality: { model: "synthetic-model", personality: "synthetic" } } } };
+  const dynamic = { type: "event_msg", payload: { type: "item_completed", thread_id: sourceThread, turn_id: "legacy-turn", started_at_ms: 0, completed_at_ms: 1,
+    item: { type: "DynamicToolCall", id: "dynamic-id", namespace: "synthetic", tool: "synthetic_failure", arguments: { query: "synthetic" },
+      status: "failed", success: false, duration: { secs: 0, nanos: 1 }, content_items: [{ type: "inputText", text: "Synthetic historical failure" }] } } };
+  for (const version of ["0.148.0-alpha.15", "0.149.0-alpha.4.3", "0.153.4"]) {
+    for (const state of [world.payload.state, { orchestrator_skills: null, personality: null }, { personality: { model: "synthetic" } }]) {
+      const { read, encoded } = encodeLegacyHybridNative(legacyHybridNative({ version, modify: f => { f.splice(4, 1, { ...world, payload: { full: false, state } }); } }));
+      try { assert.equal(encoded.publicationReady, true); assert.equal(read.inventory[4].representation, "provider-envelope-original-only");
+        assert.equal(encoded.rows.some(r => JSON.stringify(r).includes("orchestrator_skills")), false); }
+      finally { releaseHistoryBytes(encoded.raw); }
+    }
+  }
+  for (const version of ["0.148.0-alpha.15", "0.163.0-alpha.10.2"]) {
+    const { encoded } = encodeLegacyHybridNative(legacyHybridNative({ version, modify: f => { f.splice(4, 1, structuredClone(dynamic)); } }));
+    try { assert.equal(encoded.publicationReady, true); assert.equal(encoded.hybridCoverage.nativeToolRecords, 0);
+      assert.ok(encoded.rows.some(r => r.type === "assistant" && r.message.content.some(b => b.type === "text" && b.text.includes('"status":"failed"'))));
+      assert.ok(encoded.rows.every(r => r.message.content.every(b => !["tool_use", "tool_result"].includes(b.type)))); }
+    finally { releaseHistoryBytes(encoded.raw); }
+  }
+  for (const bad of [
+    { ...world, payload: { full: false, state: { personality: { model: "s", extra: true } } } },
+    { ...world, payload: { full: false, state: { orchestrator_skills: { enabled: true } } } },
+    { ...dynamic, payload: { ...dynamic.payload, item: { ...dynamic.payload.item, unknown: true } } },
+    { ...dynamic, payload: { ...dynamic.payload, item: { ...dynamic.payload.item, content_items: [{ type: "encrypted_content", text: "never imported" }] } } },
+  ]) {
+    const { encoded } = encodeLegacyHybridNative(legacyHybridNative({ version: "0.148.0-alpha.15", modify: f => { f.splice(4, 1, bad); } }));
+    try { assert.equal(encoded.publicationReady, false); } finally { releaseHistoryBytes(encoded.raw); }
+  }
+});
+
+test("hybrid v4 quotes the recorded unmatched legacy assistant transmission without importing adjacent reasoning", () => {
+  const modify = f => {
+    f[4].payload.content[0].text = "SYNTHETIC unmatched historical transmission";
+    f[4].payload.internal_chat_message_metadata_passthrough.content_item_kinds = ["unknown"];
+    f.splice(4, 0, { type: "response_item", payload: { type: "reasoning", encrypted_content: "PRIVATE_REASONING_NOT_IMPORTED" } });
+  };
+  const { read, encoded } = encodeLegacyHybridNative(legacyHybridNative({ version: "0.148.0-alpha.15", modify }));
+  try {
+    assert.equal(encoded.publicationReady, true);
+    const entry = read.inventory.find(r => r.classification === "unconfirmed-historical-provider-transmission");
+    assert.equal(entry.recordedProviderRole, "assistant"); assert.equal(entry.reconstructedAssistantMessage, false);
+    assert.equal(entry.relationshipToCanonicalAuthoredMessage, "unconfirmed");
+    assert.equal(encoded.hybridCoverage.unconfirmedHistoricalProviderTransmissions, 1);
+    assert.ok(encoded.rows.some(r => r.message.content.some(b => b.text?.includes("UNCONFIRMED"))));
+    assert.ok(!encoded.raw.includes(Buffer.from("PRIVATE_REASONING_NOT_IMPORTED")));
+    assert.equal(read.inventory.find(r => r.itemType === "reasoning").classification, "private-original-only");
+  } finally { releaseHistoryBytes(encoded.raw); }
+  for (const mutate of [
+    f => { f[0].payload.cli_version = "0.149.0-alpha.4.3"; },
+    f => { f[5].payload.phase = "commentary"; },
+    f => { f[5].payload.internal_chat_message_metadata_passthrough.content_item_kinds = ["private"]; },
+    f => { f[5].payload.internal_chat_message_metadata_passthrough.provenance = "unknown"; },
+    f => { f[5].payload.content[0].type = "encrypted_content"; },
+    f => { f.splice(4, 1, { type: "event_msg", payload: { type: "token_count" } }); },
+  ]) {
+    const result = encodeLegacyHybridNative(legacyHybridNative({ version: "0.148.0-alpha.15", modify: f => { modify(f); mutate(f); } }));
+    try { assert.equal(result.encoded.publicationReady, false);
+      assert.equal(result.read.inventory.some(r => r.classification === "unconfirmed-historical-provider-transmission"), false); }
+    finally { releaseHistoryBytes(result.encoded.raw); }
+  }
 });

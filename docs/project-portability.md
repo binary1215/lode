@@ -404,9 +404,10 @@ PNG qualification checks signature, chunk CRCs, header/data ordering, bounded
 inflate and scanline framing. This is structural integrity, not proof that a
 provider/model can process the image. Damaged bytes remain in the captured
 original and block derivative publication; they are not repaired or dropped into
-an apparently complete conversation. JPEG/GIF/WebP bytes are currently outside
-this codec validation scope: they are retained and diagnosed as unqualified,
-not missing. Existing qualified inputs retain profile v2. Pinned completion
+an apparently complete conversation. The earlier codec profiles keep JPEG/GIF/WebP
+outside their validation scope; those bytes are retained as unqualified, not missing.
+The separate hybrid-v3 profile below qualifies a narrow baseline JPEG format.
+Existing qualified inputs retain profile v2. Pinned completion
 observations, original line-byte hashing and wire-only outcome preservation use
 profile v3. A completion observation ordinal is not a wire call-start ordinal:
 the decoder associates only unique exact same-turn calls, arguments and outputs.
@@ -786,17 +787,186 @@ scopes; conversation grouping does not merge code trees, owners or P2 direction.
 Incomplete trailing source bytes remain in P3 and appear under
 `remainingSourceUncertainties`; they are not an automatic prefix-publication
 gate. `pendingThreadIds` describes work remaining for the requested action.
+
+Large physical histories use private finite-prefix captures, streamed hashing
+and file-backed frame references. They do not inherit the 512MiB whole-JSON
+snapshot limit. IO buffers are 1MiB and a decoded JSONL frame remains bounded
+at 64MiB; a larger frame is not silently truncated or skipped. Temporary
+captures/output spools are released after archive consumption or failure.
+Small fragment getters reuse at most a 1MiB private read window per file owner.
+Each access checks current authority and root/file identity, and returns a copy.
+Full chunk reads and final hashes always reread actual bytes. A failed owner
+keeps its original error; a cached window cannot revive it or grant permission.
+The record audit walks exact selected JSONL byte ranges in sequence, checking
+every frame address/hash and current scope, then freshly hashing each original.
+It never merges equal ordinals across physical rollouts or reads a parent future.
+The optional JavaScript prepare API returns the final inspected artifact for
+immediate use in the same process. Existing derive calls and CLI/MCP still return
+only summaries. Consumers recheck all source/artifact bytes and current scope
+before effects. A saved summary or another process must inspect again; this
+object is neither a durable verification token nor recovery/permission authority.
+Live export batches physical packet preparation between full observation
+verification before and after the batch. Per-source selection, lineage, digest
+and current checks and final archive verification remain; no earlier packet is
+returned when a later source or final reconciliation fails. Optional Host
+`onProcess` storage observations expose exact temporary ownership for cleanup
+after process loss. They are P5 telemetry, never recovery direction or a new
+logging prerequisite for ordinary work.
+
+The separate `codex-claude-physical-hybrid-v3` converter supports recorded
+settings envelopes without a thread ID only for exact creation versions
+`0.148.0-alpha.15` and `0.149.0-alpha.4.3`. It never fills the missing ID or treats
+the settings as current instructions. Explicit malformed/foreign IDs, modern
+omissions and unknown settings fields keep their existing rejection/diagnostic.
+Prior hybrid-v1/v2 artifacts keep their original representation and identity.
+
+For canonical local-image references, the new profile proves exact user text,
+recorded wrapper path/number/order, user-origin content kinds, same owner/turn,
+adjacent original addresses and a unique exact wire association. A digest index
+only finds candidates; every hit is compared against the complete source fields.
+Canonical reference fields stay explicitly quoted and the captured inline bytes
+stay in the same original user message. No historical path is opened, downloaded
+or assumed equal to a current file. Unknown or ambiguous evidence is retained
+and diagnosed, never silently replaced with an unavailable-image label.
+PNG integrity checks remain unchanged. JPEG support is limited to one baseline
+8-bit interleaved scan, one or three components and qualified quantization/Huffman
+tables. It reads every entropy-coded coefficient and verifies MCU boundaries,
+byte stuffing, fill bits and exact end. Progressive/restart/other unsupported
+forms remain unqualified. It does not allocate a raster, re-encode bytes or claim
+provider image processing; official SDK and actual screen checks remain separate.
+Direct callers of `readCodexLiveProjectSource` release the observation with
+`releaseCodexLiveProjectObservation` in `finally`; the combined live export
+does this itself. Retain the finished archive for subsequent work.
+
+Hybrid-v6 retains a recorded tool argument string that is not valid JSON as
+quoted historical data. It never repairs the input, emits it as a native tool
+call or infers the historical outcome. In this v6 read, the strict reader records a blocking
+source-addressed diagnostic for that input only; v6's historical view preserves
+the call and result originals. Outer JSON, UTF8, digest, identity, permission,
+cancellation and numeric-precision errors keep their existing handling.
+Hybrid-v1 through v5 preserve their previous representation and error behavior.
+V6 also recognizes the exact provider-context envelope described below when
+observed in a container created by `0.148.0-alpha.15`; v5 keeps its existing
+`0.153.4` boundary. A container creation version does not identify the producer
+of every later record. No record-producer version, human attribution or current
+instruction authority is inferred from this additional observation.
+
+Hybrid-v5 additionally recognizes the observed Codex `0.153.4` provider context
+envelope whose three text parts are attributed, in order, to
+`plugins.recommendations`, `agents_md.instructions` and
+`environments.environment_context`. Despite its recorded wire `user` role, it
+stays only in the unchanged original companion and exact record ledger; it is
+not reconstructed as a human message or copied into native instructions. The
+outer record fields (only ordinal/type/payload and an optional timestamp string),
+version, exact payload/metadata fields and types, and part/kind count and order
+must match. Unknown fields or mixed user/private content kinds remain
+unqualified. Hybrid-v1 through v4 retain their original output and identity.
+
+Hybrid-v4 adds explicitly versioned historical representations while retaining
+hybrid-v1/v2/v3 output and identity. For creation versions `0.148.0-alpha.15`
+and `0.149.0-alpha.4.3`, an assistant wire message with a different ID can
+corroborate exactly one canonical message only with the same physical owner,
+recorded turn, unchanged phase and complete qualified text projection. The
+canonical record must immediately precede the wire record in both original
+ordinal and byte order; one-to-one use and original order are checked. No
+message ID is rewritten or claimed equivalent. Ambiguity is not a match.
+
+Known legacy user transmissions whose canonical relationship cannot be proved
+are preserved as explicitly labelled historical provider data, not attributed
+as reconstructed user input. A narrow `0.148.0-alpha.15` assistant transmission
+with recorded `unknown` content kind can likewise remain an unconfirmed quote
+when immediately preceded by an original-only reasoning record. The reasoning
+itself is not imported. This is not a rule for arbitrary unknown content kinds,
+roles, provenance, fields or encrypted content. Native quotes are historical
+assistant data; their labels, inventory and coverage distinguish them from
+canonical authored messages, current answers, approval and recovery direction.
+Old instruction strings may exist inside these quotes; they are not applied as
+current instructions. Complete canonical authored coverage does not establish
+the attribution of these additional transmissions.
+
+The observed `personality` and `orchestrator_skills` configuration shapes in
+creation versions `0.148.0-alpha.15`, `0.149.0-alpha.4.3` and `0.153.4` stay
+original-only. Recorded failed `DynamicToolCall` shapes in `0.148.0-alpha.15`
+and `0.163.0-alpha.10.2` are quoted in full as passive history, including
+status, success, error and duration. They never become new native tool calls or
+successful execution. Unknown fields and unqualified representations remain
+diagnosed with their originals preserved.
+
+Same-process inspected artifacts freeze metadata, mapping, rows and callbacks
+without evaluating lazy bodies. Publication accepts the original privately
+registered inspected object, not a clone, JSON summary or replacement callback.
+Rechecks verify current files and detached small Buffer bytes before effects;
+this identity check grants no permission. A later process inspects originals
+again. Target paths use JSON serialization and official native handoff; running
+Desktop registry files are never directly patched to register a conversation.
+
+Live physical intake records `CodexSelectedHistoryAddressEvidence`: exact
+selected typed addresses and projection watermarks, not another copy of the
+canonical database item bodies. Original bodies come from the verified raw
+prefixes; canonical-row/body equivalence remains unclaimed. Offline full
+canonical capture is a separate existing path. Physical filenames may end in
+`-<physical UUID>.jsonl` or `_<physical UUID>.jsonl`; selected logical state,
+header identity, ancestor cutoff bytes/ordinals and digests must still agree.
+Historical paginated creation versions `0.148.0-alpha.15`, `0.149.0-alpha.4.3`
+and `0.153.4` use the
+same explicit format checks; this does not relax the installed SQLite profile.
+
+An explicitly selected `.jsonl.zst` ancestor uses the official Node Zstd stream
+adapter with a bounded window and shared operation deadline. It stores only the
+requested decoded prefix, verifies its LF/ordinal/cutoff and reconciles the exact
+compressed input range observed. P3 records distinguish filesystem-prefetched
+input from decoder-consumed bytes and bind their digest/identity to the decoded
+prefix. Original compressed files stay unchanged at source; compressed containers
+and decoded parent futures are not copied into the archive. The stored prefix is
+labelled `zstd-decoded-selected-prefix`, not an original uncompressed file.
+Early cutoff does not verify a complete compressed frame/container checksum.
+Archive reads verify stored prefix bytes/lineage and the typed encoding record;
+they do not claim offline reproduction from a stored compressed container.
+Permission, cancellation and decoder errors remain failures, distinct from the
+deliberate cutoff. Discovery returns exact compressed names for HEAD to include
+in its existing explicit ancestor scope; users need no JSON or file renaming.
+
+Lode's file-backed processing does not make the official Claude SDK a streaming
+reader. SDK 0.3.234 loads and reconstructs the selected conversation before
+applying offset/limit. Verify the actual emitted output with the pinned reader
+in a supervised process, and report its resource/format failure separately.
+Small SDK pages, a successful archive or Lode's exact digest are not proof of
+SDK success, Desktop display or model continuation.
 Unknown prior same-ID or opaque operations stay scoped to that conversation's
 native effect. Their first unresolved observation is retained once in the local
 P5 store; a later packet that omits that history does not clear it. Old paths and
 inode numbers do not prove another PC or reset an attempt. If all evidence is
 erased, global exactly-once reconstruction is impossible and is not claimed.
 
+A historical target ID is qualified only against the exact original publication
+record, its historical manifest and intent, input digest, captured source and
+selected conversation, supported converter, deterministic native ID and stored
+operation namespace. A different UUID alone does not establish an unrelated
+attempt. Missing proof, unknown schema/profile, malformed content or inconsistent
+bindings remain opaque; actual original-byte, permission and identity failures
+remain primary errors. This pure classification supplies no lease or retry
+permission and does not change the current conversation's source representation.
+Unknown or partial entries inside managed P5 namespaces retain original file
+bytes where supported and explicit scope metadata. Unclassified entries in old
+archives remain coverage uncertainty, never a newly invented executed attempt
+or an apparently safe empty history. Ordinary valid transfers need no extra user
+form or approval; only the affected uncertain effect remains pending.
+
 The archive and derivative evidence never grant execution permission or P2
 recovery. Host storage, journal results and source transcripts do not become
 ReviewDecision, Product Canon, current Session selection or task completion.
-The local candidate connects these surfaces; actual user migration, Desktop
-display and model continuation require their separately authorized verification.
+The current candidate was exercised on three finite captured conversations under
+the qualified Claude CLI 2.1.317 / Agent SDK 0.3.234 profile. All 250,631 emitted
+messages matched the official reader. The official Desktop local `/resume`
+picker and actual conversation display were observed for all three, with exact
+native-ID bindings and original prefixes verified unchanged after viewing. No
+new model prompt was submitted during this check.
+
+This validates those selected copies and their observed display. Future model
+use of the complete migrated context, automatic synchronization of later source
+messages, and other client versions remain unverified. New targets still need
+their own storage, reader and display observations; a saved result is not a
+reason to replay publication or automatically continue a task.
 
 When code/docs are requested, HEAD supplies `workspace_sources` with each current
 Project workspace and its approved repository-owned path inventory during live
@@ -851,7 +1021,7 @@ explicit common Session staging/import remains the way to recover original P2.
 
 ### Captured conversation display names
 
-New physical-v3 and hybrid-v2 derivations use the captured selected-state name as list metadata, trimmed using official SDK semantics. Long and duplicate names remain valid. With no display name, a generic label plus the source ID is used; the first prompt is never a fallback because it can contain sensitive input. Native IDs and recorded fork ancestry remain separate provenance.
+Physical-v3, hybrid-v2 and hybrid-v3 derivations use the captured selected-state name as list metadata, trimmed using official SDK semantics. Long and duplicate names remain valid. With no display name, a generic label plus the source ID is used; the first prompt is never a fallback because it can contain sensitive input. Native IDs and recorded fork ancestry remain separate provenance.
 
 Historical physical-v1/v2 and hybrid-v1 retain their original bytes and reproduction rules. A naming upgrade does not republish a delivered conversation under a new ID. Default derivation resumes an existing exact profile; ambiguous multiple profiles require an exact selection.
 

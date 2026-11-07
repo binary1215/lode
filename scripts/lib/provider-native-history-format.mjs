@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { historyLines } from "./native-history-bytes.mjs";
 const fail = code => { throw Object.assign(new Error(code), { code }); };
 const object = value => value && typeof value === "object" && !Array.isArray(value);
 const id = value => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$/u.test(value);
@@ -11,22 +12,24 @@ const decode = raw => {
 // Structural evidence only. These functions are not a substitute for the
 // installed official decoder, native list/history observation or model resume.
 export function decodeClaudeHistoryRecords(raw) {
-  const records = [];
+  return [...iterateClaudeHistoryRecords(raw)];
+}
+export function* iterateClaudeHistoryRecords(raw) {
   let lineNumber = 0;
-  for (const line of decode(raw).split(/\r?\n/u)) {
+  for (const bytes of historyLines(raw)) {
+    const line = decode(bytes);
     lineNumber++;
     if (!line.trim()) continue;
     let row;
     try { row = JSON.parse(line); } catch { fail("NATIVE_CLAUDE_JSONL_INCOMPLETE_OR_INVALID"); }
     if (!object(row) || typeof row.type !== "string") fail("NATIVE_CLAUDE_JSONL_RECORD_INVALID");
-    records.push({ record: row, line: lineNumber });
+    yield { record: row, line: lineNumber };
   }
-  return records;
 }
 export function inspectClaudeHistoryOriginal(raw, nativeId) {
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu.test(nativeId || "")) fail("NATIVE_CLAUDE_SELECTION_INVALID");
   const rows = [], uuids = new Map(), types = new Set(), sessions = new Set();
-  for (const { record: row, line: lineNumber } of decodeClaudeHistoryRecords(raw)) {
+  for (const { record: row, line: lineNumber } of iterateClaudeHistoryRecords(raw)) {
     types.add(row.type);
     if (typeof row.sessionId === "string") sessions.add(row.sessionId);
     if (["user", "assistant"].includes(row.type)) {
@@ -34,18 +37,20 @@ export function inspectClaudeHistoryOriginal(raw, nativeId) {
         || row.message.role !== row.type || !(typeof row.message.content === "string" || Array.isArray(row.message.content))) fail("NATIVE_CLAUDE_MESSAGE_INVALID");
       if (row.parentUuid != null && !id(row.parentUuid)) fail("NATIVE_CLAUDE_PARENT_INVALID");
       if (uuids.has(row.uuid)) fail("NATIVE_CLAUDE_DUPLICATE_MESSAGE_ID");
-      uuids.set(row.uuid, row);
+      uuids.set(row.uuid, { parentUuid: row.parentUuid });
       rows.push({ uuid: row.uuid, parentUuid: row.parentUuid ?? null, role: row.message.role, sessionId: typeof row.sessionId === "string" ? row.sessionId : null, line: lineNumber });
     }
   }
   if (!rows.length) fail("NATIVE_CLAUDE_NO_CONVERSATION_MESSAGES");
   const missingParents = [...new Set(rows.map(row => row.parentUuid).filter(parent => parent && !uuids.has(parent)))];
+  const visited = new Set();
   for (const row of rows) {
     const seen = new Set([row.uuid]); let parent = row.parentUuid;
-    while (parent && uuids.has(parent)) {
+    while (parent && uuids.has(parent) && !visited.has(parent)) {
       if (seen.has(parent)) fail("NATIVE_CLAUDE_PARENT_CYCLE");
       seen.add(parent); parent = uuids.get(parent).parentUuid;
     }
+    for (const uuid of seen) visited.add(uuid);
   }
   // A filename or metadata-only session ID cannot identify the selected
   // conversation. Forks may retain ancestor messages from another session.

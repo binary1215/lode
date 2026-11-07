@@ -1,4 +1,5 @@
 import { isDeepStrictEqual as equal } from "node:util";
+import crypto from "node:crypto";
 
 // Read-only format qualifications, pinned to openai/codex
 // f79b26ccbb3116b052544666a181012fb45dc49b. models.rs,
@@ -60,6 +61,58 @@ export function exactWireAuthoredProjection(payload, canonical) {
 
 export function canonicalUserBodyKey(item) {
   const text = textParts(item.content); return text === null ? null : JSON.stringify(text);
+}
+
+// A bounded index hint only. Every bucket hit still needs the exact matcher;
+// inline bytes are deliberately not proof that a historical path is current.
+export function localImageProjectionIndexKey(content, canonical = false) {
+  if (!Array.isArray(content)) return null;
+  if (!content.some(part => part?.type === (canonical ? "local_image" : "input_image"))) return null;
+  const digest = crypto.createHash("sha256"); let images = 0;
+  const add = (kind, text) => { digest.update(kind + ":" + Buffer.byteLength(text) + ":"); digest.update(text); };
+  for (const part of content) {
+    if (part?.type === (canonical ? "text" : "input_text") && typeof part.text === "string") add("text", part.text);
+    else if (canonical && part?.type === "local_image" && typeof part.path === "string") {
+      add("text", '<image name=[Image #' + ++images + '] path="' + part.path + '">');
+      add("image", "high"); add("text", "</image>");
+    } else if (!canonical && part?.type === "input_image" && part.detail === "high") { images++; add("image", "high"); }
+    else return null;
+  }
+  return images ? digest.digest("hex") : null;
+}
+
+// The recorded Codex local-image emitter, not a similarity/path lookup rule.
+// The caller separately proves exact original addresses, same owner/turn,
+// immediate physical adjacency and one-to-one use. No ID is manufactured.
+export function exactWireLocalImageProjection(payload, canonical, turnId) {
+  const metadata = payload?.internal_chat_message_metadata_passthrough;
+  if (payload?.type !== "message" || payload.role !== "user" || canonical?.type !== "UserMessage"
+    || typeof payload.id !== "string" || !payload.id || typeof turnId !== "string" || !turnId
+    || metadata?.turn_id !== turnId || !ownFields(metadata, ["turn_id", "create_time", "content_item_kinds"])
+    || !Array.isArray(payload.content) || !Array.isArray(canonical.content)
+    || !Array.isArray(metadata.content_item_kinds) || metadata.content_item_kinds.length !== payload.content.length) return null;
+  const images = [], kinds = []; let index = 0;
+  for (const [canonicalPartIndex, part] of canonical.content.entries()) {
+    if (part?.type === "text") {
+      const wire = payload.content[index];
+      if (!ownFields(part, ["type", "text", "text_elements"]) || typeof part.text !== "string"
+        || part.text_elements !== undefined && (!Array.isArray(part.text_elements) || part.text_elements.length)
+        || !ownFields(wire, ["type", "text"]) || wire.type !== "input_text" || wire.text !== part.text) return null;
+      kinds.push("user.text"); index++; continue;
+    }
+    if (!ownFields(part, ["type", "path"]) || part.type !== "local_image" || typeof part.path !== "string" || !part.path) return null;
+    const prefix = payload.content[index], image = payload.content[index + 1], suffix = payload.content[index + 2];
+    const ordinal = images.length + 1;
+    if (!ownFields(prefix, ["type", "text"]) || prefix.type !== "input_text"
+      || prefix.text !== '<image name=[Image #' + ordinal + '] path="' + part.path + '">'
+      || !ownFields(image, ["type", "image_url", "detail"]) || image.type !== "input_image" || image.detail !== "high"
+      || typeof image.image_url !== "string" || !/^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/]*={0,2}$/u.test(image.image_url)
+      || !ownFields(suffix, ["type", "text"]) || suffix.type !== "input_text" || suffix.text !== "</image>") return null;
+    images.push({ canonicalPartIndex, wireImageIndex: index + 1, wrapperOrdinal: ordinal });
+    kinds.push("user.text", "user.image", "user.text"); index += 3;
+  }
+  if (!images.length || index !== payload.content.length || !equal(kinds, metadata.content_item_kinds)) return null;
+  return { profile: "recorded-local-image-wrapper-v1", images, noPathLookup: true, imageByteEquivalenceToCurrentFileClaimed: false };
 }
 
 export function knownAgentRoutingRecord(payload) {

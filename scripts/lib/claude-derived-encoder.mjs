@@ -1,6 +1,5 @@
-import crypto from "node:crypto";
+import { historyHash, encodeHistoryLines, releaseHistoryBytes } from "./native-history-bytes.mjs";
 import { inspectClaudeHistoryOriginal } from "./provider-native-history-format.mjs";
-import { SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 import { inspectDerivedInlineImage } from "./derived-inline-image.mjs";
 
 export const CLAUDE_DERIVED_FORMAT = Object.freeze({
@@ -8,7 +7,7 @@ export const CLAUDE_DERIVED_FORMAT = Object.freeze({
   converter: "codex-claude-derived-v2", evidence: "requires-exact-official-reader-observation",
 });
 export const CODEX_COMPLETION_CONVERTER = "codex-claude-derived-v3";
-export const derivedHash = value => crypto.createHash("sha256").update(value).digest("hex");
+export const derivedHash = value => historyHash(value);
 export const derivedJson = value => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 export const derivedFail = (code, details = {}) => { throw Object.assign(new Error(code), { code, ...details }); };
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iu.test(value);
@@ -26,8 +25,9 @@ function toolName(event) {
 // reviewable incomplete artifact; it is not silently repaired or textified.
 export function encodeClaudeDerived({ events, targetId, cwd, createdAt, diagnostics = [], displayMetadata = null,
   authoredMessagePolicy = "legacy-strict" }) {
-  if (!["legacy-strict", "audit-preserve-source-v1", "hybrid-preserve-source-v1"].includes(authoredMessagePolicy)) derivedFail("DERIVED_AUTHORED_POLICY_INVALID");
+  if (!["legacy-strict", "audit-preserve-source-v1", "hybrid-preserve-source-v1", "hybrid-preserve-source-v2"].includes(authoredMessagePolicy)) derivedFail("DERIVED_AUTHORED_POLICY_INVALID");
   const preserveAuthored = authoredMessagePolicy !== "legacy-strict";
+  const authoredImages = authoredMessagePolicy === "hybrid-preserve-source-v2";
   if (!uuid(targetId) || typeof cwd !== "string" || !Number.isFinite(Date.parse(createdAt)) || !Array.isArray(events))
     derivedFail("DERIVED_ENCODING_INPUT_INVALID");
   const problems = structuredClone(diagnostics), groups = [], mappings = [];
@@ -47,6 +47,7 @@ export function encodeClaudeDerived({ events, targetId, cwd, createdAt, diagnost
       ...(preserveAuthored && ["user", "assistant"].includes(event.kind) ? {
         sourceContentIndex: event.sub ?? 0,
         sourceContentPath: event.sourceContentPath ?? "item.content[" + (event.sub ?? 0) + "].text",
+        ...(event.imageEvidence ? { capturedImageEvidence: event.imageEvidence } : {}),
       } : {}),
       sourceRole: event.kind, targetRole: role, ...(event.name ? { originalToolName: event.name, originalNamespace: event.namespace || null, targetToolName: toolName(event), callId: event.callId } : {}) });
   };
@@ -60,22 +61,35 @@ export function encodeClaudeDerived({ events, targetId, cwd, createdAt, diagnost
       // when a separate activity contract is unsupported. This does not repair
       // that contract or make the candidate publishable.
       if (pending.size) problem(event, "DERIVED_INTERLEAVED_TOOL_EXCHANGE");
-      if (typeof event.text !== "string") { problem(event, "DERIVED_TEXT_INVALID"); continue; }
+      let block;
+      if (event.contentKind === "image") {
+        if (!authoredImages || event.kind !== "user" || !event.imageEvidence) { problem(event, "DERIVED_AUTHORED_IMAGE_UNQUALIFIED"); continue; }
+        const match = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/]*={0,2})$/u.exec(event.url || "");
+        if (!match || !match[2] || Buffer.from(match[2], "base64").toString("base64") !== match[2]) {
+          problem(event, "DERIVED_IMAGE_NOT_CAPTURED_OR_UNSUPPORTED"); continue;
+        }
+        const validation = inspectDerivedInlineImage(match[1], Buffer.from(match[2], "base64"), "png-and-baseline-jpeg-v1");
+        if (!validation.valid) { problem(event, validation.code); continue; }
+        block = { type: "image", source: { type: "base64", media_type: match[1], data: match[2] } };
+      } else {
+        if (typeof event.text !== "string") { problem(event, "DERIVED_TEXT_INVALID"); continue; }
+        block = { type: "text", get text() { return event.text; } };
+      }
       const key = authoredKey(event.source), previous = groups.at(-1);
       const join = key !== null && previous?.role === event.kind
-        && previous.content.every(block => block.type === "text")
+        && (authoredImages || previous.content.every(block => block.type === "text"))
         && previous.sources.every(source => authoredKey(source) === key);
-      add(event.kind, { type: "text", text: event.text }, event, { join, representation: event.authoredRepresentation ?? "native-content" });
+      add(event.kind, block, event, { join, representation: event.authoredRepresentation ?? "native-content" });
       callGroupOpen = false; resultGroupOpen = false;
       continue;
     }
-    if (authoredMessagePolicy === "hybrid-preserve-source-v1" && event.kind === "historical-activity") {
+    if (["hybrid-preserve-source-v1", "hybrid-preserve-source-v2"].includes(authoredMessagePolicy) && event.kind === "historical-activity") {
       const join = pending.size > 0 && event.joinVerifiedToolCallGroup === true && callGroupOpen && !resultGroupOpen
         && pending.has(event.callId) && groups.at(-1)?.role === "assistant"
         && groups.at(-1).content.some(block => block.type === "tool_use" && block.id === event.callId);
       if (pending.size && !join) { problem(event, "DERIVED_INTERLEAVED_TOOL_EXCHANGE"); continue; }
       if (typeof event.text !== "string") { problem(event, "DERIVED_TEXT_INVALID"); continue; }
-      add("assistant", { type: "text", text: event.text }, event, { join, representation: "quoted-historical-codex-activity" });
+      add("assistant", { type: "text", get text() { return event.text; } }, event, { join, representation: "quoted-historical-codex-activity" });
       if (!join) { callGroupOpen = false; resultGroupOpen = false; }
       continue;
     }
@@ -88,7 +102,7 @@ export function encodeClaudeDerived({ events, targetId, cwd, createdAt, diagnost
       if (typeof event.callId !== "string" || !event.callId || seenCalls.has(event.callId)) { problem(event, "DERIVED_TOOL_ID_INVALID_OR_REUSED"); continue; }
       if (!event.input || typeof event.input !== "object" || Array.isArray(event.input)) { problem(event, "DERIVED_TOOL_INPUT_NOT_OBJECT"); continue; }
       seenCalls.add(event.callId); pending.set(event.callId, event);
-      add("assistant", { type: "tool_use", id: event.callId, name, input: structuredClone(event.input) }, event, { join: callGroupOpen });
+      add("assistant", { type: "tool_use", id: event.callId, name, get input() { return structuredClone(event.input); } }, event, { join: callGroupOpen });
       callGroupOpen = true; resultGroupOpen = false;
       continue;
     }
@@ -96,8 +110,7 @@ export function encodeClaudeDerived({ events, targetId, cwd, createdAt, diagnost
       const call = pending.get(event.callId);
       if (!call) { problem(event, "DERIVED_ORPHAN_TOOL_RESULT"); continue; }
       if (event.output === undefined) { problem(event, "DERIVED_TOOL_RESULT_MISSING"); continue; }
-      const content = typeof event.output === "string" ? event.output : JSON.stringify(event.output);
-      add("user", { type: "tool_result", tool_use_id: event.callId, content,
+      add("user", { type: "tool_result", tool_use_id: event.callId, get content() { return typeof event.output === "string" ? event.output : JSON.stringify(event.output); },
         ...(typeof event.isError === "boolean" ? { is_error: event.isError } : {}) },
         { ...event, name: call.name, namespace: call.namespace }, { join: resultGroupOpen,
           representation: event.outputRepresentation || (typeof event.output === "string" ? "native-tool-result-text" : "native-tool-result-json") });
@@ -109,7 +122,7 @@ export function encodeClaudeDerived({ events, targetId, cwd, createdAt, diagnost
     callGroupOpen = false; resultGroupOpen = false;
     if (event.kind === "user" || event.kind === "assistant") {
       if (typeof event.text !== "string") { problem(event, "DERIVED_TEXT_INVALID"); continue; }
-      add(event.kind, { type: "text", text: event.text }, event);
+      add(event.kind, { type: "text", get text() { return event.text; } }, event);
     } else if (event.kind === "image") {
       const match = /^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/]*={0,2})$/u.exec(event.url || "");
       if (!match || !match[2] || Buffer.from(match[2], "base64").toString("base64") !== match[2]) {
@@ -153,9 +166,9 @@ export function encodeClaudeDerived({ events, targetId, cwd, createdAt, diagnost
   if (displayMetadata !== null && (typeof displayMetadata.title !== "string" || !displayMetadata.title
     || displayMetadata.scope !== "native-list-metadata-not-transcript-or-recovery-direction")) derivedFail("DERIVED_DISPLAY_METADATA_INVALID");
   const records = displayMetadata ? [...rows, { type: "custom-title", customTitle: displayMetadata.title, sessionId: targetId }] : rows;
-  const raw = Buffer.from(records.map(row => JSON.stringify(row)).join("\n") + "\n");
-  if (raw.length > SNAPSHOT_STORAGE_LIMITS.decodedBytes) derivedFail("DERIVED_TRANSCRIPT_STORAGE_LIMIT");
-  if (rows.length) inspectClaudeHistoryOriginal(raw, targetId);
+  const raw = encodeHistoryLines(records);
+  try { if (rows.length) inspectClaudeHistoryOriginal(raw, targetId); }
+  catch (error) { try { releaseHistoryBytes(raw); } catch (cleanup) { error.captureCleanup = { code: cleanup.code }; } throw error; }
   return { raw, rows, mappings, diagnostics: problems, publicationReady: rows.length > 0 && !problems.some(p => p.blocksPublication),
     ...(displayMetadata ? { displayMetadata } : {}),
     openSafety: { pendingToolCalls: pending.size, trailingUserMessage: rows.at(-1)?.type === "user",

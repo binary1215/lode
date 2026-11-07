@@ -95,7 +95,8 @@ test("source hashes, identity, truncation and post-read record changes stay prim
   assert.throws(() => project(bad), { code: "PHYSICAL_ITEM_NATIVE_IDENTITY_MISMATCH" });
   const whole = nativeFor(f.rows), broken = whole.originals[0].raw.subarray(0, -1); whole.originals[0] = { ...whole.originals[0], raw: broken, sha256: hash(broken) };
   assert.throws(() => readCodexHybridPhysical({ native: whole, threadId: id }), { code: "CODEX_LINEAGE_INCOMPLETE_JSONL" });
-  const prepared = project(f.rows); prepared.read.records[2].rawText += " ";
+  const prepared = project(f.rows), record = prepared.read.records[2];
+  Object.defineProperty(record, "rawText", { value: record.rawText + " ", configurable: true, enumerable: true });
   assert.throws(() => encodeCodexHybrid({ read: prepared.read, targetId: crypto.randomUUID(), cwd: "C:/synthetic", createdAt: "2026-11-06T00:00:00Z" }), { code: "HYBRID_SOURCE_RECORD_CHANGED" });
 });
 

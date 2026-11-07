@@ -1,11 +1,11 @@
 import { capturedCodexDisplayMetadata } from "./codex-display-metadata.mjs";
 import fs from "node:fs";
+import { isHistoryBytes, historyEquals, readHistoryRaw, createHistoryArtifact, captureHistoryPrefix, HISTORY_MEMORY_BYTES } from "./native-history-bytes.mjs";
 import path from "node:path";
 import { isDeepStrictEqual as equal } from "node:util";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
 import { nativeRoot, pinNativeRoot, nativeRaw, nativeCheck, nativeSeparate } from "./provider-native-history-host.mjs";
-import { SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 import { resolveCodexPhysicalLineage } from "./codex-physical-lineage.mjs";
 import { parseCodexSourceJson } from "./codex-source-json.mjs";
 import { verifySelectedCodexStateEvidence } from "./codex-native-state-evidence.mjs";
@@ -26,12 +26,12 @@ function archiveContext(directory, signal, authority) {
 function exact(root, relative, bytes, check) {
   check(); const file = copiedProjectFile(root, relative);
   if (fs.lstatSync(file, { throwIfNoEntry: false })) {
-    if (!nativeRaw(root, relative, null, check).raw.equals(bytes)) fail("PHYSICAL_SOURCE_ARCHIVE_CONFLICT");
+    if (!historyEquals(readHistoryRaw(root, relative, null, check).raw, bytes)) fail("PHYSICAL_SOURCE_ARCHIVE_CONFLICT");
     return;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true }); copiedProjectFile(root, relative); check();
-  try { atomicCreateArtifact(file, bytes); } catch (error) { if (error.code !== "EEXIST") throw error; }
-  if (!nativeRaw(root, relative, null, check).raw.equals(bytes)) fail("PHYSICAL_SOURCE_ARCHIVE_CONFLICT");
+  try { createHistoryArtifact(file, bytes, check); } catch (error) { if (error.code !== "EEXIST") throw error; }
+  if (!historyEquals(readHistoryRaw(root, relative, null, check).raw, bytes)) fail("PHYSICAL_SOURCE_ARCHIVE_CONFLICT");
 }
 
 // Intake for explicitly selected already-captured JSONL prefixes. This reads no
@@ -48,8 +48,8 @@ export function captureCodexPhysicalSourceFiles({ sourceRoot, directory, threadI
   const index = new Map();
   for (const file of files) {
     if (!file || !uuid(file.rolloutId) || !uuid(file.threadId) || typeof file.path !== "string"
-      || !path.posix.basename(file.path).endsWith("-" + file.rolloutId + ".jsonl")
-      || !Number.isSafeInteger(file.endByteOffset) || file.endByteOffset < 1 || file.endByteOffset > SNAPSHOT_STORAGE_LIMITS.decodedBytes
+      || !["-", "_"].some(separator => path.posix.basename(file.path).endsWith(separator + file.rolloutId + ".jsonl"))
+      || !Number.isSafeInteger(file.endByteOffset) || file.endByteOffset < 1
       || !/^[a-f0-9]{64}$/u.test(file.sha256 || "")) fail("PHYSICAL_SOURCE_FILES_INVALID");
     index.set(file.rolloutId, file);
   }
@@ -60,6 +60,8 @@ export function captureCodexPhysicalSourceFiles({ sourceRoot, directory, threadI
   const exists = Boolean(fs.lstatSync(destination, { throwIfNoEntry: false })), target = exists ? archiveContext(destination, signal, assertCurrentAuthority) : null;
   nativeSeparate(source.root, target?.root ?? destination);
   const check = () => { source.check(); parentPin.verify(); target?.check(); }, originals = [], seen = new Set();
+  const owned = []; let failure = null;
+  try {
   let selected = rolloutId, requiredBytes = null, selectedObservation = null;
   while (selected !== null) {
     check(); if (seen.has(selected)) fail("CODEX_LINEAGE_CYCLE"); seen.add(selected);
@@ -73,11 +75,12 @@ export function captureCodexPhysicalSourceFiles({ sourceRoot, directory, threadI
     try {
       check(); const opened = fs.fstatSync(fd, { bigint: true });
       if (opened.dev !== before.dev || opened.ino !== before.ino || opened.nlink !== 1n) fail("PHYSICAL_SOURCE_FILE_CHANGED");
-      raw = Buffer.alloc(file.endByteOffset); let offset = 0;
+      if (file.endByteOffset > HISTORY_MEMORY_BYTES) { const captured = captureHistoryPrefix(fd, file.endByteOffset, check); owned.push(captured); raw = captured.raw; }
+      else { raw = Buffer.alloc(file.endByteOffset); let offset = 0;
       while (offset < raw.length) {
         check(); const count = fs.readSync(fd, raw, offset, Math.min(65536, raw.length - offset), offset);
         if (!count) fail("PHYSICAL_SOURCE_FILE_CHANGED"); offset += count;
-      }
+      } }
       check(); const after = fs.fstatSync(fd, { bigint: true }), named = fs.lstatSync(filename, { bigint: true });
       if (after.dev !== before.dev || after.ino !== before.ino || named.dev !== before.dev || named.ino !== before.ino
         || after.nlink !== 1n || named.nlink !== 1n || after.size < BigInt(raw.length) || hash(raw) !== file.sha256) fail("PHYSICAL_SOURCE_FILE_CHANGED");
@@ -111,7 +114,7 @@ export function captureCodexPhysicalSourceFiles({ sourceRoot, directory, threadI
       reasonCode: "PHYSICAL_STATE_PATH_NOT_BOUND" };
     if (state.cli_version === selectedHeader.cli_version && state.history_mode === selectedHeader.history_mode
       && typeof state.rollout_path === "string" && path.isAbsolute(state.rollout_path)
-      && path.basename(state.rollout_path).endsWith("-" + rolloutId + ".jsonl")) {
+      && ["-", "_"].some(separator => path.basename(state.rollout_path).endsWith(separator + rolloutId + ".jsonl"))) {
       const namespaced = value => process.platform === "win32" ? path.toNamespacedPath(value) : value;
       const relative = path.relative(namespaced(source.root), namespaced(state.rollout_path));
       if (relative && relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative)) {
@@ -126,6 +129,12 @@ export function captureCodexPhysicalSourceFiles({ sourceRoot, directory, threadI
   check(); if (!exists) fs.mkdirSync(destination);
   return archiveCodexCapturedPhysicalSource({ directory: target?.root ?? destination, threadId, rolloutId, originals, _selectionBinding: binding,
     signal, assertCurrentAuthority: check });
+  } catch (error) { failure = error; throw error;
+  } finally {
+    let cleanupFailure = null;
+    for (const capture of owned) try { capture.release(); } catch (error) { cleanupFailure ??= error; }
+    if (cleanupFailure) { if (failure) failure.captureCleanup = { code: cleanupFailure.code }; else throw cleanupFailure; }
+  }
 }
 
 // Current trusted Host supplies already-captured bytes, not transcript paths,
@@ -152,8 +161,9 @@ function encodeCapturedPhysicalSource({ threadId, rolloutId, originals, _selecti
   if (!uuid(threadId) || proof.segments.at(-1)?.threadId !== threadId) fail("PHYSICAL_SOURCE_SELECTION_MISMATCH");
   const byId = new Map(originals.map(original => [original.rolloutId, original]));
   const trimmed = proof.segments.map(segment => {
-    const original = byId.get(segment.rolloutId), raw = Buffer.from(original.raw).subarray(0, segment.endByteOffset);
-    return { rolloutId: segment.rolloutId, threadId: segment.threadId, raw, sha256: hash(raw) };
+    const original = byId.get(segment.rolloutId), raw = original.raw.subarray(0, segment.endByteOffset);
+    return { rolloutId: segment.rolloutId, threadId: segment.threadId, raw, sha256: hash(raw),
+      ...(original.encoding ? { sourceEncoding: original.encoding } : {}) };
   });
   // Reproduce from the actual archived prefixes. Full parent-suffix digests or
   // counts are not identity inputs: changing an excluded future must not mint
@@ -163,7 +173,7 @@ function encodeCapturedPhysicalSource({ threadId, rolloutId, originals, _selecti
     threadIds: [threadId], selectedRolloutId: rolloutId,
     ...(_selectionBinding ? { selectionBinding: _selectionBinding } : {}),
     files: trimmed.map(original => ({ rolloutId: original.rolloutId, threadId: original.threadId,
-      sha256: original.sha256, bytes: original.raw.length })),
+      sha256: original.sha256, bytes: original.raw.length, ...(original.sourceEncoding ? { sourceEncoding: original.sourceEncoding } : {}) })),
     sourceBasis: "explicitly-supplied-captured-physical-prefixes-not-a-live-provider-snapshot",
     canonicalDatabaseRowsClaimed: false, modelContextEquivalent: false, globalInventoryComplete: false,
     grantsRecoveryAuthority: false, restoresExecutionPermission: false };
@@ -174,7 +184,24 @@ function encodeCapturedPhysicalSource({ threadId, rolloutId, originals, _selecti
 // Shared physical codec, with no executable source store or source re-open.
 // The trusted closed intake, not caller assertions, provides the path/FD basis.
 export function encodeCodexObservedLivePhysicalSource({ observation, threadId, check = () => {} }) {
-  check(); const observed = verifyCodexLiveProjectObservation(observation), selected = observed.conversations.find(row => row.threadId === threadId);
+  check(); const observed = verifyCodexLiveProjectObservation(observation);
+  const encoded = encodeVerifiedObservedSelection({ observation, observed, threadId, check });
+  check(); verifyCodexLiveProjectObservation(observation); return encoded;
+}
+
+// No packet escapes until the whole exact observation passes again. This is
+// batching identical work, not a caller-supplied verification token or scope.
+export function encodeCodexObservedLivePhysicalSources({ observation, check = () => {} }) {
+  check(); const observed = verifyCodexLiveProjectObservation(observation), encoded = new Map();
+  for (const row of observed.conversations) {
+    check(); encoded.set(row.threadId, encodeVerifiedObservedSelection({ observation, observed, threadId: row.threadId, check }));
+  }
+  check(); verifyCodexLiveProjectObservation(observation);
+  return { observed, encoded };
+}
+
+function encodeVerifiedObservedSelection({ observation, observed, threadId, check }) {
+  const selected = observed.conversations.find(row => row.threadId === threadId);
   if (!selected || selected.lineage?.status !== "physical-lineage-ranges-verified") return null;
   const leaf = selected.originals.find(row => row.rolloutId === selected.rolloutId), evidence = selected.selectedStateEvidence;
   const state = verifySelectedCodexStateEvidence(evidence, [threadId])[0], verified = selected.selectedStateHeaderAgreement === true;
@@ -185,7 +212,7 @@ export function encodeCodexObservedLivePhysicalSource({ observation, threadId, c
     reasonCode: verified ? null : "PHYSICAL_STATE_PATH_NOT_BOUND", ...(verified ? { stateCanonicalPath: leaf.canonicalPath } : {}) };
   capturedBindings.add(binding);
   const encoded = encodeCapturedPhysicalSource({ threadId, rolloutId: selected.rolloutId, originals: selected.originals, _selectionBinding: binding, check });
-  check(); verifyCodexLiveProjectObservation(observation);
+  check();
   return { manifestRaw: encoded.raw, intentRaw: json({ schemaVersion: 1, kind: "CapturedPhysicalHistoryIntent", payloadId: encoded.payloadId, payloadDigest: encoded.digest }),
     originals: encoded.trimmed, payloadId: encoded.payloadId, payloadDigest: encoded.digest };
 }
@@ -194,7 +221,7 @@ export function inspectCodexCapturedPhysicalSource({ directory, expectedPayloadI
   const { root, check } = archiveContext(directory, signal, assertCurrentAuthority);
   const verified = verifyCodexCapturedPhysicalEvidence({ manifestRaw: nativeRaw(root, "manifest.json", signal, check).raw,
     captureIntentRaw: nativeRaw(root, "capture-intent.json", signal, check).raw, expectedPayloadId, check,
-    readObject: file => nativeRaw(root, "objects/" + file.sha256 + ".bin", signal, check).raw });
+    readObject: file => readHistoryRaw(root, "objects/" + file.sha256 + ".bin", signal, check).raw });
   return { ...verified, directory: root, authorityPlane: "P4", check };
 }
 
@@ -216,8 +243,9 @@ export function verifyCodexCapturedPhysicalEvidence({ manifestRaw, captureIntent
   const native = { payload, payloadId, payloadDigest };
   const originals = payload.files.map(file => {
     if (!uuid(file.rolloutId) || !uuid(file.threadId) || !/^[a-f0-9]{64}$/u.test(file.sha256 || "")
+      || Object.hasOwn(file, "sourceEncoding") && file.sourceEncoding !== "zstd-decoded-selected-prefix"
       || !Number.isSafeInteger(file.bytes) || file.bytes < 1) fail("PHYSICAL_SOURCE_INVALID");
-    check(); const raw = Buffer.from(readObject(file));
+    check(); const supplied = readObject(file), raw = isHistoryBytes(supplied) ? supplied : Buffer.from(supplied);
     if (raw.length !== file.bytes || hash(raw) !== file.sha256) fail("NATIVE_HISTORY_PAYLOAD_IDENTITY_MISMATCH");
     return { ...file, raw };
   });
@@ -233,14 +261,15 @@ export function verifyCodexCapturedPhysicalEvidence({ manifestRaw, captureIntent
   if (binding) {
     const state = verifySelectedCodexStateEvidence(binding.evidence, payload.threadIds)[0], selected = payload.files.find(file => file.rolloutId === payload.selectedRolloutId);
     const style = binding.sourcePlatform === "win32" ? path.win32 : ["linux", "darwin"].includes(binding.sourcePlatform) ? path.posix : null;
-    const header = parseCodexSourceJson(originals.find(original => original.rolloutId === payload.selectedRolloutId).raw.toString("utf8").split("\n", 1)[0]).payload;
+    const selectedRaw = originals.find(original => original.rolloutId === payload.selectedRolloutId).raw;
+    const header = parseCodexSourceJson(selectedRaw.subarray(0, selectedRaw.indexOf(10)).toString("utf8")).payload;
     if (binding.kind !== "captured-selected-state-path" || !["association-proposed", "captured-state-path-verified"].includes(binding.status)
       || !/^[a-f0-9]{64}$/u.test(binding.evidenceDigest || "") || !style || binding.queryReplayVerified !== false
       || binding.stableNativeThreadId !== state.id || binding.physicalRolloutId !== payload.selectedRolloutId || binding.rootSessionId !== proof.rootSessionId
       || binding.selectedPrefixDigest !== selected.sha256 || binding.statePath !== state.rollout_path) fail("PHYSICAL_STATE_BINDING_INVALID");
     if (binding.status === "captured-state-path-verified" && (binding.reasonCode !== null
       || state.cli_version !== header.cli_version || state.history_mode !== header.history_mode
-      || typeof binding.statePath !== "string" || !style.basename(binding.statePath).endsWith("-" + binding.physicalRolloutId + ".jsonl")
+      || typeof binding.statePath !== "string" || !["-", "_"].some(separator => style.basename(binding.statePath).endsWith(separator + binding.physicalRolloutId + ".jsonl"))
       || typeof binding.stateCanonicalPath !== "string" || !style.isAbsolute(binding.stateCanonicalPath)
       || binding.stateCanonicalPath !== binding.observedSource?.canonicalPath
       || !/^\d+$/u.test(binding.observedSource?.dev || "") || !/^\d+$/u.test(binding.observedSource?.ino || ""))) fail("PHYSICAL_STATE_BINDING_INVALID");
@@ -250,7 +279,8 @@ export function verifyCodexCapturedPhysicalEvidence({ manifestRaw, captureIntent
 
 // Semantic IR is computed from raw ItemCompleted/wire records. It is never
 // persisted as counterfeit thread_items rows, current P2 or provider memory.
-export function readCodexCapturedPhysicalEvents({ native, threadId, cutoffItemId = null, converter = CODEX_PHYSICAL_CONVERTER, check = () => {} }) {
+export function readCodexCapturedPhysicalEvents({ native, threadId, cutoffItemId = null, converter = CODEX_PHYSICAL_CONVERTER, check = () => {},
+  diagnoseMalformedWireArguments = false }) {
   if (!CODEX_PHYSICAL_PROFILES.includes(converter)) fail("DERIVED_CONVERTER_PROFILE_UNQUALIFIED");
   if (native.payload.threadIds[0] !== threadId) fail("PHYSICAL_SOURCE_SELECTION_MISMATCH");
   if (cutoffItemId !== null) fail("PHYSICAL_SOURCE_ITEM_CUTOFF_UNQUALIFIED");
@@ -258,8 +288,8 @@ export function readCodexCapturedPhysicalEvents({ native, threadId, cutoffItemId
   const events = [], diagnostics = [], inventory = [], pending = new Map(), seen = new Set(), seenItems = new Set(), canonicalTools = new Map();
   const problem = (source, code, blocksPublication = true) => diagnostics.push({ source, code, blocksPublication });
   const frames = native.proof.frames.map(frame => {
-    check(); const raw = originals.get(frame.source.rolloutId).raw.subarray(frame.source.startByteOffset, frame.source.endByteOffset - 1);
-    return { document: parseCodexSourceJson(new TextDecoder("utf-8", { fatal: true }).decode(raw)), source: {
+    check(); const object = originals.get(frame.source.rolloutId), raw = object.raw.subarray(frame.source.startByteOffset, frame.source.endByteOffset - 1);
+    return { get document() { return parseCodexSourceJson(new TextDecoder("utf-8", { fatal: true }).decode(object.raw.subarray(frame.source.startByteOffset, frame.source.endByteOffset - 1))); }, source: {
       nativeId: frame.source.threadId, physicalRolloutId: frame.source.rolloutId, rawOrdinal: frame.source.ordinal,
       rawFrameSha256: hash(raw), prefixOrigin: frame.source.origin, recordOrigin: "captured-raw-not-canonical-DB-row" } };
   });
@@ -282,12 +312,15 @@ export function readCodexCapturedPhysicalEvents({ native, threadId, cutoffItemId
       problem(frame.source, "PHYSICAL_ITEM_TURN_UNQUALIFIED");
     if (item?.type === "McpToolCall") {
       if (canonicalTools.has(item.id)) problem(frame.source, "PHYSICAL_CANONICAL_TOOL_ID_AMBIGUOUS");
-      canonicalTools.set(item.id, { item, source: frame.source, turnId: payload.turn_id, ordinal: frame.document.ordinal, matched: false });
+      canonicalTools.set(item.id, { get item() { return frame.document.payload.item; }, source: frame.source, turnId: payload.turn_id, ordinal: frame.document.ordinal, matched: false });
     }
     if (frame.taskBoundaryVerified) activeTurn = null;
   }
   let terminalAtCapture = false, lastTurnStatus = "unknown";
-  const add = (event, frame, sub = 0) => events.push({ ...event, at: frame.document.ordinal, sub, source: { ...frame.source, ...(event.source || {}) } });
+  const add = (event, frame, sub = 0) => {
+    const retained = Object.defineProperties({}, Object.getOwnPropertyDescriptors(event));
+    Object.assign(retained, { at: frame.source.rawOrdinal, sub, source: { ...frame.source, ...(event.source || {}) } }); events.push(retained);
+  };
   const outputEqual = (wire, canonical) => {
     if (equal(wire, canonical)) return true;
     if (typeof wire !== "string" || typeof canonical === "string") return false;
@@ -308,7 +341,7 @@ export function readCodexCapturedPhysicalEvents({ native, threadId, cutoffItemId
       if (item.type === "UserMessage") {
         if (!Array.isArray(item.content)) { problem(source, "PHYSICAL_USER_CONTENT_UNQUALIFIED"); continue; }
         for (const [index, part] of item.content.entries()) {
-          if (part?.type === "text" && typeof part.text === "string") add({ kind: "user", text: part.text, source: itemSource }, frame, index);
+          if (part?.type === "text" && typeof part.text === "string") add({ kind: "user", get text() { return frame.document.payload.item.content[index].text; }, source: itemSource }, frame, index);
           else if (part?.type === "image" && typeof part.url === "string" && part.url.startsWith("data:")) add({ kind: "image", url: part.url, source: itemSource }, frame, index);
           else if (["image", "local_image"].includes(part?.type)) add({ kind: "attachment-unavailable", reference: structuredClone(part), source: itemSource }, frame, index);
           else problem(source, "PHYSICAL_USER_INPUT_UNQUALIFIED");
@@ -316,7 +349,7 @@ export function readCodexCapturedPhysicalEvents({ native, threadId, cutoffItemId
       } else if (item.type === "AgentMessage") {
         if (item.phase != null && !["commentary", "partial_answer", "final_answer", "final"].includes(item.phase)) problem(source, "PHYSICAL_ASSISTANT_PHASE_UNQUALIFIED");
         if (!Array.isArray(item.content) || !item.content.every(part => part?.type === "Text" && typeof part.text === "string")) { problem(source, "PHYSICAL_ASSISTANT_CONTENT_UNQUALIFIED"); continue; }
-        item.content.forEach((part, index) => add({ kind: "assistant", text: part.text, source: itemSource }, frame, index));
+        item.content.forEach((part, index) => add({ kind: "assistant", get text() { return frame.document.payload.item.content[index].text; }, source: itemSource }, frame, index));
       } else if (["Reasoning", "SystemMessage", "DeveloperMessage"].includes(item.type)) add({ kind: "archive", reason: "private-reasoning-or-source-instruction-not-replayed", source: itemSource }, frame);
       else if (item.type !== "McpToolCall") problem(source, "PHYSICAL_CANONICAL_ITEM_UNQUALIFIED");
       continue;
@@ -330,8 +363,25 @@ export function readCodexCapturedPhysicalEvents({ native, threadId, cutoffItemId
     if (document.type === "response_item" && ["function_call", "custom_tool_call"].includes(p?.type)) {
       if (typeof p.call_id !== "string" || seen.has(p.call_id)) { problem(source, "PHYSICAL_WIRE_CALL_AMBIGUOUS"); continue; }
       seen.add(p.call_id);
-      const input = p.type === "function_call" ? typeof p.arguments === "string" ? parseCodexSourceJson(p.arguments) : p.arguments : { input: p.input };
-      const call = { kind: "tool-call", callId: p.call_id, name: p.name, namespace: p.namespace ?? null, input };
+      let input;
+      try { input = p.type === "function_call" ? typeof p.arguments === "string" ? parseCodexSourceJson(p.arguments) : p.arguments : { input: p.input }; }
+      catch (error) {
+        // A hybrid historical view may retain an invalid argument string as
+        // passive source data. Strict/native mapping remains unqualified. Do
+        // not catch outer JSON, UTF8, scope, precision or filesystem failures.
+        if (diagnoseMalformedWireArguments !== true || !(error instanceof SyntaxError)) throw error;
+        const address = native.proof.frames.find(candidate => candidate.source.rolloutId === source.physicalRolloutId
+          && candidate.source.ordinal === source.rawOrdinal)?.source;
+        if (!address) fail("PHYSICAL_WIRE_ARGUMENT_SOURCE_UNAVAILABLE");
+        diagnostics.push({ code: "PHYSICAL_WIRE_ARGUMENT_JSON_UNQUALIFIED", source: { ...source,
+          startByteOffset: address.startByteOffset, endByteOffset: address.endByteOffset,
+          originalObjectSha256: originals.get(source.physicalRolloutId).sha256 },
+          argumentBytes: Buffer.byteLength(p.arguments), argumentSha256: hash(Buffer.from(p.arguments)),
+          nativeToolQualified: false, blocksPublication: true });
+        continue;
+      }
+      const call = { kind: "tool-call", callId: p.call_id, name: p.name, namespace: p.namespace ?? null,
+        get input() { const p = frame.document.payload; return p.type === "function_call" ? typeof p.arguments === "string" ? parseCodexSourceJson(p.arguments) : p.arguments : { input: p.input }; } };
       const canonical = canonicalTools.get(p.call_id);
       if (!frame.wireTurnId) problem(source, "PHYSICAL_WIRE_TURN_UNQUALIFIED");
       if (canonical && (p.type !== "function_call" || canonical.turnId !== frame.wireTurnId || canonical.ordinal < document.ordinal
@@ -357,7 +407,7 @@ export function readCodexCapturedPhysicalEvents({ native, threadId, cutoffItemId
         else { call.canonical.matched = true; isError = knownError; }
       }
       if (isError === null) problem(source, "DERIVED_WIRE_TOOL_OUTCOME_UNRECORDED", false);
-      add({ kind: "tool-result", callId: p.call_id, output: p.output, isError,
+      add({ kind: "tool-result", callId: p.call_id, get output() { return frame.document.payload.output; }, isError,
         source: { errorFlagEvidence: isError === null ? "not-recorded" : "source-operational-observation" } }, frame);
       pending.delete(p.call_id); continue;
     }

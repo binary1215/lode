@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { readCodexHistoryAddresses } from "./codex-history-addresses.mjs";
+import { readCodexZstdPrefix } from "./codex-zstd-prefix.mjs";
+import { captureHistoryPrefix, historyHash, historyLines, isHistoryBytes, HISTORY_MEMORY_BYTES, HISTORY_IO_BYTES } from "./native-history-bytes.mjs";
 import { isDeepStrictEqual as equal } from "node:util";
 import { withLiveCodexReadSnapshots } from "./codex-live-read-guard.mjs";
-import { inspectCodexNativeDatabase, readSelectedCodexHistory, codexNativePortabilityProfile } from "./codex-native-portability.mjs";
+import { inspectCodexNativeDatabase, codexNativePortabilityProfile } from "./codex-native-portability.mjs";
 import { readSelectedCodexStateEvidence, verifySelectedCodexStateEvidence } from "./codex-native-state-evidence.mjs";
 import { readCodexProjectCatalog, readCodexExplicitProjectCatalog } from "./codex-project-catalog.mjs";
 import { readCodexExplicitProjectSelection, codexSourcePathKey } from "./codex-explicit-project-selection.mjs";
@@ -12,15 +15,16 @@ import { pinNativeRoot } from "./provider-native-history-host.mjs";
 import { decodeSqliteCell, readTypedSqliteRows } from "./native-sqlite-values.mjs";
 import { parseCodexSourceJson } from "./codex-source-json.mjs";
 import { resolveCodexPhysicalLineage, isCodexPaginatedCreationVersion } from "./codex-physical-lineage.mjs";
-import { SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 import { CODEX_NATIVE_MAX_FRAME_BYTES } from "./codex-native-rollout.mjs";
 import { derivedHash as hash, derivedFail as fail } from "./claude-derived-encoder.mjs";
 
 const profile = codexNativePortabilityProfile();
 const observations = new WeakMap();
+const captures = new WeakMap();
 function observationDigest(value) {
   const digest = crypto.createHash("sha256");
   const visit = item => {
+    if (isHistoryBytes(item)) { digest.update("bytes:" + item.length + ":" + historyHash(item)); return; }
     if (item instanceof Uint8Array) { digest.update("bytes:" + item.byteLength + ":"); digest.update(item); return; }
     if (Array.isArray(item)) { digest.update("array:" + item.length + ":"); for (const child of item) visit(child); return; }
     if (item && typeof item === "object") { const keys = Object.keys(item).sort(); digest.update("object:" + keys.length + ":"); for (const key of keys) { digest.update(JSON.stringify(key)); visit(item[key]); } return; }
@@ -31,7 +35,7 @@ function observationDigest(value) {
   visit(value); return digest.digest("hex");
 }
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(value);
-const filenameId = relative => /-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\.jsonl$/u.exec(path.posix.basename(relative))?.[1];
+const filenameId = relative => /[-_]([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\.jsonl(?:\.zst)?$/u.exec(path.posix.basename(relative))?.[1];
 const identity = stat => ({ dev: String(stat.dev), ino: String(stat.ino) });
 const parse = bytes => parseCodexSourceJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
 function sourceRelative(root, absolute, inspectPath = true, observedRoot = root) {
@@ -45,7 +49,7 @@ function sourceRelative(root, absolute, inspectPath = true, observedRoot = root)
   const relatives = new Set();
   for (const spelling of new Set([root, observedRoot])) {
     const relative = path.relative(namespaced(spelling), namespaced(absolute)).split(path.sep).join("/");
-    if (!/^(?:sessions|archived_sessions)\/.+\.jsonl$/u.test(relative) || !filenameId(relative)) continue;
+    if (!/^(?:sessions|archived_sessions)\/.+\.jsonl(?:\.zst)?$/u.test(relative) || !filenameId(relative)) continue;
     relatives.add(relative);
   }
   if (!relatives.size) fail("CODEX_LIVE_SELECTED_PATH_UNQUALIFIED");
@@ -53,20 +57,30 @@ function sourceRelative(root, absolute, inspectPath = true, observedRoot = root)
   const [relative] = relatives;
   if (inspectPath) copiedProjectFile(root, relative); return relative;
 }
-function readRange(root, relative, check, { length = null, expectedIdentity = null, expectedDigest = null, firstFrameOnly = false } = {}) {
+function readRange(root, relative, check, { length = null, expectedIdentity = null, expectedDigest = null, firstFrameOnly = false, owned = null, reconcileOnly = false, observeCapture = () => {} } = {}) {
   check(); const file = copiedProjectFile(root, relative), before = fs.lstatSync(file, { bigint: true });
   if (!before.isFile() || before.nlink !== 1n || expectedIdentity && !equal(identity(before), expectedIdentity)) fail("CODEX_LIVE_ROLLOUT_IDENTITY_CHANGED");
   let count = firstFrameOnly ? Number(before.size < BigInt(CODEX_NATIVE_MAX_FRAME_BYTES + 1) ? before.size : BigInt(CODEX_NATIVE_MAX_FRAME_BYTES + 1)) : length ?? Number(before.size);
-  if (!Number.isSafeInteger(count) || count < 1 || count > SNAPSHOT_STORAGE_LIMITS.decodedBytes || BigInt(count) > before.size) fail("CODEX_LIVE_ROLLOUT_RANGE_UNQUALIFIED");
+  if (!Number.isSafeInteger(count) || count < 1 || BigInt(count) > before.size) fail("CODEX_LIVE_ROLLOUT_RANGE_UNQUALIFIED");
   const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  let captured = null, retained = false, failure = null;
   try {
     check(); const opened = fs.fstatSync(fd, { bigint: true });
     if (!equal(identity(opened), identity(before)) || opened.nlink !== 1n) fail("CODEX_LIVE_ROLLOUT_IDENTITY_CHANGED");
-    let raw = Buffer.alloc(count);
+    if (reconcileOnly) {
+      const bytes = Buffer.alloc(Math.min(HISTORY_IO_BYTES, count)), digest = crypto.createHash("sha256"); let offset = 0;
+      while (offset < count) { check(); const n = fs.readSync(fd, bytes, 0, Math.min(bytes.length, count - offset), offset);
+        if (!n) fail("CODEX_LIVE_ROLLOUT_PREFIX_CHANGED"); digest.update(bytes.subarray(0, n)); offset += n; }
+      check(); const named = fs.lstatSync(copiedProjectFile(root, relative), { bigint: true }), after = fs.fstatSync(fd, { bigint: true }), sha256 = digest.digest("hex");
+      if (!equal(identity(named), identity(before)) || !equal(identity(after), identity(before)) || named.nlink !== 1n || after.nlink !== 1n
+        || named.size < BigInt(count) || after.size < BigInt(count) || expectedDigest === null || sha256 !== expectedDigest) fail("CODEX_LIVE_ROLLOUT_PREFIX_CHANGED");
+      return { relative, identity: identity(before), sha256 };
+    }
+    let raw = !firstFrameOnly && count > HISTORY_MEMORY_BYTES ? null : Buffer.alloc(count);
     const read = destination => {
       let offset = 0;
       while (offset < destination.length) {
-        check(); const size = fs.readSync(fd, destination, offset, Math.min(65536, destination.length - offset), offset);
+        check(); const size = fs.readSync(fd, destination, offset, Math.min(HISTORY_IO_BYTES, destination.length - offset), offset);
         if (!size) fail("CODEX_LIVE_ROLLOUT_PREFIX_CHANGED"); offset += size;
       }
     };
@@ -81,22 +95,31 @@ function readRange(root, relative, check, { length = null, expectedIdentity = nu
       }
       if (!end || raw[end - 1] !== 10) fail("CODEX_LIVE_ROLLOUT_HEADER_UNAVAILABLE");
       raw = raw.subarray(0, end); count = end;
-    } else read(raw);
+    } else if (raw) read(raw);
+    else { captured = captureHistoryPrefix(fd, count, check, storage => observeCapture({ event: "temporary-capture-created", ...storage })); raw = captured.raw; }
     // Normal append is allowed. Reconcile retained bytes, not global mtime or
     // the unrelated source writer's commits. This is not an adversarial lock.
-    const comparison = Buffer.alloc(Math.min(65536, count)); let compared = 0;
+    const comparison = Buffer.alloc(Math.min(HISTORY_IO_BYTES, count)), reread = crypto.createHash("sha256"); let compared = 0;
     while (compared < count) {
       check(); const size = fs.readSync(fd, comparison, 0, Math.min(comparison.length, count - compared), compared);
-      if (!size || !raw.subarray(compared, compared + size).equals(comparison.subarray(0, size))) fail("CODEX_LIVE_ROLLOUT_PREFIX_CHANGED"); compared += size;
+      if (!size) fail("CODEX_LIVE_ROLLOUT_PREFIX_CHANGED");
+      reread.update(comparison.subarray(0, size)); compared += size;
     }
     check();
     const named = fs.lstatSync(copiedProjectFile(root, relative), { bigint: true }), after = fs.fstatSync(fd, { bigint: true });
     if (!equal(identity(named), identity(before)) || !equal(identity(after), identity(before)) || named.nlink !== 1n || after.nlink !== 1n
       || named.size < BigInt(count) || after.size < BigInt(count)
-      || expectedDigest !== null && hash(raw) !== expectedDigest) fail("CODEX_LIVE_ROLLOUT_PREFIX_CHANGED");
+      || reread.digest("hex") !== hash(raw) || expectedDigest !== null && hash(raw) !== expectedDigest) fail("CODEX_LIVE_ROLLOUT_PREFIX_CHANGED");
     check(); const canonicalPath = fs.realpathSync(file); check();
-    return { raw, relative, canonicalPath, identity: identity(before), sha256: hash(raw) };
-  } finally { fs.closeSync(fd); }
+    const result = { raw, relative, canonicalPath, identity: identity(before), sha256: hash(raw) };
+    if (captured && !reconcileOnly) { if (!owned) fail("CODEX_LIVE_CAPTURE_OWNER_REQUIRED"); owned.add(captured); retained = true; }
+    if (captured) observeCapture({ event: "temporary-capture-complete", ...captured.storage, sha256: result.sha256 });
+    return result;
+  } catch (error) { failure = error; throw error;
+  } finally {
+    try { fs.closeSync(fd); } catch (cleanup) { if (failure) failure.descriptorCleanup = { code: cleanup.code }; else throw cleanup; }
+    try { if (captured && !retained) captured.release(); } catch (cleanup) { if (failure) failure.captureCleanup = { code: cleanup.code }; else throw cleanup; }
+  }
 }
 function header(original) {
   const end = original.raw.indexOf(10);
@@ -145,7 +168,7 @@ function projectAncestorLocator(state, projectId, root, check, exactLocations = 
       recursive: false, unrelatedBodiesRead: false, completeNativeInventoryClaimed: false };
   };
 }
-function historyAddresses(history, original) {
+function historyAddresses(history, original, check = () => {}) {
   const rows = new Map(history.tables.map(table => [table.name, table.rows.map(row => Object.fromEntries(table.columns.map((name, index) => [name, decodeSqliteCell(row[index])])))]));
   const projections = rows.get("thread_history_projection_state");
   if (projections.length !== 1) return { status: "projection-watermark-unavailable", addressCoverageComplete: false, canonicalRowContentsEquivalent: false };
@@ -155,10 +178,11 @@ function historyAddresses(history, original) {
   if (mark.next_rollout_byte_offset > BigInt(original.raw.length) || mark.next_rollout_byte_offset > BigInt(Number.MAX_SAFE_INTEGER)
     || mark.next_rollout_ordinal > BigInt(Number.MAX_SAFE_INTEGER)) fail("CODEX_LIVE_HISTORY_WATERMARK_AHEAD_OF_RAW");
   const end = Number(mark.next_rollout_byte_offset), positions = new Map(), ends = new Map(); let offset = 0, nextOrdinal = null;
-  while (offset < end) {
-    const newline = original.raw.indexOf(10, offset);
-    if (newline < 0 || newline >= end || newline - offset > CODEX_NATIVE_MAX_FRAME_BYTES) fail("CODEX_LIVE_HISTORY_WATERMARK_BOUNDARY_INVALID");
-    const frame = parse(original.raw.subarray(offset, newline));
+  for (const line of historyLines(original.raw.subarray(0, end))) {
+    check();
+    const newline = offset + line.length;
+    if (newline >= end || newline - offset > CODEX_NATIVE_MAX_FRAME_BYTES) fail("CODEX_LIVE_HISTORY_WATERMARK_BOUNDARY_INVALID");
+    const frame = parse(line);
     if (!Number.isSafeInteger(frame.ordinal) || frame.ordinal < 0 || nextOrdinal !== null && frame.ordinal !== nextOrdinal) fail("CODEX_LINEAGE_ORDINAL_MISMATCH");
     positions.set(BigInt(frame.ordinal).toString(), BigInt(offset)); ends.set(BigInt(frame.ordinal).toString(), BigInt(newline + 1));
     nextOrdinal = frame.ordinal + 1; offset = newline + 1;
@@ -189,7 +213,9 @@ export async function readCodexLiveProjectSource({ home, sourceProjectId, thread
   const selectionRequested = [sourceSelectionFile, expectedSourceSelectionDigest, sourceProjectRoot].some(value => value !== undefined);
   const selection = selectionRequested ? readCodexExplicitProjectSelection({ file: sourceSelectionFile, expectedDigest: expectedSourceSelectionDigest,
     home, projectRoot: sourceProjectRoot, projectId: sourceProjectId, signal: guardOptions.signal, assertCurrentAuthority: guardOptions.assertCurrentAuthority }) : null;
-  const result = await withLiveCodexReadSnapshots({ ...guardOptions, home }, ({ root, connections, check, evidence }) => {
+  const owned = new Set(); let result;
+  const observeCapture = event => { try { guardOptions.onProcess?.({ purpose: "private-history-prefix-storage", authorityPlane: "P5", ...event }); } catch { /* Optional Host telemetry is not an ordinary-work gate. */ } };
+  try { result = await withLiveCodexReadSnapshots({ ...guardOptions, home }, async ({ root, connections, check, checkCaptured, evidence }) => {
     const observedRoot = path.resolve(home), state = connections["state_5.sqlite"], historyDb = connections["thread_history_1.sqlite"];
     const inspect = (db, file) => { check(); return inspectCodexNativeDatabase(db, { file, engineVersion: profile.engineVersion, platform: process.platform, architecture: process.arch,
       inspectionScope: "selected-live-read-schema" }); };
@@ -231,13 +257,15 @@ export async function readCodexLiveProjectSource({ home, sourceProjectId, thread
     }
     onBoundary("state-read"); check(); selection?.check();
     inspect(historyDb, "thread_history_1.sqlite");
-    const history = located.length ? readSelectedCodexHistory(historyDb, { engineVersion: profile.engineVersion, platform: process.platform, architecture: process.arch,
-      threadIds: located.map(row => row.rolloutId), inspectionScope: "selected-live-read-schema" }) : null;
-    const conversations = selections.map(selection => {
+    const history = located.length ? readCodexHistoryAddresses(historyDb, located.map(row => row.rolloutId)) : null;
+    const conversations = [];
+    for (const selection of selections) {
+      const inspectSelection = async () => {
       const selectedStateEvidence = readSelectedCodexStateEvidence(state, [selection.threadId]);
       const partial = extra => ({ ...selection, status: "selected-source-unavailable", selectedStateEvidence,
         originals: [], retained: [], nativePublicationReady: false, semanticHistoryEquivalent: false, ...extra });
       if (!selection.rolloutId) return partial({ reasonCode: selection.reasonCode });
+      if (selection.relative.endsWith(".zst")) return partial({ reasonCode: "CODEX_LIVE_COMPRESSED_LEAF_UNQUALIFIED" });
       const selectedHistory = { ...history, threadIds: [selection.rolloutId], tables: history.tables.map(table => ({ ...table,
         rows: table.rows.filter(row => decodeSqliteCell(row[table.columns.indexOf("thread_id")]) === selection.rolloutId) })) };
       check(); let leaf;
@@ -247,7 +275,7 @@ export async function readCodexLiveProjectSource({ home, sourceProjectId, thread
           primarySourceFailure: { code: present ? "CODEX_EXPLICIT_SELECTION_ABSENCE_CHANGED" : "ENOENT", syscall: "lstat" },
           sourceFileObservation: present ? "present-but-not-adopted; new observation required" : "absent-at-observation; no later file adopted" });
       }
-      try { leaf = readRange(root, selection.relative, check, { expectedIdentity: selection.expectedFileIdentity ?? null }); }
+      try { leaf = readRange(root, selection.relative, check, { expectedIdentity: selection.expectedFileIdentity ?? null, owned, observeCapture }); }
       catch (error) {
         // Only this exact absent selected file is an ordinary per-row unknown.
         // Permission, source identity, hash and other primary failures survive.
@@ -279,6 +307,10 @@ export async function readCodexLiveProjectSource({ home, sourceProjectId, thread
           break;
         }
         if (discovery) {
+          // Automatic discovery supplies names, not permission to decode an
+          // unknown owner's compressed body. HEAD can reuse this exact path
+          // in the existing explicit ancestor inventory under current scope.
+          if (relative.endsWith(".zst")) { unresolvedAncestorId = base.thread_id; ancestorReason = "compressed-ancestor-explicit-inventory-required"; break; }
           try { candidateHeader = readRange(root, relative, check, { firstFrameOnly: true, expectedIdentity: memberPin?.fileIdentity ?? null }); }
           catch (error) {
             if (error.code !== "ENOENT" || error.path !== path.join(root, relative)) throw error;
@@ -291,7 +323,15 @@ export async function readCodexLiveProjectSource({ home, sourceProjectId, thread
           }
         }
         let original;
-        try { original = readRange(root, relative, check, { length: base.end_byte_offset, expectedIdentity: memberPin?.fileIdentity ?? candidateHeader?.identity ?? null }); }
+        try {
+          if (relative.endsWith(".zst")) {
+            original = await readCodexZstdPrefix({ root, relative, length: base.end_byte_offset, expectedIdentity: memberPin?.fileIdentity ?? null, check,
+              onTemporaryCapture: storage => observeCapture({ event: "temporary-capture-created", ...storage }) });
+            owned.add(original.capture);
+            observeCapture({ event: "temporary-capture-complete", ...original.capture.storage, expectedBytes: original.raw.length, sha256: original.sha256 });
+            delete original.capture;
+          } else original = readRange(root, relative, check, { length: base.end_byte_offset, expectedIdentity: memberPin?.fileIdentity ?? candidateHeader?.identity ?? null, owned, observeCapture });
+        }
         catch (error) {
           if (error.code !== "ENOENT" || error.path !== path.join(root, relative)) throw error;
           unresolvedAncestorId = base.thread_id; ancestorReason = "explicit-ancestor-file-not-found"; break;
@@ -302,10 +342,10 @@ export async function readCodexLiveProjectSource({ home, sourceProjectId, thread
       }
       let proof = null;
       if (unresolvedAncestorId === null && knownLeafProfile) {
-        try { proof = resolveCodexPhysicalLineage({ originals, rolloutId: selection.rolloutId, check }); }
+        try { check(); proof = resolveCodexPhysicalLineage({ originals, rolloutId: selection.rolloutId, check: checkCaptured }); check(); }
         catch (error) { if (error.code !== "CODEX_LINEAGE_SOURCE_PROFILE_UNQUALIFIED") throw error; ancestorReason = error.code; }
       }
-      const addresses = knownLeafProfile ? historyAddresses(selectedHistory, leaf)
+      const addresses = knownLeafProfile ? historyAddresses(selectedHistory, leaf, checkCaptured)
         : { status: "not-checked-source-profile-unqualified", addressCoverageComplete: false, canonicalRowContentsEquivalent: false };
       const stateRecord = records.find(row => row.id === selection.threadId);
       return { ...selection, status: "selected-live-originals-observed", selectedStateEvidence, history: selectedHistory,
@@ -315,12 +355,15 @@ export async function readCodexLiveProjectSource({ home, sourceProjectId, thread
         originals, retained, lineage: proof ? { status: proof.status, rootSessionId: proof.rootSessionId, segments: proof.segments, ancestorDiscovery } : { status: ancestorReason, unresolvedAncestorId, ancestorDiscovery },
         historyCoverage: addresses, incompleteTail: { bytes: leaf.raw.length - completeEnd, sha256: hash(leaf.raw.subarray(completeEnd)), raw: leaf.raw.subarray(completeEnd) },
         semanticHistoryEquivalent: false, nativePublicationReady: false };
-    });
+      };
+      conversations.push(await inspectSelection());
+    }
     onBoundary("raw-read"); check(); selection?.check();
     // Bounded final reconciliation tolerates append. A selected prefix rewrite
     // is a source conflict, not a retry or an invitation to broaden selection.
     for (const conversation of conversations) for (const original of conversation.retained)
-      readRange(root, original.relative, check, { length: original.raw.length, expectedIdentity: original.identity, expectedDigest: original.sha256 });
+      readRange(root, original.relative, check, { length: original.encoding === "zstd-decoded-selected-prefix" ? original.compressedRead : original.raw.length,
+        expectedIdentity: original.identity, expectedDigest: original.encoding === "zstd-decoded-selected-prefix" ? original.compressedSha256 : original.sha256, reconcileOnly: true });
     return { kind: "CodexLiveProjectSourceObservation", schemaVersion: 1, authorityPlane: "P3", sourceProjectId, sourceRoot: root,
       sourceProjectNamespace: selection ? "caller-project-reference-not-native-membership" : "codex-native-project",
       appMembershipVerifiedByCore: false, selectionIsPermission: false,
@@ -329,15 +372,36 @@ export async function readCodexLiveProjectSource({ home, sourceProjectId, thread
         unavailableConversations: conversations.filter(row => row.status === "selected-source-unavailable").length,
         unresolvedLineageConversations: conversations.filter(row => row.lineage && row.lineage.status !== "physical-lineage-ranges-verified").length,
         semanticHistoryEquivalent: false, completeNativeInventoryClaimed: false,
-        databaseValidation: "exact-schema-and-selected-typed-rows-plus-raw-addresses", wholeDatabaseIntegrity: "not-observed" },
+        databaseValidation: "exact-schema-and-selected-typed-address-rows-plus-raw-addresses", canonicalRowBodiesCaptured: false, wholeDatabaseIntegrity: "not-observed" },
       snapshots: { state: "independent-state-read-transaction", history: "independent-history-read-transaction", startedAt,
         observedAt: new Date().toISOString(), globalAtomicSnapshotClaimed: false },
       evidence, currentAfterSnapshotRelease: "not-observed", allNativeHistoryObserved: false,
       nativePublicationAttempted: false, grantsRecoveryAuthority: false, restoresExecutionPermission: false };
-  });
+  }); } catch (error) {
+    const count = owned.size; let released = 0;
+    for (const capture of owned) try { capture.release(); released++; } catch (cleanup) { error.captureCleanup = { code: cleanup.code }; }
+    error.sourceCaptureCleanup = { captures: count, released, remaining: count - released };
+    throw error;
+  }
   if (result.status !== "live-source-components-observed") return result;
-  const observation = { ...result, status: "live-project-source-observed", sourceBytesPersisted: false, nativePublicationAttempted: false };
-  observations.set(observation, observationDigest(observation)); return observation;
+  const observation = { ...result, status: "live-project-source-observed", sourceBytesPersisted: owned.size > 0,
+    temporaryCaptureCount: owned.size, captureStorage: owned.size ? "private-finite-prefix-files-release-after-archive-or-failure" : "in-memory",
+    nativePublicationAttempted: false };
+  try { observations.set(observation, observationDigest(observation)); captures.set(observation, owned); return observation; }
+  catch (error) { for (const capture of owned) try { capture.release(); } catch (cleanup) { error.captureCleanup = { code: cleanup.code }; } throw error; }
+}
+
+export function releaseCodexLiveProjectObservation(observation) {
+  const owned = captures.get(observation); if (!owned) return;
+  // Releasing never reopens the source. A released observation cannot mint a
+  // new archive; keep completed archived originals instead of replaying intake.
+  observations.delete(observation);
+  let failure = null;
+  for (const capture of owned) {
+    try { capture.release(); owned.delete(capture); } catch (error) { failure ??= error; }
+  }
+  if (failure) { failure.sourceCaptureCleanup = { remaining: owned.size }; throw failure; }
+  captures.delete(observation);
 }
 
 // Provenance of this already-closed in-memory read only. A saved JSON object is

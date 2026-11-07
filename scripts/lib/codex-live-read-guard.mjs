@@ -139,10 +139,21 @@ export async function openCodexLiveReadGuard({ home, allowSynchronizationFiles, 
     if (readyConfirmed && (ended.code !== 0 || !lines.some(line => line.released === true))) fail("CODEX_LIVE_GUARD_RELEASE_UNCONFIRMED");
     return ended;
   };
+  // Pure inspection of already-captured bytes needs current scope/lifetime,
+  // not another filesystem lookup for every historical frame. Source opens,
+  // IO boundaries and final reconciliation continue using the full check.
+  const checkCaptured = () => {
+    if (primary) throw primary;
+    try {
+      scope();
+      if (closed || released) fail("CODEX_LIVE_GUARD_NOT_HELD");
+      if (Date.now() > deadline) fail("CODEX_LIVE_SOURCE_DEADLINE_EXCEEDED");
+    } catch (error) { primary ??= error; throw primary; }
+  };
   const check = () => {
     if (primary) throw primary;
     try {
-      scope(); rootPin.verify();
+      checkCaptured(); rootPin.verify();
       // A caller spelling (including an 8.3 name) must still resolve to the
       // exact directory pinned when these four handles were acquired.
       if (inputRoot !== root && nativeRoot(inputRoot) !== root) fail("CODEX_LIVE_SOURCE_IDENTITY_CHANGED");
@@ -168,7 +179,7 @@ export async function openCodexLiveReadGuard({ home, allowSynchronizationFiles, 
     for (const [index, file] of observed.files.entries()) if (String(file.volume) !== expected[index].dev || BigInt("0x" + file.fileIndex).toString() !== expected[index].ino || file.links !== 1) fail("CODEX_LIVE_SOURCE_IDENTITY_CHANGED");
     readyConfirmed = true;
     check();
-    return { status: "live-source-read-guard-held", root, paths, databases: databaseNames, check, release,
+    return { status: "live-source-read-guard-held", root, paths, databases: databaseNames, check, checkCaptured, release,
       evidence: { platform: process.platform, node: process.version, sqlite: process.versions.sqlite, powershell: observed.powershell,
         files: paths.map((filename, index) => ({ name: path.basename(filename), identity: expected[index] })), namespaceGuard: "delete-rename-only-not-byte-freeze",
         writerQuiescenceClaimed: false, globalAtomicSnapshotClaimed: false, scriptSha256: CODEX_LIVE_GUARD_SCRIPT_SHA256 } };
@@ -197,7 +208,7 @@ export async function withLiveCodexReadSnapshots(options, consume) {
       const entry = { name, db, transaction: false }; connections.push(entry);
       db.exec("BEGIN"); entry.transaction = true;
     }
-    value = await consume({ root: guard.root, connections: Object.fromEntries(connections.map(entry => [entry.name, entry.db])), check: guard.check,
+    value = await consume({ root: guard.root, connections: Object.fromEntries(connections.map(entry => [entry.name, entry.db])), check: guard.check, checkCaptured: guard.checkCaptured,
       evidence: guard.evidence, sourceSnapshotScope: "independent-DB-read-transactions-first-read-establishes-each-snapshot-not-global-atomic" });
     guard.check();
   } catch (error) { primary = error; }

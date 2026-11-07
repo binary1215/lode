@@ -1,4 +1,7 @@
 import fs from "node:fs";
+import { verifyCodexHistoryAddresses } from "./codex-history-addresses.mjs";
+import { verifyCodexZstdPrefixObservation } from "./codex-zstd-prefix.mjs";
+import { isHistoryBytes, historyEquals, historyMetadataText, readHistoryRaw, createHistoryArtifact } from "./native-history-bytes.mjs";
 import path from "node:path";
 import { isDeepStrictEqual as equal } from "node:util";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
@@ -6,8 +9,8 @@ import { copiedProjectFile, inspectCopiedProjectFile, copyOriginal } from "./pro
 import { nativeRoot, pinNativeRoot, nativeRaw, nativeCheck, nativeSeparate } from "./provider-native-history-host.mjs";
 import { readCapturedProjectCatalogFile } from "./captured-project-collection.mjs";
 import { verifyCodexProjectCatalog } from "./codex-project-catalog.mjs";
-import { inspectCodexCapturedPhysicalSource, verifyCodexCapturedPhysicalEvidence, encodeCodexObservedLivePhysicalSource } from "./codex-captured-physical-source.mjs";
-import { readCodexLiveProjectSource, verifyCodexLiveProjectObservation } from "./codex-live-project-source.mjs";
+import { inspectCodexCapturedPhysicalSource, verifyCodexCapturedPhysicalEvidence, encodeCodexObservedLivePhysicalSources } from "./codex-captured-physical-source.mjs";
+import { readCodexLiveProjectSource, verifyCodexLiveProjectObservation, releaseCodexLiveProjectObservation } from "./codex-live-project-source.mjs";
 import { verifySelectedCodexStateEvidence } from "./codex-native-state-evidence.mjs";
 import { verifySelectedCodexHistory } from "./codex-native-portability.mjs";
 import { capturePortableWorkspaces, verifyPortableWorkspaceEvidence } from "./portable-workspace-evidence.mjs";
@@ -26,9 +29,9 @@ function exact(root, relative, raw, check) {
   check(); const file = copiedProjectFile(root, relative);
   if (!fs.lstatSync(file, { throwIfNoEntry: false })) {
     fs.mkdirSync(path.dirname(file), { recursive: true }); check();
-    try { atomicCreateArtifact(file, raw); } catch (error) { if (error.code !== "EEXIST") throw error; }
+    try { createHistoryArtifact(file, raw, check); } catch (error) { if (error.code !== "EEXIST") throw error; }
   }
-  if (!nativeRaw(root, relative, null, check).raw.equals(raw)) fail("PORTABLE_EVIDENCE_CREATE_CONFLICT");
+  if (!historyEquals(readHistoryRaw(root, relative, null, check).raw, raw)) fail("PORTABLE_EVIDENCE_CREATE_CONFLICT");
 }
 const historyNames = new Set(["publication-attempt.json", "publication-receipt.json", "desktop-open-attempt.json", "desktop-open-return.json"]);
 
@@ -37,10 +40,23 @@ const historyNames = new Set(["publication-attempt.json", "publication-receipt.j
 function captureHistory(source, queue, signal) {
   source.check(); const base = "native/derived/claude", file = copiedProjectFile(source.root, base), stat = fs.lstatSync(file, { throwIfNoEntry: false });
   const observation = { scope: "selected-captured-source-store-known-derivative-and-effect-files", entries: [],
+    classificationProfile: "known-operational-namespaces-v2",
     coverage: "bounded-observation-not-complete-or-atomic", noPriorAttemptsProven: false, skippedUnknownEntries: 0,
     inferredTargetDeviceIdentity: false, grantsExecutionAuthority: false };
   if (!stat) return { ...observation, status: "no-history-directory-observed-not-proof-of-no-attempt" };
   if (!stat.isDirectory() || stat.isSymbolicLink()) fail("PORTABLE_EVIDENCE_HISTORY_PATH_UNSAFE");
+  const preserveUnqualifiedOperationalEntry = (relative, entry) => {
+    source.check();
+    if (entry.isSymbolicLink()) fail("PORTABLE_EVIDENCE_HISTORY_PATH_UNSAFE");
+    const metadata = { path: relative, entryKind: entry.isFile() ? "file" : entry.isDirectory() ? "directory" : "other",
+      interpretation: "unqualified-operational-namespace-entry; occurrence-or-outcome-not-inferred", rawOriginalPreserved: false };
+    if (entry.isFile()) {
+      observation.entries.push({ path: relative, kind: "historical-P5-observation-not-new-authority",
+        recordKind: "unqualified-operational-namespace-entry", original: queue(source, relative) });
+      metadata.rawOriginalPreserved = true;
+    }
+    (observation.unqualifiedOperationalEntries ??= []).push(metadata);
+  };
   for (const child of fs.readdirSync(file, { withFileTypes: true })) {
     source.check();
     if (!/^derived-claude-[a-f0-9]{24}$/u.test(child.name)) { observation.skippedUnknownEntries++; continue; }
@@ -56,12 +72,16 @@ function captureHistory(source, queue, signal) {
     if (!effectStat.isDirectory() || effectStat.isSymbolicLink()) fail("PORTABLE_EVIDENCE_HISTORY_PATH_UNSAFE");
     for (const folder of fs.readdirSync(effectPath, { withFileTypes: true })) {
       source.check();
-      if (!/^(?:open-)?[a-f0-9]{24}$/u.test(folder.name)) { observation.skippedUnknownEntries++; continue; }
+      if (!/^(?:open-)?[a-f0-9]{24}$/u.test(folder.name)) {
+        observation.skippedUnknownEntries++; preserveUnqualifiedOperationalEntry(effects + "/" + folder.name, folder); continue;
+      }
       if (!folder.isDirectory() || folder.isSymbolicLink()) fail("PORTABLE_EVIDENCE_HISTORY_PATH_UNSAFE");
       const effect = effects + "/" + folder.name;
       for (const entry of fs.readdirSync(copiedProjectFile(source.root, effect), { withFileTypes: true })) {
         source.check();
-        if (!historyNames.has(entry.name)) { observation.skippedUnknownEntries++; continue; }
+        if (!historyNames.has(entry.name)) {
+          observation.skippedUnknownEntries++; preserveUnqualifiedOperationalEntry(effect + "/" + entry.name, entry); continue;
+        }
         if (!entry.isFile() || entry.isSymbolicLink()) fail("PORTABLE_EVIDENCE_HISTORY_PATH_UNSAFE");
         const relativeFile = effect + "/" + entry.name;
         const raw = nativeRaw(source.root, relativeFile, signal, source.check);
@@ -82,7 +102,8 @@ export function exportPortableProjectEvidence({ directory, catalogFile, expected
   workspaceSources = [], liveObservation = null, signal, assertCurrentAuthority = () => {} }) {
   const target = context(directory, signal, assertCurrentAuthority);
   if (liveObservation !== null && (catalogFile !== undefined || expectedCatalogDigest !== undefined || physicalSources.length)) fail("PORTABLE_EVIDENCE_MIXED_LIVE_SOURCE_BASIS");
-  const observed = liveObservation === null ? null : verifyCodexLiveProjectObservation(liveObservation);
+  const batch = liveObservation === null ? null : encodeCodexObservedLivePhysicalSources({ observation: liveObservation, check: target.check });
+  const observed = batch?.observed ?? null;
   const catalogSource = observed ? { catalog: observed.catalog, verified: verifyCodexProjectCatalog(observed.catalog),
     recheck: () => { target.check(); verifyCodexLiveProjectObservation(liveObservation); } }
     : readCapturedProjectCatalogFile({ catalogFile, expectedCatalogDigest, signal, assertCurrentAuthority: target.check });
@@ -96,13 +117,13 @@ export function exportPortableProjectEvidence({ directory, catalogFile, expected
     copies.push({ source, entry: { ...entry, path: relativeFile } }); return reference(entry);
   };
   const queueBytes = value => {
-    target.check(); const raw = Buffer.from(value), entry = { sha256: hash(raw), bytes: raw.length };
+    target.check(); const raw = isHistoryBytes(value) ? value : Buffer.from(value), entry = { sha256: hash(raw), bytes: raw.length };
     copies.push({ raw, entry }); return entry;
   };
   let liveCapture = null;
   if (observed) {
     const rows = observed.conversations.map(row => {
-      const encoded = encodeCodexObservedLivePhysicalSource({ observation: liveObservation, threadId: row.threadId, check: target.check });
+      const encoded = batch.encoded.get(row.threadId);
       if (encoded) {
         for (const original of encoded.originals) queueBytes(original.raw);
         sources.push({ threadId: row.threadId, provider: "codex", kind: "captured-physical-originals", manifest: queueBytes(encoded.manifestRaw), intent: queueBytes(encoded.intentRaw),
@@ -114,7 +135,8 @@ export function exportPortableProjectEvidence({ directory, catalogFile, expected
         selectedState: queueBytes(json(row.selectedStateEvidence)), history: row.history ? queueBytes(json(row.history)) : null,
         lineage: row.lineage ?? null, historyCoverage: row.historyCoverage ?? null, stateHeaderAgreement: row.stateHeaderAgreement ?? null,
         primarySourceFailure: row.primarySourceFailure ?? null, sourceFileObservation: row.sourceFileObservation ?? null,
-        originals: row.originals.map(original => ({ threadId: original.threadId, rolloutId: original.rolloutId, original: queueBytes(original.raw) })),
+        originals: row.originals.map(original => ({ threadId: original.threadId, rolloutId: original.rolloutId, original: queueBytes(original.raw),
+          ...(original.encoding ? { sourceEncoding: original.encoding, compressionEvidence: original.compressionEvidence } : {}) })),
         incompleteTail: row.incompleteTail ? queueBytes(row.incompleteTail.raw) : null,
         nativePublicationReady: false, semanticHistoryEquivalent: false };
     });
@@ -211,7 +233,10 @@ export async function exportCodexLiveProjectEvidence({ directory, lodeBundles = 
   if (typeof assertCurrentAuthority !== "function") fail("CODEX_LIVE_SOURCE_CURRENT_SCOPE_REQUIRED");
   const observation = await readCodexLiveProjectSource({ ...sourceOptions, signal, assertCurrentAuthority });
   if (observation.status !== "live-project-source-observed") return observation;
-  return exportPortableProjectEvidence({ directory, lodeBundles, workspaceSources, liveObservation: observation, signal, assertCurrentAuthority });
+  let failure = null;
+  try { return exportPortableProjectEvidence({ directory, lodeBundles, workspaceSources, liveObservation: observation, signal, assertCurrentAuthority }); }
+  catch (error) { failure = error; throw error; }
+  finally { try { releaseCodexLiveProjectObservation(observation); } catch (cleanup) { if (failure) failure.captureCleanup = { code: cleanup.code }; else throw cleanup; } }
 }
 
 export function inspectPortableProjectEvidence({ directory, archiveId, expectedArchiveDigest = null, workspaceSourceRoots = null, workspaceObjectSelection = "all-evidence", signal, assertCurrentAuthority = () => {} }) {
@@ -240,7 +265,7 @@ function archiveObjectReader(root, signal, check) {
     // Empty raw originals are valid evidence; JSON/physical codecs impose their
     // own shape requirements separately. Do not discard interrupted journals.
     if (!digest(entry?.sha256) || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0) fail("PORTABLE_EVIDENCE_OBJECT_INVALID");
-    const read = nativeRaw(root, "objects/" + entry.sha256 + ".bin", signal, check);
+    const read = readHistoryRaw(root, "objects/" + entry.sha256 + ".bin", signal, check);
     if (read.entry.sha256 !== entry.sha256 || read.entry.bytes !== entry.bytes) fail("PORTABLE_EVIDENCE_OBJECT_CHANGED"); return read.raw;
   };
 }
@@ -292,12 +317,19 @@ function verifyArchiveManifest({ manifest, archiveId, archiveDigest, object, ver
         || row.historyCoverage && row.historyCoverage.canonicalRowContentsEquivalent !== false) fail("PORTABLE_LIVE_CAPTURE_ROW_INVALID");
       const selectedState = verifySelectedCodexStateEvidence(parseCodexSourceJson(object(row.selectedState).toString("utf8")), [row.threadId])[0];
       if (row.history) {
-        const history = parseCodexSourceJson(object(row.history).toString("utf8"));
+        const history = parseCodexSourceJson(historyMetadataText(object(row.history)));
         if (!equal(history.threadIds, [row.rolloutId])) fail("PORTABLE_LIVE_CAPTURE_ROW_INVALID");
         if (history.authorityPlane !== "P3" || history.grantsRecoveryAuthority !== false || history.nativeWriteAuthorized !== false) fail("PORTABLE_LIVE_CAPTURE_ROW_INVALID");
-        verifySelectedCodexHistory(history);
+        if (history.kind === "CodexSelectedHistoryAddressEvidence") verifyCodexHistoryAddresses(history);
+        else verifySelectedCodexHistory(history);
       }
       const originals = row.originals.map(original => ({ ...original, raw: object(original.original) }));
+      for (const original of originals) {
+        if (Object.hasOwn(original, "sourceEncoding") || Object.hasOwn(original, "compressionEvidence")) {
+          if (original.sourceEncoding !== "zstd-decoded-selected-prefix") fail("PORTABLE_LIVE_CAPTURE_ENCODING_INVALID");
+          verifyCodexZstdPrefixObservation(original.compressionEvidence, { bytes: original.original.bytes, sha256: original.original.sha256 });
+        }
+      }
       if (row.stateHeaderAgreement !== undefined && row.stateHeaderAgreement !== null) {
         const leaf = originals.find(original => original.rolloutId === row.rolloutId), end = leaf?.raw.indexOf(10) ?? -1;
         if (end < 0) fail("PORTABLE_LIVE_CAPTURE_ROW_INVALID");
@@ -308,8 +340,8 @@ function verifyArchiveManifest({ manifest, archiveId, archiveDigest, object, ver
       if (row.incompleteTail && object(row.incompleteTail).includes(10)) fail("PORTABLE_LIVE_CAPTURE_TAIL_INVALID");
       const source = sources.find(source => source.threadId === row.threadId);
       const ordered = files => files.sort((a, b) => a.rolloutId.localeCompare(b.rolloutId));
-      if (source && (!equal(ordered(source.native.payload.files.map(file => ({ rolloutId: file.rolloutId, threadId: file.threadId, sha256: file.sha256, bytes: file.bytes }))),
-        ordered(row.originals.map(original => ({ rolloutId: original.rolloutId, threadId: original.threadId, ...original.original }))))
+      if (source && (!equal(ordered(source.native.payload.files.map(file => ({ rolloutId: file.rolloutId, threadId: file.threadId, sha256: file.sha256, bytes: file.bytes, sourceEncoding: file.sourceEncoding ?? null }))),
+        ordered(row.originals.map(original => ({ rolloutId: original.rolloutId, threadId: original.threadId, ...original.original, sourceEncoding: original.sourceEncoding ?? null }))))
         || row.status !== "selected-live-originals-observed" || row.lineage?.status !== "physical-lineage-ranges-verified")) fail("PORTABLE_LIVE_CAPTURE_ROW_INVALID");
       if (row.status === "selected-source-unavailable" && (!row.reasonCode || originals.length || source)) fail("PORTABLE_LIVE_CAPTURE_ROW_INVALID");
     }

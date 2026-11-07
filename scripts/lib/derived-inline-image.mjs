@@ -1,5 +1,6 @@
 import { inflateSync } from "node:zlib";
 import { SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
+import { inspectDerivedBaselineJpeg } from "./derived-baseline-jpeg.mjs";
 
 const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const crcTable = Uint32Array.from({ length: 256 }, (_, value) => {
@@ -13,10 +14,12 @@ function crc32(bytes) {
 }
 const invalid = code => ({ valid: false, code, originalBytesPreserved: true, providerImageProcessingVerified: false });
 
-// A bounded, provider-independent PNG integrity check, not a visual/model test.
-// Other codecs remain explicitly unqualified, rather than declared absent or
-// silently passed to a model after only checking base64 syntax.
-export function inspectDerivedInlineImage(mediaType, bytes) {
+// Bounded provider-independent integrity checks, not visual/model tests.
+// The default PNG profile remains unchanged. A separate explicit profile adds
+// baseline JPEG entropy validation; other codecs remain unqualified, not absent.
+export function inspectDerivedInlineImage(mediaType, bytes, profile = "png-v1") {
+  if (!["png-v1", "png-and-baseline-jpeg-v1"].includes(profile)) return invalid("DERIVED_IMAGE_VALIDATION_PROFILE_UNQUALIFIED");
+  if (mediaType === "image/jpeg" && profile === "png-and-baseline-jpeg-v1") return inspectDerivedBaselineJpeg(bytes);
   if (mediaType !== "image/png") return invalid("DERIVED_IMAGE_CODEC_VALIDATION_UNQUALIFIED");
   if (bytes.length < 8 || !bytes.subarray(0, 8).equals(signature)) return invalid("DERIVED_PNG_SIGNATURE_INVALID");
   let offset = 8, header = null, ended = false, dataStarted = false, dataEnded = false, paletteEntries = 0;

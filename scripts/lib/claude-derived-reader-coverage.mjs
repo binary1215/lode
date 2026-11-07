@@ -15,7 +15,7 @@ function knownAppendedNotice(row, index, prefixCount) {
     && !Object.hasOwn(row, "origin") && !Object.hasOwn(row, "turnOrigin") && !Object.hasOwn(row, "promptSource");
 }
 
-export function compareClaudeDerivedReader({ nativeMessages, returned, nativeId, prefixCount, exactSessionObserved, digestObservation = false }) {
+export function compareClaudeDerivedReader({ nativeMessages, returned, nativeId, prefixCount, exactSessionObserved, digestObservation = false, nativeMessageDigests = null }) {
   const originals = new Map(), seen = new Set(), matched = new Set(), mismatches = [];
   for (const [index, row] of nativeMessages.entries()) {
     if (typeof row.uuid !== "string" || originals.has(row.uuid) || row.sessionId !== nativeId || row.message?.role !== row.type)
@@ -29,7 +29,7 @@ export function compareClaudeDerivedReader({ nativeMessages, returned, nativeId,
     }
     seen.add(row.uuid);
     const original = originals.get(row.uuid);
-    const bodyMatches = original && (digestObservation ? /^[a-f0-9]{64}$/u.test(row.messageSha256 ?? "") && row.messageSha256 === claudeMessageDigest(original.row.message)
+    const bodyMatches = original && (digestObservation ? /^[a-f0-9]{64}$/u.test(row.messageSha256 ?? "") && row.messageSha256 === (nativeMessageDigests?.get(row.uuid) ?? claudeMessageDigest(original.row.message))
       : isDeepStrictEqual(row.message, original.row.message));
     if (!original || row.type !== original.row.type || row.session_id !== nativeId || !bodyMatches)
       mismatches.push({ index, uuid: row.uuid, code: "role-body-id-mismatch" });
