@@ -2367,7 +2367,9 @@
      "args": [
       {
        "root": "<root>",
-       "caller": null,
+       "caller": {
+        "lodeRecordingPlaceholder": "caller"
+       },
        "environment": {},
        "hostTicket": null
       }
@@ -2391,7 +2393,9 @@
      "args": [
       {
        "root": "<root>",
-       "caller": null,
+       "caller": {
+        "lodeRecordingPlaceholder": "caller"
+       },
        "environment": {},
        "hostTicket": "sample-host_ticket"
       }
@@ -2415,7 +2419,9 @@
      "args": [
       {
        "root": "<root>",
-       "caller": null,
+       "caller": {
+        "lodeRecordingPlaceholder": "caller"
+       },
        "environment": {},
        "hostTicket": ""
       }
@@ -2440,7 +2446,9 @@
      "args": [
       {
        "root": "<root>",
-       "caller": null,
+       "caller": {
+        "lodeRecordingPlaceholder": "caller"
+       },
        "environment": {},
        "to": "sample-to",
        "body": "sample-body",
@@ -2472,7 +2480,9 @@
      "args": [
       {
        "root": "<root>",
-       "caller": null,
+       "caller": {
+        "lodeRecordingPlaceholder": "caller"
+       },
        "environment": {},
        "to": "sample-to",
        "body": "sample-body",
@@ -2504,7 +2514,9 @@
      "args": [
       {
        "root": "<root>",
-       "caller": null,
+       "caller": {
+        "lodeRecordingPlaceholder": "caller"
+       },
        "environment": {},
        "to": "sample-to",
        "body": "sample-body",
@@ -16243,6 +16255,126 @@
   },
   {
    "surface": "cli",
+   "command": "project-document-prepare",
+   "argv": [
+    "project-document-prepare",
+    "<root>"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "HEAD-selected Project documents requires --input <json-file>."
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "project-document-prepare",
+   "argv": [
+    "project-document-prepare",
+    "<root>",
+    "--input",
+    "<cwd>/input.json"
+   ],
+   "calls": [
+    {
+     "fn": "project-document-publication#prepareProjectDocuments",
+     "args": [
+      {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "project-document-prepare",
+   "argv": [
+    "project-document-prepare",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "project-document-publication#prepareProjectDocuments",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "project-document-publish",
+   "argv": [
+    "project-document-publish",
+    "<root>"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "HEAD-selected Project documents requires --input <json-file>."
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "project-document-publish",
+   "argv": [
+    "project-document-publish",
+    "<root>",
+    "--input",
+    "<cwd>/input.json"
+   ],
+   "calls": [
+    {
+     "fn": "project-document-publication#publishProjectDocuments",
+     "args": [
+      {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "project-document-publish",
+   "argv": [
+    "project-document-publish",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "project-document-publication#publishProjectDocuments",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "project-document-status",
    "argv": [
     "project-document-status",
@@ -18160,6 +18292,186 @@
     "<root>"
    ],
    "calls": [],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "work-document-configure",
+   "argv": [
+    "work-document-configure",
+    "<root>"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "HEAD-selected work document operation requires --input <json-file>."
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "work-document-configure",
+   "argv": [
+    "work-document-configure",
+    "<root>",
+    "--input",
+    "<cwd>/input.json"
+   ],
+   "calls": [
+    {
+     "fn": "work-document-publication#configureWorkDocuments",
+     "args": [
+      {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "work-document-configure",
+   "argv": [
+    "work-document-configure",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "work-document-publication#configureWorkDocuments",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "work-document-prepare",
+   "argv": [
+    "work-document-prepare",
+    "<root>"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "HEAD-selected work document operation requires --input <json-file>."
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "work-document-prepare",
+   "argv": [
+    "work-document-prepare",
+    "<root>",
+    "--input",
+    "<cwd>/input.json"
+   ],
+   "calls": [
+    {
+     "fn": "work-document-publication#prepareWorkDocuments",
+     "args": [
+      {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "work-document-prepare",
+   "argv": [
+    "work-document-prepare",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "work-document-publication#prepareWorkDocuments",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "work-document-publish",
+   "argv": [
+    "work-document-publish",
+    "<root>"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "HEAD-selected work document operation requires --input <json-file>."
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "work-document-publish",
+   "argv": [
+    "work-document-publish",
+    "<root>",
+    "--input",
+    "<cwd>/input.json"
+   ],
+   "calls": [
+    {
+     "fn": "work-document-publication#publishWorkDocuments",
+     "args": [
+      {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "work-document-publish",
+   "argv": [
+    "work-document-publish",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "work-document-publication#publishWorkDocuments",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
    "outcome": {
     "ok": true
    }

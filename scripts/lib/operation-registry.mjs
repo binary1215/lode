@@ -4967,7 +4967,11 @@ export async function callRegistered(entry, surface, input, context = input) {
   const loader = side.impl ?? entry.impl;
   let value;
   if (side.handle) {
-    value = await side.handle(input, context, async (...callArguments) => (await loader())(...callArguments));
+    value = await side.handle(input, context, async (...callArguments) => {
+      // A handle-only entry has no implementation for call() to run.
+      if (!loader) throw new Error(`${entry.name} has no registered implementation to call.`);
+      return (await loader())(...callArguments);
+    });
   } else {
     const callArguments = side.args(input, context);
     const implementation = await loader();
