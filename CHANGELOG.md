@@ -11,7 +11,7 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
-## 0.3.0-beta.87 — publication tracked separately
+## 0.3.0-beta.88 — publication tracked separately
 
 - Enforce the declared `project_root` argument of every MCP tool before dispatch.
   A missing, empty or non-string root is refused as `INVALID_TOOL_ARGUMENTS`
@@ -35,6 +35,8 @@ Host/MCP reload.
 - Document that instruction linking creates a missing CLAUDE.md/AGENTS.md with
   only the link block, and that a copy whose records prove their origin is
   adopted as a relocation on explicit resume.
+## 0.3.0-beta.87 — publication tracked separately
+
 - Apply the existing controlled cleanup clock to the two remaining semantic
   clean-close fixture tests. Preserve the real native EOF/exit/tree/PID proof,
   production grace policy and forced/uncertain/nonzero negative tests.
