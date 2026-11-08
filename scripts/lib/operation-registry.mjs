@@ -4,8 +4,9 @@
 //   tool   the MCP tool definition, listed by allTools at its original position;
 //   mcp    args(arguments, context) -> the implementation's argument list, with
 //          optional before/after adapters (see callRegistered);
-//   cli    command, the option names it reads, args(context) -> argument list,
-//          and optional before/after adapters;
+//   cli    command (and aliases), the option names it reads, args(context) ->
+//          argument list or handle(context), and optional before/after adapters;
+//          a CLI-only entry is named "cli:<command>" and has no tool or mcp side;
 //   impl   lazy loader of the scripts/lib implementation (absent when every
 //          surface uses handle);
 //   mcp.maxResponseBytes  optional cap on the formatted MCP response.
@@ -13,6 +14,8 @@
 // each args function (for example CLI numbers arrive as text). Operations not yet
 // listed here keep their original MCP/CLI dispatch branches.
 // test/dispatch-recordings.test.mjs pins the call each surface makes.
+import path from "node:path";
+import fs from "node:fs";
 import { resolveOperation } from "./lode-operation-contract.mjs";
 import { DEFAULT_CONTEXT_BUDGET } from "./context-budget.mjs";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
@@ -85,6 +88,14 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_project_document_status",
+    cli: {
+      command: "project-document-status",
+      flags: [],
+      handle: async (context) => {
+        const { root } = context;
+        return (await import("./project-document-publication.mjs")).projectDocumentStatus({ root });
+      },
+    },
     tool: workDocumentTools.find((tool) => tool.name === "head_project_document_status"),
     mcp: { args: (args) => ["head_project_document_status", args] },
     impl: () => import("./work-document-surface.mjs").then((module) => module.workDocumentFromMcp),
@@ -109,6 +120,14 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_work_document_status",
+    cli: {
+      command: "work-document-status",
+      flags: ["logical-key"],
+      handle: async (context) => {
+        const { root, options } = context;
+        return (await import("./work-document-publication.mjs")).workDocumentStatus({ root, logicalKey: options["logical-key"] });
+      },
+    },
     tool: workDocumentTools.find((tool) => tool.name === "head_work_document_status"),
     mcp: { args: (args) => ["head_work_document_status", args] },
     impl: () => import("./work-document-surface.mjs").then((module) => module.workDocumentFromMcp),
@@ -141,6 +160,16 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_project_status",
+    cli: {
+      command: "status",
+      aliases: ["doctor"],
+      flags: [],
+      handle: async (context) => {
+        const { root } = context;
+        const { inspectProjectExperience } = await import("./project-bootstrap.mjs");
+        return await inspectProjectExperience({ root });
+      },
+    },
     tool: {
       name: "head_project_status",
       description:
@@ -181,6 +210,21 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_project_bundle_export",
+    cli: {
+      command: "project-export",
+      flags: ["destination", "provenance", "sources"],
+      handle: async (context) => {
+        const { root, options, signal, onExportScope } = context;
+        return (await import("./project-portability.mjs")).exportProjectBundle({
+          root,
+          destination: options.destination,
+          provenanceScope: options.provenance,
+          sourceMode: options.sources,
+          signal,
+          onExportScope,
+        });
+      },
+    },
     tool: {
       name: "head_project_bundle_export",
       description:
@@ -214,6 +258,25 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_project_bundle_read",
+    cli: {
+      command: "project-bundle-inspect",
+      flags: ["expected-bundle", "handoff-max-bytes", "handoff-offset"],
+      handle: async (context) => {
+        const { root, options, signal } = context;
+        const handoffOptions = {
+          offset: options["handoff-offset"] === undefined ? 0 : Number(options["handoff-offset"]),
+          maxBytes: options["handoff-max-bytes"] === undefined ? 65536 : Number(options["handoff-max-bytes"]),
+        };
+        if (!fs.lstatSync(root).isDirectory()) {
+          if (options["expected-bundle"] !== undefined) throw new Error("A standalone Handoff has no verified bundle identity.");
+          return (await import("./project-handoff.mjs")).readProjectHandoffFile({ file: root, ...handoffOptions, signal });
+        }
+        const core = await import("./project-portability.mjs");
+        return core.projectBundleSummary(
+          core.inspectProjectBundle({ bundleRoot: root, expectedBundleId: options["expected-bundle"] ?? null, signal, handoffOptions }),
+        );
+      },
+    },
     tool: {
       name: "head_project_bundle_read",
       description:
@@ -241,6 +304,25 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_project_bundle_import",
+    cli: {
+      command: "project-import",
+      flags: ["bundle", "expected-bundle"],
+      handle: async (context) => {
+        const { root, options, command, signal, pluginRoot } = context;
+        const result = (await import("./project-portability.mjs")).importProjectBundle({
+          root,
+          bundleRoot: options.bundle,
+          expectedBundleId: options["expected-bundle"] ?? null,
+          pluginRoot,
+          signal,
+        });
+        return {
+          ...result,
+          nextRead: { command: "conversation-enter", projectRoot: result.targetRoot, sessionId: result.selectedSessionId },
+          selectionScope: "exact-current-request-no-default-change",
+        };
+      },
+    },
     tool: {
       name: "head_project_bundle_import",
       description:
@@ -261,6 +343,40 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_project_native_history",
+    cli: {
+      command: "project-native-history",
+      flags: ["action", "companions", "executable", "expected-bundle", "native-home", "provider", "runtime-root", "threads"],
+      handle: async (context) => {
+        const { root, options, onProcess, signal, nativeHistoryHost, pluginRoot } = context;
+        const allowed = new Set(["action", "provider", "native-home", "executable", "threads", "runtime-root", "expected-bundle", "companions"]);
+        if (Object.keys(options).some((key) => !allowed.has(key))) throw new Error("Unsupported native history arguments.");
+        return (await import("./project-native-history.mjs")).operateProjectNativeHistory({
+          action: options.action,
+          provider: options.provider,
+          bundleRoot: root,
+          expectedBundleId: options["expected-bundle"] ?? null,
+          nativeHome: options["native-home"],
+          executable: options.executable,
+          threadIds:
+            options.threads === undefined
+              ? undefined
+              : String(options.threads)
+                  .split(",")
+                  .map((value) => value.trim()),
+          companionPaths:
+            options.companions === undefined
+              ? []
+              : String(options.companions)
+                  .split(",")
+                  .map((value) => value.trim()),
+          root: options["runtime-root"],
+          pluginRoot,
+          nativeHistoryHost,
+          signal,
+          onProcess,
+        });
+      },
+    },
     tool: {
       name: "head_project_native_history",
       description:
@@ -304,6 +420,26 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_project_initialize_or_resume",
+    cli: {
+      command: "init",
+      aliases: ["resume"],
+      flags: ["copied-project", "input", "instruction-integration", "profile", "runtime", "write-root-instructions"],
+      handle: async (context) => {
+        const { root, options, projectSessionRoute, pluginRoot, inputJson } = context;
+        const { initializeOrResumeProject } = await import("./project-bootstrap.mjs");
+        return await initializeOrResumeProject({
+          root,
+          projectSessionRoute,
+          pluginRoot,
+          runtimes: options.runtime?.split(","),
+          profile: options.profile || "core",
+          copiedProject: options["copied-project"] ?? null,
+          instructionIntegration: options["instruction-integration"] ?? null,
+          writeRootInstructionFiles: options["write-root-instructions"] === true,
+          onboarding: options.input ? inputJson(options, "Project onboarding") : null,
+        });
+      },
+    },
     tool: {
       name: "head_project_initialize_or_resume",
       description:
@@ -1198,6 +1334,18 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_runtime_invocation_result",
+    cli: {
+      command: "runtime-invocation-result",
+      flags: ["authorization"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { resolveProjectStorage } = await import("./project-storage-format.mjs");
+        const { validateRuntimeInvocationRecordIdentity } = await import("./runtime-invocation-record.mjs");
+        const { readRuntimeInvocationResult } = await import("./runtime-run-result-application.mjs");
+        validateRuntimeInvocationRecordIdentity(options.authorization);
+        return readRuntimeInvocationResult({ root, authorizationId: options.authorization, storage: resolveProjectStorage(root) });
+      },
+    },
     tool: {
       name: "head_runtime_invocation_result",
       description:
@@ -2093,6 +2241,28 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_session_work_record",
+    cli: {
+      command: "session-work-record",
+      flags: ["document-selection", "input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const input = inputJson(options, "Selected Session work evidence");
+        let documentSelection, documentSelectionError;
+        if (options["document-selection"]) {
+          try {
+            documentSelection = JSON.parse(fs.readFileSync(path.resolve(options["document-selection"]), "utf8"));
+          } catch (error) {
+            documentSelectionError = error.code || "WORK_DOCUMENT_SELECTION_JSON_INVALID";
+          }
+        }
+        return (await import("./session-work-document-workflow.mjs")).recordSessionWorkAndProjectDocuments({
+          root,
+          input,
+          documentSelection,
+          documentSelectionError,
+        });
+      },
+    },
     tool: {
       name: "head_session_work_record",
       description:
@@ -2210,6 +2380,19 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_session_continue",
+    cli: {
+      command: "session-continue",
+      flags: ["checkpoint", "runtime"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { continueSessionFromArtifacts } = await import("./runtime-session-continuation.mjs");
+        return continueSessionFromArtifacts({
+          root,
+          checkpointId: options.checkpoint || null,
+          runtime: options.runtime,
+        });
+      },
+    },
     tool: {
       name: "head_session_continue",
       description:
@@ -2230,6 +2413,17 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_worker_integration",
+    cli: {
+      command: "worker-integrate",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, onProcess, inputJson } = context;
+        const { operateWorkerIntegration, validateWorkerIntegrationRequest } = await import("./worker-integration-workflow.mjs");
+        const { resolveProjectStorage } = await import("./project-storage-format.mjs");
+        const input = validateWorkerIntegrationRequest(inputJson(options, "Worker integration"));
+        return await operateWorkerIntegration(input, { root, onProcess, storage: resolveProjectStorage(root) });
+      },
+    },
     tool: {
       name: "head_worker_integration",
       description:
@@ -2283,6 +2477,20 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_worker_integration_status",
+    cli: {
+      command: "worker-integration-status",
+      flags: ["integration", "verification"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { inspectWorkerIntegration, validateWorkerIntegrationStatusRequest } = await import("./worker-integration-workflow.mjs");
+        const { resolveProjectStorage } = await import("./project-storage-format.mjs");
+        const input = validateWorkerIntegrationStatusRequest({
+          integrationId: options.integration,
+          ...(options.verification ? { verificationId: options.verification } : {}),
+        });
+        return inspectWorkerIntegration(input, { root, storage: resolveProjectStorage(root) });
+      },
+    },
     tool: {
       name: "head_worker_integration_status",
       description:
@@ -4572,6 +4780,43 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_project_graph",
+    cli: {
+      command: "graph-query",
+      flags: [
+        "anchors",
+        "depth",
+        "details",
+        "inventory-cursor",
+        "inventory-page",
+        "inventory-paths",
+        "max-edges",
+        "max-nodes",
+        "paths",
+        "query",
+        "view",
+        "world-model",
+      ],
+      handle: async (context) => {
+        const { root, options } = context;
+        return import("./project-graph.mjs").then(({ queryProjectGraph }) =>
+          queryProjectGraph({
+            root,
+            query: options.query || "",
+            view: options.view || "all",
+            paths: options.paths?.split(",") || [],
+            anchorIds: options.anchors?.split(",") || [],
+            depth: options.depth == null ? 1 : Number(options.depth),
+            details: options.details === true || options.details === "true",
+            maxNodes: options["max-nodes"] == null ? undefined : Number(options["max-nodes"]),
+            maxEdges: options["max-edges"] == null ? undefined : Number(options["max-edges"]),
+            worldModelId: options["world-model"] || "",
+            inventoryPage: options["inventory-page"] === true || options["inventory-page"] === "true",
+            inventoryPaths: options["inventory-paths"]?.split(","),
+            inventoryCursor: options["inventory-cursor"],
+          }),
+        );
+      },
+    },
     tool: {
       name: "head_project_graph",
       description:
@@ -4659,6 +4904,15 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_session_create",
+    cli: {
+      command: "session-create",
+      flags: ["new-session", "purpose"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { createLodeSession } = await import("./session-routing.mjs");
+        return createLodeSession({ root, sessionId: options["new-session"], purpose: options.purpose });
+      },
+    },
     tool: {
       name: "head_session_create",
       description:
@@ -4735,6 +4989,15 @@ export const OPERATIONS = Object.freeze([
   },
   {
     name: "head_session_list",
+    cli: {
+      command: "session-list",
+      flags: [],
+      handle: async (context) => {
+        const { root } = context;
+        const { readSessionWorkList } = await import("./session-work-context.mjs");
+        return readSessionWorkList({ root });
+      },
+    },
     tool: {
       name: "head_session_list",
       description:
@@ -4848,6 +5111,717 @@ export const OPERATIONS = Object.freeze([
     },
     impl: () => import("./run-lineage.mjs").then((module) => module.startRun),
   },
+  {
+    name: "cli:help",
+    cli: {
+      command: "help",
+      aliases: ["--help", "-h"],
+      flags: [],
+      handle: async (context) => {
+        const { surface, usage } = context;
+        return usage({ surface });
+      },
+    },
+  },
+  {
+    name: "cli:help-all",
+    cli: {
+      command: "help-all",
+      flags: [],
+      handle: async (context) => {
+        const { surface, usage } = context;
+        return usage({ all: true, surface });
+      },
+    },
+  },
+  {
+    name: "cli:--version",
+    cli: {
+      command: "--version",
+      aliases: ["version"],
+      flags: [],
+      handle: async (context) => {
+        const { packageMetadata } = context;
+        const { ARTIFACT_COMPOSITION } = await import("./lode-artifact-composition.mjs");
+        return { name: ARTIFACT_COMPOSITION.pluginName, version: packageMetadata.version };
+      },
+    },
+  },
+  {
+    name: "cli:graph-explorer",
+    cli: {
+      command: "graph-explorer",
+      flags: ["anchors", "history", "layer", "output", "paths", "query", "share"],
+      handle: async (context) => {
+        const { root, options } = context;
+        return import("./graph-explorer.mjs").then(({ exportGraphExplorer }) =>
+          exportGraphExplorer({
+            root,
+            query: options.query || "",
+            anchorIds: options.anchors?.split(",") || [],
+            paths: options.paths?.split(",") || [],
+            layer: options.layer || "project",
+            history: options.history === true,
+            share: options.share === true,
+            output: options.output || null,
+          }),
+        );
+      },
+    },
+  },
+  {
+    name: "cli:runtime-invocation-authorize",
+    cli: {
+      command: "runtime-invocation-authorize",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, command, surface, inputJson } = context;
+        const { requireOperationSurface } = await import("./managed-maintenance-surface.mjs");
+        const { inspectRuntimeAdapters } = await import("./lode-core.mjs");
+        const { buildRuntimeInvocationAuthorization } = await import("./runtime-invocation-lifecycle.mjs");
+        const input = inputJson(options, "Runtime invocation authorization");
+        requireOperationSurface(command, surface, { workerBound: input.worker != null });
+        const allowed = new Set(["runtime", "scope", "workspaceMode", "runtimeSelection", "worker", "retry", "limits"]);
+        const unexpected = Object.keys(input).filter((key) => !allowed.has(key));
+        if (unexpected.length) throw new Error(`Runtime invocation authorization contains unsupported fields: ${unexpected.sort().join(", ")}`);
+        return inspectRuntimeAdapters(root).then((runtimeStatus) =>
+          buildRuntimeInvocationAuthorization({
+            ...input,
+            root,
+            protocolEvidence: runtimeStatus.protocolEvidence,
+            projectBinding: runtimeStatus.projectBinding,
+            persist: true,
+          }),
+        );
+      },
+    },
+  },
+  {
+    name: "cli:runtime-invocation-execute",
+    cli: {
+      command: "runtime-invocation-execute",
+      flags: ["authorization", "input"],
+      handle: async (context) => {
+        const { root, options, command, surface, onProcess, signal, optionalInputJson, requireRuntimeSurface } = context;
+        const { inspectRuntimeAdapters } = await import("./lode-core.mjs");
+        const { readRuntimeInvocationAuthorization } = await import("./runtime-invocation-lifecycle.mjs");
+        const { executeRuntimeInvocation } = await import("./runtime-one-shot-exec.mjs");
+        const authorization = readRuntimeInvocationAuthorization({ root, authorizationId: options.authorization }).authorization;
+        requireRuntimeSurface(command, surface, root, authorization);
+        const input = optionalInputJson(options, "Runtime invocation execution");
+        const unexpected = Object.keys(input).filter((key) => key !== "sessionRequest");
+        if (unexpected.length) throw new Error(`Runtime invocation execution contains unsupported fields: ${unexpected.sort().join(", ")}`);
+        return inspectRuntimeAdapters(root).then(
+          async (runtimeStatus) =>
+            await executeRuntimeInvocation({
+              root,
+              authorization,
+              sessionRequest: input.sessionRequest || "",
+              signal,
+              onProcessEvent: onProcess,
+              protocolEvidence: runtimeStatus.protocolEvidence,
+              projectBinding: runtimeStatus.projectBinding,
+              persist: true,
+            }),
+        );
+      },
+    },
+  },
+  {
+    name: "cli:runtime-invocation-apply-run-result",
+    cli: {
+      command: "runtime-invocation-apply-run-result",
+      flags: ["authorization"],
+      handle: async (context) => {
+        const { root, options, command, surface, requireRuntimeSurface } = context;
+        const { resolveProjectStorage } = await import("./project-storage-format.mjs");
+        const { readRuntimeInvocationAuthorization } = await import("./runtime-invocation-lifecycle.mjs");
+        const { applyRuntimeRunResult } = await import("./runtime-run-result-application.mjs");
+        const authorization = readRuntimeInvocationAuthorization({ root, authorizationId: options.authorization }).authorization;
+        requireRuntimeSurface(command, surface, root, authorization);
+        return applyRuntimeRunResult({ root, authorizationId: options.authorization, storage: resolveProjectStorage(root) });
+      },
+    },
+  },
+  {
+    name: "cli:worker-execute",
+    cli: {
+      command: "worker-execute",
+      flags: ["authorization", "input", "role"],
+      handle: async (context) => {
+        const { root, options, onProcess, signal, inputJson } = context;
+        const { inspectRuntimeAdapters } = await import("./lode-core.mjs");
+        const { executeBoundedWorkerDispatch } = await import("./bounded-worker-dispatch.mjs");
+        const input = options.input ? inputJson(options, "Bounded worker execution") : {};
+        const unexpected = Object.keys(input).filter((key) => key !== "sessionRequest");
+        if (unexpected.length) throw new Error(`Bounded worker execution contains unsupported fields: ${unexpected.sort().join(", ")}`);
+        return inspectRuntimeAdapters(root).then(
+          async (runtimeStatus) =>
+            await executeBoundedWorkerDispatch({
+              root,
+              authorizationId: options.authorization,
+              role: options.role,
+              execution: {
+                sessionRequest: input.sessionRequest ?? "",
+                signal,
+                onProcessEvent: onProcess,
+                protocolEvidence: runtimeStatus.protocolEvidence,
+                projectBinding: runtimeStatus.projectBinding,
+              },
+            }),
+        );
+      },
+    },
+  },
+  {
+    name: "cli:onboarding-start",
+    cli: {
+      command: "onboarding-start",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, optionalInputJson } = context;
+        const { startOnboarding } = await import("./onboarding.mjs");
+        return await startOnboarding({ ...optionalInputJson(options, "Onboarding start"), root });
+      },
+    },
+  },
+  {
+    name: "cli:onboarding-candidates",
+    cli: {
+      command: "onboarding-candidates",
+      flags: ["candidate-set"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { readOnboardingCandidateSet } = await import("./onboarding.mjs");
+        return readOnboardingCandidateSet({ root, candidateSetId: options["candidate-set"] });
+      },
+    },
+  },
+  {
+    name: "cli:onboarding-review-read",
+    cli: {
+      command: "onboarding-review-read",
+      flags: ["review"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { readOnboardingReviewDecision } = await import("./onboarding.mjs");
+        return readOnboardingReviewDecision({ root, reviewDecisionId: options.review });
+      },
+    },
+  },
+  {
+    name: "cli:source-scope-set",
+    cli: {
+      command: "source-scope-set",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { inspectProject } = await import("./lode-core.mjs");
+        const { writeRepositorySourceScope } = await import("./repository-source-scope.mjs");
+        const inspected = inspectProject(root);
+        if (inspected.status !== "ready") throw new Error(`Project must be ready to configure source scope; current status: ${inspected.status}.`);
+        return writeRepositorySourceScope({
+          projectRoot: inspected.project.projectRoot,
+          selection: inputJson(options, "Repository source scope"),
+          storage: inspected.storage,
+        });
+      },
+    },
+  },
+  {
+    name: "cli:source-scope-status",
+    cli: {
+      command: "source-scope-status",
+      flags: [],
+      handle: async (context) => {
+        const { root } = context;
+        const { inspectProject } = await import("./lode-core.mjs");
+        const { readRepositorySourceScope } = await import("./repository-source-scope.mjs");
+        const inspected = inspectProject(root);
+        if (inspected.status === "not_initialized") throw new Error("Lode Agent Core is not initialized.");
+        return readRepositorySourceScope({ projectRoot: inspected.project.projectRoot, storage: inspected.storage });
+      },
+    },
+  },
+  {
+    name: "cli:feature-mapping-candidates",
+    cli: {
+      command: "feature-mapping-candidates",
+      flags: ["candidate-set"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { readFeatureMappingCandidateSet } = await import("./feature-mapping.mjs");
+        return readFeatureMappingCandidateSet({ root, candidateSetId: options["candidate-set"] });
+      },
+    },
+  },
+  {
+    name: "cli:feature-mapping-review-read",
+    cli: {
+      command: "feature-mapping-review-read",
+      flags: ["review"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { readFeatureMappingReviewDecision } = await import("./feature-mapping.mjs");
+        return readFeatureMappingReviewDecision({ root, reviewDecisionId: options.review });
+      },
+    },
+  },
+  {
+    name: "cli:change-set-record",
+    cli: {
+      command: "change-set-record",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { recordChangeSet } = await import("./change-set.mjs");
+        return await recordChangeSet({ ...inputJson(options, "ChangeSet"), root });
+      },
+    },
+  },
+  {
+    name: "cli:change-set-read",
+    cli: {
+      command: "change-set-read",
+      flags: ["change-set"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { readChangeSet } = await import("./change-set.mjs");
+        return readChangeSet({ root, changeSetId: options["change-set"] });
+      },
+    },
+  },
+  {
+    name: "cli:change-impact-candidates",
+    cli: {
+      command: "change-impact-candidates",
+      flags: ["candidate-set"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { readChangeImpactCandidateSet } = await import("./change-set.mjs");
+        return readChangeImpactCandidateSet({ root, candidateSetId: options["candidate-set"] });
+      },
+    },
+  },
+  {
+    name: "cli:change-impact-review",
+    cli: {
+      command: "change-impact-review",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { reviewChangeImpact } = await import("./change-set.mjs");
+        return await reviewChangeImpact({ ...inputJson(options, "Change impact ReviewDecision"), root });
+      },
+    },
+  },
+  {
+    name: "cli:change-impact-review-read",
+    cli: {
+      command: "change-impact-review-read",
+      flags: ["review"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { readChangeImpactReviewDecision } = await import("./change-set.mjs");
+        return readChangeImpactReviewDecision({ root, reviewDecisionId: options.review });
+      },
+    },
+  },
+  {
+    name: "cli:change-set-vcs-attach",
+    cli: {
+      command: "change-set-vcs-attach",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { attachVcsEvidence } = await import("./change-set.mjs");
+        return await attachVcsEvidence({ ...inputJson(options, "VCS evidence attachment"), root });
+      },
+    },
+  },
+  {
+    name: "cli:observation-file-ingest",
+    cli: {
+      command: "observation-file-ingest",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { ingestJsonObservationEventFile } = await import("./observation-adapter.mjs");
+        const value = inputJson(options, "Host JSON Observation source");
+        return await ingestJsonObservationEventFile({
+          root,
+          sourceKey: value.sourceKey,
+          binding: value.binding,
+          descriptor: value.descriptor,
+          eventFile: value.eventFile,
+          maxBytes: value.maxBytes,
+        });
+      },
+    },
+  },
+  {
+    name: "cli:head-continuity",
+    cli: {
+      command: "head-continuity",
+      flags: ["fresh"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { buildLodeContinuitySnapshot } = await import("./product-operating-loop.mjs");
+        return buildLodeContinuitySnapshot({ root, fresh: options.fresh === true });
+      },
+    },
+  },
+  {
+    name: "cli:world-index",
+    cli: {
+      command: "world-index",
+      flags: ["git-log", "parent-snapshot", "revision-parents", "runtime-state"],
+      handle: async (context) => {
+        const { root, options, readJsonFile } = context;
+        const { GitLogFileHistoryAdapter } = await import("./git-history.mjs");
+        const { RuntimeStateFileAdapter } = await import("./runtime-state.mjs");
+        const { buildWorldModel } = await import("./world-model.mjs");
+        return await buildWorldModel({
+          root,
+          persist: true,
+          gitHistoryAdapter: options["git-log"] ? new GitLogFileHistoryAdapter({ file: options["git-log"] }) : null,
+          runtimeStateAdapter: options["runtime-state"] ? new RuntimeStateFileAdapter({ file: options["runtime-state"] }) : null,
+          parentSourceSnapshotIds: Object.hasOwn(options, "parent-snapshot")
+            ? options["parent-snapshot"]
+                .split(",")
+                .map((item) => item.trim())
+                .filter(Boolean)
+            : undefined,
+          revisionParentIds: Object.hasOwn(options, "revision-parents") ? readJsonFile(options["revision-parents"], "Revision parent map") : undefined,
+        });
+      },
+    },
+  },
+  {
+    name: "cli:storage-gc",
+    cli: {
+      command: "storage-gc",
+      flags: ["apply"],
+      handle: async (context) => {
+        const { root, options, onProcess, signal } = context;
+        const { inspectSnapshotPreservationClosure } = await import("./snapshot-preservation-closure.mjs");
+        const { inspectSnapshotGarbageCollection, applySnapshotGarbageCollection } = await import("./snapshot-gc.mjs");
+        if (options.apply === true || options.apply === "true") return await applySnapshotGarbageCollection({ root, signal, onProcess });
+        const inspection = inspectSnapshotGarbageCollection({ root });
+        try {
+          inspection.typedClosure = await inspectSnapshotPreservationClosure({ root });
+        } catch (error) {
+          inspection.typedClosure = { status: "partial-preserved", reasonCode: error.code || "TYPED_CLOSURE_UNAVAILABLE", deletedCount: 0 };
+        }
+        return inspection;
+      },
+    },
+  },
+  {
+    name: "cli:world-status",
+    cli: {
+      command: "world-status",
+      flags: [],
+      handle: async (context) => {
+        const { root } = context;
+        const { inspectWorldModel } = await import("./world-model.mjs");
+        return await inspectWorldModel({ root });
+      },
+    },
+  },
+  {
+    name: "cli:world-refresh",
+    cli: {
+      command: "world-refresh",
+      flags: ["expect-changed", "parent-snapshot", "trigger-evidence"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { refreshWorldModel } = await import("./incremental-refresh.mjs");
+        return await refreshWorldModel({
+          root,
+          triggerKind: "manual",
+          triggerEvidenceIds: options["trigger-evidence"]
+            ? options["trigger-evidence"]
+                .split(",")
+                .map((item) => item.trim())
+                .filter(Boolean)
+            : [],
+          expectedChangedPaths:
+            options["expect-changed"] == null
+              ? null
+              : options["expect-changed"]
+                  .split(",")
+                  .map((item) => item.trim())
+                  .filter(Boolean),
+          additionalParentSourceSnapshotIds: options["parent-snapshot"]
+            ? options["parent-snapshot"]
+                .split(",")
+                .map((item) => item.trim())
+                .filter(Boolean)
+            : [],
+        });
+      },
+    },
+  },
+  {
+    name: "cli:world-refresh-events",
+    cli: {
+      command: "world-refresh-events",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { processRefreshTriggerBatch } = await import("./refresh-trigger.mjs");
+        const input = inputJson(options, "Refresh trigger event ingestion");
+        const unexpected = Object.keys(input).filter((key) => !["sourceKind", "events", "maxEvents"].includes(key));
+        if (unexpected.length) throw new Error(`Refresh trigger event ingestion contains unsupported fields: ${unexpected.sort().join(", ")}`);
+        if (input.sourceKind !== "ci") throw new Error("world-refresh-events accepts only sourceKind ci; use world-refresh-watch for filesystem events.");
+        return await processRefreshTriggerBatch({ root, ...input });
+      },
+    },
+  },
+  {
+    name: "cli:world-refresh-watch",
+    cli: {
+      command: "world-refresh-watch",
+      flags: ["debounce-ms", "max-events"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { runFileSystemRefreshWatcher } = await import("./refresh-trigger.mjs");
+        return await runFileSystemRefreshWatcher({
+          root,
+          debounceMs: options["debounce-ms"] == null ? undefined : Number(options["debounce-ms"]),
+          maxEvents: options["max-events"] == null ? undefined : Number(options["max-events"]),
+        });
+      },
+    },
+  },
+  {
+    name: "cli:world-graph-remote-database-initialize",
+    cli: {
+      command: "world-graph-remote-database-initialize",
+      flags: ["confirm-database", "reset-incompatible"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { resolveProjectStorage } = await import("./project-storage-format.mjs");
+        const { initializeArcadeDbDatabase } = await import("./arcadedb-database-lifecycle.mjs");
+        return initializeArcadeDbDatabase({
+          root,
+          storage: resolveProjectStorage(root),
+          resetIncompatible: options["reset-incompatible"] === "true",
+          confirmDatabase: options["confirm-database"] || "",
+        });
+      },
+    },
+  },
+  {
+    name: "cli:world-graph-remote-activate",
+    cli: {
+      command: "world-graph-remote-activate",
+      flags: [],
+      handle: async (context) => {
+        const { root } = context;
+        const { activateArcadeDbGraphProjection } = await import("./graphdb-projection-activation.mjs");
+        return await activateArcadeDbGraphProjection({ root });
+      },
+    },
+  },
+  {
+    name: "cli:world-docs-capture",
+    cli: {
+      command: "world-docs-capture",
+      flags: [],
+      handle: async (context) => {
+        const { root } = context;
+        const { captureWorldMarkdownChanges } = await import("./world-model.mjs");
+        return await captureWorldMarkdownChanges({ root, persist: true });
+      },
+    },
+  },
+  {
+    name: "cli:world-docs-review",
+    cli: {
+      command: "world-docs-review",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { reviewDocumentChanges } = await import("./document-change-review.mjs");
+        const input = inputJson(options, "Document-change ReviewDecision");
+        const allowed = new Set(["candidateSetId", "disposition", "acceptedCandidateIds", "resultingProductModel", "rationale", "apply"]);
+        const unexpected = Object.keys(input).filter((key) => !allowed.has(key));
+        if (unexpected.length) throw new Error(`Document-change ReviewDecision contains unsupported fields: ${unexpected.sort().join(", ")}`);
+        return await reviewDocumentChanges({ ...input, root });
+      },
+    },
+  },
+  {
+    name: "cli:world-docs-apply",
+    cli: {
+      command: "world-docs-apply",
+      flags: ["review"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { applyDocumentChangeReview } = await import("./document-change-review.mjs");
+        return await applyDocumentChangeReview({ root, reviewDecisionId: options.review });
+      },
+    },
+  },
+  {
+    name: "cli:world-docs-policy-set",
+    cli: {
+      command: "world-docs-policy-set",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { setPostRefreshProjectionPolicy } = await import("./post-refresh-projection.mjs");
+        const input = inputJson(options, "Post-refresh document projection policy");
+        const unexpected = Object.keys(input).filter((key) => key !== "mode");
+        if (unexpected.length) throw new Error(`Post-refresh document projection policy contains unsupported fields: ${unexpected.sort().join(", ")}`);
+        return setPostRefreshProjectionPolicy({ root, mode: input.mode });
+      },
+    },
+  },
+  {
+    name: "cli:world-docs-policy-status",
+    cli: {
+      command: "world-docs-policy-status",
+      flags: [],
+      handle: async (context) => {
+        const { root } = context;
+        const { inspectPostRefreshProjectionPolicy } = await import("./post-refresh-projection.mjs");
+        return inspectPostRefreshProjectionPolicy({ root });
+      },
+    },
+  },
+  {
+    name: "cli:checkpoint",
+    cli: {
+      command: "checkpoint",
+      flags: ["next", "summary"],
+      handle: async (context) => {
+        const { root, options } = context;
+        const { createRecoveryCheckpoint } = await import("./compaction-recovery.mjs");
+        return createRecoveryCheckpoint({
+          root,
+          purpose: options.summary,
+          currentPosition: options.summary,
+          nextExpectedResult: options.next || options.summary,
+          approvedDecisions: [],
+          openReviewIds: [],
+        });
+      },
+    },
+  },
+  {
+    name: "cli:project-document-prepare",
+    cli: {
+      command: "project-document-prepare",
+      aliases: ["project-document-publish"],
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, command, inputJson } = context;
+        const api = await import("./project-document-publication.mjs");
+        const input = inputJson(options, "HEAD-selected Project documents");
+        return api[command === "project-document-prepare" ? "prepareProjectDocuments" : "publishProjectDocuments"]({ ...input, root });
+      },
+    },
+  },
+  {
+    name: "cli:work-document-prepare",
+    cli: {
+      command: "work-document-prepare",
+      aliases: ["work-document-configure", "work-document-publish"],
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, command, inputJson } = context;
+        const api = await import("./work-document-publication.mjs");
+        const input = inputJson(options, "HEAD-selected work document operation");
+        const method = {
+          "work-document-prepare": "prepareWorkDocuments",
+          "work-document-configure": "configureWorkDocuments",
+          "work-document-publish": "publishWorkDocuments",
+        }[command];
+        return api[method]({ ...input, root });
+      },
+    },
+  },
+  {
+    name: "cli:lineage-plan",
+    cli: {
+      command: "lineage-plan",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { createWholePlanSnapshot } = await import("./execution-lineage.mjs");
+        return createWholePlanSnapshot({ ...inputJson(options, "Whole plan"), root, persist: true });
+      },
+    },
+  },
+  {
+    name: "cli:lineage-next-plan",
+    cli: {
+      command: "lineage-next-plan",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { createNextWholePlanSnapshot } = await import("./execution-lineage.mjs");
+        return createNextWholePlanSnapshot({ ...inputJson(options, "Next whole plan"), root, persist: true });
+      },
+    },
+  },
+  {
+    name: "cli:lineage-contract",
+    cli: {
+      command: "lineage-contract",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { createExecutionContract } = await import("./execution-lineage.mjs");
+        return createExecutionContract({ ...inputJson(options, "Execution Contract"), root, persist: true });
+      },
+    },
+  },
+  {
+    name: "cli:run-finish",
+    cli: {
+      command: "run-finish",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { finishRun } = await import("./run-lineage.mjs");
+        return finishRun({ ...inputJson(options, "Result Packet"), root });
+      },
+    },
+  },
+  {
+    name: "cli:run-review",
+    cli: {
+      command: "run-review",
+      flags: ["input"],
+      handle: async (context) => {
+        const { root, options, inputJson } = context;
+        const { reviewRun } = await import("./run-lineage.mjs");
+        return reviewRun({ ...inputJson(options, "ReviewDecision"), root });
+      },
+    },
+  },
+  {
+    name: "cli:context-compile",
+    cli: {
+      command: "context-compile",
+      flags: ["budget", "evidence-needs", "task"],
+      handle: async (context) => {
+        const { root, options, evidenceNeedsInput } = context;
+        const { compileContext, DEFAULT_CONTEXT_BUDGET } = await import("./context-compiler.mjs");
+        return await compileContext({
+          root,
+          task: options.task,
+          budget: options.budget == null ? DEFAULT_CONTEXT_BUDGET : Number(options.budget),
+          evidenceNeeds: evidenceNeedsInput(options),
+          persist: true,
+        });
+      },
+    },
+  },
 ]);
 
 // Host presentation hints describe the implemented effect; they do not grant
@@ -4923,7 +5897,7 @@ const supplementalReadOnlyHints = {
 // The MCP tool catalog in listing order: every registered operation's tool, with
 // the optional logical Session route on each project_root tool and the
 // supplemental read-only hints applied once.
-const catalog = OPERATIONS.map((entry) => entry.tool);
+const catalog = OPERATIONS.filter((entry) => entry.tool).map((entry) => entry.tool);
 for (const tool of catalog) {
   if (tool.inputSchema?.properties?.project_root) {
     tool.inputSchema.properties.session_id = {
@@ -4940,9 +5914,12 @@ export function registryCatalog() {
   return catalog;
 }
 
-const byName = new Map(OPERATIONS.map((entry) => [entry.name, entry]));
-// Entries without a cli side are MCP-only here; their CLI commands keep their own branch.
-const byCommand = new Map(OPERATIONS.filter((entry) => entry.cli).map((entry) => [entry.cli.command, entry]));
+const byName = new Map(OPERATIONS.filter((entry) => entry.mcp).map((entry) => [entry.name, entry]));
+// MCP-only entries have no cli side; CLI-only entries (named "cli:<command>")
+// have no tool or mcp side. A CLI command may have aliases ("doctor" for "status").
+const byCommand = new Map(
+  OPERATIONS.filter((entry) => entry.cli).flatMap((entry) => [entry.cli.command, ...(entry.cli.aliases ?? [])].map((command) => [command, entry])),
+);
 
 export function registeredOperation(name) {
   return byName.get(resolveOperation(name)?.semanticName ?? name) ?? null;
