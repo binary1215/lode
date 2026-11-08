@@ -8,14 +8,7 @@ import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 import { callRegistered, registeredCommand } from "./lib/operation-registry.mjs";
 import { commandEntry, isManagedMutation, requireOperationSurface, requireSurface } from "./lib/managed-maintenance-surface.mjs";
 import { inspectProject, inspectRuntimeAdapters } from "./lib/lode-core.mjs";
-import {
-  withSessionCallContext,
-  sessionCallRequiresBinding,
-  sessionSelectionUnresolved,
-  createLodeSession,
-  readProjectDirection,
-  updateProjectDirection,
-} from "./lib/session-routing.mjs";
+import { withSessionCallContext, sessionCallRequiresBinding, sessionSelectionUnresolved, createLodeSession } from "./lib/session-routing.mjs";
 import {
   operateWorkerIntegration,
   inspectWorkerIntegration,
@@ -25,32 +18,12 @@ import {
 import { resolveProjectStorage } from "./lib/project-storage-format.mjs";
 import { validateRuntimeInvocationRecordIdentity } from "./lib/runtime-invocation-record.mjs";
 import { compileContext, DEFAULT_CONTEXT_BUDGET } from "./lib/context-compiler.mjs";
-import { prepareContextWorkflow, previewContextWorkflow } from "./lib/context-workflow.mjs";
-import { prepareSourceContext, inspectSourceObservation } from "./lib/source-context-workflow.mjs";
 import { createExecutionContract, createNextWholePlanSnapshot, createWholePlanSnapshot } from "./lib/execution-lineage.mjs";
 import { GitLogFileHistoryAdapter } from "./lib/git-history.mjs";
 import { RuntimeStateFileAdapter } from "./lib/runtime-state.mjs";
 import { finishRun, reviewRun } from "./lib/run-lineage.mjs";
-import {
-  buildWorldModel,
-  captureWorldMarkdownChanges,
-  inspectWorldGraphProjection,
-  inspectWorldMarkdownProjection,
-  inspectWorldModel,
-  queryWorldHistory,
-  queryWorldModel,
-  queryWorldRuntimeState,
-  queryWorldTemporalGraph,
-  readWorldDocumentChangeCandidateSet,
-} from "./lib/world-model.mjs";
-import {
-  inspectOnboarding,
-  proposeOnboardingSemanticRefresh,
-  readOnboardingCandidateSet,
-  readOnboardingReviewDecision,
-  restoreOnboardingCandidate,
-  startOnboarding,
-} from "./lib/onboarding.mjs";
+import { buildWorldModel, captureWorldMarkdownChanges, inspectWorldModel } from "./lib/world-model.mjs";
+import { readOnboardingCandidateSet, readOnboardingReviewDecision, startOnboarding } from "./lib/onboarding.mjs";
 import { readFeatureMappingCandidateSet, readFeatureMappingReviewDecision } from "./lib/feature-mapping.mjs";
 import {
   attachVcsEvidence,
@@ -63,51 +36,19 @@ import {
 import { refreshWorldModel } from "./lib/incremental-refresh.mjs";
 import { processRefreshTriggerBatch, runFileSystemRefreshWatcher } from "./lib/refresh-trigger.mjs";
 import { inspectPostRefreshProjectionPolicy, setPostRefreshProjectionPolicy } from "./lib/post-refresh-projection.mjs";
-import {
-  applyDocumentChangeReview,
-  inspectDocumentChangeReviewStatus,
-  readDocumentChangeApplicationReceipt,
-  readDocumentChangeReviewDecision,
-  reviewDocumentChanges,
-} from "./lib/document-change-review.mjs";
-import { activateArcadeDbGraphProjection, inspectArcadeDbGraphProjectionStatus } from "./lib/graphdb-projection-activation.mjs";
-import { initializeArcadeDbDatabase, inspectArcadeDbDatabaseCompatibility } from "./lib/arcadedb-database-lifecycle.mjs";
-import {
-  buildRuntimeInvocationAuthorization,
-  inspectRuntimeInvocationExecutionLease,
-  readRuntimeInvocationAuthorization,
-} from "./lib/runtime-invocation-lifecycle.mjs";
+import { applyDocumentChangeReview, reviewDocumentChanges } from "./lib/document-change-review.mjs";
+import { activateArcadeDbGraphProjection } from "./lib/graphdb-projection-activation.mjs";
+import { initializeArcadeDbDatabase } from "./lib/arcadedb-database-lifecycle.mjs";
+import { buildRuntimeInvocationAuthorization, readRuntimeInvocationAuthorization } from "./lib/runtime-invocation-lifecycle.mjs";
 import { executeRuntimeInvocation } from "./lib/runtime-one-shot-exec.mjs";
 import { applyRuntimeRunResult, readRuntimeInvocationResult } from "./lib/runtime-run-result-application.mjs";
 import { readRepositorySourceScope, writeRepositorySourceScope } from "./lib/repository-source-scope.mjs";
 import { initializeOrResumeProject, inspectProjectExperience, inspectProjectLocationExperience } from "./lib/project-bootstrap.mjs";
-import {
-  buildLodeContinuitySnapshot,
-  inspectProductOperatingLoop,
-  observeProductOutcome,
-  recordProductHypothesis,
-  recordProductSignal,
-} from "./lib/product-operating-loop.mjs";
-import {
-  inspectProductPolicyStatus,
-  proposeProductPolicy,
-  readProductPolicyCandidate,
-  readProductPolicyReviewDecision,
-  reviewProductPolicy,
-} from "./lib/product-policy.mjs";
-import { collectRegisteredObservation, ingestJsonObservationEventFile } from "./lib/observation-adapter.mjs";
-import { prepareObservationEvidence } from "./lib/observation-workflow.mjs";
-import {
-  inspectConformanceQueue,
-  prepareConformanceAssessment,
-  readConformanceFinding,
-  recordConformanceDisposition,
-} from "./lib/conformance-reconciliation.mjs";
+import { buildLodeContinuitySnapshot } from "./lib/product-operating-loop.mjs";
+import { ingestJsonObservationEventFile } from "./lib/observation-adapter.mjs";
 import { formatCliError, formatCliResult } from "./lib/cli-presentation.mjs";
 import { createRecoveryCheckpoint } from "./lib/compaction-recovery.mjs";
-import { enterConversationRecovery, processCompactionLifecycle } from "./lib/compaction-lifecycle.mjs";
-import { readSessionWorkContext, readSessionWorkList } from "./lib/session-work-context.mjs";
-import { integrateReviewedRunCheckpoint, restoreSessionFromArtifacts } from "./lib/session-recovery.mjs";
+import { readSessionWorkList } from "./lib/session-work-context.mjs";
 import { continueSessionFromArtifacts } from "./lib/runtime-session-continuation.mjs";
 import { executeBoundedWorkerDispatch, readBoundedWorkerDispatch } from "./lib/bounded-worker-dispatch.mjs";
 
@@ -546,6 +487,8 @@ async function runRoutedCommand(
       workerJobSupervisor,
       workerPreparationBackend,
       observationRegistry,
+      compactionLifecycleHost,
+      evidenceNeedsInput,
     });
   if (command === "help" || command === "--help" || command === "-h") return usage({ surface });
   if (command === "help-all") return usage({ all: true, surface });
@@ -647,7 +590,6 @@ async function runRoutedCommand(
         inventoryCursor: options["inventory-cursor"],
       }),
     );
-  if (command === "graph-index") return import("./lib/project-graph.mjs").then(({ indexProjectGraph }) => indexProjectGraph({ root }));
   if (command === "graph-explorer")
     return import("./lib/graph-explorer.mjs").then(({ exportGraphExplorer }) =>
       exportGraphExplorer({
@@ -663,14 +605,6 @@ async function runRoutedCommand(
     );
   if (command === "session-create") return createLodeSession({ root, sessionId: options["new-session"], purpose: options.purpose });
   if (command === "session-list") return readSessionWorkList({ root });
-  if (command === "project-direction-read") return readProjectDirection({ root });
-  if (command === "project-direction-update")
-    return updateProjectDirection({
-      root,
-      expectedDirectionId: options["expected-direction"] || null,
-      input: inputJson(options, "Current user Project direction"),
-    });
-  if (command === "runtime-adapters") return await inspectRuntimeAdapters(root);
   if (command === "runtime-invocation-authorize") {
     const input = inputJson(options, "Runtime invocation authorization");
     requireOperationSurface(command, surface, { workerBound: input.worker != null });
@@ -698,7 +632,6 @@ async function runRoutedCommand(
     });
     return inspectWorkerIntegration(input, { root, storage: resolveProjectStorage(root) });
   }
-  if (command === "runtime-invocation-lease-status") return inspectRuntimeInvocationExecutionLease({ root, authorizationId: options.authorization });
   if (command === "runtime-invocation-execute") {
     const authorization = readRuntimeInvocationAuthorization({ root, authorizationId: options.authorization }).authorization;
     requireRuntimeSurface(command, surface, root, authorization);
@@ -749,12 +682,6 @@ async function runRoutedCommand(
     );
   }
   if (command === "onboarding-start") return await startOnboarding({ ...optionalInputJson(options, "Onboarding start"), root });
-  if (command === "onboarding-semantic-refresh") {
-    const input = inputJson(options, "Fresh onboarding semantic proposal");
-    return await proposeOnboardingSemanticRefresh({ root, semanticProposal: input.semanticProposal || input, recoveryBasis: input.recoveryBasis || null });
-  }
-  if (command === "onboarding-candidate-restore") return restoreOnboardingCandidate({ ...inputJson(options, "Exact candidate restoration"), root });
-  if (command === "onboarding-status") return await inspectOnboarding({ root });
   if (command === "onboarding-candidates") return readOnboardingCandidateSet({ root, candidateSetId: options["candidate-set"] });
   if (command === "onboarding-review-read") return readOnboardingReviewDecision({ root, reviewDecisionId: options.review });
   if (command === "source-scope-set") {
@@ -779,52 +706,6 @@ async function runRoutedCommand(
   if (command === "change-impact-review") return await reviewChangeImpact({ ...inputJson(options, "Change impact ReviewDecision"), root });
   if (command === "change-impact-review-read") return readChangeImpactReviewDecision({ root, reviewDecisionId: options.review });
   if (command === "change-set-vcs-attach") return await attachVcsEvidence({ ...inputJson(options, "VCS evidence attachment"), root });
-  if (command === "conformance-prepare")
-    return await prepareConformanceAssessment({
-      root,
-      limit: options.limit == null ? 32 : Number(options.limit),
-      projectionId: options.projection || "",
-      cursor: options.cursor || "",
-    });
-  if (command === "conformance-queue")
-    return await inspectConformanceQueue({
-      root,
-      status: options.status || "all",
-      riskHint: options["risk-hint"] || "",
-      limit: options.limit == null ? 25 : Number(options.limit),
-      projectionId: options.projection || "",
-      cursor: options.cursor || "",
-      canonAnchor:
-        options["canon-kind"] != null || options["canon-key"] != null ? { entityKind: options["canon-kind"], entityKey: options["canon-key"] } : null,
-    });
-  if (command === "conformance-read") return readConformanceFinding({ root, findingId: options.finding });
-  if (command === "conformance-disposition") return await recordConformanceDisposition({ ...inputJson(options, "Conformance user disposition"), root });
-  if (command === "product-policy-propose") return await proposeProductPolicy({ ...inputJson(options, "Product Policy proposal"), root });
-  if (command === "product-policy-review") return await reviewProductPolicy({ ...inputJson(options, "Product Policy ReviewDecision"), root });
-  if (command === "product-policy-status") return inspectProductPolicyStatus({ root, candidateId: options.candidate });
-  if (command === "product-policy-candidate-read") return readProductPolicyCandidate({ root, candidateId: options.candidate });
-  if (command === "product-policy-review-read") return readProductPolicyReviewDecision({ root, reviewDecisionId: options.review });
-  if (command === "product-signal-record") return await recordProductSignal({ ...inputJson(options, "ProductSignal"), root });
-  if (command === "product-hypothesis-record") return await recordProductHypothesis({ ...inputJson(options, "ProductHypothesis"), root });
-  if (command === "product-outcome-observe") return await observeProductOutcome({ ...inputJson(options, "OutcomeObservation"), root });
-  if (command === "product-operating-status") return inspectProductOperatingLoop({ root, fresh: options.fresh === true });
-  if (command === "observation-prepare")
-    return prepareObservationEvidence({
-      root,
-      registry: observationRegistry,
-      typeKey: options["type-key"],
-      subjectType: options["subject-type"] || "",
-      subjectKey: options["subject-key"] || "",
-      adapterKey: options["adapter-key"] || "",
-      observedAfter: options["observed-after"] || "",
-      observedBefore: options["observed-before"] || "",
-      existingLimit: options["existing-limit"] == null ? 20 : Number(options["existing-limit"]),
-      sourceLimit: options["source-limit"] == null ? 20 : Number(options["source-limit"]),
-      sourceAvailability: options["source-availability"] || "",
-      sourceProjectionId: options["source-projection"] || "",
-      sourceCursor: options["source-cursor"] || "",
-    });
-  if (command === "observation-source-collect") return await collectRegisteredObservation({ root, registry: observationRegistry, sourceId: options.source });
   if (command === "observation-file-ingest") {
     const value = inputJson(options, "Host JSON Observation source");
     return await ingestJsonObservationEventFile({
@@ -899,8 +780,6 @@ async function runRoutedCommand(
       debounceMs: options["debounce-ms"] == null ? undefined : Number(options["debounce-ms"]),
       maxEvents: options["max-events"] == null ? undefined : Number(options["max-events"]),
     });
-  if (command === "world-graph-status") return await inspectWorldGraphProjection({ root });
-  if (command === "world-graph-remote-database-status") return inspectArcadeDbDatabaseCompatibility({ root, storage: resolveProjectStorage(root) });
   if (command === "world-graph-remote-database-initialize")
     return initializeArcadeDbDatabase({
       root,
@@ -909,10 +788,7 @@ async function runRoutedCommand(
       confirmDatabase: options["confirm-database"] || "",
     });
   if (command === "world-graph-remote-activate") return await activateArcadeDbGraphProjection({ root });
-  if (command === "world-graph-remote-status") return await inspectArcadeDbGraphProjectionStatus({ root });
-  if (command === "world-docs-status") return await inspectWorldMarkdownProjection({ root });
   if (command === "world-docs-capture") return await captureWorldMarkdownChanges({ root, persist: true });
-  if (command === "world-docs-candidates") return readWorldDocumentChangeCandidateSet({ root, candidateSetId: options["candidate-set"] });
   if (command === "world-docs-review") {
     const input = inputJson(options, "Document-change ReviewDecision");
     const allowed = new Set(["candidateSetId", "disposition", "acceptedCandidateIds", "resultingProductModel", "rationale", "apply"]);
@@ -921,9 +797,6 @@ async function runRoutedCommand(
     return await reviewDocumentChanges({ ...input, root });
   }
   if (command === "world-docs-apply") return await applyDocumentChangeReview({ root, reviewDecisionId: options.review });
-  if (command === "world-docs-review-status") return await inspectDocumentChangeReviewStatus({ root, candidateSetId: options["candidate-set"] });
-  if (command === "world-docs-review-read") return readDocumentChangeReviewDecision({ root, reviewDecisionId: options.review });
-  if (command === "world-docs-application-read") return readDocumentChangeApplicationReceipt({ root, applicationReceiptId: options.application });
   if (command === "world-docs-policy-set") {
     const input = inputJson(options, "Post-refresh document projection policy");
     const unexpected = Object.keys(input).filter((key) => key !== "mode");
@@ -931,57 +804,6 @@ async function runRoutedCommand(
     return setPostRefreshProjectionPolicy({ root, mode: input.mode });
   }
   if (command === "world-docs-policy-status") return inspectPostRefreshProjectionPolicy({ root });
-  if (command === "world-query")
-    return await queryWorldModel({
-      root,
-      query: options.query,
-      depth: options.depth == null ? 1 : Number(options.depth),
-      maxResults: options.limit == null ? 100 : Number(options.limit),
-    });
-  if (command === "world-temporal")
-    return await queryWorldTemporalGraph({
-      root,
-      query: options.query,
-      anchorIds: options["anchor-ids"]
-        ? options["anchor-ids"]
-            .split(",")
-            .map((item) => item.trim())
-            .filter(Boolean)
-        : null,
-      expectedGraphSnapshotId: options["graph-snapshot"] || null,
-      kinds: options.kind
-        ? options.kind
-            .split(",")
-            .map((item) => item.trim())
-            .filter(Boolean)
-        : null,
-      relations: options.relations
-        ? options.relations
-            .split(",")
-            .map((item) => item.trim())
-            .filter(Boolean)
-        : null,
-      includeUnreviewedCandidates: options["include-candidates"] === "true",
-      minConfidence: options["min-confidence"] == null ? 0 : Number(options["min-confidence"]),
-      depth: options.depth == null ? 1 : Number(options.depth),
-      maxNodes: options.limit == null ? 100 : Number(options.limit),
-      maxEdges: options["edge-limit"] == null ? 200 : Number(options["edge-limit"]),
-    });
-  if (command === "world-history")
-    return await queryWorldHistory({
-      root,
-      query: options.query || "",
-      limit: options.limit == null ? 50 : Number(options.limit),
-    });
-  if (command === "world-runtime")
-    return await queryWorldRuntimeState({
-      root,
-      query: options.query || "",
-      runtime: options.runtime || "",
-      state: options.state || "",
-      kind: options.kind || "",
-      limit: options.limit == null ? 50 : Number(options.limit),
-    });
   if (command === "checkpoint")
     return createRecoveryCheckpoint({
       root,
@@ -1026,14 +848,6 @@ async function runRoutedCommand(
     }[command];
     return api[method]({ ...input, root });
   }
-  if (command === "session-work-read")
-    return readSessionWorkContext({
-      ...(options.input ? inputJson(options, "Session work read") : {}),
-      ...(options["scan-evidence"] !== undefined ? { scanEvidence: options["scan-evidence"] === true || options["scan-evidence"] === "true" } : {}),
-      ...(options["after-evidence-id"] !== undefined ? { afterEvidenceId: options["after-evidence-id"] } : {}),
-      root,
-    });
-  if (command === "session-restore") return restoreSessionFromArtifacts({ root, checkpointId: options.checkpoint || null });
   if (command === "session-continue") {
     return continueSessionFromArtifacts({
       root,
@@ -1041,51 +855,11 @@ async function runRoutedCommand(
       runtime: options.runtime,
     });
   }
-  if (command === "conversation-enter") return await enterConversationRecovery({ root });
-  if (command === "compaction-lifecycle-step")
-    return await processCompactionLifecycle({
-      root,
-      hostAdapter: compactionLifecycleHost,
-      direction: options.input ? inputJson(options, "Lode compaction direction") : null,
-    });
   if (command === "lineage-plan") return createWholePlanSnapshot({ ...inputJson(options, "Whole plan"), root, persist: true });
   if (command === "lineage-next-plan") return createNextWholePlanSnapshot({ ...inputJson(options, "Next whole plan"), root, persist: true });
   if (command === "lineage-contract") return createExecutionContract({ ...inputJson(options, "Execution Contract"), root, persist: true });
   if (command === "run-finish") return finishRun({ ...inputJson(options, "Result Packet"), root });
   if (command === "run-review") return reviewRun({ ...inputJson(options, "ReviewDecision"), root });
-  if (command === "run-integrate-checkpoint") return integrateReviewedRunCheckpoint({ ...inputJson(options, "Run result integration"), root });
-  if (command === "context-prepare")
-    return await prepareContextWorkflow({ root, task: options.task, budget: options.budget == null ? DEFAULT_CONTEXT_BUDGET : Number(options.budget) });
-  if (command === "source-context")
-    return await prepareSourceContext({
-      root,
-      task: options.task,
-      needs: options.input
-        ? inputJson(options, "Source needs").needs
-        : options.source
-          ? [
-              {
-                kind: options.kind ?? (options.symbol ? "outgoing-calls" : "source"),
-                path: options.source,
-                symbol: options.symbol ?? "",
-                required: options.required !== "false",
-              },
-            ]
-          : [],
-      retain: options.retain === "true",
-      budget: options.budget == null ? undefined : Number(options.budget),
-      signal,
-      onProcess,
-      timeoutMs: options.timeout == null ? 15_000 : Number(options.timeout),
-    });
-  if (command === "source-observation-read") return inspectSourceObservation({ root, bundleKey: options.bundle, failureKey: options.failure });
-  if (command === "context-preview")
-    return await previewContextWorkflow({
-      root,
-      task: options.task,
-      budget: options.budget == null ? DEFAULT_CONTEXT_BUDGET : Number(options.budget),
-      evidenceNeeds: evidenceNeedsInput(options),
-    });
   if (command === "context-compile")
     return await compileContext({
       root,

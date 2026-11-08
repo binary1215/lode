@@ -251,3 +251,56 @@ export const conformanceFindingInputSchema = {
   required: ["canon_anchor", "evidence_anchors", "claim"],
   additionalProperties: false,
 };
+
+export const onboardingSemanticProposalSchema = {
+  type: "object",
+  description:
+    "Fresh provider-HEAD-authored P3 product candidates. Core verifies exact current source evidence and never treats this proposal as Product Canon.",
+  properties: {
+    schemaVersion: { type: "integer", const: 1 },
+    sourceSnapshotId: { type: "string", pattern: "^source-snapshot-[a-f0-9]{24}$" },
+    candidates: {
+      type: "array",
+      minItems: 1,
+      maxItems: 200,
+      items: {
+        type: "object",
+        properties: {
+          productKind: { type: "string", enum: ["FeatureGroup", "Capability", "Feature", "Requirement", "Constraint", "Decision"] },
+          proposedEntity: { type: "object" },
+          explanation: { type: "string", minLength: 1, maxLength: 2000 },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+          evidence: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            items: {
+              type: "object",
+              properties: {
+                path: { type: "string", minLength: 1 },
+                line: { type: "integer", minimum: 1 },
+                contentDigest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+                symbol: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string", minLength: 1 },
+                    kind: { type: "string", minLength: 1 },
+                    line: { type: "integer", minimum: 1 },
+                  },
+                  required: ["name", "kind", "line"],
+                  additionalProperties: false,
+                },
+              },
+              required: ["path", "line"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["productKind", "proposedEntity", "evidence", "explanation", "confidence"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["schemaVersion", "sourceSnapshotId", "candidates"],
+  additionalProperties: false,
+};

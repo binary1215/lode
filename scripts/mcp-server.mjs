@@ -3,7 +3,7 @@ import readline from "node:readline";
 import { workDocumentTools, workDocumentFromMcp, workDocumentCompositionSchema } from "./lib/work-document-surface.mjs";
 import { resolveOperation } from "./lib/lode-operation-contract.mjs";
 import { requireMcpConfirmation } from "./lib/dispatch-adapters.mjs";
-import { conformanceFindingInputSchema, sessionWorkEvidenceSchema, workEvidenceText } from "./lib/tool-schemas.mjs";
+import { sessionWorkEvidenceSchema, workEvidenceText } from "./lib/tool-schemas.mjs";
 import { callRegistered, registeredOperation, registeredTools } from "./lib/operation-registry.mjs";
 import { assertProjectRootArgument } from "./lib/mcp-argument-validation.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
@@ -32,7 +32,6 @@ import { fileURLToPath } from "node:url";
 import { isManagedMutation, requireOperationSurface, requireSurface } from "./lib/managed-maintenance-surface.mjs";
 import { coreContract } from "./lib/core-contract.mjs";
 import { coreEntryGuidance } from "./lib/lode-entry-guidance.mjs";
-import { DEFAULT_CONTEXT_BUDGET } from "./lib/context-budget.mjs";
 import { formatMcpToolContent } from "./lib/cli-presentation.mjs";
 import { sessionCallRequiresBinding } from "./lib/session-routing.mjs";
 import { createNativeSessionHostBridge } from "./lib/session-native-host.mjs";
@@ -131,58 +130,6 @@ async function initializeProjectFromMcp(args, { projectSessionRoute, onValidated
     releasePluginInitializationContext(installationContext);
   }
 }
-const onboardingSemanticProposalSchema = {
-  type: "object",
-  description:
-    "Fresh provider-HEAD-authored P3 product candidates. Core verifies exact current source evidence and never treats this proposal as Product Canon.",
-  properties: {
-    schemaVersion: { type: "integer", const: 1 },
-    sourceSnapshotId: { type: "string", pattern: "^source-snapshot-[a-f0-9]{24}$" },
-    candidates: {
-      type: "array",
-      minItems: 1,
-      maxItems: 200,
-      items: {
-        type: "object",
-        properties: {
-          productKind: { type: "string", enum: ["FeatureGroup", "Capability", "Feature", "Requirement", "Constraint", "Decision"] },
-          proposedEntity: { type: "object" },
-          explanation: { type: "string", minLength: 1, maxLength: 2000 },
-          confidence: { type: "number", minimum: 0, maximum: 1 },
-          evidence: {
-            type: "array",
-            minItems: 1,
-            maxItems: 8,
-            items: {
-              type: "object",
-              properties: {
-                path: { type: "string", minLength: 1 },
-                line: { type: "integer", minimum: 1 },
-                contentDigest: { type: "string", pattern: "^[a-f0-9]{64}$" },
-                symbol: {
-                  type: "object",
-                  properties: {
-                    name: { type: "string", minLength: 1 },
-                    kind: { type: "string", minLength: 1 },
-                    line: { type: "integer", minimum: 1 },
-                  },
-                  required: ["name", "kind", "line"],
-                  additionalProperties: false,
-                },
-              },
-              required: ["path", "line"],
-              additionalProperties: false,
-            },
-          },
-        },
-        required: ["productKind", "proposedEntity", "evidence", "explanation", "confidence"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["schemaVersion", "sourceSnapshotId", "candidates"],
-  additionalProperties: false,
-};
 // Host presentation hints describe the implemented effect; they do not grant
 // permission or prove that a caller obtained a user's approval.
 const supplementalReadOnlyHints = {
@@ -531,159 +478,15 @@ const allTools = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
-  {
-    name: "head_onboarding_semantic_refresh",
-    description:
-      "Create a fresh current P3 semantic onboarding proposal after a completed historical boundary. This creates only P3 candidates and continuity evidence; Product Canon changes only through a later explicit user ReviewDecision.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        semantic_proposal: onboardingSemanticProposalSchema,
-        recovery_basis: {
-          type: "object",
-          properties: { pointerHash: { type: "string", pattern: "^[a-f0-9]{64}$" }, rawHash: { type: ["string", "null"], pattern: "^[a-f0-9]{64}$" } },
-          required: ["pointerHash", "rawHash"],
-          additionalProperties: false,
-        },
-      },
-      required: ["project_root", "semantic_proposal"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_onboarding_candidate_restore",
-    description:
-      "Restore verified original candidate content after preserving damaged bytes. Changes no Canon, decision or P2 direction; HEAD supplies exact observed raw hash, not a new user approval.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        candidate_set_id: { type: "string", pattern: "^onboarding-candidates-[a-f0-9]{24}$" },
-        source_content: { type: "string", minLength: 1, maxLength: 8388608 },
-        expected_raw_hash: { type: ["string", "null"], pattern: "^[a-f0-9]{64}$" },
-      },
-      required: ["project_root", "candidate_set_id", "source_content", "expected_raw_hash"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools(["head_onboarding_semantic_refresh", "head_onboarding_candidate_restore"]),
   ...registeredTools(["head_onboarding_review"]),
-  {
-    name: "head_product_policy_propose",
-    description:
-      "Record one immutable P3 Policy create, revise, or retire candidate against the exact current Product Canon. The provider HEAD or user supplies meaning, explicit Feature or FeatureGroup applications, and optional exact Requirement, Constraint, or Decision references; Core never infers inheritance or promotes the candidate.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        operation: { type: "string", enum: ["create", "revise", "retire"] },
-        key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
-        name: { type: "string", minLength: 1, maxLength: 256 },
-        description: { type: "string", maxLength: 4000 },
-        statement: { type: "string", minLength: 1, maxLength: 8000 },
-        applies_to: {
-          type: "array",
-          maxItems: 256,
-          uniqueItems: true,
-          items: {
-            type: "object",
-            properties: {
-              kind: { type: "string", enum: ["Feature", "FeatureGroup"] },
-              key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
-            },
-            required: ["kind", "key"],
-            additionalProperties: false,
-          },
-        },
-        governed_by: {
-          type: "array",
-          maxItems: 256,
-          uniqueItems: true,
-          items: {
-            type: "object",
-            properties: {
-              kind: { type: "string", enum: ["Requirement", "Constraint", "Decision"] },
-              key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
-            },
-            required: ["kind", "key"],
-            additionalProperties: false,
-          },
-        },
-        evidence_anchors: {
-          type: "array",
-          maxItems: 32,
-          items: {
-            type: "object",
-            properties: {
-              kind: { type: "string", enum: ["user-request", "source", "observation", "decision", "other"] },
-              reference: { type: "string", minLength: 1, maxLength: 1024 },
-              digest: { anyOf: [{ type: "string", pattern: "^[a-f0-9]{64}$" }, { type: "null" }] },
-              summary: { type: "string", maxLength: 1000 },
-            },
-            required: ["kind", "reference"],
-            additionalProperties: false,
-          },
-        },
-        explanation: { type: "string", maxLength: 4000 },
-      },
-      required: ["project_root", "operation", "key"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_product_policy_review",
-    description:
-      "Record one explicit user ReviewDecision for an exact Policy candidate. Accept changes Product Canon only when the candidate base is still current and no Run authority is active; reject is nonblocking. Exact retries repair missing derived projections without a second decision.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        candidate_id: { type: "string", pattern: "^policy-candidate-[a-f0-9]{24}$" },
-        disposition: { type: "string", enum: ["accept", "reject"] },
-        rationale: { type: "string", minLength: 1, maxLength: 4000 },
-      },
-      required: ["project_root", "candidate_id", "disposition", "rationale"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_product_policy_status",
-    description:
-      "Read the exact Policy candidate, its optional ReviewDecision, and whether Canon is still at the candidate base or accepted result. This creates no state and never blocks ordinary work.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 }, candidate_id: { type: "string", pattern: "^policy-candidate-[a-f0-9]{24}$" } },
-      required: ["project_root", "candidate_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_product_policy_candidate",
-    description: "Read and digest-verify one immutable P3 Product Policy candidate.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 }, candidate_id: { type: "string", pattern: "^policy-candidate-[a-f0-9]{24}$" } },
-      required: ["project_root", "candidate_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_product_policy_review_decision",
-    description: "Read and digest-verify one exact Product Policy ReviewDecision and its candidate binding.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 }, review_decision_id: { type: "string", pattern: "^review-decision-[a-f0-9]{24}$" } },
-      required: ["project_root", "review_decision_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools([
+    "head_product_policy_propose",
+    "head_product_policy_review",
+    "head_product_policy_status",
+    "head_product_policy_candidate",
+    "head_product_policy_review_decision",
+  ]),
   ...registeredTools([
     "head_metric_define",
     "head_metric_observe",
@@ -695,32 +498,9 @@ const allTools = [
     "head_delivery_status",
   ]),
   ...registeredTools(["head_markdown_projection_build"]),
-  {
-    name: "head_runtime_adapters",
-    description:
-      "Inspect provider-neutral runtime contracts, privacy-bounded executable discovery, fixed non-session version and protocol/capability evidence, and Lode project/session capability binding without creating or controlling a provider session.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 } },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_runtime_adapters"]),
   ...registeredTools(["head_runtime_invocation_authorization"]),
-  {
-    name: "head_runtime_invocation_lease_status",
-    description:
-      "Read the durable at-most-once consumption and exact-owner release status for one runtime invocation authorization without claiming, replaying, or controlling a provider.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        authorization_id: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "authorization_id"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_runtime_invocation_lease_status"]),
   {
     name: "head_runtime_invocation_result",
     description:
@@ -735,92 +515,12 @@ const allTools = [
       additionalProperties: false,
     },
   },
-  {
-    name: "head_onboarding_status",
-    description:
-      "Read and digest-verify the project-scoped onboarding state, current candidate batch, storage selection, Product Canon identity, and local World Model status without promoting candidates or mutating project state.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 } },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_onboarding_status"]),
   ...registeredTools(["head_feature_mapping_propose", "head_feature_mapping_status", "head_feature_mapping_review"]),
   ...registeredTools(["head_change_set_status", "head_vcs_evidence"]),
-  {
-    name: "head_conformance_prepare",
-    description:
-      "Prepare bounded current Product Canon and optional World identities for provider HEAD semantic drift analysis. The user supplies no JSON or graph IDs; Core chooses no meaning, writes nothing, and never blocks ordinary work.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        limit: { type: "integer", minimum: 1, maximum: 64, default: 32 },
-        projection_id: { type: "string" },
-        cursor: { type: "string" },
-      },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools(["head_conformance_prepare"]),
   ...registeredTools(["head_conformance_propose"]),
-  {
-    name: "head_conformance_queue",
-    description:
-      "Read a bounded, paginated P4 Conformance queue. Missing Graph or optional sources, partial coverage, risk hints, and open findings never block ordinary work.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        canon_anchor: conformanceFindingInputSchema.properties.canon_anchor,
-        status: {
-          type: "string",
-          enum: ["all", "open", "acknowledged", "deferred", "action-requested", "needs-recheck", "resolution-proposed", "closed-dismissed", "closed-resolved"],
-          default: "all",
-        },
-        risk_hint: { type: "string", enum: ["", "unknown", "low", "medium", "high"], default: "" },
-        limit: { type: "integer", minimum: 1, maximum: 64, default: 25 },
-        projection_id: { type: "string" },
-        cursor: { type: "string", pattern: "^conformance-finding-[a-f0-9]{24}$" },
-      },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_conformance_read",
-    description: "Read and digest-verify one exact Conformance Finding, its non-authoritative resolutions, and exact-finding dispositions.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 }, finding_id: { type: "string", pattern: "^conformance-finding-[a-f0-9]{24}$" } },
-      required: ["project_root", "finding_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_conformance_disposition",
-    description:
-      "Record a disposition for one exact Finding. HEAD may acknowledge/defer with actor=head without user confirmation, but cannot supersede user dispositions or close findings. User dispositions require explicit confirmation. Neither path authorizes execution, mutates Canon, or writes recovery direction.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        finding_id: { type: "string", pattern: "^conformance-finding-[a-f0-9]{24}$" },
-        disposition: { type: "string", enum: ["acknowledge", "defer", "dismiss", "request-code-fix", "request-canon-revision", "accept-resolution"] },
-        rationale: { type: "string", minLength: 1 },
-        defer_until: { anyOf: [{ type: "string", format: "date-time" }, { type: "null" }] },
-        resolution_id: { anyOf: [{ type: "string", pattern: "^conformance-resolution-[a-f0-9]{24}$" }, { type: "null" }] },
-        actor: { type: "string", enum: ["user", "head"], default: "user" },
-        confirm_user_disposition: { type: "boolean", default: false },
-      },
-      required: ["project_root", "finding_id", "disposition", "rationale"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_conformance_queue", "head_conformance_read", "head_conformance_disposition"]),
   ...registeredTools(["head_conformance_resolution_propose"]),
   {
     name: "head_conformance_trigger_status",
@@ -849,205 +549,7 @@ const allTools = [
       additionalProperties: false,
     },
   },
-  {
-    name: "head_source_context",
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    description:
-      "Collect current task-scoped source evidence and compile it into Context without Product onboarding or full indexing. HEAD chooses exact needs after inspecting the user's task; never ask users to author JSON or IDs. Python outgoing-calls uses isolated parse-only stdlib AST, preserves unresolved calls, and claims no runtime truth or completeness. Optional retention stores P3 evidence only; failures affect dependent judgments, not independent work.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        task: { type: "string", minLength: 1 },
-        needs: {
-          type: "array",
-          maxItems: 32,
-          items: {
-            type: "object",
-            properties: {
-              kind: { type: "string", enum: ["source", "outgoing-calls", "declarations", "selected-source"] },
-              path: { type: "string", minLength: 1 },
-              symbol: { type: "string", maxLength: 512 },
-              required: { type: "boolean", default: true },
-              selection: {
-                type: "object",
-                description: "Optional exact occurrence from a declarations response; selected-source only. No outline prerequisite for a known unique symbol.",
-                properties: {
-                  path: { type: "string", minLength: 1, maxLength: 512 },
-                  fileDigest: { type: "string", pattern: "^[a-f0-9]{64}$" },
-                  qualifiedName: { type: "string", minLength: 1, maxLength: 512 },
-                  kind: { type: "string", enum: ["class", "function", "async-function", "method", "async-method"] },
-                  occurrence: { type: "integer", minimum: 1 },
-                  range: {
-                    type: "object",
-                    properties: Object.fromEntries(
-                      ["start", "end"].map((key) => [
-                        key,
-                        {
-                          type: "object",
-                          properties: { line: { type: "integer", minimum: 0 }, character: { type: "integer", minimum: 0 } },
-                          required: ["line", "character"],
-                          additionalProperties: false,
-                        },
-                      ]),
-                    ),
-                    required: ["start", "end"],
-                    additionalProperties: false,
-                  },
-                },
-                required: ["path", "fileDigest", "qualifiedName", "kind", "occurrence", "range"],
-                additionalProperties: false,
-              },
-            },
-            required: ["kind", "path"],
-            additionalProperties: false,
-          },
-        },
-        retain: {
-          type: "boolean",
-          default: false,
-          description: "HEAD selects retention for audit/reuse/handoff; no additional user approval. Ephemeral is the default.",
-        },
-        timeout_ms: { type: "integer", minimum: 1, maximum: 120000, default: 15000 },
-        budget: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
-      },
-      required: ["project_root", "task"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_source_observation_read",
-    description:
-      "Audit exact retained original source/response after integrity verification, even after source edits. Reports current, stale or unavailable sourceState separately; historical data is not eligible as current Context or P2 recovery authority.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        bundle_key: { type: "string", pattern: "^[a-f0-9]{64}$" },
-        failure_key: {
-          type: "string",
-          pattern: "^[a-f0-9]{64}$",
-          description: "Alternatively, read the exact retained failure. Supply exactly one key; HEAD obtains it from the collection result.",
-        },
-      },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_context_prepare",
-    description:
-      "Return source-linked selected context from the exact user task in one read-only call. Reuse this preparation directly; HEAD inspects originals or requests a guided preview only when useful. No World activation, JSON form, compulsory inclusion proof, token tier or new approval. HEAD judges semantic sufficiency; Core grants no authority and writes no recovery state.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        task: { type: "string", minLength: 1 },
-        budget: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER, default: DEFAULT_CONTEXT_BUDGET },
-      },
-      required: ["project_root", "task"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_context_preview",
-    description:
-      "Prepare source-linked selected context from the exact user task, with optional HEAD evidence guidance. Reports omissions and uncertainty without an inclusion-proof gate or fixed token tiers. HEAD expands useful sources and assesses sufficiency. Writes nothing and grants no authority.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        task: { type: "string", minLength: 1 },
-        budget: {
-          type: "integer",
-          minimum: 1,
-          maximum: Number.MAX_SAFE_INTEGER,
-          default: DEFAULT_CONTEXT_BUDGET,
-          description:
-            "Approximate selected-context limit. HEAD may choose any positive safe integer or inspect more original evidence; this is not a provider-fit proof.",
-        },
-        evidence_needs: {
-          type: "array",
-          maxItems: 32,
-          description:
-            "Task-local evidence requirements chosen by HEAD. The Compiler checks actual inclusion only; it does not infer requirements or judge semantic sufficiency.",
-          items: {
-            type: "object",
-            properties: {
-              id: { type: "string", pattern: "^[a-z0-9][a-z0-9._-]{0,63}$" },
-              kind: {
-                type: "string",
-                enum: [
-                  "claim",
-                  "decision",
-                  "git-decision",
-                  "observation",
-                  "product-context",
-                  "repository-file",
-                  "repository-source",
-                  "repository-test",
-                  "runtime-state",
-                  "semantic-relation",
-                  "temporal-relation",
-                  "unknown",
-                ],
-              },
-              paths: {
-                type: "array",
-                maxItems: 32,
-                description:
-                  "Exact normalized project-relative repository paths selected by HEAD after semantic task analysis. Core verifies actual current inclusion; paths never grant authority.",
-                items: { type: "string", minLength: 1 },
-              },
-              entityKeys: {
-                type: "array",
-                maxItems: 32,
-                description:
-                  "Exact Product Canon entity keys selected by HEAD for product-context evidence. Core verifies actual current inclusion; keys never grant authority.",
-                items: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
-              },
-              observationIds: {
-                type: "array",
-                minItems: 1,
-                maxItems: 32,
-                uniqueItems: true,
-                description:
-                  "Exact immutable Observation identities selected by HEAD. Core verifies current existence and actual inclusion without lexical matching or semantic promotion.",
-                items: { type: "string", pattern: "^(observation|derived-observation)-[a-f0-9]{24}$" },
-              },
-              facets: { type: "array", maxItems: 16, items: { type: "string", minLength: 1 } },
-              relationTypes: { type: "array", maxItems: 16, items: { type: "string", pattern: "^[A-Za-z][A-Za-z0-9_]{0,63}$" } },
-              graphAnchor: {
-                type: "object",
-                description:
-                  "Exact task-local graph anchors proposed by HEAD after semantic analysis. Core only verifies current Project/World/Graph binding and bounded inclusion; the proposal has no Canon, instruction, review, or recovery authority.",
-                properties: {
-                  projectId: { type: "string", minLength: 1, maxLength: 256 },
-                  worldModelId: { type: "string", pattern: "^world-model-[a-f0-9]{24}$" },
-                  graphSnapshotId: { type: "string", pattern: "^graph-snapshot-[a-f0-9]{24}$" },
-                  nodeIds: { type: "array", minItems: 1, maxItems: 32, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 256 } },
-                  depth: { type: "integer", minimum: 1, maximum: 3 },
-                  maxNodes: { type: "integer", minimum: 1, maximum: 500 },
-                  maxEdges: { type: "integer", minimum: 1, maximum: 1000 },
-                },
-                required: ["projectId", "worldModelId", "graphSnapshotId", "nodeIds", "depth", "maxNodes", "maxEdges"],
-                additionalProperties: false,
-              },
-              minimumItems: { type: "integer", minimum: 1, maximum: 20, default: 1 },
-              rationale: { type: "string", maxLength: 500 },
-            },
-            required: ["id", "kind"],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["project_root", "task"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools(["head_source_context", "head_source_observation_read", "head_context_prepare", "head_context_preview"]),
   ...registeredTools([
     "head_context_capsule",
     "head_lineage_artifact",
@@ -1068,65 +570,7 @@ const allTools = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
-  {
-    name: "head_session_work_read",
-    description:
-      "Read the selected Session's recent work and explicitly linked earlier reasons with verified originals and bounded output. Entry already provides work context; expand only when useful. Exact IDs avoid inventory enumeration; an explicit cursor reads an ID page. Some history may remain outside the returned bodies. No write, repair, replay or recovery direction.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: workEvidenceText,
-        evidence_ids: { type: "array", maxItems: 512, items: { type: "string", pattern: "^work-evidence-[a-f0-9]{24}$" } },
-        after_evidence_id: {
-          type: "string",
-          pattern: "^work-evidence-[a-f0-9]{24}$",
-          description: "Explicit lexical ID-page anchor, not a time-order cursor. Default global selection returns no continuation cursor.",
-        },
-        scan_evidence: {
-          type: "boolean",
-          description:
-            "Start the first bounded lexical original page without a seed ID; follow the returned next arguments when useful. Default recent-work selection is unchanged. No write or completeness claim.",
-        },
-        max_records: { type: "integer", minimum: 1, maximum: 512 },
-        max_characters: {
-          type: "integer",
-          minimum: 2,
-          maximum: 524288,
-          description:
-            "Actual emitted P3 JSON UTF16 budget: records, plus separate recordExcerpts and their coverage/selectors/expansion when present. Separate bounded outer/Todo metadata excluded; omissions/expansion disclosed.",
-        },
-        todo_id: {
-          type: "string",
-          pattern: "^todo-[a-z0-9][a-z0-9-]{0,79}$",
-          description: "Inspect this recorded task, including terminal or conflicting revisions, independently of recent work.",
-        },
-        after_todo_id: { type: "string", pattern: "^todo-[a-z0-9][a-z0-9-]{0,79}$", description: "Continue the known unresolved Todo list by stable item ID." },
-        scan_todos: {
-          type: "boolean",
-          description:
-            "Read a bounded original ID page when the replaceable Todo index is missing or incomplete. Continue with after_evidence_id; no repair or World refresh.",
-        },
-      },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_session_restore",
-    description:
-      "Reconstruct the exact current Project/Session/Run consumer input from the canonical SessionRunCheckpoint and verified artifacts. This derived view never resumes or depends on a provider session.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        checkpoint_id: { type: "string", pattern: "^checkpoint-[a-f0-9]{24}$" },
-      },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools(["head_session_work_read", "head_session_restore"]),
   {
     name: "head_session_continue",
     description:
@@ -1229,27 +673,7 @@ const allTools = [
     "head_bounded_worker_wave_wait",
     "head_bounded_worker_wave_abandon",
   ]),
-  {
-    name: "head_run_integrate_checkpoint",
-    description:
-      "After an exact accepted Fresh HEAD ReviewDecision, bind one reviewed Run result to one canonical recovery checkpoint. ResultPacket evidence cannot author checkpoint direction and no ReviewDecision is created here.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        run_id: { type: "string", pattern: "^run-[0-9]+-[a-f0-9]{6}$" },
-        review_decision_id: { type: "string", pattern: "^review-decision-[a-f0-9]{24}$" },
-        purpose: { type: "string", minLength: 1 },
-        approved_decisions: { type: "array", uniqueItems: true, items: { type: "string", minLength: 1 } },
-        current_position: { type: "string", minLength: 1 },
-        next_expected_result: { type: "string", minLength: 1 },
-        open_review_ids: { type: "array", uniqueItems: true, items: { type: "string", minLength: 1 } },
-      },
-      required: ["project_root", "run_id", "review_decision_id", "purpose", "approved_decisions", "current_position", "next_expected_result"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools(["head_run_integrate_checkpoint"]),
   ...registeredTools(["head_run_integration"]),
   {
     name: "head_world_model",
@@ -1264,40 +688,7 @@ const allTools = [
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   ...registeredTools(["head_incremental_refresh_status", "head_incremental_refresh_receipt", "head_refresh_trigger_status", "head_refresh_trigger_delivery"]),
-  {
-    name: "head_graph_projection_status",
-    description: "Read and verify the current replaceable graph projection adapter state without treating the graph backend as canon or unique authority.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 } },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_graphdb_projection_status",
-    description:
-      "Read the privacy-safe ArcadeDB projection activation, current semantic binding, and disclosed local fallback state without exposing credentials or granting the remote backend authority.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 } },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  },
-  {
-    name: "head_graphdb_database_status",
-    description:
-      "Read a privacy-safe compatibility audit for the selected ArcadeDB database and HEAD-reserved schema without exposing the endpoint, database name, credentials, or mutation authority.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 } },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  },
+  ...registeredTools(["head_graph_projection_status", "head_graphdb_projection_status", "head_graphdb_database_status"]),
   {
     name: "head_graphdb_connection_preflight",
     description:
@@ -1342,283 +733,28 @@ const allTools = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
-  {
-    name: "head_markdown_projection_status",
-    description:
-      "Read and verify the deterministic Markdown projection, published-view drift, and current GraphSnapshot binding without treating generated documents as canon.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 } },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_markdown_projection_status"]),
   ...registeredTools(["head_post_refresh_projection_status", "head_post_refresh_projection_receipt"]),
-  {
-    name: "head_document_change_candidates",
-    description: "Read and digest-verify one immutable DocumentChangeCandidateSet without accepting it or changing Product Canon.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        candidate_set_id: { type: "string", pattern: "^document-change-candidate-set-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "candidate_set_id"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_document_change_review_status",
-    description:
-      "Read the explicit review and application status for one immutable DocumentChangeCandidateSet without accepting, applying, or mutating Product Canon.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        candidate_set_id: { type: "string", pattern: "^document-change-candidate-set-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "candidate_set_id"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_document_change_review",
-    description:
-      "Read and digest-verify one explicit document-to-Product-Canon ReviewDecision and its exact candidate and resulting Product Model revision bindings.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        review_decision_id: { type: "string", pattern: "^document-change-review-decision-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "review_decision_id"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_document_change_application",
-    description:
-      "Read and digest-verify one document-change application receipt linking the user ReviewDecision to exact before/after World, Graph, Canon, and Markdown projection identities.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        application_receipt_id: { type: "string", pattern: "^document-change-application-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "application_receipt_id"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_world_query",
-    description: "Traverse a bounded, digest-verified semantic neighborhood in the current Repository World Model as evidence, never instruction authority.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        query: { type: "string", minLength: 1 },
-        depth: { type: "integer", minimum: 0, maximum: 3, default: 1 },
-        limit: { type: "integer", minimum: 1, maximum: 500, default: 100 },
-      },
-      required: ["project_root", "query"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_git_history",
-    description: "Read bounded Git commit-message decision evidence from the current digest-verified World Model without promoting it to project decisions.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        query: { type: "string", default: "" },
-        limit: { type: "integer", minimum: 1, maximum: 500, default: 50 },
-      },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_temporal_graph",
-    description:
-      "Run a deterministic allowlisted traversal over the current rebuildable temporal provenance GraphSnapshot. Use exact_anchor_ids plus expected_graph_snapshot_id for HEAD-proposed semantic anchors; query is lexical discovery fallback only and never proves semantic relevance. Neither mode grants Canon, review, instruction, or recovery authority.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        query: { type: "string", minLength: 1 },
-        exact_anchor_ids: { type: "array", minItems: 1, maxItems: 32, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 256 } },
-        expected_graph_snapshot_id: { type: "string", pattern: "^graph-snapshot-[a-f0-9]{24}$" },
-        kinds: { type: "array", items: { type: "string" }, uniqueItems: true },
-        relation_types: { type: "array", items: { type: "string" }, uniqueItems: true },
-        depth: { type: "integer", minimum: 0, maximum: 3, default: 1 },
-        node_limit: { type: "integer", minimum: 1, maximum: 500, default: 100 },
-        edge_limit: { type: "integer", minimum: 0, maximum: 1000, default: 200 },
-        min_confidence: { type: "number", minimum: 0, maximum: 1, default: 0 },
-        include_unreviewed_candidates: { type: "boolean", default: false },
-      },
-      required: ["project_root"],
-      oneOf: [{ required: ["query"] }, { required: ["exact_anchor_ids", "expected_graph_snapshot_id"] }],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools([
+    "head_document_change_candidates",
+    "head_document_change_review_status",
+    "head_document_change_review",
+    "head_document_change_application",
+    "head_world_query",
+    "head_git_history",
+    "head_temporal_graph",
+  ]),
   ...registeredTools(["head_graph_lineage_status", "head_graph_lineage_trace", "head_graph_lineage_diff"]),
-  {
-    name: "head_runtime_state",
-    description:
-      "Read bounded point-in-time external runtime observations from the current digest-verified World Model as evidence without granting runtime control authority.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        query: { type: "string", default: "" },
-        runtime: { type: "string", default: "" },
-        state: { type: "string", default: "" },
-        kind: { type: "string", default: "" },
-        limit: { type: "integer", minimum: 1, maximum: 500, default: 50 },
-      },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_runtime_state"]),
   ...registeredTools(["head_compact_prepare", "head_compact_verify", "head_compact_continue", "head_compact_status", "head_compact_abort"]),
-  {
-    name: "head_product_signal_record",
-    description: "Record an immutable observed-fact ProductSignal and rebuild the derived Product Graph without changing Product Canon.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        statement: { type: "string", minLength: 1 },
-        observed_at: { type: "string", format: "date-time" },
-        source: { type: "string" },
-        evidence_ids: { type: "array", uniqueItems: true, items: { type: "string", minLength: 1 } },
-      },
-      required: ["project_root", "statement"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_product_hypothesis_record",
-    description: "Record an immutable non-authoritative hypothesis linked to ProductSignals and/or exact common Observation identities.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        statement: { type: "string", minLength: 1 },
-        rationale: { type: "string" },
-        signal_ids: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^product-signal-[a-f0-9]{24}$" } },
-        observation_ids: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^(observation|derived-observation)-[a-f0-9]{24}$" } },
-      },
-      required: ["project_root", "statement"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_product_signal_record", "head_product_hypothesis_record"]),
   ...registeredTools(["head_product_initiative_propose", "head_product_initiative_review"]),
-  {
-    name: "head_product_outcome_observe",
-    description:
-      "Record observed or derived outcome evidence bound to an accepted ChangeSet, ResultPacket, and execution ReviewDecision without judging success or changing Feature status.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        change_set_id: { type: "string", pattern: "^change-set-[a-f0-9]{24}$" },
-        initiative_id: { type: "string", pattern: "^reviewed-product-initiative-[a-f0-9]{24}$" },
-        statement: { type: "string", minLength: 1 },
-        epistemic_class: { type: "string", enum: ["observed-fact", "derived-projection"] },
-        evidence_ids: { type: "array", uniqueItems: true, items: { type: "string", minLength: 1 } },
-      },
-      required: ["project_root", "change_set_id", "statement"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_product_operating_status",
-    description:
-      "Read Product Operating Loop artifacts and authority classes, reusing a disclosed write-invalidated verified-snapshot cache unless fresh verification is requested.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 }, fresh: { type: "boolean", default: false } },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_product_outcome_observe", "head_product_operating_status"]),
   ...registeredTools(["head_release_observe"]),
   ...registeredTools(["head_release_status", "head_observation_sources"]),
-  {
-    name: "head_observation_prepare",
-    description:
-      "Prepare one reuse-first, non-persisted Observation view for an exact type selected by provider HEAD. It returns existing current Observation IDs before configured source IDs and never judges sufficiency, selects a source, collects data, or asks the user for provenance JSON.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        type_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
-        subject_type: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
-        subject_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
-        adapter_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
-        observed_after: { type: "string", format: "date-time" },
-        observed_before: { type: "string", format: "date-time" },
-        existing_limit: { type: "integer", minimum: 1, maximum: 100 },
-        source_limit: { type: "integer", minimum: 1, maximum: 64 },
-        source_availability: { type: "string", enum: ["unknown", "ready", "auth-missing", "rate-limited", "unavailable"] },
-        source_projection_id: { type: "string", pattern: "^observation-source-projection-[a-f0-9]{24}$" },
-        source_cursor: { type: "string", pattern: "^observation-source-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "type_key"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_observation_collect_source",
-    description:
-      "Collect one configured Host source by its bounded opaque source ID. The trusted Host owns paths, credentials, descriptor, scope, and provenance; this tool accepts none of them and records only non-authoritative P3 Observation evidence.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 }, source_id: { type: "string", pattern: "^observation-source-[a-f0-9]{24}$" } },
-      required: ["project_root", "source_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  },
+  ...registeredTools(["head_observation_prepare", "head_observation_collect_source"]),
   ...registeredTools(["head_observation_ingest", "head_observation_derive"]),
-  {
-    name: "head_conversation_enter",
-    description:
-      "Obtain missing current conversation context, or reuse sufficient verified supplied entry for the exact selected Session and current common direction. This read-only entry restores verified P2 direction and returns bounded status, Attention and package facts; detailed World freshness is explicitly not inspected. No continuation, provider attachment, review, Canon change or ordinary-work gate is created. Explicit project status retains full optional diagnostics when needed.",
-    inputSchema: { type: "object", properties: { project_root: { type: "string", minLength: 1 } }, required: ["project_root"], additionalProperties: false },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_compaction_lifecycle_step",
-    description:
-      "Process one Host-injected provider-neutral compaction lifecycle event. The Host owns event delivery and compaction; Core restores P2 first, retains transport tokens only in P5, and never asks the user for event, epoch, turn, or token JSON. Without an injected Host adapter this is a non-blocking unavailable capability.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        direction: {
-          type: "object",
-          description:
-            "Optional current recovery direction authored by provider HEAD at a before-compaction boundary. Omit to reuse the exact current checkpoint.",
-          properties: {
-            purpose: { type: "string", minLength: 1 },
-            approved_decisions: { type: "array", uniqueItems: true, items: { type: "string", minLength: 1 } },
-            current_position: { type: "string", minLength: 1 },
-            next_expected_result: { type: "string", minLength: 1 },
-            open_review_ids: { type: "array", uniqueItems: true, items: { type: "string", minLength: 1 } },
-          },
-          required: ["purpose", "approved_decisions", "current_position", "next_expected_result", "open_review_ids"],
-          additionalProperties: false,
-        },
-      },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools(["head_conversation_enter", "head_compaction_lifecycle_step"]),
   ...registeredTools(["head_observation_read", "head_observation_query"]),
   {
     name: "head_continuity_snapshot",
@@ -1683,13 +819,7 @@ allTools.push(
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
-  {
-    name: "head_project_graph_index",
-    description:
-      "Refresh the replaceable graph inventory from existing verified records and observations. Reuse unchanged inputs; no Product approval, execution, checkpoint or semantic inference.",
-    inputSchema: { type: "object", properties: { project_root: { type: "string", minLength: 1 } }, required: ["project_root"], additionalProperties: false },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools(["head_project_graph_index"]),
   {
     name: "head_session_create",
     description:
@@ -1757,38 +887,7 @@ allTools.push(
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
-  {
-    name: "head_project_direction_read",
-    description: "Read the current common user-directed goal, constraints and cancellation across Sessions. Historical graphs/checkpoints cannot override it.",
-    inputSchema: { type: "object", properties: { project_root: { type: "string", minLength: 1 } }, required: ["project_root"], additionalProperties: false },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_project_direction_update",
-    description:
-      "Record a current user direction against the exact common-direction basis; identical retry reuses it. HEAD conveys the user's scoped decision. Observed evidence, projected approval and model consensus cannot author direction or grant deployment/Canon authority.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        expected_direction_id: { type: ["string", "null"] },
-        direction: {
-          type: "object",
-          properties: {
-            goal: { type: "string" },
-            constraints: { type: "array", items: { type: "string" } },
-            decisions: { type: "array", items: { type: "string" } },
-            cancelledActions: { type: "array", items: { type: "string" } },
-          },
-          required: ["goal", "constraints", "decisions", "cancelledActions"],
-          additionalProperties: false,
-        },
-      },
-      required: ["project_root", "expected_direction_id", "direction"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools(["head_project_direction_read", "head_project_direction_update"]),
 );
 
 allTools.push(...registeredTools(["head_run_start"]));
@@ -2339,6 +1438,9 @@ async function dispatchRouted(
           workerJobSupervisor,
           workerPreparationBackend,
           observationRegistry,
+          graphDbTransport,
+          compactionLifecycleHost,
+          readRelatedNativeContext,
         })
       : await (name === "head_core_contract"
           ? {
@@ -2377,600 +1479,129 @@ async function dispatchRouted(
                   inventoryPaths: args.inventory_paths,
                   inventoryCursor: args.inventory_cursor,
                 })
-              : name === "head_project_graph_index"
-                ? (await import("./lib/project-graph.mjs")).indexProjectGraph({ root: args.project_root })
-                : name === "head_project_native_history"
-                  ? await projectNativeHistoryFromMcp(args, signal, nativeHistoryHost, onProcess)
-                  : name === "head_project_bundle_export" || name === "head_project_bundle_read" || name === "head_project_bundle_import"
-                    ? await projectBundleFromMcp(name, args, signal, onExportScope)
-                    : name === "head_session_create"
-                      ? (await import("./lib/session-routing.mjs")).createHeadSession({
+              : name === "head_project_native_history"
+                ? await projectNativeHistoryFromMcp(args, signal, nativeHistoryHost, onProcess)
+                : name === "head_project_bundle_export" || name === "head_project_bundle_read" || name === "head_project_bundle_import"
+                  ? await projectBundleFromMcp(name, args, signal, onExportScope)
+                  : name === "head_session_create"
+                    ? (await import("./lib/session-routing.mjs")).createHeadSession({
+                        root: args.project_root,
+                        sessionId: args.new_session_id,
+                        purpose: args.purpose,
+                      })
+                    : name === "head_session_list"
+                      ? await (
+                          await import("./lib/session-work-context.mjs")
+                        ).readSessionWorkList({
                           root: args.project_root,
-                          sessionId: args.new_session_id,
-                          purpose: args.purpose,
+                          sessionId: args.session_id ?? null,
+                          maxSessions: args.max_sessions ?? 16,
+                          afterSessionId: args.after_session_id ?? null,
+                          conversationCandidates: args.conversation_candidates,
+                          conversationEnvironment: hostEnvironment,
                         })
-                      : name === "head_session_list"
+                      : name === "head_onboarding_guide"
                         ? await (
-                            await import("./lib/session-work-context.mjs")
-                          ).readSessionWorkList({
-                            root: args.project_root,
-                            sessionId: args.session_id ?? null,
-                            maxSessions: args.max_sessions ?? 16,
-                            afterSessionId: args.after_session_id ?? null,
-                            conversationCandidates: args.conversation_candidates,
-                            conversationEnvironment: hostEnvironment,
-                          })
-                        : name === "head_project_direction_read"
-                          ? (await import("./lib/session-routing.mjs")).readProjectDirection({ root: args.project_root })
-                          : name === "head_project_direction_update"
-                            ? (await import("./lib/session-routing.mjs")).updateProjectDirection({
-                                root: args.project_root,
-                                expectedDirectionId: args.expected_direction_id,
-                                input: args.direction,
-                              })
-                            : name === "head_onboarding_guide"
-                              ? await (
-                                  await import("./lib/onboarding-conversation.mjs")
-                                ).inspectConversationalOnboarding({ root: args.project_root, candidateLimit: args.candidate_limit ?? 25 })
-                              : name === "head_project_initialize_or_resume"
-                                ? await initializeProjectFromMcp(args, {
-                                    projectSessionRoute,
-                                    onValidatedSessionSelection,
-                                    pluginLaunch,
-                                    servingModuleUrl,
-                                    installationCaller,
+                            await import("./lib/onboarding-conversation.mjs")
+                          ).inspectConversationalOnboarding({ root: args.project_root, candidateLimit: args.candidate_limit ?? 25 })
+                        : name === "head_project_initialize_or_resume"
+                          ? await initializeProjectFromMcp(args, {
+                              projectSessionRoute,
+                              onValidatedSessionSelection,
+                              pluginLaunch,
+                              servingModuleUrl,
+                              installationCaller,
+                            })
+                          : name === "head_runtime_invocation_result"
+                            ? await runtimeResultFromMcp(args)
+                            : name === "head_conformance_trigger_status"
+                              ? conformanceTriggerRegistry
+                                ? conformanceTriggerRegistry.inspect({
+                                    root: args.project_root,
+                                    sourceId: args.source_id,
                                   })
-                                : name === "head_onboarding_semantic_refresh"
-                                  ? await (
-                                      await import("./lib/onboarding.mjs")
-                                    ).proposeOnboardingSemanticRefresh({
+                                : {
+                                    status: "optional-host-adapter-unavailable",
+                                    ordinaryWorkBlocked: false,
+                                    authority: "P5-capability-disclosure-only",
+                                  }
+                              : name === "head_conformance_trigger_prepare"
+                                ? conformanceTriggerRegistry
+                                  ? conformanceTriggerRegistry.prepare({
                                       root: args.project_root,
-                                      semanticProposal: args.semantic_proposal,
-                                      recoveryBasis: args.recovery_basis || null,
+                                      sourceId: args.source_id,
+                                      limit: args.limit ?? 64,
                                     })
-                                  : name === "head_onboarding_candidate_restore"
-                                    ? (await import("./lib/onboarding.mjs")).restoreOnboardingCandidate({
-                                        root: args.project_root,
-                                        candidateSetId: args.candidate_set_id,
-                                        sourceContent: args.source_content,
-                                        expectedRawHash: args.expected_raw_hash,
-                                      })
-                                    : name === "head_product_policy_propose"
-                                      ? await (
-                                          await import("./lib/product-policy.mjs")
-                                        ).proposeProductPolicy({
-                                          root: args.project_root,
-                                          operation: args.operation,
-                                          key: args.key,
-                                          name: args.name,
-                                          description: args.description,
-                                          statement: args.statement,
-                                          appliesTo: args.applies_to,
-                                          governedBy: args.governed_by,
-                                          evidenceAnchors: args.evidence_anchors || [],
-                                          explanation: args.explanation || "",
-                                        })
-                                      : name === "head_product_policy_review"
-                                        ? await (
-                                            await import("./lib/product-policy.mjs")
-                                          ).reviewProductPolicy({
-                                            root: args.project_root,
-                                            candidateId: args.candidate_id,
-                                            disposition: args.disposition,
-                                            rationale: args.rationale,
-                                          })
-                                        : name === "head_product_policy_status"
-                                          ? (await import("./lib/product-policy.mjs")).inspectProductPolicyStatus({
-                                              root: args.project_root,
-                                              candidateId: args.candidate_id,
-                                            })
-                                          : name === "head_product_policy_candidate"
-                                            ? (await import("./lib/product-policy.mjs")).readProductPolicyCandidate({
+                                  : {
+                                      status: "optional-host-adapter-unavailable",
+                                      ordinaryWorkBlocked: false,
+                                      authority: "P5-capability-disclosure-only",
+                                    }
+                                : name === "head_session_work_record"
+                                  ? await (
+                                      await import("./lib/session-work-document-workflow.mjs")
+                                    ).recordSessionWorkAndProjectDocuments({
+                                      root: args.project_root,
+                                      input: args.evidence,
+                                      documentSelection: args.document_selection,
+                                    })
+                                  : name.startsWith("head_work_document_") || name.startsWith("head_project_document_")
+                                    ? await workDocumentFromMcp(name, args)
+                                    : name === "head_session_continue"
+                                      ? await continueSessionFromMcp(args, coordinationWorkspaceHost)
+                                      : name === "head_worker_integration"
+                                        ? await workerIntegrationFromMcp(args, onProcess)
+                                        : name === "head_worker_integration_status"
+                                          ? await workerIntegrationFromMcp(args, onProcess, true)
+                                          : name === "head_world_model"
+                                            ? await (
+                                                await import("./lib/world-model.mjs")
+                                              ).inspectWorldModelStatus({
                                                 root: args.project_root,
-                                                candidateId: args.candidate_id,
                                               })
-                                            : name === "head_product_policy_review_decision"
-                                              ? (await import("./lib/product-policy.mjs")).readProductPolicyReviewDecision({
+                                            : name === "head_graphdb_connection_preflight"
+                                              ? (await import("./lib/graphdb-projection-activation.mjs")).inspectArcadeDbCredentialPreflight({
                                                   root: args.project_root,
-                                                  reviewDecisionId: args.review_decision_id,
+                                                  transport: graphDbTransport,
+                                                  storage: resolveProjectStorage(args.project_root),
                                                 })
-                                              : name === "head_runtime_adapters"
-                                                ? await (await import("./lib/lode-core.mjs")).inspectRuntimeAdapters(args.project_root)
-                                                : name === "head_runtime_invocation_lease_status"
-                                                  ? (await import("./lib/runtime-invocation-lifecycle.mjs")).inspectRuntimeInvocationExecutionLease({
-                                                      root: args.project_root,
-                                                      authorizationId: args.authorization_id,
-                                                    })
-                                                  : name === "head_runtime_invocation_result"
-                                                    ? await runtimeResultFromMcp(args)
-                                                    : name === "head_onboarding_status"
-                                                      ? await (await import("./lib/onboarding.mjs")).inspectOnboarding({ root: args.project_root })
-                                                      : name === "head_conformance_prepare"
+                                              : name === "head_graphdb_database_initialize"
+                                                ? await initializeGraphDbFromMcp(args, graphDbTransport)
+                                                : name === "head_graphdb_projection_activate"
+                                                  ? await activateGraphDbFromMcp(args, graphDbTransport)
+                                                  : name === "head_continuity_snapshot"
+                                                    ? await (
+                                                        await import("./lib/product-operating-loop.mjs")
+                                                      ).buildHeadContinuitySnapshot({
+                                                        root: args.project_root,
+                                                        fresh: args.fresh ?? false,
+                                                      })
+                                                    : name === "head_conversation_list"
+                                                      ? await (
+                                                          await import("./lib/conversation-messaging.mjs")
+                                                        ).listProjectConversations({
+                                                          root: args.project_root,
+                                                          caller,
+                                                          environment: hostEnvironment,
+                                                          hostTicket: args.host_ticket ?? null,
+                                                        })
+                                                      : name === "head_conversation_send"
                                                         ? await (
-                                                            await import("./lib/conformance-reconciliation.mjs")
-                                                          ).prepareConformanceAssessment({
+                                                            await import("./lib/conversation-messaging.mjs")
+                                                          ).sendProjectConversation({
                                                             root: args.project_root,
-                                                            limit: args.limit ?? 32,
-                                                            projectionId: args.projection_id || "",
-                                                            cursor: args.cursor || "",
+                                                            caller,
+                                                            environment: hostEnvironment,
+                                                            to: args.to,
+                                                            body: args.body,
+                                                            replyTo: args.reply_to ?? null,
+                                                            hostTicket: args.host_ticket ?? null,
+                                                            waitMs: Number(hostEnvironment?.LODE_CONVERSATION_DELIVERY_WAIT_MS || 0),
+                                                            signal,
                                                           })
-                                                        : name === "head_conformance_queue"
-                                                          ? await (
-                                                              await import("./lib/conformance-reconciliation.mjs")
-                                                            ).inspectConformanceQueue({
-                                                              root: args.project_root,
-                                                              status: args.status || "all",
-                                                              riskHint: args.risk_hint || "",
-                                                              limit: args.limit ?? 25,
-                                                              projectionId: args.projection_id || "",
-                                                              cursor: args.cursor || "",
-                                                              canonAnchor:
-                                                                args.canon_anchor == null
-                                                                  ? null
-                                                                  : {
-                                                                      entityKind: args.canon_anchor.entity_kind,
-                                                                      entityKey: args.canon_anchor.entity_key,
-                                                                    },
-                                                            })
-                                                          : name === "head_conformance_read"
-                                                            ? (await import("./lib/conformance-reconciliation.mjs")).readConformanceFinding({
-                                                                root: args.project_root,
-                                                                findingId: args.finding_id,
-                                                              })
-                                                            : name === "head_conformance_disposition"
-                                                              ? await (
-                                                                  await import("./lib/conformance-reconciliation.mjs")
-                                                                ).recordConformanceDisposition({
-                                                                  root: args.project_root,
-                                                                  findingId: args.finding_id,
-                                                                  disposition: args.disposition,
-                                                                  rationale: args.rationale,
-                                                                  deferUntil: args.defer_until ?? null,
-                                                                  resolutionId: args.resolution_id ?? null,
-                                                                  confirmUserDisposition: args.confirm_user_disposition,
-                                                                  actor: args.actor ?? "user",
-                                                                })
-                                                              : name === "head_conformance_trigger_status"
-                                                                ? conformanceTriggerRegistry
-                                                                  ? conformanceTriggerRegistry.inspect({
-                                                                      root: args.project_root,
-                                                                      sourceId: args.source_id,
-                                                                    })
-                                                                  : {
-                                                                      status: "optional-host-adapter-unavailable",
-                                                                      ordinaryWorkBlocked: false,
-                                                                      authority: "P5-capability-disclosure-only",
-                                                                    }
-                                                                : name === "head_conformance_trigger_prepare"
-                                                                  ? conformanceTriggerRegistry
-                                                                    ? conformanceTriggerRegistry.prepare({
-                                                                        root: args.project_root,
-                                                                        sourceId: args.source_id,
-                                                                        limit: args.limit ?? 64,
-                                                                      })
-                                                                    : {
-                                                                        status: "optional-host-adapter-unavailable",
-                                                                        ordinaryWorkBlocked: false,
-                                                                        authority: "P5-capability-disclosure-only",
-                                                                      }
-                                                                  : name === "head_source_context"
-                                                                    ? await (
-                                                                        await import("./lib/source-context-workflow.mjs")
-                                                                      ).prepareSourceContext({
-                                                                        root: args.project_root,
-                                                                        task: args.task,
-                                                                        needs: args.needs ?? [],
-                                                                        retain: args.retain ?? false,
-                                                                        budget: args.budget,
-                                                                        timeoutMs: args.timeout_ms ?? 15_000,
-                                                                        signal,
-                                                                        onProcess,
-                                                                      })
-                                                                    : name === "head_source_observation_read"
-                                                                      ? (await import("./lib/source-context-workflow.mjs")).inspectSourceObservation({
-                                                                          root: args.project_root,
-                                                                          bundleKey: args.bundle_key,
-                                                                          failureKey: args.failure_key,
-                                                                        })
-                                                                      : name === "head_context_prepare"
-                                                                        ? await (
-                                                                            await import("./lib/context-workflow.mjs")
-                                                                          ).prepareContextWorkflow({
-                                                                            root: args.project_root,
-                                                                            task: args.task,
-                                                                            budget: args.budget ?? DEFAULT_CONTEXT_BUDGET,
-                                                                          })
-                                                                        : name === "head_context_preview"
-                                                                          ? await (
-                                                                              await import("./lib/context-workflow.mjs")
-                                                                            ).previewContextWorkflow({
-                                                                              root: args.project_root,
-                                                                              task: args.task,
-                                                                              budget: args.budget ?? DEFAULT_CONTEXT_BUDGET,
-                                                                              evidenceNeeds: args.evidence_needs || [],
-                                                                            })
-                                                                          : name === "head_session_work_record"
-                                                                            ? await (
-                                                                                await import("./lib/session-work-document-workflow.mjs")
-                                                                              ).recordSessionWorkAndProjectDocuments({
-                                                                                root: args.project_root,
-                                                                                input: args.evidence,
-                                                                                documentSelection: args.document_selection,
-                                                                              })
-                                                                            : name.startsWith("head_work_document_") ||
-                                                                                name.startsWith("head_project_document_")
-                                                                              ? await workDocumentFromMcp(name, args)
-                                                                              : name === "head_session_work_read"
-                                                                                ? (await import("./lib/session-work-context.mjs")).readSessionWorkContext({
-                                                                                    root: args.project_root,
-                                                                                    evidenceIds: args.evidence_ids ?? null,
-                                                                                    afterEvidenceId: args.after_evidence_id ?? null,
-                                                                                    scanEvidence: args.scan_evidence ?? false,
-                                                                                    maxRecords: args.max_records ?? 8,
-                                                                                    maxCharacters: args.max_characters ?? 32768,
-                                                                                    todoId: args.todo_id ?? null,
-                                                                                    afterTodoId: args.after_todo_id ?? null,
-                                                                                    scanTodos: args.scan_todos ?? false,
-                                                                                  })
-                                                                                : name === "head_session_restore"
-                                                                                  ? (await import("./lib/session-recovery.mjs")).restoreSessionFromArtifacts({
-                                                                                      root: args.project_root,
-                                                                                      checkpointId: args.checkpoint_id || null,
-                                                                                    })
-                                                                                  : name === "head_session_continue"
-                                                                                    ? await continueSessionFromMcp(args, coordinationWorkspaceHost)
-                                                                                    : name === "head_worker_integration"
-                                                                                      ? await workerIntegrationFromMcp(args, onProcess)
-                                                                                      : name === "head_worker_integration_status"
-                                                                                        ? await workerIntegrationFromMcp(args, onProcess, true)
-                                                                                        : name === "head_run_integrate_checkpoint"
-                                                                                          ? (
-                                                                                              await import("./lib/session-recovery.mjs")
-                                                                                            ).integrateReviewedRunCheckpoint({
-                                                                                              root: args.project_root,
-                                                                                              runId: args.run_id,
-                                                                                              reviewDecisionId: args.review_decision_id,
-                                                                                              purpose: args.purpose,
-                                                                                              approvedDecisions: args.approved_decisions,
-                                                                                              currentPosition: args.current_position,
-                                                                                              nextExpectedResult: args.next_expected_result,
-                                                                                              openReviewIds: args.open_review_ids || [],
-                                                                                            })
-                                                                                          : name === "head_world_model"
-                                                                                            ? await (
-                                                                                                await import("./lib/world-model.mjs")
-                                                                                              ).inspectWorldModelStatus({
-                                                                                                root: args.project_root,
-                                                                                              })
-                                                                                            : name === "head_graph_projection_status"
-                                                                                              ? await (
-                                                                                                  await import("./lib/world-model.mjs")
-                                                                                                ).inspectWorldGraphProjection({
-                                                                                                  root: args.project_root,
-                                                                                                })
-                                                                                              : name === "head_graphdb_projection_status"
-                                                                                                ? await (
-                                                                                                    await import("./lib/graphdb-projection-activation.mjs")
-                                                                                                  ).inspectArcadeDbGraphProjectionStatus({
-                                                                                                    root: args.project_root,
-                                                                                                    transport: graphDbTransport,
-                                                                                                  })
-                                                                                                : name === "head_graphdb_database_status"
-                                                                                                  ? (
-                                                                                                      await import("./lib/arcadedb-database-lifecycle.mjs")
-                                                                                                    ).inspectArcadeDbDatabaseCompatibility({
-                                                                                                      root: args.project_root,
-                                                                                                      transport: graphDbTransport,
-                                                                                                      storage: resolveProjectStorage(args.project_root),
-                                                                                                    })
-                                                                                                  : name === "head_graphdb_connection_preflight"
-                                                                                                    ? (
-                                                                                                        await import("./lib/graphdb-projection-activation.mjs")
-                                                                                                      ).inspectArcadeDbCredentialPreflight({
-                                                                                                        root: args.project_root,
-                                                                                                        transport: graphDbTransport,
-                                                                                                        storage: resolveProjectStorage(args.project_root),
-                                                                                                      })
-                                                                                                    : name === "head_graphdb_database_initialize"
-                                                                                                      ? await initializeGraphDbFromMcp(args, graphDbTransport)
-                                                                                                      : name === "head_graphdb_projection_activate"
-                                                                                                        ? await activateGraphDbFromMcp(args, graphDbTransport)
-                                                                                                        : name === "head_markdown_projection_status"
-                                                                                                          ? await (
-                                                                                                              await import("./lib/world-model.mjs")
-                                                                                                            ).inspectWorldMarkdownProjection({
-                                                                                                              root: args.project_root,
-                                                                                                            })
-                                                                                                          : name === "head_document_change_candidates"
-                                                                                                            ? (
-                                                                                                                await import("./lib/world-model.mjs")
-                                                                                                              ).readWorldDocumentChangeCandidateSet({
-                                                                                                                root: args.project_root,
-                                                                                                                candidateSetId: args.candidate_set_id,
-                                                                                                              })
-                                                                                                            : name === "head_document_change_review_status"
-                                                                                                              ? await (
-                                                                                                                  await import("./lib/document-change-review.mjs")
-                                                                                                                ).inspectDocumentChangeReviewStatus({
-                                                                                                                  root: args.project_root,
-                                                                                                                  candidateSetId: args.candidate_set_id,
-                                                                                                                })
-                                                                                                              : name === "head_document_change_review"
-                                                                                                                ? (
-                                                                                                                    await import("./lib/document-change-review.mjs")
-                                                                                                                  ).readDocumentChangeReviewDecision({
-                                                                                                                    root: args.project_root,
-                                                                                                                    reviewDecisionId: args.review_decision_id,
-                                                                                                                  })
-                                                                                                                : name === "head_document_change_application"
-                                                                                                                  ? (
-                                                                                                                      await import("./lib/document-change-review.mjs")
-                                                                                                                    ).readDocumentChangeApplicationReceipt({
-                                                                                                                      root: args.project_root,
-                                                                                                                      applicationReceiptId:
-                                                                                                                        args.application_receipt_id,
-                                                                                                                    })
-                                                                                                                  : name === "head_world_query"
-                                                                                                                    ? await (
-                                                                                                                        await import("./lib/world-model.mjs")
-                                                                                                                      ).queryWorldModel({
-                                                                                                                        root: args.project_root,
-                                                                                                                        query: args.query,
-                                                                                                                        depth: args.depth ?? 1,
-                                                                                                                        maxResults: args.limit ?? 100,
-                                                                                                                      })
-                                                                                                                    : name === "head_git_history"
-                                                                                                                      ? await (
-                                                                                                                          await import("./lib/world-model.mjs")
-                                                                                                                        ).queryWorldHistory({
-                                                                                                                          root: args.project_root,
-                                                                                                                          query: args.query || "",
-                                                                                                                          limit: args.limit ?? 50,
-                                                                                                                        })
-                                                                                                                      : name === "head_temporal_graph"
-                                                                                                                        ? await (
-                                                                                                                            await import("./lib/world-model.mjs")
-                                                                                                                          ).queryWorldTemporalGraph({
-                                                                                                                            root: args.project_root,
-                                                                                                                            query: args.query,
-                                                                                                                            anchorIds:
-                                                                                                                              args.exact_anchor_ids || null,
-                                                                                                                            expectedGraphSnapshotId:
-                                                                                                                              args.expected_graph_snapshot_id ||
-                                                                                                                              null,
-                                                                                                                            kinds: args.kinds || null,
-                                                                                                                            relations:
-                                                                                                                              args.relation_types || null,
-                                                                                                                            includeUnreviewedCandidates:
-                                                                                                                              args.include_unreviewed_candidates ??
-                                                                                                                              false,
-                                                                                                                            minConfidence:
-                                                                                                                              args.min_confidence ?? 0,
-                                                                                                                            depth: args.depth ?? 1,
-                                                                                                                            maxNodes: args.node_limit ?? 100,
-                                                                                                                            maxEdges: args.edge_limit ?? 200,
-                                                                                                                          })
-                                                                                                                        : name === "head_runtime_state"
-                                                                                                                          ? await (
-                                                                                                                              await import("./lib/world-model.mjs")
-                                                                                                                            ).queryWorldRuntimeState({
-                                                                                                                              root: args.project_root,
-                                                                                                                              query: args.query || "",
-                                                                                                                              runtime: args.runtime || "",
-                                                                                                                              state: args.state || "",
-                                                                                                                              kind: args.kind || "",
-                                                                                                                              limit: args.limit ?? 50,
-                                                                                                                            })
-                                                                                                                          : name === "head_conversation_enter"
-                                                                                                                            ? await (
-                                                                                                                                await import("./lib/compaction-lifecycle.mjs")
-                                                                                                                              ).enterConversationRecovery({
-                                                                                                                                root: args.project_root,
-                                                                                                                                readRelatedNativeContext,
-                                                                                                                              })
-                                                                                                                            : name ===
-                                                                                                                                "head_compaction_lifecycle_step"
-                                                                                                                              ? await (
-                                                                                                                                  await import("./lib/compaction-lifecycle.mjs")
-                                                                                                                                ).processCompactionLifecycle({
-                                                                                                                                  root: args.project_root,
-                                                                                                                                  hostAdapter:
-                                                                                                                                    compactionLifecycleHost,
-                                                                                                                                  direction:
-                                                                                                                                    args.direction == null
-                                                                                                                                      ? null
-                                                                                                                                      : {
-                                                                                                                                          purpose:
-                                                                                                                                            args.direction
-                                                                                                                                              .purpose,
-                                                                                                                                          approvedDecisions:
-                                                                                                                                            args.direction
-                                                                                                                                              .approved_decisions,
-                                                                                                                                          currentPosition:
-                                                                                                                                            args.direction
-                                                                                                                                              .current_position,
-                                                                                                                                          nextExpectedResult:
-                                                                                                                                            args.direction
-                                                                                                                                              .next_expected_result,
-                                                                                                                                          openReviewIds:
-                                                                                                                                            args.direction
-                                                                                                                                              .open_review_ids,
-                                                                                                                                        },
-                                                                                                                                })
-                                                                                                                              : name ===
-                                                                                                                                  "head_product_signal_record"
-                                                                                                                                ? await (
-                                                                                                                                    await import("./lib/product-operating-loop.mjs")
-                                                                                                                                  ).recordProductSignal({
-                                                                                                                                    root: args.project_root,
-                                                                                                                                    statement: args.statement,
-                                                                                                                                    observedAt:
-                                                                                                                                      args.observed_at,
-                                                                                                                                    source: args.source || "",
-                                                                                                                                    evidenceIds:
-                                                                                                                                      args.evidence_ids || [],
-                                                                                                                                  })
-                                                                                                                                : name ===
-                                                                                                                                    "head_product_hypothesis_record"
-                                                                                                                                  ? await (
-                                                                                                                                      await import("./lib/product-operating-loop.mjs")
-                                                                                                                                    ).recordProductHypothesis({
-                                                                                                                                      root: args.project_root,
-                                                                                                                                      statement: args.statement,
-                                                                                                                                      rationale:
-                                                                                                                                        args.rationale || "",
-                                                                                                                                      signalIds:
-                                                                                                                                        args.signal_ids || [],
-                                                                                                                                      observationIds:
-                                                                                                                                        args.observation_ids ||
-                                                                                                                                        [],
-                                                                                                                                    })
-                                                                                                                                  : name ===
-                                                                                                                                      "head_product_outcome_observe"
-                                                                                                                                    ? await (
-                                                                                                                                        await import("./lib/product-operating-loop.mjs")
-                                                                                                                                      ).observeProductOutcome({
-                                                                                                                                        root: args.project_root,
-                                                                                                                                        changeSetId:
-                                                                                                                                          args.change_set_id,
-                                                                                                                                        initiativeId:
-                                                                                                                                          args.initiative_id ||
-                                                                                                                                          "",
-                                                                                                                                        statement:
-                                                                                                                                          args.statement,
-                                                                                                                                        epistemicClass:
-                                                                                                                                          args.epistemic_class ||
-                                                                                                                                          "observed-fact",
-                                                                                                                                        evidenceIds:
-                                                                                                                                          args.evidence_ids ||
-                                                                                                                                          [],
-                                                                                                                                      })
-                                                                                                                                    : name ===
-                                                                                                                                        "head_product_operating_status"
-                                                                                                                                      ? (
-                                                                                                                                          await import("./lib/product-operating-loop.mjs")
-                                                                                                                                        ).inspectProductOperatingLoop(
-                                                                                                                                          {
-                                                                                                                                            root: args.project_root,
-                                                                                                                                            fresh:
-                                                                                                                                              args.fresh ??
-                                                                                                                                              false,
-                                                                                                                                          },
-                                                                                                                                        )
-                                                                                                                                      : name ===
-                                                                                                                                          "head_observation_prepare"
-                                                                                                                                        ? (
-                                                                                                                                            await import("./lib/observation-workflow.mjs")
-                                                                                                                                          ).prepareObservationEvidence(
-                                                                                                                                            {
-                                                                                                                                              root: args.project_root,
-                                                                                                                                              registry:
-                                                                                                                                                observationRegistry,
-                                                                                                                                              typeKey:
-                                                                                                                                                args.type_key,
-                                                                                                                                              subjectType:
-                                                                                                                                                args.subject_type ||
-                                                                                                                                                "",
-                                                                                                                                              subjectKey:
-                                                                                                                                                args.subject_key ||
-                                                                                                                                                "",
-                                                                                                                                              adapterKey:
-                                                                                                                                                args.adapter_key ||
-                                                                                                                                                "",
-                                                                                                                                              observedAfter:
-                                                                                                                                                args.observed_after ||
-                                                                                                                                                "",
-                                                                                                                                              observedBefore:
-                                                                                                                                                args.observed_before ||
-                                                                                                                                                "",
-                                                                                                                                              existingLimit:
-                                                                                                                                                args.existing_limit ??
-                                                                                                                                                20,
-                                                                                                                                              sourceLimit:
-                                                                                                                                                args.source_limit ??
-                                                                                                                                                20,
-                                                                                                                                              sourceAvailability:
-                                                                                                                                                args.source_availability ||
-                                                                                                                                                "",
-                                                                                                                                              sourceProjectionId:
-                                                                                                                                                args.source_projection_id ||
-                                                                                                                                                "",
-                                                                                                                                              sourceCursor:
-                                                                                                                                                args.source_cursor ||
-                                                                                                                                                "",
-                                                                                                                                            },
-                                                                                                                                          )
-                                                                                                                                        : name ===
-                                                                                                                                            "head_observation_collect_source"
-                                                                                                                                          ? await (
-                                                                                                                                              await import("./lib/observation-adapter.mjs")
-                                                                                                                                            ).collectRegisteredObservation(
-                                                                                                                                              {
-                                                                                                                                                root: args.project_root,
-                                                                                                                                                registry:
-                                                                                                                                                  observationRegistry,
-                                                                                                                                                sourceId:
-                                                                                                                                                  args.source_id,
-                                                                                                                                              },
-                                                                                                                                            )
-                                                                                                                                          : name ===
-                                                                                                                                              "head_continuity_snapshot"
-                                                                                                                                            ? await (
-                                                                                                                                                await import("./lib/product-operating-loop.mjs")
-                                                                                                                                              ).buildHeadContinuitySnapshot(
-                                                                                                                                                {
-                                                                                                                                                  root: args.project_root,
-                                                                                                                                                  fresh:
-                                                                                                                                                    args.fresh ??
-                                                                                                                                                    false,
-                                                                                                                                                },
-                                                                                                                                              )
-                                                                                                                                            : name ===
-                                                                                                                                                "head_conversation_list"
-                                                                                                                                              ? await (
-                                                                                                                                                  await import("./lib/conversation-messaging.mjs")
-                                                                                                                                                ).listProjectConversations(
-                                                                                                                                                  {
-                                                                                                                                                    root: args.project_root,
-                                                                                                                                                    caller,
-                                                                                                                                                    environment:
-                                                                                                                                                      hostEnvironment,
-                                                                                                                                                    hostTicket:
-                                                                                                                                                      args.host_ticket ??
-                                                                                                                                                      null,
-                                                                                                                                                  },
-                                                                                                                                                )
-                                                                                                                                              : name ===
-                                                                                                                                                  "head_conversation_send"
-                                                                                                                                                ? await (
-                                                                                                                                                    await import("./lib/conversation-messaging.mjs")
-                                                                                                                                                  ).sendProjectConversation(
-                                                                                                                                                    {
-                                                                                                                                                      root: args.project_root,
-                                                                                                                                                      caller,
-                                                                                                                                                      environment:
-                                                                                                                                                        hostEnvironment,
-                                                                                                                                                      to: args.to,
-                                                                                                                                                      body: args.body,
-                                                                                                                                                      replyTo:
-                                                                                                                                                        args.reply_to ??
-                                                                                                                                                        null,
-                                                                                                                                                      hostTicket:
-                                                                                                                                                        args.host_ticket ??
-                                                                                                                                                        null,
-                                                                                                                                                      waitMs:
-                                                                                                                                                        Number(
-                                                                                                                                                          hostEnvironment?.LODE_CONVERSATION_DELIVERY_WAIT_MS ||
-                                                                                                                                                            0,
-                                                                                                                                                        ),
-                                                                                                                                                      signal,
-                                                                                                                                                    },
-                                                                                                                                                  )
-                                                                                                                                                : (() => {
-                                                                                                                                                    throw new Error(
-                                                                                                                                                      `Unknown tool: ${name}`,
-                                                                                                                                                    );
-                                                                                                                                                  })());
+                                                        : (() => {
+                                                            throw new Error(`Unknown tool: ${name}`);
+                                                          })());
     // MCP structuredContent is an optional object, never null/array/scalar.
     // Keep absent originals as their original text value, not fabricated state.
     const response = success(id, {
