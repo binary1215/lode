@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { skipCode } from "../../scripts/codemods/js-scan.mjs";
+import { OPERATIONS } from "../../scripts/lib/operation-registry.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 export const FIXTURE_ROOT = "/lode-dispatch-fixture/project";
@@ -124,6 +125,8 @@ export function cliCommands() {
     if (/evidenceNeedsInput\(options\)/.test(block)) flags.add("evidence-needs");
     for (const name of names) if (!commands.has(name)) commands.set(name, [...flags].sort());
   }
+  // Commands moved to the operation registry declare the options they read.
+  for (const entry of OPERATIONS) if (!commands.has(entry.cli.command)) commands.set(entry.cli.command, [...entry.cli.flags].sort());
   return commands;
 }
 
