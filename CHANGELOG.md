@@ -11,6 +11,15 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.94 — publication tracked separately
+
+- Dispatch the measurement, delivery, release status, refresh receipt/status and
+  observation read/query/sources operations through the operation registry (50
+  of 144), with no behavior change on either surface.
+- Record numeric edge limits and the `--include-execution false` case in the
+  dispatch recordings, and match entry states in the documented-flow check as
+  whole tokens of the core Skill's entry table.
+
 ## 0.3.0-beta.93 — publication tracked separately
 
 - Dispatch the checkpoint, compaction, graph-lineage, change-set and
