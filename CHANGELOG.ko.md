@@ -9,6 +9,17 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.91 — 게시 결과는 별도 확인
+
+- SHA-256 다이제스트, 정규화 JSON, 오류와 이유 코드, 원자적 쓰기, 경로 탈출
+  검사를 위한 공용 `scripts/lib/core/` 헬퍼를 추가하고 `scripts/lib`의 중복
+  지역 헬퍼를 그 위로 옮깁니다. 다이제스트 바이트·메시지·코드·파일 효과는
+  그대로이며, lint 테스트가 라이브러리에서 raw `createHash`, `renameSync`,
+  지역 digest 헬퍼를 막습니다.
+- `scripts/lib/core/errors.mjs`의 `REASON_CODES`는 `code`/`reasonCode` 값이나
+  fail/error 호출 인자로 쓰인 이유 코드를 나열하며 테스트가 코드와 동기화를
+  유지합니다.
+
 ## 0.3.0-beta.90 — 게시 결과는 별도 확인
 
 - 모든 JavaScript 소스를 Prettier 3.9.10(`printWidth` 160, 나머지 기본값)으로 한
