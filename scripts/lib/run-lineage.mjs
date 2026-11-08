@@ -1,5 +1,15 @@
 import crypto from "node:crypto";
-import { sessionStateHash, operationPointerHash, completedTransitionMatches, sameValue, unchangedSession, startPatch, finishPatch, reviewPatch, verifyRunTransitionOriginal } from "./run-source-verification.mjs";
+import {
+  sessionStateHash,
+  operationPointerHash,
+  completedTransitionMatches,
+  sameValue,
+  unchangedSession,
+  startPatch,
+  finishPatch,
+  reviewPatch,
+  verifyRunTransitionOriginal,
+} from "./run-source-verification.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { sessionStatePath, sessionStateForWrite, assertRunSession, withSessionRoute, defaultSessionStatePath } from "./session-routing.mjs";
@@ -30,8 +40,11 @@ function atomicWrite(file, content) {
 }
 
 function readJson(file, label) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`${label} is invalid JSON: ${error.message}`, "INVALID_RUN_CANON"); }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(`${label} is invalid JSON: ${error.message}`, "INVALID_RUN_CANON");
+  }
 }
 
 function readyProject(root, action) {
@@ -63,18 +76,31 @@ function stateFile(root, storage) {
 function sessionChange({ run, inspected, kind, artifactId, changedAt, patch }) {
   const existing = run.sessionTransition;
   if (existing?.kind === kind) {
-    if (existing.artifactId !== artifactId || existing.projectId !== inspected.project.projectId
-      || existing.sessionId !== inspected.state.sessionId || existing.runId !== run.runId) {
+    if (
+      existing.artifactId !== artifactId ||
+      existing.projectId !== inspected.project.projectId ||
+      existing.sessionId !== inspected.state.sessionId ||
+      existing.runId !== run.runId
+    ) {
       fail("Run transition retry differs from its recorded input or identity.", "RUN_TRANSITION_CONFLICT");
     }
-    if (!completedTransitionMatches(run, inspected.state, patch) && !unchangedSession(inspected.state, existing, patch)) fail("Session changed in fields owned by the recorded Run operation.", "RUN_TRANSITION_SESSION_DRIFT");
+    if (!completedTransitionMatches(run, inspected.state, patch) && !unchangedSession(inspected.state, existing, patch))
+      fail("Session changed in fields owned by the recorded Run operation.", "RUN_TRANSITION_SESSION_DRIFT");
     return existing;
   }
   const transition = {
-    kind, artifactId, projectId: inspected.project.projectId,
-    sessionId: inspected.state.sessionId, runId: run.runId, changedAt,
-    before: Object.fromEntries([...new Set([...Object.keys(patch), "currentWholePlanId", "activeRunId", "activeExecutionContractId", "lastReviewedRunId"])]
-      .map((key) => [key, inspected.state[key] ?? null])),
+    kind,
+    artifactId,
+    projectId: inspected.project.projectId,
+    sessionId: inspected.state.sessionId,
+    runId: run.runId,
+    changedAt,
+    before: Object.fromEntries(
+      [...new Set([...Object.keys(patch), "currentWholePlanId", "activeRunId", "activeExecutionContractId", "lastReviewedRunId"])].map((key) => [
+        key,
+        inspected.state[key] ?? null,
+      ]),
+    ),
     patch,
   };
   return transition;
@@ -89,8 +115,9 @@ function commitSessionTransition({ root, inspected, run, patch }) {
   if (!unchangedSession(inspected.state, transition, patch)) {
     fail("Run transition cannot overwrite changed Session state.", "RUN_TRANSITION_SESSION_DRIFT");
   }
-  try { atomicWrite(stateFile(root, inspected.storage), json(state)); }
-  catch (error) {
+  try {
+    atomicWrite(stateFile(root, inspected.storage), json(state));
+  } catch (error) {
     // Publication may have completed before staging/transport cleanup failed.
     // Exact target bytes prove storage only, never a worker/effect outcome.
     if (fs.readFileSync(stateFile(root, inspected.storage), "utf8") !== json(state)) throw error;
@@ -99,20 +126,21 @@ function commitSessionTransition({ root, inspected, run, patch }) {
 }
 
 function verifyRunLineage(root, run, inspected) {
- assertRunSession(root,run,inspected.state);
- const contract=requireArtifact(root,run.executionContractId,"ExecutionContract");
- requireArtifact(root,run.wholePlanId,"WholePlanSnapshot");
- readContextCapsule({root,capsuleId:run.capsuleId});
- if(run.projectId!==inspected.project.projectId||contract.wholePlanId!==run.wholePlanId||contract.capsuleId!==run.capsuleId)fail("Run lineage differs from its verified Contract.","RUN_LINEAGE_CONFLICT");
- return contract;
+  assertRunSession(root, run, inspected.state);
+  const contract = requireArtifact(root, run.executionContractId, "ExecutionContract");
+  requireArtifact(root, run.wholePlanId, "WholePlanSnapshot");
+  readContextCapsule({ root, capsuleId: run.capsuleId });
+  if (run.projectId !== inspected.project.projectId || contract.wholePlanId !== run.wholePlanId || contract.capsuleId !== run.capsuleId)
+    fail("Run lineage differs from its verified Contract.", "RUN_LINEAGE_CONFLICT");
+  return contract;
 }
-function verifyStartOperation(root,run,inspected) {
- inspectTransition(inspected,run);
- return run.startOperation||null;
+function verifyStartOperation(root, run, inspected) {
+  inspectTransition(inspected, run);
+  return run.startOperation || null;
 }
-function inspectTransition(inspected,run) {
- assertRunSession(inspected.project.projectRoot,run,inspected.state);
- return verifyRunTransitionOriginal({inspected,run,requireArtifact,readContextCapsule});
+function inspectTransition(inspected, run) {
+  assertRunSession(inspected.project.projectRoot, run, inspected.state);
+  return verifyRunTransitionOriginal({ inspected, run, requireArtifact, readContextCapsule });
 }
 
 // Read-only, affected current Run only. This never repairs a Session or creates
@@ -140,8 +168,12 @@ export function reconcileRunStorageTransition({ root = "." } = {}) {
 
 function committedResponse(root, response, changedPaths = null) {
   const projection = changedPaths ? noteProjectGraphChange(root, changedPaths) : { status: "not-requested", ordinaryWorkBlocked: false };
-  return { ...response, canonicalCommit: "committed", executionReplayAllowed: false,
-    projectionUpdate: { ...projection, status: changedPaths && projection.status !== "unavailable" ? "current" : projection.status } };
+  return {
+    ...response,
+    canonicalCommit: "committed",
+    executionReplayAllowed: false,
+    projectionUpdate: { ...projection, status: changedPaths && projection.status !== "unavailable" ? "current" : projection.status },
+  };
 }
 
 function pendingReviewBundle(root) {
@@ -175,20 +207,33 @@ export function getPendingReviewContext({ root = "." } = {}) {
 
 export function startRun(options = {}) {
   return withRunStorageMutation(options.root, () => {
-    try { return startRunLocked(options); }
-    catch (error) { error.affectedOperation = "run-start"; error.executionReplayAllowed = false; throw error; }
+    try {
+      return startRunLocked(options);
+    } catch (error) {
+      error.affectedOperation = "run-start";
+      error.executionReplayAllowed = false;
+      throw error;
+    }
   });
 }
 
 function withRunStorageMutation(root, operation) {
   let response;
-  try { return withProjectMutation({ root, scope: "session-recovery" }, () => (response = operation())); }
-  catch (error) {
+  try {
+    return withProjectMutation({ root, scope: "session-recovery" }, () => (response = operation()));
+  } catch (error) {
     // A lease-release error after the exact transaction returned is operational
     // cleanup loss, not permission to repeat the already committed transition.
     if (response?.canonicalCommit !== "committed") throw error;
-    return { ...response, executionReplayAllowed: false,
-      operationalCleanup: { status: "incomplete", reasonCode: error.code || "RUN_MUTATION_RELEASE_FAILED", retryTarget: "exact-owned-operational-cleanup-not-execution" } };
+    return {
+      ...response,
+      executionReplayAllowed: false,
+      operationalCleanup: {
+        status: "incomplete",
+        reasonCode: error.code || "RUN_MUTATION_RELEASE_FAILED",
+        retryTarget: "exact-owned-operational-cleanup-not-execution",
+      },
+    };
   }
 }
 
@@ -196,7 +241,8 @@ function startRunLocked({ root = ".", executionContractId, startRequestId } = {}
   if (typeof executionContractId !== "string" || !executionContractId.trim()) {
     fail("A verified Execution Contract is required to start a Run.", "EXECUTION_CONTRACT_REQUIRED");
   }
-  if (startRequestId != null && (typeof startRequestId !== "string" || !startRequestId.trim() || startRequestId.length > 256)) fail("Run start request key must be non-empty text of at most 256 characters.", "INVALID_RUN_START_REQUEST");
+  if (startRequestId != null && (typeof startRequestId !== "string" || !startRequestId.trim() || startRequestId.length > 256))
+    fail("Run start request key must be non-empty text of at most 256 characters.", "INVALID_RUN_START_REQUEST");
   let inspected = readyProject(root, "a Run starts");
   const projectRoot = inspected.project.projectRoot;
   const contract = requireArtifact(projectRoot, executionContractId.trim(), "ExecutionContract");
@@ -204,46 +250,72 @@ function startRunLocked({ root = ".", executionContractId, startRequestId } = {}
   readContextCapsule({ root: projectRoot, capsuleId: contract.capsuleId });
   const requestKeyHash = startRequestId == null ? null : sessionStateHash(startRequestId.trim());
   const inputHash = sessionStateHash({ executionContractId: contract.executionContractId, wholePlanId: contract.wholePlanId, capsuleId: contract.capsuleId });
-  const matches = [], orphans = [];
+  const matches = [],
+    orphans = [];
   const directory = path.join(projectRoot, formatForVerifiedOwner(inspected.storage).directory, "sessions", "runs");
-  if (fs.existsSync(directory)) for (const id of fs.readdirSync(directory).sort()) {
-    if (!/^run-[0-9]+-[a-f0-9]{6}$/.test(id)) continue;
-    // Failed staging before no-clobber publication may leave an empty directory,
-    // not a canonical intent or an uncertain Run. Do not invent one from layout.
-    if (!fs.existsSync(runFile(projectRoot, id, inspected.storage))) continue;
-    let prior;
-    try { prior = readJson(runFile(projectRoot, id, inspected.storage), "Run start candidate"); }
-    catch { orphans.push({ runId: id, reason: "owner-unknown" }); continue; }
-    // A demonstrably different owner is not this Session's history gate.
-    const ownerId = prior.sessionId || readJson(defaultSessionStatePath(projectRoot, inspected.storage), "Default Session owner").sessionId;
-    if (ownerId !== inspected.state.sessionId) {
-      try { withSessionRoute(projectRoot, ownerId, () => {}); }
-      catch { orphans.push({ runId: id, reason: "owner-unverified" }); continue; }
-      if (prior.projectId === inspected.project.projectId) continue;
-      orphans.push({ runId: id, reason: "project-owner-conflict" }); continue;
+  if (fs.existsSync(directory))
+    for (const id of fs.readdirSync(directory).sort()) {
+      if (!/^run-[0-9]+-[a-f0-9]{6}$/.test(id)) continue;
+      // Failed staging before no-clobber publication may leave an empty directory,
+      // not a canonical intent or an uncertain Run. Do not invent one from layout.
+      if (!fs.existsSync(runFile(projectRoot, id, inspected.storage))) continue;
+      let prior;
+      try {
+        prior = readJson(runFile(projectRoot, id, inspected.storage), "Run start candidate");
+      } catch {
+        orphans.push({ runId: id, reason: "owner-unknown" });
+        continue;
+      }
+      // A demonstrably different owner is not this Session's history gate.
+      const ownerId = prior.sessionId || readJson(defaultSessionStatePath(projectRoot, inspected.storage), "Default Session owner").sessionId;
+      if (ownerId !== inspected.state.sessionId) {
+        try {
+          withSessionRoute(projectRoot, ownerId, () => {});
+        } catch {
+          orphans.push({ runId: id, reason: "owner-unverified" });
+          continue;
+        }
+        if (prior.projectId === inspected.project.projectId) continue;
+        orphans.push({ runId: id, reason: "project-owner-conflict" });
+        continue;
+      }
+      if (requestKeyHash && prior.startOperation?.requestKeyHash === requestKeyHash) {
+        if (prior.runId !== id) fail("Run start candidate path differs.", "RUN_START_IDENTITY_CONFLICT");
+        verifyStartOperation(projectRoot, prior, inspected);
+        if (prior.startOperation.inputHash !== inputHash) fail("Run start request key was reused with different input.", "RUN_START_REQUEST_CONFLICT");
+        matches.push(prior);
+      }
+      if (prior.status === "active" && prior.runId !== inspected.state.activeRunId) orphans.push({ runId: id, reason: "unattached-active-run" });
     }
-    if (requestKeyHash && prior.startOperation?.requestKeyHash === requestKeyHash) {
-      if (prior.runId !== id) fail("Run start candidate path differs.", "RUN_START_IDENTITY_CONFLICT");
-      verifyStartOperation(projectRoot, prior, inspected);
-      if (prior.startOperation.inputHash !== inputHash) fail("Run start request key was reused with different input.", "RUN_START_REQUEST_CONFLICT");
-      matches.push(prior);
-    }
-    if (prior.status === "active" && prior.runId !== inspected.state.activeRunId) orphans.push({ runId: id, reason: "unattached-active-run" });
-  }
   if (matches.length > 1) fail("Run start request identifies multiple Runs.", "RUN_START_UNRESOLVED");
   if (matches.length === 1) {
-    const prior = matches[0], op = prior.startOperation;
-    if (orphans.some((candidate) => candidate.runId !== prior.runId)) fail("Other unresolved Run start candidates require investigation.", "RUN_START_UNRESOLVED");
+    const prior = matches[0],
+      op = prior.startOperation;
+    if (orphans.some((candidate) => candidate.runId !== prior.runId))
+      fail("Other unresolved Run start candidates require investigation.", "RUN_START_UNRESOLVED");
     if (prior.status === "active" && unchangedSession(inspected.state, op.transition, op.patch)) {
       assertProjectActionsCurrent({ root: projectRoot, actions: contract.allowedActions || [] });
       const state = commitSessionTransition({ root: projectRoot, inspected, run: prior, patch: op.patch });
-      return committedResponse(projectRoot, { status: "run_started", run: publicRun(prior), state, storageRecovery: "session-storage-only", unknownEffect: true }, [path.relative(projectRoot, stateFile(projectRoot, inspected.storage)).replaceAll("\\", "/")]);
+      return committedResponse(
+        projectRoot,
+        { status: "run_started", run: publicRun(prior), state, storageRecovery: "session-storage-only", unknownEffect: true },
+        [path.relative(projectRoot, stateFile(projectRoot, inspected.storage)).replaceAll("\\", "/")],
+      );
     }
-    if (prior.status === "active" && inspected.state.activeRunId !== prior.runId) fail("Recorded start Session preimage changed.", "RUN_TRANSITION_SESSION_DRIFT");
-    if (prior.status === "active" && inspectTransition(inspected, prior).status !== "committed") fail("Recorded start Session pointers changed.", "RUN_TRANSITION_SESSION_DRIFT");
-    return { status: "run_start_already_committed", run: publicRun(prior), state: inspected.state,
-      canonicalCommit: "committed", executionReplayAllowed: false, historical: prior.status !== "active", unknownEffect: prior.status === "active",
-      projectionUpdate: { status: "not-requested", ordinaryWorkBlocked: false } };
+    if (prior.status === "active" && inspected.state.activeRunId !== prior.runId)
+      fail("Recorded start Session preimage changed.", "RUN_TRANSITION_SESSION_DRIFT");
+    if (prior.status === "active" && inspectTransition(inspected, prior).status !== "committed")
+      fail("Recorded start Session pointers changed.", "RUN_TRANSITION_SESSION_DRIFT");
+    return {
+      status: "run_start_already_committed",
+      run: publicRun(prior),
+      state: inspected.state,
+      canonicalCommit: "committed",
+      executionReplayAllowed: false,
+      historical: prior.status !== "active",
+      unknownEffect: prior.status === "active",
+      projectionUpdate: { status: "not-requested", ordinaryWorkBlocked: false },
+    };
   }
   if (orphans.length) fail("A Run start has no recoverable request identity; do not guess or create a replacement Run.", "RUN_START_UNRESOLVED");
   reconcileLocked(inspected);
@@ -256,9 +328,7 @@ function startRunLocked({ root = ".", executionContractId, startRequestId } = {}
     fail(`Review disposition ${requiredPlanAction.disposition} requires an explicit user-owned direction before another Run.`, "USER_DIRECTION_REQUIRED");
   }
   if (requiredPlanAction?.kind === "next-whole-plan") {
-    const respondsToReview = (plan.lineage || []).some((link) => (
-      link.relation === "responds-to" && link.targetId === requiredPlanAction.reviewDecisionId
-    ));
+    const respondsToReview = (plan.lineage || []).some((link) => link.relation === "responds-to" && link.targetId === requiredPlanAction.reviewDecisionId);
     if (!respondsToReview || plan.previousWholePlanId !== requiredPlanAction.wholePlanId) {
       fail("The next Run requires a new WholePlanSnapshot created from the pending ReviewDecision.", "NEXT_WHOLE_PLAN_REQUIRED");
     }
@@ -279,18 +349,25 @@ function startRunLocked({ root = ".", executionContractId, startRequestId } = {}
   };
   const patch = startPatch(run);
   run.sessionTransition = sessionChange({ run, inspected, kind: "start", artifactId: runId, changedAt: run.startedAt, patch });
-  const operation = { projectId: run.projectId, sessionId: run.sessionId, runId, requestKeyHash, inputHash,
-    patch, transition: run.sessionTransition };
+  const operation = { projectId: run.projectId, sessionId: run.sessionId, runId, requestKeyHash, inputHash, patch, transition: run.sessionTransition };
   run.startOperation = { ...operation, operationHash: sessionStateHash(operation) };
   atomicCreateArtifact(runFile(projectRoot, runId, inspected.storage), json(run));
   const state = commitSessionTransition({ root: projectRoot, inspected, run, patch });
-  return committedResponse(projectRoot, { status: "run_started", run: publicRun(run), state }, [path.relative(projectRoot, runFile(projectRoot, runId, inspected.storage)).replaceAll("\\", "/"), path.relative(projectRoot, stateFile(projectRoot, inspected.storage)).replaceAll("\\", "/")]);
+  return committedResponse(projectRoot, { status: "run_started", run: publicRun(run), state }, [
+    path.relative(projectRoot, runFile(projectRoot, runId, inspected.storage)).replaceAll("\\", "/"),
+    path.relative(projectRoot, stateFile(projectRoot, inspected.storage)).replaceAll("\\", "/"),
+  ]);
 }
 
 export function finishRun(options = {}) {
   return withRunStorageMutation(options.root, () => {
-    try { return finishRunLocked(options); }
-    catch (error) { error.affectedOperation = "run-finish-storage"; error.executionReplayAllowed = false; throw error; }
+    try {
+      return finishRunLocked(options);
+    } catch (error) {
+      error.affectedOperation = "run-finish-storage";
+      error.executionReplayAllowed = false;
+      throw error;
+    }
   });
 }
 
@@ -303,10 +380,13 @@ function finishRunLocked({ root = ".", outcome, evidence, planDelta = "", impact
   let run = readJson(file, "Run canon");
   assertRunSession(projectRoot, run, inspected.state);
   if (run.sessionTransition?.kind === "review") fail("This Run already has an exact review transition; finish cannot replace it.", "RUN_TRANSITION_CONFLICT");
-  if (run.runId !== runId || !["active", "awaiting_review"].includes(run.status) || !run.executionContractId) fail("Active Run canon is not bound to an Execution Contract.", "INVALID_RUN_LINEAGE");
-  if (inspected.state.currentWholePlanId !== run.wholePlanId
-    || inspected.state.activeRunId && inspected.state.activeExecutionContractId !== run.executionContractId
-    || !inspected.state.activeRunId && (inspected.state.pendingReview?.resultPacketId !== run.resultPacketId || run.status !== "awaiting_review")) {
+  if (run.runId !== runId || !["active", "awaiting_review"].includes(run.status) || !run.executionContractId)
+    fail("Active Run canon is not bound to an Execution Contract.", "INVALID_RUN_LINEAGE");
+  if (
+    inspected.state.currentWholePlanId !== run.wholePlanId ||
+    (inspected.state.activeRunId && inspected.state.activeExecutionContractId !== run.executionContractId) ||
+    (!inspected.state.activeRunId && (inspected.state.pendingReview?.resultPacketId !== run.resultPacketId || run.status !== "awaiting_review"))
+  ) {
     fail("Session does not point to this Run transition.", "RUN_LINEAGE_CONFLICT");
   }
   const contract = requireArtifact(projectRoot, run.executionContractId, "ExecutionContract");
@@ -326,7 +406,8 @@ function finishRunLocked({ root = ".", outcome, evidence, planDelta = "", impact
     persist: false,
   };
   const preview = createResultPacket(input).artifact;
-  if (run.resultPacketId && run.resultPacketId !== preview.resultPacketId) fail("Run result retry differs from the recorded ResultPacket.", "RUN_TRANSITION_CONFLICT");
+  if (run.resultPacketId && run.resultPacketId !== preview.resultPacketId)
+    fail("Run result retry differs from the recorded ResultPacket.", "RUN_TRANSITION_CONFLICT");
   const pendingReview = {
     runId,
     wholePlanId: run.wholePlanId,
@@ -340,19 +421,40 @@ function finishRunLocked({ root = ".", outcome, evidence, planDelta = "", impact
     pendingReview,
   };
   const sessionTransition = sessionChange({ run, inspected, kind: "finish", artifactId: preview.resultPacketId, changedAt: run.completedAt || now(), patch });
-  const completedRun = { ...run, sessionId: run.sessionId || inspected.state.sessionId, sessionTransition, status: "awaiting_review", resultPacketId: preview.resultPacketId, completedAt: sessionTransition.changedAt };
+  const completedRun = {
+    ...run,
+    sessionId: run.sessionId || inspected.state.sessionId,
+    sessionTransition,
+    status: "awaiting_review",
+    resultPacketId: preview.resultPacketId,
+    completedAt: sessionTransition.changedAt,
+  };
   const alreadyCommitted = completedTransitionMatches(completedRun, inspected.state, patch);
   if (run.status !== "awaiting_review" || !run.sessionTransition) atomicWrite(file, json(completedRun));
   const resultPacket = createResultPacket({ ...input, persist: true }).artifact;
   const state = commitSessionTransition({ root: projectRoot, inspected, run: completedRun, patch });
-  return committedResponse(projectRoot, { status: "run_awaiting_review", run: publicRun(completedRun), resultPacket, state },
-    alreadyCommitted ? null : [path.relative(projectRoot, file).replaceAll("\\", "/"), relativeProjectArtifact(inspected.storage, "lineage", "result-packets", `${resultPacket.resultPacketId}.json`), path.relative(projectRoot, stateFile(projectRoot, inspected.storage)).replaceAll("\\", "/")]);
+  return committedResponse(
+    projectRoot,
+    { status: "run_awaiting_review", run: publicRun(completedRun), resultPacket, state },
+    alreadyCommitted
+      ? null
+      : [
+          path.relative(projectRoot, file).replaceAll("\\", "/"),
+          relativeProjectArtifact(inspected.storage, "lineage", "result-packets", `${resultPacket.resultPacketId}.json`),
+          path.relative(projectRoot, stateFile(projectRoot, inspected.storage)).replaceAll("\\", "/"),
+        ],
+  );
 }
 
 export function reviewRun(options = {}) {
   return withRunStorageMutation(options.root, () => {
-    try { return reviewRunLocked(options); }
-    catch (error) { error.affectedOperation = "run-review-storage"; error.executionReplayAllowed = false; throw error; }
+    try {
+      return reviewRunLocked(options);
+    } catch (error) {
+      error.affectedOperation = "run-review-storage";
+      error.executionReplayAllowed = false;
+      throw error;
+    }
   });
 }
 
@@ -376,10 +478,14 @@ function reviewRunLocked({ root = ".", reviewContextId, disposition, rationale, 
   let run = readJson(file, "Run canon");
   assertRunSession(projectRoot, run, inspected.state);
   const pending = inspected.state.pendingReview || { runId, wholePlanId: run.wholePlanId, resultPacketId: run.resultPacketId };
-  if (run.runId !== runId || !["awaiting_review", "reviewed"].includes(run.status)
-    || run.resultPacketId !== pending.resultPacketId || run.wholePlanId !== pending.wholePlanId
-    || inspected.state.currentWholePlanId !== run.wholePlanId
-    || !inspected.state.pendingReview && (run.status !== "reviewed" || inspected.state.lastReviewDecisionId !== run.reviewDecisionId)) {
+  if (
+    run.runId !== runId ||
+    !["awaiting_review", "reviewed"].includes(run.status) ||
+    run.resultPacketId !== pending.resultPacketId ||
+    run.wholePlanId !== pending.wholePlanId ||
+    inspected.state.currentWholePlanId !== run.wholePlanId ||
+    (!inspected.state.pendingReview && (run.status !== "reviewed" || inspected.state.lastReviewDecisionId !== run.reviewDecisionId))
+  ) {
     fail("Pending review state does not match Run canon.", "RUN_REVIEW_CONFLICT");
   }
   const currentReview = buildFreshLodeReview({
@@ -404,23 +510,26 @@ function reviewRunLocked({ root = ".", reviewContextId, disposition, rationale, 
     persist: false,
   };
   const preview = createReviewDecision(input).artifact;
-  if (run.reviewDecisionId && run.reviewDecisionId !== preview.reviewDecisionId) fail("Run review retry differs from the recorded ReviewDecision.", "RUN_TRANSITION_CONFLICT");
-  if (run.status === "reviewed" && run.reviewDisposition !== preview.disposition) fail("Run disposition differs from its exact ReviewDecision.", "RUN_TRANSITION_CONFLICT");
-  const requiredPlanAction = preview.disposition === "accept"
-    ? null
-    : new Set(["revise", "expand"]).has(preview.disposition)
-      ? {
-          kind: "next-whole-plan",
-          disposition: preview.disposition,
-          wholePlanId: pending.wholePlanId,
-          reviewDecisionId: preview.reviewDecisionId,
-        }
-      : {
-          kind: "user-direction",
-          disposition: preview.disposition,
-          wholePlanId: pending.wholePlanId,
-          reviewDecisionId: preview.reviewDecisionId,
-        };
+  if (run.reviewDecisionId && run.reviewDecisionId !== preview.reviewDecisionId)
+    fail("Run review retry differs from the recorded ReviewDecision.", "RUN_TRANSITION_CONFLICT");
+  if (run.status === "reviewed" && run.reviewDisposition !== preview.disposition)
+    fail("Run disposition differs from its exact ReviewDecision.", "RUN_TRANSITION_CONFLICT");
+  const requiredPlanAction =
+    preview.disposition === "accept"
+      ? null
+      : new Set(["revise", "expand"]).has(preview.disposition)
+        ? {
+            kind: "next-whole-plan",
+            disposition: preview.disposition,
+            wholePlanId: pending.wholePlanId,
+            reviewDecisionId: preview.reviewDecisionId,
+          }
+        : {
+            kind: "user-direction",
+            disposition: preview.disposition,
+            wholePlanId: pending.wholePlanId,
+            reviewDecisionId: preview.reviewDecisionId,
+          };
   const patch = {
     mode: "session",
     pendingReview: null,
@@ -429,20 +538,38 @@ function reviewRunLocked({ root = ".", reviewContextId, disposition, rationale, 
     requiredPlanAction,
   };
   const sessionTransition = sessionChange({ run, inspected, kind: "review", artifactId: preview.reviewDecisionId, changedAt: run.reviewedAt || now(), patch });
-  const reviewedRun = { ...run, sessionId: run.sessionId || inspected.state.sessionId, sessionTransition, status: "reviewed", reviewDecisionId: preview.reviewDecisionId, reviewDisposition: preview.disposition, reviewedAt: sessionTransition.changedAt };
+  const reviewedRun = {
+    ...run,
+    sessionId: run.sessionId || inspected.state.sessionId,
+    sessionTransition,
+    status: "reviewed",
+    reviewDecisionId: preview.reviewDecisionId,
+    reviewDisposition: preview.disposition,
+    reviewedAt: sessionTransition.changedAt,
+  };
   const alreadyCommitted = completedTransitionMatches(reviewedRun, inspected.state, patch);
   if (run.status !== "reviewed" || run.sessionTransition?.kind !== "review") atomicWrite(file, json(reviewedRun));
   const reviewDecision = createReviewDecision({ ...input, persist: true }).artifact;
   const state = commitSessionTransition({ root: projectRoot, inspected, run: reviewedRun, patch });
-  return committedResponse(projectRoot, { status: "run_reviewed", run: publicRun(reviewedRun), reviewDecision, state },
-    alreadyCommitted ? null : [path.relative(projectRoot, file).replaceAll("\\", "/"), relativeProjectArtifact(inspected.storage, "lineage", "review-decisions", `${reviewDecision.reviewDecisionId}.json`), path.relative(projectRoot, stateFile(projectRoot, inspected.storage)).replaceAll("\\", "/")]);
+  return committedResponse(
+    projectRoot,
+    { status: "run_reviewed", run: publicRun(reviewedRun), reviewDecision, state },
+    alreadyCommitted
+      ? null
+      : [
+          path.relative(projectRoot, file).replaceAll("\\", "/"),
+          relativeProjectArtifact(inspected.storage, "lineage", "review-decisions", `${reviewDecision.reviewDecisionId}.json`),
+          path.relative(projectRoot, stateFile(projectRoot, inspected.storage)).replaceAll("\\", "/"),
+        ],
+  );
 }
 
 // Internal historical-reader composition: validate original lineage and
 // transition structure without treating a later Session pointer as corruption
 // or repairing P2. Used by the explicit snapshot collector only.
 export function verifyRetainedRunOriginal({ root, run, storage }) {
-  if (!run || run.schemaVersion !== 1 || !["active", "awaiting_review", "reviewed"].includes(run.status)) fail("Retained Run schema is unsupported.", "INVALID_RUN_CANON");
+  if (!run || run.schemaVersion !== 1 || !["active", "awaiting_review", "reviewed"].includes(run.status))
+    fail("Retained Run schema is unsupported.", "INVALID_RUN_CANON");
   const ownerId = run.sessionId || readJson(defaultSessionStatePath(root, storage), "Default Session owner").sessionId;
   return withSessionRoute(root, ownerId, () => {
     const inspected = readyProject(root, "retained Run lineage is read");

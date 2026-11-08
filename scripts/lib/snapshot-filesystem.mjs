@@ -17,27 +17,68 @@ async function windowsDriveType(root, { signal, onProcess, deadline = Date.now()
   // Only a validated drive letter is interpolated, never Project source/text.
   const script = `[ordered]@{driveType=[int]([System.IO.DriveInfo]::new('${drive[0]}:\\').DriveType);created=[System.Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToString('o')} | ConvertTo-Json -Compress`;
   const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script];
-  const event = (kind, details = {}) => { try { onProcess?.({ event: kind, purpose: "snapshot-filesystem-qualification", parentPid: process.pid, command: [command, ...args], cwd: root, ports: [], ...details }); } catch { /* Diagnostic does not grant or prevent effects. */ } };
+  const event = (kind, details = {}) => {
+    try {
+      onProcess?.({
+        event: kind,
+        purpose: "snapshot-filesystem-qualification",
+        parentPid: process.pid,
+        command: [command, ...args],
+        cwd: root,
+        ports: [],
+        ...details,
+      });
+    } catch {
+      /* Diagnostic does not grant or prevent effects. */
+    }
+  };
   event("planned", { pid: null });
-  return new Promise(resolve => {
-    let child, output = "", failed = false, escalation, timer;
+  return new Promise((resolve) => {
+    let child,
+      output = "",
+      failed = false,
+      escalation,
+      timer;
     const stop = () => {
       failed = true;
       if (!child || child.exitCode !== null || child.signalCode !== null) return;
       child.kill("SIGTERM");
-      escalation ??= setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }, 250);
+      escalation ??= setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      }, 250);
     };
-    try { child = spawn(command, args, { cwd: root, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }); }
-    catch { resolve(null); return; }
+    try {
+      child = spawn(command, args, { cwd: root, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    } catch {
+      resolve(null);
+      return;
+    }
     timer = setTimeout(stop, Math.max(1, Math.min(3000, deadline - Date.now())));
     signal?.addEventListener?.("abort", stop, { once: true });
-    child.once("spawn", () => { event("started", { pid: child.pid }); if (signal?.aborted) stop(); });
-    child.stdout.on("data", chunk => { output += chunk; if (Buffer.byteLength(output) > 2048) stop(); });
-    child.stderr.on("data", () => { failed = true; });
-    child.once("error", () => { failed = true; });
+    child.once("spawn", () => {
+      event("started", { pid: child.pid });
+      if (signal?.aborted) stop();
+    });
+    child.stdout.on("data", (chunk) => {
+      output += chunk;
+      if (Buffer.byteLength(output) > 2048) stop();
+    });
+    child.stderr.on("data", () => {
+      failed = true;
+    });
+    child.once("error", () => {
+      failed = true;
+    });
     child.once("close", (code, closeSignal) => {
-      clearTimeout(timer); clearTimeout(escalation); signal?.removeEventListener?.("abort", stop);
-      let document; try { document = JSON.parse(output); } catch { failed = true; }
+      clearTimeout(timer);
+      clearTimeout(escalation);
+      signal?.removeEventListener?.("abort", stop);
+      let document;
+      try {
+        document = JSON.parse(output);
+      } catch {
+        failed = true;
+      }
       event("closed", { pid: child.pid ?? null, exitCode: code, signal: closeSignal, created: document?.created ?? null });
       resolve(!failed && code === 0 && Number.isInteger(document?.driveType) && document.driveType >= 0 && document.driveType <= 6 ? document.driveType : null);
     });
@@ -51,8 +92,15 @@ export async function qualifySnapshotFileSystem({ root, signal, onProcess, deadl
     const driveType = platform === "win32" ? await windowsDriveType(root, { signal, onProcess, deadline }) : undefined;
     const type = platform === "linux" ? fs.statfsSync(root).type : undefined;
     const status = classifySnapshotFileSystem({ platform, driveType, type });
-    return { status, platform, ...(driveType !== undefined ? { driveType } : {}), ...(type !== undefined ? { type } : {}),
+    return {
+      status,
+      platform,
+      ...(driveType !== undefined ? { driveType } : {}),
+      ...(type !== undefined ? { type } : {}),
       ...(status !== "qualified-local" ? { reasonCode: "UNSUPPORTED_OR_UNKNOWN_GC_FILESYSTEM" } : {}),
-      boundary: "OS filesystem classification; not proof of every hidden backing layer or noncooperating host" };
-  } catch (error) { return { status: "unsupported-or-unknown", reasonCode: error.code || "GC_FILESYSTEM_UNAVAILABLE" }; }
+      boundary: "OS filesystem classification; not proof of every hidden backing layer or noncooperating host",
+    };
+  } catch (error) {
+    return { status: "unsupported-or-unknown", reasonCode: error.code || "GC_FILESYSTEM_UNAVAILABLE" };
+  }
 }

@@ -16,28 +16,12 @@ import { verifyImportedDefaultSession } from "./session-import-proof.mjs";
 import { verifySessionWorkEvidenceOriginal } from "./session-work-evidence-original.mjs";
 import { assertProjectStorageUnchanged } from "./project-storage-format.mjs";
 import { sessionStatePath } from "./session-routing.mjs";
-import {
-  inspectCopiedProjectCanon,
-  verifySelectedProjectOriginals,
-  verifyProjectMetadataOriginal,
-} from "./project-copy-canon.mjs";
-import {
-  copyOriginal,
-  copiedProjectFile,
-  inspectCopiedProjectFile,
-  verifyCopiedProjectFile,
-  readCopiedProjectExcerpt,
-} from "./project-copy-evidence.mjs";
+import { inspectCopiedProjectCanon, verifySelectedProjectOriginals, verifyProjectMetadataOriginal } from "./project-copy-canon.mjs";
+import { copyOriginal, copiedProjectFile, inspectCopiedProjectFile, verifyCopiedProjectFile, readCopiedProjectExcerpt } from "./project-copy-evidence.mjs";
 import { readProjectDirection } from "./project-direction.mjs";
-import {
-  verifyProjectLocation,
-  verifyProjectLocationOriginals,
-} from "./project-location-proof.mjs";
+import { verifyProjectLocation, verifyProjectLocationOriginals } from "./project-location-proof.mjs";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
-import {
-  readBoundedSnapshotDescriptor,
-  SNAPSHOT_STORAGE_LIMITS,
-} from "./snapshot-storage-codec.mjs";
+import { readBoundedSnapshotDescriptor, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 
 const fail = (code) => {
   throw Object.assign(new Error(code), { code });
@@ -49,34 +33,20 @@ const check = (signal) => {
 };
 const contained = (base, file) => {
   const relative = path.relative(base, file);
-  return (
-    !relative ||
-    (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))
-  );
+  return !relative || (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative));
 };
 
 function boundedJson(root, relative) {
   const file = copiedProjectFile(root, relative),
     stat = fs.lstatSync(file);
-  if (!stat.isFile() || stat.nlink !== 1 || stat.size > SNAPSHOT_STORAGE_LIMITS.decodedBytes)
-    fail("PROJECT_BUNDLE_MANIFEST_UNSAFE");
+  if (!stat.isFile() || stat.nlink !== 1 || stat.size > SNAPSHOT_STORAGE_LIMITS.decodedBytes) fail("PROJECT_BUNDLE_MANIFEST_UNSAFE");
   const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
   try {
     const opened = fs.fstatSync(fd);
-    if (opened.ino !== stat.ino || opened.dev !== stat.dev || opened.size !== stat.size)
-      fail("PROJECT_COPY_SOURCE_CHANGED");
-    const bytes = readBoundedSnapshotDescriptor(
-        fd,
-        stat.size,
-        SNAPSHOT_STORAGE_LIMITS.decodedBytes,
-      ),
+    if (opened.ino !== stat.ino || opened.dev !== stat.dev || opened.size !== stat.size) fail("PROJECT_COPY_SOURCE_CHANGED");
+    const bytes = readBoundedSnapshotDescriptor(fd, stat.size, SNAPSHOT_STORAGE_LIMITS.decodedBytes),
       after = fs.fstatSync(fd);
-    if (
-      after.size !== opened.size ||
-      after.mtimeMs !== opened.mtimeMs ||
-      after.ctimeMs !== opened.ctimeMs
-    )
-      fail("PROJECT_COPY_SOURCE_CHANGED");
+    if (after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs) fail("PROJECT_COPY_SOURCE_CHANGED");
     return {
       bytes,
       value: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
@@ -93,8 +63,7 @@ function exactCreate(root, relative, bytes) {
   const file = copiedProjectFile(root, relative);
   if (fs.existsSync(file)) {
     const current = inspectCopiedProjectFile(root, relative);
-    if (current.bytes !== bytes.length || current.sha256 !== sha(bytes))
-      fail("PROJECT_BUNDLE_CONFLICT");
+    if (current.bytes !== bytes.length || current.sha256 !== sha(bytes)) fail("PROJECT_BUNDLE_CONFLICT");
     return;
   }
   atomicCreateArtifact(file, bytes);
@@ -111,8 +80,7 @@ function exportProjectBundleUncoordinated({
   provenanceScope = DEFAULT_PROJECT_PROVENANCE_SCOPE,
   sourceMode = "selected-retained-sources",
 } = {}) {
-  if (!["selected-only", "project-proof-metadata"].includes(provenanceScope))
-    fail("PROJECT_BUNDLE_PROVENANCE_SCOPE_INVALID");
+  if (!["selected-only", "project-proof-metadata"].includes(provenanceScope)) fail("PROJECT_BUNDLE_PROVENANCE_SCOPE_INVALID");
   if (!["selected-retained-sources", "refs-only"].includes(sourceMode)) fail("PROJECT_BUNDLE_SOURCE_MODE_INVALID");
   check(signal);
   const inspected = readGraphProject(root);
@@ -131,20 +99,13 @@ function exportProjectBundleUncoordinated({
     project: inspected.project,
     selectedSession: { sessionId: state.sessionId, stateFile },
   });
-  if (
-    canon.originals.find((entry) => entry.path === stateRelative)?.sha256 !==
-    sha(stateOriginal.bytes)
-  )
-    fail("PROJECT_COPY_SOURCE_CHANGED");
+  if (canon.originals.find((entry) => entry.path === stateRelative)?.sha256 !== sha(stateOriginal.bytes)) fail("PROJECT_COPY_SOURCE_CHANGED");
   const filesByPath = new Map(canon.originals.map((entry) => [entry.path, entry]));
-  const omittedRunOwnerProof =
-    canon.runOwnerGlobalMetadata && provenanceScope === "selected-only";
-  if (omittedRunOwnerProof)
-    for (const relative of canon.runOwnerOriginals) filesByPath.delete(relative);
+  const omittedRunOwnerProof = canon.runOwnerGlobalMetadata && provenanceScope === "selected-only";
+  if (omittedRunOwnerProof) for (const relative of canon.runOwnerOriginals) filesByPath.delete(relative);
   const ownerOriginals = new Map();
   let ownerGlobalMetadata = false;
-  const needsOwnerProof =
-    state.projectId == null && stateRelative !== directory + "/sessions/current.json";
+  const needsOwnerProof = state.projectId == null && stateRelative !== directory + "/sessions/current.json";
   if (needsOwnerProof) {
     const valid = verifyImportedDefaultSession({
       root: sourceRoot,
@@ -161,20 +122,15 @@ function exportProjectBundleUncoordinated({
         });
         if (
           document?.kind === "VerifiedProjectCopyAdmission" ||
-          (document?.kind === "PortableProjectAdmission" &&
-            document.selectedSessionId !== state.sessionId)
+          (document?.kind === "PortableProjectAdmission" && document.selectedSessionId !== state.sessionId)
         )
           ownerGlobalMetadata = true;
       },
     });
     if (!valid) fail("HEAD_SESSION_IDENTITY_MISMATCH");
   }
-  const omittedOwnerProof =
-    needsOwnerProof &&
-    (ownerGlobalMetadata || canon.runOwnerGlobalMetadata) &&
-    provenanceScope === "selected-only";
-  if (!omittedOwnerProof)
-    for (const entry of ownerOriginals.values()) filesByPath.set(entry.path, entry);
+  const omittedOwnerProof = needsOwnerProof && (ownerGlobalMetadata || canon.runOwnerGlobalMetadata) && provenanceScope === "selected-only";
+  if (!omittedOwnerProof) for (const entry of ownerOriginals.values()) filesByPath.set(entry.path, entry);
   const add = (relative) => {
     check(signal);
     const observed = inspectCopiedProjectFile(sourceRoot, relative, { signal });
@@ -182,8 +138,7 @@ function exportProjectBundleUncoordinated({
     return observed;
   };
   add(directory + "/project.json");
-  if (fs.existsSync(copiedProjectFile(sourceRoot, directory + "/instructions/project.md")))
-    add(directory + "/instructions/project.md");
+  if (fs.existsSync(copiedProjectFile(sourceRoot, directory + "/instructions/project.md"))) add(directory + "/instructions/project.md");
   const workRecords = [];
   const workDirectory = path.posix.dirname(stateRelative) + "/work-evidence",
     workPath = copiedProjectFile(sourceRoot, workDirectory);
@@ -194,18 +149,27 @@ function exportProjectBundleUncoordinated({
         entry = add(relative),
         raw = fs.readFileSync(copiedProjectFile(sourceRoot, relative));
       if (sha(raw) !== entry.sha256) fail("PROJECT_COPY_SOURCE_CHANGED");
-      workRecords.push(verifySessionWorkEvidenceOriginal({
-        owner: { projectId: storage.projectId, sessionId: canon.sessionId, storage },
-        evidenceId: name.slice(0, -5),
-        bytes: raw,
-      }));
+      workRecords.push(
+        verifySessionWorkEvidenceOriginal({
+          owner: { projectId: storage.projectId, sessionId: canon.sessionId, storage },
+          evidenceId: name.slice(0, -5),
+          bytes: raw,
+        }),
+      );
     }
-  const sourceCollection = collectPortableSourceOriginals({ root: sourceRoot, storage, project: inspected.project, sessionId: canon.sessionId, records: workRecords, mode: sourceMode, signal });
+  const sourceCollection = collectPortableSourceOriginals({
+    root: sourceRoot,
+    storage,
+    project: inspected.project,
+    sessionId: canon.sessionId,
+    records: workRecords,
+    mode: sourceMode,
+    signal,
+  });
   for (const entry of sourceCollection.files) filesByPath.set(entry.path, entry);
   // Only the selected Project's declared location proof is common closure.
   // No generated manifest/config, cache or unrelated Session directory is read.
-  const omittedCommonProof =
-    Boolean(inspected.project.location?.admissionDigest) && provenanceScope === "selected-only";
+  const omittedCommonProof = Boolean(inspected.project.location?.admissionDigest) && provenanceScope === "selected-only";
   let original = inspected.project;
   const proofSeen = new Set();
   while (original.location && !omittedCommonProof) {
@@ -219,31 +183,21 @@ function exportProjectBundleUncoordinated({
     proofSeen.add(location.previousProjectDigest);
     if (location.admissionDigest) {
       const portable = location.kind === PORTABLE_PROJECT_LOCATION_KIND;
-      const receiptPath =
-        directory +
-        "/project-location/" +
-        (portable ? "portable/" : "copies/") +
-        location.admissionDigest +
-        ".json";
+      const receiptPath = directory + "/project-location/" + (portable ? "portable/" : "copies/") + location.admissionDigest + ".json";
       const receipt = boundedJson(sourceRoot, receiptPath).value;
       add(receiptPath);
       add(
         directory +
           "/project-location/" +
-          (portable
-            ? "portable-bundles/" + receipt.bundleManifestDigest
-            : "copy-originals/" + receipt.sourceManifestDigest) +
+          (portable ? "portable-bundles/" + receipt.bundleManifestDigest : "copy-originals/" + receipt.sourceManifestDigest) +
           ".json",
       );
     }
-    const predecessor =
-      directory + "/project-location/history/" + location.previousProjectDigest + ".json";
+    const predecessor = directory + "/project-location/history/" + location.previousProjectDigest + ".json";
     add(predecessor);
     original = boundedJson(sourceRoot, predecessor).value;
   }
-  const files = [...filesByPath.values()].sort((a, b) =>
-    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
-  );
+  const files = [...filesByPath.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const manifest = {
     schemaVersion: 2,
     requiredCapabilities: [PORTABLE_SOURCE_CAPABILITY],
@@ -261,22 +215,15 @@ function exportProjectBundleUncoordinated({
     coverage: {
       selectedCanonAndP2: "typed-original-reference-closure-verified",
       selectedWorkEvidence: "typed-originals-verified",
-      selectedRunOwnerProof: omittedRunOwnerProof
-        ? "omitted-global-inventory-metadata"
-        : "included-or-not-needed",
-      sourceLocationProof: omittedCommonProof
-        ? "omitted-global-inventory-metadata"
-        : "included",
+      selectedRunOwnerProof: omittedRunOwnerProof ? "omitted-global-inventory-metadata" : "included-or-not-needed",
+      sourceLocationProof: omittedCommonProof ? "omitted-global-inventory-metadata" : "included",
       selectedSessionOwnerProof: omittedOwnerProof
         ? "omitted-global-inventory-metadata"
         : needsOwnerProof
           ? "included-exact-default-mapping"
           : "direct-project-identity",
       otherSessions:
-        provenanceScope === "project-proof-metadata" &&
-        (inspected.project.location?.admissionDigest ||
-          ownerGlobalMetadata ||
-          canon.runOwnerGlobalMetadata)
+        provenanceScope === "project-proof-metadata" && (inspected.project.location?.admissionDigest || ownerGlobalMetadata || canon.runOwnerGlobalMetadata)
           ? "payloads-not-included-common-proof-metadata-included"
           : "not-read-not-included",
       generatedSettings: "not-read-not-included-use-current-installation",
@@ -284,25 +231,27 @@ function exportProjectBundleUncoordinated({
       historicalExecution: "not-included-no-execution-permission-transferred",
       repositoryWorktree: "not-included",
       retainedSourceOriginals: sourceCollection.transfer,
-      exactDiffPortability: sourceCollection.transfer.references.every(ref => ref.status === "included-verified-retained-original") ? "selected-source-bytes-included-diff-not-yet-queried" : "partial-selected-source-bytes",
+      exactDiffPortability: sourceCollection.transfer.references.every((ref) => ref.status === "included-verified-retained-original")
+        ? "selected-source-bytes-included-diff-not-yet-queried"
+        : "partial-selected-source-bytes",
       attachments: "not-included-unless-explicitly-selected",
       nativeHistory: "not-requested",
     },
     restoresExecutionPermission: false,
     transfersNativeBinding: false,
   };
-  const handoff = buildProjectHandoff({ manifest, readOriginal: entry =>
-    readCopiedProjectExcerpt(sourceRoot, entry, { maxBytes: Math.max(1, entry.bytes), signal }).bytes });
+  const handoff = buildProjectHandoff({
+    manifest,
+    readOriginal: (entry) => readCopiedProjectExcerpt(sourceRoot, entry, { maxBytes: Math.max(1, entry.bytes), signal }).bytes,
+  });
   manifest.handoff = handoff.descriptor;
   const encoded = json(manifest),
     manifestSha256 = sha(encoded),
     bundleId = "project-bundle-" + manifestSha256.slice(0, 24);
-  if (typeof destination !== "string" || !destination.trim())
-    fail("PROJECT_BUNDLE_DESTINATION_REQUIRED");
+  if (typeof destination !== "string" || !destination.trim()) fail("PROJECT_BUNDLE_DESTINATION_REQUIRED");
   const parent = fs.realpathSync(path.dirname(path.resolve(destination))),
     bundleRoot = copiedProjectFile(parent, path.basename(path.resolve(destination)));
-  if (contained(path.join(sourceRoot, directory), bundleRoot))
-    fail("PROJECT_BUNDLE_DESTINATION_INSIDE_SOURCE");
+  if (contained(path.join(sourceRoot, directory), bundleRoot)) fail("PROJECT_BUNDLE_DESTINATION_INSIDE_SOURCE");
   const exportScope = Object.freeze({
     kind: "ProjectExportScope",
     authorityPlane: "P4",
@@ -310,18 +259,12 @@ function exportProjectBundleUncoordinated({
     provenanceScope,
     sourceMode,
     retainedSourceOriginals: sourceCollection.transfer,
-    sourceNotice: "Before export: eligible exact full-file retained originals cited by this selected Session are included by default. Current worktree, other Session bodies and Git-only collection are excluded. Choose refs-only to omit source bodies. Source identity is not producer truth or execution permission; exclusions remain per-reference partial.",
-    commonProofMetadata:
-      provenanceScope === "project-proof-metadata"
-        ? "required-original-path-id-hash-metadata"
-        : "cross-session-proof-metadata-excluded",
+    sourceNotice:
+      "Before export: eligible exact full-file retained originals cited by this selected Session are included by default. Current worktree, other Session bodies and Git-only collection are excluded. Choose refs-only to omit source bodies. Source identity is not producer truth or execution permission; exclusions remain per-reference partial.",
+    commonProofMetadata: provenanceScope === "project-proof-metadata" ? "required-original-path-id-hash-metadata" : "cross-session-proof-metadata-excluded",
     requiredProofMayMentionOtherSessions:
       provenanceScope === "project-proof-metadata" &&
-      Boolean(
-        inspected.project.location?.admissionDigest ||
-          ownerGlobalMetadata ||
-          canon.runOwnerGlobalMetadata,
-      ),
+      Boolean(inspected.project.location?.admissionDigest || ownerGlobalMetadata || canon.runOwnerGlobalMetadata),
     otherSessionBodiesIncluded: false,
     userConfigurationIncluded: false,
     executionPermissionTransferred: false,
@@ -342,13 +285,8 @@ function exportProjectBundleUncoordinated({
   if (!fs.existsSync(bundleRoot)) fs.mkdirSync(bundleRoot);
   if (!fs.lstatSync(bundleRoot).isDirectory()) fail("PROJECT_BUNDLE_DESTINATION_INVALID");
   const intentFile = copiedProjectFile(bundleRoot, "export-intent.json");
-  if (!fs.existsSync(intentFile) && fs.readdirSync(bundleRoot).length)
-    fail("PROJECT_BUNDLE_DESTINATION_NOT_EMPTY");
-  exactCreate(
-    bundleRoot,
-    "export-intent.json",
-    json({ schemaVersion: 1, kind: "ProjectBundleExportIntent", bundleId, manifestSha256 }),
-  );
+  if (!fs.existsSync(intentFile) && fs.readdirSync(bundleRoot).length) fail("PROJECT_BUNDLE_DESTINATION_NOT_EMPTY");
+  exactCreate(bundleRoot, "export-intent.json", json({ schemaVersion: 1, kind: "ProjectBundleExportIntent", bundleId, manifestSha256 }));
   const objects = copiedProjectFile(bundleRoot, "objects");
   if (!fs.existsSync(objects)) fs.mkdirSync(objects);
   for (const entry of files) copyOriginal(sourceRoot, bundleRoot, entry, { signal, onObject });
@@ -362,20 +300,21 @@ function exportProjectBundleUncoordinated({
     const file = copiedProjectFile(bundleRoot, "HANDOFF.md");
     if (!fs.existsSync(file)) atomicCreateArtifact(file, handoff.bytes);
   } catch (error) {
-    if (error.code !== "EEXIST") handoffPublicationFailure = { code: error.code || "PROJECT_HANDOFF_PUBLICATION_FAILED", message: String(error.message).slice(0, 1024) };
+    if (error.code !== "EEXIST")
+      handoffPublicationFailure = { code: error.code || "PROJECT_HANDOFF_PUBLICATION_FAILED", message: String(error.message).slice(0, 1024) };
   }
   exactCreate(bundleRoot, "manifest.json", encoded);
   return {
-    status:
-      omittedCommonProof || omittedOwnerProof || omittedRunOwnerProof
-        ? "exported-partial-provenance"
-        : "exported",
+    status: omittedCommonProof || omittedOwnerProof || omittedRunOwnerProof ? "exported-partial-provenance" : "exported",
     projectAdmissionReady: !omittedCommonProof && !omittedOwnerProof && !omittedRunOwnerProof,
     bundleId,
     bundleRoot,
     manifestSha256,
     fileCount: files.length,
-    handoff: { ...readBundleHandoff({ bundleRoot, manifest, signal }), ...(handoffPublicationFailure ? { primaryPublicationFailure: handoffPublicationFailure } : {}) },
+    handoff: {
+      ...readBundleHandoff({ bundleRoot, manifest, signal }),
+      ...(handoffPublicationFailure ? { primaryPublicationFailure: handoffPublicationFailure } : {}),
+    },
     exportScope,
     coverage: manifest.coverage,
     authorityPlane: "P3",
@@ -443,16 +382,13 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
       allowed.add(relative);
       return boundedJson(root, objectPath(entry)).bytes;
     },
-    read = (relative) =>
-      JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(originalBytes(relative)));
+    read = (relative) => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(originalBytes(relative)));
   const projectPath = manifest.directory + "/project.json",
     projectEntry = entries.get(projectPath);
-  if (!projectEntry || projectEntry.sha256 !== manifest.sourceProjectDigest)
-    fail("PROJECT_BUNDLE_MANIFEST_INVALID");
+  if (!projectEntry || projectEntry.sha256 !== manifest.sourceProjectDigest) fail("PROJECT_BUNDLE_MANIFEST_INVALID");
   const project = verifyProjectMetadataOriginal(read(projectPath), manifest.directory);
   if (project.projectId !== manifest.projectId) fail("PROJECT_BUNDLE_IDENTITY_MISMATCH");
-  const partialProvenance =
-    manifest.coverage?.sourceLocationProof === "omitted-global-inventory-metadata";
+  const partialProvenance = manifest.coverage?.sourceLocationProof === "omitted-global-inventory-metadata";
   if (partialProvenance) {
     const location = project.location;
     if (
@@ -464,8 +400,7 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
     )
       fail("PROJECT_BUNDLE_MANIFEST_INVALID");
   } else {
-    if (manifest.coverage?.sourceLocationProof !== "included")
-      fail("PROJECT_BUNDLE_MANIFEST_INVALID");
+    if (manifest.coverage?.sourceLocationProof !== "included") fail("PROJECT_BUNDLE_MANIFEST_INVALID");
     verifyProjectLocationOriginals({
       directory: manifest.directory,
       project,
@@ -473,11 +408,8 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
     });
   }
   const selectedState = read(manifest.selectedSessionPath);
-  const unkeyedNamed =
-    selectedState.projectId == null &&
-    manifest.selectedSessionPath !== manifest.directory + "/sessions/current.json";
-  const partialOwner =
-    manifest.coverage?.selectedSessionOwnerProof === "omitted-global-inventory-metadata";
+  const unkeyedNamed = selectedState.projectId == null && manifest.selectedSessionPath !== manifest.directory + "/sessions/current.json";
+  const partialOwner = manifest.coverage?.selectedSessionOwnerProof === "omitted-global-inventory-metadata";
   if (unkeyedNamed && !partialOwner) {
     const stateBytes = originalBytes(manifest.selectedSessionPath);
     // The source layout is retained exactly; no fake Core owner is registered.
@@ -489,8 +421,7 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
       sourceStateBytes: stateBytes,
     });
   }
-  const partialRunOwner =
-    manifest.coverage?.selectedRunOwnerProof === "omitted-global-inventory-metadata";
+  const partialRunOwner = manifest.coverage?.selectedRunOwnerProof === "omitted-global-inventory-metadata";
   const selected = verifySelectedProjectOriginals({
     directory: manifest.directory,
     project,
@@ -502,45 +433,37 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
     },
     read,
     has: (relative) => entries.has(relative),
-    list: (relative) =>
-      [...entries.keys()]
-        .filter((name) => name.startsWith(relative + "/"))
-        .map((name) => name.slice(relative.length + 1)),
+    list: (relative) => [...entries.keys()].filter((name) => name.startsWith(relative + "/")).map((name) => name.slice(relative.length + 1)),
   });
   const instruction = manifest.directory + "/instructions/project.md";
   if (entries.has(instruction)) allowed.add(instruction);
   const workRecords = [];
   const workDirectory = path.posix.dirname(manifest.selectedSessionPath) + "/work-evidence/";
   for (const entry of entries.values())
-    if (
-      entry.path.startsWith(workDirectory) &&
-      /^work-evidence-[a-f0-9]{24}\.json$/.test(entry.path.slice(workDirectory.length))
-    ) {
+    if (entry.path.startsWith(workDirectory) && /^work-evidence-[a-f0-9]{24}\.json$/.test(entry.path.slice(workDirectory.length))) {
       if (entry.bytes > 64 * 1024) fail("INVALID_SESSION_WORK_EVIDENCE");
       const raw = originalBytes(entry.path);
-      workRecords.push(verifySessionWorkEvidenceOriginal({
-        owner: {
-          projectId: project.projectId,
-          sessionId: selected.sessionId,
-          storage: {
-            dialect: manifest.directory === ".lode" ? "lode" : "head",
-            directory: manifest.directory,
+      workRecords.push(
+        verifySessionWorkEvidenceOriginal({
+          owner: {
+            projectId: project.projectId,
+            sessionId: selected.sessionId,
+            storage: {
+              dialect: manifest.directory === ".lode" ? "lode" : "head",
+              directory: manifest.directory,
+            },
           },
-        },
-        evidenceId: path.posix.basename(entry.path).slice(0, -5),
-        bytes: raw,
-      }));
+          evidenceId: path.posix.basename(entry.path).slice(0, -5),
+          bytes: raw,
+        }),
+      );
     }
   verifyPortableSourceReferenceClosure(manifest, workRecords);
   for (const relative of verifyPortableSourceObjects({ root, manifest, readOriginal: originalBytes })) allowed.add(relative);
-  for (const relative of entries.keys())
-    if (!allowed.has(relative)) fail("PROJECT_BUNDLE_SCOPE_MISMATCH");
+  for (const relative of entries.keys()) if (!allowed.has(relative)) fail("PROJECT_BUNDLE_SCOPE_MISMATCH");
   validateProjectHandoffDescriptor(manifest);
   return {
-    status:
-      partialProvenance || partialOwner || partialRunOwner
-        ? "verified-selected-originals-partial-provenance"
-        : "verified-selected-bundle",
+    status: partialProvenance || partialOwner || partialRunOwner ? "verified-selected-originals-partial-provenance" : "verified-selected-bundle",
     projectAdmissionReady: !partialProvenance && !partialOwner && !partialRunOwner,
     bundleId,
     bundleRoot: root,
@@ -553,10 +476,7 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
       exactDiff: "not-yet-queried",
       sourceLocationProof: partialProvenance ? "partial-not-project-admission" : "verified",
       operationalCapabilities: "excluded",
-      otherSessions:
-        project.location?.admissionDigest && !partialProvenance
-          ? "payloads-excluded-common-proof-metadata-included"
-          : "excluded",
+      otherSessions: project.location?.admissionDigest && !partialProvenance ? "payloads-excluded-common-proof-metadata-included" : "excluded",
       generatedSettings: "excluded",
       nativeHistory: "not-requested",
     },
@@ -619,21 +539,10 @@ function portableImportPlan({ inspected, root, pluginRoot, createdAt }) {
     pluginRoot,
     directory,
   });
-  const generated = new Map(
-    [...installation.files].map(([relative, value]) => [relative, Buffer.from(value)]),
-  );
-  generated.set(
-    directory + "/project-location/history/" + manifest.sourceProjectDigest + ".json",
-    sourceBytes,
-  );
-  generated.set(
-    directory + "/project-location/portable-bundles/" + manifestSha256 + ".json",
-    fs.readFileSync(copiedProjectFile(bundleRoot, "manifest.json")),
-  );
-  generated.set(
-    directory + "/project-location/portable/" + admissionDigest + ".json",
-    receiptBytes,
-  );
+  const generated = new Map([...installation.files].map(([relative, value]) => [relative, Buffer.from(value)]));
+  generated.set(directory + "/project-location/history/" + manifest.sourceProjectDigest + ".json", sourceBytes);
+  generated.set(directory + "/project-location/portable-bundles/" + manifestSha256 + ".json", fs.readFileSync(copiedProjectFile(bundleRoot, "manifest.json")));
+  generated.set(directory + "/project-location/portable/" + admissionDigest + ".json", receiptBytes);
   const managed = [
     { path: directory + "/project.json", sha256: sha(projectBytes) },
     ...[...installation.files].map(([relative, value]) => ({
@@ -667,31 +576,19 @@ function portableImportPlan({ inspected, root, pluginRoot, createdAt }) {
   };
 }
 
-export function importProjectBundle({
-  bundleRoot,
-  root,
-  pluginRoot,
-  expectedBundleId = null,
-  signal,
-  onPublication = null,
-} = {}) {
+export function importProjectBundle({ bundleRoot, root, pluginRoot, expectedBundleId = null, signal, onPublication = null } = {}) {
   const inspected = inspectProjectBundle({ bundleRoot, expectedBundleId, signal });
   if (!inspected.projectAdmissionReady) fail("PROJECT_BUNDLE_PROVENANCE_INCOMPLETE");
   const targetRoot = fs.realpathSync(path.resolve(root)),
     directory = inspected.manifest.directory;
-  if (
-    contained(path.join(targetRoot, directory), inspected.bundleRoot) ||
-    contained(inspected.bundleRoot, targetRoot)
-  )
+  if (contained(path.join(targetRoot, directory), inspected.bundleRoot) || contained(inspected.bundleRoot, targetRoot))
     fail("PROJECT_BUNDLE_SOURCE_TARGET_OVERLAP");
   const pendingRelative = directory + "/project-location/pending.json",
     pendingFile = copiedProjectFile(targetRoot, pendingRelative);
-  const readPending = () =>
-    fs.existsSync(pendingFile) ? boundedJson(targetRoot, pendingRelative) : null;
+  const readPending = () => (fs.existsSync(pendingFile) ? boundedJson(targetRoot, pendingRelative) : null);
   const initialPending = readPending();
   const createdAt = initialPending?.value.createdAt || new Date().toISOString();
-  if (typeof createdAt !== "string" || !Number.isFinite(Date.parse(createdAt)))
-    fail("PROJECT_BUNDLE_IMPORT_INTENT_INVALID");
+  if (typeof createdAt !== "string" || !Number.isFinite(Date.parse(createdAt))) fail("PROJECT_BUNDLE_IMPORT_INTENT_INVALID");
   const plan = portableImportPlan({ inspected, root: targetRoot, pluginRoot, createdAt });
   const summary = {
     kind: "ProjectPortabilityPublication",
@@ -713,15 +610,13 @@ export function importProjectBundle({
     })),
   };
   const pendingBytes = json(summary);
-  if (initialPending && !initialPending.bytes.equals(pendingBytes))
-    fail("PROJECT_BUNDLE_IMPORT_INTENT_CONFLICT");
+  if (initialPending && !initialPending.bytes.equals(pendingBytes)) fail("PROJECT_BUNDLE_IMPORT_INTENT_CONFLICT");
   const projectFile = copiedProjectFile(targetRoot, directory + "/project.json");
   // Never reinterpret a damaged/foreign existing Project as an empty target.
   if (!initialPending) {
     const current = resolveProjectStorage(targetRoot);
     if (current) {
-      if (current.projectId !== plan.projectId || current.directory !== directory)
-        fail("PROJECT_BUNDLE_TARGET_PROJECT_CONFLICT");
+      if (current.projectId !== plan.projectId || current.directory !== directory) fail("PROJECT_BUNDLE_TARGET_PROJECT_CONFLICT");
       if (projectBundleWasImported(current, inspected.manifestSha256)) {
         let identical = true;
         for (const entry of inspected.manifest.files) {
@@ -742,7 +637,11 @@ export function importProjectBundle({
             selectedSessionId: plan.selectedSessionId,
             targetRoot,
             persisted: false,
-            sourceTransfer: { coverage: inspected.manifest.sourceTransfer || { status: "not-recorded-not-certified" }, destinationOriginals: "verified-identical", exactDiff: "not-yet-queried" },
+            sourceTransfer: {
+              coverage: inspected.manifest.sourceTransfer || { status: "not-recorded-not-certified" },
+              destinationOriginals: "verified-identical",
+              exactDiff: "not-yet-queried",
+            },
             defaultSessionChanged: false,
             restoresExecutionPermission: false,
             nativeBindingTransferred: false,
@@ -780,10 +679,8 @@ export function importProjectBundle({
     },
     () => {
       const currentPending = readPending();
-      if (currentPending && !currentPending.bytes.equals(pendingBytes))
-        fail("PROJECT_BUNDLE_IMPORT_INTENT_CONFLICT");
-      if (!currentPending && fs.existsSync(projectFile))
-        fail("PROJECT_BUNDLE_TARGET_PROJECT_CONFLICT");
+      if (currentPending && !currentPending.bytes.equals(pendingBytes)) fail("PROJECT_BUNDLE_IMPORT_INTENT_CONFLICT");
+      if (!currentPending && fs.existsSync(projectFile)) fail("PROJECT_BUNDLE_TARGET_PROJECT_CONFLICT");
       verifyExisting();
       check(signal);
       exactCreate(targetRoot, pendingRelative, pendingBytes);
@@ -799,55 +696,53 @@ export function importProjectBundle({
         onPublication?.("record", entry.path);
       }
       const finish = () => {
-      for (const entry of expected) verifyCopiedProjectFile(targetRoot, entry);
-      if (!fs.readFileSync(pendingFile).equals(pendingBytes))
-        fail("PROJECT_BUNDLE_IMPORT_INTENT_CONFLICT");
-      const targetStateEntry = expected.find(
-        (entry) => entry.path === inspected.manifest.selectedSessionPath,
-      );
-      const targetStateBytes = fs.readFileSync(
-          copiedProjectFile(targetRoot, targetStateEntry.path),
-        ),
-        targetState = JSON.parse(targetStateBytes);
-      if (
-        targetState.projectId == null &&
-        targetStateEntry.path !== directory + "/sessions/current.json" &&
-        !verifyImportedDefaultSession({
-          root: targetRoot,
-          directory,
-          project: JSON.parse(plan.generated.get(directory + "/project.json")),
-          sessionId: plan.selectedSessionId,
-          stateFile: copiedProjectFile(targetRoot, targetStateEntry.path),
-          stateBytes: targetStateBytes,
-        })
-      )
-        fail("HEAD_SESSION_IDENTITY_MISMATCH");
-      check(signal);
-      fs.unlinkSync(pendingFile);
-      return withSnapshotReferences({ root: targetRoot }, () => {
-      const restored = withSessionRoute(targetRoot, plan.selectedSessionId, () =>
-        inspectProject(targetRoot),
-      );
-      if (restored.status !== "ready") fail("PROJECT_BUNDLE_IMPORT_NOT_READY");
-      return {
-        status: "imported",
-        bundleId: inspected.bundleId,
-        projectId: plan.projectId,
-        selectedSessionId: plan.selectedSessionId,
-        targetRoot,
-        admissionDigest: plan.admissionDigest,
-        sourceTransfer: { coverage: inspected.manifest.sourceTransfer || { status: "not-recorded-not-certified" }, destinationOriginals: "verified-copied", exactDiff: "not-yet-queried" },
-        defaultSessionChanged: false,
-        restoresExecutionPermission: false,
-        nativeBindingTransferred: false,
-        rootSettings: "preserved-unowned-not-imported",
-        nativeHistory: "not-requested",
-        worktree: "not-imported",
-      };
-      });
+        for (const entry of expected) verifyCopiedProjectFile(targetRoot, entry);
+        if (!fs.readFileSync(pendingFile).equals(pendingBytes)) fail("PROJECT_BUNDLE_IMPORT_INTENT_CONFLICT");
+        const targetStateEntry = expected.find((entry) => entry.path === inspected.manifest.selectedSessionPath);
+        const targetStateBytes = fs.readFileSync(copiedProjectFile(targetRoot, targetStateEntry.path)),
+          targetState = JSON.parse(targetStateBytes);
+        if (
+          targetState.projectId == null &&
+          targetStateEntry.path !== directory + "/sessions/current.json" &&
+          !verifyImportedDefaultSession({
+            root: targetRoot,
+            directory,
+            project: JSON.parse(plan.generated.get(directory + "/project.json")),
+            sessionId: plan.selectedSessionId,
+            stateFile: copiedProjectFile(targetRoot, targetStateEntry.path),
+            stateBytes: targetStateBytes,
+          })
+        )
+          fail("HEAD_SESSION_IDENTITY_MISMATCH");
+        check(signal);
+        fs.unlinkSync(pendingFile);
+        return withSnapshotReferences({ root: targetRoot }, () => {
+          const restored = withSessionRoute(targetRoot, plan.selectedSessionId, () => inspectProject(targetRoot));
+          if (restored.status !== "ready") fail("PROJECT_BUNDLE_IMPORT_NOT_READY");
+          return {
+            status: "imported",
+            bundleId: inspected.bundleId,
+            projectId: plan.projectId,
+            selectedSessionId: plan.selectedSessionId,
+            targetRoot,
+            admissionDigest: plan.admissionDigest,
+            sourceTransfer: {
+              coverage: inspected.manifest.sourceTransfer || { status: "not-recorded-not-certified" },
+              destinationOriginals: "verified-copied",
+              exactDiff: "not-yet-queried",
+            },
+            defaultSessionChanged: false,
+            restoresExecutionPermission: false,
+            nativeBindingTransferred: false,
+            rootSettings: "preserved-unowned-not-imported",
+            nativeHistory: "not-requested",
+            worktree: "not-imported",
+          };
+        });
       };
       for (const [relative, bytes] of plan.generated) {
-        check(signal); exactCreate(targetRoot, relative, bytes);
+        check(signal);
+        exactCreate(targetRoot, relative, bytes);
         // The pending import keeps this namespace ineligible for collection.
         onPublication?.(relative === directory + "/project.json" ? "project" : "generated", relative);
       }
@@ -912,13 +807,7 @@ export function projectBundleSummary(inspected) {
   };
 }
 
-function importSelectedSessionIntoExisting({
-  inspected,
-  targetRoot,
-  storage,
-  signal,
-  onPublication,
-}) {
+function importSelectedSessionIntoExisting({ inspected, targetRoot, storage, signal, onPublication }) {
   const { manifest, bundleRoot, bundleId, manifestSha256 } = inspected;
   // Validate current common direction, but never replace it with the source.
   readProjectDirection({ root: targetRoot, storage });
@@ -926,10 +815,8 @@ function importSelectedSessionIntoExisting({
   const sourceSessionDirectory = path.posix.dirname(sourceSelectedPath);
   const sourceStateEntry = manifest.files.find((entry) => entry.path === sourceSelectedPath);
   const state = boundedJson(bundleRoot, objectPath(sourceStateEntry)).value;
-  const sourceDefaultFormat =
-    sourceSelectedPath === storage.directory + "/sessions/current.json";
-  if (state.projectId != null && state.projectId !== storage.projectId)
-    fail("HEAD_SESSION_IDENTITY_MISMATCH");
+  const sourceDefaultFormat = sourceSelectedPath === storage.directory + "/sessions/current.json";
+  if (state.projectId != null && state.projectId !== storage.projectId) fail("HEAD_SESSION_IDENTITY_MISMATCH");
   const ownerProofPaths = new Set();
   if (state.projectId == null && !sourceDefaultFormat) {
     verifyBundledDefaultOwner({
@@ -941,9 +828,7 @@ function importSelectedSessionIntoExisting({
     });
   }
   const legacyRuns = manifest.files
-    .filter((entry) =>
-      /^\.?(?:lode|head)\/sessions\/runs\/run-[0-9]+-[a-f0-9]{6}\/run\.json$/.test(entry.path),
-    )
+    .filter((entry) => /^\.?(?:lode|head)\/sessions\/runs\/run-[0-9]+-[a-f0-9]{6}\/run\.json$/.test(entry.path))
     .map((entry) => ({ entry, run: boundedJson(bundleRoot, objectPath(entry)).value }))
     .filter((item) => item.run.sessionId == null);
   if (!sourceDefaultFormat)
@@ -967,9 +852,7 @@ function importSelectedSessionIntoExisting({
     }
   }
   const sessionDirectory =
-    defaultId === manifest.selectedSessionId
-      ? storage.directory + "/sessions"
-      : storage.directory + "/sessions/by-id/" + manifest.selectedSessionId;
+    defaultId === manifest.selectedSessionId ? storage.directory + "/sessions" : storage.directory + "/sessions/by-id/" + manifest.selectedSessionId;
   const selectedPath = sessionDirectory + "/current.json";
   const targetNamed = selectedPath !== defaultPath;
   const mapSelectedPath = (relative) =>
@@ -988,9 +871,7 @@ function importSelectedSessionIntoExisting({
     historical = [];
   for (const entry of manifest.files) {
     const local = entry.path.slice(storage.directory.length + 1);
-    const belongsToSession =
-      entry.path === sourceSelectedPath ||
-      entry.path.startsWith(sourceSessionDirectory + "/work-evidence/");
+    const belongsToSession = entry.path === sourceSelectedPath || entry.path.startsWith(sourceSessionDirectory + "/work-evidence/");
     const immutableClosure =
       /^(?:lineage\/(?:whole-plans|execution-contracts|result-packets|review-decisions)\/|context\/capsules\/|sessions\/ledger\/|sessions\/runs\/|observations\/source-bundles\/)/.test(
         local,
@@ -1019,8 +900,7 @@ function importSelectedSessionIntoExisting({
   const stateFile = copiedProjectFile(targetRoot, selectedPath);
   const stateAlreadyPresent = fs.existsSync(stateFile);
   const admissionPending = sessionDirectory + "/import-pending.json";
-  const needsAdmission =
-    !stateAlreadyPresent || fs.existsSync(copiedProjectFile(targetRoot, admissionPending));
+  const needsAdmission = !stateAlreadyPresent || fs.existsSync(copiedProjectFile(targetRoot, admissionPending));
   const pendingRelative = needsAdmission ? admissionPending : archive + "/pending.json";
   const pending = json({
     schemaVersion: 1,
@@ -1036,8 +916,7 @@ function importSelectedSessionIntoExisting({
       const sourceLocal = entry.sourcePath.slice(storage.directory.length + 1);
       if (/^(?:project-direction\/revisions|project-location)\//.test(sourceLocal)) {
         const original = copiedProjectFile(targetRoot, entry.sourcePath);
-        if (fs.existsSync(original))
-          verifyCopiedProjectFile(targetRoot, { ...entry, path: entry.sourcePath });
+        if (fs.existsSync(original)) verifyCopiedProjectFile(targetRoot, { ...entry, path: entry.sourcePath });
       }
     }
     for (const entry of [...active, ...historical]) {
@@ -1046,167 +925,153 @@ function importSelectedSessionIntoExisting({
     }
   };
   assertTargetBasis();
-  return withProjectMutation(
-    { root: targetRoot, storage, scope: "selected-session-import" },
-    () => {
-      assertTargetBasis();
-      check(signal);
-      exactCreate(targetRoot, pendingRelative, pending);
-      for (const entry of [
-        ...active.filter((entry) => entry.path !== selectedPath),
-        ...historical,
-      ]) {
-        const target = copiedProjectFile(targetRoot, entry.path);
-        fs.mkdirSync(path.dirname(target), { recursive: true });
-        copiedProjectFile(targetRoot, entry.path);
-        copyOriginal(bundleRoot, targetRoot, entry, {
-          signal,
-          sourceRelative: objectPath(entry),
-          targetRelative: entry.path,
-        });
-        onPublication?.("record", entry.path);
-      }
-      const originalManifest = fs.readFileSync(copiedProjectFile(bundleRoot, "manifest.json"));
-      exactCreate(targetRoot, archive + "/bundle-manifest.json", originalManifest);
-      const payload = {
-        schemaVersion: 1,
-        kind: "SelectedSessionImportReceipt",
-        authorityPlane: "P3",
-        projectId: storage.projectId,
-        sessionId: manifest.selectedSessionId,
-        bundleId,
-        manifestSha256,
-        stateOriginal: {
-          sourcePath: sourceSelectedPath,
-          path: selectedPath,
-          sha256: stateEntry.sha256,
-          bytes: stateEntry.bytes,
-        },
-        sourceDefaultFormat,
-        activeOriginals: active.map((entry) => ({
-          sourcePath: entry.sourcePath,
-          storedPath: entry.path,
-          sha256: entry.sha256,
-          bytes: entry.bytes,
-        })),
-        historicalOriginals: historical.map((entry) => ({
-          sourcePath: entry.sourcePath,
-          storedPath: entry.path,
-          sha256: entry.sha256,
-          bytes: entry.bytes,
-        })),
-        currentTargetCommon: "preserved-not-replaced",
-        sourceCommon: "historical-only",
-        grantsExecutionAuthorization: false,
-        transfersNativeBinding: false,
-        defaultSessionChanged: false,
-      };
-      const receiptDigest = sha(json(payload));
+  return withProjectMutation({ root: targetRoot, storage, scope: "selected-session-import" }, () => {
+    assertTargetBasis();
+    check(signal);
+    exactCreate(targetRoot, pendingRelative, pending);
+    for (const entry of [...active.filter((entry) => entry.path !== selectedPath), ...historical]) {
+      const target = copiedProjectFile(targetRoot, entry.path);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      copiedProjectFile(targetRoot, entry.path);
+      copyOriginal(bundleRoot, targetRoot, entry, {
+        signal,
+        sourceRelative: objectPath(entry),
+        targetRelative: entry.path,
+      });
+      onPublication?.("record", entry.path);
+    }
+    const originalManifest = fs.readFileSync(copiedProjectFile(bundleRoot, "manifest.json"));
+    exactCreate(targetRoot, archive + "/bundle-manifest.json", originalManifest);
+    const payload = {
+      schemaVersion: 1,
+      kind: "SelectedSessionImportReceipt",
+      authorityPlane: "P3",
+      projectId: storage.projectId,
+      sessionId: manifest.selectedSessionId,
+      bundleId,
+      manifestSha256,
+      stateOriginal: {
+        sourcePath: sourceSelectedPath,
+        path: selectedPath,
+        sha256: stateEntry.sha256,
+        bytes: stateEntry.bytes,
+      },
+      sourceDefaultFormat,
+      activeOriginals: active.map((entry) => ({
+        sourcePath: entry.sourcePath,
+        storedPath: entry.path,
+        sha256: entry.sha256,
+        bytes: entry.bytes,
+      })),
+      historicalOriginals: historical.map((entry) => ({
+        sourcePath: entry.sourcePath,
+        storedPath: entry.path,
+        sha256: entry.sha256,
+        bytes: entry.bytes,
+      })),
+      currentTargetCommon: "preserved-not-replaced",
+      sourceCommon: "historical-only",
+      grantsExecutionAuthorization: false,
+      transfersNativeBinding: false,
+      defaultSessionChanged: false,
+    };
+    const receiptDigest = sha(json(payload));
+    exactCreate(
+      targetRoot,
+      archive + "/receipt.json",
+      json({
+        ...payload,
+        receiptId: "session-import-" + receiptDigest.slice(0, 24),
+        receiptDigest,
+      }),
+    );
+    if (sourceDefaultFormat && targetNamed) {
       exactCreate(
         targetRoot,
-        archive + "/receipt.json",
+        sessionDirectory + "/imports/owners/" + stateEntry.sha256 + ".json",
         json({
-          ...payload,
-          receiptId: "session-import-" + receiptDigest.slice(0, 24),
+          schemaVersion: 1,
+          kind: "ImportedDefaultSessionOwnerProof",
+          authorityPlane: "P3",
+          projectId: storage.projectId,
+          sessionId: manifest.selectedSessionId,
+          bundleId,
           receiptDigest,
+          sourcePath: sourceSelectedPath,
+          targetPath: selectedPath,
+          originalSha256: stateEntry.sha256,
+          grantsRecoveryDirection: false,
+          grantsExecutionAuthorization: false,
         }),
       );
-      if (sourceDefaultFormat && targetNamed) {
+    }
+    if (sourceDefaultFormat && targetNamed)
+      for (const { entry, run } of legacyRuns)
         exactCreate(
           targetRoot,
-          sessionDirectory + "/imports/owners/" + stateEntry.sha256 + ".json",
+          sessionDirectory + "/imports/run-owners/" + entry.sha256 + ".json",
           json({
             schemaVersion: 1,
-            kind: "ImportedDefaultSessionOwnerProof",
+            kind: "ImportedDefaultRunOwnerProof",
             authorityPlane: "P3",
             projectId: storage.projectId,
             sessionId: manifest.selectedSessionId,
-            bundleId,
-            receiptDigest,
-            sourcePath: sourceSelectedPath,
-            targetPath: selectedPath,
-            originalSha256: stateEntry.sha256,
+            runId: run.runId,
+            path: entry.path,
+            originalSha256: entry.sha256,
+            sourceStateSha256: stateEntry.sha256,
             grantsRecoveryDirection: false,
             grantsExecutionAuthorization: false,
           }),
         );
-      }
-      if (sourceDefaultFormat && targetNamed)
-        for (const { entry, run } of legacyRuns)
-          exactCreate(
-            targetRoot,
-            sessionDirectory + "/imports/run-owners/" + entry.sha256 + ".json",
-            json({
-              schemaVersion: 1,
-              kind: "ImportedDefaultRunOwnerProof",
-              authorityPlane: "P3",
-              projectId: storage.projectId,
-              sessionId: manifest.selectedSessionId,
-              runId: run.runId,
-              path: entry.path,
-              originalSha256: entry.sha256,
-              sourceStateSha256: stateEntry.sha256,
-              grantsRecoveryDirection: false,
-              grantsExecutionAuthorization: false,
-            }),
-          );
-      assertTargetBasis();
-      copyOriginal(bundleRoot, targetRoot, stateEntry, {
-        signal,
-        sourceRelative: objectPath(stateEntry),
-        targetRelative: selectedPath,
-      });
-      onPublication?.("session", selectedPath);
-      for (const entry of [...active, ...historical])
-        verifyCopiedProjectFile(targetRoot, entry);
-      assertProjectStorageUnchanged(storage);
-      check(signal);
-      const pendingFile = copiedProjectFile(targetRoot, pendingRelative);
-      if (!fs.readFileSync(pendingFile).equals(pending))
-        fail("PROJECT_BUNDLE_IMPORT_INTENT_CONFLICT");
-      if (
-        state.projectId == null &&
-        targetNamed &&
-        !verifyImportedDefaultSession({
-          root: targetRoot,
-          directory: storage.directory,
-          project: { projectId: storage.projectId },
-          sessionId: manifest.selectedSessionId,
-          stateFile,
-          stateBytes: fs.readFileSync(stateFile),
-        })
-      )
-        fail("HEAD_SESSION_IDENTITY_MISMATCH");
-      fs.unlinkSync(pendingFile);
-      return {
-        status: needsAdmission
-          ? "selected-session-imported"
-          : "existing-project-originals-identical",
-        bundleId,
-        projectId: storage.projectId,
-        selectedSessionId: manifest.selectedSessionId,
-        targetRoot,
-        sourceOriginalsReceipt: archive + "/receipt.json",
-        sourceTransfer: { coverage: manifest.sourceTransfer || { status: "not-recorded-not-certified" }, destinationOriginals: "verified-copied", exactDiff: "not-yet-queried" },
-        currentTargetCommon: "preserved-not-replaced",
-        sourceCommon: "historical-only",
-        defaultSessionChanged: false,
-        restoresExecutionPermission: false,
-        nativeBindingTransferred: false,
-      };
-    },
-  );
+    assertTargetBasis();
+    copyOriginal(bundleRoot, targetRoot, stateEntry, {
+      signal,
+      sourceRelative: objectPath(stateEntry),
+      targetRelative: selectedPath,
+    });
+    onPublication?.("session", selectedPath);
+    for (const entry of [...active, ...historical]) verifyCopiedProjectFile(targetRoot, entry);
+    assertProjectStorageUnchanged(storage);
+    check(signal);
+    const pendingFile = copiedProjectFile(targetRoot, pendingRelative);
+    if (!fs.readFileSync(pendingFile).equals(pending)) fail("PROJECT_BUNDLE_IMPORT_INTENT_CONFLICT");
+    if (
+      state.projectId == null &&
+      targetNamed &&
+      !verifyImportedDefaultSession({
+        root: targetRoot,
+        directory: storage.directory,
+        project: { projectId: storage.projectId },
+        sessionId: manifest.selectedSessionId,
+        stateFile,
+        stateBytes: fs.readFileSync(stateFile),
+      })
+    )
+      fail("HEAD_SESSION_IDENTITY_MISMATCH");
+    fs.unlinkSync(pendingFile);
+    return {
+      status: needsAdmission ? "selected-session-imported" : "existing-project-originals-identical",
+      bundleId,
+      projectId: storage.projectId,
+      selectedSessionId: manifest.selectedSessionId,
+      targetRoot,
+      sourceOriginalsReceipt: archive + "/receipt.json",
+      sourceTransfer: {
+        coverage: manifest.sourceTransfer || { status: "not-recorded-not-certified" },
+        destinationOriginals: "verified-copied",
+        exactDiff: "not-yet-queried",
+      },
+      currentTargetCommon: "preserved-not-replaced",
+      sourceCommon: "historical-only",
+      defaultSessionChanged: false,
+      restoresExecutionPermission: false,
+      nativeBindingTransferred: false,
+    };
+  });
 }
 
-export function readImportedSourceOriginal({
-  root,
-  sessionId,
-  bundleId,
-  sourcePath,
-  expectedDigest,
-  offset = 0,
-  maxBytes = 65536,
-} = {}) {
+export function readImportedSourceOriginal({ root, sessionId, bundleId, sourcePath, expectedDigest, offset = 0, maxBytes = 65536 } = {}) {
   const storage = resolveProjectStorage(root);
   if (
     !storage ||
@@ -1219,8 +1084,7 @@ export function readImportedSourceOriginal({
   )
     fail("PROJECT_IMPORTED_ORIGINAL_SELECTOR_INVALID");
   let archive = storage.directory + "/sessions/by-id/" + sessionId + "/imports/" + bundleId;
-  if (!fs.existsSync(copiedProjectFile(storage.projectRoot, archive + "/receipt.json")))
-    archive = storage.directory + "/sessions/imports/" + bundleId;
+  if (!fs.existsSync(copiedProjectFile(storage.projectRoot, archive + "/receipt.json"))) archive = storage.directory + "/sessions/imports/" + bundleId;
   const { value: receipt } = boundedJson(storage.projectRoot, archive + "/receipt.json");
   const { receiptId, receiptDigest, ...payload } = receipt;
   if (
@@ -1234,38 +1098,19 @@ export function readImportedSourceOriginal({
   )
     fail("PROJECT_IMPORTED_ORIGINAL_RECEIPT_INVALID");
   const originalManifest = boundedJson(storage.projectRoot, archive + "/bundle-manifest.json");
-  if (
-    sha(originalManifest.bytes) !== receipt.manifestSha256 ||
-    bundleId !== "project-bundle-" + receipt.manifestSha256.slice(0, 24)
-  )
+  if (sha(originalManifest.bytes) !== receipt.manifestSha256 || bundleId !== "project-bundle-" + receipt.manifestSha256.slice(0, 24))
     fail("PROJECT_IMPORTED_ORIGINAL_RECEIPT_INVALID");
   validatePortableManifestFormat(originalManifest.value);
   const mapping =
-    receipt.historicalOriginals.find(
-      (entry) => entry.sourcePath === sourcePath && entry.sha256 === expectedDigest,
-    ) ||
-    receipt.activeOriginals?.find(
-      (entry) => entry.sourcePath === sourcePath && entry.sha256 === expectedDigest,
-    );
-  if (
-    !mapping ||
-    !originalManifest.value.files.some(
-      (entry) =>
-        entry.path === sourcePath &&
-        entry.sha256 === expectedDigest &&
-        entry.bytes === mapping.bytes,
-    )
-  )
+    receipt.historicalOriginals.find((entry) => entry.sourcePath === sourcePath && entry.sha256 === expectedDigest) ||
+    receipt.activeOriginals?.find((entry) => entry.sourcePath === sourcePath && entry.sha256 === expectedDigest);
+  if (!mapping || !originalManifest.value.files.some((entry) => entry.path === sourcePath && entry.sha256 === expectedDigest && entry.bytes === mapping.bytes))
     fail("PROJECT_IMPORTED_ORIGINAL_NOT_FOUND");
   const expectedPath = archive + "/originals/" + expectedDigest + ".bin";
   const activeMapping = receipt.activeOriginals?.some(
-    (entry) =>
-      entry.sourcePath === sourcePath &&
-      entry.storedPath === mapping.storedPath &&
-      entry.sha256 === expectedDigest,
+    (entry) => entry.sourcePath === sourcePath && entry.storedPath === mapping.storedPath && entry.sha256 === expectedDigest,
   );
-  if (mapping.storedPath !== expectedPath && !activeMapping)
-    fail("PROJECT_IMPORTED_ORIGINAL_RECEIPT_INVALID");
+  if (mapping.storedPath !== expectedPath && !activeMapping) fail("PROJECT_IMPORTED_ORIGINAL_RECEIPT_INVALID");
   const excerpt = readCopiedProjectExcerpt(
     storage.projectRoot,
     { path: mapping.storedPath, sha256: expectedDigest, bytes: mapping.bytes },
@@ -1306,8 +1151,7 @@ function verifyBundledDefaultOwner({ root, manifest, entries, allowed, sourceSta
       const entry = entries.get(relative);
       if (!entry) return null;
       const original = boundedJson(root, objectPath(entry));
-      if (sha(original.bytes) !== entry.sha256 || original.bytes.length !== entry.bytes)
-        fail("PROJECT_COPY_SOURCE_CHANGED");
+      if (sha(original.bytes) !== entry.sha256 || original.bytes.length !== entry.bytes) fail("PROJECT_COPY_SOURCE_CHANGED");
       allowed.add(relative);
       return { bytes: original.bytes, document: original.value };
     },
@@ -1316,10 +1160,7 @@ function verifyBundledDefaultOwner({ root, manifest, entries, allowed, sourceSta
 }
 
 function verifyBundledRunOwner({ root, manifest, entries, allowed, runId, run }) {
-  const project = boundedJson(
-    root,
-    objectPath(entries.get(manifest.directory + "/project.json")),
-  ).value;
+  const project = boundedJson(root, objectPath(entries.get(manifest.directory + "/project.json"))).value;
   const relative = manifest.directory + "/sessions/runs/" + runId + "/run.json",
     entry = entries.get(relative);
   if (!entry) fail("PROJECT_BUNDLE_REFERENCE_MISSING");
@@ -1335,8 +1176,7 @@ function verifyBundledRunOwner({ root, manifest, entries, allowed, runId, run })
       const entry = entries.get(relative);
       if (!entry) return null;
       const original = boundedJson(root, objectPath(entry));
-      if (sha(original.bytes) !== entry.sha256 || original.bytes.length !== entry.bytes)
-        fail("PROJECT_COPY_SOURCE_CHANGED");
+      if (sha(original.bytes) !== entry.sha256 || original.bytes.length !== entry.bytes) fail("PROJECT_COPY_SOURCE_CHANGED");
       allowed.add(relative);
       return { bytes: original.bytes, document: original.value };
     },

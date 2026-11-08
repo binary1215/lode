@@ -50,7 +50,8 @@ function validateTurn(value) {
 
 function readyIdentity(root) {
   const inspected = inspectProject(root);
-  if (inspected.status !== "ready") fail(`Project must be ready for Host compaction lifecycle processing; current status: ${inspected.status}.`, "PROJECT_NOT_READY");
+  if (inspected.status !== "ready")
+    fail(`Project must be ready for Host compaction lifecycle processing; current status: ${inspected.status}.`, "PROJECT_NOT_READY");
   return {
     inspected,
     identity: {
@@ -62,25 +63,44 @@ function readyIdentity(root) {
 }
 
 function adapterDescriptor(adapter) {
-  if (!adapter || typeof adapter.describe !== "function" || typeof adapter.nextEvent !== "function"
-    || typeof adapter.retainContinuation !== "function" || typeof adapter.loadContinuation !== "function"
-    || typeof adapter.acknowledge !== "function") {
+  if (
+    !adapter ||
+    typeof adapter.describe !== "function" ||
+    typeof adapter.nextEvent !== "function" ||
+    typeof adapter.retainContinuation !== "function" ||
+    typeof adapter.loadContinuation !== "function" ||
+    typeof adapter.acknowledge !== "function"
+  ) {
     fail("Compaction lifecycle Host adapter is incomplete.", "INVALID_COMPACTION_LIFECYCLE_HOST");
   }
   const descriptor = adapter.describe();
-  exactKeys(descriptor, [
-    "adapterKey", "adapterVersion", "authorityPlane", "deliverySemantics", "providerNeutral",
-    "providerSessionIdentityPersisted", "recoveryAuthority", "instructionAuthority", "promotionAuthority",
-  ], "Compaction lifecycle Host descriptor", "INVALID_COMPACTION_LIFECYCLE_HOST");
-  if (!new Set(["head.compaction-lifecycle-host", "lode.compaction-lifecycle-host"]).has(descriptor.adapterKey)
-    || descriptor.adapterVersion !== COMPACTION_LIFECYCLE_VERSION
-    || descriptor.authorityPlane !== "P5"
-    || descriptor.deliverySemantics !== "journaled-no-uncertain-replay"
-    || descriptor.providerNeutral !== true
-    || descriptor.providerSessionIdentityPersisted !== false
-    || descriptor.recoveryAuthority !== false
-    || descriptor.instructionAuthority !== false
-    || descriptor.promotionAuthority !== false) {
+  exactKeys(
+    descriptor,
+    [
+      "adapterKey",
+      "adapterVersion",
+      "authorityPlane",
+      "deliverySemantics",
+      "providerNeutral",
+      "providerSessionIdentityPersisted",
+      "recoveryAuthority",
+      "instructionAuthority",
+      "promotionAuthority",
+    ],
+    "Compaction lifecycle Host descriptor",
+    "INVALID_COMPACTION_LIFECYCLE_HOST",
+  );
+  if (
+    !new Set(["head.compaction-lifecycle-host", "lode.compaction-lifecycle-host"]).has(descriptor.adapterKey) ||
+    descriptor.adapterVersion !== COMPACTION_LIFECYCLE_VERSION ||
+    descriptor.authorityPlane !== "P5" ||
+    descriptor.deliverySemantics !== "journaled-no-uncertain-replay" ||
+    descriptor.providerNeutral !== true ||
+    descriptor.providerSessionIdentityPersisted !== false ||
+    descriptor.recoveryAuthority !== false ||
+    descriptor.instructionAuthority !== false ||
+    descriptor.promotionAuthority !== false
+  ) {
     fail("Compaction lifecycle Host descriptor attempts to change the provider-neutral P5 boundary.", "COMPACTION_LIFECYCLE_AUTHORITY_VIOLATION");
   }
   return descriptor;
@@ -141,7 +161,7 @@ function recoveryAttention(error, details = {}) {
 async function conversationProjection(root, recovery) {
   const publicRecovery = { ...recovery };
   delete publicRecovery.restore;
-  const projectStatus = (await inspectConversationProjectExperience({ root, recoveryOverride: publicRecovery }));
+  const projectStatus = await inspectConversationProjectExperience({ root, recoveryOverride: publicRecovery });
   return {
     ...actionability(projectStatus),
     projectStatus,
@@ -158,11 +178,17 @@ export function projectRelocationHint(root) {
     if (!location || !["relocation_available", "relocation_pending"].includes(location.status)) return null;
     return {
       reasonCode: location.status === "relocation_pending" ? "PROJECT_RELOCATION_PENDING" : "PROJECT_RELOCATION_AVAILABLE",
-      projectLocation: { status: location.status, projectId: location.retainedProject?.projectId ?? null,
-        previousRoot: location.retainedProject?.previousRoot ?? null, adopted: false },
+      projectLocation: {
+        status: location.status,
+        projectId: location.retainedProject?.projectId ?? null,
+        previousRoot: location.retainedProject?.previousRoot ?? null,
+        adopted: false,
+      },
       nextAction: location.nextAction,
     };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export async function enterConversationRecovery({ root = ".", readRelatedNativeContext = null } = {}) {
@@ -170,24 +196,37 @@ export async function enterConversationRecovery({ root = ".", readRelatedNativeC
   const readable = isProjectRecoveryReadable(inspected);
   const entryDirection = readable ? readProjectDirectionView({ root }) : null;
   const recovery = recoveryReadiness(inspected, { includeRestore: true });
-  const composed = (await conversationProjection(root, recovery));
+  const composed = await conversationProjection(root, recovery);
   // Optional P3 work is never a prerequisite for P2 restore or ordinary work.
   // Its absence/corruption cannot manufacture a purpose, next action or approval.
   if (readable) {
     try {
-      composed.workContext = readSessionWorkContext({ root, expectedSessionId: inspected.state.sessionId,
-        expectedCheckpointId: inspected.state.latestCheckpoint || null });
+      composed.workContext = readSessionWorkContext({
+        root,
+        expectedSessionId: inspected.state.sessionId,
+        expectedCheckpointId: inspected.state.latestCheckpoint || null,
+      });
     } catch (error) {
-      composed.workContext = { kind: "SessionWorkContextProjection", authorityPlane: "P4",
-        status: "work_context_unavailable", reasonCode: error.code || "SESSION_WORK_EVIDENCE_READ_ERROR",
-        records: [], persisted: false, recoveryAuthority: false, instructionAuthority: false,
-        ordinaryWorkBlocked: false, executionReplayAllowed: false };
+      composed.workContext = {
+        kind: "SessionWorkContextProjection",
+        authorityPlane: "P4",
+        status: "work_context_unavailable",
+        reasonCode: error.code || "SESSION_WORK_EVIDENCE_READ_ERROR",
+        records: [],
+        persisted: false,
+        recoveryAuthority: false,
+        instructionAuthority: false,
+        ordinaryWorkBlocked: false,
+        executionReplayAllowed: false,
+      };
     }
     if (typeof readRelatedNativeContext === "function") {
       try {
         const related = readRelatedNativeContext({ childSessionId: inspected.state.sessionId });
         if (related && typeof related.then !== "function") composed.relatedNativeWorkContext = related;
-      } catch { /* Historical related P3 is optional, not recovery authority. */ }
+      } catch {
+        /* Historical related P3 is optional, not recovery authority. */
+      }
     }
   }
   const finish = (result) => {
@@ -195,15 +234,27 @@ export async function enterConversationRecovery({ root = ".", readRelatedNativeC
     const afterProject = JSON.parse(fs.readFileSync(safeSessionPath(root, formatForVerifiedOwner(inspected.storage).directory, "project.json"), "utf8"));
     const afterState = JSON.parse(fs.readFileSync(sessionStatePath(root, inspected.storage), "utf8"));
     const afterDirection = readProjectDirectionView({ root });
-    if (JSON.stringify(afterProject) === JSON.stringify(inspected.project)
-      && JSON.stringify(afterState) === JSON.stringify(inspected.state)
-      && sameProjectDirectionView(afterDirection, entryDirection)) return result;
+    if (
+      JSON.stringify(afterProject) === JSON.stringify(inspected.project) &&
+      JSON.stringify(afterState) === JSON.stringify(inspected.state) &&
+      sameProjectDirectionView(afterDirection, entryDirection)
+    )
+      return result;
     // A sequential composition is not an atomic snapshot. Never publish old
     // next-action context together with a later cancellation as a stable entry.
-    return { ...recoveryAttention({ code: "CONVERSATION_ENTRY_BASIS_CHANGED" }), persisted: false,
-      ...afterDirection, sessionId: null, workContext: { status: "work_context_basis_changed", records: [], persisted: false },
+    return {
+      ...recoveryAttention({ code: "CONVERSATION_ENTRY_BASIS_CHANGED" }),
+      persisted: false,
+      ...afterDirection,
+      sessionId: null,
+      workContext: { status: "work_context_basis_changed", records: [], persisted: false },
       nextHeadAction: "Reread this bounded entry before dependent work. Continue independent work; do not replay effects or ask for routine approval.",
-      presentation: { mode: "exception", summary: "Selected context changed during entry; only dependent context needs another read.", userActionRequired: false } };
+      presentation: {
+        mode: "exception",
+        summary: "Selected context changed during entry; only dependent context needs another read.",
+        userActionRequired: false,
+      },
+    };
   };
   if (!readable) {
     // A folder holding a Lode Project recorded for another root stays unavailable
@@ -268,16 +319,18 @@ function currentEpochForEvent(root, event) {
 }
 
 async function currentDirectionAfterContinuationDrift(error, { root, event, hostAdapter }) {
-  if (!new Set(["COMPACTION_CHECKPOINT_STALE", "COMPACTION_SESSION_DRIFT", "COMPACTION_RUN_DRIFT", "COMPACTION_RUN_POINTER_MISMATCH"]).has(error.code)) throw error;
+  if (!new Set(["COMPACTION_CHECKPOINT_STALE", "COMPACTION_SESSION_DRIFT", "COMPACTION_RUN_DRIFT", "COMPACTION_RUN_POINTER_MISMATCH"]).has(error.code))
+    throw error;
   const current = inspectCompaction({ root });
   if (current.epoch?.epochId === event.epochId && ["prepared", "provider_compacted", "verified"].includes(current.epoch.state)) {
     abortCompaction({ root, epochId: event.epochId, reason: "current-p2-direction-superseded-transport-continuation" });
   }
-  const conversationEntry = (await enterConversationRecovery({ root }));
+  const conversationEntry = await enterConversationRecovery({ root });
   return {
-    status: conversationEntry.status === "recovery_attention_required"
-      ? "recovery_attention_required"
-      : "conversation_direction_restored_without_transport_continuation",
+    status:
+      conversationEntry.status === "recovery_attention_required"
+        ? "recovery_attention_required"
+        : "conversation_direction_restored_without_transport_continuation",
     reasonCode: error.code,
     eventKind: event.kind,
     conversationEntry,
@@ -293,7 +346,7 @@ async function currentDirectionAfterContinuationDrift(error, { root, event, host
 }
 
 export async function processCompactionLifecycle({ root = ".", hostAdapter = null, direction = null } = {}) {
-  const entry = (await enterConversationRecovery({ root }));
+  const entry = await enterConversationRecovery({ root });
   if (!hostAdapter) {
     return {
       status: "host_lifecycle_unavailable",
@@ -330,8 +383,11 @@ export async function processCompactionLifecycle({ root = ".", hostAdapter = nul
       compaction = inspectCompaction({ root: identity.projectRoot });
     }
     let superseded = false;
-    if (compaction.epoch && ["prepared", "provider_compacted", "verified"].includes(compaction.epoch.state)
-      && event.userTurnId > compaction.epoch.userTurnIdAtPrepare) {
+    if (
+      compaction.epoch &&
+      ["prepared", "provider_compacted", "verified"].includes(compaction.epoch.state) &&
+      event.userTurnId > compaction.epoch.userTurnIdAtPrepare
+    ) {
       try {
         verifyCompaction({
           root: identity.projectRoot,
@@ -345,7 +401,7 @@ export async function processCompactionLifecycle({ root = ".", hostAdapter = nul
         superseded = true;
       }
     }
-    const refreshed = (await enterConversationRecovery({ root: identity.projectRoot }));
+    const refreshed = await enterConversationRecovery({ root: identity.projectRoot });
     return {
       status: refreshed.status,
       eventKind: event.kind,
@@ -363,9 +419,10 @@ export async function processCompactionLifecycle({ root = ".", hostAdapter = nul
   if (event.kind === "before-compaction") {
     let prepared;
     try {
-      prepared = direction == null
-        ? prepareCompactionFromCurrentCheckpoint({ root: identity.projectRoot, runtime: event.runtime, userTurnIdAtPrepare: event.userTurnId })
-        : prepareCompaction({ root: identity.projectRoot, runtime: event.runtime, userTurnIdAtPrepare: event.userTurnId, ...validateDirection(direction) });
+      prepared =
+        direction == null
+          ? prepareCompactionFromCurrentCheckpoint({ root: identity.projectRoot, runtime: event.runtime, userTurnIdAtPrepare: event.userTurnId })
+          : prepareCompaction({ root: identity.projectRoot, runtime: event.runtime, userTurnIdAtPrepare: event.userTurnId, ...validateDirection(direction) });
     } catch (error) {
       if (direction == null && new Set(["SESSION_RESTORE_CHECKPOINT_REQUIRED", "SESSION_RESTORE_CURRENT_CHECKPOINT_REQUIRED"]).has(error.code)) {
         return {
@@ -397,10 +454,13 @@ export async function processCompactionLifecycle({ root = ".", hostAdapter = nul
     }
     if (!retained || retained.status !== "retained") {
       abortCompaction({ root: identity.projectRoot, epochId: prepared.epoch.epochId, reason: "host-continuation-retention-uncertain" });
-      return recoveryAttention({ code: "COMPACTION_HOST_RETENTION_UNCERTAIN" }, {
-        eventKind: event.kind,
-        acknowledgement: safeAcknowledge(hostAdapter, event, "failed"),
-      });
+      return recoveryAttention(
+        { code: "COMPACTION_HOST_RETENTION_UNCERTAIN" },
+        {
+          eventKind: event.kind,
+          acknowledgement: safeAcknowledge(hostAdapter, event, "failed"),
+        },
+      );
     }
     return {
       status: "compaction_lifecycle_prepared",
@@ -419,7 +479,7 @@ export async function processCompactionLifecycle({ root = ".", hostAdapter = nul
   }
 
   const compaction = currentEpochForEvent(identity.projectRoot, event);
-  const restored = (await enterConversationRecovery({ root: identity.projectRoot }));
+  const restored = await enterConversationRecovery({ root: identity.projectRoot });
   if (restored.recoveryDependentWorkBlocked) {
     return recoveryAttention({ code: restored.reasonCode }, { eventKind: event.kind, conversationEntry: restored });
   }
@@ -452,10 +512,14 @@ export async function processCompactionLifecycle({ root = ".", hostAdapter = nul
     const transportOnlyAbort = new Set([
       "current-p2-direction-superseded-transport-continuation",
       "host-continuation-unavailable-fresh-logical-head",
-      "COMPACTION_CHECKPOINT_STALE", "COMPACTION_SESSION_DRIFT", "COMPACTION_RUN_DRIFT", "COMPACTION_RUN_POINTER_MISMATCH",
+      "COMPACTION_CHECKPOINT_STALE",
+      "COMPACTION_SESSION_DRIFT",
+      "COMPACTION_RUN_DRIFT",
+      "COMPACTION_RUN_POINTER_MISMATCH",
     ]).has(compaction.epoch.abortReason);
     if (transportOnlyAbort) {
-      if (event.outcome !== "succeeded") fail("Host outcome conflicts with the successful compaction whose transport continuation was closed.", "COMPACTION_LIFECYCLE_DIVERGENT_OUTCOME");
+      if (event.outcome !== "succeeded")
+        fail("Host outcome conflicts with the successful compaction whose transport continuation was closed.", "COMPACTION_LIFECYCLE_DIVERGENT_OUTCOME");
       return {
         status: "conversation_direction_restored_without_transport_continuation",
         eventKind: event.kind,
@@ -517,7 +581,13 @@ export async function processCompactionLifecycle({ root = ".", hostAdapter = nul
     if (["prepared", "provider_compacted", "verified"].includes(compaction.epoch.state)) {
       if (compaction.epoch.state === "prepared") {
         try {
-          verifyCompaction({ root: identity.projectRoot, epochId: event.epochId, checkpointDigest: compaction.epoch.checkpointDigest, currentUserTurnId: event.userTurnId, providerCompacted: false });
+          verifyCompaction({
+            root: identity.projectRoot,
+            epochId: event.epochId,
+            checkpointDigest: compaction.epoch.checkpointDigest,
+            currentUserTurnId: event.userTurnId,
+            providerCompacted: false,
+          });
         } catch (error) {
           if (!new Set(["PROVIDER_COMPACTION_FAILED", "COMPACTION_SUPERSEDED"]).has(error.code)) throw error;
         }
@@ -553,14 +623,20 @@ export async function processCompactionLifecycle({ root = ".", hostAdapter = nul
   }
   if (event.userTurnId > compaction.epoch.userTurnIdAtPrepare) {
     try {
-      verifyCompaction({ root: identity.projectRoot, epochId: event.epochId, checkpointDigest: compaction.epoch.checkpointDigest, currentUserTurnId: event.userTurnId, providerCompacted: true });
+      verifyCompaction({
+        root: identity.projectRoot,
+        epochId: event.epochId,
+        checkpointDigest: compaction.epoch.checkpointDigest,
+        currentUserTurnId: event.userTurnId,
+        providerCompacted: true,
+      });
     } catch (error) {
       if (error.code !== "COMPACTION_SUPERSEDED") throw error;
     }
     return {
       status: "compaction_lifecycle_superseded",
       eventKind: event.kind,
-      conversationEntry: (await enterConversationRecovery({ root: identity.projectRoot })),
+      conversationEntry: await enterConversationRecovery({ root: identity.projectRoot }),
       continuationConsumed: false,
       acknowledgement: safeAcknowledge(hostAdapter, event, "processed"),
       ordinaryWorkBlocked: false,
@@ -570,14 +646,16 @@ export async function processCompactionLifecycle({ root = ".", hostAdapter = nul
     };
   }
   if (compaction.epoch.state === "prepared" || compaction.epoch.state === "provider_compacted") {
-    try { verifyCompaction({
-      root: identity.projectRoot,
-      epochId: event.epochId,
-      checkpointDigest: compaction.epoch.checkpointDigest,
-      currentUserTurnId: event.userTurnId,
-      providerCompacted: true,
-    }); } catch (error) {
-      return (await currentDirectionAfterContinuationDrift(error, { root: identity.projectRoot, event, hostAdapter }));
+    try {
+      verifyCompaction({
+        root: identity.projectRoot,
+        epochId: event.epochId,
+        checkpointDigest: compaction.epoch.checkpointDigest,
+        currentUserTurnId: event.userTurnId,
+        providerCompacted: true,
+      });
+    } catch (error) {
+      return await currentDirectionAfterContinuationDrift(error, { root: identity.projectRoot, event, hostAdapter });
     }
   } else if (compaction.epoch.state !== "verified") {
     fail(`After-compaction success cannot continue from state ${compaction.epoch.state}.`, "INVALID_COMPACTION_STATE");
@@ -611,13 +689,15 @@ export async function processCompactionLifecycle({ root = ".", hostAdapter = nul
     };
   }
   let continued;
-  try { continued = continueCompaction({
-    root: identity.projectRoot,
-    epochId: event.epochId,
-    continuationToken: loaded.continuationToken,
-    currentUserTurnId: event.userTurnId,
-  }); } catch (error) {
-    return (await currentDirectionAfterContinuationDrift(error, { root: identity.projectRoot, event, hostAdapter }));
+  try {
+    continued = continueCompaction({
+      root: identity.projectRoot,
+      epochId: event.epochId,
+      continuationToken: loaded.continuationToken,
+      currentUserTurnId: event.userTurnId,
+    });
+  } catch (error) {
+    return await currentDirectionAfterContinuationDrift(error, { root: identity.projectRoot, event, hostAdapter });
   }
   return {
     status: "compaction_lifecycle_continued",

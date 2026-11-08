@@ -6,6 +6,8 @@ export function recordedSubagentCaller({ root, runtime, nativeSessionId, environ
   if (runtime !== "codex" || typeof nativeSessionId !== "string" || !nativeSessionId) return false;
   try {
     const snapshot = createNativeObservationStore({ environment }).read({ root, caller: { runtime, nativeSessionId, agentId: null } });
-    return Boolean(snapshot?.rows?.some(row => row.observation?.event === "SubagentStart" || row.observation?.phase === "child-start-observed"));
-  } catch { return false; }
+    return Boolean(snapshot?.rows?.some((row) => row.observation?.event === "SubagentStart" || row.observation?.phase === "child-start-observed"));
+  } catch {
+    return false;
+  }
 }

@@ -30,23 +30,36 @@ function ownerFile(projectRoot, storage = null) {
 function readOwner(projectRoot, storage = null) {
   const file = ownerFile(projectRoot, storage);
   if (!fs.existsSync(file)) return null;
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`Refresh writer lease owner is invalid JSON: ${error.message}`, "INVALID_REFRESH_WRITER_LEASE"); }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(`Refresh writer lease owner is invalid JSON: ${error.message}`, "INVALID_REFRESH_WRITER_LEASE");
+  }
 }
 
 function verifyOwner(owner, { projectId = "", token = "", storage = null } = {}) {
   const format = familyFormatForOriginal("head-agent-core-refresh-writer-lease", owner, storage);
-  if (!owner || typeof owner !== "object" || Array.isArray(owner)
-    || owner.schemaVersion !== 1 || owner.kind !== "RefreshWriterLease"
-    || !format
-    || owner.protocol?.version !== REFRESH_WRITER_LEASE_VERSION
-    || typeof owner.projectId !== "string" || !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(owner.projectId)
-    || !Number.isInteger(owner.pid) || owner.pid <= 0
-    || typeof owner.token !== "string" || !/^[a-f0-9]{32}$/.test(owner.token)
-    || typeof owner.startedAt !== "string" || Number.isNaN(Date.parse(owner.startedAt))
-    || owner.authority !== "operational-refresh-serialization-only"
-    || owner.instructionAuthority !== false || owner.promotionAuthority !== false
-    || owner.canonMutationAuthority !== false) {
+  if (
+    !owner ||
+    typeof owner !== "object" ||
+    Array.isArray(owner) ||
+    owner.schemaVersion !== 1 ||
+    owner.kind !== "RefreshWriterLease" ||
+    !format ||
+    owner.protocol?.version !== REFRESH_WRITER_LEASE_VERSION ||
+    typeof owner.projectId !== "string" ||
+    !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(owner.projectId) ||
+    !Number.isInteger(owner.pid) ||
+    owner.pid <= 0 ||
+    typeof owner.token !== "string" ||
+    !/^[a-f0-9]{32}$/.test(owner.token) ||
+    typeof owner.startedAt !== "string" ||
+    Number.isNaN(Date.parse(owner.startedAt)) ||
+    owner.authority !== "operational-refresh-serialization-only" ||
+    owner.instructionAuthority !== false ||
+    owner.promotionAuthority !== false ||
+    owner.canonMutationAuthority !== false
+  ) {
     fail("Refresh writer lease owner is invalid.", "INVALID_REFRESH_WRITER_LEASE");
   }
   if (projectId && owner.projectId !== projectId) fail("Refresh writer lease belongs to another project.", "REFRESH_WRITER_LEASE_PROJECT_MISMATCH");
@@ -65,8 +78,12 @@ function processState(pid) {
 }
 
 function statOrAbsent(file) {
-  try { return fs.lstatSync(file); }
-  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  try {
+    return fs.lstatSync(file);
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 function verifyPublicationDirectory(directory, expectedBytes, { allowEmpty = false } = {}) {
@@ -251,5 +268,7 @@ export function inspectRefreshWriterLease({ projectRoot, projectId, storage = nu
 }
 
 export async function withRefreshWriterLease(options = {}, ...rest) {
-  return withSnapshotReferencesAsync({ root: options.projectRoot ?? ".", storage: options.storage }, () => withRefreshWriterLeaseUncoordinated(options, ...rest));
+  return withSnapshotReferencesAsync({ root: options.projectRoot ?? ".", storage: options.storage }, () =>
+    withRefreshWriterLeaseUncoordinated(options, ...rest),
+  );
 }

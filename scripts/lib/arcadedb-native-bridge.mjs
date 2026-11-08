@@ -22,7 +22,12 @@ const digest = (value) => crypto.createHash("sha256").update(value).digest("hex"
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   return value;
 }
 
@@ -40,8 +45,13 @@ function inside(root, candidate) {
 }
 
 function assertFields(value, fields, label) {
-  if (!value || typeof value !== "object" || Array.isArray(value)
-    || Object.keys(value).some((field) => !fields.includes(field)) || fields.some((field) => !(field in value))) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.keys(value).some((field) => !fields.includes(field)) ||
+    fields.some((field) => !(field in value))
+  ) {
     fail(`${label} fields are invalid.`, "INVALID_ARCADEDB_NATIVE_BRIDGE_MANIFEST");
   }
 }
@@ -83,24 +93,47 @@ export function createArcadeDbNativeBridgeManifest({ platform, arch, binaryFile,
   const root = path.resolve(manifestDirectory || ".");
   const file = path.resolve(binaryFile || "");
   const stat = fs.lstatSync(file, { throwIfNoEntry: false });
-  if (!inside(root, file) || !stat?.isFile() || stat.isSymbolicLink()) fail("ArcadeDB native bridge binary is missing or unsafe.", "ARCADEDB_NATIVE_BRIDGE_BINARY_MISSING");
+  if (!inside(root, file) || !stat?.isFile() || stat.isSymbolicLink())
+    fail("ArcadeDB native bridge binary is missing or unsafe.", "ARCADEDB_NATIVE_BRIDGE_BINARY_MISSING");
   const relativePath = path.relative(root, file).replaceAll("\\", "/");
   if (relativePath !== target.executable) fail("ArcadeDB native bridge binary name does not match its target.", "INVALID_ARCADEDB_NATIVE_BRIDGE_MANIFEST");
-  return verifyArcadeDbNativeBridgeManifest(withIdentity(payload({
-    target: { platform: target.platform, arch: target.arch, directory: target.directory },
-    binary: { relativePath, sha256: digest(fs.readFileSync(file)), size: stat.size },
-  })), { platform, arch });
+  return verifyArcadeDbNativeBridgeManifest(
+    withIdentity(
+      payload({
+        target: { platform: target.platform, arch: target.arch, directory: target.directory },
+        binary: { relativePath, sha256: digest(fs.readFileSync(file)), size: stat.size },
+      }),
+    ),
+    { platform, arch },
+  );
 }
 
 export function verifyArcadeDbNativeBridgeManifest(manifest, { platform = process.platform, arch = process.arch } = {}) {
-  assertFields(manifest, [
-    "schemaVersion", "kind", "manifestVersion", "bridgeProtocolVersion", "target", "binary", "operations",
-    "processModel", "authority", "manifestId", "manifestHash",
-  ], "ArcadeDB native bridge manifest");
+  assertFields(
+    manifest,
+    [
+      "schemaVersion",
+      "kind",
+      "manifestVersion",
+      "bridgeProtocolVersion",
+      "target",
+      "binary",
+      "operations",
+      "processModel",
+      "authority",
+      "manifestId",
+      "manifestHash",
+    ],
+    "ArcadeDB native bridge manifest",
+  );
   assertFields(manifest.target, ["platform", "arch", "directory"], "ArcadeDB native bridge target");
   assertFields(manifest.binary, ["relativePath", "sha256", "size"], "ArcadeDB native bridge binary");
   assertFields(manifest.processModel, ["stdio", "descendants", "network", "databaseWrites", "projectWrites"], "ArcadeDB native bridge process model");
-  assertFields(manifest.authority, ["kind", "instructionAuthority", "promotionAuthority", "canonicalAuthority", "mutatesProject", "mutatesCanon"], "ArcadeDB native bridge authority");
+  assertFields(
+    manifest.authority,
+    ["kind", "instructionAuthority", "promotionAuthority", "canonicalAuthority", "mutatesProject", "mutatesCanon"],
+    "ArcadeDB native bridge authority",
+  );
   const legacy = manifest.kind === "HeadAgentArcadeDbBridgeManifest";
   const target = targetFor(platform, arch, legacy);
   const expected = payload({
@@ -111,12 +144,17 @@ export function verifyArcadeDbNativeBridgeManifest(manifest, { platform = proces
   const identityPayload = { ...manifest };
   delete identityPayload.manifestId;
   delete identityPayload.manifestHash;
-  if (manifest.schemaVersion !== 1 || !["HeadAgentArcadeDbBridgeManifest", "LodeAgentArcadeDbBridgeManifest"].includes(manifest.kind)
-    || manifest.manifestVersion !== ARCADEDB_NATIVE_BRIDGE_MANIFEST_VERSION
-    || manifest.bridgeProtocolVersion !== ARCADEDB_NATIVE_BRIDGE_PROTOCOL_VERSION
-    || manifest.binary.relativePath !== target.executable || !/^[a-f0-9]{64}$/.test(manifest.binary.sha256 || "")
-    || !Number.isSafeInteger(manifest.binary.size) || manifest.binary.size < 1
-    || canonicalJson(identityPayload) !== canonicalJson(expected)) {
+  if (
+    manifest.schemaVersion !== 1 ||
+    !["HeadAgentArcadeDbBridgeManifest", "LodeAgentArcadeDbBridgeManifest"].includes(manifest.kind) ||
+    manifest.manifestVersion !== ARCADEDB_NATIVE_BRIDGE_MANIFEST_VERSION ||
+    manifest.bridgeProtocolVersion !== ARCADEDB_NATIVE_BRIDGE_PROTOCOL_VERSION ||
+    manifest.binary.relativePath !== target.executable ||
+    !/^[a-f0-9]{64}$/.test(manifest.binary.sha256 || "") ||
+    !Number.isSafeInteger(manifest.binary.size) ||
+    manifest.binary.size < 1 ||
+    canonicalJson(identityPayload) !== canonicalJson(expected)
+  ) {
     fail("ArcadeDB native bridge manifest contract is invalid.", "INVALID_ARCADEDB_NATIVE_BRIDGE_MANIFEST");
   }
   const identity = withIdentity(identityPayload);
@@ -139,16 +177,23 @@ export function resolveVerifiedArcadeDbNativeBridge({ pluginRoot = ".", manifest
   const realManifest = fs.realpathSync(manifestPath);
   if (!inside(root, realManifest)) fail("ArcadeDB native bridge manifest resolved outside the plugin root.", "ARCADEDB_NATIVE_BRIDGE_PATH_ESCAPE");
   let manifest;
-  try { manifest = JSON.parse(fs.readFileSync(realManifest, "utf8")); }
-  catch { fail("ArcadeDB native bridge manifest is invalid JSON.", "INVALID_ARCADEDB_NATIVE_BRIDGE_MANIFEST"); }
+  try {
+    manifest = JSON.parse(fs.readFileSync(realManifest, "utf8"));
+  } catch {
+    fail("ArcadeDB native bridge manifest is invalid JSON.", "INVALID_ARCADEDB_NATIVE_BRIDGE_MANIFEST");
+  }
   verifyArcadeDbNativeBridgeManifest(manifest, { platform, arch });
   const binaryPath = path.resolve(path.dirname(realManifest), manifest.binary.relativePath);
   const binaryStat = fs.lstatSync(binaryPath, { throwIfNoEntry: false });
-  if (!inside(root, binaryPath) || !binaryStat?.isFile() || binaryStat.isSymbolicLink()) fail("ArcadeDB native bridge binary is unavailable or unsafe.", "ARCADEDB_NATIVE_BRIDGE_BINARY_MISSING");
+  if (!inside(root, binaryPath) || !binaryStat?.isFile() || binaryStat.isSymbolicLink())
+    fail("ArcadeDB native bridge binary is unavailable or unsafe.", "ARCADEDB_NATIVE_BRIDGE_BINARY_MISSING");
   const realBinary = fs.realpathSync(binaryPath);
-  if (!inside(root, realBinary) || path.dirname(realBinary) !== path.dirname(realManifest)) fail("ArcadeDB native bridge binary escaped its immutable distribution directory.", "ARCADEDB_NATIVE_BRIDGE_PATH_ESCAPE");
-  if (platform !== "win32" && (binaryStat.mode & 0o111) === 0) fail("ArcadeDB native bridge binary is not executable.", "ARCADEDB_NATIVE_BRIDGE_BINARY_NOT_EXECUTABLE");
+  if (!inside(root, realBinary) || path.dirname(realBinary) !== path.dirname(realManifest))
+    fail("ArcadeDB native bridge binary escaped its immutable distribution directory.", "ARCADEDB_NATIVE_BRIDGE_PATH_ESCAPE");
+  if (platform !== "win32" && (binaryStat.mode & 0o111) === 0)
+    fail("ArcadeDB native bridge binary is not executable.", "ARCADEDB_NATIVE_BRIDGE_BINARY_NOT_EXECUTABLE");
   const bytes = fs.readFileSync(realBinary);
-  if (bytes.length !== manifest.binary.size || digest(bytes) !== manifest.binary.sha256) fail("ArcadeDB native bridge binary digest verification failed.", "ARCADEDB_NATIVE_BRIDGE_BINARY_DIGEST_MISMATCH");
+  if (bytes.length !== manifest.binary.size || digest(bytes) !== manifest.binary.sha256)
+    fail("ArcadeDB native bridge binary digest verification failed.", "ARCADEDB_NATIVE_BRIDGE_BINARY_DIGEST_MISMATCH");
   return Object.freeze({ manifest, manifestPath: realManifest, binaryPath: realBinary });
 }

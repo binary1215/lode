@@ -42,23 +42,26 @@ export function codexProxyCommand(platform = process.platform) {
 // Quotes, newlines, and NUL cannot be a single CreateProcess argument.
 // Unicode, spaces, parentheses, apostrophes, 8.3 names, and \\?\ prefixes can.
 function windowsSocketRejected(socketPath) {
-  return typeof socketPath !== "string"
-    || socketPath.length === 0
-    || socketPath.length > 32767
-    || /[\0\r\n"]/u.test(socketPath);
+  return typeof socketPath !== "string" || socketPath.length === 0 || socketPath.length > 32767 || /[\0\r\n"]/u.test(socketPath);
 }
 
 function windowsPathEntries(env) {
-  return String(env?.PATH || env?.Path || "").split(";").map(entry => {
-    const trimmed = entry.trim();
-    if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed.slice(1, -1);
-    return trimmed;
-  }).filter(entry => path.win32.isAbsolute(entry));
+  return String(env?.PATH || env?.Path || "")
+    .split(";")
+    .map((entry) => {
+      const trimmed = entry.trim();
+      if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed.slice(1, -1);
+      return trimmed;
+    })
+    .filter((entry) => path.win32.isAbsolute(entry));
 }
 
 function windowsPathExtensions(env) {
   const raw = env?.PATHEXT || env?.Pathext || ".COM;.EXE;.BAT;.CMD";
-  const extensions = String(raw).split(";").map(item => item.trim()).filter(item => /^\.(?:exe|com|cmd|bat)$/iu.test(item));
+  const extensions = String(raw)
+    .split(";")
+    .map((item) => item.trim())
+    .filter((item) => /^\.(?:exe|com|cmd|bat)$/iu.test(item));
   return extensions.length ? extensions : [".COM", ".EXE", ".BAT", ".CMD"];
 }
 
@@ -69,7 +72,7 @@ export function resolveCodexWindowsTarget({ env = process.env, exists = fs.exist
   for (const dir of windowsPathEntries(env)) {
     for (const extension of windowsPathExtensions(env)) {
       const names = [`codex${extension}`, `codex${extension.toLowerCase()}`];
-      const candidate = names.map(name => path.win32.join(dir, name)).find(file => path.win32.isAbsolute(file) && exists(file));
+      const candidate = names.map((name) => path.win32.join(dir, name)).find((file) => path.win32.isAbsolute(file) && exists(file));
       if (!candidate) continue;
       if (extension.toLowerCase() === ".cmd" || extension.toLowerCase() === ".bat") {
         const parsed = readCodexCmdShim(candidate, exists, readFile, execPath);
@@ -87,21 +90,30 @@ function readCodexCmdShim(cmdFile, exists, readFile, execPath) {
   try {
     const raw = readFile(cmdFile);
     text = Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw);
-  } catch { return null; }
+  } catch {
+    return null;
+  }
   if (text.length > 65536 || text.includes("\0")) return null;
   const match = text.match(/%~?dp0%?\\([^"\r\n]+\.js)/iu);
   if (!match || match[1].includes("\0")) return null;
   const script = path.win32.normalize(path.win32.join(path.win32.dirname(cmdFile), match[1]));
   if (!path.win32.isAbsolute(script) || !script.toLowerCase().endsWith(".js") || !exists(script)) return null;
   const beside = path.win32.join(path.win32.dirname(cmdFile), "node.exe");
-  const node = exists(beside) && path.win32.isAbsolute(beside) ? beside : (path.win32.isAbsolute(execPath) ? execPath : null);
+  const node = exists(beside) && path.win32.isAbsolute(beside) ? beside : path.win32.isAbsolute(execPath) ? execPath : null;
   if (!node) return null;
   return { command: node, args: [script] };
 }
 
 // The socket path is one argv element. shell stays false so cmd.exe does not
 // expand %VAR% or reinterpret Unicode as the OEM code page.
-export function codexProxyLaunch({ platform = process.platform, socketPath, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync, execPath = process.execPath } = {}) {
+export function codexProxyLaunch({
+  platform = process.platform,
+  socketPath,
+  env = process.env,
+  exists = fs.existsSync,
+  readFile = fs.readFileSync,
+  execPath = process.execPath,
+} = {}) {
   if (windowsSocketRejected(socketPath)) return { mode: "none", evidence: "codex-proxy-socket-rejected" };
   const proxyArgs = ["app-server", "proxy", "--sock", socketPath];
   if (platform === "win32") {
@@ -112,22 +124,36 @@ export function codexProxyLaunch({ platform = process.platform, socketPath, env 
   return { mode: "proxy", command: codexProxyCommand(platform), args: proxyArgs, shell: false };
 }
 
-export function codexTransportPlan({ platform = process.platform, socketPath, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync, execPath = process.execPath } = {}) {
+export function codexTransportPlan({
+  platform = process.platform,
+  socketPath,
+  env = process.env,
+  exists = fs.existsSync,
+  readFile = fs.readFileSync,
+  execPath = process.execPath,
+} = {}) {
   const launch = codexProxyLaunch({ platform, socketPath, env, exists, readFile, execPath });
   if (launch.mode !== "proxy") return { mode: "none", evidence: launch.evidence || "codex-engine-unavailable" };
   return { mode: "proxy", command: launch.command, args: launch.args, shell: false };
 }
 
 export function ancestorUsesSharedEngine(commandLines) {
-  return Array.isArray(commandLines) && commandLines.some(line => typeof line === "string"
-    && /\bapp-server\b/u.test(line) && /--listen\b/u.test(line) && /unix:\/\//u.test(line));
+  return (
+    Array.isArray(commandLines) &&
+    commandLines.some((line) => typeof line === "string" && /\bapp-server\b/u.test(line) && /--listen\b/u.test(line) && /unix:\/\//u.test(line))
+  );
 }
 
 export function windowsProcessQuery(pid) {
   return {
     file: absoluteSystemExecutable("powershell.exe"),
-    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
-      `Get-CimInstance Win32_Process -Filter "ProcessId = ${Number(pid)}" | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress`],
+    args: [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `Get-CimInstance Win32_Process -Filter "ProcessId = ${Number(pid)}" | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress`,
+    ],
   };
 }
 
@@ -158,11 +184,14 @@ export function linuxAncestors(pid = process.pid, readFile = fs.readFileSync) {
   const seen = new Set();
   while (current > 0 && !seen.has(current) && lines.length < 32) {
     seen.add(current);
-    let command = "", status = "";
+    let command = "",
+      status = "";
     try {
       command = readFile(`/proc/${current}/cmdline`).toString("utf8").replaceAll("\0", " ").trim();
       status = readFile(`/proc/${current}/status`, "utf8");
-    } catch { break; }
+    } catch {
+      break;
+    }
     if (command) lines.push(command);
     const parent = /^PPid:\s+(\d+)/mu.exec(status);
     if (!parent) break;
@@ -213,28 +242,41 @@ function ancestorWalk(pid, readOne) {
 export function collectAncestors({ platform = process.platform, environment = process.env, pid = process.pid, spawnSyncImpl = spawnSync } = {}) {
   if (typeof environment?.LODE_CONVERSATION_ANCESTORS === "string") return environment.LODE_CONVERSATION_ANCESTORS.split("\n");
   if (platform === "darwin") {
-    return ancestorWalk(pid, current => {
+    return ancestorWalk(pid, (current) => {
       let result;
-      try { result = spawnSyncImpl("ps", ["-o", "ppid=,command=", "-p", String(current)], { encoding: "utf8", timeout: 2000, shell: false, env: { ...process.env, LC_ALL: "C", TZ: "UTC" } }); }
-      catch { return null; }
+      try {
+        result = spawnSyncImpl("ps", ["-o", "ppid=,command=", "-p", String(current)], {
+          encoding: "utf8",
+          timeout: 2000,
+          shell: false,
+          env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
+        });
+      } catch {
+        return null;
+      }
       const match = /^\s*(\d+)\s+(.*)$/u.exec(String(result?.stdout || ""));
       if (!match || result.status !== 0) return null;
       return { parent: Number(match[1]), command: match[2].trim() };
     });
   }
   if (platform === "win32") {
-    return ancestorWalk(pid, current => {
+    return ancestorWalk(pid, (current) => {
       const command = windowsProcessQuery(current);
       let result;
-      try { result = spawnSyncImpl(command.file, command.args, { encoding: "utf8", timeout: 2000, windowsHide: true, shell: false }); }
-      catch { return null; }
+      try {
+        result = spawnSyncImpl(command.file, command.args, { encoding: "utf8", timeout: 2000, windowsHide: true, shell: false });
+      } catch {
+        return null;
+      }
       try {
         const parsed = JSON.parse(result?.stdout || "null");
         const rows = Array.isArray(parsed) ? parsed : [parsed];
-        const row = rows.find(item => Number(item?.ProcessId) === current) || null;
+        const row = rows.find((item) => Number(item?.ProcessId) === current) || null;
         if (!row) return null;
         return { parent: Number(row.ParentProcessId), command: typeof row.CommandLine === "string" ? row.CommandLine : "" };
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     });
   }
   if (platform === "linux") return linuxAncestors(pid);
@@ -255,7 +297,16 @@ export function codexLive(record, { recent }) {
 }
 
 export function codexDeliver({ message, presence, platform, environment, signal, assertTarget }) {
-  return deliverCodexTurn({ socketPath: presence.channel.socketPath, platform, threadId: presence.nativeSessionId, text: message.text, root: message.projectRoot, env: environment, signal, assertTarget });
+  return deliverCodexTurn({
+    socketPath: presence.channel.socketPath,
+    platform,
+    threadId: presence.nativeSessionId,
+    text: message.text,
+    root: message.projectRoot,
+    env: environment,
+    signal,
+    assertTarget,
+  });
 }
 
 function rpc(id, method, params) {
@@ -263,9 +314,10 @@ function rpc(id, method, params) {
 }
 
 function readResponse(child, id, timeoutMs, signal) {
-  return new Promise(resolve => {
-    let buffer = "", settled = false;
-    const finish = value => {
+  return new Promise((resolve) => {
+    let buffer = "",
+      settled = false;
+    const finish = (value) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -275,51 +327,101 @@ function readResponse(child, id, timeoutMs, signal) {
     };
     const timer = setTimeout(() => finish(null), timeoutMs);
     const abort = () => finish(null);
-    const onData = chunk => {
+    const onData = (chunk) => {
       buffer += chunk.toString("utf8");
-      if (Buffer.byteLength(buffer, "utf8") > 1024 * 1024) { finish(null); return; }
+      if (Buffer.byteLength(buffer, "utf8") > 1024 * 1024) {
+        finish(null);
+        return;
+      }
       let boundary;
       while ((boundary = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 1);
+        const line = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 1);
         if (!line) continue;
         try {
           const parsed = JSON.parse(line);
           if (parsed.id === id) finish(parsed);
-        } catch { /* Notifications and partial lines are ignored until a matching id. */ }
+        } catch {
+          /* Notifications and partial lines are ignored until a matching id. */
+        }
       }
     };
     child.stdout?.on("data", onData);
-    if (signal?.aborted) abort(); else signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
   });
 }
 
 function writeLine(child, line) {
   return new Promise((resolve, reject) => {
-    child.stdin.write(line, error => error ? reject(error) : resolve());
+    child.stdin.write(line, (error) => (error ? reject(error) : resolve()));
   });
 }
 
 // Only a known pre-turn failure can queue. Once turn/start may have been written,
 // a missing response is unknown and must not cause automatic prompt redelivery.
-export async function deliverCodexTurn({ socketPath, platform = process.platform, threadId, text, root, pluginRoot = path.resolve(import.meta.dirname, "../.."), supervisorSelection = null, spawnImpl = spawn, timeoutMs = 3000, env = process.env, exists = fs.existsSync, readFile = fs.readFileSync, execPath = process.execPath, signal, assertTarget } = {}) {
+export async function deliverCodexTurn({
+  socketPath,
+  platform = process.platform,
+  threadId,
+  text,
+  root,
+  pluginRoot = path.resolve(import.meta.dirname, "../.."),
+  supervisorSelection = null,
+  spawnImpl = spawn,
+  timeoutMs = 3000,
+  env = process.env,
+  exists = fs.existsSync,
+  readFile = fs.readFileSync,
+  execPath = process.execPath,
+  signal,
+  assertTarget,
+} = {}) {
   if (signal?.aborted) return { outcome: "unavailable", evidence: "codex-proxy-cancelled-before-start" };
   const plan = codexProxyLaunch({ platform, socketPath, env, exists, readFile, execPath });
   if (plan.mode !== "proxy" || typeof threadId !== "string" || typeof text !== "string") {
     return { outcome: "unavailable", evidence: plan.evidence || "codex-engine-unavailable" };
   }
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000) return { outcome: "unavailable", evidence: "codex-proxy-limit-invalid" };
-  let child, transport, turnAttempted = false, outcome, refusal;
+  let child,
+    transport,
+    turnAttempted = false,
+    outcome,
+    refusal;
   const protocol = async () => {
     if (spawnImpl !== spawn) {
       // Private protocol fault fixtures only. CLI/MCP never accept or forward
       // a spawn callback, endpoint override or supervisor selection argument.
-      if (!process.env.NODE_TEST_CONTEXT && !process.execArgv.includes("--test")) return { outcome: "unavailable", evidence: "codex-proxy-fixture-outside-test" };
+      if (!process.env.NODE_TEST_CONTEXT && !process.execArgv.includes("--test"))
+        return { outcome: "unavailable", evidence: "codex-proxy-fixture-outside-test" };
       child = spawnImpl(plan.command, plan.args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, shell: false });
     } else {
       if (typeof root !== "string" || !path.isAbsolute(root)) return { outcome: "unavailable", evidence: "codex-proxy-project-unavailable" };
-      const executablePath = path.isAbsolute(plan.command) ? plan.command : String(env.PATH || env.Path || "").split(path.delimiter).filter(directory => path.isAbsolute(directory)).map(directory => path.join(directory, plan.command)).find(file => { try { return fs.statSync(file).isFile(); } catch { return false; } });
+      const executablePath = path.isAbsolute(plan.command)
+        ? plan.command
+        : String(env.PATH || env.Path || "")
+            .split(path.delimiter)
+            .filter((directory) => path.isAbsolute(directory))
+            .map((directory) => path.join(directory, plan.command))
+            .find((file) => {
+              try {
+                return fs.statSync(file).isFile();
+              } catch {
+                return false;
+              }
+            });
       if (!executablePath) return { outcome: "unavailable", evidence: "codex-proxy-unresolved" };
-      transport = openConversationCodexProxy({ executablePath, args: plan.args, root, environment: env, pluginRoot, supervisorSelection, timeoutMs: 4 * timeoutMs + 6000, signal, assertTarget });
+      transport = openConversationCodexProxy({
+        executablePath,
+        args: plan.args,
+        root,
+        environment: env,
+        pluginRoot,
+        supervisorSelection,
+        timeoutMs: 4 * timeoutMs + 6000,
+        signal,
+        assertTarget,
+      });
       child = transport.child;
     }
     const initialize = readResponse(child, 1, timeoutMs, signal);
@@ -345,16 +447,30 @@ export async function deliverCodexTurn({ socketPath, platform = process.platform
     outcome = await protocol();
   } catch (error) {
     if (error.conversationTargetRefused) refusal = error;
-    outcome = { outcome: turnAttempted ? "unknown" : "unavailable", evidence: error?.code === "EINVAL" ? "codex-proxy-spawn-rejected" : "codex-proxy-failed", reasonCode: error.code ?? null };
+    outcome = {
+      outcome: turnAttempted ? "unknown" : "unavailable",
+      evidence: error?.code === "EINVAL" ? "codex-proxy-spawn-rejected" : "codex-proxy-failed",
+      reasonCode: error.code ?? null,
+    };
   } finally {
     if (transport) {
       let cleanup;
-      try { cleanup = await transport.close(); } catch (error) { cleanup = { verified: false, code: error.code || "CONVERSATION_PROXY_CLEANUP_UNVERIFIED" }; }
-      if (!cleanup.verified) outcome = { outcome: turnAttempted ? "unknown" : "unavailable", evidence: "codex-proxy-cleanup-unverified", deliveryEvidence: outcome, cleanup };
+      try {
+        cleanup = await transport.close();
+      } catch (error) {
+        cleanup = { verified: false, code: error.code || "CONVERSATION_PROXY_CLEANUP_UNVERIFIED" };
+      }
+      if (!cleanup.verified)
+        outcome = { outcome: turnAttempted ? "unknown" : "unavailable", evidence: "codex-proxy-cleanup-unverified", deliveryEvidence: outcome, cleanup };
       else outcome = { ...outcome, cleanup };
       if (refusal && !cleanup.verified) refusal.proxyCleanup = cleanup;
     } else {
-      try { child?.stdin?.end(); child?.kill?.(); } catch { /* Synthetic protocol fixture only. */ }
+      try {
+        child?.stdin?.end();
+        child?.kill?.();
+      } catch {
+        /* Synthetic protocol fixture only. */
+      }
     }
   }
   if (refusal) throw refusal;

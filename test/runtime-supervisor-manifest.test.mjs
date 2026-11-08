@@ -13,8 +13,18 @@ import {
   PROCESS_SUPERVISOR_INTERACTIVE_PROTOCOL_VERSION,
 } from "../scripts/lib/runtime-process-supervisor.mjs";
 
-console.log(JSON.stringify({ event: "supervisor-manifest-test", pid: process.pid, parentPid: process.ppid,
-  command: process.execPath, args: process.argv.slice(1), cwd: process.cwd(), ports: [], nativeExecutionPerformed: false }));
+console.log(
+  JSON.stringify({
+    event: "supervisor-manifest-test",
+    pid: process.pid,
+    parentPid: process.ppid,
+    command: process.execPath,
+    args: process.argv.slice(1),
+    cwd: process.cwd(),
+    ports: [],
+    nativeExecutionPerformed: false,
+  }),
+);
 
 const targets = [
   ["win32", "x64", "windows-x64", "lode-agent-supervisor.exe"],
@@ -42,11 +52,22 @@ function fixture(t, target = targets.find(([platform, arch]) => platform === pro
 }
 
 function reidentify(value) {
-  const sort = (item) => Array.isArray(item) ? item.map(sort) : item && typeof item === "object"
-    ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, sort(item[key])])) : item;
+  const sort = (item) =>
+    Array.isArray(item)
+      ? item.map(sort)
+      : item && typeof item === "object"
+        ? Object.fromEntries(
+            Object.keys(item)
+              .sort()
+              .map((key) => [key, sort(item[key])]),
+          )
+        : item;
   delete value.manifestId;
   delete value.manifestHash;
-  const manifestHash = crypto.createHash("sha256").update(JSON.stringify(sort(value))).digest("hex");
+  const manifestHash = crypto
+    .createHash("sha256")
+    .update(JSON.stringify(sort(value)))
+    .digest("hex");
   return { ...value, manifestHash, manifestId: `process-supervisor-manifest-${manifestHash.slice(0, 24)}` };
 }
 
@@ -60,7 +81,8 @@ test("manifest declares process and file-effect protocols without platform capab
     assert.equal(manifest.supervisorProtocolVersion, PROCESS_SUPERVISOR_PROTOCOL_VERSION);
     assert.equal(manifest.capabilities.declarationOnly, true);
     assert.deepEqual(manifest.capabilities.processSupervision, {
-      oneShotProtocolVersion: "0.1.0", jobProtocolVersion: "0.1.0",
+      oneShotProtocolVersion: "0.1.0",
+      jobProtocolVersion: "0.1.0",
       detachedJobAvailability: "runtime-platform-preflight-required",
       interactiveProtocolVersion: "0.1.0",
       interactiveTransport: "bounded-bootstrap-line-streaming-stdio",
@@ -73,14 +95,20 @@ test("manifest declares process and file-effect protocols without platform capab
       shellInterpretation: false,
     });
     assert.deepEqual(manifest.capabilities.fileEffects, {
-      transport: "single-request-stdio", transportProtocolVersion: "0.1.0", imageProtocolVersion: "0.1.0",
+      transport: "single-request-stdio",
+      transportProtocolVersion: "0.1.0",
+      imageProtocolVersion: "0.1.0",
       operations: ["probe", "inspect", "edit", "retry", "image-preflight", "image-apply", "image-inspect", "image-retry"],
       availability: "runtime-platform-and-target-preflight-required",
     });
     assert.deepEqual(manifest.authority, {
       kind: "bounded-operational-process-and-file-effects",
-      instructionAuthority: false, promotionAuthority: false, recoveryAuthority: false,
-      grantsExecutionAuthorization: false, grantsWriteAuthorization: false, mutatesCanon: false,
+      instructionAuthority: false,
+      promotionAuthority: false,
+      recoveryAuthority: false,
+      grantsExecutionAuthorization: false,
+      grantsWriteAuthorization: false,
+      mutatesCanon: false,
     });
   }
   const nativeRoot = new URL("../native/lode-agent-worker/internal/", import.meta.url);
@@ -99,18 +127,32 @@ test("manifest declares process and file-effect protocols without platform capab
 test("interactive declaration is exact and cannot imply provider authorization or weaken one-shot framing", (t) => {
   const f = fixture(t);
   for (const mutate of [
-    (value) => { value.manifestVersion = "0.2.0"; },
+    (value) => {
+      value.manifestVersion = "0.2.0";
+    },
     (value) => {
       value.manifestVersion = "0.2.0";
       delete value.capabilities.processSupervision.interactiveProtocolVersion;
       delete value.capabilities.processSupervision.interactiveTransport;
     },
-    (value) => { delete value.capabilities.processSupervision.interactiveProtocolVersion; },
-    (value) => { delete value.capabilities.processSupervision.interactiveTransport; },
-    (value) => { value.capabilities.processSupervision.interactiveProtocolVersion = "99.0.0"; },
-    (value) => { value.capabilities.processSupervision.interactiveTransport = "unbounded-streaming-stdio"; },
-    (value) => { value.capabilities.processSupervision.providerSessionAuthorized = true; },
-    (value) => { value.processModel.transport = "bounded-bootstrap-line-streaming-stdio"; },
+    (value) => {
+      delete value.capabilities.processSupervision.interactiveProtocolVersion;
+    },
+    (value) => {
+      delete value.capabilities.processSupervision.interactiveTransport;
+    },
+    (value) => {
+      value.capabilities.processSupervision.interactiveProtocolVersion = "99.0.0";
+    },
+    (value) => {
+      value.capabilities.processSupervision.interactiveTransport = "unbounded-streaming-stdio";
+    },
+    (value) => {
+      value.capabilities.processSupervision.providerSessionAuthorized = true;
+    },
+    (value) => {
+      value.processModel.transport = "bounded-bootstrap-line-streaming-stdio";
+    },
   ]) {
     const value = structuredClone(f.manifest);
     mutate(value);
@@ -121,10 +163,22 @@ test("interactive declaration is exact and cannot imply provider authorization o
 test("a self-consistent manifest digest cannot amplify authority or conceal physical file effects", (t) => {
   const f = fixture(t);
   const mutations = [
-    ...Object.keys(f.manifest.authority).filter((key) => key !== "kind").map((key) => (value) => { value.authority[key] = true; }),
-    (value) => { value.authority.kind = "operational-process-control-only"; },
-    (value) => { value.authority.approvedBy = "caller-asserted-user"; },
-    (value) => { value.schemaVersion = 1; value.manifestVersion = "0.1.0"; delete value.capabilities; },
+    ...Object.keys(f.manifest.authority)
+      .filter((key) => key !== "kind")
+      .map((key) => (value) => {
+        value.authority[key] = true;
+      }),
+    (value) => {
+      value.authority.kind = "operational-process-control-only";
+    },
+    (value) => {
+      value.authority.approvedBy = "caller-asserted-user";
+    },
+    (value) => {
+      value.schemaVersion = 1;
+      value.manifestVersion = "0.1.0";
+      delete value.capabilities;
+    },
   ];
   for (const mutate of mutations) {
     const value = structuredClone(f.manifest);
@@ -136,13 +190,27 @@ test("a self-consistent manifest digest cannot amplify authority or conceal phys
 test("manifest capabilities cannot replace current platform and exact-target preflight", (t) => {
   const f = fixture(t);
   for (const mutate of [
-    (value) => { value.capabilities.declarationOnly = false; },
-    (value) => { value.capabilities.fileEffects.availability = "supported"; },
-    (value) => { value.capabilities.fileEffects.preflightPassed = true; },
-    (value) => { value.capabilities.fileEffects.operations.push("unbounded-write"); },
-    (value) => { value.capabilities.fileEffects.operations = ["probe", "inspect"]; },
-    (value) => { value.capabilities.fileEffects.imageProtocolVersion = "99.0.0"; },
-    (value) => { value.capabilities.processSupervision.detachedJobAvailability = "supported-on-all-platforms"; },
+    (value) => {
+      value.capabilities.declarationOnly = false;
+    },
+    (value) => {
+      value.capabilities.fileEffects.availability = "supported";
+    },
+    (value) => {
+      value.capabilities.fileEffects.preflightPassed = true;
+    },
+    (value) => {
+      value.capabilities.fileEffects.operations.push("unbounded-write");
+    },
+    (value) => {
+      value.capabilities.fileEffects.operations = ["probe", "inspect"];
+    },
+    (value) => {
+      value.capabilities.fileEffects.imageProtocolVersion = "99.0.0";
+    },
+    (value) => {
+      value.capabilities.processSupervision.detachedJobAvailability = "supported-on-all-platforms";
+    },
   ]) {
     const value = structuredClone(f.manifest);
     mutate(value);

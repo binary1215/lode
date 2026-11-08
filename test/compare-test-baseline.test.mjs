@@ -8,7 +8,7 @@ import { compareFailing, failingTests } from "../scripts/compare-test-baseline.m
 
 const script = path.resolve(import.meta.dirname, "../scripts/compare-test-baseline.mjs");
 
-const tap = lines => `TAP version 13\n${lines.join("\n")}\n`;
+const tap = (lines) => `TAP version 13\n${lines.join("\n")}\n`;
 const base = tap([
   "# Subtest: always fails without Go",
   "not ok 1 - always fails without Go",
@@ -24,7 +24,7 @@ const base = tap([
   "ok 5 - skipped # SKIP optional helper",
   "1..5",
   "# tests 6",
-  "# fail 4"
+  "# fail 4",
 ]);
 const branch = tap([
   "# Subtest: always fails without Go",
@@ -41,32 +41,36 @@ const branch = tap([
   "# Subtest: always fails without Go",
   "not ok 5 - always fails without Go",
   "1..5",
-  "# tests 6"
+  "# tests 6",
 ]);
 
 test("failing names keep their subtest path, count duplicates and ignore TODO and SKIP", () => {
   const parsed = failingTests(base);
   assert.equal(parsed.total, 6);
-  assert.deepEqual([...parsed.failing], [
-    ["always fails without Go", 1],
-    ["parent > child", 1],
-    ["parent", 1],
-    ["fixed later", 1]
-  ]);
+  assert.deepEqual(
+    [...parsed.failing],
+    [
+      ["always fails without Go", 1],
+      ["parent > child", 1],
+      ["parent", 1],
+      ["fixed later", 1],
+    ],
+  );
 });
 
 test("the comparison reports only new and fixed failures", () => {
   assert.deepEqual(compareFailing(failingTests(base), failingTests(branch)), {
     added: ["always fails without Go", "new break"],
-    fixed: ["fixed later"]
+    fixed: ["fixed later"],
   });
   assert.deepEqual(compareFailing(failingTests(base), failingTests(base)), { added: [], fixed: [] });
 });
 
-test("the CLI exits 1 on a new failure, 0 without one and 2 on a usage error", async t => {
+test("the CLI exits 1 on a new failure, 0 without one and 2 on a usage error", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "lode-compare-baseline-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const baseFile = path.join(root, "base.tap"), branchFile = path.join(root, "branch.tap");
+  const baseFile = path.join(root, "base.tap"),
+    branchFile = path.join(root, "branch.tap");
   fs.writeFileSync(baseFile, base);
   fs.writeFileSync(branchFile, branch);
   const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });

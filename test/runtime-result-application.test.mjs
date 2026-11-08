@@ -13,13 +13,33 @@ import { createExecutionContract, createWholePlanSnapshot, readLineageArtifact }
 import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
 import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
 import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization, buildRuntimeInvocationLifecycleReceipt, buildRuntimeResultPacketDraft, normalizeRuntimeEvent, prepareRuntimeInvocationExecution, verifyRuntimeInvocationCurrentLineage, runRuntimeLifecycleConformance, reconcileWorkerMember } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { RUNTIME_OPERATIONAL_STATE_ENV, withRuntimeExecutionLease, inspectRuntimeExecutionLease, createRuntimePreConsumeGateCapability } from "../scripts/lib/runtime-execution-lease.mjs";
+import {
+  buildRuntimeInvocationAuthorization,
+  buildRuntimeInvocationLifecycleReceipt,
+  buildRuntimeResultPacketDraft,
+  normalizeRuntimeEvent,
+  prepareRuntimeInvocationExecution,
+  verifyRuntimeInvocationCurrentLineage,
+  runRuntimeLifecycleConformance,
+  reconcileWorkerMember,
+} from "../scripts/lib/runtime-invocation-lifecycle.mjs";
+import {
+  RUNTIME_OPERATIONAL_STATE_ENV,
+  withRuntimeExecutionLease,
+  inspectRuntimeExecutionLease,
+  createRuntimePreConsumeGateCapability,
+} from "../scripts/lib/runtime-execution-lease.mjs";
 import { persistRuntimeInvocationRecord, readRuntimeInvocationRecord } from "../scripts/lib/runtime-invocation-record.mjs";
 import { applyRuntimeRunResult, readRuntimeInvocationResult } from "../scripts/lib/runtime-run-result-application.mjs";
 import { withProjectMutationAsync } from "../scripts/lib/project-mutation-lock.mjs";
 import { createBoundedWorkerDispatch } from "../scripts/lib/bounded-worker-dispatch.mjs";
-import { createBoundedWorkerJobHost, startBoundedWorkerJob, readBoundedWorkerJob, cancelBoundedWorkerJob, reconcileBoundedWorkerJob } from "../scripts/lib/bounded-worker-job.mjs";
+import {
+  createBoundedWorkerJobHost,
+  startBoundedWorkerJob,
+  readBoundedWorkerJob,
+  cancelBoundedWorkerJob,
+  reconcileBoundedWorkerJob,
+} from "../scripts/lib/bounded-worker-job.mjs";
 import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process-supervisor.mjs";
 import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
 import { prepareWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker-workspace.mjs";
@@ -36,19 +56,36 @@ import { dispatch as dispatchMcp, catalogTools as mcpTools } from "../scripts/mc
 // generated catalog and Hook assertions use the canonical Lode vocabulary.
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
-console.log(JSON.stringify({ event: "owned-runtime-application-test", pid: process.pid, parentPid: process.ppid, command: process.execPath, args: process.argv.slice(1), cwd: process.cwd(), ports: [], liveProviderInvoked: false }));
+console.log(
+  JSON.stringify({
+    event: "owned-runtime-application-test",
+    pid: process.pid,
+    parentPid: process.ppid,
+    command: process.execPath,
+    args: process.argv.slice(1),
+    cwd: process.cwd(),
+    ports: [],
+    liveProviderInvoked: false,
+  }),
+);
 
 function fixedCapabilitySpawn(_command, args) {
   const key = args.join(" ");
-  const output = key === "--version" ? "codex 1.2.3\n"
-    : key === "--help" ? "exec\nmcp-server\napp-server\n"
-      : key === "exec --help" ? "Run Codex non-interactively\n--json\n--output-schema\n--color\n--sandbox\n--skip-git-repo-check\n--cd\n--ephemeral\nresume\n"
-        : "stdio://\ngenerate-json-schema\n--listen\n";
+  const output =
+    key === "--version"
+      ? "codex 1.2.3\n"
+      : key === "--help"
+        ? "exec\nmcp-server\napp-server\n"
+        : key === "exec --help"
+          ? "Run Codex non-interactively\n--json\n--output-schema\n--color\n--sandbox\n--skip-git-repo-check\n--cd\n--ephemeral\nresume\n"
+          : "stdio://\ngenerate-json-schema\n--listen\n";
   // Discovery is modeled data in this record/application fixture, not process
   // conformance. Keep actual child/stdio/termination coverage in runtime tests.
   const child = new EventEmitter();
   Object.assign(child, { pid: 1, stdout: new EventEmitter(), stderr: new EventEmitter(), exitCode: null, signalCode: null });
-  child.kill = () => { throw new Error("No actual process in discovery fixture"); };
+  child.kill = () => {
+    throw new Error("No actual process in discovery fixture");
+  };
   queueMicrotask(() => {
     child.stdout.emit("data", Buffer.from(output));
     child.exitCode = 0;
@@ -85,8 +122,19 @@ async function fixture(t, { withWave = false, withWrite = false } = {}) {
   assert.equal(fs.existsSync(path.resolve(root, ".lode/project.json")), true);
   assert.equal(fs.existsSync(path.resolve(root, ".head/project.json")), false);
   const capsule = (await compileContext({ root, task: "Verify a synthetic completed record is applied to its own Run", persist: true })).capsule;
-  const plan = createWholePlanSnapshot({ root, objective: "Verify exact application target", plan: [{ id: "apply", outcome: "Exact application evidence" }] }).artifact;
-  const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId, scope: "Synthetic fixture A only", acceptanceCriteria: ["Preserve exact Run identity"], allowedActions: ["runtime.invoke", "project.read", ...(withWrite ? ["project.write"] : [])] }).artifact;
+  const plan = createWholePlanSnapshot({
+    root,
+    objective: "Verify exact application target",
+    plan: [{ id: "apply", outcome: "Exact application evidence" }],
+  }).artifact;
+  const contract = createExecutionContract({
+    root,
+    wholePlanId: plan.wholePlanId,
+    capsuleId: capsule.capsuleId,
+    scope: "Synthetic fixture A only",
+    acceptanceCriteria: ["Preserve exact Run identity"],
+    allowedActions: ["runtime.invoke", "project.read", ...(withWrite ? ["project.write"] : [])],
+  }).artifact;
   const run = startRun({ root, executionContractId: contract.executionContractId }).run;
   const executable = path.join(bin, process.platform === "win32" ? "codex.exe" : "codex");
   fs.writeFileSync(executable, "Capability schema fixture, never executed as a provider\n");
@@ -97,13 +145,34 @@ async function fixture(t, { withWave = false, withWrite = false } = {}) {
   const versionEvidence = await buildRuntimeVersionEvidence({ runtimes: ["codex"], environment, spawnImplementation: fixedCapabilitySpawn });
   const protocolEvidence = await buildRuntimeProtocolEvidence({ runtimes: ["codex"], environment, versionEvidence, spawnImplementation: fixedCapabilitySpawn });
   const inspected = inspectProject(root);
-  const projectBinding = buildRuntimeProjectBinding({ storage, projectId: inspected.project.projectId, headSessionId: inspected.state.sessionId, projectRoot: root, projectStatus: "ready", versionEvidence, protocolEvidence });
-  const authorization = buildRuntimeInvocationAuthorization({ root, runtime: "codex", protocolEvidence, projectBinding, scope: { kind: "run" }, persist: true }).authorization;
+  const projectBinding = buildRuntimeProjectBinding({
+    storage,
+    projectId: inspected.project.projectId,
+    headSessionId: inspected.state.sessionId,
+    projectRoot: root,
+    projectStatus: "ready",
+    versionEvidence,
+    protocolEvidence,
+  });
+  const authorization = buildRuntimeInvocationAuthorization({
+    root,
+    runtime: "codex",
+    protocolEvidence,
+    projectBinding,
+    scope: { kind: "run" },
+    persist: true,
+  }).authorization;
   assert.equal(authorization.projectRootDigest, hash(root));
   let wave = null;
   if (withWave) {
-    const other = buildRuntimeInvocationAuthorization({ root, runtime: "codex", protocolEvidence, projectBinding,
-      limits: { timeoutMs: authorization.limits.timeoutMs + 1 }, persist: true }).authorization;
+    const other = buildRuntimeInvocationAuthorization({
+      root,
+      runtime: "codex",
+      protocolEvidence,
+      projectBinding,
+      limits: { timeoutMs: authorization.limits.timeoutMs + 1 },
+      persist: true,
+    }).authorization;
     createBoundedWorkerDispatch({ root, authorizationId: authorization.authorizationId, role: "coder" });
     createBoundedWorkerDispatch({ root, authorizationId: other.authorizationId, role: "reviewer" });
     wave = createBoundedWorkerWave({ root, authorizationIds: [authorization.authorizationId, other.authorizationId] }).wave;
@@ -111,12 +180,57 @@ async function fixture(t, { withWave = false, withWrite = false } = {}) {
   // Model a completed-provider RECORD with real builders, hashes, durable lease,
   // and record readers. The operational booleans below are synthetic fixture
   // data, not real provider/supervisor observations or live conformance evidence.
-  const providerResult = { schemaVersion: 1, kind: "RuntimeStructuredResult", protocolVersion: "0.1.0", outcome: "SCHEMA FIXTURE ONLY: modeled completed A result", evidence: ["Synthetic record fixture, no provider invoked"], planDelta: "", impactRadius: [], verification: ["Validate stored schema and application target only"], unknowns: ["No live provider or supervisor execution was tested"] };
+  const providerResult = {
+    schemaVersion: 1,
+    kind: "RuntimeStructuredResult",
+    protocolVersion: "0.1.0",
+    outcome: "SCHEMA FIXTURE ONLY: modeled completed A result",
+    evidence: ["Synthetic record fixture, no provider invoked"],
+    planDelta: "",
+    impactRadius: [],
+    verification: ["Validate stored schema and application target only"],
+    unknowns: ["No live provider or supervisor execution was tested"],
+  };
   const events = [normalizeRuntimeEvent({ authorization, sequence: 0, line: JSON.stringify({ type: "turn.completed", fixtureOnly: true }) })];
-  const leased = await withRuntimeExecutionLease({ projectRoot: root, authorization, ownerFenceDigest: hash("synthetic fixture owner") }, async ({ consumption }) => ({ receipt: buildRuntimeInvocationLifecycleReceipt({
-    authorization, events, consumption, status: "completed", exitCode: 0, signal: "", stdoutBytes: 0, stderrBytes: 0, stdoutDigest: hash(""), stderrDigest: hash(""), callerFenceDigest: hash("synthetic caller"), childFenceDigest: hash("synthetic child"), childStarted: true, childExitObserved: true, terminationRequested: false, projectFenceValidated: true, inputDigestObserved: authorization.executionInput.digest, noDescendantFixture: false, descendantTreeOwnershipValidated: true, providerMode: "actual-codex", providerSessionCreated: true, structuredResult: providerResult,
-    supervision: { supervisionMode: "native-process-tree", supervisionStrategy: process.platform === "win32" ? "windows-job-object" : "posix-process-group", supervisorManifestDigest: hash("synthetic manifest"), ownershipEstablished: true, providerChildStarted: true, providerChildExitObserved: true, treeCleanupAttempted: true, treeCleanupVerified: true },
-  }) }));
+  const leased = await withRuntimeExecutionLease(
+    { projectRoot: root, authorization, ownerFenceDigest: hash("synthetic fixture owner") },
+    async ({ consumption }) => ({
+      receipt: buildRuntimeInvocationLifecycleReceipt({
+        authorization,
+        events,
+        consumption,
+        status: "completed",
+        exitCode: 0,
+        signal: "",
+        stdoutBytes: 0,
+        stderrBytes: 0,
+        stdoutDigest: hash(""),
+        stderrDigest: hash(""),
+        callerFenceDigest: hash("synthetic caller"),
+        childFenceDigest: hash("synthetic child"),
+        childStarted: true,
+        childExitObserved: true,
+        terminationRequested: false,
+        projectFenceValidated: true,
+        inputDigestObserved: authorization.executionInput.digest,
+        noDescendantFixture: false,
+        descendantTreeOwnershipValidated: true,
+        providerMode: "actual-codex",
+        providerSessionCreated: true,
+        structuredResult: providerResult,
+        supervision: {
+          supervisionMode: "native-process-tree",
+          supervisionStrategy: process.platform === "win32" ? "windows-job-object" : "posix-process-group",
+          supervisorManifestDigest: hash("synthetic manifest"),
+          ownershipEstablished: true,
+          providerChildStarted: true,
+          providerChildExitObserved: true,
+          treeCleanupAttempted: true,
+          treeCleanupVerified: true,
+        },
+      }),
+    }),
+  );
   const receipt = leased.result.receipt;
   const draft = buildRuntimeResultPacketDraft({ authorization, receipt, leaseRelease: leased.release, providerResult });
   persistRuntimeInvocationRecord({ projectRoot: root, authorization, events, receipt, draft });
@@ -126,32 +240,46 @@ async function fixture(t, { withWave = false, withWrite = false } = {}) {
   return { storage, root, operational, run, plan, capsule, contract, authorization, record, wave, protocolEvidence, projectBinding, beforeCleanup };
 }
 
-test("wave guidance separates seal readiness, wait cancellation, member failure and cleanup", async t => {
+test("wave guidance separates seal readiness, wait cancellation, member failure and cleanup", async (t) => {
   const f = await fixture(t, { withWave: true });
   const input = { root: f.root, waveId: f.wave.waveId };
-  const pointer = path.join(f.root, f.storage.directory, "sessions/current.json"), before = fs.readFileSync(pointer);
+  const pointer = path.join(f.root, f.storage.directory, "sessions/current.json"),
+    before = fs.readFileSync(pointer);
   const status = () => readBoundedWorkerWaveStatus(input).projection;
   assert.equal(status().guidance.aggregateAvailable, false);
   assert.equal(status().guidance.canSeal, false);
   await assert.rejects(waitForBoundedWorkerWave(input), { code: "BOUNDED_WORKER_WAVE_NOT_SEALED" });
-  const otherId = f.wave.members.find(m => m.authorizationId !== f.authorization.authorizationId).authorizationId;
+  const otherId = f.wave.members.find((m) => m.authorizationId !== f.authorization.authorizationId).authorizationId;
   const other = JSON.parse(fs.readFileSync(path.join(f.root, f.storage.directory, "runtime/execution-authorizations", `${otherId}.json`)));
   let release, ready;
-  const started = new Promise(resolve => { ready = resolve; });
-  const hold = new Promise(resolve => { release = resolve; });
-  const pending = withRuntimeExecutionLease({ projectRoot: f.root, authorization: other, ownerFenceDigest: hash("wave fixture") },
-    async () => { ready(); await hold; throw Error("Synthetic terminal failure"); }).catch(error => error);
-  f.beforeCleanup.push(async () => { release(); await pending; });
+  const started = new Promise((resolve) => {
+    ready = resolve;
+  });
+  const hold = new Promise((resolve) => {
+    release = resolve;
+  });
+  const pending = withRuntimeExecutionLease({ projectRoot: f.root, authorization: other, ownerFenceDigest: hash("wave fixture") }, async () => {
+    ready();
+    await hold;
+    throw Error("Synthetic terminal failure");
+  }).catch((error) => error);
+  f.beforeCleanup.push(async () => {
+    release();
+    await pending;
+  });
   await started;
-  assert.equal(status().state, "open"); assert.equal(status().guidance.canSeal, true);
+  assert.equal(status().state, "open");
+  assert.equal(status().guidance.canSeal, true);
   sealBoundedWorkerWave(input);
   const active = status();
   assert.equal(active.state, "sealed");
   assert.deepEqual(active.guidance.unsettledMemberAuthorizationIds, [otherId]);
-  const controller = new AbortController(); controller.abort();
+  const controller = new AbortController();
+  controller.abort();
   await assert.rejects(waitForBoundedWorkerWave({ ...input, signal: controller.signal }), { code: "BOUNDED_WORKER_WAVE_WAIT_ABORTED" });
   assert.equal(status().counts.waiting, 1, "Aborting wait must not cancel a member");
-  release(); await pending;
+  release();
+  await pending;
   const failed = await waitForBoundedWorkerWave(input);
   assert.equal(failed.projection.state, "failed");
   assert.equal(failed.projection.guidance.groupStateProvesProcessCleanup, false);
@@ -178,7 +306,9 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
       write({type:'turn.completed'});
     });
   `;
-  fs.writeFileSync(runnerFile, `
+  fs.writeFileSync(
+    runnerFile,
+    `
     import fs from 'node:fs';
     import path from 'node:path';
     const storage = ${JSON.stringify(f.storage)};
@@ -215,37 +345,61 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
       const draft = buildRuntimeResultPacketDraft({ authorization, receipt: execution.receipt, leaseRelease: execution.executionLease.release });
       persistRuntimeInvocationRecord({ projectRoot: root, authorization, events: execution.events, receipt: execution.receipt, draft });
     }
-  `);
-  const authorization = buildRuntimeInvocationAuthorization({ root: f.root, runtime: "codex", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding,
-    worker: { taskKey: "detached-success", role: "coder", outcome: "Synthetic detached owner", selectedContext: "Fixture only; no model call" }, limits: { timeoutMs: 8000 }, persist: true }).authorization;
-  const selection = resolveVerifiedProcessSupervisor({ pluginRoot: (process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT) || pluginRoot });
+  `,
+  );
+  const authorization = buildRuntimeInvocationAuthorization({
+    root: f.root,
+    runtime: "codex",
+    protocolEvidence: f.protocolEvidence,
+    projectBinding: f.projectBinding,
+    worker: { taskKey: "detached-success", role: "coder", outcome: "Synthetic detached owner", selectedContext: "Fixture only; no model call" },
+    limits: { timeoutMs: 8000 },
+    persist: true,
+  }).authorization;
+  const selection = resolveVerifiedProcessSupervisor({
+    pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+  });
   const frontendFile = path.join(path.dirname(f.root), "synthetic-frontend.mjs");
-  fs.writeFileSync(frontendFile, `
+  fs.writeFileSync(
+    frontendFile,
+    `
     import { createBoundedWorkerJobHost } from ${JSON.stringify(moduleUrl("bounded-worker-job.mjs"))};
     import { runCommand } from ${JSON.stringify(pathToFileURL(path.join(pluginRoot, "scripts", "head.mjs")).href)};
     const host = createBoundedWorkerJobHost(${JSON.stringify({ runnerFile, policy: { kind: "protocol-fixture", actualProviderInvoked: false, mode: "success" } })});
     const result = await runCommand(${JSON.stringify(["managed-maintenance", "worker-start", f.root, "--authorization", authorization.authorizationId, "--role", "coder"])}, { workerJobHost: host, workerJobSupervisor: ${JSON.stringify(selection)} });
     console.log(JSON.stringify(result));
-  `);
+  `,
+  );
   const jobs = [authorization];
   f.beforeCleanup.push(async () => {
     for (const job of jobs) {
       if (!fs.existsSync(f.root)) continue;
-      try { cancelBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId }); } catch {}
+      try {
+        cancelBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId });
+      } catch {}
       const deadline = Date.now() + 11000;
       while (Date.now() < deadline) {
         const state = readBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId });
         if (state.ownerExitObserved || state.status === "not-started") break;
-        await new Promise(resolve => setTimeout(resolve, 25));
+        await new Promise((resolve) => setTimeout(resolve, 25));
       }
     }
   });
   console.log(JSON.stringify({ event: "planned-frontend", command: process.execPath, args: [frontendFile], cwd: f.root, parentPid: process.pid, ports: [] }));
   const frontend = spawn(process.execPath, [frontendFile], { cwd: f.root, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   console.log(JSON.stringify({ event: "started-frontend", pid: frontend.pid, parentPid: process.pid, ports: [] }));
-  let output = "", diagnostic = "";
-  frontend.stdout.on("data", bytes => { output += bytes; }); frontend.stderr.on("data", bytes => { diagnostic += bytes; });
-  const exit = await new Promise((resolve, reject) => { frontend.on("error", reject); frontend.on("close", resolve); });
+  let output = "",
+    diagnostic = "";
+  frontend.stdout.on("data", (bytes) => {
+    output += bytes;
+  });
+  frontend.stderr.on("data", (bytes) => {
+    diagnostic += bytes;
+  });
+  const exit = await new Promise((resolve, reject) => {
+    frontend.on("error", reject);
+    frontend.on("close", resolve);
+  });
   console.log(JSON.stringify({ event: "closed-frontend", pid: frontend.pid, exitCode: exit, ports: [] }));
   assert.equal(exit, 0, diagnostic);
   const frontendResult = JSON.parse(output.trim());
@@ -257,25 +411,49 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
   assert.ok(["running", "unknown", "settling", "completed"].includes(frontendResult.status));
   assert.throws(() => process.kill(frontend.pid, 0), { code: "ESRCH" });
   const host = createBoundedWorkerJobHost({ runnerFile, policy: { kind: "protocol-fixture", actualProviderInvoked: false, mode: "success" } });
-  const replay = await startBoundedWorkerJob({ root: f.root, authorizationId: authorization.authorizationId, role: "coder" }, { host, supervisorSelection: selection });
+  const replay = await startBoundedWorkerJob(
+    { root: f.root, authorizationId: authorization.authorizationId, role: "coder" },
+    { host, supervisorSelection: selection },
+  );
   assert.equal(replay.replayAllowed, false);
   let state;
   const deadline = Date.now() + 11000;
-  do { state = readBoundedWorkerJob({ root: f.root, authorizationId: authorization.authorizationId }); if (state.ownerExitObserved) break; await new Promise(resolve => setTimeout(resolve, 25)); } while (Date.now() < deadline);
+  do {
+    state = readBoundedWorkerJob({ root: f.root, authorizationId: authorization.authorizationId });
+    if (state.ownerExitObserved) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  } while (Date.now() < deadline);
   assert.equal(state.status, "completed", JSON.stringify(state));
   assert.equal(state.result.actualProviderInvoked, false);
   const kill = process.kill;
   process.kill = () => true; // A reused numeric PID must not hide actual owner exit.
-  try { assert.deepEqual(readBoundedWorkerJob({ root: f.root, authorizationId: authorization.authorizationId }), state); }
-  finally { process.kill = kill; }
-  assert.deepEqual((await runCommand(["managed-maintenance", "worker-job-reconcile", f.root, "--authorization", authorization.authorizationId])), state);
+  try {
+    assert.deepEqual(readBoundedWorkerJob({ root: f.root, authorizationId: authorization.authorizationId }), state);
+  } finally {
+    process.kill = kill;
+  }
+  assert.deepEqual(await runCommand(["managed-maintenance", "worker-job-reconcile", f.root, "--authorization", authorization.authorizationId]), state);
   assert.deepEqual(cancelBoundedWorkerJob({ root: f.root, authorizationId: authorization.authorizationId }), state);
   const record = readRuntimeInvocationRecord({ root: f.root, storage: f.storage, authorizationId: authorization.authorizationId });
   assert.equal(record.receipt.receiptId, state.result.receiptId);
-  assert.equal(inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: authorization.projectId, authorizationId: authorization.authorizationId }).status, "consumed-released");
-  const mcp = await dispatchMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: {
-    name: "head_bounded_worker_job_status", arguments: { project_root: f.root, authorization_id: authorization.authorizationId },
-  } });
+  assert.equal(
+    inspectRuntimeExecutionLease({
+      projectRoot: f.root,
+      storage: f.storage,
+      projectId: authorization.projectId,
+      authorizationId: authorization.authorizationId,
+    }).status,
+    "consumed-released",
+  );
+  const mcp = await dispatchMcp({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: {
+      name: "head_bounded_worker_job_status",
+      arguments: { project_root: f.root, authorization_id: authorization.authorizationId },
+    },
+  });
   assert.deepEqual(mcp.result.structuredContent, state);
   const directoryFor = (job) => path.join(f.operational, "worker-jobs", job.projectId, job.authorizationId);
   const bindingFile = path.join(directoryFor(authorization), "binding.json");
@@ -286,36 +464,79 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
   assert.throws(() => readBoundedWorkerJob({ root: f.root, authorizationId: authorization.authorizationId }), { code: "WORKER_JOB_CONFLICT" });
   fs.writeFileSync(bindingFile, bindingBytes);
   const makeJob = (taskKey, sourcePaths = []) => {
-    const job = buildRuntimeInvocationAuthorization({ root: f.root, runtime: "codex", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding,
-      worker: { taskKey, role: "coder", outcome: "Synthetic owner counterexample", selectedContext: "No actual provider", sourcePaths }, limits: { timeoutMs: 8000 }, persist: true }).authorization;
+    const job = buildRuntimeInvocationAuthorization({
+      root: f.root,
+      runtime: "codex",
+      protocolEvidence: f.protocolEvidence,
+      projectBinding: f.projectBinding,
+      worker: { taskKey, role: "coder", outcome: "Synthetic owner counterexample", selectedContext: "No actual provider", sourcePaths },
+      limits: { timeoutMs: 8000 },
+      persist: true,
+    }).authorization;
     jobs.push(job);
     return job;
   };
   const waitExit = async (job) => {
     const end = Date.now() + 11000;
     let value;
-    do { value = readBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId }); if (value.ownerExitObserved) return value; await new Promise(resolve => setTimeout(resolve, 25)); } while (Date.now() < end);
+    do {
+      value = readBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId });
+      if (value.ownerExitObserved) return value;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    } while (Date.now() < end);
     assert.fail(`Synthetic owner did not exit: ${JSON.stringify(value)}`);
   };
   await t.test("selected child root and policy bind before authorization without reinterpreting older inputs", async () => {
     fs.writeFileSync(path.join(f.root, "child-source.txt"), "selected worker bytes");
     const sourceBasis = captureWorkerSourceBasis({ root: f.root, paths: ["child-source.txt"], maxBytes: 4096 });
-    const workspaceBinding = prepareWorkerWorkspace({ projectRoot: f.root, workspaceRoot: path.join(path.dirname(f.root), "selected-child"), sourceBasis, maxBytes: 4096 });
+    const workspaceBinding = prepareWorkerWorkspace({
+      projectRoot: f.root,
+      workspaceRoot: path.join(path.dirname(f.root), "selected-child"),
+      sourceBasis,
+      maxBytes: 4096,
+    });
     const policy = { kind: "protocol-fixture", actualProviderInvoked: false, mode: "success" };
     const executionBoundary = workerExecutionBoundary({ binding: workspaceBinding, sourceBasis, policy });
-    const options = { root: f.root, runtime: "codex", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding,
-      worker: { taskKey: "selected-child", role: "coder", outcome: "Read a prebound synthetic child snapshot", selectedContext: "No actual provider", sourcePaths: ["child-source.txt"], executionBoundary }, limits: { timeoutMs: 8000 } };
+    const options = {
+      root: f.root,
+      runtime: "codex",
+      protocolEvidence: f.protocolEvidence,
+      projectBinding: f.projectBinding,
+      worker: {
+        taskKey: "selected-child",
+        role: "coder",
+        outcome: "Read a prebound synthetic child snapshot",
+        selectedContext: "No actual provider",
+        sourcePaths: ["child-source.txt"],
+        executionBoundary,
+      },
+      limits: { timeoutMs: 8000 },
+    };
     const job = buildRuntimeInvocationAuthorization(options).authorization;
     jobs.push(job);
     assert.equal(job.protocolVersion, "0.5.0");
     assert.equal(authorization.protocolVersion, "0.4.0");
     assert.deepEqual(prepareRuntimeInvocationExecution({ root: f.root, authorization: job }).executionInput.boundedWorker.executionBoundary, executionBoundary);
-    assert.throws(() => buildRuntimeInvocationAuthorization({ ...options, persist: false, worker: { ...options.worker, executionBoundary: { ...executionBoundary, ownedPaths: ["child-source.txt"] } } }), { code: "WORKER_WORKSPACE_CONFLICT" });
+    assert.throws(
+      () =>
+        buildRuntimeInvocationAuthorization({
+          ...options,
+          persist: false,
+          worker: { ...options.worker, executionBoundary: { ...executionBoundary, ownedPaths: ["child-source.txt"] } },
+        }),
+      { code: "WORKER_WORKSPACE_CONFLICT" },
+    );
     await assert.rejects(() => executeCodexRuntimeInvocation({ root: f.root, authorization: job }), { code: "WORKER_JOB_POLICY_UNAVAILABLE" });
     const wrongHost = createBoundedWorkerJobHost({ runnerFile, policy: { ...policy, mode: "wait" }, workspaceBinding });
-    await assert.rejects(() => startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host: wrongHost, supervisorSelection: selection }), { code: "WORKER_JOB_CONFLICT" });
+    await assert.rejects(
+      () => startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host: wrongHost, supervisorSelection: selection }),
+      { code: "WORKER_JOB_CONFLICT" },
+    );
     assert.equal(fs.existsSync(directoryFor(job)), false);
-    assert.equal(inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: job.projectId, authorizationId: job.authorizationId }).status, "available");
+    assert.equal(
+      inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: job.projectId, authorizationId: job.authorizationId }).status,
+      "available",
+    );
     const selectedHost = createBoundedWorkerJobHost({ runnerFile, policy, workspaceBinding });
     await startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host: selectedHost, supervisorSelection: selection });
     assert.equal((await waitExit(job)).status, "completed");
@@ -330,16 +551,44 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
     const sourceBasis = captureWorkerSourceBasis({ root: f.root, paths: sourcePaths, maxBytes: 4096 });
     const writeBasis = captureWorkerWriteBasis({ root: f.root, paths: ["writable-source.txt", "worker-new.txt"], maxBytes: 4096 });
     for (const unownedFixture of [false, true]) {
-      const workspaceBinding = prepareWorkerWorkspace({ projectRoot: f.root, workspaceRoot: path.join(path.dirname(f.root), `write-owner-${unownedFixture}`), sourceBasis, maxBytes: 4096 });
+      const workspaceBinding = prepareWorkerWorkspace({
+        projectRoot: f.root,
+        workspaceRoot: path.join(path.dirname(f.root), `write-owner-${unownedFixture}`),
+        sourceBasis,
+        maxBytes: 4096,
+      });
       const policy = { kind: "protocol-fixture", actualProviderInvoked: false, mode: "success", writeFixture: true, unownedFixture };
-      const executionBoundary = workerExecutionBoundary({ binding: workspaceBinding, sourceBasis, policy, ownedPaths: writeBasis.map(entry => entry.path), writeBasis });
-      const job = buildRuntimeInvocationAuthorization({ root: f.root, runtime: "codex", workspaceMode: "workspace-write", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding,
-        worker: { taskKey: `write-owner-${unownedFixture}`, role: "coder", outcome: "Synthetic isolated write observation", selectedContext: "No actual provider", sourcePaths, executionBoundary }, limits: { timeoutMs: 8000 } }).authorization;
+      const executionBoundary = workerExecutionBoundary({
+        binding: workspaceBinding,
+        sourceBasis,
+        policy,
+        ownedPaths: writeBasis.map((entry) => entry.path),
+        writeBasis,
+      });
+      const job = buildRuntimeInvocationAuthorization({
+        root: f.root,
+        runtime: "codex",
+        workspaceMode: "workspace-write",
+        protocolEvidence: f.protocolEvidence,
+        projectBinding: f.projectBinding,
+        worker: {
+          taskKey: `write-owner-${unownedFixture}`,
+          role: "coder",
+          outcome: "Synthetic isolated write observation",
+          selectedContext: "No actual provider",
+          sourcePaths,
+          executionBoundary,
+        },
+        limits: { timeoutMs: 8000 },
+      }).authorization;
       jobs.push(job);
       const selectedHost = createBoundedWorkerJobHost({ runnerFile, policy, workspaceBinding });
       const sessionFile = path.join(f.root, f.storage.directory, "sessions", "current.json");
       const sessionBefore = fs.readFileSync(sessionFile);
-      await startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host: selectedHost, supervisorSelection: selection });
+      await startBoundedWorkerJob(
+        { root: f.root, authorizationId: job.authorizationId, role: "coder" },
+        { host: selectedHost, supervisorSelection: selection },
+      );
       const state = await waitExit(job);
       assert.equal(fs.existsSync(path.join(f.root, "worker-new.txt")), false);
       assert.equal(fs.readFileSync(path.join(f.root, "writable-source.txt"), "utf8"), "original canonical source");
@@ -363,9 +612,15 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
         assert.throws(() => readBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId }), { code: "WORKER_JOB_CONFLICT" });
         fs.writeFileSync(patchFile, frozen);
         const cliPatch = await runCommand(["worker-job-patch", f.root, "--authorization", job.authorizationId]);
-        const mcpPatch = await dispatchMcp({ jsonrpc: "2.0", id: 32, method: "tools/call", params: {
-          name: "head_bounded_worker_job_patch", arguments: { project_root: f.root, authorization_id: job.authorizationId },
-        } });
+        const mcpPatch = await dispatchMcp({
+          jsonrpc: "2.0",
+          id: 32,
+          method: "tools/call",
+          params: {
+            name: "head_bounded_worker_job_patch",
+            arguments: { project_root: f.root, authorization_id: job.authorizationId },
+          },
+        });
         assert.deepEqual(mcpPatch.result.structuredContent, cliPatch);
         assert.equal(cliPatch.applied, false);
         assert.equal(cliPatch.actualProviderInvoked, false);
@@ -377,12 +632,22 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
         assert.equal(prepared.applied, false);
         const integrationId = prepared.intent.integrationId;
         // A larger caller allowance is not a new effect or evidence identity.
-        assert.equal(prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [job.authorizationId], maxBytes: 8192 }).intent.integrationId, integrationId);
-        assert.throws(() => prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [job.authorizationId, job.authorizationId], maxBytes: 4096 }), { code: "WORKER_PATCH_INTEGRATION_CONFLICT" });
+        assert.equal(
+          prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [job.authorizationId], maxBytes: 8192 }).intent.integrationId,
+          integrationId,
+        );
+        assert.throws(
+          () =>
+            prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [job.authorizationId, job.authorizationId], maxBytes: 4096 }),
+          { code: "WORKER_PATCH_INTEGRATION_CONFLICT" },
+        );
         const integrationFile = path.join(f.root, f.storage.directory, "runtime/worker-integrations", `${integrationId}.json`);
         // An unrelated corrupt P3 document cannot turn into a global gate.
         fs.writeFileSync(path.join(path.dirname(integrationFile), `worker-integration-${"0".repeat(24)}--${"0".repeat(24)}.json`), "{");
-        assert.equal(prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [job.authorizationId], maxBytes: 8192 }).intent.integrationId, integrationId);
+        assert.equal(
+          prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [job.authorizationId], maxBytes: 8192 }).intent.integrationId,
+          integrationId,
+        );
         const integrationBytes = fs.readFileSync(integrationFile);
         const basis = readWorkerIntegrationBasis({ root: f.root, storage: f.storage, integrationId });
         assert.equal(basis.lineageVerified, true);
@@ -390,27 +655,76 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
         assert.equal(basis.semanticVerification, "not-assessed");
         assert.equal(basis.appliedByThisOperation, false);
         const launchSibling = async (taskKey, writeText) => {
-          const siblingBinding = prepareWorkerWorkspace({ projectRoot: f.root, workspaceRoot: path.join(path.dirname(f.root), taskKey), sourceBasis, maxBytes: 4096 });
-          const siblingPolicy = { ...policy, writeText };
-          const siblingBoundary = workerExecutionBoundary({ binding: siblingBinding, sourceBasis, policy: siblingPolicy, ownedPaths: writeBasis.map(entry => entry.path), writeBasis });
-          const sibling = buildRuntimeInvocationAuthorization({ root: f.root, runtime: "codex", workspaceMode: "workspace-write", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding,
-            worker: { taskKey, role: "coder", outcome: "Synthetic second selected contribution", selectedContext: "No actual provider", sourcePaths, executionBoundary: siblingBoundary }, limits: { timeoutMs: 8000 } }).authorization;
-          jobs.push(sibling);
-          await startBoundedWorkerJob({ root: f.root, authorizationId: sibling.authorizationId, role: "coder" }, {
-            host: createBoundedWorkerJobHost({ runnerFile, policy: siblingPolicy, workspaceBinding: siblingBinding }), supervisorSelection: selection,
+          const siblingBinding = prepareWorkerWorkspace({
+            projectRoot: f.root,
+            workspaceRoot: path.join(path.dirname(f.root), taskKey),
+            sourceBasis,
+            maxBytes: 4096,
           });
+          const siblingPolicy = { ...policy, writeText };
+          const siblingBoundary = workerExecutionBoundary({
+            binding: siblingBinding,
+            sourceBasis,
+            policy: siblingPolicy,
+            ownedPaths: writeBasis.map((entry) => entry.path),
+            writeBasis,
+          });
+          const sibling = buildRuntimeInvocationAuthorization({
+            root: f.root,
+            runtime: "codex",
+            workspaceMode: "workspace-write",
+            protocolEvidence: f.protocolEvidence,
+            projectBinding: f.projectBinding,
+            worker: {
+              taskKey,
+              role: "coder",
+              outcome: "Synthetic second selected contribution",
+              selectedContext: "No actual provider",
+              sourcePaths,
+              executionBoundary: siblingBoundary,
+            },
+            limits: { timeoutMs: 8000 },
+          }).authorization;
+          jobs.push(sibling);
+          await startBoundedWorkerJob(
+            { root: f.root, authorizationId: sibling.authorizationId, role: "coder" },
+            {
+              host: createBoundedWorkerJobHost({ runnerFile, policy: siblingPolicy, workspaceBinding: siblingBinding }),
+              supervisorSelection: selection,
+            },
+          );
           assert.equal((await waitExit(sibling)).status, "completed");
           return sibling;
         };
         const sibling = await launchSibling("write-combined-identical", "synthetic child edit");
-        const combined = prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [sibling.authorizationId, job.authorizationId], maxBytes: 4096 });
+        const combined = prepareWorkerPatchIntegration({
+          root: f.root,
+          storage: f.storage,
+          authorizationIds: [sibling.authorizationId, job.authorizationId],
+          maxBytes: 4096,
+        });
         assert.equal(combined.intent.members.length, 2);
         assert.equal(combined.intent.composition.patches.length, 2, "identical effects retain two member references, not duplicate writes");
-        assert.deepEqual(combined.intent.composition.patches.map(item => item.memberIndices), [[0, 1], [0, 1]]);
-        assert.equal(prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [job.authorizationId, sibling.authorizationId], maxBytes: 8192 }).intent.integrationId, combined.intent.integrationId);
+        assert.deepEqual(
+          combined.intent.composition.patches.map((item) => item.memberIndices),
+          [
+            [0, 1],
+            [0, 1],
+          ],
+        );
+        assert.equal(
+          prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [job.authorizationId, sibling.authorizationId], maxBytes: 8192 })
+            .intent.integrationId,
+          combined.intent.integrationId,
+        );
         const divergent = await launchSibling("write-combined-conflict", "different synthetic child edit");
         const beforeConflict = fs.readdirSync(path.dirname(integrationFile));
-        const conflict = prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [job.authorizationId, divergent.authorizationId], maxBytes: 4096 });
+        const conflict = prepareWorkerPatchIntegration({
+          root: f.root,
+          storage: f.storage,
+          authorizationIds: [job.authorizationId, divergent.authorizationId],
+          maxBytes: 4096,
+        });
         assert.equal(conflict.status, "conflict");
         assert.equal(conflict.persisted, false);
         assert.deepEqual(fs.readdirSync(path.dirname(integrationFile)), beforeConflict);
@@ -423,9 +737,12 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
         fs.writeFileSync(path.join(f.root, "read-only.txt"), "new external input, not an approved integration");
         try {
           assert.deepEqual(readWorkerPatchIntegration({ root: f.root, storage: f.storage, integrationId }).intent, prepared.intent);
-          assert.equal(prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [job.authorizationId], maxBytes: 8192 }).intent.integrationId, integrationId);
+          assert.equal(
+            prepareWorkerPatchIntegration({ root: f.root, storage: f.storage, authorizationIds: [job.authorizationId], maxBytes: 8192 }).intent.integrationId,
+            integrationId,
+          );
           const driftBasis = readWorkerIntegrationBasis({ root: f.root, storage: f.storage, integrationId });
-          assert.equal(driftBasis.dependencies.find(item => item.path === "read-only.txt").status, "external-dependency-drift");
+          assert.equal(driftBasis.dependencies.find((item) => item.path === "read-only.txt").status, "external-dependency-drift");
           assert.equal(driftBasis.headReassessmentRequired, true);
           assert.notEqual(driftBasis.observedBasisDigest, basis.observedBasisDigest);
           assert.equal(driftBasis.appliedByThisOperation, false);
@@ -433,7 +750,9 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
           const session = JSON.parse(sessionBefore);
           fs.writeFileSync(sessionFile, JSON.stringify({ ...session, sessionId: `session-${crypto.randomUUID()}` }));
           assert.deepEqual(readWorkerPatchIntegration({ root: f.root, storage: f.storage, integrationId }).intent, prepared.intent);
-          assert.throws(() => requireCurrentWorkerPatchIntegration({ root: f.root, storage: f.storage, integrationId }), { code: "RUNTIME_INVOCATION_FENCE_MISMATCH" });
+          assert.throws(() => requireCurrentWorkerPatchIntegration({ root: f.root, storage: f.storage, integrationId }), {
+            code: "RUNTIME_INVOCATION_FENCE_MISMATCH",
+          });
         } finally {
           fs.writeFileSync(sessionFile, sessionBefore);
           fs.writeFileSync(path.join(f.root, "read-only.txt"), "unowned canonical source");
@@ -444,8 +763,12 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
         fs.appendFileSync(roleFile, "\nLocal managed projection drift\n");
         try {
           assert.deepEqual(readWorkerPatchIntegration({ root: f.root, storage: f.storage, integrationId }).intent, prepared.intent);
-          assert.throws(() => requireCurrentWorkerPatchIntegration({ root: f.root, storage: f.storage, integrationId }), { code: "RUNTIME_INVOCATION_FENCE_MISMATCH" });
-        } finally { fs.writeFileSync(roleFile, roleBefore); }
+          assert.throws(() => requireCurrentWorkerPatchIntegration({ root: f.root, storage: f.storage, integrationId }), {
+            code: "RUNTIME_INVOCATION_FENCE_MISMATCH",
+          });
+        } finally {
+          fs.writeFileSync(roleFile, roleBefore);
+        }
         assert.deepEqual(fs.readFileSync(sessionFile), sessionBefore);
       }
     }
@@ -456,8 +779,17 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
     const waitingHost = createBoundedWorkerJobHost({ runnerFile, policy: { kind: "protocol-fixture", actualProviderInvoked: false, mode: "wait" } });
     await startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host: waitingHost, supervisorSelection: selection });
     const startedBy = Date.now() + 3000;
-    while (!inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: job.projectId, authorizationId: job.authorizationId }).singleUseConsumed && Date.now() < startedBy) await new Promise(resolve => setTimeout(resolve, 25));
-    assert.equal(inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: job.projectId, authorizationId: job.authorizationId }).singleUseConsumed, true);
+    while (
+      !inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: job.projectId, authorizationId: job.authorizationId })
+        .singleUseConsumed &&
+      Date.now() < startedBy
+    )
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(
+      inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: job.projectId, authorizationId: job.authorizationId })
+        .singleUseConsumed,
+      true,
+    );
     fs.writeFileSync(path.join(f.root, "cancel-basis.txt"), "new user edit, never restore to cancel");
     assert.equal(readBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId }).current, false);
     const first = cancelBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId });
@@ -480,8 +812,11 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
       }
       return result;
     };
-    try { await startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host, supervisorSelection: selection }); }
-    finally { fs.linkSync = link; }
+    try {
+      await startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host, supervisorSelection: selection });
+    } finally {
+      fs.linkSync = link;
+    }
     const replay = await startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host, supervisorSelection: selection });
     assert.equal(replay.replayAllowed, false);
     const completed = await waitExit(job);
@@ -497,13 +832,26 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
     const spawnImplementation = () => {
       calls += 1;
       const child = new EventEmitter();
-      child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
-      child.kill = () => { setImmediate(() => child.emit("close", 1)); return true; };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {
+        setImmediate(() => child.emit("close", 1));
+        return true;
+      };
       setImmediate(() => child.stdout.emit("error", Object.assign(new Error("Synthetic unconnected launcher pipe"), { code: "ENOTCONN" })));
       return child;
     };
-    await assert.rejects(startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host, supervisorSelection: selection, spawnImplementation }), { code: "ENOTCONN" });
-    const replay = await startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host, supervisorSelection: selection, spawnImplementation });
+    await assert.rejects(
+      startBoundedWorkerJob(
+        { root: f.root, authorizationId: job.authorizationId, role: "coder" },
+        { host, supervisorSelection: selection, spawnImplementation },
+      ),
+      { code: "ENOTCONN" },
+    );
+    const replay = await startBoundedWorkerJob(
+      { root: f.root, authorizationId: job.authorizationId, role: "coder" },
+      { host, supervisorSelection: selection, spawnImplementation },
+    );
     assert.equal(replay.status, "unknown");
     assert.equal(calls, 1);
     // This injected child never exists; do not spend the real-owner cleanup wait.
@@ -526,25 +874,42 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
     try {
       const restored = readBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId }, { inspectorSelection: selection });
       assert.deepEqual(restored, completed);
-    } finally { fs.renameSync(`${manifestFile}.retired`, manifestFile); }
+    } finally {
+      fs.renameSync(`${manifestFile}.retired`, manifestFile);
+    }
   });
   await t.test("provider result is restored after outer exit1 publication failure without replay or P2 mutation", async () => {
     fs.writeFileSync(path.join(f.root, "restore-basis.txt"), "original selected bytes");
     const job = makeJob("detached-publication-recovery", ["restore-basis.txt"]);
-    const failingHost = createBoundedWorkerJobHost({ runnerFile, policy: { kind: "protocol-fixture", actualProviderInvoked: false,
-      mode: "publication-failure", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding, supervisorSelection: selection } });
+    const failingHost = createBoundedWorkerJobHost({
+      runnerFile,
+      policy: {
+        kind: "protocol-fixture",
+        actualProviderInvoked: false,
+        mode: "publication-failure",
+        protocolEvidence: f.protocolEvidence,
+        projectBinding: f.projectBinding,
+        supervisorSelection: selection,
+      },
+    });
     await startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host: failingHost, supervisorSelection: selection });
     const incomplete = await waitExit(job);
     assert.equal(incomplete.ownerExitCode, 1, JSON.stringify(incomplete));
     assert.equal(incomplete.status, "incomplete");
-    assert.throws(() => readRuntimeInvocationRecord({ root: f.root, storage: f.storage, authorizationId: job.authorizationId }), { code: "RUNTIME_INVOCATION_RESULT_NOT_FOUND" });
-    const releaseFile = path.join(f.root, f.storage.directory, 'runtime/execution-leases', job.authorizationId, 'release.json');
+    assert.throws(() => readRuntimeInvocationRecord({ root: f.root, storage: f.storage, authorizationId: job.authorizationId }), {
+      code: "RUNTIME_INVOCATION_RESULT_NOT_FOUND",
+    });
+    const releaseFile = path.join(f.root, f.storage.directory, "runtime/execution-leases", job.authorizationId, "release.json");
     fs.renameSync(releaseFile, `${releaseFile}.withheld`);
     try {
       assert.equal(reconcileBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId }).status, "incomplete");
       assert.equal(fs.existsSync(releaseFile), false, "recovery must not infer a missing release");
-      assert.throws(() => readRuntimeInvocationRecord({ root: f.root, storage: f.storage, authorizationId: job.authorizationId }), { code: "RUNTIME_INVOCATION_RESULT_NOT_FOUND" });
-    } finally { fs.renameSync(`${releaseFile}.withheld`, releaseFile); }
+      assert.throws(() => readRuntimeInvocationRecord({ root: f.root, storage: f.storage, authorizationId: job.authorizationId }), {
+        code: "RUNTIME_INVOCATION_RESULT_NOT_FOUND",
+      });
+    } finally {
+      fs.renameSync(`${releaseFile}.withheld`, releaseFile);
+    }
     const pointer = fs.readFileSync(path.join(f.root, f.storage.directory, "sessions/current.json"));
     fs.writeFileSync(path.join(f.root, "restore-basis.txt"), "new user bytes, historical result only");
     const restored = reconcileBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId });
@@ -556,26 +921,43 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
     assert.deepEqual(fs.readFileSync(path.join(f.root, f.storage.directory, "sessions/current.json")), pointer);
     assert.equal(fs.readFileSync(path.join(f.root, "restore-basis.txt"), "utf8"), "new user bytes, historical result only");
     // A conflicting existing P3 record is not overwritten by recovery.
-    const receiptFile = path.join(f.root, f.storage.directory, 'runtime/invocations', job.authorizationId, 'receipt.json');
+    const receiptFile = path.join(f.root, f.storage.directory, "runtime/invocations", job.authorizationId, "receipt.json");
     const bytes = fs.readFileSync(receiptFile);
     fs.writeFileSync(receiptFile, JSON.stringify({ ...JSON.parse(bytes), status: "failed" }));
     assert.throws(() => reconcileBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId }));
     assert.notDeepEqual(fs.readFileSync(receiptFile), bytes);
     fs.writeFileSync(receiptFile, bytes);
-    const stdoutFile = path.join(f.operational, 'runtime-output', job.projectId, job.authorizationId, 'stdout.bin');
+    const stdoutFile = path.join(f.operational, "runtime-output", job.projectId, job.authorizationId, "stdout.bin");
     const raw = fs.readFileSync(stdoutFile);
-    fs.appendFileSync(stdoutFile, 'synthetic tamper');
-    try { assert.throws(() => reconcileBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId }), { code: "INVALID_RUNTIME_OUTPUT_SPOOL" }); }
-    finally { fs.writeFileSync(stdoutFile, raw); }
+    fs.appendFileSync(stdoutFile, "synthetic tamper");
+    try {
+      assert.throws(() => reconcileBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId }), { code: "INVALID_RUNTIME_OUTPUT_SPOOL" });
+    } finally {
+      fs.writeFileSync(stdoutFile, raw);
+    }
   });
   await t.test("Run transition does not block exact protective cancellation or mutate P2", async () => {
     const job = makeJob("detached-stale-run-cancel");
     const waitingHost = createBoundedWorkerJobHost({ runnerFile, policy: { kind: "protocol-fixture", actualProviderInvoked: false, mode: "wait" } });
     await startBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId, role: "coder" }, { host: waitingHost, supervisorSelection: selection });
     const startedBy = Date.now() + 3000;
-    while (!inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: job.projectId, authorizationId: job.authorizationId }).singleUseConsumed && Date.now() < startedBy) await new Promise(resolve => setTimeout(resolve, 25));
-    assert.equal(inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: job.projectId, authorizationId: job.authorizationId }).singleUseConsumed, true);
-    finishRun({ root: f.root, outcome: "Explicit synthetic transition", evidence: [{ uri: "fixture", digest: "synthetic-transition" }], verification: [{ check: "fixture-only", status: "passed" }] });
+    while (
+      !inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: job.projectId, authorizationId: job.authorizationId })
+        .singleUseConsumed &&
+      Date.now() < startedBy
+    )
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(
+      inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: job.projectId, authorizationId: job.authorizationId })
+        .singleUseConsumed,
+      true,
+    );
+    finishRun({
+      root: f.root,
+      outcome: "Explicit synthetic transition",
+      evidence: [{ uri: "fixture", digest: "synthetic-transition" }],
+      verification: [{ check: "fixture-only", status: "passed" }],
+    });
     const pointer = fs.readFileSync(path.join(f.root, f.storage.directory, "sessions/current.json"));
     assert.equal(readBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId }).current, false);
     cancelBoundedWorkerJob({ root: f.root, authorizationId: job.authorizationId });
@@ -587,16 +969,26 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
 test("same-model workers bind distinct selected inputs and converge on one exact member authorization", async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(path.join(f.root, "selected.txt"), "local untracked bytes Ω\n");
-  const worker = { taskKey: "parser", role: "coder", outcome: "Inspect parser behavior", selectedContext: "Prior HEAD decision: preserve Unicode Ω.\nNo deployment.", sourcePaths: ["selected.txt"] };
+  const worker = {
+    taskKey: "parser",
+    role: "coder",
+    outcome: "Inspect parser behavior",
+    selectedContext: "Prior HEAD decision: preserve Unicode Ω.\nNo deployment.",
+    sourcePaths: ["selected.txt"],
+  };
   const options = { root: f.root, runtime: "codex", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding, worker };
   const first = buildRuntimeInvocationAuthorization(options).authorization;
-  const second = buildRuntimeInvocationAuthorization({ ...options, worker: { ...worker, taskKey: "printer", outcome: "Inspect printer behavior" } }).authorization;
+  const second = buildRuntimeInvocationAuthorization({
+    ...options,
+    worker: { ...worker, taskKey: "printer", outcome: "Inspect printer behavior" },
+  }).authorization;
   assert.notEqual(first.authorizationId, second.authorizationId);
   assert.equal(first.runtime, second.runtime);
   assert.deepEqual(first.runtimeSelection, second.runtimeSelection);
   assert.equal(buildRuntimeInvocationAuthorization(options).authorization.authorizationId, first.authorizationId);
-  assert.throws(() => createBoundedWorkerDispatch({ root: f.root, authorizationId: first.authorizationId, role: "reviewer" }),
-    { code: "BOUNDED_WORKER_DISPATCH_OWNERSHIP_CONFLICT" });
+  assert.throws(() => createBoundedWorkerDispatch({ root: f.root, authorizationId: first.authorizationId, role: "reviewer" }), {
+    code: "BOUNDED_WORKER_DISPATCH_OWNERSHIP_CONFLICT",
+  });
   createBoundedWorkerDispatch({ root: f.root, authorizationId: first.authorizationId, role: "coder" });
   for (const authorization of [first, second]) {
     const prepared = prepareRuntimeInvocationExecution({ root: f.root, authorization });
@@ -612,25 +1004,40 @@ test("same-model workers bind distinct selected inputs and converge on one exact
   assert.throws(() => prepareRuntimeInvocationExecution({ root: f.root, authorization: first }), { code: "WORKER_SOURCE_BASIS_DRIFT" });
   fs.writeFileSync(path.join(f.root, "selected.txt"), "local untracked bytes Ω\n");
   const events = [];
-  const result = await runRuntimeLifecycleConformance({ root: f.root, authorization: first, onProcessEvent: (event) => {
-    events.push(event); console.log(JSON.stringify({ event: "owned-worker-input-fixture", ...event }));
-  } });
+  const result = await runRuntimeLifecycleConformance({
+    root: f.root,
+    authorization: first,
+    onProcessEvent: (event) => {
+      events.push(event);
+      console.log(JSON.stringify({ event: "owned-worker-input-fixture", ...event }));
+    },
+  });
   assert.equal(result.receipt.status, "completed");
   assert.equal(result.receipt.inputDigestObserved, first.executionInput.digest);
   assert.equal(events.filter((event) => event.type === "spawn").length, 1);
-  for (const changed of [{ limits: { timeoutMs: 60001 } }, { runtimeSelection: { model: "fixture/another-model" } },
-    { worker: { ...worker, selectedContext: "Different context" } }]) {
+  for (const changed of [
+    { limits: { timeoutMs: 60001 } },
+    { runtimeSelection: { model: "fixture/another-model" } },
+    { worker: { ...worker, selectedContext: "Different context" } },
+  ]) {
     assert.throws(() => buildRuntimeInvocationAuthorization({ ...options, ...changed }), { code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT" });
   }
-  await assert.rejects(() => runRuntimeLifecycleConformance({ root: f.root, authorization: first }),
-    (error) => /CONSUMED/.test(error.code));
+  await assert.rejects(
+    () => runRuntimeLifecycleConformance({ root: f.root, authorization: first }),
+    (error) => /CONSUMED/.test(error.code),
+  );
 });
 
 test("unconsumed member reprepare preserves task identity and fences superseded consumption", async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(path.join(f.root, "source.txt"), "before");
-  const options = { root: f.root, runtime: "codex", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding,
-    worker: { taskKey: "same-task", role: "coder", outcome: "Inspect selected source", selectedContext: "", sourcePaths: ["source.txt"] } };
+  const options = {
+    root: f.root,
+    runtime: "codex",
+    protocolEvidence: f.protocolEvidence,
+    projectBinding: f.projectBinding,
+    worker: { taskKey: "same-task", role: "coder", outcome: "Inspect selected source", selectedContext: "", sourcePaths: ["source.txt"] },
+  };
   const previous = buildRuntimeInvocationAuthorization(options).authorization;
   fs.writeFileSync(path.join(f.root, "source.txt"), "user edit retained");
   const current = buildRuntimeInvocationAuthorization(options).authorization;
@@ -638,32 +1045,56 @@ test("unconsumed member reprepare preserves task identity and fences superseded 
   assert.equal(current.workerInput.previousAuthorizationId, previous.authorizationId);
   assert.equal(buildRuntimeInvocationAuthorization(options).authorization.authorizationId, current.authorizationId);
   assert.throws(() => prepareRuntimeInvocationExecution({ root: f.root, authorization: previous }), { code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT" });
-  await assert.rejects(() => withRuntimeExecutionLease({ projectRoot: f.root, authorization: previous, ownerFenceDigest: hash("stale owner") },
-    async () => { assert.fail("superseded member must not enter its operation"); }), { code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT" });
-  assert.equal(prepareRuntimeInvocationExecution({ root: f.root, authorization: current }).executionInput.boundedWorker.sourceBasis[0].digest, hash("user edit retained"));
+  await assert.rejects(
+    () =>
+      withRuntimeExecutionLease({ projectRoot: f.root, authorization: previous, ownerFenceDigest: hash("stale owner") }, async () => {
+        assert.fail("superseded member must not enter its operation");
+      }),
+    { code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT" },
+  );
+  assert.equal(
+    prepareRuntimeInvocationExecution({ root: f.root, authorization: current }).executionInput.boundedWorker.sourceBasis[0].digest,
+    hash("user edit retained"),
+  );
 });
 
 test("frozen member publication recovers without re-reading deleted source", async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(path.join(f.root, "selected.txt"), "original");
-  const options = { root: f.root, runtime: "codex", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding,
-    worker: { taskKey: "publish", role: "coder", outcome: "Inspect", selectedContext: "", sourcePaths: ["selected.txt"] } };
+  const options = {
+    root: f.root,
+    runtime: "codex",
+    protocolEvidence: f.protocolEvidence,
+    projectBinding: f.projectBinding,
+    worker: { taskKey: "publish", role: "coder", outcome: "Inspect", selectedContext: "", sourcePaths: ["selected.txt"] },
+  };
   const link = fs.linkSync;
   let fault = false;
   fs.linkSync = (source, target) => {
     if (!fault && path.basename(path.dirname(target)) === "execution-authorizations") {
-      fault = true; throw Object.assign(new Error("publication fixture"), { code: "EIO" });
+      fault = true;
+      throw Object.assign(new Error("publication fixture"), { code: "EIO" });
     }
     return link(source, target);
   };
-  try { assert.throws(() => buildRuntimeInvocationAuthorization(options), { code: "EIO" }); }
-  finally { fs.linkSync = link; }
+  try {
+    assert.throws(() => buildRuntimeInvocationAuthorization(options), { code: "EIO" });
+  } finally {
+    fs.linkSync = link;
+  }
   fs.unlinkSync(path.join(f.root, "selected.txt"));
   const recovered = await runCommand(["managed-maintenance", "worker-reconcile", f.root, "--task-key", "publish"]);
   assert.equal(recovered.status, "reconciled");
   assert.equal(recovered.authorization.workerInput.sourceBasis[0].digest, hash("original"));
-  const mcp = await dispatchMcp({ jsonrpc: "2.0", id: 1, method: "tools/call",
-    params: { name: "head_bounded_worker_reconcile", arguments: { project_root: f.root, task_key: "publish" } } }, { surface: "managed-maintenance" });
+  const mcp = await dispatchMcp(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "head_bounded_worker_reconcile", arguments: { project_root: f.root, task_key: "publish" } },
+    },
+    { surface: "managed-maintenance" },
+  );
   assert.equal(mcp.result.structuredContent.status, "existing");
   assert.deepEqual(mcp.result.structuredContent.authorization, recovered.authorization);
   const maintenanceTools = (await dispatchMcp({ id: 2, method: "tools/list" }, { surface: "managed-maintenance" })).result.tools;
@@ -674,24 +1105,46 @@ test("frozen member publication recovers without re-reading deleted source", asy
 
 test("verified pre-start failure permits one convergent follow-up attempt but unknown execution does not", async (t) => {
   const f = await fixture(t);
-  const options = { root: f.root, runtime: "codex", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding,
-    worker: { taskKey: "retry", role: "coder", outcome: "Inspect", selectedContext: "" } };
+  const options = {
+    root: f.root,
+    runtime: "codex",
+    protocolEvidence: f.protocolEvidence,
+    projectBinding: f.projectBinding,
+    worker: { taskKey: "retry", role: "coder", outcome: "Inspect", selectedContext: "" },
+  };
   const previous = buildRuntimeInvocationAuthorization(options).authorization;
-  await assert.rejects(() => runRuntimeLifecycleConformance({ root: f.root, authorization: previous,
-    spawnImplementation: () => { throw Object.assign(new Error("pre-start fixture"), { code: "EAGAIN" }); } }), { code: "RUNTIME_CONFORMANCE_SPAWN_FAILED" });
+  await assert.rejects(
+    () =>
+      runRuntimeLifecycleConformance({
+        root: f.root,
+        authorization: previous,
+        spawnImplementation: () => {
+          throw Object.assign(new Error("pre-start fixture"), { code: "EAGAIN" });
+        },
+      }),
+    { code: "RUNTIME_CONFORMANCE_SPAWN_FAILED" },
+  );
   const current = buildRuntimeInvocationAuthorization({ ...options, retry: true }).authorization;
   assert.equal(current.workerInput.previousAuthorizationId, previous.authorizationId);
   assert.equal(buildRuntimeInvocationAuthorization({ ...options, retry: true }).authorization.authorizationId, current.authorizationId);
-  await assert.rejects(() => withRuntimeExecutionLease({ projectRoot: f.root, authorization: current, ownerFenceDigest: hash("unknown fixture") },
-    async () => { throw new Error("Outcome not known"); }));
+  await assert.rejects(() =>
+    withRuntimeExecutionLease({ projectRoot: f.root, authorization: current, ownerFenceDigest: hash("unknown fixture") }, async () => {
+      throw new Error("Outcome not known");
+    }),
+  );
   assert.throws(() => buildRuntimeInvocationAuthorization({ ...options, retry: true }), { code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT" });
 });
 
 test("proven dead unconsumed owner does not trap same-member source reprepare", async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(path.join(f.root, "selected.txt"), "before owner crash");
-  const options = { root: f.root, runtime: "codex", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding,
-    worker: { taskKey: "dead-owner", role: "coder", outcome: "Inspect", selectedContext: "", sourcePaths: ["selected.txt"] } };
+  const options = {
+    root: f.root,
+    runtime: "codex",
+    protocolEvidence: f.protocolEvidence,
+    projectBinding: f.projectBinding,
+    worker: { taskKey: "dead-owner", role: "coder", outcome: "Inspect", selectedContext: "", sourcePaths: ["selected.txt"] },
+  };
   const previous = buildRuntimeInvocationAuthorization(options).authorization;
   const moduleUrl = pathToFileURL(path.join(pluginRoot, "scripts/lib/runtime-execution-lease.mjs")).href;
   const script = `const {withRuntimeExecutionLease,createRuntimePreConsumeGateCapability}=await import(process.argv[1]);
@@ -702,28 +1155,48 @@ test("proven dead unconsumed owner does not trap same-member source reprepare", 
   const child = spawn(process.execPath, args, { cwd: pluginRoot, windowsHide: true, stdio: ["ignore", "ignore", "pipe", "ipc"] });
   console.log(JSON.stringify({ event: "owned-crash-fixture-start", pid: child.pid, parentPid: process.pid, cwd: pluginRoot, ports: [] }));
   let stderr = "";
-  child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-2048); });
-  const closed = new Promise((resolve) => child.once("close", (code, signal) => {
-    console.log(JSON.stringify({ event: "owned-crash-fixture-exit", pid: child.pid, parentPid: process.pid, code, signal, ports: [] }));
-    resolve();
-  }));
+  child.stderr.on("data", (chunk) => {
+    stderr = (stderr + chunk).slice(-2048);
+  });
+  const closed = new Promise((resolve) =>
+    child.once("close", (code, signal) => {
+      console.log(JSON.stringify({ event: "owned-crash-fixture-exit", pid: child.pid, parentPid: process.pid, code, signal, ports: [] }));
+      resolve();
+    }),
+  );
   try {
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`Owner fixture did not claim: ${stderr}`)), 5000);
-      child.once("error", (error) => { clearTimeout(timer); reject(error); });
-      child.once("message", (message) => { clearTimeout(timer); message.claimed ? resolve() : reject(new Error("Unexpected owner message")); });
-      child.once("close", () => { clearTimeout(timer); reject(new Error(`Owner exited before claim: ${stderr}`)); });
+      child.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once("message", (message) => {
+        clearTimeout(timer);
+        message.claimed ? resolve() : reject(new Error("Unexpected owner message"));
+      });
+      child.once("close", () => {
+        clearTimeout(timer);
+        reject(new Error(`Owner exited before claim: ${stderr}`));
+      });
     });
     fs.writeFileSync(path.join(f.root, "selected.txt"), "changed while claimed");
     assert.throws(() => buildRuntimeInvocationAuthorization(options), { code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT" });
     child.kill("SIGTERM");
     await closed;
     assert.throws(() => process.kill(child.pid, 0), { code: "ESRCH" });
-    assert.equal(inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: previous.projectId, authorizationId: previous.authorizationId }).singleUseConsumed, false);
+    assert.equal(
+      inspectRuntimeExecutionLease({ projectRoot: f.root, storage: f.storage, projectId: previous.projectId, authorizationId: previous.authorizationId })
+        .singleUseConsumed,
+      false,
+    );
     const current = buildRuntimeInvocationAuthorization(options).authorization;
     assert.equal(current.workerInput.previousAuthorizationId, previous.authorizationId);
     assert.equal(current.workerInput.sourceBasis[0].digest, hash("changed while claimed"));
-    await assert.rejects(() => withRuntimeExecutionLease({ projectRoot: f.root, authorization: previous, ownerFenceDigest: hash("old owner") }, async () => {}), { code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT" });
+    await assert.rejects(
+      () => withRuntimeExecutionLease({ projectRoot: f.root, authorization: previous, ownerFenceDigest: hash("old owner") }, async () => {}),
+      { code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT" },
+    );
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
     await closed;
@@ -732,18 +1205,33 @@ test("proven dead unconsumed owner does not trap same-member source reprepare", 
 
 test("claimed owner uncertainty is not treated as proven absence", async (t) => {
   const f = await fixture(t);
-  const options = { root: f.root, runtime: "codex", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding,
-    worker: { taskKey: "unknown-owner", role: "coder", outcome: "Inspect", selectedContext: "" } };
+  const options = {
+    root: f.root,
+    runtime: "codex",
+    protocolEvidence: f.protocolEvidence,
+    projectBinding: f.projectBinding,
+    worker: { taskKey: "unknown-owner", role: "coder", outcome: "Inspect", selectedContext: "" },
+  };
   const authorization = buildRuntimeInvocationAuthorization(options).authorization;
   const gate = createRuntimePreConsumeGateCapability(async () => {
     const kill = process.kill;
-    process.kill = () => { throw Object.assign(new Error("Synthetic unknown owner"), { code: "EPERM" }); };
+    process.kill = () => {
+      throw Object.assign(new Error("Synthetic unknown owner"), { code: "EPERM" });
+    };
     try {
-      assert.throws(() => buildRuntimeInvocationAuthorization({ ...options, worker: { ...options.worker, selectedContext: "changed" } }), { code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT" });
-    } finally { process.kill = kill; }
+      assert.throws(() => buildRuntimeInvocationAuthorization({ ...options, worker: { ...options.worker, selectedContext: "changed" } }), {
+        code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT",
+      });
+    } finally {
+      process.kill = kill;
+    }
     throw Object.assign(new Error("Fixture ends before consumption"), { code: "FIXTURE_STOP" });
   });
-  await assert.rejects(() => withRuntimeExecutionLease({ projectRoot: f.root, authorization, ownerFenceDigest: hash("unknown fixture") }, async () => {}, { preConsumeGate: gate }), { code: "FIXTURE_STOP" });
+  await assert.rejects(
+    () =>
+      withRuntimeExecutionLease({ projectRoot: f.root, authorization, ownerFenceDigest: hash("unknown fixture") }, async () => {}, { preConsumeGate: gate }),
+    { code: "FIXTURE_STOP" },
+  );
 });
 
 test("write-bound worker freezes absent targets and source mode; safe reprepare cannot bypass unknown consumption", async (t) => {
@@ -757,11 +1245,28 @@ test("write-bound worker freezes absent targets and source mode; safe reprepare 
     const sourcePaths = ["editable.txt", ...(fs.existsSync(path.join(f.root, "new.txt")) ? ["new.txt"] : [])];
     const sourceBasis = captureWorkerSourceBasis({ root: f.root, paths: sourcePaths, maxBytes: 4096 });
     const writeBasis = captureWorkerWriteBasis({ root: f.root, paths: ["editable.txt", "new.txt"], maxBytes: 4096 });
-    const binding = prepareWorkerWorkspace({ projectRoot: f.root, workspaceRoot: path.join(path.dirname(f.root), `write-child-${sequence++}`), sourceBasis, maxBytes: 4096 });
+    const binding = prepareWorkerWorkspace({
+      projectRoot: f.root,
+      workspaceRoot: path.join(path.dirname(f.root), `write-child-${sequence++}`),
+      sourceBasis,
+      maxBytes: 4096,
+    });
     const policy = { kind: "protocol-fixture", actualProviderInvoked: false };
-    return { root: f.root, runtime: "codex", protocolEvidence: f.protocolEvidence, projectBinding: f.projectBinding, workspaceMode: "workspace-write",
-      worker: { taskKey: "write-basis", role: "coder", outcome: "Bounded synthetic edit", selectedContext: "No provider invoked", sourcePaths,
-        executionBoundary: workerExecutionBoundary({ binding, policy, sourceBasis, ownedPaths: ["editable.txt", "new.txt"], writeBasis }) } };
+    return {
+      root: f.root,
+      runtime: "codex",
+      protocolEvidence: f.protocolEvidence,
+      projectBinding: f.projectBinding,
+      workspaceMode: "workspace-write",
+      worker: {
+        taskKey: "write-basis",
+        role: "coder",
+        outcome: "Bounded synthetic edit",
+        selectedContext: "No provider invoked",
+        sourcePaths,
+        executionBoundary: workerExecutionBoundary({ binding, policy, sourceBasis, ownedPaths: ["editable.txt", "new.txt"], writeBasis }),
+      },
+    };
   };
   const initialOptions = prepare();
   const initial = buildRuntimeInvocationAuthorization(initialOptions).authorization;
@@ -776,7 +1281,9 @@ test("write-bound worker freezes absent targets and source mode; safe reprepare 
   assert.equal(lineageOnly.sourceBasisVerified, false);
   assert.equal(lineageOnly.executionPrepared, false);
   assert.deepEqual(snapshot(f.root), beforeLineageRead);
-  assert.throws(() => prepareRuntimeInvocationExecution({ root: f.root, authorization: initial, verifyCurrentSources: false }), { code: "WORKER_PATCH_CONFLICT" });
+  assert.throws(() => prepareRuntimeInvocationExecution({ root: f.root, authorization: initial, verifyCurrentSources: false }), {
+    code: "WORKER_PATCH_CONFLICT",
+  });
   const sessionFile = path.join(f.root, f.storage.directory, "sessions/current.json");
   const sessionBytes = fs.readFileSync(sessionFile);
   fs.writeFileSync(sessionFile, JSON.stringify({ ...JSON.parse(sessionBytes), sessionId: `session-${crypto.randomUUID()}` }));
@@ -791,8 +1298,11 @@ test("write-bound worker freezes absent targets and source mode; safe reprepare 
   fs.chmodSync(file, 0o444);
   assert.throws(() => prepareRuntimeInvocationExecution({ root: f.root, authorization: next }), { code: "WORKER_PATCH_CONFLICT" });
   fs.chmodSync(file, mode);
-  await assert.rejects(() => withRuntimeExecutionLease({ projectRoot: f.root, authorization: next, ownerFenceDigest: hash("synthetic unknown write worker") },
-    async () => { throw new Error("Synthetic unknown execution outcome"); }));
+  await assert.rejects(() =>
+    withRuntimeExecutionLease({ projectRoot: f.root, authorization: next, ownerFenceDigest: hash("synthetic unknown write worker") }, async () => {
+      throw new Error("Synthetic unknown execution outcome");
+    }),
+  );
   assert.throws(() => buildRuntimeInvocationAuthorization({ ...prepare(), retry: true }), { code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT" });
   assert.equal(fs.readFileSync(path.join(f.root, "new.txt"), "utf8"), "user created target before consumption");
   // Historical authorization remains immutable/readable after target drift.
@@ -806,8 +1316,14 @@ test("selected source input rejects protected paths, traversal and hardlinks bef
   fs.linkSync(path.join(f.root, "shared.txt"), path.join(f.root, "alias.txt"));
   const before = snapshot(f.root);
   for (const sourcePath of [".head/project.json", ".lode/project.json", "../outside", "C:/outside", "a/../../outside", "alias.txt", "file:stream"]) {
-    assert.throws(() => buildRuntimeInvocationAuthorization({ ...options, worker: { taskKey: "unsafe", role: "coder",
-      outcome: "Inspect source", selectedContext: "", sourcePaths: [sourcePath] } }), { code: "INVALID_WORKER_SOURCE_BASIS" });
+    assert.throws(
+      () =>
+        buildRuntimeInvocationAuthorization({
+          ...options,
+          worker: { taskKey: "unsafe", role: "coder", outcome: "Inspect source", selectedContext: "", sourcePaths: [sourcePath] },
+        }),
+      { code: "INVALID_WORKER_SOURCE_BASIS" },
+    );
   }
   assert.deepEqual(snapshot(f.root), before);
 });
@@ -816,14 +1332,20 @@ test("selected Session request survives caller context loss and refuses changed 
   const f = await fixture(t);
   applyRuntimeRunResult({ root: f.root, storage: f.storage, authorizationId: f.authorization.authorizationId });
   accept(f.root);
-  const authorization = buildRuntimeInvocationAuthorization({ root: f.root, runtime: "codex", protocolEvidence: f.protocolEvidence,
-    projectBinding: f.projectBinding, scope: { kind: "session", request: "Review one bounded result" },
-    worker: { taskKey: "review", role: "reviewer", outcome: "Return concerns", selectedContext: "Keep public behavior unchanged." } }).authorization;
+  const authorization = buildRuntimeInvocationAuthorization({
+    root: f.root,
+    runtime: "codex",
+    protocolEvidence: f.protocolEvidence,
+    projectBinding: f.projectBinding,
+    scope: { kind: "session", request: "Review one bounded result" },
+    worker: { taskKey: "review", role: "reviewer", outcome: "Return concerns", selectedContext: "Keep public behavior unchanged." },
+  }).authorization;
   const input = prepareRuntimeInvocationExecution({ root: f.root, authorization });
   assert.equal(input.executionInput.sessionTask.request, "Review one bounded result");
   assert.equal(input.executionInput.wholePlan, undefined);
-  assert.throws(() => prepareRuntimeInvocationExecution({ root: f.root, authorization, sessionRequest: "Different" }),
-    { code: "RUNTIME_INVOCATION_INPUT_DRIFT" });
+  assert.throws(() => prepareRuntimeInvocationExecution({ root: f.root, authorization, sessionRequest: "Different" }), {
+    code: "RUNTIME_INVOCATION_INPUT_DRIFT",
+  });
 });
 
 test("wave history remains readable after finish and later Run without granting a new seal", async (t) => {
@@ -856,11 +1378,22 @@ function snapshot(root) {
 }
 
 function accept(root) {
-  return reviewRun({ root, reviewContextId: getPendingReviewContext({ root }).review.reviewContextId, disposition: "accept", rationale: "Only the bounded synthetic fixture result is accepted." });
+  return reviewRun({
+    root,
+    reviewContextId: getPendingReviewContext({ root }).review.reviewContextId,
+    disposition: "accept",
+    rationale: "Only the bounded synthetic fixture result is accepted.",
+  });
 }
 
 function startB(f) {
-  const contract = createExecutionContract({ root: f.root, wholePlanId: f.plan.wholePlanId, capsuleId: f.capsule.capsuleId, scope: "Different synthetic fixture B", acceptanceCriteria: ["Only B evidence may complete B"] }).artifact;
+  const contract = createExecutionContract({
+    root: f.root,
+    wholePlanId: f.plan.wholePlanId,
+    capsuleId: f.capsule.capsuleId,
+    scope: "Different synthetic fixture B",
+    acceptanceCriteria: ["Only B evidence may complete B"],
+  }).artifact;
   return startRun({ root: f.root, executionContractId: contract.executionContractId }).run;
 }
 
@@ -874,8 +1407,11 @@ function missingApplicationOnce(operation) {
     }
     return link(source, target);
   };
-  try { assert.throws(operation, { code: "EIO" }); }
-  finally { fs.linkSync = link; }
+  try {
+    assert.throws(operation, { code: "EIO" });
+  } finally {
+    fs.linkSync = link;
+  }
   assert.equal(injected, true);
 }
 
@@ -888,8 +1424,22 @@ test("runtime result receipt EIO then reviewed A and different Run B never mutat
   const b = startB(f);
   const before = snapshot(f.root);
   let failure;
-  try { applyRuntimeRunResult(input); } catch (error) { failure = error; }
-  console.log(JSON.stringify({ event: "application-target-regression", errorCode: failure?.code, authorizedRunId: f.run.runId, expectedActiveRunId: b.runId, actualActiveRunId: inspectProject(f.root).state.activeRunId, projectBytesUnchanged: JSON.stringify(snapshot(f.root)) === JSON.stringify(before), evidenceScope: "stored schema fixture, no live provider" }));
+  try {
+    applyRuntimeRunResult(input);
+  } catch (error) {
+    failure = error;
+  }
+  console.log(
+    JSON.stringify({
+      event: "application-target-regression",
+      errorCode: failure?.code,
+      authorizedRunId: f.run.runId,
+      expectedActiveRunId: b.runId,
+      actualActiveRunId: inspectProject(f.root).state.activeRunId,
+      projectBytesUnchanged: JSON.stringify(snapshot(f.root)) === JSON.stringify(before),
+      evidenceScope: "stored schema fixture, no live provider",
+    }),
+  );
   assert.equal(failure?.code, "RUNTIME_RUN_RESULT_APPLICATION_CONFLICT");
   assert.deepEqual(snapshot(f.root), before);
   assert.equal(inspectProject(f.root).state.activeRunId, b.runId);
@@ -955,8 +1505,13 @@ test("normal application and complete-receipt replay stay exact and read-only ac
     return link(source, target);
   };
   let applied;
-  try { applied = applyRuntimeRunResult(input); }
-  finally { fs.readFileSync = read; fs.renameSync = rename; fs.linkSync = link; }
+  try {
+    applied = applyRuntimeRunResult(input);
+  } finally {
+    fs.readFileSync = read;
+    fs.renameSync = rename;
+    fs.linkSync = link;
+  }
   assert.equal(owners.size, 1, "one lease must cover validation and both mutations");
   assert.deepEqual([...stages].sort(), ["application-write", "record-read", "run-read", "session-write"]);
   assert.equal(applied.status, "runtime_run_result_applied");
@@ -992,8 +1547,11 @@ test("missing application receipt recovers only the exact pending result and is 
     }
     return rename(source, target);
   };
-  try { assert.throws(() => applyRuntimeRunResult(input), { code: "EIO" }); }
-  finally { fs.renameSync = rename; }
+  try {
+    assert.throws(() => applyRuntimeRunResult(input), { code: "EIO" });
+  } finally {
+    fs.renameSync = rename;
+  }
   assert.equal(injected, true);
   assert.equal(inspectProject(f.root).state.activeRunId, f.run.runId);
   missingApplicationOnce(() => applyRuntimeRunResult(input));
@@ -1019,11 +1577,18 @@ test("Run identity remains fenced when B reuses A's ExecutionContract", async (t
 
 test("delayed A result cannot complete B even when A was finished through another explicit result", async (t) => {
   const f = await fixture(t);
-  finishRun({ root: f.root, outcome: "Separate explicit A fixture result", evidence: [{ uri: "fixture", digest: "different-evidence" }], verification: [{ check: "separate fixture", status: "passed" }] });
+  finishRun({
+    root: f.root,
+    outcome: "Separate explicit A fixture result",
+    evidence: [{ uri: "fixture", digest: "different-evidence" }],
+    verification: [{ check: "separate fixture", status: "passed" }],
+  });
   accept(f.root);
   startB(f);
   const before = snapshot(f.root);
-  assert.throws(() => applyRuntimeRunResult({ root: f.root, storage: f.storage, authorizationId: f.authorization.authorizationId }), { code: "RUNTIME_RUN_RESULT_APPLICATION_CONFLICT" });
+  assert.throws(() => applyRuntimeRunResult({ root: f.root, storage: f.storage, authorizationId: f.authorization.authorizationId }), {
+    code: "RUNTIME_RUN_RESULT_APPLICATION_CONFLICT",
+  });
   assert.deepEqual(snapshot(f.root), before);
 });
 
@@ -1052,12 +1617,21 @@ test("application competes within the same Session mutation scope and rechecks d
   const input = { root: f.root, storage: f.storage, authorizationId: f.authorization.authorizationId };
   let acquired;
   let release;
-  const ready = new Promise((resolve) => { acquired = resolve; });
-  const barrier = new Promise((resolve) => { release = resolve; });
+  const ready = new Promise((resolve) => {
+    acquired = resolve;
+  });
+  const barrier = new Promise((resolve) => {
+    release = resolve;
+  });
   const competitor = withProjectMutationAsync({ root: f.root, scope: "session-recovery" }, async () => {
     acquired();
     await barrier;
-    finishRun({ root: f.root, outcome: "Competing explicit A result", evidence: [{ uri: "fixture", digest: "competing-evidence" }], verification: [{ check: "fixture", status: "passed" }] });
+    finishRun({
+      root: f.root,
+      outcome: "Competing explicit A result",
+      evidence: [{ uri: "fixture", digest: "competing-evidence" }],
+      verification: [{ check: "fixture", status: "passed" }],
+    });
     accept(f.root);
     startB(f);
   });
@@ -1066,7 +1640,10 @@ test("application competes within the same Session mutation scope and rechecks d
     const whileLocked = snapshot(f.root);
     assert.throws(() => applyRuntimeRunResult(input), { code: "PROJECT_MUTATION_BUSY" });
     assert.deepEqual(snapshot(f.root), whileLocked);
-  } finally { release(); await competitor; }
+  } finally {
+    release();
+    await competitor;
+  }
   const afterDrift = snapshot(f.root);
   assert.throws(() => applyRuntimeRunResult(input), { code: "RUNTIME_RUN_RESULT_APPLICATION_CONFLICT" });
   assert.deepEqual(snapshot(f.root), afterDrift);

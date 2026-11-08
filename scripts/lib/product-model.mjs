@@ -8,14 +8,7 @@ export const PRODUCT_MODEL_V1_VERSION = "0.1.0";
 export const PRODUCT_MODEL_V2_VERSION = "0.2.0";
 export const PRODUCT_MODEL_VERSION = PRODUCT_MODEL_V2_VERSION;
 export const PRODUCT_MODEL_RELATIVE_PATH = ".head/context/product-model.json";
-export const PRODUCT_ENTITY_KINDS_V1 = Object.freeze([
-  "FeatureGroup",
-  "Capability",
-  "Feature",
-  "Requirement",
-  "Constraint",
-  "Decision",
-]);
+export const PRODUCT_ENTITY_KINDS_V1 = Object.freeze(["FeatureGroup", "Capability", "Feature", "Requirement", "Constraint", "Decision"]);
 export const PRODUCT_ENTITY_KINDS = Object.freeze([...PRODUCT_ENTITY_KINDS_V1, "Policy"]);
 
 const fail = (message, code = "PRODUCT_MODEL_ERROR") => {
@@ -27,7 +20,11 @@ const fail = (message, code = "PRODUCT_MODEL_ERROR") => {
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   }
   return value;
 }
@@ -160,24 +157,26 @@ function policyEntities(value, label) {
   const source = value == null ? [] : value;
   if (!Array.isArray(source)) fail(`${label} must be an array.`, "INVALID_PRODUCT_MODEL");
   const seen = new Set();
-  return source.map((record, index) => {
-    const itemLabel = `${label}[${index}]`;
-    assertFields(record, ["key", "name", "description", "statement", "status", "appliesTo", "governedBy"], itemLabel);
-    const stableKey = key(record.key, `${itemLabel}.key`);
-    if (seen.has(stableKey)) fail(`${label} contains duplicate key: ${stableKey}`, "DUPLICATE_PRODUCT_KEY");
-    seen.add(stableKey);
-    const status = optionalText(record.status, `${itemLabel}.status`).toLowerCase() || "active";
-    if (!new Set(["active", "retired"]).has(status)) fail(`${itemLabel}.status is invalid.`, "INVALID_PRODUCT_STATUS");
-    return {
-      key: stableKey,
-      name: requiredText(record.name, `${itemLabel}.name`),
-      description: optionalText(record.description, `${itemLabel}.description`),
-      statement: requiredText(record.statement, `${itemLabel}.statement`),
-      status,
-      appliesTo: policyApplications(record.appliesTo, `${itemLabel}.appliesTo`),
-      governedBy: governedBy(record.governedBy, `${itemLabel}.governedBy`),
-    };
-  }).sort((left, right) => left.key.localeCompare(right.key));
+  return source
+    .map((record, index) => {
+      const itemLabel = `${label}[${index}]`;
+      assertFields(record, ["key", "name", "description", "statement", "status", "appliesTo", "governedBy"], itemLabel);
+      const stableKey = key(record.key, `${itemLabel}.key`);
+      if (seen.has(stableKey)) fail(`${label} contains duplicate key: ${stableKey}`, "DUPLICATE_PRODUCT_KEY");
+      seen.add(stableKey);
+      const status = optionalText(record.status, `${itemLabel}.status`).toLowerCase() || "active";
+      if (!new Set(["active", "retired"]).has(status)) fail(`${itemLabel}.status is invalid.`, "INVALID_PRODUCT_STATUS");
+      return {
+        key: stableKey,
+        name: requiredText(record.name, `${itemLabel}.name`),
+        description: optionalText(record.description, `${itemLabel}.description`),
+        statement: requiredText(record.statement, `${itemLabel}.statement`),
+        status,
+        appliesTo: policyApplications(record.appliesTo, `${itemLabel}.appliesTo`),
+        governedBy: governedBy(record.governedBy, `${itemLabel}.governedBy`),
+      };
+    })
+    .sort((left, right) => left.key.localeCompare(right.key));
 }
 
 function referenceSet(records) {
@@ -217,16 +216,11 @@ export function normalizeProductModelDocument(document = emptyProductModelDocume
   const constraints = statementEntities(document.constraints, "constraints");
   const decisions = statementEntities(document.decisions, "decisions", { decision: true });
   const policies = schemaVersion === 2 ? policyEntities(document.policies, "policies") : [];
-  const features = namedEntities(
-    document.features,
-    "features",
-    ["featureGroupKeys", "capabilityKeys", "governedBy"],
-    (record, label) => ({
-      featureGroupKeys: stringKeys(record.featureGroupKeys, `${label}.featureGroupKeys`),
-      capabilityKeys: stringKeys(record.capabilityKeys, `${label}.capabilityKeys`),
-      governedBy: governedBy(record.governedBy, `${label}.governedBy`),
-    }),
-  );
+  const features = namedEntities(document.features, "features", ["featureGroupKeys", "capabilityKeys", "governedBy"], (record, label) => ({
+    featureGroupKeys: stringKeys(record.featureGroupKeys, `${label}.featureGroupKeys`),
+    capabilityKeys: stringKeys(record.capabilityKeys, `${label}.capabilityKeys`),
+    governedBy: governedBy(record.governedBy, `${label}.governedBy`),
+  }));
 
   const featureGroupKeys = referenceSet(featureGroups);
   const capabilityKeys = referenceSet(capabilities);
@@ -260,18 +254,22 @@ export function normalizeProductModelDocument(document = emptyProductModelDocume
     }
   }
 
-  if (schemaVersion === 2) for (const policy of policies) {
-    for (const application of policy.appliesTo) {
-      requireReferences([application.key], application.kind === "Feature" ? featureKeys : featureGroupKeys, `Policy ${policy.key}`);
+  if (schemaVersion === 2)
+    for (const policy of policies) {
+      for (const application of policy.appliesTo) {
+        requireReferences([application.key], application.kind === "Feature" ? featureKeys : featureGroupKeys, `Policy ${policy.key}`);
+      }
+      for (const reference of policy.governedBy) {
+        requireReferences([reference.key], governedKeys[reference.kind], `Policy ${policy.key}`);
+      }
     }
-    for (const reference of policy.governedBy) {
-      requireReferences([reference.key], governedKeys[reference.kind], `Policy ${policy.key}`);
-    }
-  }
 
   const model = {
     schemaVersion,
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-product-model"), version: schemaVersion === 1 ? PRODUCT_MODEL_V1_VERSION : PRODUCT_MODEL_V2_VERSION },
+    protocol: {
+      name: formatForVerifiedOwner(storage).protocol("head-agent-core-product-model"),
+      version: schemaVersion === 1 ? PRODUCT_MODEL_V1_VERSION : PRODUCT_MODEL_V2_VERSION,
+    },
     featureGroups,
     capabilities,
     features,
@@ -302,9 +300,15 @@ export function productModelDocument(model) {
   };
   if (model.schemaVersion === 2) candidate.policies = model.policies;
   const normalized = normalizeProductModelDocument(candidate);
-  const document = { ...candidate,
-    featureGroups: normalized.featureGroups, capabilities: normalized.capabilities, features: normalized.features,
-    requirements: normalized.requirements, constraints: normalized.constraints, decisions: normalized.decisions };
+  const document = {
+    ...candidate,
+    featureGroups: normalized.featureGroups,
+    capabilities: normalized.capabilities,
+    features: normalized.features,
+    requirements: normalized.requirements,
+    constraints: normalized.constraints,
+    decisions: normalized.decisions,
+  };
   if (normalized.schemaVersion === 2) document.policies = normalized.policies;
   return document;
 }
@@ -321,15 +325,19 @@ export function readProductModelCanon({ projectRoot, storage = null } = {}) {
   let document;
   let sourceBytes = null;
   let status = "present";
-  try { sourceBytes = fs.readFileSync(file); }
-  catch (error) {
+  try {
+    sourceBytes = fs.readFileSync(file);
+  } catch (error) {
     if (error.code !== "ENOENT") throw error;
     document = emptyProductModelDocument();
     status = "missing-empty-default";
   }
   if (sourceBytes !== null) {
-    try { document = JSON.parse(sourceBytes.toString("utf8")); }
-    catch (error) { fail(`Product model canon is invalid JSON: ${error.message}`, "INVALID_PRODUCT_MODEL_JSON"); }
+    try {
+      document = JSON.parse(sourceBytes.toString("utf8"));
+    } catch (error) {
+      fail(`Product model canon is invalid JSON: ${error.message}`, "INVALID_PRODUCT_MODEL_JSON");
+    }
   }
   const model = normalizeProductModelDocument(document, storage);
   const evidenceHash = digest(canonicalJson({ path: relativePath, productModelHash: model.productModelHash }));

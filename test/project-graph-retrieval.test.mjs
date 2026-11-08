@@ -17,18 +17,28 @@ import { dispatch } from "../scripts/mcp-server.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 
-test("literal code identifiers precede repeated document headings without excluding documents or reviving stale code", async t => {
+test("literal code identifiers precede repeated document headings without excluding documents or reviving stale code", async (t) => {
   const { root } = fixture(t);
   fs.mkdirSync(path.join(root, "src"));
-  fs.writeFileSync(path.join(root, "src/delivery.mjs"), "export function resolveDelivery() { return 1; }\nexport function get() { return 2; }\nexport function CacheRelay() { return 3; }\n");
+  fs.writeFileSync(
+    path.join(root, "src/delivery.mjs"),
+    "export function resolveDelivery() { return 1; }\nexport function get() { return 2; }\nexport function CacheRelay() { return 3; }\n",
+  );
   for (let i = 0; i < 8; i++) fs.writeFileSync(path.join(root, `delivery-${i}.md`), "# resolveDelivery implementation\nDesign reference.\n");
   fs.writeFileSync(path.join(root, "onboarding.md"), "# How do I get onboarding done?\n");
-  const reasonPlan = createWholePlanSnapshot({ root, objective: "The reason we chose CacheRelay is preserving pending work", plan: ["Keep exact reasons"] }).artifact;
+  const reasonPlan = createWholePlanSnapshot({
+    root,
+    objective: "The reason we chose CacheRelay is preserving pending work",
+    plan: ["Keep exact reasons"],
+  }).artifact;
   await buildWorldModel({ root });
   for (const query of ["resolveDelivery", "`resolveDelivery`", "resolveDelivery()"]) {
     const result = await queryProjectGraph({ root, query, depth: 0, maxNodes: 60 });
     assert.equal(result.nodes[0].path, "src/delivery.mjs");
-    assert(result.nodes.some(node => node.path?.endsWith(".md")), "Matching documentation stays eligible");
+    assert(
+      result.nodes.some((node) => node.path?.endsWith(".md")),
+      "Matching documentation stays eligible",
+    );
     safe(result);
   }
   const documents = await queryProjectGraph({ root, query: "implementation", depth: 0, maxNodes: 60 });
@@ -42,14 +52,15 @@ test("literal code identifiers precede repeated document headings without exclud
     assert.equal(reasons.nodes[0].nodeId, reasonPlan.wholePlanId, "Reason questions keep their original ranking");
   }
   const filtered = await queryProjectGraph({ root, query: "resolveDelivery", paths: ["delivery-0.md"], depth: 0, maxNodes: 60 });
-  assert(filtered.nodes.length > 0); assert(filtered.nodes.every(node => node.path === "delivery-0.md"));
+  assert(filtered.nodes.length > 0);
+  assert(filtered.nodes.every((node) => node.path === "delivery-0.md"));
   fs.appendFileSync(path.join(root, "src/delivery.mjs"), "// Later source drift\n");
   const stale = await queryProjectGraph({ root, query: "resolveDelivery implementation", depth: 0, maxNodes: 60 });
-  const observed = (await inspectWorldDomainFreshness({ root }));
+  const observed = await inspectWorldDomainFreshness({ root });
   assert.equal(observed.freshness.domains.code.status, "stale");
   const eligible = new Set(buildWorldTraversalEligibility(observed.snapshot, observed.freshness.domains).nodeIds);
-  for (const node of stale.nodes.filter(node => node.origin?.layer === "world")) assert(eligible.has(node.nodeId),
-    "Ranking cannot revive an excluded original; eligible historical evidence remains navigable");
+  for (const node of stale.nodes.filter((node) => node.origin?.layer === "world"))
+    assert(eligible.has(node.nodeId), "Ranking cannot revive an excluded original; eligible historical evidence remains navigable");
 });
 function fixture(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "head-retrieval-")));
@@ -68,7 +79,8 @@ function originals(root, layout) {
       else files[next] = projectGraphDigest(fs.readFileSync(path.join(root, next)));
     }
   }
-  walk(layout.directory); return files;
+  walk(layout.directory);
+  return files;
 }
 function safe(result) {
   for (const item of [result.authority, ...result.nodes, ...result.edges]) {
@@ -78,11 +90,21 @@ function safe(result) {
   assert.equal(result.coverage.semanticSufficiency, "HEAD-owned");
 }
 
-test("natural questions rank domain evidence ahead of boilerplate, without a relevance gate", async t => {
+test("natural questions rank domain evidence ahead of boilerplate, without a relevance gate", async (t) => {
   const { root, layout } = fixture(t);
-  for (let i = 0; i < 70; i++) await proposeProductPolicy({ root, operation: "create", key: `spacing-${i}`,
-    name: `ThemeSpacing${i}`, statement: "The reason we chose the display spacing is readability." });
-  const target = createWholePlanSnapshot({ root, objective: "CacheRelay preserves unsent requests during disconnected restarts.", plan: ["Retain pending requests"] }).artifact;
+  for (let i = 0; i < 70; i++)
+    await proposeProductPolicy({
+      root,
+      operation: "create",
+      key: `spacing-${i}`,
+      name: `ThemeSpacing${i}`,
+      statement: "The reason we chose the display spacing is readability.",
+    });
+  const target = createWholePlanSnapshot({
+    root,
+    objective: "CacheRelay preserves unsent requests during disconnected restarts.",
+    plan: ["Retain pending requests"],
+  }).artifact;
   const before = originals(root, layout);
   const compact = await queryProjectGraph({ root, query: "What is the reason we chose CacheRelay?" });
   const detailed = await queryProjectGraph({ root, query: "What is the reason we chose CacheRelay?", details: true });
@@ -106,7 +128,14 @@ test("natural questions rank domain evidence ahead of boilerplate, without a rel
   assert.equal(detailed.nodes[0].objective, target.objective);
   assert(compact.nodes[0].excerpt.includes("CacheRelay"));
   assert.deepEqual(originals(root, layout), before);
-  for (const query of ["What is the reason we chose CacheRelay?", "What is the reason we chose cacherelay?", "What is the reason we chose CACHERELAY?", "CacheRelay를 유지하는 이유는?", "CacheRelay?", "cache relay"]) {
+  for (const query of [
+    "What is the reason we chose CacheRelay?",
+    "What is the reason we chose cacherelay?",
+    "What is the reason we chose CACHERELAY?",
+    "CacheRelay를 유지하는 이유는?",
+    "CacheRelay?",
+    "cache relay",
+  ]) {
     for (const maxNodes of [1, 60]) {
       const result = await queryProjectGraph({ root, query, maxNodes, maxEdges: 1, depth: 0 });
       assert.equal(result.nodes[0]?.nodeId, target.wholePlanId, query);
@@ -124,26 +153,42 @@ test("natural questions rank domain evidence ahead of boilerplate, without a rel
   assert.deepEqual(originals(root, layout), before);
 });
 
-test("metadata keys are not query evidence; short words and Korean names remain discoverable", async t => {
+test("metadata keys are not query evidence; short words and Korean names remain discoverable", async (t) => {
   const { root, layout } = fixture(t);
   const first = createWholePlanSnapshot({ root, objective: "IS checks and 오프라인큐 preserve local requests", plan: ["Inspect the comparison"] }).artifact;
   for (const query of ["IS", "오프라인큐는?", "오프라인큐의 이유는?"]) {
     const result = await queryProjectGraph({ root, query, depth: 0 });
-    assert(result.nodes.some(node => node.nodeId === first.wholePlanId), query);
+    assert(
+      result.nodes.some((node) => node.nodeId === first.wholePlanId),
+      query,
+    );
   }
   for (const query of ["instructionAuthority", "retained-evidence", "sourceReference", "schemaVersion"]) {
     assert.equal((await queryProjectGraph({ root, query, depth: 0 })).nodes.length, 0, query);
   }
 });
 
-test("current and historical common direction expose all bounded fields without P2 mutation", async t => {
+test("current and historical common direction expose all bounded fields without P2 mutation", async (t) => {
   const { root, layout } = fixture(t);
-  const old = updateProjectDirection({ root, expectedDirectionId: null, input: { goal: "Document flow", constraints: ["AirGapBoundary"], decisions: ["RetentionChoice"], cancelledActions: ["UploadCancelled"] } }).direction;
-  const current = updateProjectDirection({ root, expectedDirectionId: old.directionId, input: { goal: "Document flow", constraints: ["LocalBoundary"], decisions: [], cancelledActions: ["ExternalCancelled"] } }).direction;
+  const old = updateProjectDirection({
+    root,
+    expectedDirectionId: null,
+    input: { goal: "Document flow", constraints: ["AirGapBoundary"], decisions: ["RetentionChoice"], cancelledActions: ["UploadCancelled"] },
+  }).direction;
+  const current = updateProjectDirection({
+    root,
+    expectedDirectionId: old.directionId,
+    input: { goal: "Document flow", constraints: ["LocalBoundary"], decisions: [], cancelledActions: ["ExternalCancelled"] },
+  }).direction;
   const before = originals(root, layout);
-  for (const [query, direction, freshness] of [["AirGapBoundary", old, "historical-direction-reference"], ["RetentionChoice", old, "historical-direction-reference"], ["UploadCancelled", old, "historical-direction-reference"], ["LocalBoundary", current, "current-direction-reference"]]) {
+  for (const [query, direction, freshness] of [
+    ["AirGapBoundary", old, "historical-direction-reference"],
+    ["RetentionChoice", old, "historical-direction-reference"],
+    ["UploadCancelled", old, "historical-direction-reference"],
+    ["LocalBoundary", current, "current-direction-reference"],
+  ]) {
     const result = await queryProjectGraph({ root, query, depth: 0, details: true });
-    const node = result.nodes.find(node => node.nodeId === direction.directionId);
+    const node = result.nodes.find((node) => node.nodeId === direction.directionId);
     assert(node, query);
     assert.deepEqual(node.directionEvidence, direction.input);
     assert.equal(node.freshness, freshness);
@@ -156,9 +201,18 @@ test("current and historical common direction expose all bounded fields without 
   assert.deepEqual(originals(root, layout), before);
 });
 
-test("direction excerpts disclose truncation and keep full originals accessible", async t => {
+test("direction excerpts disclose truncation and keep full originals accessible", async (t) => {
   const { root, layout } = fixture(t);
-  const direction = updateProjectDirection({ root, expectedDirectionId: null, input: { goal: "G".repeat(3000), constraints: Array.from({ length: 40 }, (_, i) => `Constraint${i} ` + "x".repeat(700)), decisions: [], cancelledActions: [] } }).direction;
+  const direction = updateProjectDirection({
+    root,
+    expectedDirectionId: null,
+    input: {
+      goal: "G".repeat(3000),
+      constraints: Array.from({ length: 40 }, (_, i) => `Constraint${i} ` + "x".repeat(700)),
+      decisions: [],
+      cancelledActions: [],
+    },
+  }).direction;
   const before = originals(root, layout);
   const result = await queryProjectGraph({ root, anchorIds: [direction.directionId], depth: 0, details: true });
   const node = result.nodes[0];
@@ -188,20 +242,25 @@ async function worldFixture(t) {
   fs.writeFileSync(path.join(root, "src/submit.mjs"), "import { enqueue } from './queue.mjs';\nexport function submit(value) { return enqueue(value); }\n");
   fs.writeFileSync(path.join(root, "cli.mjs"), "import { submit } from './src/submit.mjs';\nexport function main(value) { return submit(value); }\n");
   fs.writeFileSync(path.join(root, "decoration.mjs"), "export const decoration = true;\n");
-  await buildWorldModel({ root }); return { root, storage, layout };
+  await buildWorldModel({ root });
+  return { root, storage, layout };
 }
 
-test("paths-only adapter query binds exact verified File anchors and preserves failure reuse", async t => {
-  const { root, layout } = await worldFixture(t), before = originals(root, layout);
+test("paths-only adapter query binds exact verified File anchors and preserves failure reuse", async (t) => {
+  const { root, layout } = await worldFixture(t),
+    before = originals(root, layout);
   let calls = 0;
   class Offline extends InMemoryGraphProjectionAdapter {
-    readPointer() { calls++; throw Object.assign(new Error("fixture offline"), { code: "ARCADEDB_UNAVAILABLE" }); }
+    readPointer() {
+      calls++;
+      throw Object.assign(new Error("fixture offline"), { code: "ARCADEDB_UNAVAILABLE" });
+    }
   }
   const graphProjectionAdapter = new Offline();
   const first = await queryProjectGraph({ root, paths: ["src\\queue.mjs"], graphProjectionAdapter });
   assert.equal(calls, 1);
   assert.equal(first.adapter.fallbackReasonCode, "ARCADEDB_UNAVAILABLE");
-  assert(first.nodes.some(node => node.path === "src/queue.mjs"));
+  assert(first.nodes.some((node) => node.path === "src/queue.mjs"));
   const again = await queryProjectGraph({ root, paths: ["src/queue.mjs"], graphProjectionAdapter });
   assert.equal(calls, 1);
   assert.equal(first.resultId, again.resultId);
@@ -209,16 +268,21 @@ test("paths-only adapter query binds exact verified File anchors and preserves f
   safe(first);
 });
 
-test("paths-only verified adapter and local-only selectors are correctly distinguished", async t => {
+test("paths-only verified adapter and local-only selectors are correctly distinguished", async (t) => {
   const { root, storage, layout } = await worldFixture(t);
   const graph = (await readWorldModelForDiscovery({ root })).snapshot.temporalProvenanceGraph;
   const graphProjectionAdapter = new InMemoryGraphProjectionAdapter();
-  (await materializeGraphProjection({ projectRoot: root, storage, graph, adapter: graphProjectionAdapter }));
+  await materializeGraphProjection({ projectRoot: root, storage, graph, adapter: graphProjectionAdapter });
   const result = await queryProjectGraph({ root, paths: ["src/queue.mjs"], graphProjectionAdapter });
   assert.equal(result.adapter.status, "verified");
   safe(result);
   let calls = 0;
-  class Unused extends InMemoryGraphProjectionAdapter { readPointer() { calls++; throw new Error("not expected"); } }
+  class Unused extends InMemoryGraphProjectionAdapter {
+    readPointer() {
+      calls++;
+      throw new Error("not expected");
+    }
+  }
   const unused = new Unused();
   const plan = createWholePlanSnapshot({ root, objective: "Inspect local evidence", plan: ["Read source"] }).artifact;
   for (const selector of [{}, { paths: ["not-in-world.mjs"] }, { anchorIds: [plan.wholePlanId] }]) {
@@ -231,12 +295,17 @@ test("paths-only verified adapter and local-only selectors are correctly disting
   assert.equal(calls, 0);
 });
 
-test("exact path queries and code impact use existing public CLI/MCP with bounded fallback", async t => {
+test("exact path queries and code impact use existing public CLI/MCP with bounded fallback", async (t) => {
   const { root, layout } = await worldFixture(t);
   const before = originals(root, layout);
   const cli = await runCommand(["graph-query", root, "--query", "src/queue.mjs", "--max-nodes", "1", "--depth", "0"]);
   assert.equal(cli.nodes[0]?.path, "src/queue.mjs");
-  const rpc = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "head_project_graph", arguments: { project_root: root, query: "src/queue.mjs", max_nodes: 1, depth: 0 } } });
+  const rpc = await dispatch({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: { name: "head_project_graph", arguments: { project_root: root, query: "src/queue.mjs", max_nodes: 1, depth: 0 } },
+  });
   assert(!rpc.error);
   assert.equal(cli.resultId, rpc.result.structuredContent.resultId);
   const impact = await runCommand(["world-query", root, "--query", "enqueue", "--depth", "3", "--limit", "20"]);
@@ -249,7 +318,7 @@ test("exact path queries and code impact use existing public CLI/MCP with bounde
   assert(serialized.includes("CALLS"));
   fs.writeFileSync(path.join(root, "src/queue.mjs"), "export function enqueue(value) { return [value]; }\n");
   const retained = await queryProjectGraph({ root, paths: ["src/queue.mjs"] });
-  assert(retained.nodes.some(node => node.freshness === "historical-source-bytes"));
+  assert(retained.nodes.some((node) => node.freshness === "historical-source-bytes"));
   safe(retained);
   assert.deepEqual(originals(root, layout), before);
 });

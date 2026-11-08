@@ -52,7 +52,11 @@ const digest = (value) => crypto.createHash("sha256").update(value).digest("hex"
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   }
   return value;
 }
@@ -108,10 +112,16 @@ function verifyEvidence(evidence) {
     prefix: "onboarding-evidence",
     label: "Onboarding Evidence",
   });
-  if (evidence.instructionAuthority !== false || evidence.promotionAuthority !== false
-    || typeof evidence.sourceKind !== "string" || !evidence.sourceKind
-    || typeof evidence.sourceId !== "string" || !evidence.sourceId
-    || typeof evidence.statement !== "string" || !evidence.statement) {
+  if (
+    evidence.instructionAuthority !== false ||
+    evidence.promotionAuthority !== false ||
+    typeof evidence.sourceKind !== "string" ||
+    !evidence.sourceKind ||
+    typeof evidence.sourceId !== "string" ||
+    !evidence.sourceId ||
+    typeof evidence.statement !== "string" ||
+    !evidence.statement
+  ) {
     fail("Onboarding Evidence fields or authority are invalid.", "INVALID_ONBOARDING_PROJECTION_EVIDENCE");
   }
   return evidence;
@@ -124,13 +134,25 @@ function verifyCandidate(candidate, format) {
     prefix: "onboarding-candidate",
     label: "Onboarding product candidate",
   });
-  if (candidate.schemaVersion !== 1 || candidate.kind !== "OnboardingProductCandidate" || !PRODUCT_ENTITY_KINDS.includes(candidate.productKind)
-    || candidate.authorityClass !== "candidate" || candidate.instructionAuthority !== false || candidate.promotionAuthority !== false
-    || !Number.isFinite(candidate.confidence) || candidate.confidence < 0 || candidate.confidence > 1
-    || !new Set([format.protocol("head-agent-core-semantic-proposal-normalizer"), format.protocol("head-agent-core-user-brief-normalizer")]).has(candidate.producer)
-    || candidate.producerVersion !== CANDIDATE_PROTOCOL_VERSION
-    || typeof candidate.explanation !== "string" || !candidate.explanation || candidate.explanation.length > 2000
-    || !/^source-snapshot-[a-f0-9]{24}$/.test(candidate.sourceSnapshotId || "")) {
+  if (
+    candidate.schemaVersion !== 1 ||
+    candidate.kind !== "OnboardingProductCandidate" ||
+    !PRODUCT_ENTITY_KINDS.includes(candidate.productKind) ||
+    candidate.authorityClass !== "candidate" ||
+    candidate.instructionAuthority !== false ||
+    candidate.promotionAuthority !== false ||
+    !Number.isFinite(candidate.confidence) ||
+    candidate.confidence < 0 ||
+    candidate.confidence > 1 ||
+    !new Set([format.protocol("head-agent-core-semantic-proposal-normalizer"), format.protocol("head-agent-core-user-brief-normalizer")]).has(
+      candidate.producer,
+    ) ||
+    candidate.producerVersion !== CANDIDATE_PROTOCOL_VERSION ||
+    typeof candidate.explanation !== "string" ||
+    !candidate.explanation ||
+    candidate.explanation.length > 2000 ||
+    !/^source-snapshot-[a-f0-9]{24}$/.test(candidate.sourceSnapshotId || "")
+  ) {
     fail("Onboarding product candidate fields or authority are invalid.", "INVALID_ONBOARDING_PROJECTION_CANDIDATE");
   }
   sortedUnique(candidate.evidenceIds, `Candidate ${candidate.candidateId} evidenceIds`);
@@ -146,17 +168,23 @@ export function verifyOnboardingCandidateSetForProjection(document, projectId = 
   });
   const candidateProtocolVersion = document.protocol?.version;
   const format = familyFormatForOriginal("head-agent-core-onboarding-candidates", document, storage);
-  if (!format || document.kind !== "OnboardingCandidateSet"
-    || candidateProtocolVersion !== CANDIDATE_PROTOCOL_VERSION
-    || document.schemaVersion !== 1 || (projectId && document.projectId !== projectId)
-    || !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || "")
-    || !/^session-[A-Fa-f0-9-]{36}$/.test(document.sessionId || "")
-    || !["existing", "new"].includes(document.inputMode)
-    || !/^onboarding-storage-[a-f0-9]{24}$/.test(document.storageSelectionId || "")
-    || document.worldModelId != null
-    || !/^source-snapshot-[a-f0-9]{24}$/.test(document.sourceSnapshotId || "")
-    || !/^product-model-[a-f0-9]{24}$/.test(document.productModelId || "")
-    || document.authorityClass !== "candidate-set" || document.instructionAuthority !== false || document.promotionAuthority !== false) {
+  if (
+    !format ||
+    document.kind !== "OnboardingCandidateSet" ||
+    candidateProtocolVersion !== CANDIDATE_PROTOCOL_VERSION ||
+    document.schemaVersion !== 1 ||
+    (projectId && document.projectId !== projectId) ||
+    !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || "") ||
+    !/^session-[A-Fa-f0-9-]{36}$/.test(document.sessionId || "") ||
+    !["existing", "new"].includes(document.inputMode) ||
+    !/^onboarding-storage-[a-f0-9]{24}$/.test(document.storageSelectionId || "") ||
+    document.worldModelId != null ||
+    !/^source-snapshot-[a-f0-9]{24}$/.test(document.sourceSnapshotId || "") ||
+    !/^product-model-[a-f0-9]{24}$/.test(document.productModelId || "") ||
+    document.authorityClass !== "candidate-set" ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false
+  ) {
     fail("Onboarding candidate set fields or authority are invalid.", "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET");
   }
   if (canonicalJson(document.limits) !== canonicalJson(CURRENT_CANDIDATE_SET_LIMITS)) {
@@ -165,9 +193,11 @@ export function verifyOnboardingCandidateSetForProjection(document, projectId = 
   if (!Array.isArray(document.candidates) || !Array.isArray(document.evidence) || !Array.isArray(document.unknowns)) {
     fail("Onboarding candidate set collections are invalid.", "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET");
   }
-  if (document.candidates.length > Number(document.limits?.maxCandidates)
-    || document.evidence.length > Number(document.limits?.maxEvidenceRecords)
-    || document.unknowns.length > Number(document.limits?.maxUnknowns)) {
+  if (
+    document.candidates.length > Number(document.limits?.maxCandidates) ||
+    document.evidence.length > Number(document.limits?.maxEvidenceRecords) ||
+    document.unknowns.length > Number(document.limits?.maxUnknowns)
+  ) {
     fail("Onboarding candidate set exceeds its recorded bounds.", "ONBOARDING_PROJECTION_LIMIT");
   }
   const evidenceIds = new Set();
@@ -179,36 +209,51 @@ export function verifyOnboardingCandidateSetForProjection(document, projectId = 
   if (canonicalJson(document.evidence.map((item) => item.evidenceId)) !== canonicalJson([...evidenceIds].sort(compareText))) {
     fail("Onboarding Evidence must use deterministic ordering.", "INVALID_ONBOARDING_PROJECTION_ORDER");
   }
-  if (document.briefEvidenceId != null && (!/^onboarding-brief-[a-f0-9]{24}$/.test(document.briefEvidenceId)
-    || !document.evidence.some((item) => item.sourceKind === "user-owned-onboarding-brief" && item.sourceId === document.briefEvidenceId))) {
+  if (
+    document.briefEvidenceId != null &&
+    (!/^onboarding-brief-[a-f0-9]{24}$/.test(document.briefEvidenceId) ||
+      !document.evidence.some((item) => item.sourceKind === "user-owned-onboarding-brief" && item.sourceId === document.briefEvidenceId))
+  ) {
     fail("Onboarding candidate set references missing brief Evidence.", "UNKNOWN_ONBOARDING_PROJECTION_EVIDENCE");
   }
   const candidateIds = new Set();
   for (const candidate of document.candidates) {
     verifyCandidate(candidate, format);
-    if (candidate.sourceSnapshotId !== document.sourceSnapshotId) fail("Candidate source snapshot does not match its set.", "ONBOARDING_PROJECTION_SOURCE_MISMATCH");
+    if (candidate.sourceSnapshotId !== document.sourceSnapshotId)
+      fail("Candidate source snapshot does not match its set.", "ONBOARDING_PROJECTION_SOURCE_MISMATCH");
     if (candidateIds.has(candidate.candidateId)) fail(`Duplicate onboarding candidate: ${candidate.candidateId}`, "DUPLICATE_ONBOARDING_PROJECTION_ARTIFACT");
     candidateIds.add(candidate.candidateId);
-    for (const evidenceId of candidate.evidenceIds) if (!evidenceIds.has(evidenceId)) {
-      fail(`Candidate references unknown Evidence: ${evidenceId}`, "UNKNOWN_ONBOARDING_PROJECTION_EVIDENCE");
-    }
+    for (const evidenceId of candidate.evidenceIds)
+      if (!evidenceIds.has(evidenceId)) {
+        fail(`Candidate references unknown Evidence: ${evidenceId}`, "UNKNOWN_ONBOARDING_PROJECTION_EVIDENCE");
+      }
   }
-  const orderedCandidates = [...document.candidates].sort((left, right) => (KIND_ORDER.get(left.productKind) - KIND_ORDER.get(right.productKind))
-    || compareText(left.proposedEntity?.key, right.proposedEntity?.key) || compareText(left.candidateId, right.candidateId));
+  const orderedCandidates = [...document.candidates].sort(
+    (left, right) =>
+      KIND_ORDER.get(left.productKind) - KIND_ORDER.get(right.productKind) ||
+      compareText(left.proposedEntity?.key, right.proposedEntity?.key) ||
+      compareText(left.candidateId, right.candidateId),
+  );
   if (canonicalJson(document.candidates.map((item) => item.candidateId)) !== canonicalJson(orderedCandidates.map((item) => item.candidateId))) {
     fail("Onboarding candidates must use deterministic ordering.", "INVALID_ONBOARDING_PROJECTION_ORDER");
   }
   candidateModel(document.candidates, format);
   const unknownIds = new Set();
   for (const unknown of document.unknowns) {
-    if (!unknown || !/^onboarding-unknown-[a-f0-9]{24}$/.test(unknown.unknownId || "")
-      || typeof unknown.statement !== "string" || !unknown.statement || unknown.status !== "open") {
+    if (
+      !unknown ||
+      !/^onboarding-unknown-[a-f0-9]{24}$/.test(unknown.unknownId || "") ||
+      typeof unknown.statement !== "string" ||
+      !unknown.statement ||
+      unknown.status !== "open"
+    ) {
       fail("Onboarding Unknown is invalid.", "INVALID_ONBOARDING_PROJECTION_UNKNOWN");
     }
     sortedUnique(unknown.evidenceIds || [], `Unknown ${unknown.unknownId} evidenceIds`);
-    for (const evidenceId of unknown.evidenceIds || []) if (!evidenceIds.has(evidenceId)) {
-      fail(`Unknown references missing Evidence: ${evidenceId}`, "UNKNOWN_ONBOARDING_PROJECTION_EVIDENCE");
-    }
+    for (const evidenceId of unknown.evidenceIds || [])
+      if (!evidenceIds.has(evidenceId)) {
+        fail(`Unknown references missing Evidence: ${evidenceId}`, "UNKNOWN_ONBOARDING_PROJECTION_EVIDENCE");
+      }
     if (unknownIds.has(unknown.unknownId)) fail(`Duplicate onboarding Unknown: ${unknown.unknownId}`, "DUPLICATE_ONBOARDING_PROJECTION_ARTIFACT");
     unknownIds.add(unknown.unknownId);
   }
@@ -245,15 +290,29 @@ export function verifyOnboardingReviewDecisionForProjection(document, candidateS
   const dispositions = new Set(["accept-all", "accept-selection", "revise", "reject"]);
   const format = familyFormatForOriginal("head-agent-core-onboarding-review", document);
   const candidateFormat = familyFormatForOriginal("head-agent-core-onboarding-candidates", candidateSet);
-  if (!format || !candidateFormat || format.dialect !== candidateFormat.dialect || document.kind !== "ReviewDecision"
-    || document.protocol?.version !== "0.1.0" || document.schemaVersion !== 1
-    || document.decisionScope !== "product-canon-bootstrap" || !dispositions.has(document.disposition)
-    || (projectId && document.projectId !== projectId) || document.projectId !== candidateSet.projectId
-    || document.sessionId !== candidateSet.sessionId || document.candidateSetId !== candidateSet.candidateSetId
-    || !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || "") || !/^session-[A-Fa-f0-9-]{36}$/.test(document.sessionId || "")
-    || !Array.isArray(document.userEdits) || !Array.isArray(document.addedEntities) || !Array.isArray(document.lineage)
-    || typeof document.rationale !== "string" || !document.rationale
-    || document.authority !== "explicit-user-onboarding-review" || document.instructionAuthority !== true) {
+  if (
+    !format ||
+    !candidateFormat ||
+    format.dialect !== candidateFormat.dialect ||
+    document.kind !== "ReviewDecision" ||
+    document.protocol?.version !== "0.1.0" ||
+    document.schemaVersion !== 1 ||
+    document.decisionScope !== "product-canon-bootstrap" ||
+    !dispositions.has(document.disposition) ||
+    (projectId && document.projectId !== projectId) ||
+    document.projectId !== candidateSet.projectId ||
+    document.sessionId !== candidateSet.sessionId ||
+    document.candidateSetId !== candidateSet.candidateSetId ||
+    !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || "") ||
+    !/^session-[A-Fa-f0-9-]{36}$/.test(document.sessionId || "") ||
+    !Array.isArray(document.userEdits) ||
+    !Array.isArray(document.addedEntities) ||
+    !Array.isArray(document.lineage) ||
+    typeof document.rationale !== "string" ||
+    !document.rationale ||
+    document.authority !== "explicit-user-onboarding-review" ||
+    document.instructionAuthority !== true
+  ) {
     fail("Onboarding ReviewDecision fields or authority are invalid.", "INVALID_ONBOARDING_PROJECTION_REVIEW");
   }
   const accepted = sortedUnique(document.acceptedCandidateIds, `Review ${document.reviewDecisionId} acceptedCandidateIds`);
@@ -263,11 +322,14 @@ export function verifyOnboardingReviewDecisionForProjection(document, candidateS
     fail("Onboarding ReviewDecision candidate references are invalid.", "INVALID_ONBOARDING_PROJECTION_REVIEW");
   }
   const accepting = document.disposition.startsWith("accept");
-  if (document.promotionAuthority !== accepting
-    || (accepting && (!/^product-model-[a-f0-9]{24}$/.test(document.resultingProductModelId || "") || !/^[a-f0-9]{64}$/.test(document.resultingProductModelHash || "")))
-    || (!accepting && (document.resultingProductModelId != null || document.resultingProductModelHash != null))
-    || !/^product-model-[a-f0-9]{24}$/.test(document.previousProductModelId || "")
-    || !/^[a-f0-9]{64}$/.test(document.previousProductModelHash || "")) {
+  if (
+    document.promotionAuthority !== accepting ||
+    (accepting &&
+      (!/^product-model-[a-f0-9]{24}$/.test(document.resultingProductModelId || "") || !/^[a-f0-9]{64}$/.test(document.resultingProductModelHash || ""))) ||
+    (!accepting && (document.resultingProductModelId != null || document.resultingProductModelHash != null)) ||
+    !/^product-model-[a-f0-9]{24}$/.test(document.previousProductModelId || "") ||
+    !/^[a-f0-9]{64}$/.test(document.previousProductModelHash || "")
+  ) {
     fail("Onboarding ReviewDecision promotion fields are invalid.", "INVALID_ONBOARDING_PROJECTION_REVIEW");
   }
   if (document.disposition === "reject" && (accepted.length || rejected.length !== known.size)) {
@@ -282,15 +344,13 @@ export function verifyOnboardingReviewDecisionForProjection(document, candidateS
   return document;
 }
 
-
 // Add owner metadata only to new originals. An identical historical ownerless
 // revision can be reused by its writer, but is never rewritten or made citable.
 export function productModelRevisionForImmutableRetry(existing, intended, storage) {
   verifyProductModelRevisionForProjection(existing, storage);
   verifyProductModelRevisionForProjection(intended, storage);
   const { projectId, ...withoutOwner } = intended;
-  return existing.projectId === undefined && projectId
-    && onboardingCanonicalJson(existing) === onboardingCanonicalJson(withoutOwner) ? existing : intended;
+  return existing.projectId === undefined && projectId && onboardingCanonicalJson(existing) === onboardingCanonicalJson(withoutOwner) ? existing : intended;
 }
 
 function safeDirectory(projectRoot, relativeDirectory) {
@@ -329,8 +389,11 @@ function readArtifactDirectory(projectRoot, relativeDirectory, { idPattern, idFi
     totalBytes += size;
     if (totalBytes > ARTIFACT_LIMITS.maxTotalBytes) fail(`${label} exceeds the total byte bound.`, "ONBOARDING_PROJECTION_LIMIT");
     let document;
-    try { document = JSON.parse(fs.readFileSync(file, "utf8")); }
-    catch (error) { fail(`${label} is invalid JSON: ${entry.name}: ${error.message}`, "INVALID_ONBOARDING_PROJECTION_JSON"); }
+    try {
+      document = JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch (error) {
+      fail(`${label} is invalid JSON: ${entry.name}: ${error.message}`, "INVALID_ONBOARDING_PROJECTION_JSON");
+    }
     if (document[idField] !== id) fail(`${label} filename does not match its identity: ${entry.name}`, "ONBOARDING_PROJECTION_IDENTITY_MISMATCH");
     documents.push(document);
   }
@@ -362,8 +425,12 @@ export function loadOnboardingGraphProjection({
   const candidateDirectory = relativeProjectArtifact(storage, "onboarding", "candidate-sets");
   const reviewDirectory = relativeProjectArtifact(storage, "onboarding", "review-decisions");
   const revisionDirectory = relativeProjectArtifact(storage, "onboarding", "product-model-revisions");
-  if (typeof projectRoot !== "string" || !projectRoot || !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(projectId || "")
-    || !/^product-model-[a-f0-9]{24}$/.test(currentProductModelId || "")) {
+  if (
+    typeof projectRoot !== "string" ||
+    !projectRoot ||
+    !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(projectId || "") ||
+    !/^product-model-[a-f0-9]{24}$/.test(currentProductModelId || "")
+  ) {
     fail("Onboarding graph projection scope is invalid.", "INVALID_ONBOARDING_PROJECTION_SCOPE");
   }
   const historical = readCommittedHistoricalArtifactBoundary({ root: projectRoot, projectId, allowAbsent: true, storage });
@@ -399,8 +466,11 @@ export function loadOnboardingGraphProjection({
         current.push(document);
         continue;
       }
-      if (entry.artifactId !== document[idField] || entry.protocolFamily !== (document.protocol?.name || document.kind)
-        || entry.protocolVersion !== (document.protocol?.version || String(document.schemaVersion || ""))) {
+      if (
+        entry.artifactId !== document[idField] ||
+        entry.protocolFamily !== (document.protocol?.name || document.kind) ||
+        entry.protocolVersion !== (document.protocol?.version || String(document.schemaVersion || ""))
+      ) {
         fail(`Historical boundary role or protocol does not match: ${relative}`, "HISTORICAL_BOUNDARY_INTEGRITY_DRIFT");
       }
       if (role === "historical-product-revision" && entry.interpretationMode === "current-typed-with-historical-provenance") current.push(document);
@@ -413,8 +483,11 @@ export function loadOnboardingGraphProjection({
   const candidateSets = mergeArtifacts(storedCurrentCandidates, additionalCandidateSets, "candidateSetId", "Onboarding candidate set");
   const reviewDecisions = mergeArtifacts(storedCurrentReviews, additionalReviewDecisions, "reviewDecisionId", "Onboarding ReviewDecision");
   const productModelRevisions = mergeArtifacts(storedCurrentRevisions, additionalProductModelRevisions, "productModelId", "Product Model revision");
-  if (candidateSets.length > ARTIFACT_LIMITS.maxCandidateSets || reviewDecisions.length > ARTIFACT_LIMITS.maxReviewDecisions
-    || productModelRevisions.length > ARTIFACT_LIMITS.maxProductModelRevisions) {
+  if (
+    candidateSets.length > ARTIFACT_LIMITS.maxCandidateSets ||
+    reviewDecisions.length > ARTIFACT_LIMITS.maxReviewDecisions ||
+    productModelRevisions.length > ARTIFACT_LIMITS.maxProductModelRevisions
+  ) {
     fail("Onboarding projection additions exceed artifact-count bounds.", "ONBOARDING_PROJECTION_LIMIT");
   }
   const candidateById = new Map();
@@ -433,9 +506,10 @@ export function loadOnboardingGraphProjection({
     revisionById.set(revision.productModelId, revision);
   }
   for (const candidateSet of candidateSets) {
-    for (const parentId of candidateSet.parentCandidateSetIds) if (!candidateById.has(parentId)) {
-      fail(`Candidate set references a missing parent: ${parentId}`, "ONBOARDING_PROJECTION_DANGLING_PARENT");
-    }
+    for (const parentId of candidateSet.parentCandidateSetIds)
+      if (!candidateById.has(parentId)) {
+        fail(`Candidate set references a missing parent: ${parentId}`, "ONBOARDING_PROJECTION_DANGLING_PARENT");
+      }
     const producerReviewDecisionId = onboardingCandidateProducerReviewDecisionId(candidateSet);
     if (producerReviewDecisionId) {
       const review = reviewDecisions.find((item) => item.reviewDecisionId === producerReviewDecisionId);
@@ -458,12 +532,21 @@ export function loadOnboardingGraphProjection({
   for (const review of reviewDecisions.filter((item) => item.promotionAuthority)) {
     const previous = revisionById.get(review.previousProductModelId);
     const resulting = revisionById.get(review.resultingProductModelId);
-    if (!previous || !resulting || previous.productModelHash !== review.previousProductModelHash
-      || resulting.productModelHash !== review.resultingProductModelHash) {
-      fail(`Accepted ReviewDecision has incomplete Product Model revision evidence: ${review.reviewDecisionId}`, "ONBOARDING_PROJECTION_PRODUCT_REVISION_MISSING");
+    if (
+      !previous ||
+      !resulting ||
+      previous.productModelHash !== review.previousProductModelHash ||
+      resulting.productModelHash !== review.resultingProductModelHash
+    ) {
+      fail(
+        `Accepted ReviewDecision has incomplete Product Model revision evidence: ${review.reviewDecisionId}`,
+        "ONBOARDING_PROJECTION_PRODUCT_REVISION_MISSING",
+      );
     }
   }
-  const continuityReceipts = historical ? readHistoricalContinuityReceipts({ root: projectRoot, boundary: historical.boundary, currentCandidateSets: candidateSets, storage }) : [];
+  const continuityReceipts = historical
+    ? readHistoricalContinuityReceipts({ root: projectRoot, boundary: historical.boundary, currentCandidateSets: candidateSets, storage })
+    : [];
   const payload = {
     kind: "OnboardingGraphProjectionInput",
     protocol: { name: format.protocol("head-agent-core-onboarding-graph-projection"), version: ONBOARDING_GRAPH_PROJECTION_VERSION },
@@ -472,21 +555,23 @@ export function loadOnboardingGraphProjection({
     candidateSets,
     reviewDecisions,
     productModelRevisions,
-    historicalCoverage: historical ? {
-      boundaryId: historical.boundary.boundaryId,
-      boundaryHash: historical.boundary.boundaryHash,
-      boundaryIntegrity: historical.boundaryIntegrity,
-      applicationStatus: historical.applicationStatus,
-      ...historical.coverage,
-      references: historical.boundary.entries.map((entry) => ({
-        path: entry.path,
-        role: entry.role,
-        artifactId: entry.artifactId,
-        sha256: entry.sha256,
-        interpretationMode: entry.interpretationMode,
-      })),
-      continuityReceipts,
-    } : null,
+    historicalCoverage: historical
+      ? {
+          boundaryId: historical.boundary.boundaryId,
+          boundaryHash: historical.boundary.boundaryHash,
+          boundaryIntegrity: historical.boundaryIntegrity,
+          applicationStatus: historical.applicationStatus,
+          ...historical.coverage,
+          references: historical.boundary.entries.map((entry) => ({
+            path: entry.path,
+            role: entry.role,
+            artifactId: entry.artifactId,
+            sha256: entry.sha256,
+            interpretationMode: entry.interpretationMode,
+          })),
+          continuityReceipts,
+        }
+      : null,
     limits: ARTIFACT_LIMITS,
     authority: "mixed-source-derived-projection-input",
     instructionAuthority: false,
@@ -502,11 +587,15 @@ export function loadOnboardingGraphProjection({
 
 export function verifyOnboardingGraphProjectionInput(document) {
   const format = familyFormatForOriginal("head-agent-core-onboarding-graph-projection", document);
-  if (!document || document.kind !== "OnboardingGraphProjectionInput"
-    || !format
-    || document.protocol.version !== ONBOARDING_GRAPH_PROJECTION_VERSION
-    || document.authority !== "mixed-source-derived-projection-input"
-    || document.instructionAuthority !== false || document.promotionAuthority !== false) {
+  if (
+    !document ||
+    document.kind !== "OnboardingGraphProjectionInput" ||
+    !format ||
+    document.protocol.version !== ONBOARDING_GRAPH_PROJECTION_VERSION ||
+    document.authority !== "mixed-source-derived-projection-input" ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false
+  ) {
     fail("Onboarding graph projection input is invalid.", "INVALID_ONBOARDING_GRAPH_PROJECTION_INPUT");
   }
   const payload = { ...document };
@@ -518,9 +607,14 @@ export function verifyOnboardingGraphProjectionInput(document) {
   }
   const historical = document.historicalCoverage;
   if (historical) {
-    if (!/^historical-boundary-[a-f0-9]{24}$/.test(historical.boundaryId || "") || !/^[a-f0-9]{64}$/.test(historical.boundaryHash || "")
-      || historical.boundaryIntegrity !== "verified" || historical.applicationStatus !== "committed"
-      || !Array.isArray(historical.references) || !Array.isArray(historical.continuityReceipts)) {
+    if (
+      !/^historical-boundary-[a-f0-9]{24}$/.test(historical.boundaryId || "") ||
+      !/^[a-f0-9]{64}$/.test(historical.boundaryHash || "") ||
+      historical.boundaryIntegrity !== "verified" ||
+      historical.applicationStatus !== "committed" ||
+      !Array.isArray(historical.references) ||
+      !Array.isArray(historical.continuityReceipts)
+    ) {
       fail("Historical onboarding projection coverage is invalid.", "INVALID_ONBOARDING_HISTORICAL_COVERAGE");
     }
     for (const field of ["opaqueCandidateSetIds", "opaqueReviewDecisionIds", "typedRevisionIds", "opaqueRevisionIds", "legacyWorldEmbeddingReferenceIds"]) {
@@ -532,41 +626,83 @@ export function verifyOnboardingGraphProjectionInput(document) {
       fail("Historical typed and opaque Product revision coverage must be disjoint.", "INVALID_ONBOARDING_HISTORICAL_COVERAGE");
     }
     const referenceSpecs = new Map([
-      ["historical-candidate-set", { id: /^onboarding-candidates-[a-f0-9]{24}$/, modes: new Set(["opaque-historical"]), path: (id) => relativeProjectArtifact(format, "onboarding", "candidate-sets", `${id}.json`) }],
-      ["historical-review", { id: /^onboarding-review-decision-[a-f0-9]{24}$/, modes: new Set(["opaque-historical"]), path: (id) => relativeProjectArtifact(format, "onboarding", "review-decisions", `${id}.json`) }],
-      ["historical-product-revision", { id: /^product-model-[a-f0-9]{24}$/, modes: new Set(["current-typed-with-historical-provenance", "opaque-legacy-revision"]), path: (id) => relativeProjectArtifact(format, "onboarding", "product-model-revisions", `${id}.json`) }],
-      ["legacy-world-embedding-reference", { id: /^world-model-[a-f0-9]{24}$/, modes: new Set(["opaque-historical"]), path: (id) => relativeProjectArtifact(format, "world-model", "snapshots", `${id}.json`) }],
+      [
+        "historical-candidate-set",
+        {
+          id: /^onboarding-candidates-[a-f0-9]{24}$/,
+          modes: new Set(["opaque-historical"]),
+          path: (id) => relativeProjectArtifact(format, "onboarding", "candidate-sets", `${id}.json`),
+        },
+      ],
+      [
+        "historical-review",
+        {
+          id: /^onboarding-review-decision-[a-f0-9]{24}$/,
+          modes: new Set(["opaque-historical"]),
+          path: (id) => relativeProjectArtifact(format, "onboarding", "review-decisions", `${id}.json`),
+        },
+      ],
+      [
+        "historical-product-revision",
+        {
+          id: /^product-model-[a-f0-9]{24}$/,
+          modes: new Set(["current-typed-with-historical-provenance", "opaque-legacy-revision"]),
+          path: (id) => relativeProjectArtifact(format, "onboarding", "product-model-revisions", `${id}.json`),
+        },
+      ],
+      [
+        "legacy-world-embedding-reference",
+        {
+          id: /^world-model-[a-f0-9]{24}$/,
+          modes: new Set(["opaque-historical"]),
+          path: (id) => relativeProjectArtifact(format, "world-model", "snapshots", `${id}.json`),
+        },
+      ],
     ]);
     const referenceById = new Map();
     for (const reference of historical.references) {
       const spec = referenceSpecs.get(reference.role);
-      if (typeof reference.path !== "string" || !reference.path || typeof reference.role !== "string"
-        || typeof reference.artifactId !== "string" || !reference.artifactId || !/^[a-f0-9]{64}$/.test(reference.sha256 || "")
-        || !spec || !spec.id.test(reference.artifactId) || !spec.modes.has(reference.interpretationMode)
-        || reference.path !== spec.path(reference.artifactId)
-          && !(reference.role === "legacy-world-embedding-reference" && reference.path === spec.path(reference.artifactId) + ".gz")
-        || referenceById.has(`${reference.role}:${reference.artifactId}`)) {
+      if (
+        typeof reference.path !== "string" ||
+        !reference.path ||
+        typeof reference.role !== "string" ||
+        typeof reference.artifactId !== "string" ||
+        !reference.artifactId ||
+        !/^[a-f0-9]{64}$/.test(reference.sha256 || "") ||
+        !spec ||
+        !spec.id.test(reference.artifactId) ||
+        !spec.modes.has(reference.interpretationMode) ||
+        (reference.path !== spec.path(reference.artifactId) &&
+          !(reference.role === "legacy-world-embedding-reference" && reference.path === spec.path(reference.artifactId) + ".gz")) ||
+        referenceById.has(`${reference.role}:${reference.artifactId}`)
+      ) {
         fail("Historical onboarding reference is invalid.", "INVALID_ONBOARDING_HISTORICAL_COVERAGE");
       }
       referenceById.set(`${reference.role}:${reference.artifactId}`, reference);
     }
-    const idsFor = (role, mode = null) => historical.references
-      .filter((reference) => reference.role === role && (mode == null || reference.interpretationMode === mode))
-      .map((reference) => reference.artifactId).sort();
-    if (canonicalJson(idsFor("historical-candidate-set")) !== canonicalJson(historical.opaqueCandidateSetIds)
-      || canonicalJson(idsFor("historical-review")) !== canonicalJson(historical.opaqueReviewDecisionIds)
-      || canonicalJson(idsFor("historical-product-revision", "current-typed-with-historical-provenance")) !== canonicalJson(historical.typedRevisionIds)
-      || canonicalJson(idsFor("historical-product-revision", "opaque-legacy-revision")) !== canonicalJson(historical.opaqueRevisionIds)
-      || canonicalJson(idsFor("legacy-world-embedding-reference")) !== canonicalJson(historical.legacyWorldEmbeddingReferenceIds)) {
+    const idsFor = (role, mode = null) =>
+      historical.references
+        .filter((reference) => reference.role === role && (mode == null || reference.interpretationMode === mode))
+        .map((reference) => reference.artifactId)
+        .sort();
+    if (
+      canonicalJson(idsFor("historical-candidate-set")) !== canonicalJson(historical.opaqueCandidateSetIds) ||
+      canonicalJson(idsFor("historical-review")) !== canonicalJson(historical.opaqueReviewDecisionIds) ||
+      canonicalJson(idsFor("historical-product-revision", "current-typed-with-historical-provenance")) !== canonicalJson(historical.typedRevisionIds) ||
+      canonicalJson(idsFor("historical-product-revision", "opaque-legacy-revision")) !== canonicalJson(historical.opaqueRevisionIds) ||
+      canonicalJson(idsFor("legacy-world-embedding-reference")) !== canonicalJson(historical.legacyWorldEmbeddingReferenceIds)
+    ) {
       fail("Historical onboarding coverage does not match its exact references.", "INVALID_ONBOARDING_HISTORICAL_COVERAGE");
     }
     const projectedRevisionIds = document.productModelRevisions.map((revision) => revision.productModelId);
     const typedRevisionIds = new Set(projectedRevisionIds);
-    if (typedRevisionIds.size !== projectedRevisionIds.length
-      || historical.typedRevisionIds.some((id) => !typedRevisionIds.has(id))
-      || historical.opaqueRevisionIds.some((id) => typedRevisionIds.has(id))
-      || historical.opaqueCandidateSetIds.some((id) => document.candidateSets.some((candidate) => candidate.candidateSetId === id))
-      || historical.opaqueReviewDecisionIds.some((id) => document.reviewDecisions.some((review) => review.reviewDecisionId === id))) {
+    if (
+      typedRevisionIds.size !== projectedRevisionIds.length ||
+      historical.typedRevisionIds.some((id) => !typedRevisionIds.has(id)) ||
+      historical.opaqueRevisionIds.some((id) => typedRevisionIds.has(id)) ||
+      historical.opaqueCandidateSetIds.some((id) => document.candidateSets.some((candidate) => candidate.candidateSetId === id)) ||
+      historical.opaqueReviewDecisionIds.some((id) => document.reviewDecisions.some((review) => review.reviewDecisionId === id))
+    ) {
       fail("Historical onboarding coverage conflicts with the current typed projection sets.", "INVALID_ONBOARDING_HISTORICAL_COVERAGE");
     }
     const candidateById = new Map(document.candidateSets.map((candidate) => [candidate.candidateSetId, candidate]));
@@ -574,11 +710,19 @@ export function verifyOnboardingGraphProjectionInput(document) {
     for (const receipt of historical.continuityReceipts) {
       const source = referenceById.get(`historical-candidate-set:${receipt.historicalCandidateSetId}`);
       const target = candidateById.get(receipt.currentCandidateSetId);
-      if (receipt.relation !== "HISTORICALLY_FOLLOWS" || receipt.boundaryId !== historical.boundaryId || receipt.boundaryHash !== historical.boundaryHash
-        || source?.sha256 !== receipt.historicalCandidateSetHash || target?.candidateSetHash !== receipt.currentCandidateSetHash
-        || !/^historical-continuity-[a-f0-9]{24}$/.test(receipt.receiptId || "") || !/^[a-f0-9]{64}$/.test(receipt.receiptHash || "")
-        || receiptIds.has(receipt.receiptId)
-        || receipt.instructionAuthority !== false || receipt.promotionAuthority !== false || receipt.recoveryAuthority !== false) {
+      if (
+        receipt.relation !== "HISTORICALLY_FOLLOWS" ||
+        receipt.boundaryId !== historical.boundaryId ||
+        receipt.boundaryHash !== historical.boundaryHash ||
+        source?.sha256 !== receipt.historicalCandidateSetHash ||
+        target?.candidateSetHash !== receipt.currentCandidateSetHash ||
+        !/^historical-continuity-[a-f0-9]{24}$/.test(receipt.receiptId || "") ||
+        !/^[a-f0-9]{64}$/.test(receipt.receiptHash || "") ||
+        receiptIds.has(receipt.receiptId) ||
+        receipt.instructionAuthority !== false ||
+        receipt.promotionAuthority !== false ||
+        receipt.recoveryAuthority !== false
+      ) {
         fail("Historical onboarding continuity binding is invalid.", "INVALID_ONBOARDING_HISTORICAL_COVERAGE");
       }
       receiptIds.add(receipt.receiptId);

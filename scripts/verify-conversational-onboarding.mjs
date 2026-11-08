@@ -34,8 +34,7 @@ async function discoverTool(name) {
     assert.equal(discovery.grantsAuthorization, false);
     assert.equal(discovery.total, 1);
     assert.equal(discovery.tools[0].name, name);
-    assert.equal(discovery.tools[0].invokeWith,
-      publicToolName(discovery.tools[0].annotations.readOnlyHint === true ? "head_tools_read" : "head_tools_call"));
+    assert.equal(discovery.tools[0].invokeWith, publicToolName(discovery.tools[0].annotations.readOnlyHint === true ? "head_tools_read" : "head_tools_call"));
     discoveredTools.set(name, discovery.tools[0]);
   }
   return discoveredTools.get(name);
@@ -55,12 +54,15 @@ async function tool(name, args) {
 
 try {
   fs.mkdirSync(projectRoot, { recursive: true });
-  fs.writeFileSync(path.join(projectRoot, "request-service.mjs"), [
-    "export function acceptRequest() { return 'accepted'; }",
-    "export function validateRequest() { return 'valid'; }",
-    "export function publishReceipt() { return acceptRequest(); }",
-    "",
-  ].join("\n"));
+  fs.writeFileSync(
+    path.join(projectRoot, "request-service.mjs"),
+    [
+      "export function acceptRequest() { return 'accepted'; }",
+      "export function validateRequest() { return 'valid'; }",
+      "export function publishReceipt() { return acceptRequest(); }",
+      "",
+    ].join("\n"),
+  );
   fs.writeFileSync(path.join(projectRoot, "README.md"), "# Request processing\n\nAccept, validate, and acknowledge user requests.\n");
 
   const listed = await dispatch({ jsonrpc: "2.0", id: "tools", method: "tools/list", params: {} });
@@ -85,7 +87,10 @@ try {
   const graphDbActivateTool = await discoverTool("head_graphdb_projection_activate");
   assert.deepEqual(graphDbActivateTool.inputSchema.required, ["project_root", "confirm_remote_write"]);
   assert.equal(graphDbActivateTool.inputSchema.additionalProperties, false);
-  assert.equal(Object.keys(graphDbActivateTool.inputSchema.properties).some((key) => /password|username|credential|token/i.test(key)), false);
+  assert.equal(
+    Object.keys(graphDbActivateTool.inputSchema.properties).some((key) => /password|username|credential|token/i.test(key)),
+    false,
+  );
 
   fs.mkdirSync(coreProjectRoot, { recursive: true });
   fs.writeFileSync(path.join(coreProjectRoot, "core.mjs"), "export const coordinated = true;\n");
@@ -140,10 +145,14 @@ try {
   assert.equal(graphDbPreflight.networkRequestPerformed, false);
   assert.equal(JSON.stringify(graphDbPreflight).includes("fixture-target.invalid"), false);
   assert.equal(JSON.stringify(graphDbPreflight).includes("fixture-target-database"), false);
-  await assert.rejects(() => tool("head_graphdb_projection_activate", {
-    project_root: graphProjectRoot,
-    confirm_remote_write: false,
-  }), /explicit user confirmation/u);
+  await assert.rejects(
+    () =>
+      tool("head_graphdb_projection_activate", {
+        project_root: graphProjectRoot,
+        confirm_remote_write: false,
+      }),
+    /explicit user confirmation/u,
+  );
   const fixtureUsernameReference = "HEAD_FIXTURE_GRAPHDB_USERNAME_MISSING";
   const fixturePasswordReference = "HEAD_FIXTURE_GRAPHDB_PASSWORD_MISSING";
   const previousFixtureUsername = process.env[fixtureUsernameReference];
@@ -193,17 +202,19 @@ try {
     semantic_proposal: {
       schemaVersion: 1,
       sourceSnapshotId: initialized.onboarding.sourceSnapshotId,
-      candidates: [{
-        productKind: "Capability",
-        proposedEntity: {
-          key: "capability:request-processing",
-          name: "Request processing",
-          description: "Accept current user requests and produce acknowledgements.",
+      candidates: [
+        {
+          productKind: "Capability",
+          proposedEntity: {
+            key: "capability:request-processing",
+            name: "Request processing",
+            description: "Accept current user requests and produce acknowledgements.",
+          },
+          evidence: [{ path: "request-service.mjs", line: 1 }],
+          explanation: "Fresh HEAD interpreted current behavior; Core binds the current digest and keeps this proposal non-authoritative.",
+          confidence: 0.8,
         },
-        evidence: [{ path: "request-service.mjs", line: 1 }],
-        explanation: "Fresh HEAD interpreted current behavior; Core binds the current digest and keeps this proposal non-authoritative.",
-        confidence: 0.8,
-      }],
+      ],
     },
   });
   assert.equal(proposed.status, "product_review_required");
@@ -214,7 +225,10 @@ try {
   assert.equal(reviewGuide.status, "awaiting_review");
   assert.equal(reviewGuide.nextAction, "review_candidates");
   assert.equal(reviewGuide.review.truncated, false);
-  assert.equal(reviewGuide.review.candidates.every((candidate) => candidate.authority === "candidate-only-until-explicit-review"), true);
+  assert.equal(
+    reviewGuide.review.candidates.every((candidate) => candidate.authority === "candidate-only-until-explicit-review"),
+    true,
+  );
   const reviewGuideResponse = await toolResponse("head_onboarding_guide", { project_root: projectRoot, candidate_limit: 200 });
   assert.match(reviewGuideResponse.content[0].text, /Core supplies no automatic disposition/u);
   assert.match(reviewGuideResponse.content[0].text, /Reply in natural language/u);
@@ -224,14 +238,16 @@ try {
     project_root: projectRoot,
     candidate_set_id: reviewGuide.review.candidateSetId,
     disposition: "revise",
-    added_entities: [{
-      kind: "Capability",
-      entity: {
-        key: "capability:reviewed-continuity",
-        name: "Reviewed continuity",
-        description: "Preserve explicit successor review lineage.",
+    added_entities: [
+      {
+        kind: "Capability",
+        entity: {
+          key: "capability:reviewed-continuity",
+          name: "Reviewed continuity",
+          description: "Preserve explicit successor review lineage.",
+        },
       },
-    }],
+    ],
     rationale: "Add one user-authored concept through the required two-review path.",
   });
   assert.equal(revised.status, "onboarding_revision_awaiting_review");
@@ -294,30 +310,35 @@ try {
   assert.equal(resumed.project.sessionId, initialized.project.sessionId);
   assert.equal(resumed.onboardingAction, "already-ready");
 
-  process.stdout.write(`${JSON.stringify({
-    status: "conversational_onboarding_verified",
-    constitutionalCoreDefaultVerified: true,
-    projectIdentityPreserved: true,
-    sessionIdentityPreserved: true,
-    explicitReviewRequired: true,
-    worldGraphContextDocumentsReady: true,
-    optionalGraphDbConversationOperationsDiscoverable: true,
-    defaultToolCount: defaultToolNames.size,
-    advancedToolsDiscovered: [...discoveredTools.keys()].sort(),
-    advancedToolsRouted: [...routedToolNames].sort(),
-    discoveryGrantsAuthorization: false,
-    unconfirmedGraphDbActivationRejected: true,
-    graphDbCredentialPreflightNetworkRequests: 0,
-    graphDbTargetValuesReturnedByPreflight: false,
-    graphDbCredentialValuesAcceptedByTools: false,
-    graphDbRequired: false,
-    gitRequired: false,
-    credentialValuesPersisted: false,
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        status: "conversational_onboarding_verified",
+        constitutionalCoreDefaultVerified: true,
+        projectIdentityPreserved: true,
+        sessionIdentityPreserved: true,
+        explicitReviewRequired: true,
+        worldGraphContextDocumentsReady: true,
+        optionalGraphDbConversationOperationsDiscoverable: true,
+        defaultToolCount: defaultToolNames.size,
+        advancedToolsDiscovered: [...discoveredTools.keys()].sort(),
+        advancedToolsRouted: [...routedToolNames].sort(),
+        discoveryGrantsAuthorization: false,
+        unconfirmedGraphDbActivationRejected: true,
+        graphDbCredentialPreflightNetworkRequests: 0,
+        graphDbTargetValuesReturnedByPreflight: false,
+        graphDbCredentialValuesAcceptedByTools: false,
+        graphDbRequired: false,
+        gitRequired: false,
+        credentialValuesPersisted: false,
+      },
+      null,
+      2,
+    )}\n`,
+  );
 } finally {
   const resolvedTemporaryRoot = path.resolve(temporaryRoot);
-  if (resolvedTemporaryRoot.startsWith(path.resolve(os.tmpdir()) + path.sep)
-    && path.basename(resolvedTemporaryRoot).startsWith("head-agent-conversation-")) {
+  if (resolvedTemporaryRoot.startsWith(path.resolve(os.tmpdir()) + path.sep) && path.basename(resolvedTemporaryRoot).startsWith("head-agent-conversation-")) {
     fs.rmSync(resolvedTemporaryRoot, { recursive: true, force: true });
   }
 }

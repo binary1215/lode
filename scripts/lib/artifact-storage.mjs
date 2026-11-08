@@ -8,7 +8,10 @@ import path from "node:path";
 function staged(file, content, publish) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  let owner, failure, descriptor = null, written = false;
+  let owner,
+    failure,
+    descriptor = null,
+    written = false;
   const expected = crypto.createHash("sha256").update(content).digest("hex");
   try {
     descriptor = fs.openSync(temporary, "wx");
@@ -18,16 +21,28 @@ function staged(file, content, publish) {
     fs.closeSync(descriptor);
     descriptor = null;
     return publish(temporary);
-  } catch (error) { failure = error; throw error;
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
     if (descriptor !== null) {
-      try { fs.closeSync(descriptor); }
-      catch (error) { if (failure) failure.descriptorCleanup = { code: error.code }; else throw error; }
+      try {
+        fs.closeSync(descriptor);
+      } catch (error) {
+        if (failure) failure.descriptorCleanup = { code: error.code };
+        else throw error;
+      }
     }
     try {
       const current = fs.lstatSync(temporary);
-      if (!owner || !current.isFile() || current.isSymbolicLink() || current.dev !== owner.dev || current.ino !== owner.ino
-        || written && crypto.createHash("sha256").update(fs.readFileSync(temporary)).digest("hex") !== expected) {
+      if (
+        !owner ||
+        !current.isFile() ||
+        current.isSymbolicLink() ||
+        current.dev !== owner.dev ||
+        current.ino !== owner.ino ||
+        (written && crypto.createHash("sha256").update(fs.readFileSync(temporary)).digest("hex") !== expected)
+      ) {
         throw Object.assign(new Error("Changed staging was preserved, not deleted."), { code: "ARTIFACT_STAGING_CHANGED" });
       }
       fs.unlinkSync(temporary);
@@ -46,15 +61,24 @@ export function atomicWriteArtifact(file, content, { beforePublish = null } = {}
       const stat = fs.lstatSync(target);
       if (!stat.isFile() || stat.isSymbolicLink()) return "unsafe";
       return `${stat.dev}:${stat.ino}:${crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex")}`;
-    } catch (error) { if (error.code === "ENOENT") return "missing"; throw error; }
+    } catch (error) {
+      if (error.code === "ENOENT") return "missing";
+      throw error;
+    }
   };
   return staged(file, content, (temporary) => {
-    if (process.platform !== "win32") { beforePublish?.(); return fs.renameSync(temporary, file); }
-    const source = fingerprint(temporary), original = fingerprint(file);
-    const delays = [5, 10, 20, 40], pause = new Int32Array(new SharedArrayBuffer(4));
+    if (process.platform !== "win32") {
+      beforePublish?.();
+      return fs.renameSync(temporary, file);
+    }
+    const source = fingerprint(temporary),
+      original = fingerprint(file);
+    const delays = [5, 10, 20, 40],
+      pause = new Int32Array(new SharedArrayBuffer(4));
     const unchanged = (failure) => {
-      try { return original !== "unsafe" && fingerprint(temporary) === source && fingerprint(file) === original; }
-      catch (error) {
+      try {
+        return original !== "unsafe" && fingerprint(temporary) === source && fingerprint(file) === original;
+      } catch (error) {
         // Unknown comparison is not permission to retry; preserve the original
         // publication failure rather than replacing it with an inspection error.
         failure.retryInspection = { code: error.code ?? "UNKNOWN" };
@@ -62,8 +86,10 @@ export function atomicWriteArtifact(file, content, { beforePublish = null } = {}
       }
     };
     for (let attempt = 0; ; attempt += 1) {
-      try { beforePublish?.(); return fs.renameSync(temporary, file); }
-      catch (error) {
+      try {
+        beforePublish?.();
+        return fs.renameSync(temporary, file);
+      } catch (error) {
         if (process.platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(error.code) || attempt >= delays.length) throw error;
         // Retry only an unpublished, unchanged stage against the same target.
         // Never remove the destination or repeat a higher-level external effect.

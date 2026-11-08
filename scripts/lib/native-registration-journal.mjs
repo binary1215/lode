@@ -21,33 +21,20 @@ const fields = [
   "runtimeRootsDigest",
 ];
 function snapshot(input) {
-  if (
-    !input ||
-    typeof input !== "object" ||
-    types.isProxy(input) ||
-    ![Object.prototype, null].includes(Object.getPrototypeOf(input))
-  )
+  if (!input || typeof input !== "object" || types.isProxy(input) || ![Object.prototype, null].includes(Object.getPrototypeOf(input)))
     fail("NATIVE_REGISTRATION_INPUT_INVALID");
   const descriptors = Object.getOwnPropertyDescriptors(input);
-  const suppliedFields = Object.hasOwn(descriptors, "preparationDigest")
-    ? [...fields, "preparationDigest"]
-    : fields;
+  const suppliedFields = Object.hasOwn(descriptors, "preparationDigest") ? [...fields, "preparationDigest"] : fields;
   if (
     Reflect.ownKeys(descriptors).length !== suppliedFields.length ||
-    suppliedFields.some(
-      (key) => !descriptors[key]?.enumerable || !Object.hasOwn(descriptors[key], "value"),
-    )
+    suppliedFields.some((key) => !descriptors[key]?.enumerable || !Object.hasOwn(descriptors[key], "value"))
   )
     fail("NATIVE_REGISTRATION_INPUT_INVALID");
   const value = Object.fromEntries(suppliedFields.map((key) => [key, descriptors[key].value]));
   if (
     !["codex", "claude", "opencode"].includes(value.provider) ||
-    suppliedFields.some(
-      (key) => typeof value[key] !== "string" || !value[key] || value[key].length > 512,
-    ) ||
-    suppliedFields
-      .filter((key) => key.endsWith("Digest"))
-      .some((key) => !/^[a-f0-9]{64}$/.test(value[key]))
+    suppliedFields.some((key) => typeof value[key] !== "string" || !value[key] || value[key].length > 512) ||
+    suppliedFields.filter((key) => key.endsWith("Digest")).some((key) => !/^[a-f0-9]{64}$/.test(value[key]))
   )
     fail("NATIVE_REGISTRATION_INPUT_INVALID");
   return Object.freeze(value);
@@ -55,8 +42,7 @@ function snapshot(input) {
 function read(root, relative) {
   const file = copiedProjectFile(root, relative),
     stat = fs.lstatSync(file);
-  if (!stat.isFile() || stat.nlink !== 1 || stat.size > 65536)
-    fail("NATIVE_REGISTRATION_JOURNAL_INVALID");
+  if (!stat.isFile() || stat.nlink !== 1 || stat.size > 65536) fail("NATIVE_REGISTRATION_JOURNAL_INVALID");
   return readSnapshotFile(file, { decodedBytes: 65536 }).document;
 }
 function checkAuthority(assertCurrentAuthority) {
@@ -71,9 +57,7 @@ function observation(value, inputDigest) {
     !value ||
     value.inputDigest !== inputDigest ||
     !["absent", "matches", "diverged", "unknown"].includes(value.state) ||
-    (value.state === "matches" &&
-      (typeof value.evidenceDigest !== "string" ||
-        !/^[a-f0-9]{64}$/.test(value.evidenceDigest)))
+    (value.state === "matches" && (typeof value.evidenceDigest !== "string" || !/^[a-f0-9]{64}$/.test(value.evidenceDigest)))
   )
     fail("NATIVE_REGISTRATION_OBSERVATION_INVALID");
   return value;
@@ -92,8 +76,7 @@ function attempt(root, relative, input, inputDigest) {
       grantsRecoveryAuthority: false,
       restoresExecutionPermission: false,
     };
-  if (JSON.stringify(value) !== JSON.stringify(expected))
-    fail("NATIVE_REGISTRATION_JOURNAL_INVALID");
+  if (JSON.stringify(value) !== JSON.stringify(expected)) fail("NATIVE_REGISTRATION_JOURNAL_INVALID");
   return value;
 }
 
@@ -124,14 +107,7 @@ function identity(operationRoot, input) {
       hash(
         json(
           Object.fromEntries(
-            [
-              "provider",
-              "profileId",
-              "payloadDigest",
-              "targetHomeDigest",
-              "nativeThreadId",
-              "targetPathDigest",
-            ].map((key) => [key, selected[key]]),
+            ["provider", "profileId", "payloadDigest", "targetHomeDigest", "nativeThreadId", "targetPathDigest"].map((key) => [key, selected[key]]),
           ),
         ),
       ).slice(0, 24);
@@ -144,10 +120,7 @@ function identity(operationRoot, input) {
 // Read-only operational evidence. It neither retries delivery nor grants a
 // registered thread execution/continuation or recovery authority.
 export function inspectNativeRegistration({ operationRoot, input } = {}) {
-  const { selected, inputDigest, operationId, root, attemptPath, resultPath } = identity(
-    operationRoot,
-    input,
-  );
+  const { selected, inputDigest, operationId, root, attemptPath, resultPath } = identity(operationRoot, input);
   const existing = attempt(root, attemptPath, selected, inputDigest);
   const hasResult = fs.existsSync(copiedProjectFile(root, resultPath));
   if (hasResult && !existing) fail("NATIVE_REGISTRATION_JOURNAL_INVALID");
@@ -167,23 +140,10 @@ export function inspectNativeRegistration({ operationRoot, input } = {}) {
 // Trusted Host callbacks perform exact SDK/identity/policy/history verification;
 // no JSON, transcript or saved status can supply functions or execution rights.
 // The journal is operational at-most-once delivery, not approval or P2 direction.
-export async function requestNativeRegistration({
-  operationRoot,
-  input,
-  readStatus,
-  register,
-  assertCurrentAuthority = () => {},
-} = {}) {
-  if (
-    typeof readStatus !== "function" ||
-    typeof register !== "function" ||
-    typeof assertCurrentAuthority !== "function"
-  )
+export async function requestNativeRegistration({ operationRoot, input, readStatus, register, assertCurrentAuthority = () => {} } = {}) {
+  if (typeof readStatus !== "function" || typeof register !== "function" || typeof assertCurrentAuthority !== "function")
     fail("NATIVE_REGISTRATION_HOST_REQUIRED");
-  const { selected, inputDigest, operationId, root, attemptPath, resultPath } = identity(
-    operationRoot,
-    input,
-  );
+  const { selected, inputDigest, operationId, root, attemptPath, resultPath } = identity(operationRoot, input);
   let existing = attempt(root, attemptPath, selected, inputDigest);
   const reconcileStored = () => {
     if (fs.existsSync(copiedProjectFile(root, resultPath))) {
@@ -257,10 +217,7 @@ export async function requestNativeRegistration({
   if (observed.state !== "absent")
     return {
       ...summary,
-      status:
-        observed.state === "diverged"
-          ? "native-registration-target-diverged"
-          : "native-registration-unknown",
+      status: observed.state === "diverged" ? "native-registration-target-diverged" : "native-registration-unknown",
       persisted: false,
     };
   checkAuthority(assertCurrentAuthority);

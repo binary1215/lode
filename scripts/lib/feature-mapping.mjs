@@ -82,8 +82,11 @@ function atomicWrite(file, content) {
 }
 
 function readJson(file, label) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`${label} is invalid JSON: ${error.message}`, "INVALID_FEATURE_MAPPING_ARTIFACT"); }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(`${label} is invalid JSON: ${error.message}`, "INVALID_FEATURE_MAPPING_ARTIFACT");
+  }
 }
 
 function persistImmutable(file, document, label) {
@@ -116,10 +119,23 @@ function reviewDecisionFile(projectRoot, reviewDecisionId, storage) {
   return relativeFile(projectRoot, `${FEATURE_MAPPING_REVIEW_DIRECTORY}/${reviewDecisionId}.json`, storage);
 }
 
-function buildState({ projectId, sessionId, phase, stateRevision, candidateSetId = null, reviewDecisionId = null,
-  worldModelId = null, graphSnapshotId = null, sourceSnapshotId = null, productModelId = null, updatedAt } = {}, storage) {
-  if (!["awaiting-evidence", "awaiting-review", "reviewed", "rejected"].includes(phase)
-    || !Number.isInteger(stateRevision) || stateRevision < 0) {
+function buildState(
+  {
+    projectId,
+    sessionId,
+    phase,
+    stateRevision,
+    candidateSetId = null,
+    reviewDecisionId = null,
+    worldModelId = null,
+    graphSnapshotId = null,
+    sourceSnapshotId = null,
+    productModelId = null,
+    updatedAt,
+  } = {},
+  storage,
+) {
+  if (!["awaiting-evidence", "awaiting-review", "reviewed", "rejected"].includes(phase) || !Number.isInteger(stateRevision) || stateRevision < 0) {
     fail("Feature mapping state fields are invalid.", "INVALID_FEATURE_MAPPING_STATE");
   }
   const payload = {
@@ -152,20 +168,22 @@ function verifyState(document, { projectId, sessionId }, storage) {
   }
   const originalFormat = familyFormatForOriginal("head-agent-core-feature-mapping", document, storage);
   const rebuilt = originalFormat ? buildState({ ...payload }, originalFormat) : null;
-  if (featureMappingCanonicalJson(rebuilt) !== featureMappingCanonicalJson(document)
-    || document.projectId !== projectId || document.sessionId !== sessionId) {
+  if (featureMappingCanonicalJson(rebuilt) !== featureMappingCanonicalJson(document) || document.projectId !== projectId || document.sessionId !== sessionId) {
     fail("Feature mapping state pointer identity is invalid.", "FEATURE_MAPPING_STATE_IDENTITY_MISMATCH");
   }
   return document;
 }
 
 function writeState(projectRoot, previous, changes, storage) {
-  const state = buildState({
-    ...previous,
-    ...changes,
-    stateRevision: previous ? previous.stateRevision + 1 : 0,
-    updatedAt: now(),
-  }, storage);
+  const state = buildState(
+    {
+      ...previous,
+      ...changes,
+      stateRevision: previous ? previous.stateRevision + 1 : 0,
+      updatedAt: now(),
+    },
+    storage,
+  );
   atomicWrite(stateFile(projectRoot, storage), json(state));
   return state;
 }
@@ -201,9 +219,11 @@ function evidenceArtifact({ sourceKind, sourceNodeId, sourceRevisionId, path: so
 }
 
 function candidateArtifact({ relationshipType, from, to, evidenceIds, explanation, confidence, sourceSnapshotId, origin }, storage) {
-  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) fail("Feature mapping candidate confidence must be from zero through one.", "INVALID_FEATURE_MAPPING_CONFIDENCE");
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1)
+    fail("Feature mapping candidate confidence must be from zero through one.", "INVALID_FEATURE_MAPPING_CONFIDENCE");
   const normalizedExplanation = requiredText(explanation, "Candidate explanation");
-  if (normalizedExplanation.length > 2000) fail("Feature mapping candidate explanation must contain at most 2000 characters.", "INVALID_FEATURE_MAPPING_PROPOSAL");
+  if (normalizedExplanation.length > 2000)
+    fail("Feature mapping candidate explanation must contain at most 2000 characters.", "INVALID_FEATURE_MAPPING_PROPOSAL");
   const payload = {
     schemaVersion: 1,
     kind: "FeatureMappingCandidate",
@@ -234,8 +254,10 @@ function unknownArtifact(sourceSnapshotId, kind, statement, evidenceIds = []) {
 function candidateSetArtifact({ project, sessionId, worldModel, candidates, evidence, unknowns }, storage) {
   const orderedCandidates = [...candidates].sort((left, right) => left.candidateId.localeCompare(right.candidateId)).slice(0, MAX_CANDIDATES);
   const usedEvidence = new Set(orderedCandidates.flatMap((candidate) => candidate.evidenceIds));
-  const orderedEvidence = [...evidence].filter((item) => usedEvidence.has(item.evidenceId))
-    .sort((left, right) => left.evidenceId.localeCompare(right.evidenceId)).slice(0, MAX_EVIDENCE);
+  const orderedEvidence = [...evidence]
+    .filter((item) => usedEvidence.has(item.evidenceId))
+    .sort((left, right) => left.evidenceId.localeCompare(right.evidenceId))
+    .slice(0, MAX_EVIDENCE);
   const payload = {
     schemaVersion: 1,
     kind: "FeatureMappingCandidateSet",
@@ -262,11 +284,15 @@ function candidateSetArtifact({ project, sessionId, worldModel, candidates, evid
     promotionAuthority: false,
   };
   const hash = featureMappingDigest(featureMappingCanonicalJson(payload));
-  return verifyFeatureMappingCandidateSet({
-    ...payload,
-    candidateSetId: `feature-mapping-candidates-${hash.slice(0, 24)}`,
-    candidateSetHash: hash,
-  }, project.projectId, storage);
+  return verifyFeatureMappingCandidateSet(
+    {
+      ...payload,
+      candidateSetId: `feature-mapping-candidates-${hash.slice(0, 24)}`,
+      candidateSetHash: hash,
+    },
+    project.projectId,
+    storage,
+  );
 }
 
 function candidatesFromSemanticProposal(proposal, worldModel, storage) {
@@ -274,45 +300,78 @@ function candidatesFromSemanticProposal(proposal, worldModel, storage) {
   const continuityGenerations = graph.logicalLineageState?.continuityGenerationByLogicalEntityId || {};
   const continuityUnknown = new Set(graph.logicalLineageState?.continuityUnknownLogicalEntityIds || []);
   const nodeById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
-  const currentRevisionByLogical = new Map(graph.edges.filter((edge) => edge.type === "CURRENT_REVISION")
-    .map((edge) => [edge.from, nodeById.get(edge.to)]));
-  const fileDigestById = new Map(graph.nodes.filter((node) => node.kind === "FileRevision")
-    .map((revision) => [revision.logicalEntityId, revision.digest]));
-  const fileClassificationById = new Map(graph.nodes.filter((node) => node.kind === "FileRevision")
-    .map((revision) => [revision.logicalEntityId, revision.classification]));
+  const currentRevisionByLogical = new Map(graph.edges.filter((edge) => edge.type === "CURRENT_REVISION").map((edge) => [edge.from, nodeById.get(edge.to)]));
+  const fileDigestById = new Map(graph.nodes.filter((node) => node.kind === "FileRevision").map((revision) => [revision.logicalEntityId, revision.digest]));
+  const fileClassificationById = new Map(
+    graph.nodes.filter((node) => node.kind === "FileRevision").map((revision) => [revision.logicalEntityId, revision.classification]),
+  );
   const productNodes = graph.nodes.filter((node) => ["Feature", "Capability"].includes(node.kind));
   const evidenceById = new Map();
 
   if (!productNodes.length) {
-    return { candidates: [], evidence: [], unknowns: [unknownArtifact(graph.sourceSnapshotId, "missing-product-canon", "No authoritative Feature or Capability exists. Complete Product Canon onboarding before implementation mapping.")] };
+    return {
+      candidates: [],
+      evidence: [],
+      unknowns: [
+        unknownArtifact(
+          graph.sourceSnapshotId,
+          "missing-product-canon",
+          "No authoritative Feature or Capability exists. Complete Product Canon onboarding before implementation mapping.",
+        ),
+      ],
+    };
   }
   if (proposal == null) {
-    return { candidates: [], evidence: [], unknowns: [unknownArtifact(graph.sourceSnapshotId, "semantic-mapping-proposal-required", "Fresh HEAD semantic implementation-mapping candidates are required. Core intentionally does not infer product-to-code meaning from names or lexical overlap.")] };
+    return {
+      candidates: [],
+      evidence: [],
+      unknowns: [
+        unknownArtifact(
+          graph.sourceSnapshotId,
+          "semantic-mapping-proposal-required",
+          "Fresh HEAD semantic implementation-mapping candidates are required. Core intentionally does not infer product-to-code meaning from names or lexical overlap.",
+        ),
+      ],
+    };
   }
   assertRecordFields(proposal, ["schemaVersion", "sourceSnapshotId", "productModelId", "candidates"], "Feature mapping semantic proposal");
   if (proposal.schemaVersion !== 1) fail("Feature mapping semantic proposal schemaVersion must be 1.", "INVALID_FEATURE_MAPPING_PROPOSAL");
-  if (requiredText(proposal.sourceSnapshotId, "Feature mapping proposal sourceSnapshotId") !== graph.sourceSnapshotId) fail("Feature mapping proposal is bound to a stale SourceSnapshot.", "FEATURE_MAPPING_PROPOSAL_DRIFT");
-  if (requiredText(proposal.productModelId, "Feature mapping proposal productModelId") !== worldModel.productModel.productModelId) fail("Feature mapping proposal is bound to stale Product Canon.", "FEATURE_MAPPING_PROPOSAL_DRIFT");
-  if (!Array.isArray(proposal.candidates) || !proposal.candidates.length || proposal.candidates.length > MAX_CANDIDATES) fail(`Feature mapping proposal must contain 1 through ${MAX_CANDIDATES} candidates.`, "INVALID_FEATURE_MAPPING_PROPOSAL");
+  if (requiredText(proposal.sourceSnapshotId, "Feature mapping proposal sourceSnapshotId") !== graph.sourceSnapshotId)
+    fail("Feature mapping proposal is bound to a stale SourceSnapshot.", "FEATURE_MAPPING_PROPOSAL_DRIFT");
+  if (requiredText(proposal.productModelId, "Feature mapping proposal productModelId") !== worldModel.productModel.productModelId)
+    fail("Feature mapping proposal is bound to stale Product Canon.", "FEATURE_MAPPING_PROPOSAL_DRIFT");
+  if (!Array.isArray(proposal.candidates) || !proposal.candidates.length || proposal.candidates.length > MAX_CANDIDATES)
+    fail(`Feature mapping proposal must contain 1 through ${MAX_CANDIDATES} candidates.`, "INVALID_FEATURE_MAPPING_PROPOSAL");
 
   const candidates = proposal.candidates.map((item, index) => {
     assertRecordFields(item, ["relationshipType", "sourceNodeId", "productNodeId", "explanation", "confidence"], `Feature mapping proposal candidate ${index}`);
     const relationshipType = requiredText(item.relationshipType, `Feature mapping proposal candidate ${index}.relationshipType`).toUpperCase();
-    if (!["IMPLEMENTS", "VERIFIED_BY"].includes(relationshipType)) fail("Feature mapping proposal relationshipType must be IMPLEMENTS or VERIFIED_BY.", "INVALID_FEATURE_MAPPING_PROPOSAL");
+    if (!["IMPLEMENTS", "VERIFIED_BY"].includes(relationshipType))
+      fail("Feature mapping proposal relationshipType must be IMPLEMENTS or VERIFIED_BY.", "INVALID_FEATURE_MAPPING_PROPOSAL");
     const sourceNode = nodeById.get(requiredText(item.sourceNodeId, `Feature mapping proposal candidate ${index}.sourceNodeId`));
     const productNode = nodeById.get(requiredText(item.productNodeId, `Feature mapping proposal candidate ${index}.productNodeId`));
-    if (!sourceNode || !productNode) fail("Feature mapping proposal references a node absent from the current GraphSnapshot.", "FEATURE_MAPPING_PROPOSAL_EVIDENCE_MISSING");
-    if (!["Feature", "Capability"].includes(productNode.kind)) fail("Feature mapping proposal productNodeId must name a current Feature or Capability.", "INVALID_FEATURE_MAPPING_DIRECTION");
-    if (relationshipType === "IMPLEMENTS" && (!["File", "Symbol"].includes(sourceNode.kind)
-      || fileClassificationById.get(sourceNode.kind === "Symbol" ? sourceNode.fileId : sourceNode.nodeId) === "test")) {
+    if (!sourceNode || !productNode)
+      fail("Feature mapping proposal references a node absent from the current GraphSnapshot.", "FEATURE_MAPPING_PROPOSAL_EVIDENCE_MISSING");
+    if (!["Feature", "Capability"].includes(productNode.kind))
+      fail("Feature mapping proposal productNodeId must name a current Feature or Capability.", "INVALID_FEATURE_MAPPING_DIRECTION");
+    if (
+      relationshipType === "IMPLEMENTS" &&
+      (!["File", "Symbol"].includes(sourceNode.kind) ||
+        fileClassificationById.get(sourceNode.kind === "Symbol" ? sourceNode.fileId : sourceNode.nodeId) === "test")
+    ) {
       fail("IMPLEMENTS proposals require a current non-test File or Symbol source.", "INVALID_FEATURE_MAPPING_DIRECTION");
     }
-    if (relationshipType === "VERIFIED_BY" && sourceNode.kind !== "Test") fail("VERIFIED_BY proposals require a current Test source.", "INVALID_FEATURE_MAPPING_DIRECTION");
+    if (relationshipType === "VERIFIED_BY" && sourceNode.kind !== "Test")
+      fail("VERIFIED_BY proposals require a current Test source.", "INVALID_FEATURE_MAPPING_DIRECTION");
     const sourceRevision = currentRevisionByLogical.get(sourceNode.nodeId);
     const productRevision = currentRevisionByLogical.get(productNode.nodeId);
-    if (!sourceRevision || !productRevision) fail("Feature mapping proposal endpoints must have current revisions.", "FEATURE_MAPPING_PROPOSAL_EVIDENCE_MISSING");
+    if (!sourceRevision || !productRevision)
+      fail("Feature mapping proposal endpoints must have current revisions.", "FEATURE_MAPPING_PROPOSAL_EVIDENCE_MISSING");
     if (continuityUnknown.has(sourceNode.nodeId) || continuityUnknown.has(productNode.nodeId)) {
-      fail("Feature mapping proposal endpoint continuity is unknown because its prior derived view is unavailable; restore verified lineage evidence before approval.", "FEATURE_MAPPING_PROPOSAL_CONTINUITY_UNKNOWN");
+      fail(
+        "Feature mapping proposal endpoint continuity is unknown because its prior derived view is unavailable; restore verified lineage evidence before approval.",
+        "FEATURE_MAPPING_PROPOSAL_CONTINUITY_UNKNOWN",
+      );
     }
     const sourceFileId = sourceNode.kind === "Symbol" ? sourceNode.fileId : sourceNode.fileId || sourceNode.nodeId;
     const contentDigest = fileDigestById.get(sourceFileId) || "";
@@ -335,16 +394,19 @@ function candidatesFromSemanticProposal(proposal, worldModel, storage) {
     });
     const from = relationshipType === "IMPLEMENTS" ? sourceEndpoint : productEndpoint;
     const to = relationshipType === "IMPLEMENTS" ? productEndpoint : sourceEndpoint;
-    return candidateArtifact({
-      relationshipType,
-      from,
-      to,
-      evidenceIds: [evidence.evidenceId],
-      explanation: item.explanation,
-      confidence: item.confidence,
-      sourceSnapshotId: graph.sourceSnapshotId,
-      origin: "fresh-head-semantic-mapping-proposal",
-    }, storage);
+    return candidateArtifact(
+      {
+        relationshipType,
+        from,
+        to,
+        evidenceIds: [evidence.evidenceId],
+        explanation: item.explanation,
+        confidence: item.confidence,
+        sourceSnapshotId: graph.sourceSnapshotId,
+        origin: "fresh-head-semantic-mapping-proposal",
+      },
+      storage,
+    );
   });
   const deduplicated = new Map(candidates.map((candidate) => [candidate.candidateId, candidate]));
   if (deduplicated.size !== candidates.length) fail("Feature mapping proposal contains duplicate candidates.", "DUPLICATE_FEATURE_MAPPING_PROPOSAL");
@@ -376,33 +438,41 @@ function buildReviewDecision({ candidateSet, disposition, acceptedCandidateIds, 
     ],
   };
   const hash = featureMappingDigest(featureMappingCanonicalJson(payload));
-  return verifyFeatureMappingReviewDecision({
-    ...payload,
-    reviewDecisionId: `feature-mapping-review-decision-${hash.slice(0, 24)}`,
-    reviewDecisionHash: hash,
-  }, candidateSet, candidateSet.projectId, storage);
+  return verifyFeatureMappingReviewDecision(
+    {
+      ...payload,
+      reviewDecisionId: `feature-mapping-review-decision-${hash.slice(0, 24)}`,
+      reviewDecisionHash: hash,
+    },
+    candidateSet,
+    candidateSet.projectId,
+    storage,
+  );
 }
 
-async function rebuildWithProjection({ projectRoot, projectId, currentProductModelId, sourceWorld,
-  additionalCandidateSets = [], additionalReviewDecisions = [] }, storage) {
-  const projection = loadFeatureMappingProjection({ storage,
+async function rebuildWithProjection(
+  { projectRoot, projectId, currentProductModelId, sourceWorld, additionalCandidateSets = [], additionalReviewDecisions = [] },
+  storage,
+) {
+  const projection = loadFeatureMappingProjection({
+    storage,
     projectRoot,
     projectId,
     currentProductModelId,
     additionalCandidateSets,
     additionalReviewDecisions,
   });
-  return (await buildWorldModel({
+  return await buildWorldModel({
     root: projectRoot,
     persist: true,
     featureMappingProjectionInput: projection,
     parentSourceSnapshotIds: sourceWorld.temporalProvenanceGraph.parentSourceSnapshotIds,
     revisionParentIds: sourceWorld.temporalProvenanceGraph.revisionParentIds,
-  }));
+  });
 }
 
 async function startFeatureMappingUncoordinated(options = {}) {
-  return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, async () => (await startFeatureMappingLocked(options))));
+  return await withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, async () => await startFeatureMappingLocked(options));
 }
 
 async function startFeatureMappingLocked({ root = ".", semanticProposal = null, expectedCandidateSetId = null } = {}) {
@@ -414,67 +484,87 @@ async function startFeatureMappingLocked({ root = ".", semanticProposal = null, 
   const projectRoot = inspected.project.projectRoot;
   const currentStateFile = stateFile(projectRoot, storage);
   const previousState = fs.existsSync(currentStateFile)
-    ? verifyState(readJson(currentStateFile, "Feature mapping state pointer"), { projectId: inspected.project.projectId, sessionId: inspected.state.sessionId }, storage)
+    ? verifyState(
+        readJson(currentStateFile, "Feature mapping state pointer"),
+        { projectId: inspected.project.projectId, sessionId: inspected.state.sessionId },
+        storage,
+      )
     : null;
   if (expectedCandidateSetId !== null) {
     if (previousState?.phase !== "awaiting-review" || expectedCandidateSetId !== previousState.candidateSetId || semanticProposal === null) {
       fail("Replacing pending evidence requires the exact current candidate-set ID and a fresh semantic proposal.", "FEATURE_MAPPING_SUPERSESSION_CONFLICT");
     }
     const oldCandidate = readFeatureMappingCandidateSet({ root: projectRoot, candidateSetId: expectedCandidateSetId }).candidateSet;
-    if (oldCandidate.sessionId !== inspected.state.sessionId || previousState.reviewDecisionId !== null) fail("Pending candidate lineage is not an unreviewed current Session candidate.", "FEATURE_MAPPING_SUPERSESSION_CONFLICT");
+    if (oldCandidate.sessionId !== inspected.state.sessionId || previousState.reviewDecisionId !== null)
+      fail("Pending candidate lineage is not an unreviewed current Session candidate.", "FEATURE_MAPPING_SUPERSESSION_CONFLICT");
     if (recordedCandidateReview({ projectRoot, projectId: inspected.project.projectId, candidateSet: oldCandidate }, storage)) {
       fail("A durable decision already exists. Recover its exact pending projection; do not supersede reviewed evidence.", "FEATURE_MAPPING_REVIEW_CONFLICT");
     }
   } else if (previousState?.phase === "awaiting-review") {
-    fail(`Inspect pending evidence ${previousState.candidateSetId}; HEAD may explicitly replace it with an exact expected candidate-set ID and fresh proposal, or present it for user review when promotion is needed.`, "FEATURE_MAPPING_REVIEW_REQUIRED");
+    fail(
+      `Inspect pending evidence ${previousState.candidateSetId}; HEAD may explicitly replace it with an exact expected candidate-set ID and fresh proposal, or present it for user review when promotion is needed.`,
+      "FEATURE_MAPPING_REVIEW_REQUIRED",
+    );
   }
   let indexed;
-  try { indexed = (await inspectWorldModel({ root: projectRoot })); }
-  catch (error) {
+  try {
+    indexed = await inspectWorldModel({ root: projectRoot });
+  } catch (error) {
     if (semanticProposal != null || !["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"].includes(error.code)) throw error;
     // The explicit no-proposal setup may create its first derived view. An exact
     // proposal, however, must be checked against the World HEAD actually read.
     await buildWorldModel({ root: projectRoot, persist: true });
-    indexed = (await inspectWorldModel({ root: projectRoot }));
+    indexed = await inspectWorldModel({ root: projectRoot });
   }
   if (indexed.status !== "current" && semanticProposal == null) {
     // Setup without pinned evidence can refresh in the same explicit operation.
     // The refresh pipeline preserves source/revision ancestry for real changes.
     await refreshWorldModel({ root: projectRoot });
-    indexed = (await inspectWorldModel({ root: projectRoot }));
+    indexed = await inspectWorldModel({ root: projectRoot });
   }
   if (indexed.status !== "current") {
     fail("Repository evidence or Product Canon changed; explicitly refresh the World before proposing mappings.", "FEATURE_MAPPING_SOURCE_DRIFT");
   }
   const proposed = candidatesFromSemanticProposal(semanticProposal, indexed.snapshot, storage);
-  const candidateSet = candidateSetArtifact({
-    project: inspected.project,
-    sessionId: inspected.state.sessionId,
-    worldModel: indexed.snapshot,
-    candidates: proposed.candidates,
-    evidence: proposed.evidence,
-    unknowns: proposed.unknowns,
-  }, storage);
-  const projected = await rebuildWithProjection({
-    projectRoot,
-    projectId: inspected.project.projectId,
-    currentProductModelId: indexed.snapshot.productModel.productModelId,
-    sourceWorld: indexed.snapshot,
-    additionalCandidateSets: [candidateSet],
-  }, storage);
+  const candidateSet = candidateSetArtifact(
+    {
+      project: inspected.project,
+      sessionId: inspected.state.sessionId,
+      worldModel: indexed.snapshot,
+      candidates: proposed.candidates,
+      evidence: proposed.evidence,
+      unknowns: proposed.unknowns,
+    },
+    storage,
+  );
+  const projected = await rebuildWithProjection(
+    {
+      projectRoot,
+      projectId: inspected.project.projectId,
+      currentProductModelId: indexed.snapshot.productModel.productModelId,
+      sourceWorld: indexed.snapshot,
+      additionalCandidateSets: [candidateSet],
+    },
+    storage,
+  );
   persistImmutable(candidateSetFile(projectRoot, candidateSet.candidateSetId, storage), candidateSet, "Feature mapping candidate set");
   const phase = candidateSet.candidates.length ? "awaiting-review" : "awaiting-evidence";
-  const state = writeState(projectRoot, previousState, {
-    projectId: inspected.project.projectId,
-    sessionId: inspected.state.sessionId,
-    phase,
-    candidateSetId: candidateSet.candidateSetId,
-    reviewDecisionId: null,
-    worldModelId: projected.snapshot.worldModelId,
-    graphSnapshotId: projected.snapshot.temporalProvenanceGraph.graphSnapshotId,
-    sourceSnapshotId: projected.snapshot.temporalProvenanceGraph.sourceSnapshotId,
-    productModelId: projected.snapshot.productModel.productModelId,
-  }, storage);
+  const state = writeState(
+    projectRoot,
+    previousState,
+    {
+      projectId: inspected.project.projectId,
+      sessionId: inspected.state.sessionId,
+      phase,
+      candidateSetId: candidateSet.candidateSetId,
+      reviewDecisionId: null,
+      worldModelId: projected.snapshot.worldModelId,
+      graphSnapshotId: projected.snapshot.temporalProvenanceGraph.graphSnapshotId,
+      sourceSnapshotId: projected.snapshot.temporalProvenanceGraph.sourceSnapshotId,
+      productModelId: projected.snapshot.productModel.productModelId,
+    },
+    storage,
+  );
   return {
     status: phase === "awaiting-review" ? "awaiting_feature_mapping_review" : "awaiting_feature_mapping_evidence",
     state,
@@ -521,7 +611,10 @@ function recordedCandidateReview({ projectRoot, projectId, candidateSet }, stora
   const projection = loadFeatureMappingProjection({ storage, projectRoot, projectId, currentProductModelId: candidateSet.productModelId });
   const directory = relativeFile(projectRoot, FEATURE_MAPPING_REVIEW_DIRECTORY, storage);
   const files = fs.existsSync(directory)
-    ? fs.readdirSync(directory, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name)
+    ? fs
+        .readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map((entry) => entry.name)
     : [];
   const expectedFiles = new Set(projection.reviewDecisions.map((review) => `${review.reviewDecisionId}.json`));
   if (files.length !== expectedFiles.size || files.some((file) => !expectedFiles.has(file))) {
@@ -529,7 +622,10 @@ function recordedCandidateReview({ projectRoot, projectId, candidateSet }, stora
   }
   const matches = projection.reviewDecisions.filter((review) => review.candidateSetId === candidateSet.candidateSetId);
   if (matches.length > 1) {
-    fail("The exact Feature mapping candidate set has conflicting durable decisions; preserve the records and reconcile their authority before proceeding.", "FEATURE_MAPPING_REVIEW_CONFLICT");
+    fail(
+      "The exact Feature mapping candidate set has conflicting durable decisions; preserve the records and reconcile their authority before proceeding.",
+      "FEATURE_MAPPING_REVIEW_CONFLICT",
+    );
   }
   if (!matches.length) return null;
   const review = readFeatureMappingReviewDecision({ root: projectRoot, reviewDecisionId: matches[0].reviewDecisionId }).reviewDecision;
@@ -541,14 +637,21 @@ function recordedCandidateReview({ projectRoot, projectId, candidateSet }, stora
 
 function completeMappingReview({ projectRoot, state, review, snapshot, worldStatus = "current", reusedReviewDecision = false, updatePointer = true }, storage) {
   const nextPhase = review.disposition === "reject" ? "rejected" : "reviewed";
-  const nextState = updatePointer ? writeState(projectRoot, state, {
-    phase: nextPhase,
-    reviewDecisionId: review.reviewDecisionId,
-    worldModelId: snapshot.worldModelId,
-    graphSnapshotId: snapshot.temporalProvenanceGraph.graphSnapshotId,
-    sourceSnapshotId: snapshot.temporalProvenanceGraph.sourceSnapshotId,
-    productModelId: snapshot.productModel.productModelId,
-  }, storage) : state;
+  const nextState = updatePointer
+    ? writeState(
+        projectRoot,
+        state,
+        {
+          phase: nextPhase,
+          reviewDecisionId: review.reviewDecisionId,
+          worldModelId: snapshot.worldModelId,
+          graphSnapshotId: snapshot.temporalProvenanceGraph.graphSnapshotId,
+          sourceSnapshotId: snapshot.temporalProvenanceGraph.sourceSnapshotId,
+          productModelId: snapshot.productModel.productModelId,
+        },
+        storage,
+      )
+    : state;
   return {
     status: nextPhase === "reviewed" ? "feature_mappings_reviewed" : "feature_mappings_rejected",
     state: nextState,
@@ -568,8 +671,7 @@ function reviewProjectionState(snapshot, review) {
   const reviewDecisionIds = snapshot.featureMappingProjection?.reviewDecisionIds || [];
   const projectedReview = snapshot.temporalProvenanceGraph?.nodes?.find((node) => node.nodeId === review.reviewDecisionId) || null;
   const idPresent = reviewDecisionIds.includes(review.reviewDecisionId);
-  const exact = idPresent && projectedReview?.kind === "FeatureMappingReviewDecision"
-    && projectedReview.reviewDecisionHash === review.reviewDecisionHash;
+  const exact = idPresent && projectedReview?.kind === "FeatureMappingReviewDecision" && projectedReview.reviewDecisionHash === review.reviewDecisionHash;
   return {
     exact,
     absent: !idPresent && projectedReview == null,
@@ -577,27 +679,32 @@ function reviewProjectionState(snapshot, review) {
 }
 
 function exactRequestCanRepairOrphanProjection({ projectRoot, projectId, candidateSet, world, review }, storage) {
-  const expectedProjection = loadFeatureMappingProjection({ storage,
+  const expectedProjection = loadFeatureMappingProjection({
+    storage,
     projectRoot,
     projectId,
     currentProductModelId: candidateSet.productModelId,
     additionalReviewDecisions: [review],
   });
-  if (world.status !== "stale"
-    || world.snapshot.temporalProvenanceGraph.sourceSnapshotId !== candidateSet.sourceSnapshotId
-    || world.snapshot.productModel.productModelId !== candidateSet.productModelId
-    || world.snapshot.productModel.productModelHash !== candidateSet.productModelHash
-    || world.snapshot.featureMappingProjection?.projectionInputHash !== expectedProjection.projectionInputHash
-    || !reviewProjectionState(world.snapshot, review).exact
-    || world.changes?.featureMappingProjectionChanged !== true
-    || world.changes?.temporalProvenanceChanged !== true) return false;
+  if (
+    world.status !== "stale" ||
+    world.snapshot.temporalProvenanceGraph.sourceSnapshotId !== candidateSet.sourceSnapshotId ||
+    world.snapshot.productModel.productModelId !== candidateSet.productModelId ||
+    world.snapshot.productModel.productModelHash !== candidateSet.productModelHash ||
+    world.snapshot.featureMappingProjection?.projectionInputHash !== expectedProjection.projectionInputHash ||
+    !reviewProjectionState(world.snapshot, review).exact ||
+    world.changes?.featureMappingProjectionChanged !== true ||
+    world.changes?.temporalProvenanceChanged !== true
+  )
+    return false;
   const allowedDerivedDrift = new Set(["featureMappingProjectionChanged", "temporalProvenanceChanged"]);
-  return Object.entries(world.changes || {}).every(([key, value]) => allowedDerivedDrift.has(key)
-    || (Array.isArray(value) ? value.length === 0 : value !== true));
+  return Object.entries(world.changes || {}).every(
+    ([key, value]) => allowedDerivedDrift.has(key) || (Array.isArray(value) ? value.length === 0 : value !== true),
+  );
 }
 
 async function reviewFeatureMappingUncoordinated(options = {}) {
-  return (await withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, async () => (await reviewFeatureMappingLocked(options))));
+  return await withProjectMutationAsync({ root: options.root ?? ".", scope: "session-recovery" }, async () => await reviewFeatureMappingLocked(options));
 }
 
 async function reviewFeatureMappingLocked({ root = ".", candidateSetId, disposition, acceptedCandidateIds = [], rationale } = {}) {
@@ -609,7 +716,11 @@ async function reviewFeatureMappingLocked({ root = ".", candidateSetId, disposit
   const projectRoot = inspected.project.projectRoot;
   const pointerFile = stateFile(projectRoot, storage);
   if (!fs.existsSync(pointerFile)) fail("Feature mapping has not started.", "FEATURE_MAPPING_NOT_STARTED");
-  const state = verifyState(readJson(pointerFile, "Feature mapping state pointer"), { projectId: inspected.project.projectId, sessionId: inspected.state.sessionId }, storage);
+  const state = verifyState(
+    readJson(pointerFile, "Feature mapping state pointer"),
+    { projectId: inspected.project.projectId, sessionId: inspected.state.sessionId },
+    storage,
+  );
   if (!["awaiting-review", "reviewed", "rejected"].includes(state.phase) || state.candidateSetId !== candidateSetId) {
     fail("Feature mapping review references a stale or non-reviewable candidate set.", "STALE_FEATURE_MAPPING_CANDIDATE_SET");
   }
@@ -633,61 +744,100 @@ async function reviewFeatureMappingLocked({ root = ".", candidateSetId, disposit
   }
   const selected = new Set(selectedIds);
   const rejectedIds = allIds.filter((id) => !selected.has(id));
-  const review = buildReviewDecision({
-    candidateSet,
-    disposition: normalizedDisposition,
-    acceptedCandidateIds: selectedIds,
-    rejectedCandidateIds: rejectedIds,
-    rationale,
-  }, storage);
+  const review = buildReviewDecision(
+    {
+      candidateSet,
+      disposition: normalizedDisposition,
+      acceptedCandidateIds: selectedIds,
+      rejectedCandidateIds: rejectedIds,
+      rationale,
+    },
+    storage,
+  );
   const recordedReview = recordedCandidateReview({ projectRoot, projectId: inspected.project.projectId, candidateSet }, storage);
   const pointerPending = state.phase === "awaiting-review";
-  if (!pointerPending && (!recordedReview || state.reviewDecisionId !== recordedReview.reviewDecisionId
-    || state.phase !== (recordedReview.disposition === "reject" ? "rejected" : "reviewed"))) {
+  if (
+    !pointerPending &&
+    (!recordedReview ||
+      state.reviewDecisionId !== recordedReview.reviewDecisionId ||
+      state.phase !== (recordedReview.disposition === "reject" ? "rejected" : "reviewed"))
+  ) {
     fail("Completed Feature mapping state does not match its exact durable decision.", "FEATURE_MAPPING_REVIEW_CONFLICT");
   }
   if (recordedReview && featureMappingCanonicalJson(recordedReview) !== featureMappingCanonicalJson(review)) {
     if (!pointerPending) fail("Feature mapping review references an already reviewed candidate set.", "STALE_FEATURE_MAPPING_CANDIDATE_SET");
-    fail(`A different Feature mapping ReviewDecision is already durable for this exact candidate set. Retry the unchanged saved decision ${recordedReview.reviewDecisionId} to finish its pending state update.`, "FEATURE_MAPPING_REVIEW_CONFLICT");
+    fail(
+      `A different Feature mapping ReviewDecision is already durable for this exact candidate set. Retry the unchanged saved decision ${recordedReview.reviewDecisionId} to finish its pending state update.`,
+      "FEATURE_MAPPING_REVIEW_CONFLICT",
+    );
   }
-  let currentWorld = (await inspectWorldModel({ root: projectRoot }));
+  let currentWorld = await inspectWorldModel({ root: projectRoot });
   if (recordedReview) {
     const projectionState = reviewProjectionState(currentWorld.snapshot, recordedReview);
     if (!projectionState.exact && !projectionState.absent) {
       fail("The World projection does not match the exact saved Feature mapping decision.", "FEATURE_MAPPING_REVIEW_PROJECTION_MISMATCH");
     }
     if (projectionState.absent) {
-      await rebuildWithProjection({
-        projectRoot,
-        projectId: inspected.project.projectId,
-        currentProductModelId: currentWorld.snapshot.productModel.productModelId,
-        sourceWorld: currentWorld.snapshot,
-      }, storage);
-      currentWorld = (await inspectWorldModel({ root: projectRoot }));
+      await rebuildWithProjection(
+        {
+          projectRoot,
+          projectId: inspected.project.projectId,
+          currentProductModelId: currentWorld.snapshot.productModel.productModelId,
+          sourceWorld: currentWorld.snapshot,
+        },
+        storage,
+      );
+      currentWorld = await inspectWorldModel({ root: projectRoot });
       if (!reviewProjectionState(currentWorld.snapshot, recordedReview).exact) {
         fail("The saved Feature mapping decision could not be verified in the rebuilt World projection.", "FEATURE_MAPPING_REVIEW_PROJECTION_MISMATCH");
       }
     }
     // The durable exact P1 decision already owns the disposition. Source drift
     // is disclosed, not reinterpreted as a need to approve that decision again.
-    return completeMappingReview({ projectRoot, state, review: recordedReview, snapshot: currentWorld.snapshot,
-      worldStatus: currentWorld.status, reusedReviewDecision: true, updatePointer: pointerPending }, storage);
+    return completeMappingReview(
+      {
+        projectRoot,
+        state,
+        review: recordedReview,
+        snapshot: currentWorld.snapshot,
+        worldStatus: currentWorld.status,
+        reusedReviewDecision: true,
+        updatePointer: pointerPending,
+      },
+      storage,
+    );
   }
   const currentCandidateEvidence = candidateEvidenceIsCurrent(candidateSet, currentWorld);
-  const repairableOrphanProjection = normalizedDisposition !== "reject" && !currentCandidateEvidence && exactRequestCanRepairOrphanProjection({
-    projectRoot, projectId: inspected.project.projectId, candidateSet, world: currentWorld, review,
-  }, storage);
+  const repairableOrphanProjection =
+    normalizedDisposition !== "reject" &&
+    !currentCandidateEvidence &&
+    exactRequestCanRepairOrphanProjection(
+      {
+        projectRoot,
+        projectId: inspected.project.projectId,
+        candidateSet,
+        world: currentWorld,
+        review,
+      },
+      storage,
+    );
   if (normalizedDisposition !== "reject" && !currentCandidateEvidence && !repairableOrphanProjection) {
-    fail(`Repository evidence or Product Canon changed after mapping proposal. Explicitly reject the outdated candidate set ${candidateSetId}, then have HEAD propose fresh evidence; stale candidates cannot be accepted.`, "FEATURE_MAPPING_SOURCE_DRIFT");
+    fail(
+      `Repository evidence or Product Canon changed after mapping proposal. Explicitly reject the outdated candidate set ${candidateSetId}, then have HEAD propose fresh evidence; stale candidates cannot be accepted.`,
+      "FEATURE_MAPPING_SOURCE_DRIFT",
+    );
   }
   if (normalizedDisposition === "reject" && currentWorld.status !== "current") {
     // A rejection closes an exact historical proposal, not a claim that its
     // evidence is current. Refresh only its derived view, preserving ancestry.
     // All request/authority validation above must finish before this write.
     await refreshWorldModel({ root: projectRoot });
-    currentWorld = (await inspectWorldModel({ root: projectRoot }));
+    currentWorld = await inspectWorldModel({ root: projectRoot });
     if (currentWorld.status !== "current") {
-      fail("World evidence changed during rejection refresh; retry the same explicit rejection after concurrent changes settle.", "FEATURE_MAPPING_SOURCE_DRIFT");
+      fail(
+        "World evidence changed during rejection refresh; retry the same explicit rejection after concurrent changes settle.",
+        "FEATURE_MAPPING_SOURCE_DRIFT",
+      );
     }
   }
   // P1 authority is durable before the rebuildable P4 projection. A failed
@@ -695,20 +845,25 @@ async function reviewFeatureMappingLocked({ root = ".", candidateSetId, disposit
   // second user choice. A legacy orphan projection is only accepted when the
   // current explicit request matches it and all non-derived evidence is exact.
   persistImmutable(reviewDecisionFile(projectRoot, review.reviewDecisionId, storage), review, "Feature mapping ReviewDecision");
-  const projected = await rebuildWithProjection({
-    projectRoot,
-    projectId: inspected.project.projectId,
-    currentProductModelId: currentWorld.snapshot.productModel.productModelId,
-    sourceWorld: currentWorld.snapshot,
-  }, storage);
+  const projected = await rebuildWithProjection(
+    {
+      projectRoot,
+      projectId: inspected.project.projectId,
+      currentProductModelId: currentWorld.snapshot.productModel.productModelId,
+      sourceWorld: currentWorld.snapshot,
+    },
+    storage,
+  );
   return completeMappingReview({ projectRoot, state, review, snapshot: projected.snapshot }, storage);
 }
 
 function candidateEvidenceIsCurrent(candidateSet, world) {
-  return world.status === "current"
-    && world.snapshot.temporalProvenanceGraph.sourceSnapshotId === candidateSet.sourceSnapshotId
-    && world.snapshot.productModel.productModelId === candidateSet.productModelId
-    && world.snapshot.productModel.productModelHash === candidateSet.productModelHash;
+  return (
+    world.status === "current" &&
+    world.snapshot.temporalProvenanceGraph.sourceSnapshotId === candidateSet.sourceSnapshotId &&
+    world.snapshot.productModel.productModelId === candidateSet.productModelId &&
+    world.snapshot.productModel.productModelHash === candidateSet.productModelHash
+  );
 }
 
 function reviewedRelationshipDiagnostics(world) {
@@ -729,7 +884,8 @@ function reviewedRelationshipDiagnostics(world) {
       currentFromRevisionId: node.currentFromRevisionId ?? null,
       currentToRevisionId: node.currentToRevisionId ?? null,
       userActionRequired: false,
-    })).sort((left, right) => left.reviewedRelationshipId.localeCompare(right.reviewedRelationshipId));
+    }))
+    .sort((left, right) => left.reviewedRelationshipId.localeCompare(right.reviewedRelationshipId));
   const product = world.snapshot.productModel;
   const nodeById = new Map(graph.nodes.map((node) => [node.nodeId, node]));
   const groupByKey = new Map(product.featureGroups.map((group) => [group.key, group]));
@@ -738,63 +894,76 @@ function reviewedRelationshipDiagnostics(world) {
     const group = groupByKey.get(groupKey);
     if (!group || !group.parentFeatureGroupKeys.length) return [[groupKey]];
     const nextSeen = new Set([...seen, groupKey]);
-    return group.parentFeatureGroupKeys.flatMap((parentKey) => groupPaths(parentKey, nextSeen)
-      .map((path) => [...path, groupKey]));
+    return group.parentFeatureGroupKeys.flatMap((parentKey) => groupPaths(parentKey, nextSeen).map((path) => [...path, groupKey]));
   };
-  const productLogicalByKindKey = new Map(graph.nodes.filter((node) => ["Feature", "FeatureGroup", "Capability"].includes(node.kind))
-    .map((node) => [`${node.kind}:${node.key}`, node.nodeId]));
-  const allCodeToProductPaths = relationships.flatMap((relationship) => {
-    const productKind = relationship.relationshipType === "IMPLEMENTS" ? nodeById.get(relationship.toNodeId)?.kind : nodeById.get(relationship.fromNodeId)?.kind;
-    const productNodeId = relationship.relationshipType === "IMPLEMENTS" ? relationship.toNodeId : relationship.fromNodeId;
-    const sourceNodeId = relationship.relationshipType === "IMPLEMENTS" ? relationship.fromNodeId : relationship.toNodeId;
-    const productNode = nodeById.get(productNodeId);
-    const base = {
-      reviewedRelationshipId: relationship.reviewedRelationshipId,
-      relationshipType: relationship.relationshipType,
-      sourceNodeId,
-      sourcePath: nodeById.get(sourceNodeId)?.path || "",
-      productNodeId,
-      productKind,
-      productKey: productNode?.key || "",
-      projectionStatus: relationship.projectionStatus,
-    };
-    if (productKind !== "Feature") return [{ ...base, featureGroupPathKeys: [], featureGroupPathNodeIds: [] }];
-    const feature = product.features.find((item) => item.key === productNode.key);
-    if (!feature?.featureGroupKeys?.length) return [{ ...base, featureGroupPathKeys: [], featureGroupPathNodeIds: [] }];
-    return feature.featureGroupKeys.flatMap((groupKey) => groupPaths(groupKey).map((pathKeys) => ({
-      ...base,
-      featureGroupPathKeys: pathKeys,
-      featureGroupPathNodeIds: pathKeys.map((key) => productLogicalByKindKey.get(`FeatureGroup:${key}`)).filter(Boolean),
-    })));
-  }).sort((left, right) => left.reviewedRelationshipId.localeCompare(right.reviewedRelationshipId)
-    || left.featureGroupPathKeys.join("/").localeCompare(right.featureGroupPathKeys.join("/")));
+  const productLogicalByKindKey = new Map(
+    graph.nodes.filter((node) => ["Feature", "FeatureGroup", "Capability"].includes(node.kind)).map((node) => [`${node.kind}:${node.key}`, node.nodeId]),
+  );
+  const allCodeToProductPaths = relationships
+    .flatMap((relationship) => {
+      const productKind =
+        relationship.relationshipType === "IMPLEMENTS" ? nodeById.get(relationship.toNodeId)?.kind : nodeById.get(relationship.fromNodeId)?.kind;
+      const productNodeId = relationship.relationshipType === "IMPLEMENTS" ? relationship.toNodeId : relationship.fromNodeId;
+      const sourceNodeId = relationship.relationshipType === "IMPLEMENTS" ? relationship.fromNodeId : relationship.toNodeId;
+      const productNode = nodeById.get(productNodeId);
+      const base = {
+        reviewedRelationshipId: relationship.reviewedRelationshipId,
+        relationshipType: relationship.relationshipType,
+        sourceNodeId,
+        sourcePath: nodeById.get(sourceNodeId)?.path || "",
+        productNodeId,
+        productKind,
+        productKey: productNode?.key || "",
+        projectionStatus: relationship.projectionStatus,
+      };
+      if (productKind !== "Feature") return [{ ...base, featureGroupPathKeys: [], featureGroupPathNodeIds: [] }];
+      const feature = product.features.find((item) => item.key === productNode.key);
+      if (!feature?.featureGroupKeys?.length) return [{ ...base, featureGroupPathKeys: [], featureGroupPathNodeIds: [] }];
+      return feature.featureGroupKeys.flatMap((groupKey) =>
+        groupPaths(groupKey).map((pathKeys) => ({
+          ...base,
+          featureGroupPathKeys: pathKeys,
+          featureGroupPathNodeIds: pathKeys.map((key) => productLogicalByKindKey.get(`FeatureGroup:${key}`)).filter(Boolean),
+        })),
+      );
+    })
+    .sort(
+      (left, right) =>
+        left.reviewedRelationshipId.localeCompare(right.reviewedRelationshipId) ||
+        left.featureGroupPathKeys.join("/").localeCompare(right.featureGroupPathKeys.join("/")),
+    );
   const codeToProductPaths = allCodeToProductPaths.slice(0, MAX_DIAGNOSTIC_PATHS);
   const omittedPaths = allCodeToProductPaths.slice(MAX_DIAGNOSTIC_PATHS);
-  const featureCoverage = product.features.map((feature) => {
-    const nodeId = productLogicalByKindKey.get(`Feature:${feature.key}`);
-    const matching = relationships.filter((relationship) => relationship.relationshipType === "IMPLEMENTS" && relationship.toNodeId === nodeId);
-    return {
-      featureKey: feature.key,
-      featureNodeId: nodeId,
-      featureGroupKeys: feature.featureGroupKeys,
-      mappingStatus: matching.some((item) => item.projectionCurrent) ? "current"
-        : matching.length ? "historical-or-stale" : "unmapped",
-      reviewedRelationshipIds: matching.map((item) => item.reviewedRelationshipId).sort(),
-    };
-  }).sort((left, right) => left.featureKey.localeCompare(right.featureKey));
-  const groupCoverage = product.featureGroups.map((group) => {
-    const descendantKeys = new Set(product.featureGroups.filter((candidate) => groupPaths(candidate.key).some((path) => path.includes(group.key))).map((item) => item.key));
-    const members = featureCoverage.filter((feature) => feature.featureGroupKeys.some((key) => descendantKeys.has(key)));
-    return {
-      featureGroupKey: group.key,
-      featureGroupNodeId: productLogicalByKindKey.get(`FeatureGroup:${group.key}`),
-      parentFeatureGroupKeys: group.parentFeatureGroupKeys,
-      featureCount: members.length,
-      currentMappedFeatureCount: members.filter((feature) => feature.mappingStatus === "current").length,
-      staleMappedFeatureCount: members.filter((feature) => feature.mappingStatus === "historical-or-stale").length,
-      unmappedFeatureCount: members.filter((feature) => feature.mappingStatus === "unmapped").length,
-    };
-  }).sort((left, right) => left.featureGroupKey.localeCompare(right.featureGroupKey));
+  const featureCoverage = product.features
+    .map((feature) => {
+      const nodeId = productLogicalByKindKey.get(`Feature:${feature.key}`);
+      const matching = relationships.filter((relationship) => relationship.relationshipType === "IMPLEMENTS" && relationship.toNodeId === nodeId);
+      return {
+        featureKey: feature.key,
+        featureNodeId: nodeId,
+        featureGroupKeys: feature.featureGroupKeys,
+        mappingStatus: matching.some((item) => item.projectionCurrent) ? "current" : matching.length ? "historical-or-stale" : "unmapped",
+        reviewedRelationshipIds: matching.map((item) => item.reviewedRelationshipId).sort(),
+      };
+    })
+    .sort((left, right) => left.featureKey.localeCompare(right.featureKey));
+  const groupCoverage = product.featureGroups
+    .map((group) => {
+      const descendantKeys = new Set(
+        product.featureGroups.filter((candidate) => groupPaths(candidate.key).some((path) => path.includes(group.key))).map((item) => item.key),
+      );
+      const members = featureCoverage.filter((feature) => feature.featureGroupKeys.some((key) => descendantKeys.has(key)));
+      return {
+        featureGroupKey: group.key,
+        featureGroupNodeId: productLogicalByKindKey.get(`FeatureGroup:${group.key}`),
+        parentFeatureGroupKeys: group.parentFeatureGroupKeys,
+        featureCount: members.length,
+        currentMappedFeatureCount: members.filter((feature) => feature.mappingStatus === "current").length,
+        staleMappedFeatureCount: members.filter((feature) => feature.mappingStatus === "historical-or-stale").length,
+        unmappedFeatureCount: members.filter((feature) => feature.mappingStatus === "unmapped").length,
+      };
+    })
+    .sort((left, right) => left.featureGroupKey.localeCompare(right.featureGroupKey));
   return {
     reviewedCount: relationships.length,
     projectionCurrentCount: relationships.filter((item) => item.projectionCurrent).length,
@@ -833,18 +1002,24 @@ export async function inspectFeatureMapping({ root = "." } = {}) {
       nextAction: "Have fresh HEAD inspect the current graph, then run feature-mapping-start with a semantic proposal.",
     };
   }
-  const state = verifyState(readJson(file, "Feature mapping state pointer"), { projectId: inspected.project.projectId, sessionId: inspected.state.sessionId }, storage);
+  const state = verifyState(
+    readJson(file, "Feature mapping state pointer"),
+    { projectId: inspected.project.projectId, sessionId: inspected.state.sessionId },
+    storage,
+  );
   const candidateSet = state.candidateSetId
     ? readFeatureMappingCandidateSet({ root: inspected.project.projectRoot, candidateSetId: state.candidateSetId }).candidateSet
     : null;
   if (candidateSet && candidateSet.sessionId !== state.sessionId) {
     fail("Feature mapping candidate set belongs to a different HEAD Session.", "FEATURE_MAPPING_CANDIDATE_SET_IDENTITY_MISMATCH");
   }
-  const savedReview = candidateSet ? recordedCandidateReview({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, candidateSet }, storage) : null;
+  const savedReview = candidateSet
+    ? recordedCandidateReview({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, candidateSet }, storage)
+    : null;
   const reviewDecision = state.reviewDecisionId
     ? readFeatureMappingReviewDecision({ root: inspected.project.projectRoot, reviewDecisionId: state.reviewDecisionId }).reviewDecision
     : savedReview;
-  const world = (await inspectWorldModel({ root: inspected.project.projectRoot }));
+  const world = await inspectWorldModel({ root: inspected.project.projectRoot });
   const awaitingReview = state.phase === "awaiting-review";
   const currentEvidence = candidateSet && candidateEvidenceIsCurrent(candidateSet, world);
   const runConflict = Boolean(inspected.state.activeRunId || inspected.state.pendingReview);
@@ -853,28 +1028,33 @@ export async function inspectFeatureMapping({ root = "." } = {}) {
     state,
     candidateSet,
     reviewDecision,
-    reviewRecovery: awaitingReview && savedReview ? { status: "pointer-update-pending", reviewDecisionId: savedReview.reviewDecisionId, requiresNewUserDecision: false } : null,
-    reviewReadiness: awaitingReview ? {
-      candidateSetId: candidateSet.candidateSetId,
-      evidenceStatus: currentEvidence ? "current" : "stale",
-      acceptanceAvailable: currentEvidence && !runConflict && !savedReview,
-      explicitRejectionAvailable: !runConflict && !savedReview,
-      runConflict,
-      nextAction: runConflict
-        ? "Finish the existing Run or its pending review before changing the mapping review state."
-        : savedReview
-        ? "Retry the unchanged saved ReviewDecision to finish its pending state update; no new user decision is needed."
-        : currentEvidence
-        ? "Ask the user to review this exact candidate set; only explicit acceptance promotes mappings."
-        : "Ask whether the user wants to reject this exact outdated candidate set, then have HEAD propose fresh evidence. Rejection preserves earlier approved mappings.",
-    } : null,
+    reviewRecovery:
+      awaitingReview && savedReview
+        ? { status: "pointer-update-pending", reviewDecisionId: savedReview.reviewDecisionId, requiresNewUserDecision: false }
+        : null,
+    reviewReadiness: awaitingReview
+      ? {
+          candidateSetId: candidateSet.candidateSetId,
+          evidenceStatus: currentEvidence ? "current" : "stale",
+          acceptanceAvailable: currentEvidence && !runConflict && !savedReview,
+          explicitRejectionAvailable: !runConflict && !savedReview,
+          runConflict,
+          nextAction: runConflict
+            ? "Finish the existing Run or its pending review before changing the mapping review state."
+            : savedReview
+              ? "Retry the unchanged saved ReviewDecision to finish its pending state update; no new user decision is needed."
+              : currentEvidence
+                ? "Ask the user to review this exact candidate set; only explicit acceptance promotes mappings."
+                : "Ask whether the user wants to reject this exact outdated candidate set, then have HEAD propose fresh evidence. Rejection preserves earlier approved mappings.",
+        }
+      : null,
     worldModel: {
       status: world.status,
       worldModelId: world.snapshot.worldModelId,
       graphSnapshotId: world.snapshot.temporalProvenanceGraph.graphSnapshotId,
       sourceSnapshotId: world.snapshot.temporalProvenanceGraph.sourceSnapshotId,
-      matchesMappingState: world.snapshot.worldModelId === state.worldModelId
-        && world.snapshot.temporalProvenanceGraph.graphSnapshotId === state.graphSnapshotId,
+      matchesMappingState:
+        world.snapshot.worldModelId === state.worldModelId && world.snapshot.temporalProvenanceGraph.graphSnapshotId === state.graphSnapshotId,
     },
     relationshipDiagnostics: reviewedRelationshipDiagnostics(world),
     authority: {

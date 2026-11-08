@@ -50,14 +50,62 @@ import {
   readLineageArtifact,
 } from "../scripts/lib/execution-lineage.mjs";
 import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
-import { WORLD_MODEL_STATUS_PROJECTION_MAX_BYTES, buildWorldModel, buildWorldModelStatusProjection, captureWorldMarkdownChanges, inspectWorldGraphProjection, inspectWorldMarkdownProjection, inspectWorldModel, inspectWorldModelStatus, materializeWorldMarkdownProjection, queryWorldHistory, queryWorldModel, queryWorldRuntimeState, queryWorldTemporalGraph, readWorldDocumentChangeCandidateSet, readWorldModel } from "../scripts/lib/world-model.mjs";
-import { buildTemporalProvenanceGraph, deduplicateTemporalEdgesInPlace, queryTemporalProvenanceGraph, verifyTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
-import { InMemorySourceRelationEvidenceAdapter, buildSourceRelationEvidenceSet, verifySourceRelationEvidenceSet } from "../scripts/lib/source-relation-evidence.mjs";
-import { ActivatedArcadeDbGraphProjectionAdapter, ArcadeDbGraphProjectionAdapter, GRAPH_PROJECTION_ADAPTER_VERSION, InMemoryGraphProjectionAdapter, LocalJsonGraphProjectionAdapter, buildGraphProjectionPointer, buildPreparedTraversalRequest, createActivatedArcadeDbGraphProjectionAdapter, inspectArcadeDbGraphProjectionActivation, inspectArcadeDbGraphTopologyActivation, inspectArcadeDbIncrementalSyncReceipt, materializeGraphProjection, queryGraphProjection, verifyGraphProjectionAdapterConformance } from "../scripts/lib/graph-projection-adapter.mjs";
+import {
+  WORLD_MODEL_STATUS_PROJECTION_MAX_BYTES,
+  buildWorldModel,
+  buildWorldModelStatusProjection,
+  captureWorldMarkdownChanges,
+  inspectWorldGraphProjection,
+  inspectWorldMarkdownProjection,
+  inspectWorldModel,
+  inspectWorldModelStatus,
+  materializeWorldMarkdownProjection,
+  queryWorldHistory,
+  queryWorldModel,
+  queryWorldRuntimeState,
+  queryWorldTemporalGraph,
+  readWorldDocumentChangeCandidateSet,
+  readWorldModel,
+} from "../scripts/lib/world-model.mjs";
+import {
+  buildTemporalProvenanceGraph,
+  deduplicateTemporalEdgesInPlace,
+  queryTemporalProvenanceGraph,
+  verifyTemporalProvenanceGraph,
+} from "../scripts/lib/temporal-provenance.mjs";
+import {
+  InMemorySourceRelationEvidenceAdapter,
+  buildSourceRelationEvidenceSet,
+  verifySourceRelationEvidenceSet,
+} from "../scripts/lib/source-relation-evidence.mjs";
+import {
+  ActivatedArcadeDbGraphProjectionAdapter,
+  ArcadeDbGraphProjectionAdapter,
+  GRAPH_PROJECTION_ADAPTER_VERSION,
+  InMemoryGraphProjectionAdapter,
+  LocalJsonGraphProjectionAdapter,
+  buildGraphProjectionPointer,
+  buildPreparedTraversalRequest,
+  createActivatedArcadeDbGraphProjectionAdapter,
+  inspectArcadeDbGraphProjectionActivation,
+  inspectArcadeDbGraphTopologyActivation,
+  inspectArcadeDbIncrementalSyncReceipt,
+  materializeGraphProjection,
+  queryGraphProjection,
+  verifyGraphProjectionAdapterConformance,
+} from "../scripts/lib/graph-projection-adapter.mjs";
 import { buildPreparedTraversalCostEvidence, verifyPreparedTraversalCostEvidence } from "../scripts/lib/prepared-traversal-benchmark.mjs";
 import { activateArcadeDbGraphProjection, inspectArcadeDbGraphProjectionStatus } from "../scripts/lib/graphdb-projection-activation.mjs";
 import { inspectOnboarding, readOnboardingCandidateSet, startOnboarding } from "../scripts/lib/onboarding.mjs";
-import { DOCUMENT_PROJECTION_ADAPTER_VERSION, InMemoryMarkdownProjectionAdapter, LocalMarkdownProjectionAdapter, buildMarkdownDocumentProjection, inspectMarkdownProjection, materializeMarkdownProjection, verifyDocumentProjectionAdapterConformance } from "../scripts/lib/document-projection-adapter.mjs";
+import {
+  DOCUMENT_PROJECTION_ADAPTER_VERSION,
+  InMemoryMarkdownProjectionAdapter,
+  LocalMarkdownProjectionAdapter,
+  buildMarkdownDocumentProjection,
+  inspectMarkdownProjection,
+  materializeMarkdownProjection,
+  verifyDocumentProjectionAdapterConformance,
+} from "../scripts/lib/document-projection-adapter.mjs";
 import { normalizeProductModelDocument } from "../scripts/lib/product-model.mjs";
 import { WORLD_MODEL_STORE_ADAPTER_VERSION } from "../scripts/lib/world-model-store.mjs";
 import { GIT_HISTORY_ADAPTER_VERSION, GitCliHistoryAdapter } from "../scripts/lib/git-history.mjs";
@@ -72,7 +120,15 @@ import {
 import { WORLD_MODEL_STATUS_MCP_MAX_BYTES, dispatch as dispatchMcp, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { buildRepositorySourceScope } from "../scripts/lib/repository-source-scope.mjs";
 import { runCommand } from "../scripts/head.mjs";
-import { inspectIncrementalRefresh, inspectPostRefreshProjectionStatus, readIncrementalRefreshReceipt, readPostRefreshProjectionReceipt, refreshWorldModel, verifyIncrementalRefreshReceipt, verifyIncrementalRefreshRequest } from "../scripts/lib/incremental-refresh.mjs";
+import {
+  inspectIncrementalRefresh,
+  inspectPostRefreshProjectionStatus,
+  readIncrementalRefreshReceipt,
+  readPostRefreshProjectionReceipt,
+  refreshWorldModel,
+  verifyIncrementalRefreshReceipt,
+  verifyIncrementalRefreshRequest,
+} from "../scripts/lib/incremental-refresh.mjs";
 import {
   buildRefreshTriggerBatch,
   createFileSystemRefreshWatcher,
@@ -101,7 +157,12 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 
 function canonicalTestValue(value) {
   if (Array.isArray(value)) return value.map(canonicalTestValue);
-  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalTestValue(value[key])]));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalTestValue(value[key])]),
+    );
   return value;
 }
 
@@ -109,7 +170,10 @@ function reidentify(document, { prefix, idKey, hashKey }) {
   const payload = clone(document);
   delete payload[idKey];
   delete payload[hashKey];
-  const hash = crypto.createHash("sha256").update(JSON.stringify(canonicalTestValue(payload))).digest("hex");
+  const hash = crypto
+    .createHash("sha256")
+    .update(JSON.stringify(canonicalTestValue(payload)))
+    .digest("hex");
   return { ...payload, [idKey]: `${prefix}-${hash.slice(0, 24)}`, [hashKey]: hash };
 }
 
@@ -219,7 +283,7 @@ function temporaryProject() {
 }
 
 async function semanticCapabilityProposal(root, relativePath, suffix = "current") {
-  const world = (await inspectWorldModel({ root }));
+  const world = await inspectWorldModel({ root });
   assert.equal(world.status, "current");
   const file = world.snapshot.files.find((item) => item.path === relativePath);
   assert.ok(file);
@@ -227,18 +291,22 @@ async function semanticCapabilityProposal(root, relativePath, suffix = "current"
   return {
     schemaVersion: 1,
     sourceSnapshotId: world.snapshot.temporalProvenanceGraph.sourceSnapshotId,
-    candidates: [{
-      productKind: "Capability",
-      proposedEntity: { key: `capability:${suffix}`, name: `Capability ${suffix}`, description: "Fresh HEAD semantic proposal fixture." },
-      evidence: [{
-        path: relativePath,
-        line: symbol?.line || 1,
-        contentDigest: file.digest,
-        ...(symbol ? { symbol: { name: symbol.name, kind: symbol.kind, line: symbol.line } } : {}),
-      }],
-      explanation: "Fresh HEAD proposes product meaning; Core verifies only current evidence and review gates.",
-      confidence: 0.8,
-    }],
+    candidates: [
+      {
+        productKind: "Capability",
+        proposedEntity: { key: `capability:${suffix}`, name: `Capability ${suffix}`, description: "Fresh HEAD semantic proposal fixture." },
+        evidence: [
+          {
+            path: relativePath,
+            line: symbol?.line || 1,
+            contentDigest: file.digest,
+            ...(symbol ? { symbol: { name: symbol.name, kind: symbol.kind, line: symbol.line } } : {}),
+          },
+        ],
+        explanation: "Fresh HEAD proposes product meaning; Core verifies only current evidence and review gates.",
+        confidence: 0.8,
+      },
+    ],
   };
 }
 
@@ -248,7 +316,8 @@ function directoryFileDigests(root) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(absolute);
-      else if (entry.isFile()) files[path.relative(root, absolute).replaceAll("\\", "/")] = crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex");
+      else if (entry.isFile())
+        files[path.relative(root, absolute).replaceAll("\\", "/")] = crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex");
     }
   };
   visit(root);
@@ -258,86 +327,160 @@ function directoryFileDigests(root) {
 function hasOwnKeyDeep(value, key) {
   if (Array.isArray(value)) return value.some((item) => hasOwnKeyDeep(item, key));
   if (!value || typeof value !== "object") return false;
-  return Object.prototype.hasOwnProperty.call(value, key)
-    || Object.values(value).some((item) => hasOwnKeyDeep(item, key));
+  return Object.prototype.hasOwnProperty.call(value, key) || Object.values(value).some((item) => hasOwnKeyDeep(item, key));
 }
 
-test("host-a: Claude instruction and MCP ownership are independent in every presence combination", t => {
-  for (const instructionPresent of [false, true]) for (const mcpPresent of [false, true]) {
-    const root = temporaryProject(); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    const instruction = "User-owned Korean 지침 😀\r\n", mcp = '{"mcpServers":{"user-owned":{"command":"unused"}}}\n';
-    if (instructionPresent) fs.writeFileSync(path.join(root, "CLAUDE.md"), instruction);
-    if (mcpPresent) fs.writeFileSync(path.join(root, ".mcp.json"), mcp);
-    const result = initializeProject({ root, pluginRoot, runtimes: ["claude"] }), current = inspectProject(root);
-    assert.equal(current.status, "ready"); assert.equal(result.integrations.claude.instruction.status, instructionPresent ? "manual" : "managed");
-    assert.equal(result.integrations.claude.mcp.status, mcpPresent ? "manual" : "managed");
-    assert.equal(fs.existsSync(path.join(root, "AGENTS.md")), false); assert.equal(fs.existsSync(path.join(root, "opencode.json")), false);
-    if (instructionPresent) assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), instruction);
-    else assert(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8").includes(coreEntryGuidance()));
-    if (mcpPresent) assert.equal(fs.readFileSync(path.join(root, ".mcp.json"), "utf8"), mcp);
-    else assert.equal(JSON.parse(fs.readFileSync(path.join(root, ".mcp.json"))).mcpServers.lode.command, "node");
-    const manifest = JSON.parse(fs.readFileSync(path.join(root, current.storage.directory, "generated/manifest.json")));
-    assert.equal(manifest.managed.some(item => item.path === "CLAUDE.md"), !instructionPresent);
-    assert.equal(manifest.managed.some(item => item.path === ".mcp.json"), !mcpPresent);
-  }
+test("host-a: Claude instruction and MCP ownership are independent in every presence combination", (t) => {
+  for (const instructionPresent of [false, true])
+    for (const mcpPresent of [false, true]) {
+      const root = temporaryProject();
+      t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+      const instruction = "User-owned Korean 지침 😀\r\n",
+        mcp = '{"mcpServers":{"user-owned":{"command":"unused"}}}\n';
+      if (instructionPresent) fs.writeFileSync(path.join(root, "CLAUDE.md"), instruction);
+      if (mcpPresent) fs.writeFileSync(path.join(root, ".mcp.json"), mcp);
+      const result = initializeProject({ root, pluginRoot, runtimes: ["claude"] }),
+        current = inspectProject(root);
+      assert.equal(current.status, "ready");
+      assert.equal(result.integrations.claude.instruction.status, instructionPresent ? "manual" : "managed");
+      assert.equal(result.integrations.claude.mcp.status, mcpPresent ? "manual" : "managed");
+      assert.equal(fs.existsSync(path.join(root, "AGENTS.md")), false);
+      assert.equal(fs.existsSync(path.join(root, "opencode.json")), false);
+      if (instructionPresent) assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), instruction);
+      else assert(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8").includes(coreEntryGuidance()));
+      if (mcpPresent) assert.equal(fs.readFileSync(path.join(root, ".mcp.json"), "utf8"), mcp);
+      else assert.equal(JSON.parse(fs.readFileSync(path.join(root, ".mcp.json"))).mcpServers.lode.command, "node");
+      const manifest = JSON.parse(fs.readFileSync(path.join(root, current.storage.directory, "generated/manifest.json")));
+      assert.equal(
+        manifest.managed.some((item) => item.path === "CLAUDE.md"),
+        !instructionPresent,
+      );
+      assert.equal(
+        manifest.managed.some((item) => item.path === ".mcp.json"),
+        !mcpPresent,
+      );
+    }
 });
 
-test("host-a: explicit resume supplies an absent legacy manual part without adopting existing user files", async t => {
-  const root = temporaryProject(); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(root, "CLAUDE.md"), "User owns this file\n"); fs.writeFileSync(path.join(root, ".mcp.json"), "{}\n");
+test("host-a: explicit resume supplies an absent legacy manual part without adopting existing user files", async (t) => {
+  const root = temporaryProject();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "CLAUDE.md"), "User owns this file\n");
+  fs.writeFileSync(path.join(root, ".mcp.json"), "{}\n");
   initializeProject({ root, pluginRoot, runtimes: ["claude"] });
-  const initial = inspectProject(root), projectFile = path.join(root, initial.storage.directory, "project.json"), manifestFile = path.join(root, initial.storage.directory, "generated/manifest.json");
-  const project = JSON.parse(fs.readFileSync(projectFile)); project.integrations.claude = { status: "manual", reason: "Legacy combined ownership", instructionProjection: ".lode/generated/lode-instructions.md", mcpProjection: ".lode/generated/claude.mcp.json" };
+  const initial = inspectProject(root),
+    projectFile = path.join(root, initial.storage.directory, "project.json"),
+    manifestFile = path.join(root, initial.storage.directory, "generated/manifest.json");
+  const project = JSON.parse(fs.readFileSync(projectFile));
+  project.integrations.claude = {
+    status: "manual",
+    reason: "Legacy combined ownership",
+    instructionProjection: ".lode/generated/lode-instructions.md",
+    mcpProjection: ".lode/generated/claude.mcp.json",
+  };
   fs.writeFileSync(projectFile, JSON.stringify(project, null, 2) + "\n");
-  const manifest = JSON.parse(fs.readFileSync(manifestFile)); manifest.managed.find(row => row.path === ".lode/project.json").sha256 = crypto.createHash("sha256").update(fs.readFileSync(projectFile)).digest("hex");
-  fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + "\n"); fs.unlinkSync(path.join(root, ".mcp.json"));
-  const sessionFile = path.join(root, initial.storage.directory, "sessions/current.json"), sessionBytes = fs.readFileSync(sessionFile);
+  const manifest = JSON.parse(fs.readFileSync(manifestFile));
+  manifest.managed.find((row) => row.path === ".lode/project.json").sha256 = crypto.createHash("sha256").update(fs.readFileSync(projectFile)).digest("hex");
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + "\n");
+  fs.unlinkSync(path.join(root, ".mcp.json"));
+  const sessionFile = path.join(root, initial.storage.directory, "sessions/current.json"),
+    sessionBytes = fs.readFileSync(sessionFile);
   assert.equal(inspectProject(root).status, "ready");
   const result = await initializeOrResumeProject({ root, pluginRoot, profile: "core", instructionIntegration: "preserve" });
-  assert.equal(inspectProject(root).status, "ready"); assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), "User owns this file\n");
-  assert.equal(inspectProject(root).project.integrations.claude.instruction.status, "manual"); assert.equal(inspectProject(root).project.integrations.claude.mcp.status, "managed");
-  assert.equal(result.installationAction, "converged"); assert.equal(result.coreGuidance, coreEntryGuidance()); assert.deepEqual(fs.readFileSync(sessionFile), sessionBytes);
+  assert.equal(inspectProject(root).status, "ready");
+  assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), "User owns this file\n");
+  assert.equal(inspectProject(root).project.integrations.claude.instruction.status, "manual");
+  assert.equal(inspectProject(root).project.integrations.claude.mcp.status, "managed");
+  assert.equal(result.installationAction, "converged");
+  assert.equal(result.coreGuidance, coreEntryGuidance());
+  assert.deepEqual(fs.readFileSync(sessionFile), sessionBytes);
   assert.equal(convergeProjectInstallation({ root, pluginRoot }).status, "current");
 });
 
-test("host-a: explicit standalone MCP entry returns shared guidance with manual instructions preserved", async t => {
-  const root = temporaryProject(); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+test("host-a: explicit standalone MCP entry returns shared guidance with manual instructions preserved", async (t) => {
+  const root = temporaryProject();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, "CLAUDE.md"), "User-owned standalone context\n");
   const { dispatch } = await import("../scripts/mcp-server.mjs");
-  const response = await dispatch({ jsonrpc: "2.0", id: "standalone-entry-guidance", method: "tools/call", params: {
-    name: "lode_project_initialize_or_resume", arguments: { project_root: root, profile: "core", runtimes: ["claude"], instruction_integration: "preserve" } } });
-  assert.equal(response.error, undefined, JSON.stringify(response)); assert.equal(response.result?.isError, undefined, JSON.stringify(response));
+  const response = await dispatch({
+    jsonrpc: "2.0",
+    id: "standalone-entry-guidance",
+    method: "tools/call",
+    params: {
+      name: "lode_project_initialize_or_resume",
+      arguments: { project_root: root, profile: "core", runtimes: ["claude"], instruction_integration: "preserve" },
+    },
+  });
+  assert.equal(response.error, undefined, JSON.stringify(response));
+  assert.equal(response.result?.isError, undefined, JSON.stringify(response));
   assert.equal(response.result.structuredContent.coreGuidance, coreEntryGuidance());
-  assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), "User-owned standalone context\n"); assert(fs.existsSync(path.join(root, ".mcp.json")));
+  assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), "User-owned standalone context\n");
+  assert(fs.existsSync(path.join(root, ".mcp.json")));
   assert.equal(response.result.structuredContent.instructionIntegration.hostConsumption, "not-verified");
 });
 
-test("host-a: missing owned projections stay drift errors and a create race preserves the intervening user file", t => {
-  const root = temporaryProject(); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  initializeProject({ root, pluginRoot, runtimes: ["claude"] }); fs.unlinkSync(path.join(root, ".mcp.json"));
+test("host-a: missing owned projections stay drift errors and a create race preserves the intervening user file", (t) => {
+  const root = temporaryProject();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeProject({ root, pluginRoot, runtimes: ["claude"] });
+  fs.unlinkSync(path.join(root, ".mcp.json"));
   assert.throws(() => convergeProjectInstallation({ root, pluginRoot }), /Managed project files must be drift-free/);
   assert.equal(fs.existsSync(path.join(root, ".mcp.json")), false);
-  const other = temporaryProject(); t.after(() => fs.rmSync(other, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(other, "CLAUDE.md"), "User owns instructions\n"); fs.writeFileSync(path.join(other, ".mcp.json"), "{}\n");
-  initializeProject({ root: other, pluginRoot, runtimes: ["claude"] }); fs.unlinkSync(path.join(other, ".mcp.json"));
-  const before = directoryFileDigests(other), link = fs.linkSync;
-  fs.linkSync = (source, target) => { if (target === path.join(other, ".mcp.json")) fs.writeFileSync(target, "User race winner\n"); return link(source, target); };
-  try { assert.throws(() => convergeProjectInstallation({ root: other, pluginRoot }), error => error.code === "EEXIST"); }
-  finally { fs.linkSync = link; }
+  const other = temporaryProject();
+  t.after(() => fs.rmSync(other, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(other, "CLAUDE.md"), "User owns instructions\n");
+  fs.writeFileSync(path.join(other, ".mcp.json"), "{}\n");
+  initializeProject({ root: other, pluginRoot, runtimes: ["claude"] });
+  fs.unlinkSync(path.join(other, ".mcp.json"));
+  const before = directoryFileDigests(other),
+    link = fs.linkSync;
+  fs.linkSync = (source, target) => {
+    if (target === path.join(other, ".mcp.json")) fs.writeFileSync(target, "User race winner\n");
+    return link(source, target);
+  };
+  try {
+    assert.throws(
+      () => convergeProjectInstallation({ root: other, pluginRoot }),
+      (error) => error.code === "EEXIST",
+    );
+  } finally {
+    fs.linkSync = link;
+  }
   assert.equal(fs.readFileSync(path.join(other, ".mcp.json"), "utf8"), "User race winner\n");
-  const after = directoryFileDigests(other); delete after[".mcp.json"]; assert.deepEqual(after, before);
+  const after = directoryFileDigests(other);
+  delete after[".mcp.json"];
+  assert.deepEqual(after, before);
 });
 
-test("host-a: failed manifest publication rolls back only owned new projections and prior metadata bytes", t => {
-  const root = temporaryProject(); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(root, "CLAUDE.md"), "User-owned instructions\n"); fs.writeFileSync(path.join(root, ".mcp.json"), "{}\n");
-  initializeProject({ root, pluginRoot, runtimes: ["claude"] }); fs.unlinkSync(path.join(root, ".mcp.json"));
-  const before = directoryFileDigests(root), target = path.join(root, ".lode/generated/manifest.json"), rename = fs.renameSync;
+test("host-a: failed manifest publication rolls back only owned new projections and prior metadata bytes", (t) => {
+  const root = temporaryProject();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "CLAUDE.md"), "User-owned instructions\n");
+  fs.writeFileSync(path.join(root, ".mcp.json"), "{}\n");
+  initializeProject({ root, pluginRoot, runtimes: ["claude"] });
+  fs.unlinkSync(path.join(root, ".mcp.json"));
+  const before = directoryFileDigests(root),
+    target = path.join(root, ".lode/generated/manifest.json"),
+    rename = fs.renameSync;
   let injected = false;
-  fs.renameSync = (source, file) => { if (file === target && !injected) { injected = true; throw Object.assign(new Error("Synthetic publication failure"), { code: "EIO" }); } return rename(source, file); };
-  try { assert.throws(() => convergeProjectInstallation({ root, pluginRoot }), error => error.code === "EIO"); }
-  finally { fs.renameSync = rename; }
-  assert.equal(injected, true); assert.deepEqual(directoryFileDigests(root), before); assert.equal(inspectProject(root).status, "ready");
+  fs.renameSync = (source, file) => {
+    if (file === target && !injected) {
+      injected = true;
+      throw Object.assign(new Error("Synthetic publication failure"), { code: "EIO" });
+    }
+    return rename(source, file);
+  };
+  try {
+    assert.throws(
+      () => convergeProjectInstallation({ root, pluginRoot }),
+      (error) => error.code === "EIO",
+    );
+  } finally {
+    fs.renameSync = rename;
+  }
+  assert.equal(injected, true);
+  assert.deepEqual(directoryFileDigests(root), before);
+  assert.equal(inspectProject(root).status, "ready");
 });
 
 test("initializes Claude, Codex, and OpenCode projections and verifies managed canon", (t) => {
@@ -375,7 +518,7 @@ test("defaults to the constitutional core without activating Product or Graph go
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   fs.writeFileSync(path.join(root, "src", "index.mjs"), "export const ready = true;\n");
 
-  const absent = (await inspectProjectExperience({ root }));
+  const absent = await inspectProjectExperience({ root });
   assert.equal(absent.status, "not_initialized");
   assert.equal(absent.nextAction.id, "initialize_core");
   assert.equal(absent.readiness.context.state, "blocked");
@@ -406,16 +549,31 @@ test("defaults to the constitutional core without activating Product or Graph go
   assert.equal(first.productGovernanceActivated, false);
   assert.equal(first.onboardingAction, "not-activated");
   const { storage: storageReadiness, ...coreReadiness } = first.readiness;
-  assert.deepEqual({
-    kind: storageReadiness.kind, authorityPlane: storageReadiness.authorityPlane,
-    persisted: storageReadiness.persisted, scope: storageReadiness.scope,
-    snapshotIntegrity: storageReadiness.snapshotIntegrity, freshness: storageReadiness.freshness,
-    layers: storageReadiness.layers, ordinaryWorkBlocked: storageReadiness.ordinaryWorkBlocked,
-  }, {
-    kind: "SnapshotReaderCompatibilityProjection", authorityPlane: "P4", persisted: false,
-    scope: "bounded-local-pointer-declarations-only", snapshotIntegrity: "not-inspected", freshness: "not-inspected",
-    layers: [{ layer: "world", state: "absent" }, { layer: "graph", state: "absent" }], ordinaryWorkBlocked: false,
-  });
+  assert.deepEqual(
+    {
+      kind: storageReadiness.kind,
+      authorityPlane: storageReadiness.authorityPlane,
+      persisted: storageReadiness.persisted,
+      scope: storageReadiness.scope,
+      snapshotIntegrity: storageReadiness.snapshotIntegrity,
+      freshness: storageReadiness.freshness,
+      layers: storageReadiness.layers,
+      ordinaryWorkBlocked: storageReadiness.ordinaryWorkBlocked,
+    },
+    {
+      kind: "SnapshotReaderCompatibilityProjection",
+      authorityPlane: "P4",
+      persisted: false,
+      scope: "bounded-local-pointer-declarations-only",
+      snapshotIntegrity: "not-inspected",
+      freshness: "not-inspected",
+      layers: [
+        { layer: "world", state: "absent" },
+        { layer: "graph", state: "absent" },
+      ],
+      ordinaryWorkBlocked: false,
+    },
+  );
   assert.deepEqual(coreReadiness, {
     core: { state: "ready", managedProjectionDriftCount: 0 },
     product: { state: "not_activated", governanceActivated: false, onboardingStatus: "initialized" },
@@ -475,7 +633,7 @@ test("defaults to the constitutional core without activating Product or Graph go
   assert.equal(resumed.project.sessionId, first.project.sessionId);
   assert.equal(fs.readFileSync(path.join(root, layout.directory, "onboarding", "current.json"), "utf8"), onboardingBeforeResume);
 
-  const projected = (await inspectProjectExperience({ root }));
+  const projected = await inspectProjectExperience({ root });
   assert.equal(projected.status, "core_ready");
   assert.equal(projected.state.sessionId, first.project.sessionId);
   assert.equal(projected.capabilities.find((item) => item.id === "bounded-workers").availability, "requires-session-or-run-authorization");
@@ -518,7 +676,10 @@ test("defaults to the constitutional core without activating Product or Graph go
   assert.match(humanDoctor.stdout, /Next: Continue the user's original task\./u);
   assert.doesNotMatch(humanDoctor.stdout, /^(?:Command|MCP):/mu);
 
-  const jsonStatus = spawnSync(process.execPath, [path.join(pluginRoot, "scripts", "head.mjs"), "status", root, "--json"], { encoding: "utf8", windowsHide: true });
+  const jsonStatus = spawnSync(process.execPath, [path.join(pluginRoot, "scripts", "head.mjs"), "status", root, "--json"], {
+    encoding: "utf8",
+    windowsHide: true,
+  });
   assert.equal(jsonStatus.status, 0, jsonStatus.stderr);
   assert.equal(JSON.parse(jsonStatus.stdout).runtime.activePackageVersion, pluginVersion);
 
@@ -534,14 +695,23 @@ test("defaults to the constitutional core without activating Product or Graph go
   assert.equal(jsonHelp.status, 0, jsonHelp.stderr);
   assert.equal(JSON.parse(jsonHelp.stdout).surface, "light-default");
   assert.equal(JSON.parse(jsonHelp.stdout).contextPreparationRequired, false);
-  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("context-prepare")), true);
+  assert.equal(
+    (await runCommand(["help-all"])).commands.some((command) => command.includes("context-prepare")),
+    true,
+  );
 
-  const humanFailure = spawnSync(process.execPath, [path.join(pluginRoot, "scripts", "head.mjs"), "not-a-command", root], { encoding: "utf8", windowsHide: true });
+  const humanFailure = spawnSync(process.execPath, [path.join(pluginRoot, "scripts", "head.mjs"), "not-a-command", root], {
+    encoding: "utf8",
+    windowsHide: true,
+  });
   assert.notEqual(humanFailure.status, 0);
   assert.match(humanFailure.stdout, /Lode could not complete that step/u);
   assert.equal(humanFailure.stdout.trimStart().startsWith("{"), false);
 
-  const jsonFailure = spawnSync(process.execPath, [path.join(pluginRoot, "scripts", "head.mjs"), "not-a-command", root, "--json"], { encoding: "utf8", windowsHide: true });
+  const jsonFailure = spawnSync(process.execPath, [path.join(pluginRoot, "scripts", "head.mjs"), "not-a-command", root, "--json"], {
+    encoding: "utf8",
+    windowsHide: true,
+  });
   assert.notEqual(jsonFailure.status, 0);
   assert.equal(JSON.parse(jsonFailure.stdout).code, "HEAD_CLI_ERROR");
 });
@@ -558,19 +728,22 @@ test("reports loaded versus configured package state without blocking ordinary w
   const oldInstructions = "# Old managed instructions\n";
   fs.writeFileSync(generatedInstructionsFile, oldInstructions);
   const oldInstructionDigest = crypto.createHash("sha256").update(oldInstructions).digest("hex");
-  const oldManaged = manifest.managed.map((item) => item.path === `${layout.directory}/generated/lode-instructions.md`
-    ? { ...item, sha256: oldInstructionDigest }
-    : item);
+  const oldManaged = manifest.managed.map((item) =>
+    item.path === `${layout.directory}/generated/lode-instructions.md` ? { ...item, sha256: oldInstructionDigest } : item,
+  );
   fs.writeFileSync(manifestFile, `${JSON.stringify({ ...manifest, packageVersion: "0.0.0-fixture", managed: oldManaged }, null, 2)}\n`);
   assert.equal(inspectProject(root).status, "ready");
 
-  const outdated = (await inspectProjectExperience({ root }));
+  const outdated = await inspectProjectExperience({ root });
   assert.equal(outdated.runtime.loadedPackageVersion, pluginVersion);
   assert.equal(outdated.runtime.configuredPackageVersion, "0.0.0-fixture");
   assert.equal(outdated.runtime.state, "project-integration-outdated");
   assert.equal(outdated.runtime.restartRequired, true);
   assert.deepEqual(outdated.runtime.reloadSequence, ["converge-project-integration", "restart-host"]);
-  assert.equal(outdated.attention.items.some((item) => item.id === "plugin-integration-update"), true);
+  assert.equal(
+    outdated.attention.items.some((item) => item.id === "plugin-integration-update"),
+    true,
+  );
   assert.equal(outdated.attention.ordinaryWorkBlocked, false);
 
   const converged = await initializeOrResumeProject({ root, pluginRoot, runtimes: ["codex"] });
@@ -583,10 +756,9 @@ test("reports loaded versus configured package state without blocking ordinary w
 test("requires an explicit product profile before applying onboarding input", async (t) => {
   const root = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await assert.rejects(
-    async () => (await initializeOrResumeProject({ root, pluginRoot, onboarding: { mode: "existing" } })),
-    { code: "PROJECT_BOOTSTRAP_PROFILE_REQUIRED" },
-  );
+  await assert.rejects(async () => await initializeOrResumeProject({ root, pluginRoot, onboarding: { mode: "existing" } }), {
+    code: "PROJECT_BOOTSTRAP_PROFILE_REQUIRED",
+  });
   assert.equal(fs.existsSync(path.join(root, ".head")), false);
   assert.equal(fs.existsSync(path.join(root, ".lode")), false);
 });
@@ -598,16 +770,17 @@ test("rejects invalid source scope before project initialization mutates the tar
   fs.writeFileSync(path.join(root, "src", "index.mjs"), "export const ready = true;\n");
 
   await assert.rejects(
-    async () => (await initializeOrResumeProject({
-      root,
-      pluginRoot,
-      runtimes: ["codex"],
-      profile: "product",
-      onboarding: {
-        mode: "existing",
-        sourceScope: { includeRoots: ["."], excludeRoots: [] },
-      },
-    })),
+    async () =>
+      await initializeOrResumeProject({
+        root,
+        pluginRoot,
+        runtimes: ["codex"],
+        profile: "product",
+        onboarding: {
+          mode: "existing",
+          sourceScope: { includeRoots: ["."], excludeRoots: [] },
+        },
+      }),
     { code: "INVALID_REPOSITORY_SOURCE_SCOPE_PATH" },
   );
   assert.equal(fs.existsSync(path.join(root, ".head")), false);
@@ -621,28 +794,30 @@ test("resume requires a fresh semantic reproposal for stale non-authoritative on
   fs.writeFileSync(path.join(root, "src", "routing.py"), "def route_request():\n    return True\n");
   const discovery = await initializeOrResumeProject({ root, pluginRoot, runtimes: ["codex"], profile: "product", onboarding: { mode: "existing" } });
   assert.equal(discovery.status, "product_evidence_required");
-  const invalidProposal = (await semanticCapabilityProposal(root, "src/routing.py", "invalid"));
+  const invalidProposal = await semanticCapabilityProposal(root, "src/routing.py", "invalid");
   invalidProposal.candidates[0].confidence = Number.NaN;
   await assert.rejects(
-    async () => (await initializeOrResumeProject({
-      root,
-      pluginRoot,
-      runtimes: ["codex"],
-      profile: "product",
-      onboarding: { mode: "existing", semanticProposal: invalidProposal },
-    })),
+    async () =>
+      await initializeOrResumeProject({
+        root,
+        pluginRoot,
+        runtimes: ["codex"],
+        profile: "product",
+        onboarding: { mode: "existing", semanticProposal: invalidProposal },
+      }),
     { code: "INVALID_ONBOARDING_CONFIDENCE" },
   );
-  const coercedProposal = (await semanticCapabilityProposal(root, "src/routing.py", "coerced"));
+  const coercedProposal = await semanticCapabilityProposal(root, "src/routing.py", "coerced");
   coercedProposal.candidates[0].confidence = "0.8";
   await assert.rejects(
-    async () => (await initializeOrResumeProject({
-      root,
-      pluginRoot,
-      runtimes: ["codex"],
-      profile: "product",
-      onboarding: { mode: "existing", semanticProposal: coercedProposal },
-    })),
+    async () =>
+      await initializeOrResumeProject({
+        root,
+        pluginRoot,
+        runtimes: ["codex"],
+        profile: "product",
+        onboarding: { mode: "existing", semanticProposal: coercedProposal },
+      }),
     { code: "INVALID_ONBOARDING_CONFIDENCE" },
   );
   const first = await initializeOrResumeProject({
@@ -650,7 +825,7 @@ test("resume requires a fresh semantic reproposal for stale non-authoritative on
     pluginRoot,
     runtimes: ["codex"],
     profile: "product",
-    onboarding: { mode: "existing", semanticProposal: (await semanticCapabilityProposal(root, "src/routing.py", "routing")) },
+    onboarding: { mode: "existing", semanticProposal: await semanticCapabilityProposal(root, "src/routing.py", "routing") },
   });
   assert.equal(first.status, "product_review_required");
   assert.equal(first.nextAction.id, "review_product_candidates");
@@ -676,7 +851,7 @@ test("resume requires a fresh semantic reproposal for stale non-authoritative on
     pluginRoot,
     runtimes: ["codex"],
     profile: "product",
-    onboarding: { semanticProposal: (await semanticCapabilityProposal(root, "src/policy.py", "policy")) },
+    onboarding: { semanticProposal: await semanticCapabilityProposal(root, "src/policy.py", "policy") },
   });
   assert.equal(resumed.onboardingAction, "refreshed-stale-candidates");
   assert.equal(resumed.previousCandidateSetId, firstSetId);
@@ -694,7 +869,7 @@ test("resume requires a fresh semantic reproposal for stale non-authoritative on
     pluginRoot,
     runtimes: ["codex"],
     profile: "product",
-    onboarding: { semanticProposal: (await semanticCapabilityProposal(root, "src/routing.py", "routing-returned")) },
+    onboarding: { semanticProposal: await semanticCapabilityProposal(root, "src/routing.py", "routing-returned") },
   });
   assert.equal(returnedToFirstSource.onboardingAction, "refreshed-stale-candidates");
   assert.equal(returnedToFirstSource.previousCandidateSetId, successor.candidateSetId);
@@ -710,20 +885,14 @@ test("defines deterministic provider-neutral runtime contracts while every contr
   const first = await inspectRuntimeAdapters(root);
   const repeated = await inspectRuntimeAdapters(root);
   assert.deepEqual(first, repeated);
-  assert.ok([
-    "bounded-non-session-protocol-and-project-binding-verified",
-    "bounded-non-session-protocol-and-project-binding-partial",
-  ].includes(first.status));
+  assert.ok(["bounded-non-session-protocol-and-project-binding-verified", "bounded-non-session-protocol-and-project-binding-partial"].includes(first.status));
   assert.equal(first.composition.activationBoundary.runtimeControlEnabled, false);
   assert.equal(first.composition.activationBoundary.machineInterfacesVerified, false);
   assert.deepEqual(first.composition.selectedRuntimes, ["claude", "codex", "opencode"]);
   verifyRuntimeAdapterComposition(first.composition);
   verifyRuntimeAdapterContractMatrix(first.contractMatrix);
   assert.deepEqual(buildRuntimeAdapterContractMatrix(), first.contractMatrix);
-  assert.deepEqual(
-    buildRuntimeAdapterComposition({ platform: process.platform, runtimes: ["opencode", "claude", "codex"] }),
-    first.composition,
-  );
+  assert.deepEqual(buildRuntimeAdapterComposition({ platform: process.platform, runtimes: ["opencode", "claude", "codex"] }), first.composition);
   assert.equal(first.machineInterfaces.status, "read-only-machine-discovery");
   assert.equal(first.machineInterfaces.composition.activationBoundary.machineInterfaceDiscoveryValidated, true);
   assert.equal(first.machineInterfaces.composition.activationBoundary.actualPlatformExecutionValidated, false);
@@ -780,12 +949,12 @@ test("preserves existing Claude host files and emits generated instruction and M
   const root = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, "CLAUDE.md"), "project owned\n");
-  fs.writeFileSync(path.join(root, ".mcp.json"), "{\"mcpServers\":{}}\n");
+  fs.writeFileSync(path.join(root, ".mcp.json"), '{"mcpServers":{}}\n');
   const result = initializeProject({ root, pluginRoot, runtimes: ["claude"] });
   const layout = inspectProject(root).storage;
   assert.equal(result.status, "ready_with_manual_integration");
   assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), "project owned\n");
-  assert.equal(fs.readFileSync(path.join(root, ".mcp.json"), "utf8"), "{\"mcpServers\":{}}\n");
+  assert.equal(fs.readFileSync(path.join(root, ".mcp.json"), "utf8"), '{"mcpServers":{}}\n');
   assert.ok(fs.existsSync(path.join(root, layout.directory, "generated", "lode-instructions.md")));
   assert.ok(fs.existsSync(path.join(root, layout.directory, "generated", "claude.mcp.json")));
 });
@@ -796,11 +965,14 @@ test("binds a Run to an Execution Contract, Result Packet, and ReviewDecision", 
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const layout = inspectProject(root).storage;
   assert.throws(() => startRun({ root }), { code: "EXECUTION_CONTRACT_REQUIRED" });
-  const compiled = (await compileContext({ root, task: "Produce a verified plugin", budget: 32_768, persist: true }));
+  const compiled = await compileContext({ root, task: "Produce a verified plugin", budget: 32_768, persist: true });
   const plan = createWholePlanSnapshot({
     root,
     objective: "Produce a verified plugin without losing whole-plan authority",
-    plan: [{ id: "implement", outcome: "Bounded implementation" }, { id: "verify", outcome: "Evidence-backed verification" }],
+    plan: [
+      { id: "implement", outcome: "Bounded implementation" },
+      { id: "verify", outcome: "Evidence-backed verification" },
+    ],
     invariants: ["The user owns material decisions"],
   });
   const contract = createExecutionContract({
@@ -827,10 +999,7 @@ test("binds a Run to an Execution Contract, Result Packet, and ReviewDecision", 
   });
   assert.equal(checkpoint.checkpoint.runPointer.runId, started.run.runId);
   assert.equal(checkpoint.checkpoint.runPointer.executionContractId, contract.artifact.executionContractId);
-  assert.throws(
-    () => finishRun({ root, outcome: "Unproven result", evidence: [], verification: [] }),
-    { code: "INVALID_LINEAGE_INPUT" },
-  );
+  assert.throws(() => finishRun({ root, outcome: "Unproven result", evidence: [], verification: [] }), { code: "INVALID_LINEAGE_INPUT" });
   assert.equal(inspectProject(root).state.activeRunId, started.run.runId);
   const knowledgeFile = path.join(root, layout.directory, "context", "knowledge.json");
   const knowledgeBefore = fs.readFileSync(knowledgeFile, "utf8");
@@ -847,29 +1016,27 @@ test("binds a Run to an Execution Contract, Result Packet, and ReviewDecision", 
   assert.equal(finished.run.runId, started.run.runId);
   assert.equal(finished.run.status, "awaiting_review");
   assert.equal(inspectProject(root).state.mode, "review");
-  assert.throws(
-    () => startRun({ root, executionContractId: contract.artifact.executionContractId }),
-    { code: "RUN_REVIEW_REQUIRED" },
-  );
+  assert.throws(() => startRun({ root, executionContractId: contract.artifact.executionContractId }), { code: "RUN_REVIEW_REQUIRED" });
   const reviewContext = getPendingReviewContext({ root });
   assert.equal(reviewContext.review.excludedContext.includes("executor-transcript"), true);
   assert.equal(reviewContext.review.contextReference.capsuleId, compiled.capsule.capsuleId);
   assert.equal(reviewContext.review.resultPacket.knowledgeProposals[0].instructionAuthority, false);
-  assert.throws(
-    () => reviewRun({ root, reviewContextId: "fresh-head-review-000000000000000000000000", disposition: "accept", rationale: "stale" }),
-    { code: "STALE_FRESH_HEAD_REVIEW" },
-  );
+  assert.throws(() => reviewRun({ root, reviewContextId: "fresh-head-review-000000000000000000000000", disposition: "accept", rationale: "stale" }), {
+    code: "STALE_FRESH_HEAD_REVIEW",
+  });
   const reviewed = reviewRun({
     root,
     reviewContextId: reviewContext.review.reviewContextId,
     disposition: "accept",
     rationale: "The Result Packet satisfies both acceptance criteria.",
     nextActions: ["Return to Session mode"],
-    knowledgeProposalRecommendations: [{
-      proposalId: finished.resultPacket.knowledgeProposals[0].proposalId,
-      recommendation: "recommend-promotion",
-      rationale: "The claim is directly supported by the verified lifecycle test.",
-    }],
+    knowledgeProposalRecommendations: [
+      {
+        proposalId: finished.resultPacket.knowledgeProposals[0].proposalId,
+        recommendation: "recommend-promotion",
+        rationale: "The claim is directly supported by the verified lifecycle test.",
+      },
+    ],
   });
   assert.equal(reviewed.run.reviewDisposition, "accept");
   assert.equal(reviewed.reviewDecision.knowledgeProposalRecommendations[0].authorityEffect, "none-until-separate-authorized-promotion");
@@ -885,7 +1052,7 @@ test("requires a review-linked next WholePlanSnapshot after revise", async (t) =
   const root = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
-  const firstCapsule = (await compileContext({ root, task: "Execute the first plan generation", budget: 32_768, persist: true }));
+  const firstCapsule = await compileContext({ root, task: "Execute the first plan generation", budget: 32_768, persist: true });
   const firstPlan = createWholePlanSnapshot({
     root,
     objective: "Preserve the objective while refining the execution plan",
@@ -915,10 +1082,7 @@ test("requires a review-linked next WholePlanSnapshot after revise", async (t) =
     nextActions: ["Create the next WholePlanSnapshot"],
   });
   assert.equal(reviewed.state.requiredPlanAction.kind, "next-whole-plan");
-  assert.throws(
-    () => startRun({ root, executionContractId: firstContract.artifact.executionContractId }),
-    { code: "NEXT_WHOLE_PLAN_REQUIRED" },
-  );
+  assert.throws(() => startRun({ root, executionContractId: firstContract.artifact.executionContractId }), { code: "NEXT_WHOLE_PLAN_REQUIRED" });
 
   const nextPlan = createNextWholePlanSnapshot({
     root,
@@ -927,8 +1091,11 @@ test("requires a review-linked next WholePlanSnapshot after revise", async (t) =
   });
   assert.equal(nextPlan.artifact.generation, 1);
   assert.equal(nextPlan.artifact.objective, firstPlan.artifact.objective);
-  assert.deepEqual(nextPlan.artifact.lineage.map((link) => link.relation), ["refines", "responds-to"]);
-  const nextCapsule = (await compileContext({ root, task: "Execute the revised plan generation", budget: 32_768, persist: true }));
+  assert.deepEqual(
+    nextPlan.artifact.lineage.map((link) => link.relation),
+    ["refines", "responds-to"],
+  );
+  const nextCapsule = await compileContext({ root, task: "Execute the revised plan generation", budget: 32_768, persist: true });
   const nextContract = createExecutionContract({
     root,
     wholePlanId: nextPlan.artifact.wholePlanId,
@@ -945,7 +1112,7 @@ test("blocks another Run when review requires user-owned direction", async (t) =
   const root = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initializeProject({ root, pluginRoot, runtimes: ["opencode"] });
-  const capsule = (await compileContext({ root, task: "Reach a material direction boundary", budget: 32_768, persist: true }));
+  const capsule = await compileContext({ root, task: "Reach a material direction boundary", budget: 32_768, persist: true });
   const plan = createWholePlanSnapshot({ root, objective: "Keep material direction with the user", plan: "Stop at escalation" });
   const contract = createExecutionContract({
     root,
@@ -970,10 +1137,7 @@ test("blocks another Run when review requires user-owned direction", async (t) =
     nextActions: ["Request explicit user direction"],
   });
   assert.equal(reviewed.state.requiredPlanAction.kind, "user-direction");
-  assert.throws(
-    () => startRun({ root, executionContractId: contract.artifact.executionContractId }),
-    { code: "USER_DIRECTION_REQUIRED" },
-  );
+  assert.throws(() => startRun({ root, executionContractId: contract.artifact.executionContractId }), { code: "USER_DIRECTION_REQUIRED" });
 });
 
 test("detects managed file drift and blocks canonical mutation", async (t) => {
@@ -982,7 +1146,7 @@ test("detects managed file drift and blocks canonical mutation", async (t) => {
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   fs.appendFileSync(path.join(root, "AGENTS.md"), "drift\n");
   assert.equal(inspectProject(root).status, "drifted");
-  const experience = (await inspectProjectExperience({ root }));
+  const experience = await inspectProjectExperience({ root });
   assert.equal(experience.status, "core_drifted");
   assert.equal(experience.readiness.product.state, "inspection_blocked");
   assert.equal(experience.readiness.product.governanceActivated, null);
@@ -995,14 +1159,21 @@ test("detects managed file drift and blocks canonical mutation", async (t) => {
   assert.equal(experience.attention.blockedOperations.includes("head-managed-mutation"), true);
   assert.equal(experience.attention.items.find((item) => item.id === "managed-projection-drift").actionability, "when-managed-mutation-is-in-scope");
   assert.equal(experience.capabilities.find((item) => item.id === "direct-work").availability, "available");
-  assert.equal(experience.capabilities.filter((item) => item.id !== "direct-work").every((item) => item.availability === "blocked-until-core-ready"), true);
-  assert.throws(() => createRecoveryCheckpoint({
-    root,
-    purpose: "must fail",
-    approvedDecisions: [],
-    currentPosition: "must fail",
-    nextExpectedResult: "must fail",
-  }), { code: "MANAGED_DRIFT" });
+  assert.equal(
+    experience.capabilities.filter((item) => item.id !== "direct-work").every((item) => item.availability === "blocked-until-core-ready"),
+    true,
+  );
+  assert.throws(
+    () =>
+      createRecoveryCheckpoint({
+        root,
+        purpose: "must fail",
+        approvedDecisions: [],
+        currentPosition: "must fail",
+        nextExpectedResult: "must fail",
+      }),
+    { code: "MANAGED_DRIFT" },
+  );
 });
 
 test("builds an incremental, freshness-aware Repository World Model", async (t) => {
@@ -1013,7 +1184,10 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
   fs.writeFileSync(path.join(root, ".git", "HEAD"), "ref: refs/heads/main\n");
   fs.writeFileSync(path.join(root, ".git", "refs", "heads", "main"), `${"a".repeat(40)}\n`);
   fs.writeFileSync(path.join(root, "src", "math.mjs"), "export function double(value) { return value * 2; }\n");
-  fs.writeFileSync(path.join(root, "src", "service.mjs"), 'import value from "dependency-a";\nimport { double } from "./math.mjs";\nexport function serve() { return double(value); }\n');
+  fs.writeFileSync(
+    path.join(root, "src", "service.mjs"),
+    'import value from "dependency-a";\nimport { double } from "./math.mjs";\nexport function serve() { return double(value); }\n',
+  );
   fs.writeFileSync(path.join(root, "README.md"), "# Test project\n\nRepository World Model fixture.\n");
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const layout = inspectProject(root).storage;
@@ -1050,12 +1224,21 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
   assert.equal(first.pointer.sourceAdapters.compute.fallbackUsed, true);
   assert.equal(first.pointer.sourceAdapters.compute.fallbackReasonCode, "GO_WORKER_NOT_AVAILABLE");
   assert.equal(first.snapshot.worldModelId, unchanged.snapshot.worldModelId);
-  assert.equal(first.snapshot.files.some((item) => item.path === "AGENTS.md"), false);
+  assert.equal(
+    first.snapshot.files.some((item) => item.path === "AGENTS.md"),
+    false,
+  );
   assert.equal(first.snapshot.git.commit, "a".repeat(40));
   assert.equal(first.snapshot.runtimeState.mode, "session");
   const source = first.snapshot.files.find((item) => item.path === "src/service.mjs");
-  assert.equal(source.symbols.some((item) => item.name === "serve"), true);
-  assert.equal(source.dependencies.some((item) => item.specifier === "dependency-a"), true);
+  assert.equal(
+    source.symbols.some((item) => item.name === "serve"),
+    true,
+  );
+  assert.equal(
+    source.dependencies.some((item) => item.specifier === "dependency-a"),
+    true,
+  );
   assert.equal(first.snapshot.semanticGraph.authority, "derived-evidence-only");
   assert.equal(first.snapshot.semanticGraph.summary.callEdgeCount, 1);
   const graphNodes = new Map(first.snapshot.semanticGraph.nodes.map((node) => [node.id, node]));
@@ -1064,10 +1247,10 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
   assert.equal(graphNodes.get(call.to).name, "double");
   assert.equal(call.evidence.path, "src/service.mjs");
   assert.equal(call.confidence, "heuristic");
-  const fullInspection = (await inspectWorldModel({ root }));
+  const fullInspection = await inspectWorldModel({ root });
   assert.equal(fullInspection.status, "current");
   const headBeforeStatus = directoryFileDigests(path.join(root, layout.directory));
-  const statusProjection = (await inspectWorldModelStatus({ root }));
+  const statusProjection = await inspectWorldModelStatus({ root });
   assert.equal(statusProjection.kind, "WorldModelStatusProjection");
   assert.equal(statusProjection.status, "current");
   assert.equal(statusProjection.identities.worldModelId, first.snapshot.worldModelId);
@@ -1091,7 +1274,7 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
   assert.deepEqual(directoryFileDigests(path.join(root, layout.directory)), headBeforeStatus);
 
   {
-    const oversizedSnapshot = { ...fullInspection.snapshot, transportLimitFixture: "x".repeat((64 * 1024 * 1024) + 1) };
+    const oversizedSnapshot = { ...fullInspection.snapshot, transportLimitFixture: "x".repeat(64 * 1024 * 1024 + 1) };
     const oversizedProjection = buildWorldModelStatusProjection({ ...fullInspection, snapshot: oversizedSnapshot });
     assert.ok(oversizedProjection.fullSnapshot.serializedByteLength > 64 * 1024 * 1024);
     assert.ok(Buffer.byteLength(JSON.stringify(oversizedProjection), "utf8") < WORLD_MODEL_STATUS_PROJECTION_MAX_BYTES);
@@ -1110,16 +1293,16 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
     rebuildable: false,
     uniqueAuthority: true,
   });
-  await assert.rejects(((buildWorldModel({ root, storeAdapter: authorityViolatingStore, gitHistoryAdapter }))), { code: "INVALID_WORLD_MODEL_STORE_AUTHORITY" });
+  await assert.rejects(buildWorldModel({ root, storeAdapter: authorityViolatingStore, gitHistoryAdapter }), { code: "INVALID_WORLD_MODEL_STORE_AUTHORITY" });
 
   fs.appendFileSync(path.join(root, "src", "service.mjs"), "export class Worker {}\n");
   fs.writeFileSync(path.join(root, ".git", "refs", "heads", "main"), `${"b".repeat(40)}\n`);
-  const stale = (await inspectWorldModel({ root }));
+  const stale = await inspectWorldModel({ root });
   assert.equal(stale.status, "stale");
   assert.equal(stale.changes.changed.includes("src/service.mjs"), true);
   assert.equal(stale.fileFreshness.find((item) => item.path === "src/service.mjs").status, "stale");
   assert.equal(stale.changes.gitChanged, true);
-  const staleCapsule = (await compileContext({ root, task: "Find Worker and dependency-a", budget: 32_768, persist: false }));
+  const staleCapsule = await compileContext({ root, task: "Find Worker and dependency-a", budget: 32_768, persist: false });
   assert.ok(staleCapsule.capsule.snapshot.coverage.includes("repository-code-evidence-excluded"));
   assert.equal(staleCapsule.capsule.repositoryWorldFreshness.domains.code.status, "stale");
   assert.deepEqual(staleCapsule.capsule.repositoryContext, []);
@@ -1127,19 +1310,35 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
   assert.notEqual(second.snapshot.worldModelId, first.snapshot.worldModelId);
   assert.equal(second.pointer.previousWorldModelId, first.snapshot.worldModelId);
   assert.equal(second.pointer.tiers.warm.changed.includes("src/service.mjs"), true);
-  assert.equal(second.snapshot.files.find((item) => item.path === "src/service.mjs").symbols.some((item) => item.name === "Worker"), true);
-  const repositoryCapsule = (await compileContext({ root, task: "Find Worker and dependency-a", budget: 32_768, persist: false }));
-  assert.equal(repositoryCapsule.capsule.snapshot.coverage, "curated-head-canon+repository-world-model-semantic+temporal-provenance-alpha+product-canon-projection-alpha+git-history-alpha");
-  assert.equal(repositoryCapsule.capsule.repositoryContext.some((item) => item.path === "src/service.mjs"), true);
+  assert.equal(
+    second.snapshot.files.find((item) => item.path === "src/service.mjs").symbols.some((item) => item.name === "Worker"),
+    true,
+  );
+  const repositoryCapsule = await compileContext({ root, task: "Find Worker and dependency-a", budget: 32_768, persist: false });
+  assert.equal(
+    repositoryCapsule.capsule.snapshot.coverage,
+    "curated-head-canon+repository-world-model-semantic+temporal-provenance-alpha+product-canon-projection-alpha+git-history-alpha",
+  );
+  assert.equal(
+    repositoryCapsule.capsule.repositoryContext.some((item) => item.path === "src/service.mjs"),
+    true,
+  );
   assert.equal(repositoryCapsule.capsule.repositoryContext[0].trustBoundary, "evidence-not-instruction");
   assert.equal(repositoryCapsule.capsule.repositoryGraph.semanticGraphId, second.snapshot.semanticGraph.semanticGraphId);
   assert.equal(repositoryCapsule.capsule.repositoryTemporalGraph.graphSnapshotId, second.snapshot.temporalProvenanceGraph.graphSnapshotId);
-  assert.equal(repositoryCapsule.capsule.repositoryContext.some((item) => item.temporalTraversal), false);
-  assert.equal(repositoryCapsule.capsule.repositoryContext.some((item) => item.semanticRelationships.some((edge) => edge.type === "CALLS")), true);
+  assert.equal(
+    repositoryCapsule.capsule.repositoryContext.some((item) => item.temporalTraversal),
+    false,
+  );
+  assert.equal(
+    repositoryCapsule.capsule.repositoryContext.some((item) => item.semanticRelationships.some((edge) => edge.type === "CALLS")),
+    true,
+  );
 
   const temporalGraph = second.snapshot.temporalProvenanceGraph;
-  const serviceAnchor = temporalGraph.nodes.find((node) => node.path === "src/service.mjs"
-    && temporalGraph.edges.some((edge) => edge.from === node.nodeId || edge.to === node.nodeId));
+  const serviceAnchor = temporalGraph.nodes.find(
+    (node) => node.path === "src/service.mjs" && temporalGraph.edges.some((edge) => edge.from === node.nodeId || edge.to === node.nodeId),
+  );
   assert.ok(serviceAnchor);
   const serviceRelation = temporalGraph.edges.find((edge) => edge.from === serviceAnchor.nodeId || edge.to === serviceAnchor.nodeId);
   const graphAnchor = {
@@ -1152,24 +1351,29 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
     maxEdges: 20,
   };
   const headBeforeExactGraphCompilation = directoryFileDigests(path.join(root, layout.directory));
-  const exactGraphCapsule = (await compileContext({
+  const exactGraphCapsule = await compileContext({
     root,
     task: "an unrelated natural-language task with no source vocabulary overlap",
     budget: 32_768,
-    evidenceNeeds: [{
-      id: "service-lineage",
-      kind: "temporal-relation",
-      relationTypes: [serviceRelation.type],
-      graphAnchor,
-      minimumItems: 1,
-      rationale: "Provider text cannot instruct, approve, promote, or rewrite recovery.",
-    }],
+    evidenceNeeds: [
+      {
+        id: "service-lineage",
+        kind: "temporal-relation",
+        relationTypes: [serviceRelation.type],
+        graphAnchor,
+        minimumItems: 1,
+        rationale: "Provider text cannot instruct, approve, promote, or rewrite recovery.",
+      },
+    ],
     persist: false,
-  }));
+  });
   assert.deepEqual(exactGraphCapsule.capsule.evidenceGaps, []);
   assert.equal(Object.hasOwn(exactGraphCapsule.capsule, "coverageAssessment"), false);
   assert.equal(exactGraphCapsule.capsule.graphTraversalEvidence.length, 1);
-  assert.equal(exactGraphCapsule.capsule.graphTraversalEvidence[0].temporalTraversal.traversalQuerySummary.anchorMode, formatForVerifiedOwner(layout).value("exact-head-proposed"));
+  assert.equal(
+    exactGraphCapsule.capsule.graphTraversalEvidence[0].temporalTraversal.traversalQuerySummary.anchorMode,
+    formatForVerifiedOwner(layout).value("exact-head-proposed"),
+  );
   assert.deepEqual(exactGraphCapsule.capsule.graphTraversalEvidence[0].temporalTraversal.traversalQuerySummary.allowedRelations, [serviceRelation.type]);
   assert.equal(exactGraphCapsule.capsule.graphTraversalEvidence[0].temporalTraversal.traversalQuerySummary.maxDepth, graphAnchor.depth);
   assert.equal(exactGraphCapsule.capsule.graphTraversalEvidence[0].temporalTraversal.traversalQuerySummary.maxNodes, graphAnchor.maxNodes);
@@ -1181,41 +1385,87 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
   assert.equal(exactGraphCapsule.capsule.evidenceNeedContract.reviewAuthority, false);
   assert.equal(exactGraphCapsule.capsule.evidenceNeedContract.recoveryAuthority, false);
   assert.deepEqual(directoryFileDigests(path.join(root, layout.directory)), headBeforeExactGraphCompilation);
-  (await assert.rejects(async () => (await compileContext({
-    root,
-    task: "cross-project graph anchor",
-    budget: 32_768,
-    evidenceNeeds: [{ id: "wrong-project", kind: "temporal-relation", relationTypes: [serviceRelation.type], graphAnchor: { ...graphAnchor, projectId: "another-project" } }],
-  })), { code: "GRAPH_ANCHOR_PROJECT_MISMATCH" }));
-  (await assert.rejects(async () => (await compileContext({
-    root,
-    task: "stale world graph anchor",
-    budget: 32_768,
-    evidenceNeeds: [{ id: "stale-world", kind: "temporal-relation", relationTypes: [serviceRelation.type], graphAnchor: { ...graphAnchor, worldModelId: `world-model-${"0".repeat(24)}` } }],
-  })), { code: "GRAPH_ANCHOR_WORLD_MODEL_MISMATCH" }));
-  (await assert.rejects(async () => (await compileContext({
-    root,
-    task: "duplicate graph anchors",
-    budget: 32_768,
-    evidenceNeeds: [{ id: "duplicate-anchor", kind: "temporal-relation", relationTypes: [serviceRelation.type], graphAnchor: { ...graphAnchor, nodeIds: [serviceAnchor.nodeId, serviceAnchor.nodeId] } }],
-  })), { code: "INVALID_EVIDENCE_NEEDS" }));
+  await assert.rejects(
+    async () =>
+      await compileContext({
+        root,
+        task: "cross-project graph anchor",
+        budget: 32_768,
+        evidenceNeeds: [
+          {
+            id: "wrong-project",
+            kind: "temporal-relation",
+            relationTypes: [serviceRelation.type],
+            graphAnchor: { ...graphAnchor, projectId: "another-project" },
+          },
+        ],
+      }),
+    { code: "GRAPH_ANCHOR_PROJECT_MISMATCH" },
+  );
+  await assert.rejects(
+    async () =>
+      await compileContext({
+        root,
+        task: "stale world graph anchor",
+        budget: 32_768,
+        evidenceNeeds: [
+          {
+            id: "stale-world",
+            kind: "temporal-relation",
+            relationTypes: [serviceRelation.type],
+            graphAnchor: { ...graphAnchor, worldModelId: `world-model-${"0".repeat(24)}` },
+          },
+        ],
+      }),
+    { code: "GRAPH_ANCHOR_WORLD_MODEL_MISMATCH" },
+  );
+  await assert.rejects(
+    async () =>
+      await compileContext({
+        root,
+        task: "duplicate graph anchors",
+        budget: 32_768,
+        evidenceNeeds: [
+          {
+            id: "duplicate-anchor",
+            kind: "temporal-relation",
+            relationTypes: [serviceRelation.type],
+            graphAnchor: { ...graphAnchor, nodeIds: [serviceAnchor.nodeId, serviceAnchor.nodeId] },
+          },
+        ],
+      }),
+    { code: "INVALID_EVIDENCE_NEEDS" },
+  );
   const serviceFile = path.join(root, "src", "service.mjs");
   const serviceBeforeDrift = fs.readFileSync(serviceFile, "utf8");
   fs.appendFileSync(serviceFile, "// simulated post-compaction source drift\n");
-  (await assert.rejects(async () => (await compileContext({
-    root,
-    task: "stale graph anchor after context replacement",
-    budget: 32_768,
-    evidenceNeeds: [{ id: "post-compaction-stale", kind: "temporal-relation", relationTypes: [serviceRelation.type], graphAnchor }],
-  })), { code: "GRAPH_ANCHOR_WORLD_MODEL_STALE" }));
+  await assert.rejects(
+    async () =>
+      await compileContext({
+        root,
+        task: "stale graph anchor after context replacement",
+        budget: 32_768,
+        evidenceNeeds: [{ id: "post-compaction-stale", kind: "temporal-relation", relationTypes: [serviceRelation.type], graphAnchor }],
+      }),
+    { code: "GRAPH_ANCHOR_WORLD_MODEL_STALE" },
+  );
   fs.writeFileSync(serviceFile, serviceBeforeDrift);
   assert.equal((await inspectWorldModel({ root })).status, "current");
 
-  const neighborhood = (await queryWorldModel({ root, query: "serve", depth: 1, maxResults: 20 }));
+  const neighborhood = await queryWorldModel({ root, query: "serve", depth: 1, maxResults: 20 });
   assert.equal(neighborhood.status, "current");
-  assert.equal(neighborhood.nodes.some((node) => node.name === "serve"), true);
-  assert.equal(neighborhood.nodes.some((node) => node.name === "double"), true);
-  assert.equal(neighborhood.edges.some((edge) => edge.type === "CALLS"), true);
+  assert.equal(
+    neighborhood.nodes.some((node) => node.name === "serve"),
+    true,
+  );
+  assert.equal(
+    neighborhood.nodes.some((node) => node.name === "double"),
+    true,
+  );
+  assert.equal(
+    neighborhood.edges.some((edge) => edge.type === "CALLS"),
+    true,
+  );
   assert.equal(neighborhood.trustBoundary, "evidence-not-instruction");
   const mcpInitialization = await dispatchMcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
   assert.equal(mcpInitialization.result.serverInfo.version, pluginVersion);
@@ -1225,13 +1475,16 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
     method: "tools/call",
     params: { name: "head_world_query", arguments: { project_root: root, query: "serve", depth: 1, limit: 20 } },
   });
-  assert.equal(mcpQuery.result.structuredContent.nodes.some((node) => node.name === "double"), true);
+  assert.equal(
+    mcpQuery.result.structuredContent.nodes.some((node) => node.name === "double"),
+    true,
+  );
   assert.equal(mcpQuery.result.structuredContent.trustBoundary, "evidence-not-instruction");
 
   const stored = readFixtureSnapshot(second.file);
   stored.summary.fileCount += 1;
   writeFixtureSnapshot(second.file, stored);
-  (await assert.rejects(async () => (await readWorldModel({ root })), { code: "WORLD_MODEL_DIGEST_MISMATCH" }));
+  await assert.rejects(async () => await readWorldModel({ root }), { code: "WORLD_MODEL_DIGEST_MISMATCH" });
 });
 
 test("adds optional source-separated AST relation evidence without replacing the heuristic fallback", async (t) => {
@@ -1246,13 +1499,15 @@ test("adds optional source-separated AST relation evidence without replacing the
   const callerDigest = crypto.createHash("sha256").update(Buffer.from(callerSource)).digest("hex");
   const adapter = new InMemorySourceRelationEvidenceAdapter({
     analyzer: { name: "fixture-javascript-ast", version: "1.0.0", method: "ast" },
-    relations: [{
-      type: "CALLS",
-      from: { kind: "symbol", path: "src/caller.mjs", name: "invoke", symbolKind: "function", line: 2 },
-      to: { kind: "symbol", path: "src/target.mjs", name: "target", symbolKind: "function", line: 1 },
-      evidence: { path: "src/caller.mjs", line: 2, digest: callerDigest },
-      language: "javascript",
-    }],
+    relations: [
+      {
+        type: "CALLS",
+        from: { kind: "symbol", path: "src/caller.mjs", name: "invoke", symbolKind: "function", line: 2 },
+        to: { kind: "symbol", path: "src/target.mjs", name: "target", symbolKind: "function", line: 1 },
+        evidence: { path: "src/caller.mjs", line: 2, digest: callerDigest },
+        language: "javascript",
+      },
+    ],
   });
   const indexed = await buildWorldModel({ root, sourceRelationEvidenceAdapter: adapter });
   const astEdges = indexed.snapshot.semanticGraph.edges.filter((edge) => edge.evidenceSource?.kind === "language-ast-adapter");
@@ -1261,7 +1516,10 @@ test("adds optional source-separated AST relation evidence without replacing the
   assert.equal(astEdges[0].evidenceSource.authority, "derived-structural-evidence-only");
   assert.equal(indexed.snapshot.semanticGraph.accuracy, "heuristic-fallback-plus-source-separated-ast-evidence");
   assert.equal(indexed.snapshot.semanticGraph.summary.astEvidenceEdgeCount, 1);
-  assert.equal(indexed.snapshot.semanticGraph.edges.some((edge) => edge.type === "CALLS" && edge.confidence === "heuristic"), true);
+  assert.equal(
+    indexed.snapshot.semanticGraph.edges.some((edge) => edge.type === "CALLS" && edge.confidence === "heuristic"),
+    true,
+  );
   assert.equal((await inspectWorldModel({ root })).status, "current");
   assert.equal(indexed.pointer.sourceAdapters.sourceRelationEvidence.status, "collected");
   assert.equal(Object.hasOwn(indexed.snapshot.semanticGraph.sourceRelationEvidence, "providerSessionId"), false);
@@ -1272,44 +1530,60 @@ test("adds optional source-separated AST relation evidence without replacing the
     storage: inspectProject(root).storage,
   });
   assert.equal(verifySourceRelationEvidenceSet(evidence).instructionAuthority, false);
-  assert.throws(() => buildSourceRelationEvidenceSet({
-    projectId: indexed.snapshot.projectId,
-    files: evidence.files,
-    analyzer: { name: "invalid", version: "1", method: "prompt" },
-    relations: [],
-  }), { code: "INVALID_SOURCE_RELATION_EVIDENCE" });
+  assert.throws(
+    () =>
+      buildSourceRelationEvidenceSet({
+        projectId: indexed.snapshot.projectId,
+        files: evidence.files,
+        analyzer: { name: "invalid", version: "1", method: "prompt" },
+        relations: [],
+      }),
+    { code: "INVALID_SOURCE_RELATION_EVIDENCE" },
+  );
   assert.throws(() => verifySourceRelationEvidenceSet({ ...evidence, providerSessionId: "must-not-persist" }), { code: "INVALID_SOURCE_RELATION_EVIDENCE" });
 
-  const staleFiles = evidence.files.map((file) => file.path === "src/caller.mjs" ? { ...file, digest: "0".repeat(64) } : file);
-  const staleEvidence = buildSourceRelationEvidenceSet({
-    projectId: indexed.snapshot.projectId,
-    files: staleFiles,
-    analyzer: evidence.analyzer,
-    relations: [{
-      type: "CALLS",
-      from: { kind: "symbol", path: "src/caller.mjs", name: "invoke", symbolKind: "function", line: 2 },
-      to: { kind: "symbol", path: "src/target.mjs", name: "target", symbolKind: "function", line: 1 },
-      evidence: { path: "src/caller.mjs", line: 2, digest: "0".repeat(64) },
-      language: "javascript",
-    }],
-  }, inspectProject(root).storage);
-  await assert.rejects(((buildWorldModel({
-    root,
-    persist: false,
-    sourceRelationEvidenceAdapter: { adapterKind: "stale-ast-fixture", collect: () => staleEvidence },
-  }))), { code: "SOURCE_RELATION_EVIDENCE_SOURCE_MISMATCH" });
+  const staleFiles = evidence.files.map((file) => (file.path === "src/caller.mjs" ? { ...file, digest: "0".repeat(64) } : file));
+  const staleEvidence = buildSourceRelationEvidenceSet(
+    {
+      projectId: indexed.snapshot.projectId,
+      files: staleFiles,
+      analyzer: evidence.analyzer,
+      relations: [
+        {
+          type: "CALLS",
+          from: { kind: "symbol", path: "src/caller.mjs", name: "invoke", symbolKind: "function", line: 2 },
+          to: { kind: "symbol", path: "src/target.mjs", name: "target", symbolKind: "function", line: 1 },
+          evidence: { path: "src/caller.mjs", line: 2, digest: "0".repeat(64) },
+          language: "javascript",
+        },
+      ],
+    },
+    inspectProject(root).storage,
+  );
+  await assert.rejects(
+    buildWorldModel({
+      root,
+      persist: false,
+      sourceRelationEvidenceAdapter: { adapterKind: "stale-ast-fixture", collect: () => staleEvidence },
+    }),
+    { code: "SOURCE_RELATION_EVIDENCE_SOURCE_MISMATCH" },
+  );
 
   const missingEndpointAdapter = new InMemorySourceRelationEvidenceAdapter({
     analyzer: { name: "fixture-javascript-ast", version: "1.0.0", method: "ast" },
-    relations: [{
-      type: "CALLS",
-      from: { kind: "symbol", path: "src/caller.mjs", name: "missing", symbolKind: "function", line: 2 },
-      to: { kind: "symbol", path: "src/target.mjs", name: "target", symbolKind: "function", line: 1 },
-      evidence: { path: "src/caller.mjs", line: 2, digest: callerDigest },
-      language: "javascript",
-    }],
+    relations: [
+      {
+        type: "CALLS",
+        from: { kind: "symbol", path: "src/caller.mjs", name: "missing", symbolKind: "function", line: 2 },
+        to: { kind: "symbol", path: "src/target.mjs", name: "target", symbolKind: "function", line: 1 },
+        evidence: { path: "src/caller.mjs", line: 2, digest: callerDigest },
+        language: "javascript",
+      },
+    ],
   });
-  await assert.rejects(((buildWorldModel({ root, persist: false, sourceRelationEvidenceAdapter: missingEndpointAdapter }))), { code: "SOURCE_RELATION_EVIDENCE_ENDPOINT_MISSING" });
+  await assert.rejects(buildWorldModel({ root, persist: false, sourceRelationEvidenceAdapter: missingEndpointAdapter }), {
+    code: "SOURCE_RELATION_EVIDENCE_ENDPOINT_MISSING",
+  });
 });
 
 test("separates Host operational refs from product Git freshness while preserving branch, remote, and tag drift", async (t) => {
@@ -1323,10 +1597,46 @@ test("separates Host operational refs from product Git freshness while preservin
   const gitHistoryAdapter = new MemoryGitHistoryAdapter({
     adapterKind: "git-ref-boundary-fixture",
     commits: [
-      { commit: "a".repeat(40), parents: [], authoredAt: "2026-08-20T00:00:00Z", committedAt: "2026-08-20T00:00:00Z", author: { name: "Fixture" }, refs: [], subject: "a", body: "" },
-      { commit: "b".repeat(40), parents: ["a".repeat(40)], authoredAt: "2026-08-20T00:01:00Z", committedAt: "2026-08-20T00:01:00Z", author: { name: "Fixture" }, refs: [], subject: "b", body: "" },
-      { commit: "c".repeat(40), parents: ["b".repeat(40)], authoredAt: "2026-08-20T00:02:00Z", committedAt: "2026-08-20T00:02:00Z", author: { name: "Fixture" }, refs: [], subject: "c", body: "" },
-      { commit: "d".repeat(40), parents: ["c".repeat(40)], authoredAt: "2026-08-20T00:03:00Z", committedAt: "2026-08-20T00:03:00Z", author: { name: "Fixture" }, refs: ["tag: release"], subject: "d", body: "" },
+      {
+        commit: "a".repeat(40),
+        parents: [],
+        authoredAt: "2026-08-20T00:00:00Z",
+        committedAt: "2026-08-20T00:00:00Z",
+        author: { name: "Fixture" },
+        refs: [],
+        subject: "a",
+        body: "",
+      },
+      {
+        commit: "b".repeat(40),
+        parents: ["a".repeat(40)],
+        authoredAt: "2026-08-20T00:01:00Z",
+        committedAt: "2026-08-20T00:01:00Z",
+        author: { name: "Fixture" },
+        refs: [],
+        subject: "b",
+        body: "",
+      },
+      {
+        commit: "c".repeat(40),
+        parents: ["b".repeat(40)],
+        authoredAt: "2026-08-20T00:02:00Z",
+        committedAt: "2026-08-20T00:02:00Z",
+        author: { name: "Fixture" },
+        refs: [],
+        subject: "c",
+        body: "",
+      },
+      {
+        commit: "d".repeat(40),
+        parents: ["c".repeat(40)],
+        authoredAt: "2026-08-20T00:03:00Z",
+        committedAt: "2026-08-20T00:03:00Z",
+        author: { name: "Fixture" },
+        refs: ["tag: release"],
+        subject: "d",
+        body: "",
+      },
     ],
   });
 
@@ -1335,13 +1645,16 @@ test("separates Host operational refs from product Git freshness while preservin
   const hostRef = path.join(root, ".git", "refs", "codex", "turn-diffs", "turn-1");
   fs.mkdirSync(path.dirname(hostRef), { recursive: true });
   fs.writeFileSync(hostRef, `${"b".repeat(40)}\n`);
-  let status = (await inspectWorldModel({ root }));
+  let status = await inspectWorldModel({ root });
   assert.equal(status.status, "current");
   assert.equal(status.changes.gitChanged, false);
   assert.equal(status.changes.gitHistoryChanged, false);
   fs.writeFileSync(hostRef, `${"c".repeat(40)}\n`);
-  fs.writeFileSync(path.join(root, ".git", "packed-refs"), `# pack-refs with: peeled fully-peeled sorted\n${"d".repeat(40)} refs/codex/turn-diffs/packed-turn\n`);
-  status = (await inspectWorldModel({ root }));
+  fs.writeFileSync(
+    path.join(root, ".git", "packed-refs"),
+    `# pack-refs with: peeled fully-peeled sorted\n${"d".repeat(40)} refs/codex/turn-diffs/packed-turn\n`,
+  );
+  status = await inspectWorldModel({ root });
   assert.equal(status.status, "current");
   assert.equal(status.currentSourceDigest, baseline.snapshot.sourceDigest);
   const hostOnlyRebuild = await buildWorldModel({ root, gitHistoryAdapter });
@@ -1350,7 +1663,7 @@ test("separates Host operational refs from product Git freshness while preservin
   assert.equal(hostOnlyRebuild.snapshot.git.referencesDigest, baselineReferenceDigest);
 
   fs.writeFileSync(path.join(root, ".git", "refs", "heads", "main"), `${"b".repeat(40)}\n`);
-  status = (await inspectWorldModel({ root }));
+  status = await inspectWorldModel({ root });
   assert.equal(status.status, "stale");
   assert.equal(status.changes.gitChanged, true);
   assert.equal(status.changes.gitHistoryChanged, true);
@@ -1360,7 +1673,7 @@ test("separates Host operational refs from product Git freshness while preservin
   const remoteRef = path.join(root, ".git", "refs", "remotes", "origin", "main");
   fs.mkdirSync(path.dirname(remoteRef), { recursive: true });
   fs.writeFileSync(remoteRef, `${"c".repeat(40)}\n`);
-  status = (await inspectWorldModel({ root }));
+  status = await inspectWorldModel({ root });
   assert.equal(status.status, "stale");
   assert.equal(status.changes.gitHistoryChanged, true);
   const remoteRefresh = await buildWorldModel({ root, gitHistoryAdapter });
@@ -1370,7 +1683,7 @@ test("separates Host operational refs from product Git freshness while preservin
   const tagRef = path.join(root, ".git", "refs", "tags", "release");
   fs.mkdirSync(path.dirname(tagRef), { recursive: true });
   fs.writeFileSync(tagRef, `${"d".repeat(40)}\n`);
-  status = (await inspectWorldModel({ root }));
+  status = await inspectWorldModel({ root });
   assert.equal(status.status, "stale");
   assert.equal(status.changes.gitHistoryChanged, true);
   const tagRefresh = await buildWorldModel({ root, gitHistoryAdapter });
@@ -1421,13 +1734,28 @@ test("Git CLI history excludes Host-only commits and decorations while retaining
     referenceTags: ["v1"],
   });
   assert.equal(observed.status, "available");
-  assert.equal(observed.commits.some((commit) => commit.commit === hostOnlyCommit), false);
+  assert.equal(
+    observed.commits.some((commit) => commit.commit === hostOnlyCommit),
+    false,
+  );
   const product = observed.commits.find((commit) => commit.commit === productCommit);
   assert.ok(product);
-  assert.equal(product.refs.some((ref) => ref.includes("codex/turn-diffs")), false);
-  assert.equal(product.refs.some((ref) => ref.includes("refs/heads/main")), true);
-  assert.equal(product.refs.some((ref) => ref.includes("refs/remotes/origin/main")), true);
-  assert.equal(product.refs.some((ref) => ref.includes("refs/tags/v1")), true);
+  assert.equal(
+    product.refs.some((ref) => ref.includes("codex/turn-diffs")),
+    false,
+  );
+  assert.equal(
+    product.refs.some((ref) => ref.includes("refs/heads/main")),
+    true,
+  );
+  assert.equal(
+    product.refs.some((ref) => ref.includes("refs/remotes/origin/main")),
+    true,
+  );
+  assert.equal(
+    product.refs.some((ref) => ref.includes("refs/tags/v1")),
+    true,
+  );
 });
 
 test("refreshes observed state incrementally with immutable ancestry and active-Run drift disclosure", async (t) => {
@@ -1451,7 +1779,9 @@ test("refreshes observed state incrementally with immutable ancestry and active-
     managedRootFiles: ["AGENTS.md", layout.directory],
     previousSnapshot: first.snapshot,
   });
-  const reference = scanRepositoryReference(buildRepositoryScanInput({ projectRoot: root, storage: layout, managedRootFiles: ["AGENTS.md", layout.directory] }));
+  const reference = scanRepositoryReference(
+    buildRepositoryScanInput({ projectRoot: root, storage: layout, managedRootFiles: ["AGENTS.md", layout.directory] }),
+  );
   assert.deepEqual(incremental.result, reference);
   assert.equal(incremental.diagnostics.analyzedFileCount, 0);
   assert.equal(incremental.diagnostics.reusedFileCount, first.snapshot.files.length);
@@ -1463,23 +1793,29 @@ test("refreshes observed state incrementally with immutable ancestry and active-
   assert.equal(unchanged.postRefreshProjection.status, "manual-deferred");
   assert.equal(fs.existsSync(path.join(root, layout.directory, "generated", "knowledge")), false);
   assert.equal((await inspectIncrementalRefresh({ root })).status, "current");
-  const legacyRequest = reidentify({ ...clone(unchanged.request), protocol: { ...unchanged.request.protocol, version: "0.1.0" } }, {
-    prefix: "incremental-refresh-request",
-    idKey: "refreshRequestId",
-    hashKey: "refreshRequestHash",
-  });
+  const legacyRequest = reidentify(
+    { ...clone(unchanged.request), protocol: { ...unchanged.request.protocol, version: "0.1.0" } },
+    {
+      prefix: "incremental-refresh-request",
+      idKey: "refreshRequestId",
+      hashKey: "refreshRequestHash",
+    },
+  );
   verifyIncrementalRefreshRequest(legacyRequest);
-  const legacyReceipt = reidentify({
-    ...clone(unchanged.receipt),
-    protocol: { ...unchanged.receipt.protocol, version: "0.1.0" },
-    refreshRequestId: legacyRequest.refreshRequestId,
-    refreshRequestHash: legacyRequest.refreshRequestHash,
-    projectionDisposition: { ...unchanged.receipt.projectionDisposition, documents: "not-regenerated-explicit-follow-up-only" },
-  }, {
-    prefix: "incremental-refresh-receipt",
-    idKey: "refreshReceiptId",
-    hashKey: "refreshReceiptHash",
-  });
+  const legacyReceipt = reidentify(
+    {
+      ...clone(unchanged.receipt),
+      protocol: { ...unchanged.receipt.protocol, version: "0.1.0" },
+      refreshRequestId: legacyRequest.refreshRequestId,
+      refreshRequestHash: legacyRequest.refreshRequestHash,
+      projectionDisposition: { ...unchanged.receipt.projectionDisposition, documents: "not-regenerated-explicit-follow-up-only" },
+    },
+    {
+      prefix: "incremental-refresh-receipt",
+      idKey: "refreshReceiptId",
+      hashKey: "refreshReceiptHash",
+    },
+  );
   verifyIncrementalRefreshReceipt(legacyReceipt);
 
   const firstGraph = first.snapshot.temporalProvenanceGraph;
@@ -1506,7 +1842,10 @@ test("refreshes observed state incrementally with immutable ancestry and active-
   assert.equal(refreshedInMemory.receipt.refreshReceiptId, refreshed.receipt.refreshReceiptId);
   assert.equal(refreshedInMemory.worldModel.worldModelId, refreshed.worldModel.worldModelId);
   assert.equal(refreshedInMemory.worldModel.sourceSnapshotId, refreshed.worldModel.sourceSnapshotId);
-  assert.equal((await readIncrementalRefreshReceipt({ root, refreshReceiptId: refreshed.receipt.refreshReceiptId, storeAdapter: memoryStore })).receipt.refreshReceiptId, refreshed.receipt.refreshReceiptId);
+  assert.equal(
+    (await readIncrementalRefreshReceipt({ root, refreshReceiptId: refreshed.receipt.refreshReceiptId, storeAdapter: memoryStore })).receipt.refreshReceiptId,
+    refreshed.receipt.refreshReceiptId,
+  );
   assert.deepEqual(refreshed.receipt.observedChanges, {
     added: ["src/added.mjs"],
     changed: ["src/service.mjs"],
@@ -1521,7 +1860,10 @@ test("refreshes observed state incrementally with immutable ancestry and active-
   assert.equal(stableRevision.nodeId, firstStableRevision.nodeId);
   assert.notEqual(serviceRevision.nodeId, firstServiceRevision.nodeId);
   assert.deepEqual(serviceRevision.parentRevisionIds, [firstServiceRevision.nodeId]);
-  assert.equal((await readIncrementalRefreshReceipt({ root, refreshReceiptId: refreshed.receipt.refreshReceiptId })).receipt.refreshReceiptId, refreshed.receipt.refreshReceiptId);
+  assert.equal(
+    (await readIncrementalRefreshReceipt({ root, refreshReceiptId: refreshed.receipt.refreshReceiptId })).receipt.refreshReceiptId,
+    refreshed.receipt.refreshReceiptId,
+  );
   assert.equal((await runCommand(["world-refresh-status", root])).status, "current");
 
   const mcpStatus = await dispatchMcp({
@@ -1546,7 +1888,7 @@ test("refreshes observed state incrementally with immutable ancestry and active-
   assert.deepEqual(multiParent.receipt.next.parentSourceSnapshotIds, [explicitSecondParent, refreshedGraph.sourceSnapshotId].sort());
   const runBaseGraph = (await readWorldModel({ root })).snapshot.temporalProvenanceGraph;
 
-  const capsule = (await compileContext({ root, task: "Change service without changing the whole plan", budget: 32_768, persist: true }));
+  const capsule = await compileContext({ root, task: "Change service without changing the whole plan", budget: 32_768, persist: true });
   const plan = createWholePlanSnapshot({
     root,
     objective: "Keep the service working",
@@ -1576,7 +1918,9 @@ test("refreshes observed state incrementally with immutable ancestry and active-
   const tampered = JSON.parse(fs.readFileSync(tamperedFile, "utf8"));
   tampered.executionDrift.requiredHeadAction = "silently-replace-active-capsule";
   fs.writeFileSync(tamperedFile, `${JSON.stringify(tampered, null, 2)}\n`);
-  (await assert.rejects(async () => (await readIncrementalRefreshReceipt({ root, refreshReceiptId: duringRun.receipt.refreshReceiptId })), { code: "INVALID_REFRESH_RECEIPT" }));
+  await assert.rejects(async () => await readIncrementalRefreshReceipt({ root, refreshReceiptId: duringRun.receipt.refreshReceiptId }), {
+    code: "INVALID_REFRESH_RECEIPT",
+  });
 });
 
 test("coalesces bounded filesystem and CI triggers into serialized authority-free refresh evidence", async (t) => {
@@ -1612,30 +1956,43 @@ test("coalesces bounded filesystem and CI triggers into serialized authority-fre
   assert.equal(canonicalBatch.instructionAuthority, false);
   assert.equal(canonicalBatch.promotionAuthority, false);
   assert.equal(canonicalBatch.canonMutationAuthority, false);
-  const legacyBatch = reidentify({
-    ...clone(canonicalBatch),
-    protocol: { ...canonicalBatch.protocol, version: "0.1.0" },
-    source: { ...canonicalBatch.source, adapterVersion: "0.1.0" },
-  }, {
-    prefix: "refresh-trigger-batch",
-    idKey: "triggerBatchId",
-    hashKey: "triggerBatchHash",
-  });
+  const legacyBatch = reidentify(
+    {
+      ...clone(canonicalBatch),
+      protocol: { ...canonicalBatch.protocol, version: "0.1.0" },
+      source: { ...canonicalBatch.source, adapterVersion: "0.1.0" },
+    },
+    {
+      prefix: "refresh-trigger-batch",
+      idKey: "triggerBatchId",
+      hashKey: "triggerBatchHash",
+    },
+  );
   verifyRefreshTriggerBatch(legacyBatch);
-  assert.throws(() => buildRefreshTriggerBatch({
-    projectId,
-    sourceKind: "ci",
-    events: [{ kind: "path-hint", operation: "change", path: "../escape.mjs", evidenceId: null }],
-  }, layout), { code: "INVALID_REFRESH_TRIGGER_PATH" });
-  const boundedBatch = buildRefreshTriggerBatch({
-    projectId,
-    sourceKind: "ci",
-    maxEvents: 1,
-    events: [
-      { kind: "project-signal", operation: "build", path: null, evidenceId: "ci-build-0003" },
-      { kind: "project-signal", operation: "test", path: null, evidenceId: "ci-test-0003" },
-    ],
-  }, layout);
+  assert.throws(
+    () =>
+      buildRefreshTriggerBatch(
+        {
+          projectId,
+          sourceKind: "ci",
+          events: [{ kind: "path-hint", operation: "change", path: "../escape.mjs", evidenceId: null }],
+        },
+        layout,
+      ),
+    { code: "INVALID_REFRESH_TRIGGER_PATH" },
+  );
+  const boundedBatch = buildRefreshTriggerBatch(
+    {
+      projectId,
+      sourceKind: "ci",
+      maxEvents: 1,
+      events: [
+        { kind: "project-signal", operation: "build", path: null, evidenceId: "ci-build-0003" },
+        { kind: "project-signal", operation: "test", path: null, evidenceId: "ci-test-0003" },
+      ],
+    },
+    layout,
+  );
   assert.equal(boundedBatch.events.length, 1);
   assert.deepEqual(boundedBatch.eventSummary.discardedReasons, [{ reason: "event-limit-exceeded", count: 1 }]);
   assert.equal(boundedBatch.requiresRescan, true);
@@ -1649,21 +2006,30 @@ test("coalesces bounded filesystem and CI triggers into serialized authority-fre
   assert.deepEqual(delivered.refresh.request.trigger.evidenceIds, [delivered.batch.triggerBatchId]);
   assert.equal(delivered.delivery.serialization, "exclusive-project-world-model-writer-lease-and-expected-pointer-check");
   assert.equal(delivered.delivery.projectionDisposition.documents.status, "manual-deferred");
-  assert.equal(delivered.delivery.projectionDisposition.documents.postRefreshProjectionReceiptId, delivered.refresh.postRefreshProjection.receipt.postRefreshProjectionReceiptId);
-  const legacyDelivery = reidentify({
-    ...clone(delivered.delivery),
-    protocol: { ...delivered.delivery.protocol, version: "0.1.0" },
-    triggerBatchId: legacyBatch.triggerBatchId,
-    triggerBatchHash: legacyBatch.triggerBatchHash,
-    projectionDisposition: { ...delivered.delivery.projectionDisposition, documents: "not-regenerated-explicit-follow-up-only" },
-  }, {
-    prefix: "refresh-trigger-delivery",
-    idKey: "triggerDeliveryId",
-    hashKey: "triggerDeliveryHash",
-  });
+  assert.equal(
+    delivered.delivery.projectionDisposition.documents.postRefreshProjectionReceiptId,
+    delivered.refresh.postRefreshProjection.receipt.postRefreshProjectionReceiptId,
+  );
+  const legacyDelivery = reidentify(
+    {
+      ...clone(delivered.delivery),
+      protocol: { ...delivered.delivery.protocol, version: "0.1.0" },
+      triggerBatchId: legacyBatch.triggerBatchId,
+      triggerBatchHash: legacyBatch.triggerBatchHash,
+      projectionDisposition: { ...delivered.delivery.projectionDisposition, documents: "not-regenerated-explicit-follow-up-only" },
+    },
+    {
+      prefix: "refresh-trigger-delivery",
+      idKey: "triggerDeliveryId",
+      hashKey: "triggerDeliveryHash",
+    },
+  );
   verifyRefreshTriggerDelivery(legacyDelivery);
   assert.equal(fs.existsSync(path.join(root, layout.directory, "generated", "knowledge")), false);
-  assert.equal((await readRefreshTriggerDelivery({ root, triggerDeliveryId: delivered.delivery.triggerDeliveryId })).delivery.triggerDeliveryId, delivered.delivery.triggerDeliveryId);
+  assert.equal(
+    (await readRefreshTriggerDelivery({ root, triggerDeliveryId: delivered.delivery.triggerDeliveryId })).delivery.triggerDeliveryId,
+    delivered.delivery.triggerDeliveryId,
+  );
   assert.equal((await inspectRefreshTriggers({ root })).status, "current");
   assert.equal((await inspectRefreshTriggers({ root })).writer.status, "idle");
 
@@ -1681,20 +2047,37 @@ test("coalesces bounded filesystem and CI triggers into serialized authority-fre
 
   fs.appendFileSync(path.join(root, "src", "service.mjs"), "export const changedThroughCli = true;\n");
   const cliInput = path.join(root, layout.directory, "ci-events.json");
-  fs.writeFileSync(cliInput, `${JSON.stringify({
-    sourceKind: "ci",
-    events: [{ kind: "project-signal", operation: "build", path: null, evidenceId: "ci-build-0002" }],
-  }, null, 2)}\n`);
+  fs.writeFileSync(
+    cliInput,
+    `${JSON.stringify(
+      {
+        sourceKind: "ci",
+        events: [{ kind: "project-signal", operation: "build", path: null, evidenceId: "ci-build-0002" }],
+      },
+      null,
+      2,
+    )}\n`,
+  );
   const cliDelivered = await runCommand(["world-refresh-events", root, "--input", cliInput]);
   assert.equal(cliDelivered.status, "refreshed");
   assert.deepEqual(cliDelivered.refresh.receipt.observedChanges.changed, ["src/service.mjs"]);
-  fs.writeFileSync(cliInput, `${JSON.stringify({
-    sourceKind: "filesystem",
-    events: [{ kind: "project-signal", operation: "unknown", path: null, evidenceId: null }],
-  }, null, 2)}\n`);
-  (await assert.rejects(async () => (await runCommand(["world-refresh-events", root, "--input", cliInput])), /accepts only sourceKind ci/));
+  fs.writeFileSync(
+    cliInput,
+    `${JSON.stringify(
+      {
+        sourceKind: "filesystem",
+        events: [{ kind: "project-signal", operation: "unknown", path: null, evidenceId: null }],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await assert.rejects(async () => await runCommand(["world-refresh-events", root, "--input", cliInput]), /accepts only sourceKind ci/);
   assert.equal((await runCommand(["world-refresh-trigger-status", root])).delivery.triggerDeliveryId, cliDelivered.delivery.triggerDeliveryId);
-  assert.equal((await runCommand(["world-refresh-trigger-read", root, "--delivery", cliDelivered.delivery.triggerDeliveryId])).delivery.triggerDeliveryId, cliDelivered.delivery.triggerDeliveryId);
+  assert.equal(
+    (await runCommand(["world-refresh-trigger-read", root, "--delivery", cliDelivered.delivery.triggerDeliveryId])).delivery.triggerDeliveryId,
+    cliDelivered.delivery.triggerDeliveryId,
+  );
   const mcpTriggerStatus = await dispatchMcp({
     jsonrpc: "2.0",
     id: 43,
@@ -1710,7 +2093,7 @@ test("coalesces bounded filesystem and CI triggers into serialized authority-fre
   });
   assert.equal(mcpTriggerDelivery.result.structuredContent.delivery.triggerDeliveryId, cliDelivered.delivery.triggerDeliveryId);
 
-  const runCapsule = (await compileContext({ root, task: "Keep the active trigger run pinned", budget: 32_768, persist: true }));
+  const runCapsule = await compileContext({ root, task: "Keep the active trigger run pinned", budget: 32_768, persist: true });
   const runPlan = createWholePlanSnapshot({
     root,
     objective: "Verify triggered refresh drift without changing authority",
@@ -1755,10 +2138,10 @@ test("coalesces bounded filesystem and CI triggers into serialized authority-fre
       return { status: "unchanged", input };
     },
   });
-  (await queue.enqueue({ kind: "path-hint", operation: "change", path: "src/service.mjs", evidenceId: null }));
-  (await queue.enqueue({ kind: "path-hint", operation: "change", path: "src/service.mjs", evidenceId: null }));
+  await queue.enqueue({ kind: "path-hint", operation: "change", path: "src/service.mjs", evidenceId: null });
+  await queue.enqueue({ kind: "path-hint", operation: "change", path: "src/service.mjs", evidenceId: null });
   const firstFlush = queue.flush();
-  (await queue.enqueue({ kind: "project-signal", operation: "unknown", path: null, evidenceId: null }));
+  await queue.enqueue({ kind: "project-signal", operation: "unknown", path: null, evidenceId: null });
   const secondFlush = queue.flush();
   await Promise.all([firstFlush, secondFlush]);
   const queueStatus = await queue.close({ flush: false });
@@ -1784,7 +2167,7 @@ test("coalesces bounded filesystem and CI triggers into serialized authority-fre
       return { status: "unchanged", input };
     },
   });
-  (await retryQueue.enqueue({ kind: "path-hint", operation: "change", path: "src/service.mjs", evidenceId: null }));
+  await retryQueue.enqueue({ kind: "path-hint", operation: "change", path: "src/service.mjs", evidenceId: null });
   await assert.rejects(retryQueue.flush(), { code: "REFRESH_WRITER_BUSY" });
   assert.equal(retryQueue.status().bufferedEventCount, 1);
   assert.equal(retryQueue.status().totalBusyRetries, 1);
@@ -1796,7 +2179,7 @@ test("coalesces bounded filesystem and CI triggers into serialized authority-fre
 
   await withRefreshWriterLease({ projectRoot: root, projectId, storage: layout }, async (writerLease) => {
     await assert.rejects(refreshWorldModel({ root }), { code: "REFRESH_WRITER_BUSY" });
-    await assert.rejects(((buildWorldModel({ root }))), { code: "REFRESH_WRITER_BUSY" });
+    await assert.rejects(buildWorldModel({ root }), { code: "REFRESH_WRITER_BUSY" });
     const nestedWorldBuild = await buildWorldModel({ root, writerLease });
     assert.equal(nestedWorldBuild.snapshot.worldModelId, (await readWorldModel({ root })).snapshot.worldModelId);
   });
@@ -1805,7 +2188,9 @@ test("coalesces bounded filesystem and CI triggers into serialized authority-fre
   const tampered = JSON.parse(fs.readFileSync(delivered.deliveryFile, "utf8"));
   tampered.authority = "canon";
   fs.writeFileSync(delivered.deliveryFile, `${JSON.stringify(tampered, null, 2)}\n`);
-  (await assert.rejects(async () => (await readRefreshTriggerDelivery({ root, triggerDeliveryId: delivered.delivery.triggerDeliveryId })), { code: "INVALID_REFRESH_TRIGGER_DELIVERY" }));
+  await assert.rejects(async () => await readRefreshTriggerDelivery({ root, triggerDeliveryId: delivered.delivery.triggerDeliveryId }), {
+    code: "INVALID_REFRESH_TRIGGER_DELIVERY",
+  });
 });
 
 test("watches filesystem changes through the bounded debounced refresh adapter", async (t) => {
@@ -1823,21 +2208,35 @@ test("watches filesystem changes through the bounded debounced refresh adapter",
   });
   const startedAt = performance.now();
   const observations = {
-    rawEventCount: 0, rawEvents: [], appendElapsedMs: null,
-    batchStartedElapsedMs: null, batchReturnedElapsedMs: null, batchErrorElapsedMs: null, batchError: null,
-    deliveryElapsedMs: null, errorElapsedMs: null, error: null,
+    rawEventCount: 0,
+    rawEvents: [],
+    appendElapsedMs: null,
+    batchStartedElapsedMs: null,
+    batchReturnedElapsedMs: null,
+    batchErrorElapsedMs: null,
+    batchError: null,
+    deliveryElapsedMs: null,
+    errorElapsedMs: null,
+    error: null,
   };
   let watcher;
-  const diagnose = (phase) => t.diagnostic(JSON.stringify({
-    phase,
-    elapsedMs: performance.now() - startedAt,
-    ...observations,
-    queue: watcher?.status() || null,
-    debounceTimerScheduled: watcher ? watcher.queue.timer !== null : null,
-    deliveryState: observations.batchError ? "batch-error-observed"
-      : observations.batchReturnedElapsedMs !== null ? "batch-returned"
-        : observations.batchStartedElapsedMs !== null ? "batch-in-flight" : "batch-not-started",
-  }));
+  const diagnose = (phase) =>
+    t.diagnostic(
+      JSON.stringify({
+        phase,
+        elapsedMs: performance.now() - startedAt,
+        ...observations,
+        queue: watcher?.status() || null,
+        debounceTimerScheduled: watcher ? watcher.queue.timer !== null : null,
+        deliveryState: observations.batchError
+          ? "batch-error-observed"
+          : observations.batchReturnedElapsedMs !== null
+            ? "batch-returned"
+            : observations.batchStartedElapsedMs !== null
+              ? "batch-in-flight"
+              : "batch-not-started",
+      }),
+    );
   const timeout = setTimeout(() => {
     diagnose("delivery-timeout");
     rejectDelivery(new Error("Filesystem refresh watcher did not deliver within the test bound."));
@@ -1861,12 +2260,15 @@ test("watches filesystem changes through the bounded debounced refresh adapter",
     observations.batchStartedElapsedMs = performance.now() - startedAt;
     try {
       const result = Reflect.apply(originalDeliverBatch, this, args);
-      Promise.resolve(result).then(() => {
-        observations.batchReturnedElapsedMs = performance.now() - startedAt;
-      }, (error) => {
-        observations.batchErrorElapsedMs = performance.now() - startedAt;
-        observations.batchError = { code: error.code || null, message: String(error.message).slice(0, 500) };
-      });
+      Promise.resolve(result).then(
+        () => {
+          observations.batchReturnedElapsedMs = performance.now() - startedAt;
+        },
+        (error) => {
+          observations.batchErrorElapsedMs = performance.now() - startedAt;
+          observations.batchError = { code: error.code || null, message: String(error.message).slice(0, 500) };
+        },
+      );
       return result;
     } catch (error) {
       observations.batchErrorElapsedMs = performance.now() - startedAt;
@@ -1876,10 +2278,12 @@ test("watches filesystem changes through the bounded debounced refresh adapter",
   };
   const observeRawEvent = (eventType, filename) => {
     observations.rawEventCount += 1;
-    if (observations.rawEvents.length < 8) observations.rawEvents.push({
-      eventType, filename: filename == null ? null : String(filename).slice(0, 200),
-      elapsedMs: performance.now() - startedAt,
-    });
+    if (observations.rawEvents.length < 8)
+      observations.rawEvents.push({
+        eventType,
+        filename: filename == null ? null : String(filename).slice(0, 200),
+        elapsedMs: performance.now() - startedAt,
+      });
   };
   watcher.watcher.on("change", observeRawEvent);
   t.after(async () => {
@@ -1888,14 +2292,17 @@ test("watches filesystem changes through the bounded debounced refresh adapter",
     watcher.watcher.off("change", observeRawEvent);
     await watcher.close({ flush: false });
   });
-  await new Promise(resolve => setImmediate(resolve)); // Let native watcher startup enter the event loop.
+  await new Promise((resolve) => setImmediate(resolve)); // Let native watcher startup enter the event loop.
   observations.appendElapsedMs = performance.now() - startedAt;
   fs.appendFileSync(path.join(root, "src", "watched.mjs"), "export const changed = 2;\n");
   const result = await delivered;
   clearTimeout(timeout);
   assert.equal(result.status, "refreshed");
   assert.equal(result.batch.source.kind, "filesystem");
-  assert.equal(result.batch.events.some((event) => event.path === "src/watched.mjs"), true);
+  assert.equal(
+    result.batch.events.some((event) => event.path === "src/watched.mjs"),
+    true,
+  );
   assert.deepEqual(result.refresh.receipt.observedChanges.changed, ["src/watched.mjs"]);
   assert.equal(result.refresh.request.trigger.kind, "filesystem");
   assert.deepEqual(result.refresh.request.trigger.evidenceIds, [result.batch.triggerBatchId]);
@@ -1917,10 +2324,11 @@ test("deduplicates large temporal edge sets without variadic stack growth", () =
   assert.equal(edges[0].ordinal, 0);
   assert.equal(edges.at(-1).ordinal, edgeCount - 1);
   assert.throws(
-    () => deduplicateTemporalEdgesInPlace([
-      { edgeId: "collision", value: 1 },
-      { edgeId: "collision", value: 2 },
-    ]),
+    () =>
+      deduplicateTemporalEdgesInPlace([
+        { edgeId: "collision", value: 1 },
+        { edgeId: "collision", value: 2 },
+      ]),
     { code: "TEMPORAL_EDGE_IDENTITY_COLLISION" },
   );
 });
@@ -1946,8 +2354,14 @@ test("builds deterministic Git-independent temporal provenance with multiple par
   const reordered = buildTemporalProvenanceGraph({ projectId: "project-temporal-test", files: [...sourceFiles].reverse() });
   assert.equal(first.graphSnapshotId, reordered.graphSnapshotId);
   assert.equal(first.summary.testRevisionCount, 1);
-  assert.equal(first.nodes.every((node) => node.instructionAuthority === false && node.promotionAuthority === false), true);
-  assert.equal(first.edges.every((edge) => edge.sourceSnapshotId === first.sourceSnapshotId), true);
+  assert.equal(
+    first.nodes.every((node) => node.instructionAuthority === false && node.promotionAuthority === false),
+    true,
+  );
+  assert.equal(
+    first.edges.every((edge) => edge.sourceSnapshotId === first.sourceSnapshotId),
+    true,
+  );
 
   const firstFile = first.nodes.find((node) => node.kind === "File" && node.path === "src/service.mjs");
   const firstFileRevision = first.nodes.find((node) => node.kind === "FileRevision" && node.path === "src/service.mjs");
@@ -1990,7 +2404,10 @@ test("builds deterministic Git-independent temporal provenance with multiple par
   });
   assert.equal(queryA.queryId, queryB.queryId);
   assert.equal(queryA.resultId, queryB.resultId);
-  assert.equal(queryA.edges.every((edge) => ["CURRENT_REVISION", "HAS_REVISION", "DECLARES"].includes(edge.type)), true);
+  assert.equal(
+    queryA.edges.every((edge) => ["CURRENT_REVISION", "HAS_REVISION", "DECLARES"].includes(edge.type)),
+    true,
+  );
   assert.equal(queryA.traversalQuery.includeUnreviewedCandidates, false);
   const changedFile = changed.nodes.find((node) => node.kind === "File" && node.path === "src/service.mjs");
   const exact = queryTemporalProvenanceGraph(changed, {
@@ -2004,19 +2421,31 @@ test("builds deterministic Git-independent temporal provenance with multiple par
   assert.equal(exact.traversalQuery.anchorMode, "exact-head-proposed");
   assert.equal(exact.traversalQuery.normalizedQuery, "");
   assert.equal(exact.inclusion.find((item) => item.nodeId === changedFile.nodeId).reason, "exact-head-anchor");
-  assert.throws(() => queryTemporalProvenanceGraph(changed, {
-    query: "service",
-    anchorIds: [changedFile.nodeId],
-    expectedGraphSnapshotId: changed.graphSnapshotId,
-  }), { code: "AMBIGUOUS_TEMPORAL_ANCHOR_MODE" });
-  assert.throws(() => queryTemporalProvenanceGraph(changed, {
-    anchorIds: [changedFile.nodeId],
-    expectedGraphSnapshotId: first.graphSnapshotId,
-  }), { code: "TEMPORAL_GRAPH_SNAPSHOT_MISMATCH" });
-  assert.throws(() => queryTemporalProvenanceGraph(changed, {
-    anchorIds: ["missing-exact-node"],
-    expectedGraphSnapshotId: changed.graphSnapshotId,
-  }), { code: "TEMPORAL_EXACT_ANCHOR_NOT_FOUND" });
+  assert.throws(
+    () =>
+      queryTemporalProvenanceGraph(changed, {
+        query: "service",
+        anchorIds: [changedFile.nodeId],
+        expectedGraphSnapshotId: changed.graphSnapshotId,
+      }),
+    { code: "AMBIGUOUS_TEMPORAL_ANCHOR_MODE" },
+  );
+  assert.throws(
+    () =>
+      queryTemporalProvenanceGraph(changed, {
+        anchorIds: [changedFile.nodeId],
+        expectedGraphSnapshotId: first.graphSnapshotId,
+      }),
+    { code: "TEMPORAL_GRAPH_SNAPSHOT_MISMATCH" },
+  );
+  assert.throws(
+    () =>
+      queryTemporalProvenanceGraph(changed, {
+        anchorIds: ["missing-exact-node"],
+        expectedGraphSnapshotId: changed.graphSnapshotId,
+      }),
+    { code: "TEMPORAL_EXACT_ANCHOR_NOT_FOUND" },
+  );
   const wideLexicalGraph = buildTemporalProvenanceGraph({
     projectId: "project-wide-lexical-traversal",
     files: Array.from({ length: 40 }, (_, index) => ({
@@ -2048,9 +2477,12 @@ test("builds deterministic Git-independent temporal provenance with multiple par
   assert.equal(indexed.snapshot.temporalProvenanceGraph.summary.sourceParentCount, 2);
   const repeated = await buildWorldModel({ root, persist: false, parentSourceSnapshotIds: [first.sourceSnapshotId, `source-snapshot-${"e".repeat(24)}`] });
   assert.equal(repeated.snapshot.temporalProvenanceGraph.graphSnapshotId, indexed.snapshot.temporalProvenanceGraph.graphSnapshotId);
-  const temporalQuery = (await queryWorldTemporalGraph({ root, query: "service.mjs", relations: ["HAS_REVISION", "CURRENT_REVISION"], depth: 1 }));
+  const temporalQuery = await queryWorldTemporalGraph({ root, query: "service.mjs", relations: ["HAS_REVISION", "CURRENT_REVISION"], depth: 1 });
   assert.equal(temporalQuery.status, "current");
-  assert.equal(temporalQuery.nodes.some((node) => node.kind === "FileRevision"), true);
+  assert.equal(
+    temporalQuery.nodes.some((node) => node.kind === "FileRevision"),
+    true,
+  );
   const mcpTemporal = await dispatchMcp({
     jsonrpc: "2.0",
     id: 5,
@@ -2063,26 +2495,36 @@ test("builds deterministic Git-independent temporal provenance with multiple par
     jsonrpc: "2.0",
     id: 6,
     method: "tools/call",
-    params: { name: "head_temporal_graph", arguments: {
-      project_root: root,
-      exact_anchor_ids: [indexedFile.nodeId],
-      expected_graph_snapshot_id: indexed.snapshot.temporalProvenanceGraph.graphSnapshotId,
-      relation_types: ["HAS_REVISION", "CURRENT_REVISION"],
-      depth: 1,
-      node_limit: 30,
-      edge_limit: 50,
-    } },
+    params: {
+      name: "head_temporal_graph",
+      arguments: {
+        project_root: root,
+        exact_anchor_ids: [indexedFile.nodeId],
+        expected_graph_snapshot_id: indexed.snapshot.temporalProvenanceGraph.graphSnapshotId,
+        relation_types: ["HAS_REVISION", "CURRENT_REVISION"],
+        depth: 1,
+        node_limit: 30,
+        edge_limit: 50,
+      },
+    },
   });
   assert.equal(mcpExactTemporal.result.structuredContent.traversalQuery.anchorMode, formatForVerifiedOwner(layout).value("exact-head-proposed"));
-  const cliExactTemporal = (await runCommand([
-    "world-temporal", root,
-    "--anchor-ids", indexedFile.nodeId,
-    "--graph-snapshot", indexed.snapshot.temporalProvenanceGraph.graphSnapshotId,
-    "--relations", "HAS_REVISION,CURRENT_REVISION",
-    "--depth", "1",
-    "--limit", "30",
-    "--edge-limit", "50",
-  ]));
+  const cliExactTemporal = await runCommand([
+    "world-temporal",
+    root,
+    "--anchor-ids",
+    indexedFile.nodeId,
+    "--graph-snapshot",
+    indexed.snapshot.temporalProvenanceGraph.graphSnapshotId,
+    "--relations",
+    "HAS_REVISION,CURRENT_REVISION",
+    "--depth",
+    "1",
+    "--limit",
+    "30",
+    "--edge-limit",
+    "50",
+  ]);
   assert.equal(cliExactTemporal.resultId, mcpExactTemporal.result.structuredContent.resultId);
 });
 
@@ -2105,8 +2547,8 @@ test("materializes and queries temporal graphs through an authority-free replace
 
   const queryInput = { query: "service.mjs", relations: ["HAS_REVISION", "CURRENT_REVISION"], depth: 1, maxNodes: 30, maxEdges: 50 };
   const reference = queryTemporalProvenanceGraph(graph, queryInput);
-  const throughMemory = (await queryWorldTemporalGraph({ root, graphProjectionAdapter: memory, ...queryInput }));
-  const throughEmbeddedFallback = (await queryWorldTemporalGraph({ root, ...queryInput }));
+  const throughMemory = await queryWorldTemporalGraph({ root, graphProjectionAdapter: memory, ...queryInput });
+  const throughEmbeddedFallback = await queryWorldTemporalGraph({ root, ...queryInput });
   assert.equal(throughMemory.resultId, reference.resultId);
   assert.equal(throughMemory.resultHash, reference.resultHash);
   assert.equal(throughMemory.graphProjection.fallbackUsed, false);
@@ -2116,18 +2558,24 @@ test("materializes and queries temporal graphs through an authority-free replace
   assert.equal(throughEmbeddedFallback.graphProjection.fallbackUsed, true);
   assert.equal(throughEmbeddedFallback.graphProjection.fallbackReasonCode, "GRAPH_PROJECTION_NOT_MATERIALIZED");
 
-  const capsuleThroughMemory = (await compileContext({ root, task: "Inspect service implementation", budget: 32_768, persist: false, graphProjectionAdapter: memory }));
-  const capsuleThroughFallback = (await compileContext({ root, task: "Inspect service implementation", budget: 32_768, persist: false }));
+  const capsuleThroughMemory = await compileContext({
+    root,
+    task: "Inspect service implementation",
+    budget: 32_768,
+    persist: false,
+    graphProjectionAdapter: memory,
+  });
+  const capsuleThroughFallback = await compileContext({ root, task: "Inspect service implementation", budget: 32_768, persist: false });
   assert.equal(capsuleThroughMemory.capsule.capsuleId, capsuleThroughFallback.capsule.capsuleId);
 
-  const conformance = (await verifyGraphProjectionAdapterConformance({
+  const conformance = await verifyGraphProjectionAdapterConformance({
     projectRoot: root,
     storage: layout,
     graph,
     referenceAdapter: new LocalJsonGraphProjectionAdapter({ projectRoot: root, storage: layout }),
     candidateAdapter: new InMemoryGraphProjectionAdapter({ adapterKind: "conformance-candidate" }),
     queries: [{ name: "service-neighborhood", query: queryInput }],
-  }));
+  });
   assert.match(conformance.conformanceReportId, /^graph-projection-conformance-[a-f0-9]{24}$/);
   assert.equal(conformance.cases[0].resultId, reference.resultId);
   assert.equal(conformance.semanticIdentity, "adapter-neutral");
@@ -2145,11 +2593,10 @@ test("materializes and queries temporal graphs through an authority-free replace
     remote: false,
     durable: false,
   });
-  await assert.rejects(((buildWorldModel({ root, graphProjectionAdapter: authorityViolating }))), { code: "INVALID_GRAPH_PROJECTION_AUTHORITY" });
-
+  await assert.rejects(buildWorldModel({ root, graphProjectionAdapter: authorityViolating }), { code: "INVALID_GRAPH_PROJECTION_AUTHORITY" });
 
   const mismatching = new InMemoryGraphProjectionAdapter({ adapterKind: "mismatching-query" });
-  (await materializeGraphProjection({ projectRoot: root, storage: layout, graph, adapter: mismatching }));
+  await materializeGraphProjection({ projectRoot: root, storage: layout, graph, adapter: mismatching });
   const mismatchingDescribe = mismatching.describe.bind(mismatching);
   mismatching.describe = () => {
     const { preparedTraversalProtocolVersion, preparedTraversalMode, ...legacy } = mismatchingDescribe();
@@ -2160,24 +2607,25 @@ test("materializes and queries temporal graphs through an authority-free replace
     const result = await originalQuery(graphSnapshotId, options);
     return { ...result, truncated: !result.truncated };
   };
-  (await assert.rejects(async () => (await queryGraphProjection({ projectRoot: root, storage: layout, graph, adapter: mismatching, query: queryInput })), { code: "GRAPH_PROJECTION_QUERY_MISMATCH" }));
+  await assert.rejects(async () => await queryGraphProjection({ projectRoot: root, storage: layout, graph, adapter: mismatching, query: queryInput }), {
+    code: "GRAPH_PROJECTION_QUERY_MISMATCH",
+  });
 
   const preparedTampering = new InMemoryGraphProjectionAdapter({ adapterKind: "tampered-prepared-verification" });
-  (await materializeGraphProjection({ projectRoot: root, storage: layout, graph, adapter: preparedTampering }));
+  await materializeGraphProjection({ projectRoot: root, storage: layout, graph, adapter: preparedTampering });
   const originalPreparedQuery = preparedTampering.queryPrepared.bind(preparedTampering);
   preparedTampering.queryPrepared = async (request) => {
     const verification = await originalPreparedQuery(request);
     return { ...verification, nodeCount: verification.nodeCount + 1 };
   };
-  (await assert.rejects(
-    async () => (await queryGraphProjection({ projectRoot: root, storage: layout, graph, adapter: preparedTampering, query: queryInput })),
-    { code: "PREPARED_TRAVERSAL_VERIFICATION_DIGEST_MISMATCH" },
-  ));
+  await assert.rejects(async () => await queryGraphProjection({ projectRoot: root, storage: layout, graph, adapter: preparedTampering, query: queryInput }), {
+    code: "PREPARED_TRAVERSAL_VERIFICATION_DIGEST_MISMATCH",
+  });
 
   const tampered = new InMemoryGraphProjectionAdapter({ adapterKind: "tampered-snapshot" });
-  (await materializeGraphProjection({ projectRoot: root, storage: layout, graph, adapter: tampered }));
+  await materializeGraphProjection({ projectRoot: root, storage: layout, graph, adapter: tampered });
   tampered.snapshots.get(graph.graphSnapshotId).summary.nodeCount += 1;
-  (await assert.rejects(async () => (await inspectWorldGraphProjection({ root, graphProjectionAdapter: tampered })), { code: "TEMPORAL_GRAPH_DIGEST_MISMATCH" }));
+  await assert.rejects(async () => await inspectWorldGraphProjection({ root, graphProjectionAdapter: tampered }), { code: "TEMPORAL_GRAPH_DIGEST_MISMATCH" });
 
   const mutating = new InMemoryGraphProjectionAdapter({ adapterKind: "mutating-write" });
   const writeSnapshot = mutating.writeSnapshot.bind(mutating);
@@ -2185,13 +2633,15 @@ test("materializes and queries temporal graphs through an authority-free replace
     document.summary.nodeCount += 1;
     return writeSnapshot(graphSnapshotId, document);
   };
-  (await assert.rejects(async () => (await materializeGraphProjection({ projectRoot: root, storage: layout, graph, adapter: mutating })), { code: "TEMPORAL_GRAPH_DIGEST_MISMATCH" }));
+  await assert.rejects(async () => await materializeGraphProjection({ projectRoot: root, storage: layout, graph, adapter: mutating }), {
+    code: "TEMPORAL_GRAPH_DIGEST_MISMATCH",
+  });
   verifyTemporalProvenanceGraph(graph);
 
   fs.appendFileSync(path.join(root, "src", "service.mjs"), "export class Worker {}\n");
   const rebuilt = await buildWorldModel({ root });
   assert.notEqual(rebuilt.snapshot.temporalProvenanceGraph.graphSnapshotId, graph.graphSnapshotId);
-  (await assert.rejects(async () => (await queryWorldTemporalGraph({ root, graphProjectionAdapter: memory, ...queryInput })), { code: "GRAPH_PROJECTION_STALE" }));
+  await assert.rejects(async () => await queryWorldTemporalGraph({ root, graphProjectionAdapter: memory, ...queryInput }), { code: "GRAPH_PROJECTION_STALE" });
   assert.equal((await inspectWorldGraphProjection({ root })).status, "current");
   assert.equal((await runCommand(["world-graph-status", root])).status, "current");
 
@@ -2210,7 +2660,16 @@ test("prepared traversal benchmark matches the reviewed fixture and rejects a di
     const args = [path.join(pluginRoot, "scripts", "benchmark-prepared-traversal.mjs"), "--iterations", "3", ...extra];
     console.log(JSON.stringify({ event: "owned-benchmark-planned", parentPid: process.pid, command: [process.execPath, ...args], cwd: pluginRoot, ports: [] }));
     const execution = spawnSync(process.execPath, args, { cwd: pluginRoot, encoding: "utf8", windowsHide: true, timeout: 30000, maxBuffer: 1024 * 1024 });
-    console.log(JSON.stringify({ event: "owned-benchmark-closed", pid: execution.pid, parentPid: process.pid, exitCode: execution.status, signal: execution.signal, ports: [] }));
+    console.log(
+      JSON.stringify({
+        event: "owned-benchmark-closed",
+        pid: execution.pid,
+        parentPid: process.pid,
+        exitCode: execution.status,
+        signal: execution.signal,
+        ports: [],
+      }),
+    );
     assert.ifError(execution.error);
     return execution;
   };
@@ -2221,15 +2680,26 @@ test("prepared traversal benchmark matches the reviewed fixture and rejects a di
   for (const [key, value] of Object.entries(report.semanticIdentity)) assert.equal(value, expected[key], key);
   const cost = report.deterministicCost;
   assert.deepEqual([cost.nodeCount, cost.edgeCount, cost.expansionNodeCount, cost.expansionEdgeCount], [274, 480, 6, 7]);
-  assert.deepEqual(cost.components, { identityEnvelopeBytes: 667, graphManifestBytes: 282, boundedExpansionBytes: 20024, graphSnapshotBytes: 437802, fullTopologyRecordsBytes: 430794 });
+  assert.deepEqual(cost.components, {
+    identityEnvelopeBytes: 667,
+    graphManifestBytes: 282,
+    boundedExpansionBytes: 20024,
+    graphSnapshotBytes: 437802,
+    fullTopologyRecordsBytes: 430794,
+  });
   for (const key of ["preparedQueryBytes", "fullReloadBaselineBytes", "savedBytes", "reductionBasisPoints"]) assert.equal(cost[key], expected[key], key);
   assert.equal(report.authorityEffect, "none");
   assert.equal(report.diagnostics.timingSemantic, false);
   assert.equal(report.diagnostics.pointerReadOptimization.pointerReadCalls, 3);
   assert.equal(report.diagnostics.clientReceiptOptimization.locallyBuiltRequestReuseCount, 3);
   assert.deepEqual(report.safety, {
-    queryPhaseReadOnly: true, persistentWrites: false, credentialsPersisted: false,
-    fullSnapshotReads: 0, fullTopologyReads: 0, distinctValidReceiptReplayRejected: true, liveEnvironmentValidated: false,
+    queryPhaseReadOnly: true,
+    persistentWrites: false,
+    credentialsPersisted: false,
+    fullSnapshotReads: 0,
+    fullTopologyReads: 0,
+    distinctValidReceiptReplayRejected: true,
+    liveEnvironmentValidated: false,
   });
   const changed = runBenchmark(["--query", "src/component-001.mjs"]);
   assert.equal(changed.status, 1);
@@ -2259,14 +2729,12 @@ test("records deterministic prepared traversal cost without making latency seman
   assert.equal(JSON.stringify(first).includes("elapsed"), false);
   assert.equal(JSON.stringify(first).includes("latency"), false);
   verifyPreparedTraversalCostEvidence(first, { graph, request });
-  assert.throws(
-    () => verifyPreparedTraversalCostEvidence({ ...first, savedBytes: first.savedBytes + 1 }),
-    { code: "INVALID_PREPARED_TRAVERSAL_COST_EVIDENCE" },
-  );
-  assert.throws(
-    () => verifyPreparedTraversalCostEvidence({ ...first, protocol: { ...first.protocol, unexpected: true } }),
-    { code: "INVALID_PREPARED_TRAVERSAL_COST_EVIDENCE" },
-  );
+  assert.throws(() => verifyPreparedTraversalCostEvidence({ ...first, savedBytes: first.savedBytes + 1 }), {
+    code: "INVALID_PREPARED_TRAVERSAL_COST_EVIDENCE",
+  });
+  assert.throws(() => verifyPreparedTraversalCostEvidence({ ...first, protocol: { ...first.protocol, unexpected: true } }), {
+    code: "INVALID_PREPARED_TRAVERSAL_COST_EVIDENCE",
+  });
 });
 
 class MockArcadeDbTransport {
@@ -2305,19 +2773,54 @@ class MockArcadeDbTransport {
     throw error;
   }
 
-  ensureSchema() { this.check(); }
-  ensureTopologySchema() { this.check(); }
-  ensureSyncSchema() { this.check(); }
-  ready() { this.check(); return true; }
-  databaseExists() { this.check(); return true; }
-  createDatabase() { this.check(); return true; }
-  dropDatabase() { this.check(); return true; }
-  readSchemaTypes() { this.check(); return arcadeDbGraphReservedSchemaFor(this.storage).map((type) => ({ name: type.name, type: type.type,
-    properties: Object.entries(type.properties).map(([name, type]) => ({ name, type })),
-    indexes: [{ properties: [...arcadeDbRequiredKeysFor(this.storage)[type.name]], unique: true }] })); }
-  readPointer(projectId) { this.check(); this.readPointerCount += 1; return this.pointers.get(projectId) ?? null; }
-  readSnapshot(projectId, id) { this.check(); this.readSnapshotCount += 1; return this.snapshots.get(`${projectId}:${id}`) ?? null; }
-  writePointer(projectId, pointerJson) { this.check(); this.pointers.set(projectId, pointerJson); }
+  ensureSchema() {
+    this.check();
+  }
+  ensureTopologySchema() {
+    this.check();
+  }
+  ensureSyncSchema() {
+    this.check();
+  }
+  ready() {
+    this.check();
+    return true;
+  }
+  databaseExists() {
+    this.check();
+    return true;
+  }
+  createDatabase() {
+    this.check();
+    return true;
+  }
+  dropDatabase() {
+    this.check();
+    return true;
+  }
+  readSchemaTypes() {
+    this.check();
+    return arcadeDbGraphReservedSchemaFor(this.storage).map((type) => ({
+      name: type.name,
+      type: type.type,
+      properties: Object.entries(type.properties).map(([name, type]) => ({ name, type })),
+      indexes: [{ properties: [...arcadeDbRequiredKeysFor(this.storage)[type.name]], unique: true }],
+    }));
+  }
+  readPointer(projectId) {
+    this.check();
+    this.readPointerCount += 1;
+    return this.pointers.get(projectId) ?? null;
+  }
+  readSnapshot(projectId, id) {
+    this.check();
+    this.readSnapshotCount += 1;
+    return this.snapshots.get(`${projectId}:${id}`) ?? null;
+  }
+  writePointer(projectId, pointerJson) {
+    this.check();
+    this.pointers.set(projectId, pointerJson);
+  }
   writePointerCompareAndSwap(projectId, expectedPointerJson, pointerJson) {
     this.check();
     const current = this.pointers.get(projectId) ?? null;
@@ -2334,7 +2837,10 @@ class MockArcadeDbTransport {
   }
   listSnapshotIds(projectId) {
     this.check();
-    return [...this.snapshots.keys()].filter((key) => key.startsWith(`${projectId}:`)).map((key) => key.slice(projectId.length + 1)).sort();
+    return [...this.snapshots.keys()]
+      .filter((key) => key.startsWith(`${projectId}:`))
+      .map((key) => key.slice(projectId.length + 1))
+      .sort();
   }
   readTopology(projectId, graphSnapshotId) {
     this.check();
@@ -2359,25 +2865,29 @@ class MockArcadeDbTransport {
     this.check();
     const key = `${projectId}:${syncId}`;
     const existing = this.syncManifests.get(key);
-    if (existing != null && existing !== syncJson) throw Object.assign(new Error("sync manifest conflict"), { code: "ARCADEDB_INCREMENTAL_SYNC_MANIFEST_CONFLICT" });
+    if (existing != null && existing !== syncJson)
+      throw Object.assign(new Error("sync manifest conflict"), { code: "ARCADEDB_INCREMENTAL_SYNC_MANIFEST_CONFLICT" });
     this.syncManifests.set(key, syncJson);
     return existing == null;
   }
   readSyncCheckpoints(projectId, syncId) {
     this.check();
     const prefix = `${projectId}:${syncId}:`;
-    return [...this.syncCheckpoints.entries()].filter(([key]) => key.startsWith(prefix)).map(([, value]) => value).sort();
+    return [...this.syncCheckpoints.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([, value]) => value)
+      .sort();
   }
   writeSyncCheckpoint(projectId, syncId, batchId, checkpointJson) {
     this.check();
-    if (!this.checkpointFailureUsed && this.failCheckpointAfter >= 0
-      && this.successfulCheckpointWrites >= this.failCheckpointAfter) {
+    if (!this.checkpointFailureUsed && this.failCheckpointAfter >= 0 && this.successfulCheckpointWrites >= this.failCheckpointAfter) {
       this.checkpointFailureUsed = true;
       throw Object.assign(new Error("mock checkpoint transport interruption"), { code: "ARCADEDB_TRANSPORT_UNAVAILABLE" });
     }
     const key = `${projectId}:${syncId}:${batchId}`;
     const existing = this.syncCheckpoints.get(key);
-    if (existing != null && existing !== checkpointJson) throw Object.assign(new Error("sync checkpoint conflict"), { code: "ARCADEDB_INCREMENTAL_SYNC_CHECKPOINT_CONFLICT" });
+    if (existing != null && existing !== checkpointJson)
+      throw Object.assign(new Error("sync checkpoint conflict"), { code: "ARCADEDB_INCREMENTAL_SYNC_CHECKPOINT_CONFLICT" });
     this.syncCheckpoints.set(key, checkpointJson);
     if (existing == null) this.successfulCheckpointWrites += 1;
     return existing == null;
@@ -2386,27 +2896,33 @@ class MockArcadeDbTransport {
     this.check();
     const targetKey = `${projectId}:${manifest.targetGraphSnapshotId}`;
     const target = this.topologies.get(targetKey) || { topologyJson: null, nodeJsons: [], edgeJsons: [] };
-    const base = manifest.baseGraphSnapshotId == null
-      ? { nodeJsons: [], edgeJsons: [] }
-      : this.topologies.get(`${projectId}:${manifest.baseGraphSnapshotId}`) || { nodeJsons: [], edgeJsons: [] };
+    const base =
+      manifest.baseGraphSnapshotId == null
+        ? { nodeJsons: [], edgeJsons: [] }
+        : this.topologies.get(`${projectId}:${manifest.baseGraphSnapshotId}`) || { nodeJsons: [], edgeJsons: [] };
     const field = batch.recordKind === "node" ? "nodeJsons" : "edgeJsons";
     const idField = batch.recordKind === "node" ? "nodeId" : "edgeId";
-    const baseById = new Map(base[field].map((value) => {
-      const record = JSON.parse(value);
-      return [record[idField], record];
-    }));
-    const targetById = new Map(target[field].map((value) => {
-      const record = JSON.parse(value);
-      return [record[idField], record];
-    }));
+    const baseById = new Map(
+      base[field].map((value) => {
+        const record = JSON.parse(value);
+        return [record[idField], record];
+      }),
+    );
+    const targetById = new Map(
+      target[field].map((value) => {
+        const record = JSON.parse(value);
+        return [record[idField], record];
+      }),
+    );
     for (const record of batch.records) {
       const sourceId = batch.recordKind === "node" ? record.sourceNodeId : record.sourceEdgeId;
       const source = baseById.get(sourceId || record[idField]);
-      const value = batch.operation === "carry-forward"
-        ? source
-        : batch.operation === "rebase"
-          ? { ...source, [idField]: record[idField], sourceSnapshotId: manifest.sourceSnapshotId }
-          : record;
+      const value =
+        batch.operation === "carry-forward"
+          ? source
+          : batch.operation === "rebase"
+            ? { ...source, [idField]: record[idField], sourceSnapshotId: manifest.sourceSnapshotId }
+            : record;
       if (!value) throw Object.assign(new Error("missing carry-forward source"), { code: "ARCADEDB_INCREMENTAL_SYNC_BASE_MISSING" });
       targetById.set(record[idField], JSON.parse(JSON.stringify(value)));
     }
@@ -2427,11 +2943,12 @@ class MockArcadeDbTransport {
     this.check();
     const key = `${projectId}:${graphSnapshotId}`;
     const existing = this.topologies.get(key);
-    if (!existing) this.topologies.set(key, {
-      topologyJson: JSON.stringify(topology),
-      nodeJsons: graph.nodes.map((node) => JSON.stringify(node)),
-      edgeJsons: graph.edges.map((edge) => JSON.stringify(edge)),
-    });
+    if (!existing)
+      this.topologies.set(key, {
+        topologyJson: JSON.stringify(topology),
+        nodeJsons: graph.nodes.map((node) => JSON.stringify(node)),
+        edgeJsons: graph.edges.map((edge) => JSON.stringify(edge)),
+      });
     else if (existing.topologyJson == null) existing.topologyJson = JSON.stringify(topology);
   }
   queryTopology(projectId, graphSnapshotId, { anchorIds, maxDepth, maxRecords }) {
@@ -2459,7 +2976,7 @@ class MockArcadeDbTransport {
           recordType: formatForVerifiedOwner(this.storage).kind("HeadAgentGraphEdge"),
           nodeJson: null,
           edgeJson: JSON.stringify(edge),
-          recordDepth: (level * 2) + 1,
+          recordDepth: level * 2 + 1,
         });
         for (const nodeId of [edge.from, edge.to]) if (!visitedNodes.has(nodeId)) next.add(nodeId);
       }
@@ -2515,9 +3032,18 @@ test("activates an ArcadeDB projection only after adapter-neutral conformance an
   assert.equal((await runCommand(["help"])).laneRecommendationRequired, false);
   assert.equal((await runCommand(["help-all"])).commands.includes("lode-agent world-graph-remote-activate <project>"), true);
   assert.equal((await runCommand(["help-all"])).surface, "ordinary-complete");
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_graphdb_projection_status"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_graphdb_database_initialize"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_graphdb_projection_activate"), true);
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_graphdb_projection_status"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_graphdb_database_initialize"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_graphdb_projection_activate"),
+    true,
+  );
   assert.equal(inspectArcadeDbGraphProjectionActivation({ projectRoot: root, storage }).status, "pending-activation");
 
   const transport = new MockArcadeDbTransport({ storage });
@@ -2527,53 +3053,70 @@ test("activates an ArcadeDB projection only after adapter-neutral conformance an
     nodeJsons: [JSON.stringify(preActivationGraph.nodes[0])],
     edgeJsons: [],
   });
-  const initializeWithoutConfirmation = await dispatchMcp({
-    jsonrpc: "2.0",
-    id: "graphdb-initialize-rejected",
-    method: "tools/call",
-    params: { name: "head_graphdb_database_initialize", arguments: { project_root: root } },
-  }, { graphDbTransport: transport });
+  const initializeWithoutConfirmation = await dispatchMcp(
+    {
+      jsonrpc: "2.0",
+      id: "graphdb-initialize-rejected",
+      method: "tools/call",
+      params: { name: "head_graphdb_database_initialize", arguments: { project_root: root } },
+    },
+    { graphDbTransport: transport },
+  );
   assert.match(initializeWithoutConfirmation.error.message, /explicit user confirmation/i);
 
-  const initializedResponse = await dispatchMcp({
-    jsonrpc: "2.0",
-    id: "graphdb-initialize",
-    method: "tools/call",
-    params: {
-      name: "head_graphdb_database_initialize",
-      arguments: { project_root: root, confirm_initialize: true },
+  const initializedResponse = await dispatchMcp(
+    {
+      jsonrpc: "2.0",
+      id: "graphdb-initialize",
+      method: "tools/call",
+      params: {
+        name: "head_graphdb_database_initialize",
+        arguments: { project_root: root, confirm_initialize: true },
+      },
     },
-  }, { graphDbTransport: transport });
+    { graphDbTransport: transport },
+  );
   assert.equal(initializedResponse.error, undefined);
   assert.equal(initializedResponse.result.structuredContent.status, "compatible-ready-for-activation");
   assert.equal(initializedResponse.result.structuredContent.action, "reused-compatible-database");
 
-  const activateWithoutConfirmation = await dispatchMcp({
-    jsonrpc: "2.0",
-    id: "graphdb-activate-rejected",
-    method: "tools/call",
-    params: { name: "head_graphdb_projection_activate", arguments: { project_root: root } },
-  }, { graphDbTransport: transport });
+  const activateWithoutConfirmation = await dispatchMcp(
+    {
+      jsonrpc: "2.0",
+      id: "graphdb-activate-rejected",
+      method: "tools/call",
+      params: { name: "head_graphdb_projection_activate", arguments: { project_root: root } },
+    },
+    { graphDbTransport: transport },
+  );
   assert.match(activateWithoutConfirmation.error.message, /explicit user confirmation/i);
 
   const partialBefore = JSON.stringify([...transport.topologies]);
-  const partialResponse = await dispatchMcp({
-    jsonrpc: "2.0", id: "graphdb-partial-unknown", method: "tools/call",
-    params: { name: "head_graphdb_projection_activate", arguments: { project_root: root, confirm_remote_write: true } },
-  }, { graphDbTransport: transport });
+  const partialResponse = await dispatchMcp(
+    {
+      jsonrpc: "2.0",
+      id: "graphdb-partial-unknown",
+      method: "tools/call",
+      params: { name: "head_graphdb_projection_activate", arguments: { project_root: root, confirm_remote_write: true } },
+    },
+    { graphDbTransport: transport },
+  );
   assert.match(partialResponse.error.message, /incremental-snapshot-sync/i);
   assert.equal(JSON.stringify([...transport.topologies]), partialBefore, "partial effects must not be replayed");
   // Separate clean fixture path; production must not silently clear remote data.
   transport.topologies.delete(`${onboarding.storageSelection.projectId}:${preActivationGraph.graphSnapshotId}`);
-  const activatedResponse = await dispatchMcp({
-    jsonrpc: "2.0",
-    id: "graphdb-activate",
-    method: "tools/call",
-    params: {
-      name: "head_graphdb_projection_activate",
-      arguments: { project_root: root, confirm_remote_write: true },
+  const activatedResponse = await dispatchMcp(
+    {
+      jsonrpc: "2.0",
+      id: "graphdb-activate",
+      method: "tools/call",
+      params: {
+        name: "head_graphdb_projection_activate",
+        arguments: { project_root: root, confirm_remote_write: true },
+      },
     },
-  }, { graphDbTransport: transport });
+    { graphDbTransport: transport },
+  );
   assert.equal(activatedResponse.error, undefined);
   const activated = activatedResponse.result.structuredContent;
   assert.equal(activated.status, "verified-active");
@@ -2592,43 +3135,42 @@ test("activates an ArcadeDB projection only after adapter-neutral conformance an
   assert.equal(JSON.stringify(activated).includes("HEAD_GRAPHDB_PASSWORD"), false);
 
   const interruptedTransport = new MockArcadeDbTransport({ storage, failCheckpointAfter: 1 });
-  const interruptedAdapter = new ArcadeDbGraphProjectionAdapter({ storage,
+  const interruptedAdapter = new ArcadeDbGraphProjectionAdapter({
+    storage,
     storageSelection: onboarding.storageSelection,
     transport: interruptedTransport,
     topologyRequired: true,
     incrementalSyncRequired: true,
   });
-  (await assert.rejects(
-    async () => (await interruptedAdapter.writeSnapshot(preActivationGraph.graphSnapshotId, preActivationGraph)),
-    { code: "ARCADEDB_WRITE_OUTCOME_UNKNOWN" },
-  ));
+  await assert.rejects(async () => await interruptedAdapter.writeSnapshot(preActivationGraph.graphSnapshotId, preActivationGraph), {
+    code: "ARCADEDB_WRITE_OUTCOME_UNKNOWN",
+  });
   assert.equal(interruptedTransport.readPointer(onboarding.storageSelection.projectId), null);
-  const resumedAdapter = new ArcadeDbGraphProjectionAdapter({ storage,
+  const resumedAdapter = new ArcadeDbGraphProjectionAdapter({
+    storage,
     storageSelection: onboarding.storageSelection,
     transport: interruptedTransport,
     topologyRequired: true,
     incrementalSyncRequired: true,
   });
-  (await resumedAdapter.writeSnapshot(preActivationGraph.graphSnapshotId, preActivationGraph));
+  await resumedAdapter.writeSnapshot(preActivationGraph.graphSnapshotId, preActivationGraph);
   await resumedAdapter.writePointer(buildGraphProjectionPointer(preActivationGraph, inspectProject(root).storage));
   const resumedSync = resumedAdapter.takeCompletedIncrementalSync();
   assert.equal(resumedSync.syncState.resumedBatchCount >= 1, true);
   assert.equal(resumedSync.syncState.appliedBatchCount + resumedSync.syncState.resumedBatchCount, resumedSync.manifest.batchCount);
 
   const conflictTransport = new MockArcadeDbTransport({ storage });
-  const conflictAdapter = new ArcadeDbGraphProjectionAdapter({ storage,
+  const conflictAdapter = new ArcadeDbGraphProjectionAdapter({
+    storage,
     storageSelection: onboarding.storageSelection,
     transport: conflictTransport,
     topologyRequired: true,
     incrementalSyncRequired: true,
   });
-  (await conflictAdapter.writeSnapshot(preActivationGraph.graphSnapshotId, preActivationGraph));
+  await conflictAdapter.writeSnapshot(preActivationGraph.graphSnapshotId, preActivationGraph);
   const externallyAdvancedPointer = buildGraphProjectionPointer(preActivationGraph, inspectProject(root).storage);
   conflictTransport.pointers.set(onboarding.storageSelection.projectId, JSON.stringify(externallyAdvancedPointer));
-  await assert.rejects(
-    () => conflictAdapter.writePointer(externallyAdvancedPointer),
-    { code: "ARCADEDB_INCREMENTAL_SYNC_POINTER_CONFLICT" },
-  );
+  await assert.rejects(() => conflictAdapter.writePointer(externallyAdvancedPointer), { code: "ARCADEDB_INCREMENTAL_SYNC_POINTER_CONFLICT" });
   assert.equal(conflictTransport.readPointer(onboarding.storageSelection.projectId), JSON.stringify(externallyAdvancedPointer));
 
   const conflictingPartialTransport = new MockArcadeDbTransport({ storage });
@@ -2639,7 +3181,8 @@ test("activates an ArcadeDB projection only after adapter-neutral conformance an
     nodeJsons: [JSON.stringify(conflictingNode)],
     edgeJsons: [],
   });
-  const conflictingPartialAdapter = new ArcadeDbGraphProjectionAdapter({ storage,
+  const conflictingPartialAdapter = new ArcadeDbGraphProjectionAdapter({
+    storage,
     storageSelection: onboarding.storageSelection,
     transport: conflictingPartialTransport,
   });
@@ -2647,7 +3190,7 @@ test("activates an ArcadeDB projection only after adapter-neutral conformance an
 
   const configured = createActivatedArcadeDbGraphProjectionAdapter({ projectRoot: root, storage, transport });
   assert.ok(configured instanceof ActivatedArcadeDbGraphProjectionAdapter);
-  const remoteStatus = (await inspectArcadeDbGraphProjectionStatus({ root, transport }));
+  const remoteStatus = await inspectArcadeDbGraphProjectionStatus({ root, transport });
   assert.equal(remoteStatus.status, "verified-active-current");
   assert.equal(remoteStatus.projection.adapter.adapterKind, "activated-arcadedb-with-local-mirror");
   assert.equal(remoteStatus.projection.adapter.fallbackUsed, false);
@@ -2661,7 +3204,7 @@ test("activates an ArcadeDB projection only after adapter-neutral conformance an
   const query = { query: graph.nodes[0].nodeId, depth: 1, maxNodes: 50, maxEdges: 100 };
   const expected = queryTemporalProvenanceGraph(graph, query);
   transport.resetCounters();
-  const remote = (await queryWorldTemporalGraph({ root, graphProjectionAdapter: configured, ...query }));
+  const remote = await queryWorldTemporalGraph({ root, graphProjectionAdapter: configured, ...query });
   assert.equal(remote.resultId, expected.resultId);
   assert.equal(remote.resultHash, expected.resultHash);
   assert.equal(remote.graphProjection.executionMode, "prepared-graph-projection-adapter");
@@ -2681,7 +3224,7 @@ test("activates an ArcadeDB projection only after adapter-neutral conformance an
     };
   };
   transport.resetCounters();
-  const batchedRemote = (await queryWorldTemporalGraph({ root, graphProjectionAdapter: configured, ...query }));
+  const batchedRemote = await queryWorldTemporalGraph({ root, graphProjectionAdapter: configured, ...query });
   assert.equal(batchedRemote.resultId, expected.resultId);
   assert.equal(batchedRemote.resultHash, expected.resultHash);
   assert.equal(transport.readPreparedTraversalBatchCount, 1);
@@ -2698,18 +3241,14 @@ test("activates an ArcadeDB projection only after adapter-neutral conformance an
     faultyTransport.pointers = new Map(transport.pointers);
     faultyTransport.topologies = new Map(transport.topologies);
     const faulty = createActivatedArcadeDbGraphProjectionAdapter({ projectRoot: root, storage, transport: faultyTransport });
-    (await assert.rejects(async () => (await queryWorldTemporalGraph({ root, graphProjectionAdapter: faulty, ...query })), { code }));
+    await assert.rejects(async () => await queryWorldTemporalGraph({ root, graphProjectionAdapter: faulty, ...query }), { code });
   }
 
-  const legacyClientMode = new ArcadeDbGraphProjectionAdapter({ storage,
-    storageSelection: onboarding.storageSelection,
-    transport,
-    topologyRequired: true,
-  });
+  const legacyClientMode = new ArcadeDbGraphProjectionAdapter({ storage, storageSelection: onboarding.storageSelection, transport, topologyRequired: true });
   assert.equal(legacyClientMode.describe().traversalMode, "verified-topology-client-reference");
   assert.equal((await legacyClientMode.query(graph.graphSnapshotId, query)).resultId, expected.resultId);
 
-  const repeated = (await activateArcadeDbGraphProjection({ root, transport }));
+  const repeated = await activateArcadeDbGraphProjection({ root, transport });
   assert.equal(repeated.topology.activationId, activated.topology.activationId);
   assert.equal(repeated.incrementalSync.batchCount, 0);
   assert.equal(repeated.incrementalSync.pointerAdvanced, false);
@@ -2717,7 +3256,7 @@ test("activates an ArcadeDB projection only after adapter-neutral conformance an
   const topologyKey = `${activated.projectId}:${graph.graphSnapshotId}`;
   const exactTopology = transport.topologies.get(topologyKey);
   transport.topologies.set(topologyKey, { ...exactTopology, nodeJsons: exactTopology.nodeJsons.slice(1) });
-  (await assert.rejects(async () => (await inspectArcadeDbGraphProjectionStatus({ root, transport })), { code: "ARCADEDB_GRAPH_TOPOLOGY_CONTENT_MISMATCH" }));
+  await assert.rejects(async () => await inspectArcadeDbGraphProjectionStatus({ root, transport }), { code: "ARCADEDB_GRAPH_TOPOLOGY_CONTENT_MISMATCH" });
   transport.topologies.set(topologyKey, exactTopology);
 
   const topologyReceipt = inspectArcadeDbGraphTopologyActivation({ projectRoot: root, storage, graph });
@@ -2727,27 +3266,31 @@ test("activates an ArcadeDB projection only after adapter-neutral conformance an
   fs.writeFileSync(topologyReceipt.activationFile, JSON.stringify(exactTopologyActivation));
 
   const unavailable = new ActivatedArcadeDbGraphProjectionAdapter({
-    projectRoot: root, storage,
+    projectRoot: root,
+    storage,
     storageSelection: onboarding.storageSelection,
-    remoteAdapter: new ArcadeDbGraphProjectionAdapter({ storage,
+    remoteAdapter: new ArcadeDbGraphProjectionAdapter({
+      storage,
       storageSelection: onboarding.storageSelection,
       transport: new MockArcadeDbTransport({ storage, failureCode: "ARCADEDB_TRANSPORT_UNAVAILABLE" }),
     }),
   });
-  const fallback = (await queryWorldTemporalGraph({ root, graphProjectionAdapter: unavailable, ...query }));
+  const fallback = await queryWorldTemporalGraph({ root, graphProjectionAdapter: unavailable, ...query });
   assert.equal(fallback.resultId, expected.resultId);
   assert.equal(fallback.graphProjection.adapter.fallbackUsed, true);
   assert.equal(fallback.graphProjection.adapter.fallbackReasonCode, "ARCADEDB_TRANSPORT_UNAVAILABLE");
 
   const rejected = new ActivatedArcadeDbGraphProjectionAdapter({
-    projectRoot: root, storage,
+    projectRoot: root,
+    storage,
     storageSelection: onboarding.storageSelection,
-    remoteAdapter: new ArcadeDbGraphProjectionAdapter({ storage,
+    remoteAdapter: new ArcadeDbGraphProjectionAdapter({
+      storage,
       storageSelection: onboarding.storageSelection,
       transport: new MockArcadeDbTransport({ storage, failureCode: "ARCADEDB_AUTHENTICATION_FAILED" }),
     }),
   });
-  (await assert.rejects(async () => (await inspectWorldGraphProjection({ root, graphProjectionAdapter: rejected })), { code: "ARCADEDB_AUTHENTICATION_FAILED" }));
+  await assert.rejects(async () => await inspectWorldGraphProjection({ root, graphProjectionAdapter: rejected }), { code: "ARCADEDB_AUTHENTICATION_FAILED" });
 
   fs.writeFileSync(path.join(root, "src", "topology-refresh.mjs"), "export const topologyRefresh = true;\n");
   const advancingAdapter = createActivatedArcadeDbGraphProjectionAdapter({ projectRoot: root, storage, transport });
@@ -2793,11 +3336,17 @@ test("renders deterministic Markdown projections and captures edits as non-autho
   assert.equal(rendered.authority, "derived-human-view-only");
   assert.equal(rendered.instructionAuthority, false);
   assert.equal(rendered.promotionAuthority, false);
-  assert.equal(rendered.documents.some((item) => item.relativePath === "index.md"), true);
-  assert.equal(rendered.documents.some((item) => item.content.includes("not project canon")), true);
+  assert.equal(
+    rendered.documents.some((item) => item.relativePath === "index.md"),
+    true,
+  );
+  assert.equal(
+    rendered.documents.some((item) => item.content.includes("not project canon")),
+    true,
+  );
 
   const memory = new InMemoryMarkdownProjectionAdapter({ adapterKind: "conformance-memory-markdown" });
-  const throughMemory = (await materializeWorldMarkdownProjection({ root, documentProjectionAdapter: memory }));
+  const throughMemory = await materializeWorldMarkdownProjection({ root, documentProjectionAdapter: memory });
   assert.equal(throughMemory.projection.adapter.adapterVersion, DOCUMENT_PROJECTION_ADAPTER_VERSION);
   assert.equal(throughMemory.documentProjectionId, rendered.documentProjectionId);
   assert.equal((await inspectWorldMarkdownProjection({ root, documentProjectionAdapter: memory })).status, "current");
@@ -2851,12 +3400,16 @@ test("renders deterministic Markdown projections and captures edits as non-autho
     remote: false,
     durable: false,
   });
-  assert.throws(() => materializeMarkdownProjection({ projectRoot: root, storage: layout, graph, adapter: authorityViolating }), { code: "INVALID_DOCUMENT_PROJECTION_AUTHORITY" });
+  assert.throws(() => materializeMarkdownProjection({ projectRoot: root, storage: layout, graph, adapter: authorityViolating }), {
+    code: "INVALID_DOCUMENT_PROJECTION_AUTHORITY",
+  });
 
   const tampered = new InMemoryMarkdownProjectionAdapter({ adapterKind: "tampered-document-projection" });
   const tamperedResult = materializeMarkdownProjection({ projectRoot: root, storage: layout, graph, adapter: tampered });
   tampered.projections.get(tamperedResult.projection.documentProjectionId).summary.documentCount += 1;
-  assert.throws(() => inspectMarkdownProjection({ projectRoot: root, storage: layout, graph, adapter: tampered }), { code: "DOCUMENT_PROJECTION_DIGEST_MISMATCH" });
+  assert.throws(() => inspectMarkdownProjection({ projectRoot: root, storage: layout, graph, adapter: tampered }), {
+    code: "DOCUMENT_PROJECTION_DIGEST_MISMATCH",
+  });
 
   const mutating = new InMemoryMarkdownProjectionAdapter({ adapterKind: "mutating-publisher" });
   const originalPublish = mutating.publishDocuments.bind(mutating);
@@ -2864,7 +3417,9 @@ test("renders deterministic Markdown projections and captures edits as non-autho
     documents[0].content += "mutated\n";
     return originalPublish(documents, options);
   };
-  assert.throws(() => materializeMarkdownProjection({ projectRoot: root, storage: layout, graph, adapter: mutating }), { code: "DOCUMENT_PROJECTION_PUBLISH_MISMATCH" });
+  assert.throws(() => materializeMarkdownProjection({ projectRoot: root, storage: layout, graph, adapter: mutating }), {
+    code: "DOCUMENT_PROJECTION_PUBLISH_MISMATCH",
+  });
   assert.equal(buildMarkdownDocumentProjection(graph, layout).documentProjectionId, rendered.documentProjectionId);
 
   const indexFile = path.join(root, layout.directory, "generated", "knowledge", "index.md");
@@ -2873,13 +3428,13 @@ test("renders deterministic Markdown projections and captures edits as non-autho
   fs.unlinkSync(path.join(root, layout.directory, "generated", "knowledge", ...removedDocument.relativePath.split("/")));
   fs.mkdirSync(path.join(root, layout.directory, "generated", "knowledge", "notes"), { recursive: true });
   fs.writeFileSync(path.join(root, layout.directory, "generated", "knowledge", "notes", "proposal.md"), "# Proposed note\n");
-  const modified = (await inspectWorldMarkdownProjection({ root }));
+  const modified = await inspectWorldMarkdownProjection({ root });
   assert.equal(modified.status, "modified");
   assert.equal(modified.projection.candidateRequired, true);
   assert.deepEqual([...new Set(modified.projection.drift.map((item) => item.changeType))].sort(), ["added", "modified", "removed"]);
-  (await assert.rejects(async () => (await materializeWorldMarkdownProjection({ root })), { code: "DOCUMENT_PROJECTION_UNREVIEWED_DRIFT" }));
+  await assert.rejects(async () => await materializeWorldMarkdownProjection({ root }), { code: "DOCUMENT_PROJECTION_UNREVIEWED_DRIFT" });
 
-  const captured = (await captureWorldMarkdownChanges({ root, persist: true }));
+  const captured = await captureWorldMarkdownChanges({ root, persist: true });
   assert.equal(captured.status, "captured");
   assert.match(captured.candidateSet.candidateSetId, /^document-change-candidate-set-[a-f0-9]{24}$/);
   assert.deepEqual([...new Set(captured.candidateSet.candidates.map((item) => item.changeType))].sort(), ["added", "modified", "removed"]);
@@ -2887,8 +3442,14 @@ test("renders deterministic Markdown projections and captures edits as non-autho
   assert.equal(captured.candidateSet.instructionAuthority, false);
   assert.equal(captured.candidateSet.promotionAuthority, false);
   assert.equal((await captureWorldMarkdownChanges({ root, persist: true })).candidateSet.candidateSetId, captured.candidateSet.candidateSetId);
-  assert.equal(readWorldDocumentChangeCandidateSet({ root, candidateSetId: captured.candidateSet.candidateSetId }).candidateSet.candidateSetId, captured.candidateSet.candidateSetId);
-  assert.equal((await runCommand(["world-docs-candidates", root, "--candidate-set", captured.candidateSet.candidateSetId])).candidateSet.candidateSetId, captured.candidateSet.candidateSetId);
+  assert.equal(
+    readWorldDocumentChangeCandidateSet({ root, candidateSetId: captured.candidateSet.candidateSetId }).candidateSet.candidateSetId,
+    captured.candidateSet.candidateSetId,
+  );
+  assert.equal(
+    (await runCommand(["world-docs-candidates", root, "--candidate-set", captured.candidateSet.candidateSetId])).candidateSet.candidateSetId,
+    captured.candidateSet.candidateSetId,
+  );
 
   const mcpCandidate = await dispatchMcp({
     jsonrpc: "2.0",
@@ -2901,7 +3462,9 @@ test("renders deterministic Markdown projections and captures edits as non-autho
   const tamperedCandidateSet = clone(captured.candidateSet);
   tamperedCandidateSet.candidates[0].proposedContentHash = "f".repeat(64);
   fs.writeFileSync(captured.file, `${JSON.stringify(tamperedCandidateSet, null, 2)}\n`);
-  assert.throws(() => readWorldDocumentChangeCandidateSet({ root, candidateSetId: captured.candidateSet.candidateSetId }), { code: "DOCUMENT_CHANGE_CANDIDATE_DIGEST_MISMATCH" });
+  assert.throws(() => readWorldDocumentChangeCandidateSet({ root, candidateSetId: captured.candidateSet.candidateSetId }), {
+    code: "DOCUMENT_CHANGE_CANDIDATE_DIGEST_MISMATCH",
+  });
   fs.writeFileSync(captured.file, `${JSON.stringify(captured.candidateSet, null, 2)}\n`);
 
   fs.writeFileSync(indexFile, rendered.documents.find((item) => item.relativePath === "index.md").content);
@@ -2923,22 +3486,24 @@ test("promotes document edits only through explicit structured Product Canon rev
   const indexed = await buildWorldModel({ root });
   assert.equal(indexed.snapshot.git.status, "not-a-git-repository");
   const initialCanon = fs.readFileSync(path.join(root, layout.directory, "context", "product-model.json"), "utf8");
-  const rendered = (await materializeWorldMarkdownProjection({ root }));
+  const rendered = await materializeWorldMarkdownProjection({ root });
   const indexFile = path.join(root, layout.directory, "generated", "knowledge", "index.md");
   fs.appendFileSync(indexFile, "\nProposal: add an auditable document review feature.\n");
-  const captured = (await captureWorldMarkdownChanges({ root, persist: true }));
+  const captured = await captureWorldMarkdownChanges({ root, persist: true });
   const resultingProductModel = {
     schemaVersion: 1,
     featureGroups: [{ key: "knowledge", name: "Knowledge projections", description: "Human-facing graph projections.", parentFeatureGroupKeys: [] }],
     capabilities: [{ key: "review-docs", name: "Review document changes", description: "Review document edits before Canon mutation." }],
-    features: [{
-      key: "document-change-review",
-      name: "Document change review",
-      description: "Turns explicitly reviewed document proposals into structured Product Canon.",
-      featureGroupKeys: ["knowledge"],
-      capabilityKeys: ["review-docs"],
-      governedBy: [],
-    }],
+    features: [
+      {
+        key: "document-change-review",
+        name: "Document change review",
+        description: "Turns explicitly reviewed document proposals into structured Product Canon.",
+        featureGroupKeys: ["knowledge"],
+        capabilityKeys: ["review-docs"],
+        governedBy: [],
+      },
+    ],
     requirements: [],
     constraints: [],
     decisions: [],
@@ -2956,10 +3521,22 @@ test("promotes document edits only through explicit structured Product Canon rev
   assert.equal(reviewed.reviewDecision.instructionAuthority, true);
   assert.equal(reviewed.reviewDecision.promotionAuthority, true);
   assert.equal(fs.readFileSync(path.join(root, layout.directory, "context", "product-model.json"), "utf8"), initialCanon);
-  assert.equal((await inspectDocumentChangeReviewStatus({ root, candidateSetId: captured.candidateSet.candidateSetId })).status, "reviewed-awaiting-application");
-  assert.equal(readDocumentChangeReviewDecision({ root, reviewDecisionId: reviewed.reviewDecision.reviewDecisionId }).resultingProductModelRevision.productModelId, reviewed.reviewDecision.resultingProductModelId);
-  assert.equal((await runCommand(["world-docs-review-status", root, "--candidate-set", captured.candidateSet.candidateSetId])).status, "reviewed-awaiting-application");
-  assert.equal((await runCommand(["world-docs-review-read", root, "--review", reviewed.reviewDecision.reviewDecisionId])).reviewDecision.reviewDecisionId, reviewed.reviewDecision.reviewDecisionId);
+  assert.equal(
+    (await inspectDocumentChangeReviewStatus({ root, candidateSetId: captured.candidateSet.candidateSetId })).status,
+    "reviewed-awaiting-application",
+  );
+  assert.equal(
+    readDocumentChangeReviewDecision({ root, reviewDecisionId: reviewed.reviewDecision.reviewDecisionId }).resultingProductModelRevision.productModelId,
+    reviewed.reviewDecision.resultingProductModelId,
+  );
+  assert.equal(
+    (await runCommand(["world-docs-review-status", root, "--candidate-set", captured.candidateSet.candidateSetId])).status,
+    "reviewed-awaiting-application",
+  );
+  assert.equal(
+    (await runCommand(["world-docs-review-read", root, "--review", reviewed.reviewDecision.reviewDecisionId])).reviewDecision.reviewDecisionId,
+    reviewed.reviewDecision.reviewDecisionId,
+  );
   const mcpReviewStatus = await dispatchMcp({
     jsonrpc: "2.0",
     id: 63,
@@ -2993,8 +3570,11 @@ test("promotes document edits only through explicit structured Product Canon rev
   try {
     fs.openSync = function (file, flags) {
       const descriptor = realOpen.apply(this, arguments);
-      if (path.dirname(path.resolve(String(file))) === path.dirname(canonFile)
-        && path.basename(String(file)).startsWith(".product-model.json.") && flags === "wx") {
+      if (
+        path.dirname(path.resolve(String(file))) === path.dirname(canonFile) &&
+        path.basename(String(file)).startsWith(".product-model.json.") &&
+        flags === "wx"
+      ) {
         ownedDescriptor = descriptor;
         ownedTemporary = String(file);
       }
@@ -3020,7 +3600,10 @@ test("promotes document edits only through explicit structured Product Canon rev
   assert.equal(fs.existsSync(ownedTemporary), false);
   assert.equal(fs.readFileSync(canonTemporary, "utf8"), preexistingTemporary);
   assert.equal(fs.readFileSync(canonFile, "utf8"), canonBeforeFaults);
-  assert.equal((await inspectDocumentChangeReviewStatus({ root, candidateSetId: captured.candidateSet.candidateSetId })).status, "reviewed-awaiting-application");
+  assert.equal(
+    (await inspectDocumentChangeReviewStatus({ root, candidateSetId: captured.candidateSet.candidateSetId })).status,
+    "reviewed-awaiting-application",
+  );
 
   const applied = await applyDocumentChangeReview({ root, reviewDecisionId: reviewed.reviewDecision.reviewDecisionId });
   assert.equal(applied.status, "applied");
@@ -3033,47 +3616,83 @@ test("promotes document edits only through explicit structured Product Canon rev
   assert.equal(applied.worldModel.temporalProvenanceGraph.parentSourceSnapshotIds.includes(indexed.snapshot.temporalProvenanceGraph.sourceSnapshotId), true);
   assert.equal((await inspectWorldModel({ root })).status, "current");
   assert.equal((await inspectWorldMarkdownProjection({ root })).status, "current");
-  assert.equal(applied.auditWorldModel.temporalProvenanceGraph.documentChangeProjection.applicationReceiptIds.includes(applied.applicationReceipt.applicationReceiptId), true);
-  assert.equal(applied.auditWorldModel.temporalProvenanceGraph.nodes.some((node) => node.kind === "DocumentChangeReviewDecision" && node.nodeId === reviewed.reviewDecision.reviewDecisionId), true);
-  assert.equal(applied.auditWorldModel.temporalProvenanceGraph.nodes.some((node) => node.kind === "DocumentChangeApplication" && node.nodeId === applied.applicationReceipt.applicationReceiptId), true);
-  const hiddenDocumentCandidate = (await queryWorldTemporalGraph({
+  assert.equal(
+    applied.auditWorldModel.temporalProvenanceGraph.documentChangeProjection.applicationReceiptIds.includes(applied.applicationReceipt.applicationReceiptId),
+    true,
+  );
+  assert.equal(
+    applied.auditWorldModel.temporalProvenanceGraph.nodes.some(
+      (node) => node.kind === "DocumentChangeReviewDecision" && node.nodeId === reviewed.reviewDecision.reviewDecisionId,
+    ),
+    true,
+  );
+  assert.equal(
+    applied.auditWorldModel.temporalProvenanceGraph.nodes.some(
+      (node) => node.kind === "DocumentChangeApplication" && node.nodeId === applied.applicationReceipt.applicationReceiptId,
+    ),
+    true,
+  );
+  const hiddenDocumentCandidate = await queryWorldTemporalGraph({
     root,
     query: captured.candidateSet.candidates[0].candidateId,
     freshness: ["historical"],
-  }));
-  assert.equal(hiddenDocumentCandidate.nodes.some((node) => node.kind === "DocumentChangeCandidate"), false);
-  const visibleDocumentCandidate = (await queryWorldTemporalGraph({
+  });
+  assert.equal(
+    hiddenDocumentCandidate.nodes.some((node) => node.kind === "DocumentChangeCandidate"),
+    false,
+  );
+  const visibleDocumentCandidate = await queryWorldTemporalGraph({
     root,
     query: captured.candidateSet.candidates[0].candidateId,
     freshness: ["historical"],
     includeUnreviewedCandidates: true,
-  }));
-  assert.equal(visibleDocumentCandidate.nodes.some((node) => node.kind === "DocumentChangeCandidate"), true);
+  });
+  assert.equal(
+    visibleDocumentCandidate.nodes.some((node) => node.kind === "DocumentChangeCandidate"),
+    true,
+  );
   const currentDocumentGraph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
-  (await assert.rejects(async () => (await queryWorldTemporalGraph({
-    root,
-    anchorIds: [captured.candidateSet.candidates[0].candidateId],
-    expectedGraphSnapshotId: currentDocumentGraph.graphSnapshotId,
-    freshness: ["historical"],
-    depth: 0,
-  })), { code: "TEMPORAL_EXACT_ANCHOR_INELIGIBLE" }));
-  const exactVisibleDocumentCandidate = (await queryWorldTemporalGraph({
+  await assert.rejects(
+    async () =>
+      await queryWorldTemporalGraph({
+        root,
+        anchorIds: [captured.candidateSet.candidates[0].candidateId],
+        expectedGraphSnapshotId: currentDocumentGraph.graphSnapshotId,
+        freshness: ["historical"],
+        depth: 0,
+      }),
+    { code: "TEMPORAL_EXACT_ANCHOR_INELIGIBLE" },
+  );
+  const exactVisibleDocumentCandidate = await queryWorldTemporalGraph({
     root,
     anchorIds: [captured.candidateSet.candidates[0].candidateId],
     expectedGraphSnapshotId: currentDocumentGraph.graphSnapshotId,
     freshness: ["historical"],
     includeUnreviewedCandidates: true,
     depth: 0,
-  }));
-  assert.equal(exactVisibleDocumentCandidate.nodes.some((node) => node.kind === "DocumentChangeCandidate"), true);
+  });
+  assert.equal(
+    exactVisibleDocumentCandidate.nodes.some((node) => node.kind === "DocumentChangeCandidate"),
+    true,
+  );
   assert.equal((await inspectDocumentChangeReviewStatus({ root, candidateSetId: captured.candidateSet.candidateSetId })).status, "applied");
-  assert.equal(readDocumentChangeApplicationReceipt({ root, applicationReceiptId: applied.applicationReceipt.applicationReceiptId }).applicationReceipt.reviewDecisionId, reviewed.reviewDecision.reviewDecisionId);
-  assert.equal((await runCommand(["world-docs-application-read", root, "--application", applied.applicationReceipt.applicationReceiptId])).applicationReceipt.applicationReceiptId, applied.applicationReceipt.applicationReceiptId);
+  assert.equal(
+    readDocumentChangeApplicationReceipt({ root, applicationReceiptId: applied.applicationReceipt.applicationReceiptId }).applicationReceipt.reviewDecisionId,
+    reviewed.reviewDecision.reviewDecisionId,
+  );
+  assert.equal(
+    (await runCommand(["world-docs-application-read", root, "--application", applied.applicationReceipt.applicationReceiptId])).applicationReceipt
+      .applicationReceiptId,
+    applied.applicationReceipt.applicationReceiptId,
+  );
   const mcpApplication = await dispatchMcp({
     jsonrpc: "2.0",
     id: 65,
     method: "tools/call",
-    params: { name: "head_document_change_application", arguments: { project_root: root, application_receipt_id: applied.applicationReceipt.applicationReceiptId } },
+    params: {
+      name: "head_document_change_application",
+      arguments: { project_root: root, application_receipt_id: applied.applicationReceipt.applicationReceiptId },
+    },
   });
   assert.equal(mcpApplication.result.structuredContent.applicationReceipt.applicationReceiptId, applied.applicationReceipt.applicationReceiptId);
   assert.equal((await applyDocumentChangeReview({ root, reviewDecisionId: reviewed.reviewDecision.reviewDecisionId })).status, "already-applied");
@@ -3082,11 +3701,18 @@ test("promotes document edits only through explicit structured Product Canon rev
   fs.appendFileSync(indexFile, "\nProposal that the user rejects.\n");
   const rejectedCandidateSet = (await captureWorldMarkdownChanges({ root, persist: true })).candidateSet;
   const rejectionInput = path.join(root, layout.directory, "document-change-rejection-input.json");
-  fs.writeFileSync(rejectionInput, `${JSON.stringify({
-    candidateSetId: rejectedCandidateSet.candidateSetId,
-    disposition: "reject",
-    rationale: "The edit does not describe an intended Product Canon change.",
-  }, null, 2)}\n`);
+  fs.writeFileSync(
+    rejectionInput,
+    `${JSON.stringify(
+      {
+        candidateSetId: rejectedCandidateSet.candidateSetId,
+        disposition: "reject",
+        rationale: "The edit does not describe an intended Product Canon change.",
+      },
+      null,
+      2,
+    )}\n`,
+  );
   const rejected = await runCommand(["world-docs-review", root, "--input", rejectionInput]);
   assert.equal(rejected.status, "rejected-and-reconciled");
   assert.equal(rejected.reviewDecision.promotionAuthority, false);
@@ -3099,19 +3725,25 @@ test("promotes document edits only through explicit structured Product Canon rev
   fs.appendFileSync(indexFile, "\nA later proposal.\n");
   const staleCandidateSet = (await captureWorldMarkdownChanges({ root, persist: true })).candidateSet;
   fs.appendFileSync(indexFile, "\nChanged after capture.\n");
-  await assert.rejects(() => reviewDocumentChanges({
-    root,
-    candidateSetId: staleCandidateSet.candidateSetId,
-    disposition: "reject",
-    rationale: "This must fail because the published proposal changed after capture.",
-  }), { code: "DOCUMENT_CHANGE_CANDIDATE_PUBLISHED_DRIFT" });
+  await assert.rejects(
+    () =>
+      reviewDocumentChanges({
+        root,
+        candidateSetId: staleCandidateSet.candidateSetId,
+        disposition: "reject",
+        rationale: "This must fail because the published proposal changed after capture.",
+      }),
+    { code: "DOCUMENT_CHANGE_CANDIDATE_PUBLISHED_DRIFT" },
+  );
 
   const reviewFile = path.join(root, layout.directory, "document-changes", "review-decisions", `${reviewed.reviewDecision.reviewDecisionId}.json`);
   const reviewDocument = JSON.parse(fs.readFileSync(reviewFile, "utf8"));
   const tamperedReview = clone(reviewDocument);
   tamperedReview.rationale = "tampered";
   fs.writeFileSync(reviewFile, `${JSON.stringify(tamperedReview, null, 2)}\n`);
-  assert.throws(() => readDocumentChangeReviewDecision({ root, reviewDecisionId: reviewed.reviewDecision.reviewDecisionId }), { code: "DOCUMENT_CHANGE_REVIEW_DIGEST_MISMATCH" });
+  assert.throws(() => readDocumentChangeReviewDecision({ root, reviewDecisionId: reviewed.reviewDecision.reviewDecisionId }), {
+    code: "DOCUMENT_CHANGE_REVIEW_DIGEST_MISMATCH",
+  });
   fs.writeFileSync(reviewFile, `${JSON.stringify(reviewDocument, null, 2)}\n`);
 
   const applicationFile = path.join(root, layout.directory, "document-changes", "applications", `${applied.applicationReceipt.applicationReceiptId}.json`);
@@ -3119,7 +3751,9 @@ test("promotes document edits only through explicit structured Product Canon rev
   const tamperedApplication = clone(applicationDocument);
   tamperedApplication.applicationReceiptHash = "f".repeat(64);
   fs.writeFileSync(applicationFile, `${JSON.stringify(tamperedApplication, null, 2)}\n`);
-  assert.throws(() => readDocumentChangeApplicationReceipt({ root, applicationReceiptId: applied.applicationReceipt.applicationReceiptId }), { code: "DOCUMENT_CHANGE_APPLICATION_DIGEST_MISMATCH" });
+  assert.throws(() => readDocumentChangeApplicationReceipt({ root, applicationReceiptId: applied.applicationReceipt.applicationReceiptId }), {
+    code: "DOCUMENT_CHANGE_APPLICATION_DIGEST_MISMATCH",
+  });
   fs.writeFileSync(applicationFile, `${JSON.stringify(applicationDocument, null, 2)}\n`);
 });
 
@@ -3143,7 +3777,7 @@ test("applies explicit post-refresh Markdown policy without overwriting edited p
 
   const policyInput = path.join(root, layout.directory, "automatic-markdown-policy.json");
   fs.writeFileSync(policyInput, `${JSON.stringify({ mode: "automatic" }, null, 2)}\n`);
-  const configured = (await runCommand(["world-docs-policy-set", root, "--input", policyInput]));
+  const configured = await runCommand(["world-docs-policy-set", root, "--input", policyInput]);
   assert.equal(configured.policy.mode, "automatic");
   assert.equal(configured.policy.selection, "explicit-user-selection");
   assert.equal((await runCommand(["world-docs-policy-status", root])).policy.policyId, configured.policy.policyId);
@@ -3156,14 +3790,18 @@ test("applies explicit post-refresh Markdown policy without overwriting edited p
   assert.equal(projected.postRefreshProjection.receipt.canonMutation, "none");
   assert.equal(projected.postRefreshProjection.receipt.activeRunMutation, "none");
   assert.equal((await inspectWorldMarkdownProjection({ root })).status, "current");
-  const projectedRead = (await readPostRefreshProjectionReceipt({
+  const projectedRead = await readPostRefreshProjectionReceipt({
     root,
     postRefreshProjectionReceiptId: projected.postRefreshProjection.receipt.postRefreshProjectionReceiptId,
-  }));
+  });
   assert.equal(projectedRead.refresh.receipt.refreshReceiptId, projected.receipt.refreshReceiptId);
   assert.equal(projectedRead.projection.graphSnapshotId, projected.receipt.next.graphSnapshotId);
   assert.equal((await runCommand(["world-docs-refresh-status", root])).status, "projected");
-  assert.equal((await runCommand(["world-docs-refresh-read", root, "--receipt", projected.postRefreshProjection.receipt.postRefreshProjectionReceiptId])).receipt.postRefreshProjectionReceiptId, projected.postRefreshProjection.receipt.postRefreshProjectionReceiptId);
+  assert.equal(
+    (await runCommand(["world-docs-refresh-read", root, "--receipt", projected.postRefreshProjection.receipt.postRefreshProjectionReceiptId])).receipt
+      .postRefreshProjectionReceiptId,
+    projected.postRefreshProjection.receipt.postRefreshProjectionReceiptId,
+  );
 
   const mcpStatus = await dispatchMcp({
     jsonrpc: "2.0",
@@ -3197,10 +3835,10 @@ test("applies explicit post-refresh Markdown policy without overwriting edited p
   assert.equal(blocked.postRefreshProjection.receipt.outcome.candidateSetId !== null, true);
   assert.equal(fs.readFileSync(indexFile, "utf8"), editedIndex);
   assert.equal((await inspectWorldMarkdownProjection({ root })).status, "modified");
-  const blockedRead = (await readPostRefreshProjectionReceipt({
+  const blockedRead = await readPostRefreshProjectionReceipt({
     root,
     postRefreshProjectionReceiptId: blocked.postRefreshProjection.receipt.postRefreshProjectionReceiptId,
-  }));
+  });
   assert.equal(blockedRead.candidateSet.requiresReviewDecision, true);
   assert.equal(blockedRead.candidateSet.instructionAuthority, false);
   assert.equal(blockedRead.candidateSet.promotionAuthority, false);
@@ -3220,7 +3858,7 @@ test("applies explicit post-refresh Markdown policy without overwriting edited p
     events: [{ kind: "project-signal", operation: "build", path: null, evidenceId: "ci-post-refresh-projection-0001" }],
   });
   assert.equal(triggered.delivery.projectionDisposition.documents.status, "projected");
-  const triggeredRead = (await readRefreshTriggerDelivery({ root, triggerDeliveryId: triggered.delivery.triggerDeliveryId }));
+  const triggeredRead = await readRefreshTriggerDelivery({ root, triggerDeliveryId: triggered.delivery.triggerDeliveryId });
   assert.equal(triggeredRead.postRefreshProjection.receipt.refresh.refreshReceiptId, triggered.refresh.receipt.refreshReceiptId);
   assert.equal((await inspectWorldMarkdownProjection({ root })).status, "current");
 
@@ -3245,7 +3883,14 @@ test("applies explicit post-refresh Markdown policy without overwriting edited p
   const tampered = JSON.parse(fs.readFileSync(tamperedFile, "utf8"));
   tampered.outcome.reasonCode = "SILENTLY_PROMOTE_DOCUMENT_EDIT";
   fs.writeFileSync(tamperedFile, `${JSON.stringify(tampered, null, 2)}\n`);
-  (await assert.rejects(async () => (await readPostRefreshProjectionReceipt({ root, postRefreshProjectionReceiptId: policyRecovered.postRefreshProjection.receipt.postRefreshProjectionReceiptId })), { code: "POST_REFRESH_PROJECTION_RECEIPT_DIGEST_MISMATCH" }));
+  await assert.rejects(
+    async () =>
+      await readPostRefreshProjectionReceipt({
+        root,
+        postRefreshProjectionReceiptId: policyRecovered.postRefreshProjection.receipt.postRefreshProjectionReceiptId,
+      }),
+    { code: "POST_REFRESH_PROJECTION_RECEIPT_DIGEST_MISMATCH" },
+  );
 });
 
 test("projects user-owned product canon into immutable temporal revisions and bounded context", async (t) => {
@@ -3253,18 +3898,20 @@ test("projects user-owned product canon into immutable temporal revisions and bo
     schemaVersion: 1,
     featureGroups: [{ key: "messaging", name: "Messaging", description: "User communication features" }],
     capabilities: [{ key: "deliver-message", name: "Deliver a message" }],
-    features: [{
-      key: "message-send",
-      name: "Message delivery",
-      description: "Send one user-authored message",
-      featureGroupKeys: ["messaging"],
-      capabilityKeys: ["deliver-message"],
-      governedBy: [
-        { kind: "Requirement", key: "message-persists" },
-        { kind: "Constraint", key: "retain-input" },
-        { kind: "Decision", key: "inline-payment" },
-      ],
-    }],
+    features: [
+      {
+        key: "message-send",
+        name: "Message delivery",
+        description: "Send one user-authored message",
+        featureGroupKeys: ["messaging"],
+        capabilityKeys: ["deliver-message"],
+        governedBy: [
+          { kind: "Requirement", key: "message-persists" },
+          { kind: "Constraint", key: "retain-input" },
+          { kind: "Decision", key: "inline-payment" },
+        ],
+      },
+    ],
     requirements: [{ key: "message-persists", statement: "A submitted message is persisted before streaming begins." }],
     constraints: [{ key: "retain-input", statement: "A payment interruption must not discard the chat input." }],
     decisions: [{ key: "inline-payment", statement: "Keep credit purchase inside the chat flow.", status: "active" }],
@@ -3280,7 +3927,10 @@ test("projects user-owned product canon into immutable temporal revisions and bo
   assert.equal(first.summary.capabilityCount, 1);
   assert.equal(first.summary.featureCount, 1);
   assert.equal(first.summary.productRevisionCount, 6);
-  assert.equal(first.nodes.filter((node) => node.authorityClass === "canon-projected").every((node) => node.instructionAuthority === false), true);
+  assert.equal(
+    first.nodes.filter((node) => node.authorityClass === "canon-projected").every((node) => node.instructionAuthority === false),
+    true,
+  );
   const feature = first.nodes.find((node) => node.kind === "Feature");
   const featureRevision = first.nodes.find((node) => node.kind === "FeatureRevision");
   assert.ok(first.edges.some((edge) => edge.type === "REALIZES" && edge.from === feature.nodeId));
@@ -3312,15 +3962,15 @@ test("projects user-owned product canon into immutable temporal revisions and bo
   assert.equal(indexed.snapshot.productModel.productModelId, ownedProductModel.productModelId);
   assert.equal(indexed.snapshot.summary.featureCount, 1);
   assert.equal(indexed.snapshot.temporalProvenanceGraph.summary.productRevisionCount, 6);
-  const query = (await queryWorldTemporalGraph({
+  const query = await queryWorldTemporalGraph({
     root,
     query: "Message delivery",
     relations: ["CONTAINS", "REALIZES", "GOVERNED_BY", "HAS_REVISION", "CURRENT_REVISION"],
     depth: 2,
-  }));
+  });
   assert.ok(query.nodes.some((node) => node.kind === "FeatureRevision" && node.semantic.name === "Message delivery"));
   assert.ok(query.edges.some((edge) => edge.type === "REALIZES"));
-  const capsule = (await compileContext({ root, task: "Change Message delivery without discarding chat input", budget: 32_768, persist: false }));
+  const capsule = await compileContext({ root, task: "Change Message delivery without discarding chat input", budget: 32_768, persist: false });
   assert.equal(capsule.capsule.productContext.length, 1, JSON.stringify(capsule.capsule.selection));
   assert.equal(capsule.capsule.productContext[0].productModelId, ownedProductModel.productModelId);
   assert.equal(capsule.capsule.productContext[0].instructionAuthority, false);
@@ -3332,7 +3982,7 @@ test("projects user-owned product canon into immutable temporal revisions and bo
   const changed = clone(productDocument);
   changed.features[0].description = "Changed product meaning";
   fs.writeFileSync(productFile, JSON.stringify(changed));
-  const stale = (await inspectWorldModel({ root }));
+  const stale = await inspectWorldModel({ root });
   assert.equal(stale.status, "stale");
   assert.equal(stale.changes.productModelChanged, true);
 
@@ -3372,7 +4022,10 @@ test("enforces a deterministic authority-free ComputeAdapter and WorkerProtocol 
   const repeated = await executeComputeOperation({ adapter: reference, operation, input: clone(input), semanticProducer: producer });
   assert.equal(first.request.requestId, repeated.request.requestId);
   assert.equal(first.response.resultDigest, repeated.response.resultDigest);
-  assert.deepEqual(first.result.files.map((file) => file.path), ["a.mjs", "z.mjs"]);
+  assert.deepEqual(
+    first.result.files.map((file) => file.path),
+    ["a.mjs", "z.mjs"],
+  );
   assert.equal(first.response.authorityEffect, "none");
 
   const report = await verifyComputeAdapterConformance({
@@ -3392,35 +4045,29 @@ test("enforces a deterministic authority-free ComputeAdapter and WorkerProtocol 
   });
   await assert.rejects(
     executeComputeOperation({ adapter: authorityEscalating, operation, input, semanticProducer: producer }),
-    (error) => error.code === "COMPUTE_OPERATION_FAILED"
-      && error.details.errors.some((item) => item.code === "COMPUTE_AUTHORITY_ESCALATION"),
+    (error) => error.code === "COMPUTE_OPERATION_FAILED" && error.details.errors.some((item) => item.code === "COMPUTE_AUTHORITY_ESCALATION"),
   );
   const unsupported = new JsReferenceComputeAdapter({ operations: {} });
-  await assert.rejects(
-    executeComputeOperation({ adapter: unsupported, operation, input, semanticProducer: producer }),
-    { code: "UNSUPPORTED_COMPUTE_OPERATION" },
-  );
-  assert.throws(
-    () => buildComputeRequest({ operation, input, semanticProducer: producer, limits: { maxInputBytes: 2 } }),
-    { code: "COMPUTE_INPUT_LIMIT" },
-  );
+  await assert.rejects(executeComputeOperation({ adapter: unsupported, operation, input, semanticProducer: producer }), {
+    code: "UNSUPPORTED_COMPUTE_OPERATION",
+  });
+  assert.throws(() => buildComputeRequest({ operation, input, semanticProducer: producer, limits: { maxInputBytes: 2 } }), { code: "COMPUTE_INPUT_LIMIT" });
   const slow = new JsReferenceComputeAdapter({
     operations: {
-      [operation]: (_input, { signal }) => new Promise((resolve) => {
-        signal.addEventListener("abort", () => resolve({ cancelled: true }), { once: true });
-      }),
+      [operation]: (_input, { signal }) =>
+        new Promise((resolve) => {
+          signal.addEventListener("abort", () => resolve({ cancelled: true }), { once: true });
+        }),
     },
   });
-  await assert.rejects(
-    executeComputeOperation({ adapter: slow, operation, input, semanticProducer: producer, limits: { timeoutMs: 10 } }),
-    { code: "COMPUTE_TIMEOUT" },
-  );
+  await assert.rejects(executeComputeOperation({ adapter: slow, operation, input, semanticProducer: producer, limits: { timeoutMs: 10 } }), {
+    code: "COMPUTE_TIMEOUT",
+  });
   const cancelled = new AbortController();
   cancelled.abort();
-  await assert.rejects(
-    executeComputeOperation({ adapter: reference, operation, input, semanticProducer: producer, signal: cancelled.signal }),
-    { code: "COMPUTE_CANCELLED" },
-  );
+  await assert.rejects(executeComputeOperation({ adapter: reference, operation, input, semanticProducer: producer, signal: cancelled.signal }), {
+    code: "COMPUTE_CANCELLED",
+  });
   assert.equal(request.inputDigest, first.request.inputDigest);
 });
 
@@ -3437,9 +4084,11 @@ test("routes deterministic repository scan v1 through a replaceable compute adap
   legacyV03.protocol.version = "0.3.0";
   legacyV03.sourceAnalysisVersion = "0.2.0";
   for (const file of legacyV03.files) {
-    file.symbols = [...new Map(file.symbols
-      .map(({ name, kind, line }) => ({ name, kind, line }))
-      .map((symbol) => [`${symbol.line}|${symbol.kind}|${symbol.name}`, symbol])).values()];
+    file.symbols = [
+      ...new Map(
+        file.symbols.map(({ name, kind, line }) => ({ name, kind, line })).map((symbol) => [`${symbol.line}|${symbol.kind}|${symbol.name}`, symbol]),
+      ).values(),
+    ];
     file.semanticFacts.calls = file.semanticFacts.calls.map(({ callee, line }) => ({ callee, line }));
   }
   legacyV03.summary.symbolCount = legacyV03.files.reduce((count, file) => count + file.symbols.length, 0);
@@ -3452,10 +4101,19 @@ test("routes deterministic repository scan v1 through a replaceable compute adap
   assert.equal(first.summary.fileCount, 10);
   const duplicateSymbols = first.files.find((file) => file.path === "fixtures/duplicate-symbols.mjs").symbols;
   assert.equal(duplicateSymbols.length, 2);
-  assert.equal(duplicateSymbols.every((symbol) => symbol.identityAmbiguous === true), true);
+  assert.equal(
+    duplicateSymbols.every((symbol) => symbol.identityAmbiguous === true),
+    true,
+  );
   assert.equal(JSON.stringify(first).includes(corpus), false);
-  assert.equal(first.files.every((file) => !path.isAbsolute(file.path) && file.instructionAuthority == null), true);
-  assert.equal(first.files.find((file) => file.path === "src/main.mjs").semanticFacts.calls.some((call) => call.callee === "double"), true);
+  assert.equal(
+    first.files.every((file) => !path.isAbsolute(file.path) && file.instructionAuthority == null),
+    true,
+  );
+  assert.equal(
+    first.files.find((file) => file.path === "src/main.mjs").semanticFacts.calls.some((call) => call.callee === "double"),
+    true,
+  );
 
   const reference = createRepositoryScanReferenceAdapter();
   const candidate = new JsReferenceComputeAdapter({
@@ -3467,12 +4125,14 @@ test("routes deterministic repository scan v1 through a replaceable compute adap
   const report = await verifyComputeAdapterConformance({
     referenceAdapter: reference,
     candidateAdapter: candidate,
-    fixtures: [{
-      name: "repository-scan-basic",
-      operation: REPOSITORY_SCAN_OPERATION,
-      input,
-      semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER,
-    }],
+    fixtures: [
+      {
+        name: "repository-scan-basic",
+        operation: REPOSITORY_SCAN_OPERATION,
+        input,
+        semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER,
+      },
+    ],
   });
   assert.match(report.fixtures[0].resultDigest, /^[a-f0-9]{64}$/);
 
@@ -3485,7 +4145,8 @@ test("routes deterministic repository scan v1 through a replaceable compute adap
 
   const technicalRoot = temporaryProject();
   t.after(() => fs.rmSync(technicalRoot, { recursive: true, force: true }));
-  for (const relative of ["src", ".uv-python/lib", ".uv-cache/archive", ".pytest_cache/state", ".generated-evidence/evidence", ".github", ".custom-source"]) fs.mkdirSync(path.join(technicalRoot, relative), { recursive: true });
+  for (const relative of ["src", ".uv-python/lib", ".uv-cache/archive", ".pytest_cache/state", ".generated-evidence/evidence", ".github", ".custom-source"])
+    fs.mkdirSync(path.join(technicalRoot, relative), { recursive: true });
   fs.writeFileSync(path.join(technicalRoot, "src", "app.py"), "value = 1\n");
   fs.writeFileSync(path.join(technicalRoot, ".uv-python", "lib", "runtime.py"), "value = 1\n");
   fs.writeFileSync(path.join(technicalRoot, ".uv-cache", "archive", "runtime.py"), "value = 1\n");
@@ -3494,12 +4155,20 @@ test("routes deterministic repository scan v1 through a replaceable compute adap
   fs.writeFileSync(path.join(technicalRoot, ".github", "workflow.yml"), "name: fixture\n");
   fs.writeFileSync(path.join(technicalRoot, ".custom-source", "module.py"), "value = 2\n");
   const unscopedScan = scanRepositoryReference(buildRepositoryScanInput({ projectRoot: technicalRoot }));
-  assert.deepEqual(unscopedScan.files.map((file) => file.path), [".custom-source/module.py", ".generated-evidence/evidence/copy.py", ".github/workflow.yml", "src/app.py"]);
-  const technicalScan = scanRepositoryReference(buildRepositoryScanInput({
-    projectRoot: technicalRoot,
-    sourceScope: buildRepositorySourceScope({ excludeRoots: [".generated-evidence"] }),
-  }));
-  assert.deepEqual(technicalScan.files.map((file) => file.path), [".custom-source/module.py", ".github/workflow.yml", "src/app.py"]);
+  assert.deepEqual(
+    unscopedScan.files.map((file) => file.path),
+    [".custom-source/module.py", ".generated-evidence/evidence/copy.py", ".github/workflow.yml", "src/app.py"],
+  );
+  const technicalScan = scanRepositoryReference(
+    buildRepositoryScanInput({
+      projectRoot: technicalRoot,
+      sourceScope: buildRepositorySourceScope({ excludeRoots: [".generated-evidence"] }),
+    }),
+  );
+  assert.deepEqual(
+    technicalScan.files.map((file) => file.path),
+    [".custom-source/module.py", ".github/workflow.yml", "src/app.py"],
+  );
   assert.equal(technicalScan.skipped.excludedDirectory, 3);
   assert.equal(technicalScan.skipped.outsideSourceScope, 1);
 
@@ -3565,12 +4234,14 @@ test("verifies Go worker distribution identity and discloses safe JavaScript fal
   const conformance = await verifyComputeAdapterConformance({
     referenceAdapter: createWorkerHealthReferenceAdapter(),
     candidateAdapter: absentAdapter,
-    fixtures: [{
-      name: "worker-health-fallback",
-      operation: WORKER_HEALTH_OPERATION,
-      input: WORKER_HEALTH_INPUT,
-      semanticProducer: WORKER_HEALTH_SEMANTIC_PRODUCER,
-    }],
+    fixtures: [
+      {
+        name: "worker-health-fallback",
+        operation: WORKER_HEALTH_OPERATION,
+        input: WORKER_HEALTH_INPUT,
+        semanticProducer: WORKER_HEALTH_SEMANTIC_PRODUCER,
+      },
+    ],
   });
   assert.match(conformance.conformanceReportId, /^compute-conformance-[a-f0-9]{24}$/);
 });
@@ -3622,19 +4293,25 @@ test("materializes adapter-neutral Git decision evidence without promoting commi
     rebuildable: false,
     uniqueAuthority: true,
   });
-  await assert.rejects(((buildWorldModel({ root, persist: false, gitHistoryAdapter: invalidAdapter }))), { code: "INVALID_GIT_HISTORY_AUTHORITY" });
+  await assert.rejects(buildWorldModel({ root, persist: false, gitHistoryAdapter: invalidAdapter }), { code: "INVALID_GIT_HISTORY_AUTHORITY" });
 
   const persisted = await buildWorldModel({ root, gitHistoryAdapter: firstAdapter });
   assert.equal(persisted.sourceAdapters.gitHistory.adapterKind, "memory-a");
   assert.equal((await inspectWorldModel({ root })).status, "current");
-  const history = (await queryWorldHistory({ root, query: "authentication", limit: 10 }));
+  const history = await queryWorldHistory({ root, query: "authentication", limit: 10 });
   assert.equal(history.commits.length, 1);
   assert.equal(history.commits[0].subject, "Centralize authentication policy");
   assert.equal(history.trustBoundary, "evidence-not-instruction");
 
-  const capsule = (await compileContext({ root, task: "Why was authentication policy centralized?", budget: 32_768, persist: false }));
-  assert.equal(capsule.capsule.snapshot.coverage, "curated-head-canon+repository-world-model-semantic+temporal-provenance-alpha+product-canon-projection-alpha+git-history-alpha");
-  assert.equal(capsule.capsule.gitDecisionEvidence.some((item) => item.commit === "c".repeat(40)), true);
+  const capsule = await compileContext({ root, task: "Why was authentication policy centralized?", budget: 32_768, persist: false });
+  assert.equal(
+    capsule.capsule.snapshot.coverage,
+    "curated-head-canon+repository-world-model-semantic+temporal-provenance-alpha+product-canon-projection-alpha+git-history-alpha",
+  );
+  assert.equal(
+    capsule.capsule.gitDecisionEvidence.some((item) => item.commit === "c".repeat(40)),
+    true,
+  );
   assert.equal(capsule.capsule.gitDecisionEvidence[0].instructionAuthority, false);
   assert.equal(capsule.capsule.repositoryHistory.interpretation, "commit-messages-are-decision-evidence-not-promoted-decisions");
 
@@ -3682,13 +4359,19 @@ test("indexes adapter-neutral external runtime observations without granting con
     ],
   };
   const memoryA = new MemoryRuntimeStateAdapter({ adapterKind: "runtime-memory-a", exported });
-  const memoryB = new MemoryRuntimeStateAdapter({ adapterKind: "runtime-memory-b", exported: { ...exported, observations: [...exported.observations].reverse() } });
+  const memoryB = new MemoryRuntimeStateAdapter({
+    adapterKind: "runtime-memory-b",
+    exported: { ...exported, observations: [...exported.observations].reverse() },
+  });
   const first = await buildWorldModel({ root, persist: false, runtimeStateAdapter: memoryA });
   const second = await buildWorldModel({ root, persist: false, runtimeStateAdapter: memoryB });
   assert.equal(first.snapshot.worldModelId, second.snapshot.worldModelId);
   assert.equal(first.snapshot.externalRuntimeState.runtimeStateId, second.snapshot.externalRuntimeState.runtimeStateId);
   assert.equal(first.snapshot.externalRuntimeState.summary.observationCount, 2);
-  assert.equal(first.snapshot.externalRuntimeState.observations.every((item) => item.instructionAuthority === false && item.controlAuthority === false), true);
+  assert.equal(
+    first.snapshot.externalRuntimeState.observations.every((item) => item.instructionAuthority === false && item.controlAuthority === false),
+    true,
+  );
   assert.equal(JSON.stringify(first.snapshot).includes("provider-session-sensitive-123"), false);
 
   const invalidAdapter = new MemoryRuntimeStateAdapter({
@@ -3699,7 +4382,7 @@ test("indexes adapter-neutral external runtime observations without granting con
     uniqueAuthority: true,
     readOnly: false,
   });
-  await assert.rejects(((buildWorldModel({ root, persist: false, runtimeStateAdapter: invalidAdapter }))), { code: "INVALID_RUNTIME_STATE_AUTHORITY" });
+  await assert.rejects(buildWorldModel({ root, persist: false, runtimeStateAdapter: invalidAdapter }), { code: "INVALID_RUNTIME_STATE_AUTHORITY" });
 
   const inputDirectory = path.join(root, layout.directory, "world-model", "inputs");
   const inputFile = path.join(inputDirectory, "runtime-state.json");
@@ -3710,14 +4393,17 @@ test("indexes adapter-neutral external runtime observations without granting con
   assert.equal(persisted.snapshot.coverage.externalRuntimeState, "point-in-time-host-export");
   assert.equal((await inspectWorldModel({ root })).status, "current");
 
-  const queried = (await queryWorldRuntimeState({ root, runtime: "codex", state: "active", limit: 10 }));
+  const queried = await queryWorldRuntimeState({ root, runtime: "codex", state: "active", limit: 10 });
   assert.equal(queried.observations.length, 1);
   assert.equal(queried.observations[0].runtime, "codex");
   assert.equal(queried.observations[0].workspace.binding, "project-root");
   assert.equal(queried.controlAuthority, false);
 
-  const capsule = (await compileContext({ root, task: "Inspect the active codex runtime session", budget: 32_768, persist: false }));
-  assert.equal(capsule.capsule.snapshot.coverage, "curated-head-canon+repository-world-model-semantic-alpha+temporal-provenance-alpha+product-canon-projection-alpha+external-runtime-state-alpha");
+  const capsule = await compileContext({ root, task: "Inspect the active codex runtime session", budget: 32_768, persist: false });
+  assert.equal(
+    capsule.capsule.snapshot.coverage,
+    "curated-head-canon+repository-world-model-semantic-alpha+temporal-provenance-alpha+product-canon-projection-alpha+external-runtime-state-alpha",
+  );
   assert.equal(capsule.capsule.runtimeStateEvidence.length, 1);
   assert.equal(capsule.capsule.runtimeStateEvidence[0].controlAuthority, false);
   assert.equal(capsule.capsule.repositoryRuntimeState.interpretation, "runtime-observations-are-evidence-not-control-authority");
@@ -3735,11 +4421,11 @@ test("indexes adapter-neutral external runtime observations without granting con
   changedExport.observedAt = "2026-08-18T12:05:00Z";
   changedExport.observations[0].state = "idle";
   fs.writeFileSync(inputFile, `${JSON.stringify(changedExport, null, 2)}\n`);
-  const stale = (await inspectWorldModel({ root }));
+  const stale = await inspectWorldModel({ root });
   assert.equal(stale.status, "stale");
   assert.equal(stale.changes.externalRuntimeStateChanged, true);
-  (await assert.rejects(async () => (await queryWorldRuntimeState({ root })), { code: "WORLD_MODEL_STALE" }));
-  const staleCapsule = (await compileContext({ root, task: "Inspect the codex runtime session", budget: 32_768, persist: false }));
+  await assert.rejects(async () => await queryWorldRuntimeState({ root }), { code: "WORLD_MODEL_STALE" });
+  const staleCapsule = await compileContext({ root, task: "Inspect the codex runtime session", budget: 32_768, persist: false });
   assert.deepEqual(staleCapsule.capsule.runtimeStateEvidence, []);
   assert.equal(staleCapsule.capsule.repositoryRuntimeState, null);
   const rebuilt = await buildWorldModel({ root, runtimeStateAdapter: new RuntimeStateFileAdapter({ file: inputFile }) });
@@ -3749,10 +4435,9 @@ test("indexes adapter-neutral external runtime observations without granting con
   const invalidExport = clone(changedExport);
   invalidExport.observations[0].transcript = "must never enter the World Model";
   fs.writeFileSync(inputFile, `${JSON.stringify(invalidExport, null, 2)}\n`);
-  await assert.rejects(
-    ((buildWorldModel({ root, persist: false, runtimeStateAdapter: new RuntimeStateFileAdapter({ file: inputFile }) }))),
-    { code: "INVALID_RUNTIME_STATE_EXPORT" },
-  );
+  await assert.rejects(buildWorldModel({ root, persist: false, runtimeStateAdapter: new RuntimeStateFileAdapter({ file: inputFile }) }), {
+    code: "INVALID_RUNTIME_STATE_EXPORT",
+  });
 });
 
 test("compiles a reproducible HEAD-guided Context Capsule without lexical eligibility gates", async (t) => {
@@ -3762,20 +4447,51 @@ test("compiles a reproducible HEAD-guided Context Capsule without lexical eligib
   const layout = inspectProject(root).storage;
   const knowledgeFile = path.join(root, layout.directory, "context", "knowledge.json");
   const knowledge = JSON.parse(fs.readFileSync(knowledgeFile, "utf8"));
-  knowledge.evidence.push({ id: "evidence-auth-ttl", sourceKind: "source", uri: "src/auth/session.ts:44", digest: "abc123", summary: "Session TTL is read from the active policy." });
-  knowledge.claims.push({ id: "claim-session-ttl", statement: "Session TTL is controlled by the active authentication policy.", status: "active", importance: 4, tags: ["auth", "session", "ttl"], evidenceIds: ["evidence-auth-ttl"] });
-  knowledge.claims.push({ id: "claim-frontend-color", statement: "The login button uses the blue palette.", status: "active", importance: 1, tags: ["frontend", "color"] });
-  knowledge.decisions.push({ id: "decision-auth-policy", title: "Centralize authentication expiry", decision: "Authentication expiry remains policy-owned.", reason: "Avoid runtime-specific TTL drift.", constraints: ["Executors must not hardcode TTL."], importance: 5, tags: ["auth", "ttl"], evidenceIds: ["evidence-auth-ttl"] });
+  knowledge.evidence.push({
+    id: "evidence-auth-ttl",
+    sourceKind: "source",
+    uri: "src/auth/session.ts:44",
+    digest: "abc123",
+    summary: "Session TTL is read from the active policy.",
+  });
+  knowledge.claims.push({
+    id: "claim-session-ttl",
+    statement: "Session TTL is controlled by the active authentication policy.",
+    status: "active",
+    importance: 4,
+    tags: ["auth", "session", "ttl"],
+    evidenceIds: ["evidence-auth-ttl"],
+  });
+  knowledge.claims.push({
+    id: "claim-frontend-color",
+    statement: "The login button uses the blue palette.",
+    status: "active",
+    importance: 1,
+    tags: ["frontend", "color"],
+  });
+  knowledge.decisions.push({
+    id: "decision-auth-policy",
+    title: "Centralize authentication expiry",
+    decision: "Authentication expiry remains policy-owned.",
+    reason: "Avoid runtime-specific TTL drift.",
+    constraints: ["Executors must not hardcode TTL."],
+    importance: 5,
+    tags: ["auth", "ttl"],
+    evidenceIds: ["evidence-auth-ttl"],
+  });
   fs.writeFileSync(knowledgeFile, `${JSON.stringify(knowledge, null, 2)}\n`);
 
-  const first = (await compileContext({ root, task: "Why is the auth session TTL policy-owned?", budget: 32_768, persist: false }));
-  const second = (await compileContext({ root, task: "Why is the auth session TTL policy-owned?", budget: 32_768, persist: false }));
+  const first = await compileContext({ root, task: "Why is the auth session TTL policy-owned?", budget: 32_768, persist: false });
+  const second = await compileContext({ root, task: "Why is the auth session TTL policy-owned?", budget: 32_768, persist: false });
   assert.equal(first.capsule.capsuleId, second.capsule.capsuleId);
   assert.equal(first.capsule.compiler.historyRelevance, "DECISIONS");
   assert.deepEqual(first.capsule.selection.includedIds.includes("claim-session-ttl"), true);
   assert.deepEqual(first.capsule.selection.includedIds.includes("decision-auth-policy"), true);
   assert.deepEqual(first.capsule.selection.includedIds.includes("claim-frontend-color"), true);
-  assert.equal(first.capsule.selection.excluded.some((item) => item.reason === "low-relevance"), false);
+  assert.equal(
+    first.capsule.selection.excluded.some((item) => item.reason === "low-relevance"),
+    false,
+  );
   assert.equal(first.capsule.claims[0].evidence[0].instructionAuthority, false);
 });
 
@@ -3783,7 +4499,7 @@ test("persists and digest-verifies a Context Capsule", async (t) => {
   const root = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initializeProject({ root, pluginRoot, runtimes: ["opencode"] });
-  const compiled = (await compileContext({ root, task: "Inspect current project context", budget: 32_768, persist: true }));
+  const compiled = await compileContext({ root, task: "Inspect current project context", budget: 32_768, persist: true });
   const verified = readContextCapsule({ root, capsuleId: compiled.capsule.capsuleId });
   assert.equal(verified.status, "verified");
   assert.equal(verified.capsule.snapshot.coverage, "curated-head-canon-only");
@@ -3794,7 +4510,7 @@ test("records a deterministic whole-plan execution lineage", async (t) => {
   const root = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
-  const compiled = (await compileContext({ root, task: "Implement the first execution lineage contract", budget: 32_768, persist: true }));
+  const compiled = await compileContext({ root, task: "Implement the first execution lineage contract", budget: 32_768, persist: true });
   const planInput = {
     root,
     objective: "Preserve whole-plan authority across bounded execution",
@@ -3839,14 +4555,15 @@ test("records a deterministic whole-plan execution lineage", async (t) => {
     runId: "run-test",
   });
   assert.throws(
-    () => createReviewDecision({
-      root,
-      wholePlanId: conflictingPlan.artifact.wholePlanId,
-      resultPacketId: result.artifact.resultPacketId,
-      reviewContext: freshReview.review,
-      disposition: "accept",
-      rationale: "This mismatch must fail.",
-    }),
+    () =>
+      createReviewDecision({
+        root,
+        wholePlanId: conflictingPlan.artifact.wholePlanId,
+        resultPacketId: result.artifact.resultPacketId,
+        reviewContext: freshReview.review,
+        disposition: "accept",
+        rationale: "This mismatch must fail.",
+      }),
     { code: "LINEAGE_CONFLICT" },
   );
   const review = createReviewDecision({
@@ -3862,7 +4579,10 @@ test("records a deterministic whole-plan execution lineage", async (t) => {
   assert.equal(readLineageArtifact({ root, artifactId: contract.artifact.executionContractId }).status, "verified");
   assert.equal(readLineageArtifact({ root, artifactId: result.artifact.resultPacketId }).artifact.evidence[0].instructionAuthority, false);
   assert.equal(readLineageArtifact({ root, artifactId: review.artifact.reviewDecisionId }).artifact.disposition, "accept");
-  assert.deepEqual(review.artifact.lineage.map((item) => item.relation), ["reviews-against", "reviews-result", "reviewed-through"]);
+  assert.deepEqual(
+    review.artifact.lineage.map((item) => item.relation),
+    ["reviews-against", "reviews-result", "reviewed-through"],
+  );
 });
 
 test("rejects a tampered execution lineage artifact", (t) => {
@@ -3873,30 +4593,72 @@ test("rejects a tampered execution lineage artifact", (t) => {
   const stored = JSON.parse(fs.readFileSync(plan.file, "utf8"));
   stored.objective = "Tampered objective";
   fs.writeFileSync(plan.file, `${JSON.stringify(stored, null, 2)}\n`);
-  assert.throws(
-    () => readLineageArtifact({ root, artifactId: plan.artifact.wholePlanId }),
-    { code: "LINEAGE_DIGEST_MISMATCH" },
-  );
+  assert.throws(() => readLineageArtifact({ root, artifactId: plan.artifact.wholePlanId }), { code: "LINEAGE_DIGEST_MISMATCH" });
 });
 
-test("installation convergence preserves target manifest-unowned root settings despite source managed flags",t=>{
- const root=temporaryProject();t.after(()=>fs.rmSync(root,{recursive:true,force:true}));initializeProject({root,pluginRoot,runtimes:["claude","codex","opencode"]});
- const rootPaths=["AGENTS.md","CLAUDE.md",".mcp.json","opencode.json"],mf=path.join(root,".lode/generated/manifest.json"),manifest=JSON.parse(fs.readFileSync(mf));
- manifest.managed=manifest.managed.filter(item=>!rootPaths.includes(item.path));manifest.packageVersion="0.0.0-synthetic-previous";fs.writeFileSync(mf,JSON.stringify(manifest));
- for(const relative of rootPaths)fs.writeFileSync(path.join(root,relative),relative.endsWith("json")?JSON.stringify({userOwned:true,model:"target-only",permissions:["preserve"],synthetic:"not-credentials"}):"User-owned current target instructions\r\n");
- assert.equal(inspectProject(root).status,"ready");const original=new Map(rootPaths.map(relative=>[path.join(root,relative),fs.readFileSync(path.join(root,relative))])),read=fs.readFileSync;
- fs.readFileSync=function(file,...args){if(original.has(String(file)))throw Error("Read of unowned root settings");return read.call(this,file,...args);};
- try{assert.equal(convergeProjectInstallation({root,pluginRoot}).status,"converged");}finally{fs.readFileSync=read;}
- for(const [file,raw]of original)assert.deepEqual(fs.readFileSync(file),raw);assert.equal(inspectProject(root).status,"ready");
+test("installation convergence preserves target manifest-unowned root settings despite source managed flags", (t) => {
+  const root = temporaryProject();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeProject({ root, pluginRoot, runtimes: ["claude", "codex", "opencode"] });
+  const rootPaths = ["AGENTS.md", "CLAUDE.md", ".mcp.json", "opencode.json"],
+    mf = path.join(root, ".lode/generated/manifest.json"),
+    manifest = JSON.parse(fs.readFileSync(mf));
+  manifest.managed = manifest.managed.filter((item) => !rootPaths.includes(item.path));
+  manifest.packageVersion = "0.0.0-synthetic-previous";
+  fs.writeFileSync(mf, JSON.stringify(manifest));
+  for (const relative of rootPaths)
+    fs.writeFileSync(
+      path.join(root, relative),
+      relative.endsWith("json")
+        ? JSON.stringify({ userOwned: true, model: "target-only", permissions: ["preserve"], synthetic: "not-credentials" })
+        : "User-owned current target instructions\r\n",
+    );
+  assert.equal(inspectProject(root).status, "ready");
+  const original = new Map(rootPaths.map((relative) => [path.join(root, relative), fs.readFileSync(path.join(root, relative))])),
+    read = fs.readFileSync;
+  fs.readFileSync = function (file, ...args) {
+    if (original.has(String(file))) throw Error("Read of unowned root settings");
+    return read.call(this, file, ...args);
+  };
+  try {
+    assert.equal(convergeProjectInstallation({ root, pluginRoot }).status, "converged");
+  } finally {
+    fs.readFileSync = read;
+  }
+  for (const [file, raw] of original) assert.deepEqual(fs.readFileSync(file), raw);
+  assert.equal(inspectProject(root).status, "ready");
 });
 
-test("installation rollback never replaces a user edit made after our managed projection publication",t=>{
- const root=temporaryProject();t.after(()=>fs.rmSync(root,{recursive:true,force:true}));initializeProject({root,pluginRoot,runtimes:["claude"]});
- const mf=path.join(root,".lode/generated/manifest.json"),manifest=JSON.parse(fs.readFileSync(mf)),mcp=path.join(root,".mcp.json");
- fs.writeFileSync(mcp,JSON.stringify({mcpServers:{lode:{command:"node",args:["C:/synthetic-old/scripts/mcp-server.mjs"]}}}));
- manifest.managed.find(item=>item.path===".mcp.json").sha256=crypto.createHash("sha256").update(fs.readFileSync(mcp)).digest("hex");manifest.pluginRoot="C:/synthetic-old";manifest.packageVersion="0.0.0-synthetic-previous";fs.writeFileSync(mf,JSON.stringify(manifest));
- const beforeManifest=fs.readFileSync(mf),edit=Buffer.from('{"currentUserEdit":"preserve"}'),rename=fs.renameSync;let edited=false;
- fs.renameSync=function(source,target){const result=rename.call(this,source,target);if(target===mcp&&!edited){edited=true;fs.writeFileSync(mcp,edit);}return result;};
- try{assert.throws(()=>convergeProjectInstallation({root,pluginRoot}),{code:"MANAGED_PROJECTION_CHANGED_AFTER_WRITE"});}finally{fs.renameSync=rename;}
- assert(edited);assert.deepEqual(fs.readFileSync(mcp),edit);assert.deepEqual(fs.readFileSync(mf),beforeManifest);
+test("installation rollback never replaces a user edit made after our managed projection publication", (t) => {
+  const root = temporaryProject();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeProject({ root, pluginRoot, runtimes: ["claude"] });
+  const mf = path.join(root, ".lode/generated/manifest.json"),
+    manifest = JSON.parse(fs.readFileSync(mf)),
+    mcp = path.join(root, ".mcp.json");
+  fs.writeFileSync(mcp, JSON.stringify({ mcpServers: { lode: { command: "node", args: ["C:/synthetic-old/scripts/mcp-server.mjs"] } } }));
+  manifest.managed.find((item) => item.path === ".mcp.json").sha256 = crypto.createHash("sha256").update(fs.readFileSync(mcp)).digest("hex");
+  manifest.pluginRoot = "C:/synthetic-old";
+  manifest.packageVersion = "0.0.0-synthetic-previous";
+  fs.writeFileSync(mf, JSON.stringify(manifest));
+  const beforeManifest = fs.readFileSync(mf),
+    edit = Buffer.from('{"currentUserEdit":"preserve"}'),
+    rename = fs.renameSync;
+  let edited = false;
+  fs.renameSync = function (source, target) {
+    const result = rename.call(this, source, target);
+    if (target === mcp && !edited) {
+      edited = true;
+      fs.writeFileSync(mcp, edit);
+    }
+    return result;
+  };
+  try {
+    assert.throws(() => convergeProjectInstallation({ root, pluginRoot }), { code: "MANAGED_PROJECTION_CHANGED_AFTER_WRITE" });
+  } finally {
+    fs.renameSync = rename;
+  }
+  assert(edited);
+  assert.deepEqual(fs.readFileSync(mcp), edit);
+  assert.deepEqual(fs.readFileSync(mf), beforeManifest);
 });

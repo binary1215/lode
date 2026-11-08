@@ -1,16 +1,7 @@
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
-import {
-  createObservationTypeDescriptor,
-  observationCanonicalJson,
-  observationDigest,
-  stableKey,
-} from "./observation-contract.mjs";
-import {
-  assertObservationProjectReady,
-  loadObservationArtifacts,
-  recordDeliveryCollectedObservation,
-} from "./observation-store.mjs";
+import { createObservationTypeDescriptor, observationCanonicalJson, observationDigest, stableKey } from "./observation-contract.mjs";
+import { assertObservationProjectReady, loadObservationArtifacts, recordDeliveryCollectedObservation } from "./observation-store.mjs";
 import { buildWorldModel, readWorldModelSnapshot } from "./world-model.mjs";
 
 export const DELIVERY_OBSERVATION_VERSION = "0.1.0";
@@ -30,7 +21,9 @@ function requiredText(value, label, max = 512) {
 }
 
 function digestValue(value, label) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   if (!/^[a-f0-9]{64}$/.test(normalized)) fail(`${label} must be a SHA-256 digest.`, "INVALID_DELIVERY_OBSERVATION_INPUT");
   return normalized;
 }
@@ -54,46 +47,63 @@ function timestamp(value, label) {
 function exactInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) fail("Delivery observation input must be an object.", "INVALID_DELIVERY_OBSERVATION_INPUT");
   const allowed = new Set([
-    "environmentKey", "targetKey", "artifactKey", "revisionKey", "revisionDigest", "outcome", "sequence",
-    "predecessorObservationId", "rollbackTargetObservationId", "observedAt", "sourceScopeDigest",
-    "sourceEventKeyDigest", "sourceEvidenceDigest", "adapterKey", "adapterVersion", "revisionReference",
+    "environmentKey",
+    "targetKey",
+    "artifactKey",
+    "revisionKey",
+    "revisionDigest",
+    "outcome",
+    "sequence",
+    "predecessorObservationId",
+    "rollbackTargetObservationId",
+    "observedAt",
+    "sourceScopeDigest",
+    "sourceEventKeyDigest",
+    "sourceEvidenceDigest",
+    "adapterKey",
+    "adapterVersion",
+    "revisionReference",
   ]);
   const unexpected = Object.keys(input).filter((key) => !allowed.has(key));
   if (unexpected.length) fail(`Delivery observation input has unsupported fields: ${unexpected.sort().join(", ")}.`, "INVALID_DELIVERY_OBSERVATION_INPUT");
 }
 
 export function deliveryObservationDescriptor(storage = null) {
-  return createObservationTypeDescriptor({
-    typeKey: DELIVERY_OBSERVATION_TYPE_KEY,
-    typeVersion: "1",
-    forms: ["event"],
-    payloadSchema: {
-      fields: [
-        { key: "environment_key", type: "stable-key", required: true },
-        { key: "target_key", type: "stable-key", required: true },
-        { key: "artifact_key", type: "stable-key", required: true },
-        { key: "revision_key", type: "stable-key", required: true },
-        { key: "revision_digest", type: "sha256", required: true },
-        { key: "outcome", type: "enum", required: true, enum: [...OUTCOMES] },
-        { key: "sequence", type: "nonnegative-integer", required: true },
-        { key: "predecessor_observation_id", type: "string", required: false, max: 96 },
-        { key: "rollback_target_observation_id", type: "string", required: false, max: 96 },
-        { key: "revision_binding", type: "enum", required: true, enum: ["declared", "verified-source-revision"] },
-        { key: "bound_world_model_id", type: "string", required: false, max: 96 },
-        { key: "bound_revision_id", type: "string", required: false, max: 96 },
-        { key: "bound_logical_entity_id", type: "string", required: false, max: 96 },
-        { key: "bound_source_path", type: "string", required: false, max: 4096 },
-      ],
-      additionalFields: false,
+  return createObservationTypeDescriptor(
+    {
+      typeKey: DELIVERY_OBSERVATION_TYPE_KEY,
+      typeVersion: "1",
+      forms: ["event"],
+      payloadSchema: {
+        fields: [
+          { key: "environment_key", type: "stable-key", required: true },
+          { key: "target_key", type: "stable-key", required: true },
+          { key: "artifact_key", type: "stable-key", required: true },
+          { key: "revision_key", type: "stable-key", required: true },
+          { key: "revision_digest", type: "sha256", required: true },
+          { key: "outcome", type: "enum", required: true, enum: [...OUTCOMES] },
+          { key: "sequence", type: "nonnegative-integer", required: true },
+          { key: "predecessor_observation_id", type: "string", required: false, max: 96 },
+          { key: "rollback_target_observation_id", type: "string", required: false, max: 96 },
+          { key: "revision_binding", type: "enum", required: true, enum: ["declared", "verified-source-revision"] },
+          { key: "bound_world_model_id", type: "string", required: false, max: 96 },
+          { key: "bound_revision_id", type: "string", required: false, max: 96 },
+          { key: "bound_logical_entity_id", type: "string", required: false, max: 96 },
+          { key: "bound_source_path", type: "string", required: false, max: 4096 },
+        ],
+        additionalFields: false,
+      },
     },
-  }, storage);
+    storage,
+  );
 }
 
 async function normalizeRevisionReference(root, value, revisionDigest) {
   if (value == null) return { revision_binding: "declared" };
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("revisionReference must be an object.", "INVALID_DELIVERY_REVISION_REFERENCE");
   const expected = ["worldModelId", "revisionId", "sourcePath", "digest"].sort();
-  if (observationCanonicalJson(Object.keys(value).sort()) !== observationCanonicalJson(expected)) fail("revisionReference fields are invalid.", "INVALID_DELIVERY_REVISION_REFERENCE");
+  if (observationCanonicalJson(Object.keys(value).sort()) !== observationCanonicalJson(expected))
+    fail("revisionReference fields are invalid.", "INVALID_DELIVERY_REVISION_REFERENCE");
   const worldModelId = requiredText(value.worldModelId, "revisionReference.worldModelId", 96);
   const revisionId = requiredText(value.revisionId, "revisionReference.revisionId", 96);
   const sourcePath = requiredText(value.sourcePath, "revisionReference.sourcePath", 4096).replaceAll("\\", "/");
@@ -114,10 +124,15 @@ async function normalizeRevisionReference(root, value, revisionDigest) {
 }
 
 function existingReplay(artifacts, adapterKey, adapterVersion, sourceScopeDigest, sourceEventKeyDigest) {
-  return artifacts.observations.find((record) => record.source.adapterKey === adapterKey
-    && record.source.adapterVersion === adapterVersion
-    && record.source.sourceScopeDigest === sourceScopeDigest
-    && record.source.sourceEventKeyDigest === sourceEventKeyDigest) || null;
+  return (
+    artifacts.observations.find(
+      (record) =>
+        record.source.adapterKey === adapterKey &&
+        record.source.adapterVersion === adapterVersion &&
+        record.source.sourceScopeDigest === sourceScopeDigest &&
+        record.source.sourceEventKeyDigest === sourceEventKeyDigest,
+    ) || null
+  );
 }
 
 async function recordDeliveryObservationUncoordinated({ root = ".", ...input } = {}) {
@@ -134,19 +149,24 @@ async function recordDeliveryObservationUncoordinated({ root = ".", ...input } =
   if (!Number.isSafeInteger(sequence) || sequence < 0) fail("Delivery sequence must be a nonnegative safe integer.", "INVALID_DELIVERY_OBSERVATION_INPUT");
   const predecessorObservationId = observationId(input.predecessorObservationId, "Delivery predecessor observation id");
   const rollbackTargetObservationId = observationId(input.rollbackTargetObservationId, "Delivery rollback target observation id");
-  if (outcome === "rolled-back" && !rollbackTargetObservationId) fail("Rolled-back delivery observations require an exact rollback target.", "INVALID_DELIVERY_OBSERVATION_INPUT");
-  if (outcome !== "rolled-back" && rollbackTargetObservationId) fail("Only rolled-back delivery observations may name a rollback target.", "INVALID_DELIVERY_OBSERVATION_INPUT");
+  if (outcome === "rolled-back" && !rollbackTargetObservationId)
+    fail("Rolled-back delivery observations require an exact rollback target.", "INVALID_DELIVERY_OBSERVATION_INPUT");
+  if (outcome !== "rolled-back" && rollbackTargetObservationId)
+    fail("Only rolled-back delivery observations may name a rollback target.", "INVALID_DELIVERY_OBSERVATION_INPUT");
   const adapterKey = stableKey(input.adapterKey || formatForVerifiedOwner(inspected.storage).value("head.delivery-host-input"), "Delivery adapter key", 192);
   const adapterVersion = stableKey(input.adapterVersion || DELIVERY_OBSERVATION_VERSION, "Delivery adapter version", 64);
   const sourceScopeDigest = digestValue(input.sourceScopeDigest, "Delivery source scope digest");
   const sourceEventKeyDigest = digestValue(input.sourceEventKeyDigest, "Delivery source event key digest");
   const sourceEvidenceDigest = digestValue(input.sourceEvidenceDigest, "Delivery source evidence digest");
-  const artifacts = loadObservationArtifacts({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, storage: inspected.storage });
+  const artifacts = loadObservationArtifacts({
+    projectRoot: inspected.project.projectRoot,
+    projectId: inspected.project.projectId,
+    storage: inspected.storage,
+  });
   const replay = existingReplay(artifacts, adapterKey, adapterVersion, sourceScopeDigest, sourceEventKeyDigest);
-  const observedAt = input.observedAt == null
-    ? replay?.temporalScope.observedAt || new Date().toISOString()
-    : timestamp(input.observedAt, "Delivery observedAt");
-  const revisionReference = (await normalizeRevisionReference(inspected.project.projectRoot, input.revisionReference, revisionDigest));
+  const observedAt =
+    input.observedAt == null ? replay?.temporalScope.observedAt || new Date().toISOString() : timestamp(input.observedAt, "Delivery observedAt");
+  const revisionReference = await normalizeRevisionReference(inspected.project.projectRoot, input.revisionReference, revisionDigest);
   const payload = {
     environment_key: environmentKey,
     target_key: targetKey,
@@ -213,8 +233,11 @@ async function recordDeliveryObservationUncoordinated({ root = ".", ...input } =
 
 async function retainedWorldSnapshot(root, worldModelId, cache) {
   if (!cache.has(worldModelId)) {
-    try { cache.set(worldModelId, { snapshot: (await readWorldModelSnapshot({ root, worldModelId })).snapshot, errorCode: null }); }
-    catch (error) { cache.set(worldModelId, { snapshot: null, errorCode: String(error?.code || "invalid").toLowerCase() }); }
+    try {
+      cache.set(worldModelId, { snapshot: (await readWorldModelSnapshot({ root, worldModelId })).snapshot, errorCode: null });
+    } catch (error) {
+      cache.set(worldModelId, { snapshot: null, errorCode: String(error?.code || "invalid").toLowerCase() });
+    }
   }
   const cached = cache.get(worldModelId);
   if (!cached.snapshot) throw Object.assign(new Error("retained World snapshot unavailable"), { code: cached.errorCode });
@@ -235,8 +258,7 @@ async function revisionReferenceStatus(root, payload, snapshotCache) {
       ...(invalid ? { issue: "declared-binding-has-verified-fields" } : {}),
     };
   }
-  if (payload.revision_binding !== "verified-source-revision"
-    || boundFields.some((field) => typeof payload[field] !== "string" || !payload[field])) {
+  if (payload.revision_binding !== "verified-source-revision" || boundFields.some((field) => typeof payload[field] !== "string" || !payload[field])) {
     return {
       binding: "invalid",
       exactRevisionReferenceEstablished: false,
@@ -248,12 +270,16 @@ async function revisionReferenceStatus(root, payload, snapshotCache) {
     };
   }
   try {
-    const snapshot = (await retainedWorldSnapshot(root, payload.bound_world_model_id, snapshotCache));
+    const snapshot = await retainedWorldSnapshot(root, payload.bound_world_model_id, snapshotCache);
     const revision = snapshot.temporalProvenanceGraph?.nodes.find((node) => node.nodeId === payload.bound_revision_id);
-    if (!revision || revision.kind !== "FileRevision"
-      || revision.logicalEntityId !== payload.bound_logical_entity_id
-      || revision.path !== payload.bound_source_path
-      || revision.digest !== payload.revision_digest) throw Object.assign(new Error("mismatch"), { code: "REVISION_MISMATCH" });
+    if (
+      !revision ||
+      revision.kind !== "FileRevision" ||
+      revision.logicalEntityId !== payload.bound_logical_entity_id ||
+      revision.path !== payload.bound_source_path ||
+      revision.digest !== payload.revision_digest
+    )
+      throw Object.assign(new Error("mismatch"), { code: "REVISION_MISMATCH" });
     return {
       binding: "verified-source-revision",
       exactRevisionReferenceEstablished: true,
@@ -288,13 +314,13 @@ async function historyEntry(record, root, snapshotCache) {
     artifactKey: payload.artifact_key,
     revisionKey: payload.revision_key,
     revisionDigest: payload.revision_digest,
-    revisionReference: (await revisionReferenceStatus(root, payload, snapshotCache)),
+    revisionReference: await revisionReferenceStatus(root, payload, snapshotCache),
   };
 }
 
 async function groupProjection(records, root, snapshotCache) {
   const byId = new Map(records.map((record) => [record.observationId, record]));
-  const entriesById = new Map((await Promise.all(records.map(async (record) => [record.observationId, (await historyEntry(record, root, snapshotCache))]))));
+  const entriesById = new Map(await Promise.all(records.map(async (record) => [record.observationId, await historyEntry(record, root, snapshotCache)])));
   const issues = [];
   const issue = (code, observationId = null, relatedObservationId = null) => issues.push({ code, observationId, relatedObservationId });
   const sequenceOwners = new Map();
@@ -321,20 +347,24 @@ async function groupProjection(records, root, snapshotCache) {
     if (record.payload.outcome === "rolled-back") {
       const rollbackTarget = rollbackId ? byId.get(rollbackId) : null;
       if (!rollbackTarget) issue("rollback-target-not-found-in-target-history", record.observationId, rollbackId);
-      else if (!new Set(["applied", "rolled-back"]).has(rollbackTarget.payload.outcome)) issue("rollback-target-was-not-applied", record.observationId, rollbackId);
+      else if (!new Set(["applied", "rolled-back"]).has(rollbackTarget.payload.outcome))
+        issue("rollback-target-was-not-applied", record.observationId, rollbackId);
     }
   }
-  for (const [sequence, owners] of sequenceOwners) if (owners.length > 1) {
-    for (const owner of owners) issue("duplicate-sequence", owner, String(sequence));
-  }
-  for (const [predecessorId, successors] of successorOwners) if (successors.length > 1) {
-    for (const successor of successors) issue("divergent-successor", successor, predecessorId);
-  }
+  for (const [sequence, owners] of sequenceOwners)
+    if (owners.length > 1) {
+      for (const owner of owners) issue("duplicate-sequence", owner, String(sequence));
+    }
+  for (const [predecessorId, successors] of successorOwners)
+    if (successors.length > 1) {
+      for (const successor of successors) issue("divergent-successor", successor, predecessorId);
+    }
   const roots = records.filter((record) => record.payload.sequence === 0 && !record.payload.predecessor_observation_id);
   if (records.length && roots.length !== 1) issue("non-unique-root", roots[0]?.observationId || null);
   const ordered = [...records].sort((left, right) => left.payload.sequence - right.payload.sequence || left.observationId.localeCompare(right.observationId));
-  const uniqueIssues = [...new Map(issues.map((entry) => [observationCanonicalJson(entry), entry])).values()]
-    .sort((left, right) => observationCanonicalJson(left).localeCompare(observationCanonicalJson(right)));
+  const uniqueIssues = [...new Map(issues.map((entry) => [observationCanonicalJson(entry), entry])).values()].sort((left, right) =>
+    observationCanonicalJson(left).localeCompare(observationCanonicalJson(right)),
+  );
   let currentRecord = null;
   if (!uniqueIssues.length) {
     for (const record of ordered) if (new Set(["applied", "rolled-back"]).has(record.payload.outcome)) currentRecord = record;
@@ -363,12 +393,20 @@ export async function inspectDeliveryState({ root = ".", environmentKey = "", ta
   const normalizedEnvironment = environmentKey ? stableKey(environmentKey, "Delivery environment filter", 128) : "";
   const normalizedTarget = targetKey ? stableKey(targetKey, "Delivery target filter", 128) : "";
   const boundedHistoryLimit = Number(historyLimit);
-  if (!Number.isInteger(boundedHistoryLimit) || boundedHistoryLimit < 1 || boundedHistoryLimit > 4096) fail("Delivery history limit must be between 1 and 4096.", "INVALID_DELIVERY_STATUS_INPUT");
+  if (!Number.isInteger(boundedHistoryLimit) || boundedHistoryLimit < 1 || boundedHistoryLimit > 4096)
+    fail("Delivery history limit must be between 1 and 4096.", "INVALID_DELIVERY_STATUS_INPUT");
   const descriptor = deliveryObservationDescriptor(inspected.storage);
-  const artifacts = loadObservationArtifacts({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, storage: inspected.storage });
-  const records = artifacts.observations.filter((record) => record.descriptorId === descriptor.descriptorId
-    && (!normalizedEnvironment || record.payload.environment_key === normalizedEnvironment)
-    && (!normalizedTarget || record.payload.target_key === normalizedTarget));
+  const artifacts = loadObservationArtifacts({
+    projectRoot: inspected.project.projectRoot,
+    projectId: inspected.project.projectId,
+    storage: inspected.storage,
+  });
+  const records = artifacts.observations.filter(
+    (record) =>
+      record.descriptorId === descriptor.descriptorId &&
+      (!normalizedEnvironment || record.payload.environment_key === normalizedEnvironment) &&
+      (!normalizedTarget || record.payload.target_key === normalizedTarget),
+  );
   const grouped = new Map();
   const snapshotCache = new Map();
   for (const record of records) {
@@ -377,21 +415,28 @@ export async function inspectDeliveryState({ root = ".", environmentKey = "", ta
     current.push(record);
     grouped.set(key, current);
   }
-  const completeTargets = (await Promise.all([...grouped.values()].map(async (items) => {
-    const derived = (await groupProjection(items, inspected.project.projectRoot, snapshotCache));
-    return {
-      environmentKey: items[0].payload.environment_key,
-      targetKey: items[0].payload.target_key,
-      artifactKey: items[0].payload.artifact_key,
-      state: derived.state,
-      ordering: derived.ordering,
-      current: derived.current,
-      lastAttempt: derived.lastAttempt,
-      history: derived.orderedHistory,
-    };
-  }))).sort((left, right) => left.environmentKey.localeCompare(right.environmentKey)
-    || left.targetKey.localeCompare(right.targetKey)
-    || left.artifactKey.localeCompare(right.artifactKey));
+  const completeTargets = (
+    await Promise.all(
+      [...grouped.values()].map(async (items) => {
+        const derived = await groupProjection(items, inspected.project.projectRoot, snapshotCache);
+        return {
+          environmentKey: items[0].payload.environment_key,
+          targetKey: items[0].payload.target_key,
+          artifactKey: items[0].payload.artifact_key,
+          state: derived.state,
+          ordering: derived.ordering,
+          current: derived.current,
+          lastAttempt: derived.lastAttempt,
+          history: derived.orderedHistory,
+        };
+      }),
+    )
+  ).sort(
+    (left, right) =>
+      left.environmentKey.localeCompare(right.environmentKey) ||
+      left.targetKey.localeCompare(right.targetKey) ||
+      left.artifactKey.localeCompare(right.artifactKey),
+  );
   const environmentKeys = [...new Set(completeTargets.map((target) => target.environmentKey))].sort();
   const environments = environmentKeys.map((key) => {
     const targets = completeTargets.filter((target) => target.environmentKey === key);
@@ -421,16 +466,23 @@ export async function inspectDeliveryState({ root = ".", environmentKey = "", ta
       unobservedTargetsInferred: false,
     };
   });
-  const fullHistory = completeTargets.flatMap((target) => target.history.map((entry) => ({
-    environmentKey: target.environmentKey,
-    targetKey: target.targetKey,
-    artifactKey: target.artifactKey,
-    ...entry,
-  }))).sort((left, right) => left.environmentKey.localeCompare(right.environmentKey)
-    || left.targetKey.localeCompare(right.targetKey)
-    || left.artifactKey.localeCompare(right.artifactKey)
-    || left.sequence - right.sequence
-    || left.observationId.localeCompare(right.observationId));
+  const fullHistory = completeTargets
+    .flatMap((target) =>
+      target.history.map((entry) => ({
+        environmentKey: target.environmentKey,
+        targetKey: target.targetKey,
+        artifactKey: target.artifactKey,
+        ...entry,
+      })),
+    )
+    .sort(
+      (left, right) =>
+        left.environmentKey.localeCompare(right.environmentKey) ||
+        left.targetKey.localeCompare(right.targetKey) ||
+        left.artifactKey.localeCompare(right.artifactKey) ||
+        left.sequence - right.sequence ||
+        left.observationId.localeCompare(right.observationId),
+    );
   const returnedHistory = fullHistory.slice(0, boundedHistoryLimit);
   const returnedIds = new Set(returnedHistory.map((entry) => entry.observationId));
   const targets = completeTargets.map((target) => ({

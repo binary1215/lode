@@ -7,10 +7,19 @@ import { readChangeSet, readVcsEvidence } from "./change-set.mjs";
 import { VCS_EVIDENCE_VERSION, verifyGitCommitObservation } from "./change-set-projection.mjs";
 import { withRefreshWriterLease } from "./refresh-writer-lease.mjs";
 import {
-  RELEASE_OBSERVATION_VERSION, releaseObservationCanonicalJson, releaseObservationDigest,
-  verifyBranchStateObservation, verifyDeploymentResultObservation, verifyReleaseObservation,
-  loadReleaseObservationProjection, DEPLOYMENT_STATUSES, REF_KINDS,
-  fail, requiredText, stableKey, safeDirectory,
+  RELEASE_OBSERVATION_VERSION,
+  releaseObservationCanonicalJson,
+  releaseObservationDigest,
+  verifyBranchStateObservation,
+  verifyDeploymentResultObservation,
+  verifyReleaseObservation,
+  loadReleaseObservationProjection,
+  DEPLOYMENT_STATUSES,
+  REF_KINDS,
+  fail,
+  requiredText,
+  stableKey,
+  safeDirectory,
 } from "./release-observation-projection.mjs";
 
 export {
@@ -33,7 +42,8 @@ function exactFields(value, fields, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${label} must be an object.`, "INVALID_RELEASE_OBSERVATION_INPUT");
   const expected = [...fields].sort();
   const actual = Object.keys(value).sort();
-  if (releaseObservationCanonicalJson(actual) !== releaseObservationCanonicalJson(expected)) fail(`${label} fields are invalid.`, "INVALID_RELEASE_OBSERVATION_INPUT");
+  if (releaseObservationCanonicalJson(actual) !== releaseObservationCanonicalJson(expected))
+    fail(`${label} fields are invalid.`, "INVALID_RELEASE_OBSERVATION_INPUT");
 }
 
 function digestValue(value, label, nullable = false) {
@@ -57,15 +67,20 @@ function identity(payload, prefix, idField, hashField) {
 function atomicWrite(file, content) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try { fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" }); fs.renameSync(temporary, file); }
-  finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
+  try {
+    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
+    fs.renameSync(temporary, file);
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
 }
 
 function persistImmutable(projectRoot, relative, id, document) {
   const file = path.join(safeDirectory(projectRoot, relative), `${id}.json`);
   if (fs.existsSync(file)) {
     const existing = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (releaseObservationCanonicalJson(existing) !== releaseObservationCanonicalJson(document)) fail(`Immutable identity collision: ${id}`, "RELEASE_OBSERVATION_IMMUTABLE_COLLISION");
+    if (releaseObservationCanonicalJson(existing) !== releaseObservationCanonicalJson(document))
+      fail(`Immutable identity collision: ${id}`, "RELEASE_OBSERVATION_IMMUTABLE_COLLISION");
     return { status: "existing", file };
   }
   atomicWrite(file, json(document));
@@ -94,7 +109,10 @@ function gitCommitObservation(commit, storage) {
     promotionAuthority: false,
   };
   const hash = releaseObservationDigest(releaseObservationCanonicalJson(payload));
-  return verifyGitCommitObservation({ ...payload, gitCommitObservationId: `git-commit-observation-${hash.slice(0, 24)}`, gitCommitObservationHash: hash }, storage);
+  return verifyGitCommitObservation(
+    { ...payload, gitCommitObservationId: `git-commit-observation-${hash.slice(0, 24)}`, gitCommitObservationHash: hash },
+    storage,
+  );
 }
 
 function branchState(projectId, reference, referencesDigest, commitObservation, storage) {
@@ -116,11 +134,30 @@ function branchState(projectId, reference, referencesDigest, commitObservation, 
     mutatesCanon: false,
     recoveryAuthority: false,
   };
-  return verifyBranchStateObservation(identity(payload, "branch-state-observation", "branchStateObservationId", "branchStateObservationHash"), projectId, storage);
+  return verifyBranchStateObservation(
+    identity(payload, "branch-state-observation", "branchStateObservationId", "branchStateObservationHash"),
+    projectId,
+    storage,
+  );
 }
 
 function normalizeDeploymentInput(input) {
-  exactFields(input, ["environmentKey", "status", "commit", "observedAt", "sourceEventKeyDigest", "deploymentEvidenceDigest", "approved", "approvalEvidenceDigest", "changeSetId", "vcsEvidenceId"], "Deployment result");
+  exactFields(
+    input,
+    [
+      "environmentKey",
+      "status",
+      "commit",
+      "observedAt",
+      "sourceEventKeyDigest",
+      "deploymentEvidenceDigest",
+      "approved",
+      "approvalEvidenceDigest",
+      "changeSetId",
+      "vcsEvidenceId",
+    ],
+    "Deployment result",
+  );
   const status = requiredText(input.status, "Deployment status", 32).toLocaleLowerCase();
   if (!DEPLOYMENT_STATUSES.has(status)) fail("Deployment status is invalid.", "INVALID_RELEASE_OBSERVATION_INPUT");
   const observedAt = requiredText(input.observedAt, "Deployment observedAt", 64);
@@ -146,15 +183,36 @@ function normalizeDeploymentInput(input) {
 }
 
 export class StructuredDeploymentResultAdapter {
-  constructor({ input } = {}) { this.adapterVersion = RELEASE_OBSERVATION_VERSION; this.input = input; }
-  describe() { return { adapterKind: "structured-deployment-result", adapterVersion: this.adapterVersion, authority: "observed-evidence-only", providerNeutral: true, persistsProviderIdentity: false }; }
-  readResult() { return normalizeDeploymentInput(this.input); }
+  constructor({ input } = {}) {
+    this.adapterVersion = RELEASE_OBSERVATION_VERSION;
+    this.input = input;
+  }
+  describe() {
+    return {
+      adapterKind: "structured-deployment-result",
+      adapterVersion: this.adapterVersion,
+      authority: "observed-evidence-only",
+      providerNeutral: true,
+      persistsProviderIdentity: false,
+    };
+  }
+  readResult() {
+    return normalizeDeploymentInput(this.input);
+  }
 }
 
 export function assertDeploymentResultAdapter(adapter) {
-  if (!adapter || typeof adapter !== "object" || adapter.adapterVersion !== RELEASE_OBSERVATION_VERSION || typeof adapter.describe !== "function" || typeof adapter.readResult !== "function") fail("DeploymentResultAdapter is invalid.", "INVALID_DEPLOYMENT_RESULT_ADAPTER");
+  if (
+    !adapter ||
+    typeof adapter !== "object" ||
+    adapter.adapterVersion !== RELEASE_OBSERVATION_VERSION ||
+    typeof adapter.describe !== "function" ||
+    typeof adapter.readResult !== "function"
+  )
+    fail("DeploymentResultAdapter is invalid.", "INVALID_DEPLOYMENT_RESULT_ADAPTER");
   const descriptor = adapter.describe();
-  if (descriptor.authority !== "observed-evidence-only" || descriptor.providerNeutral !== true || descriptor.persistsProviderIdentity !== false) fail("DeploymentResultAdapter crosses the authority boundary.", "INVALID_DEPLOYMENT_RESULT_ADAPTER_AUTHORITY");
+  if (descriptor.authority !== "observed-evidence-only" || descriptor.providerNeutral !== true || descriptor.persistsProviderIdentity !== false)
+    fail("DeploymentResultAdapter crosses the authority boundary.", "INVALID_DEPLOYMENT_RESULT_ADAPTER_AUTHORITY");
   return adapter;
 }
 
@@ -172,7 +230,11 @@ function deploymentResult(projectId, normalized, storage) {
     mutatesCanon: false,
     recoveryAuthority: false,
   };
-  return verifyDeploymentResultObservation(identity(payload, "deployment-result-observation", "deploymentResultObservationId", "deploymentResultObservationHash"), projectId, storage);
+  return verifyDeploymentResultObservation(
+    identity(payload, "deployment-result-observation", "deploymentResultObservationId", "deploymentResultObservationHash"),
+    projectId,
+    storage,
+  );
 }
 
 function releaseObservation(projectId, deployment, branchStates, storage) {
@@ -206,54 +268,78 @@ function readyProject(root) {
 export async function observeReleaseState({ root = ".", input = null, adapter = null } = {}) {
   const inspected = readyProject(root);
   const storage = inspected.storage;
-  const directories = { branchStates: relativeProjectArtifact(storage, "release-observations", "branch-states"), deploymentResults: relativeProjectArtifact(storage, "release-observations", "deployment-results"), releases: relativeProjectArtifact(storage, "release-observations", "releases") };
-  return withRefreshWriterLease({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, storage }, async (writerLease) => {
-  const selected = assertDeploymentResultAdapter(adapter || new StructuredDeploymentResultAdapter({ input }));
-  const normalized = await selected.readResult({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId });
-  const verifiedInput = normalizeDeploymentInput(normalized);
-  const { buildWorldModel } = await import("./world-model.mjs");
-  const before = await buildWorldModel({ root: inspected.project.projectRoot, persist: true, writerLease, storage });
-  const history = before.snapshot.gitDecisionHistory;
-  if (history.status !== "available") fail("Verified Git history is unavailable for release observation.", "RELEASE_GIT_HISTORY_UNAVAILABLE");
-  const commit = history.commits.find((item) => item.commit === verifiedInput.commit);
-  if (!commit) fail("Deployment commit is absent from verified reachable Git history.", "RELEASE_COMMIT_NOT_FOUND");
-  const commitObservation = gitCommitObservation(commit, storage);
-  const references = (before.snapshot.git.references || []).filter((item) => item.commit === verifiedInput.commit && REF_KINDS.has(item.kind));
-  const branchStates = references.map((reference) => branchState(inspected.project.projectId, reference, before.snapshot.git.referencesDigest, commitObservation, storage));
-  for (const branch of branchStates) persistImmutable(inspected.project.projectRoot, directories.branchStates, branch.branchStateObservationId, branch);
-  const deployment = deploymentResult(inspected.project.projectId, verifiedInput, storage);
-  const currentProjection = loadReleaseObservationProjection({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, storage: inspected.storage });
-  const conflicting = currentProjection.deploymentResults.find((item) => item.sourceEventKeyDigest === deployment.sourceEventKeyDigest && item.deploymentResultObservationId !== deployment.deploymentResultObservationId);
-  if (conflicting) fail("Deployment source event was replayed with divergent content.", "DIVERGENT_DEPLOYMENT_RESULT_REPLAY");
-  persistImmutable(inspected.project.projectRoot, directories.deploymentResults, deployment.deploymentResultObservationId, deployment);
-  let release = null;
-  let releaseStatus = deployment.status === "succeeded" && deployment.approved ? "awaiting_matching_product_ref" : "not_release_eligible";
-  if (deployment.status === "succeeded" && deployment.approved && branchStates.length) {
-    if (deployment.changeSetId) {
-      const changeSet = readChangeSet({ root: inspected.project.projectRoot, changeSetId: deployment.changeSetId, storage }).changeSet;
-      const vcsEvidence = readVcsEvidence({ root: inspected.project.projectRoot, vcsEvidenceId: deployment.vcsEvidenceId, storage }).vcsEvidence;
-      if (vcsEvidence.changeSetId !== changeSet.changeSetId || !vcsEvidence.commitObservations.some((item) => item.objectId === deployment.commit)) fail("Release ChangeSet/VCS evidence does not contain the deployed commit.", "RELEASE_VCS_EVIDENCE_MISMATCH");
-    }
-    release = releaseObservation(inspected.project.projectId, deployment, branchStates, storage);
-    persistImmutable(inspected.project.projectRoot, directories.releases, release.releaseObservationId, release);
-    releaseStatus = "release_observed";
-  }
-  const after = await buildWorldModel({ root: inspected.project.projectRoot, persist: true, writerLease, storage });
-  return {
-    status: releaseStatus,
-    branchStates,
-    deploymentResult: deployment,
-    release,
-    adapter: selected.describe(),
-    worldModel: { worldModelId: after.snapshot.worldModelId, graphSnapshotId: after.snapshot.temporalProvenanceGraph.graphSnapshotId },
-    authority: { observations: "P3-evidence-only", graph: "P4-derived", productCanonMutated: false, reviewDecisionCreated: false, recoveryDirectionMutated: false },
+  const directories = {
+    branchStates: relativeProjectArtifact(storage, "release-observations", "branch-states"),
+    deploymentResults: relativeProjectArtifact(storage, "release-observations", "deployment-results"),
+    releases: relativeProjectArtifact(storage, "release-observations", "releases"),
   };
+  return withRefreshWriterLease({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, storage }, async (writerLease) => {
+    const selected = assertDeploymentResultAdapter(adapter || new StructuredDeploymentResultAdapter({ input }));
+    const normalized = await selected.readResult({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId });
+    const verifiedInput = normalizeDeploymentInput(normalized);
+    const { buildWorldModel } = await import("./world-model.mjs");
+    const before = await buildWorldModel({ root: inspected.project.projectRoot, persist: true, writerLease, storage });
+    const history = before.snapshot.gitDecisionHistory;
+    if (history.status !== "available") fail("Verified Git history is unavailable for release observation.", "RELEASE_GIT_HISTORY_UNAVAILABLE");
+    const commit = history.commits.find((item) => item.commit === verifiedInput.commit);
+    if (!commit) fail("Deployment commit is absent from verified reachable Git history.", "RELEASE_COMMIT_NOT_FOUND");
+    const commitObservation = gitCommitObservation(commit, storage);
+    const references = (before.snapshot.git.references || []).filter((item) => item.commit === verifiedInput.commit && REF_KINDS.has(item.kind));
+    const branchStates = references.map((reference) =>
+      branchState(inspected.project.projectId, reference, before.snapshot.git.referencesDigest, commitObservation, storage),
+    );
+    for (const branch of branchStates) persistImmutable(inspected.project.projectRoot, directories.branchStates, branch.branchStateObservationId, branch);
+    const deployment = deploymentResult(inspected.project.projectId, verifiedInput, storage);
+    const currentProjection = loadReleaseObservationProjection({
+      projectRoot: inspected.project.projectRoot,
+      projectId: inspected.project.projectId,
+      storage: inspected.storage,
+    });
+    const conflicting = currentProjection.deploymentResults.find(
+      (item) =>
+        item.sourceEventKeyDigest === deployment.sourceEventKeyDigest && item.deploymentResultObservationId !== deployment.deploymentResultObservationId,
+    );
+    if (conflicting) fail("Deployment source event was replayed with divergent content.", "DIVERGENT_DEPLOYMENT_RESULT_REPLAY");
+    persistImmutable(inspected.project.projectRoot, directories.deploymentResults, deployment.deploymentResultObservationId, deployment);
+    let release = null;
+    let releaseStatus = deployment.status === "succeeded" && deployment.approved ? "awaiting_matching_product_ref" : "not_release_eligible";
+    if (deployment.status === "succeeded" && deployment.approved && branchStates.length) {
+      if (deployment.changeSetId) {
+        const changeSet = readChangeSet({ root: inspected.project.projectRoot, changeSetId: deployment.changeSetId, storage }).changeSet;
+        const vcsEvidence = readVcsEvidence({ root: inspected.project.projectRoot, vcsEvidenceId: deployment.vcsEvidenceId, storage }).vcsEvidence;
+        if (vcsEvidence.changeSetId !== changeSet.changeSetId || !vcsEvidence.commitObservations.some((item) => item.objectId === deployment.commit))
+          fail("Release ChangeSet/VCS evidence does not contain the deployed commit.", "RELEASE_VCS_EVIDENCE_MISMATCH");
+      }
+      release = releaseObservation(inspected.project.projectId, deployment, branchStates, storage);
+      persistImmutable(inspected.project.projectRoot, directories.releases, release.releaseObservationId, release);
+      releaseStatus = "release_observed";
+    }
+    const after = await buildWorldModel({ root: inspected.project.projectRoot, persist: true, writerLease, storage });
+    return {
+      status: releaseStatus,
+      branchStates,
+      deploymentResult: deployment,
+      release,
+      adapter: selected.describe(),
+      worldModel: { worldModelId: after.snapshot.worldModelId, graphSnapshotId: after.snapshot.temporalProvenanceGraph.graphSnapshotId },
+      authority: {
+        observations: "P3-evidence-only",
+        graph: "P4-derived",
+        productCanonMutated: false,
+        reviewDecisionCreated: false,
+        recoveryDirectionMutated: false,
+      },
+    };
   });
 }
 
 export function inspectReleaseObservations({ root = "." } = {}) {
   const inspected = readyProject(root);
-  const projection = loadReleaseObservationProjection({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, storage: inspected.storage });
+  const projection = loadReleaseObservationProjection({
+    projectRoot: inspected.project.projectRoot,
+    projectId: inspected.project.projectId,
+    storage: inspected.storage,
+  });
   return {
     status: projection.branchStates.length || projection.deploymentResults.length || projection.releases.length ? "active" : "not_started",
     projectId: inspected.project.projectId,

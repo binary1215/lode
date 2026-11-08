@@ -3,11 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { defaultSessionStatePath, sessionStatePath } from "./session-routing.mjs";
 import { inspectProject } from "./lode-core.mjs";
-import {
-  ONBOARDING_STATE_PROTOCOL_VERSION,
-  onboardingCanonicalJson,
-  verifyOnboardingState,
-} from "./onboarding-contract.mjs";
+import { ONBOARDING_STATE_PROTOCOL_VERSION, onboardingCanonicalJson, verifyOnboardingState } from "./onboarding-contract.mjs";
 import { verifyProductModelRevisionForProjection } from "./onboarding-projection.mjs";
 import { readProductModelCanon } from "./product-model.mjs";
 import { inspectRecoveryCheckpointBasis, readRecoveryCheckpoint } from "./compaction-recovery.mjs";
@@ -41,8 +37,11 @@ function fail(message, code = "HISTORICAL_BOUNDARY_APPLICATION_ERROR") {
 }
 
 function readJson(file, label) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`${label} is invalid JSON: ${error.message}`, "INVALID_HISTORICAL_BOUNDARY_BASIS"); }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(`${label} is invalid JSON: ${error.message}`, "INVALID_HISTORICAL_BOUNDARY_BASIS");
+  }
 }
 
 function relativePath(root, file) {
@@ -130,7 +129,8 @@ export function captureHistoricalBoundaryApplicationBasis({ root = "." } = {}) {
   }
   const canon = readProductModelCanon({ projectRoot, storage: inspected.storage });
   if (canon.status !== "present") fail("A real current Product Canon is required.", "HISTORICAL_BOUNDARY_CANON_MISSING");
-  if (canon.model.productModelId !== onboardingState.productModelId) fail("Current Canon and onboarding state do not agree.", "HISTORICAL_BOUNDARY_CANON_DRIFT");
+  if (canon.model.productModelId !== onboardingState.productModelId)
+    fail("Current Canon and onboarding state do not agree.", "HISTORICAL_BOUNDARY_CANON_DRIFT");
   const revisionRelative = relativeProjectArtifact(inspected.storage, "onboarding", "product-model-revisions", `${onboardingState.productModelId}.json`);
   const revisionFile = path.join(projectRoot, ...revisionRelative.split("/"));
   const revision = verifyProductModelRevisionForProjection(readJson(revisionFile, "Current Product Model revision"), inspected.storage);
@@ -138,7 +138,11 @@ export function captureHistoricalBoundaryApplicationBasis({ root = "." } = {}) {
     fail("Current Canon revision is not independently readable.", "HISTORICAL_BOUNDARY_CURRENT_CANON_REVISION_UNSUPPORTED");
   }
   const projectFile = fileBasis(projectRoot, relativeProjectArtifact(inspected.storage, "project.json"), inspected.project.projectId);
-  const sessionFile = fileBasis(projectRoot, path.relative(projectRoot, sessionStatePath(projectRoot, inspected.storage)).split(path.sep).join("/"), inspected.state.sessionId);
+  const sessionFile = fileBasis(
+    projectRoot,
+    path.relative(projectRoot, sessionStatePath(projectRoot, inspected.storage)).split(path.sep).join("/"),
+    inspected.state.sessionId,
+  );
   const stateBasis = fileBasis(projectRoot, relativeProjectArtifact(inspected.storage, "onboarding", "current.json"), onboardingState.pointerHash);
   const canonBasis = fileBasis(projectRoot, canon.relativePath, canon.model.productModelId);
   const referencedP2 = verifyReferencedP2(projectRoot, inspected.state, inspected.storage);
@@ -152,9 +156,15 @@ export function captureHistoricalBoundaryApplicationBasis({ root = "." } = {}) {
     appliedAtBasis: {
       project: projectFile,
       session: sessionFile,
-      ...(onboardingOwner.state.sessionId !== inspected.state.sessionId ? {
-        onboardingSession: fileBasis(projectRoot, relativePath(projectRoot, defaultSessionStatePath(projectRoot, inspected.storage)), onboardingOwner.state.sessionId),
-      } : {}),
+      ...(onboardingOwner.state.sessionId !== inspected.state.sessionId
+        ? {
+            onboardingSession: fileBasis(
+              projectRoot,
+              relativePath(projectRoot, defaultSessionStatePath(projectRoot, inspected.storage)),
+              onboardingOwner.state.sessionId,
+            ),
+          }
+        : {}),
       onboardingState: {
         ...stateBasis,
         candidateSetId: onboardingState.candidateSetId,
@@ -169,12 +179,17 @@ export function captureHistoricalBoundaryApplicationBasis({ root = "." } = {}) {
 
 export function createVerifiedHistoricalInventoryCapability({ root = ".", projectId, entries, validation, storage } = {}) {
   const projectRoot = fs.realpathSync(path.resolve(root));
-  if (!validation || validation.status !== "complete-ready-verified" || validation.instructionAuthority !== false
-    || validation.promotionAuthority !== false || !Array.isArray(validation.supportedCandidateVersions)
-    || !/^onboarding-candidates-[a-f0-9]{24}$/.test(validation.historicalReadyCandidateSetId || "")
-    || !/^onboarding-review-decision-[a-f0-9]{24}$/.test(validation.historicalReadyReviewDecisionId || "")
-    || !/^product-model-[a-f0-9]{24}$/.test(validation.historicalResultingProductModelId || "")
-    || validation.supportedCandidateVersions.some((version) => !["0.1.0", "0.2.0", "0.3.0"].includes(version))) {
+  if (
+    !validation ||
+    validation.status !== "complete-ready-verified" ||
+    validation.instructionAuthority !== false ||
+    validation.promotionAuthority !== false ||
+    !Array.isArray(validation.supportedCandidateVersions) ||
+    !/^onboarding-candidates-[a-f0-9]{24}$/.test(validation.historicalReadyCandidateSetId || "") ||
+    !/^onboarding-review-decision-[a-f0-9]{24}$/.test(validation.historicalReadyReviewDecisionId || "") ||
+    !/^product-model-[a-f0-9]{24}$/.test(validation.historicalResultingProductModelId || "") ||
+    validation.supportedCandidateVersions.some((version) => !["0.1.0", "0.2.0", "0.3.0"].includes(version))
+  ) {
     fail("External historical validation is incomplete.", "HISTORICAL_BOUNDARY_EXTERNAL_VALIDATION_REQUIRED");
   }
   verifyHistoricalInventoryEntries(entries, { projectRoot, projectId, verifyBytes: true, storage });
@@ -217,44 +232,61 @@ function buildBoundary({ projectId, entries, appliedAtBasis, validatedHistorical
 }
 
 function buildReceipt(boundary) {
-  return documentIdentity({
-    schemaVersion: 1,
-    kind: "HistoricalBoundaryApplicationReceipt",
-    protocol: { name: familyFormatForOriginal("head-agent-core-historical-artifact-boundary", boundary).protocol("head-agent-core-historical-boundary-application"), version: HISTORICAL_BOUNDARY_PROTOCOL_VERSION },
-    projectId: boundary.projectId,
-    boundaryId: boundary.boundaryId,
-    boundaryHash: boundary.boundaryHash,
-    inventoryHash: boundary.inventoryHash,
-    appliedAtBasisHash: historicalBoundaryDigest(historicalBoundaryCanonicalJson(boundary.appliedAtBasis)),
-    authorityClass: "evidence",
-    instructionAuthority: false,
-    promotionAuthority: false,
-  }, "receiptId", "receiptHash", "historical-boundary-receipt");
+  return documentIdentity(
+    {
+      schemaVersion: 1,
+      kind: "HistoricalBoundaryApplicationReceipt",
+      protocol: {
+        name: familyFormatForOriginal("head-agent-core-historical-artifact-boundary", boundary).protocol("head-agent-core-historical-boundary-application"),
+        version: HISTORICAL_BOUNDARY_PROTOCOL_VERSION,
+      },
+      projectId: boundary.projectId,
+      boundaryId: boundary.boundaryId,
+      boundaryHash: boundary.boundaryHash,
+      inventoryHash: boundary.inventoryHash,
+      appliedAtBasisHash: historicalBoundaryDigest(historicalBoundaryCanonicalJson(boundary.appliedAtBasis)),
+      authorityClass: "evidence",
+      instructionAuthority: false,
+      promotionAuthority: false,
+    },
+    "receiptId",
+    "receiptHash",
+    "historical-boundary-receipt",
+  );
 }
 
 function buildCommit(boundary, receipt) {
-  return documentIdentity({
-    schemaVersion: 1,
-    kind: "HistoricalBoundaryCommitMarker",
-    protocol: { name: familyFormatForOriginal("head-agent-core-historical-artifact-boundary", boundary).protocol("head-agent-core-historical-boundary-commit"), version: HISTORICAL_BOUNDARY_PROTOCOL_VERSION },
-    projectId: boundary.projectId,
-    boundaryId: boundary.boundaryId,
-    boundaryHash: boundary.boundaryHash,
-    receiptId: receipt.receiptId,
-    receiptHash: receipt.receiptHash,
-    inventoryHash: boundary.inventoryHash,
-    historicalIntegrityBasisHash: historicalBoundaryDigest(historicalBoundaryCanonicalJson(historicalIntegrityBasis(boundary, receipt))),
-    authorityClass: "evidence",
-    instructionAuthority: false,
-    promotionAuthority: false,
-  }, "commitId", "commitHash", "historical-boundary-commit");
+  return documentIdentity(
+    {
+      schemaVersion: 1,
+      kind: "HistoricalBoundaryCommitMarker",
+      protocol: {
+        name: familyFormatForOriginal("head-agent-core-historical-artifact-boundary", boundary).protocol("head-agent-core-historical-boundary-commit"),
+        version: HISTORICAL_BOUNDARY_PROTOCOL_VERSION,
+      },
+      projectId: boundary.projectId,
+      boundaryId: boundary.boundaryId,
+      boundaryHash: boundary.boundaryHash,
+      receiptId: receipt.receiptId,
+      receiptHash: receipt.receiptHash,
+      inventoryHash: boundary.inventoryHash,
+      historicalIntegrityBasisHash: historicalBoundaryDigest(historicalBoundaryCanonicalJson(historicalIntegrityBasis(boundary, receipt))),
+      authorityClass: "evidence",
+      instructionAuthority: false,
+      promotionAuthority: false,
+    },
+    "commitId",
+    "commitHash",
+    "historical-boundary-commit",
+  );
 }
 
 function exactJsonWrite(file, document) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const content = `${JSON.stringify(document, null, 2)}\n`;
   if (fs.existsSync(file)) {
-    if (fs.readFileSync(file, "utf8") !== content) fail(`Create-only historical artifact conflicts: ${relativePath(path.dirname(file), file)}`, "HISTORICAL_BOUNDARY_DIVERGENT_REPLAY");
+    if (fs.readFileSync(file, "utf8") !== content)
+      fail(`Create-only historical artifact conflicts: ${relativePath(path.dirname(file), file)}`, "HISTORICAL_BOUNDARY_DIVERGENT_REPLAY");
     return false;
   }
   fs.writeFileSync(file, content, { flag: "wx" });
@@ -262,27 +294,34 @@ function exactJsonWrite(file, document) {
 }
 
 function assertInventoryMatchesReadyState(capability, basis) {
-  if (capability.projectRoot !== basis.projectRoot || capability.projectId !== basis.projectId) fail("Historical inventory belongs to another Project.", "HISTORICAL_BOUNDARY_PROJECT_MISMATCH");
+  if (capability.projectRoot !== basis.projectRoot || capability.projectId !== basis.projectId)
+    fail("Historical inventory belongs to another Project.", "HISTORICAL_BOUNDARY_PROJECT_MISMATCH");
   const candidateIds = capability.entries.filter((entry) => entry.role === "historical-candidate-set").map((entry) => entry.artifactId);
   const reviewIds = capability.entries.filter((entry) => entry.role === "historical-review").map((entry) => entry.artifactId);
-  if (!candidateIds.includes(capability.validation.historicalReadyCandidateSetId)
-    || !reviewIds.includes(capability.validation.historicalReadyReviewDecisionId)) {
+  if (
+    !candidateIds.includes(capability.validation.historicalReadyCandidateSetId) ||
+    !reviewIds.includes(capability.validation.historicalReadyReviewDecisionId)
+  ) {
     fail("Historical inventory does not cover its externally verified ready approval.", "HISTORICAL_BOUNDARY_INCOMPLETE");
   }
-  const historicalResult = capability.entries.find((entry) => entry.role === "historical-product-revision"
-    && entry.artifactId === capability.validation.historicalResultingProductModelId);
+  const historicalResult = capability.entries.find(
+    (entry) => entry.role === "historical-product-revision" && entry.artifactId === capability.validation.historicalResultingProductModelId,
+  );
   if (!historicalResult || historicalResult.interpretationMode !== "current-typed-with-historical-provenance") {
     fail("Historical resulting Canon revision is not independently current-readable.", "HISTORICAL_BOUNDARY_CURRENT_CANON_REVISION_UNSUPPORTED");
   }
-  if (basis.onboardingState.candidateSetId === capability.validation.historicalReadyCandidateSetId
-    && basis.onboardingState.latestReviewDecisionId !== capability.validation.historicalReadyReviewDecisionId) {
+  if (
+    basis.onboardingState.candidateSetId === capability.validation.historicalReadyCandidateSetId &&
+    basis.onboardingState.latestReviewDecisionId !== capability.validation.historicalReadyReviewDecisionId
+  ) {
     fail("Live legacy ready pointer does not match the verified terminal review.", "HISTORICAL_BOUNDARY_INCOMPLETE");
   }
 }
 
 export function applyHistoricalArtifactBoundary({ root = ".", verifiedInventory, hostMode } = {}) {
   if (hostMode !== "explicit-one-shot") fail("Historical boundary apply requires explicit one-shot Host mode.", "HISTORICAL_BOUNDARY_HOST_MODE_REQUIRED");
-  if (!verifiedInventories.has(verifiedInventory)) fail("Serialized or unverified historical inventory cannot be applied.", "HISTORICAL_BOUNDARY_CAPABILITY_REQUIRED");
+  if (!verifiedInventories.has(verifiedInventory))
+    fail("Serialized or unverified historical inventory cannot be applied.", "HISTORICAL_BOUNDARY_CAPABILITY_REQUIRED");
   return withProjectMutation({ root, scope: "historical-boundary" }, () => {
     const inspected = inspectProject(root);
     if (inspected.status !== "ready") fail("Project and Session must be independently current-readable.", "HISTORICAL_BOUNDARY_P2_UNREADABLE");
@@ -290,28 +329,53 @@ export function applyHistoricalArtifactBoundary({ root = ".", verifiedInventory,
     if (verifiedInventory.projectRoot !== projectRoot || verifiedInventory.projectId !== inspected.project.projectId) {
       fail("Historical inventory belongs to another Project.", "HISTORICAL_BOUNDARY_PROJECT_MISMATCH");
     }
-    verifyHistoricalInventoryEntries(verifiedInventory.entries, { projectRoot, projectId: inspected.project.projectId, verifyBytes: true, storage: inspected.storage });
-    const inventoryHash = historicalBoundaryDigest(historicalBoundaryCanonicalJson({
+    verifyHistoricalInventoryEntries(verifiedInventory.entries, {
+      projectRoot,
       projectId: inspected.project.projectId,
-      entries: verifiedInventory.entries,
-    }));
-    const existing = readHistoricalBoundaryApplication({ root: projectRoot, projectId: inspected.project.projectId, allowAbsent: true, verifyBytes: true, storage: inspected.storage });
+      verifyBytes: true,
+      storage: inspected.storage,
+    });
+    const inventoryHash = historicalBoundaryDigest(
+      historicalBoundaryCanonicalJson({
+        projectId: inspected.project.projectId,
+        entries: verifiedInventory.entries,
+      }),
+    );
+    const existing = readHistoricalBoundaryApplication({
+      root: projectRoot,
+      projectId: inspected.project.projectId,
+      allowAbsent: true,
+      verifyBytes: true,
+      storage: inspected.storage,
+    });
     // A committed boundary is governed by historicalIntegrityBasis, not by the
     // one-time appliedAtBasis. Normal current Canon/Session/P2 evolution must
     // therefore make an exact retry read-only rather than look like drift.
     if (existing?.commit) {
-      if (existing.boundary.inventoryHash !== inventoryHash
-        || historicalBoundaryCanonicalJson(existing.boundary.entries) !== historicalBoundaryCanonicalJson(verifiedInventory.entries)) {
+      if (
+        existing.boundary.inventoryHash !== inventoryHash ||
+        historicalBoundaryCanonicalJson(existing.boundary.entries) !== historicalBoundaryCanonicalJson(verifiedInventory.entries)
+      ) {
         fail("A different historical inventory is already committed.", "HISTORICAL_BOUNDARY_DIVERGENT_REPLAY");
       }
-      return { status: "already-applied", writes: 0, boundary: existing.boundary, receipt: existing.receipt, commit: existing.commit, coverage: existing.coverage };
+      return {
+        status: "already-applied",
+        writes: 0,
+        boundary: existing.boundary,
+        receipt: existing.receipt,
+        commit: existing.commit,
+        coverage: existing.coverage,
+      };
     }
     verifyHistoricalRevisionInterpretations(verifiedInventory.entries, projectRoot, inspected.storage);
     const basis = captureHistoricalBoundaryApplicationBasis({ root });
     if (historicalBoundaryCanonicalJson(verifiedInventory.appliedAtBasis) !== historicalBoundaryCanonicalJson(basis.appliedAtBasis)) {
-      fail(existing ? "Incomplete historical boundary basis drifted before final commit."
-        : "Historical migration preflight basis changed before first application.",
-      existing ? "INCOMPLETE_HISTORICAL_BOUNDARY_BASIS_DRIFT" : "HISTORICAL_BOUNDARY_PREFLIGHT_BASIS_DRIFT");
+      fail(
+        existing
+          ? "Incomplete historical boundary basis drifted before final commit."
+          : "Historical migration preflight basis changed before first application.",
+        existing ? "INCOMPLETE_HISTORICAL_BOUNDARY_BASIS_DRIFT" : "HISTORICAL_BOUNDARY_PREFLIGHT_BASIS_DRIFT",
+      );
     }
     assertInventoryMatchesReadyState(verifiedInventory, basis);
     const candidate = buildBoundary({
@@ -325,8 +389,11 @@ export function applyHistoricalArtifactBoundary({ root = ".", verifiedInventory,
         resultingProductModelId: verifiedInventory.validation.historicalResultingProductModelId,
       },
     });
-    if (existing && (existing.boundary.inventoryHash !== candidate.inventoryHash
-      || historicalBoundaryCanonicalJson(existing.boundary.appliedAtBasis) !== historicalBoundaryCanonicalJson(basis.appliedAtBasis))) {
+    if (
+      existing &&
+      (existing.boundary.inventoryHash !== candidate.inventoryHash ||
+        historicalBoundaryCanonicalJson(existing.boundary.appliedAtBasis) !== historicalBoundaryCanonicalJson(basis.appliedAtBasis))
+    ) {
       fail("Incomplete historical boundary basis drifted before final commit.", "INCOMPLETE_HISTORICAL_BOUNDARY_BASIS_DRIFT");
     }
     const boundary = existing?.boundary || candidate;
@@ -340,6 +407,14 @@ export function applyHistoricalArtifactBoundary({ root = ".", verifiedInventory,
     writes += Number(exactJsonWrite(files.boundary, boundary));
     writes += Number(exactJsonWrite(files.receipt, receipt));
     writes += Number(exactJsonWrite(files.commit, commit));
-    return { status: "applied", writes, boundary, receipt, commit, coverage: readHistoricalBoundaryApplication({ root: basis.projectRoot, projectId: basis.projectId, requireCommitted: true, storage: inspected.storage }).coverage };
+    return {
+      status: "applied",
+      writes,
+      boundary,
+      receipt,
+      commit,
+      coverage: readHistoricalBoundaryApplication({ root: basis.projectRoot, projectId: basis.projectId, requireCommitted: true, storage: inspected.storage })
+        .coverage,
+    };
   });
 }

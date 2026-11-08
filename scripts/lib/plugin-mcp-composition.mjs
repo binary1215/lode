@@ -8,7 +8,8 @@ import { parseClaudeNativeToolName } from "./session-host-request.mjs";
 
 // Private, request-scoped installation composition, not an authorization or a
 // model-supplied loaded flag. No native identity is written into Project state.
-const launches = new WeakMap(), requests = new WeakMap();
+const launches = new WeakMap(),
+  requests = new WeakMap();
 const packageRoot = fs.realpathSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".."));
 const entryPath = path.join(packageRoot, "scripts", "mcp-plugin-server.mjs");
 const serverPath = path.join(packageRoot, "scripts", "mcp-server.mjs");
@@ -20,12 +21,14 @@ function regular(file) {
 }
 function verifiedEntryIdentity(manifest) {
   for (const required of ["scripts/mcp-plugin-server.mjs", "scripts/mcp-server.mjs", "scripts/lib/plugin-mcp-composition.mjs"]) {
-    if (!manifest.files.some(file => file.path === required)) throw new Error("Plugin composition code is outside the verified payload.");
+    if (!manifest.files.some((file) => file.path === required)) throw new Error("Plugin composition code is outside the verified payload.");
   }
   return manifest.releaseId;
 }
 function verifyOwnPackage() {
-  regular(entryPath); regular(serverPath); regular(path.join(packageRoot, ".mcp.json"));
+  regular(entryPath);
+  regular(serverPath);
+  regular(path.join(packageRoot, ".mcp.json"));
   // Only Claude currently supplies the exact private Hook/root correlation
   // consumed below. Other carriers keep standalone provisioning; a CLI/client
   // label or a source/Codex package is not a verified Claude plugin projection.
@@ -41,21 +44,37 @@ function ownerAt(root) {
 export function createPluginMcpLaunch(entryUrl) {
   try {
     if (fileURLToPath(entryUrl) !== entryPath || !process.argv[1] || fs.realpathSync(process.argv[1]) !== entryPath) return null;
-    const launch = Object.freeze({}); launches.set(launch, { releaseId: verifyOwnPackage() }); return launch;
-  } catch { return null; } // Unknown composition keeps ordinary standalone setup.
+    const launch = Object.freeze({});
+    launches.set(launch, { releaseId: verifyOwnPackage() });
+    return launch;
+  } catch {
+    return null;
+  } // Unknown composition keeps ordinary standalone setup.
 }
 export function createPluginInitializationContext({ launch, servingModuleUrl, caller, root } = {}) {
   try {
-    const known = launches.get(launch), parsed = parseClaudeNativeToolName(caller?.outerToolName);
-    if (!known || fileURLToPath(servingModuleUrl) !== serverPath || caller?.status !== "known" || caller.runtime !== "claude"
-      || caller.correlation !== "exact-native-tool-use" || parsed?.server !== pluginNamespace
-      || typeof caller.nativeProjectRoot !== "string" || !path.isAbsolute(caller.nativeProjectRoot) || typeof root !== "string") return null;
+    const known = launches.get(launch),
+      parsed = parseClaudeNativeToolName(caller?.outerToolName);
+    if (
+      !known ||
+      fileURLToPath(servingModuleUrl) !== serverPath ||
+      caller?.status !== "known" ||
+      caller.runtime !== "claude" ||
+      caller.correlation !== "exact-native-tool-use" ||
+      parsed?.server !== pluginNamespace ||
+      typeof caller.nativeProjectRoot !== "string" ||
+      !path.isAbsolute(caller.nativeProjectRoot) ||
+      typeof root !== "string"
+    )
+      return null;
     const canonical = fs.realpathSync(path.resolve(root));
-    if (fs.realpathSync(caller.nativeProjectRoot) !== canonical || !fs.statSync(canonical).isDirectory()
-      || verifyOwnPackage() !== known.releaseId) return null;
+    if (fs.realpathSync(caller.nativeProjectRoot) !== canonical || !fs.statSync(canonical).isDirectory() || verifyOwnPackage() !== known.releaseId) return null;
     const context = Object.freeze({});
-    requests.set(context, { root: canonical, projectId: ownerAt(canonical), launch }); return context;
-  } catch { return null; }
+    requests.set(context, { root: canonical, projectId: ownerAt(canonical), launch });
+    return context;
+  } catch {
+    return null;
+  }
 }
 export function pluginMcpServesProject(context, root, projectId) {
   try {
@@ -68,6 +87,10 @@ export function pluginMcpServesProject(context, root, projectId) {
     if (request.projectId !== null) return current === request.projectId && current === projectId;
     if (current === null && typeof projectId === "string" && projectId) request.createdProjectId ??= projectId;
     return request.createdProjectId === projectId && (current === null || current === projectId);
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
-export function releasePluginInitializationContext(context) { if (context) requests.delete(context); }
+export function releasePluginInitializationContext(context) {
+  if (context) requests.delete(context);
+}

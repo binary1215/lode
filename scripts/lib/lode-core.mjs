@@ -12,19 +12,11 @@ import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
 import { pluginMcpServesProject } from "./plugin-mcp-composition.mjs";
 import { noteProjectGraphChange } from "./discovery-index.mjs";
 import { emptyProductModelDocument, normalizeProductModelDocument } from "./product-model.mjs";
-import {
-  initialOnboardingDocuments,
-  ONBOARDING_STATE_RELATIVE_PATH,
-  ONBOARDING_STORAGE_DIRECTORY,
-  SESSION_RECORD_DIRECTORY,
-} from "./onboarding-contract.mjs";
+import { initialOnboardingDocuments, ONBOARDING_STATE_RELATIVE_PATH, ONBOARDING_STORAGE_DIRECTORY, SESSION_RECORD_DIRECTORY } from "./onboarding-contract.mjs";
 import { inspectRuntimeAdapterContracts } from "./runtime-adapter.mjs";
 import { inspectRuntimeMachineInterfaces } from "./runtime-machine-discovery.mjs";
 import { buildRuntimeVersionEvidence } from "./runtime-machine-execution.mjs";
-import {
-  buildRuntimeProjectBinding,
-  buildRuntimeProtocolEvidence,
-} from "./runtime-protocol-evidence.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "./runtime-protocol-evidence.mjs";
 
 import { SCHEMA_VERSION, SUPPORTED_RUNTIMES } from "./core-contract.mjs";
 export { SCHEMA_VERSION, SUPPORTED_RUNTIMES, coreContract } from "./core-contract.mjs";
@@ -66,13 +58,14 @@ function atomicWrite(file, content) {
 
 function readJsonOriginal(file, label) {
   try {
-    const bytes=fs.readFileSync(file);return {document:JSON.parse(bytes.toString("utf8")),bytes};
+    const bytes = fs.readFileSync(file);
+    return { document: JSON.parse(bytes.toString("utf8")), bytes };
   } catch (error) {
     fail(`${label} is invalid JSON: ${error.message}`, "INVALID_CANON");
   }
 }
 
-const readJson = (file,label) => readJsonOriginal(file,label).document;
+const readJson = (file, label) => readJsonOriginal(file, label).document;
 
 function packageVersionAt(pluginRoot) {
   for (const relative of [path.join(".codex-plugin", "plugin.json"), "package.json"]) {
@@ -135,7 +128,10 @@ function roleInstruction(role) {
 function opencodeProjection(pluginRoot, storage, projectRoot) {
   return {
     $schema: "https://opencode.ai/config.json",
-    instructions: [relativeProjectArtifact(storage, "generated", `${formatForVerifiedOwner(storage).dialect}-instructions.md`), relativeProjectArtifact(storage, "instructions/project.md")],
+    instructions: [
+      relativeProjectArtifact(storage, "generated", `${formatForVerifiedOwner(storage).dialect}-instructions.md`),
+      relativeProjectArtifact(storage, "instructions/project.md"),
+    ],
     mcp: {
       [ARTIFACT_COMPOSITION.serverName]: portableMcpDocument({ client: "opencode", pluginRoot, projectRoot }).document,
     },
@@ -151,7 +147,12 @@ function claudeMcpProjection(pluginRoot, projectRoot) {
 }
 
 function withheldInstruction(pathName, projection) {
-  return { status: "withheld", path: pathName, reason: `Root ${pathName} was not created. Pass --write-root-instructions to create or modify it. Projection: ${projection}.`, projection };
+  return {
+    status: "withheld",
+    path: pathName,
+    reason: `Root ${pathName} was not created. Pass --write-root-instructions to create or modify it. Projection: ${projection}.`,
+    projection,
+  };
 }
 function integrationPlan(root, runtimes, storage, installationContext = null, { writeRootInstructionFiles = true } = {}) {
   const integrations = {};
@@ -159,34 +160,71 @@ function integrationPlan(root, runtimes, storage, installationContext = null, { 
   if (runtimes.includes("claude")) {
     const instructionFile = path.join(root, "CLAUDE.md");
     const mcpFile = path.join(root, ".mcp.json");
-    const exists = file => { try { fs.lstatSync(file); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } };
+    const exists = (file) => {
+      try {
+        fs.lstatSync(file);
+        return true;
+      } catch (error) {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      }
+    };
     const instruction = exists(instructionFile) ? "manual" : writeRootInstructionFiles ? "managed" : "withheld";
     pluginMcpProvided = !exists(mcpFile) && pluginMcpServesProject(installationContext, root, storage.projectId);
     const mcp = exists(mcpFile) || pluginMcpProvided ? "manual" : "managed";
     const claudeStatus = instruction === "managed" && mcp === "managed" ? "managed" : instruction === "withheld" && mcp !== "manual" ? "withheld" : "manual";
     integrations.claude = {
       status: claudeStatus,
-      instruction: instruction === "withheld" ? withheldInstruction("CLAUDE.md", relativeProjectArtifact(storage, "generated/lode-instructions.md")) : { status: instruction, path: "CLAUDE.md" }, mcp: { status: mcp, path: ".mcp.json",
-        ...(pluginMcpProvided ? { reason: "No project MCP file was created for this invocation; its verified plugin server handled the request. A later standalone resume can provide the absent file." } : {}) },
+      instruction:
+        instruction === "withheld"
+          ? withheldInstruction("CLAUDE.md", relativeProjectArtifact(storage, "generated/lode-instructions.md"))
+          : { status: instruction, path: "CLAUDE.md" },
+      mcp: {
+        status: mcp,
+        path: ".mcp.json",
+        ...(pluginMcpProvided
+          ? {
+              reason:
+                "No project MCP file was created for this invocation; its verified plugin server handled the request. A later standalone resume can provide the absent file.",
+            }
+          : {}),
+      },
       paths: [instruction === "managed" && "CLAUDE.md", mcp === "managed" && ".mcp.json"].filter(Boolean),
-      ...(instruction === "manual" || mcp === "manual" ? {
-        reason: pluginMcpProvided ? "Claude file ownership is independent of this request's verified plugin MCP access. No future Host access is assumed." : "Existing project-owned Claude files were preserved independently.",
-        instructionProjection: relativeProjectArtifact(storage, "generated/lode-instructions.md"),
-        mcpProjection: relativeProjectArtifact(storage, "generated/claude.mcp.json"),
-      } : {}),
+      ...(instruction === "manual" || mcp === "manual"
+        ? {
+            reason: pluginMcpProvided
+              ? "Claude file ownership is independent of this request's verified plugin MCP access. No future Host access is assumed."
+              : "Existing project-owned Claude files were preserved independently.",
+            instructionProjection: relativeProjectArtifact(storage, "generated/lode-instructions.md"),
+            mcpProjection: relativeProjectArtifact(storage, "generated/claude.mcp.json"),
+          }
+        : {}),
     };
   }
   if (runtimes.includes("codex")) {
     const file = path.join(root, "AGENTS.md");
     integrations.codex = fs.existsSync(file)
-      ? { status: "manual", reason: "Existing project-owned AGENTS.md was preserved.", projection: relativeProjectArtifact(storage, "generated/lode-instructions.md") }
-      : writeRootInstructionFiles ? { status: "managed", path: "AGENTS.md" } : withheldInstruction("AGENTS.md", relativeProjectArtifact(storage, "generated/lode-instructions.md"));
+      ? {
+          status: "manual",
+          reason: "Existing project-owned AGENTS.md was preserved.",
+          projection: relativeProjectArtifact(storage, "generated/lode-instructions.md"),
+        }
+      : writeRootInstructionFiles
+        ? { status: "managed", path: "AGENTS.md" }
+        : withheldInstruction("AGENTS.md", relativeProjectArtifact(storage, "generated/lode-instructions.md"));
   }
   if (runtimes.includes("opencode")) {
     const file = path.join(root, "opencode.json");
-    integrations.opencode = fs.existsSync(file) || fs.existsSync(path.join(root, "opencode.jsonc"))
-      ? { status: "manual", reason: "Existing project-owned OpenCode configuration was preserved.", projection: relativeProjectArtifact(storage, "generated/opencode.json") }
-      : writeRootInstructionFiles ? { status: "managed", path: "opencode.json" } : withheldInstruction("opencode.json", relativeProjectArtifact(storage, "generated/opencode.json"));
+    integrations.opencode =
+      fs.existsSync(file) || fs.existsSync(path.join(root, "opencode.jsonc"))
+        ? {
+            status: "manual",
+            reason: "Existing project-owned OpenCode configuration was preserved.",
+            projection: relativeProjectArtifact(storage, "generated/opencode.json"),
+          }
+        : writeRootInstructionFiles
+          ? { status: "managed", path: "opencode.json" }
+          : withheldInstruction("opencode.json", relativeProjectArtifact(storage, "generated/opencode.json"));
   }
   return { integrations, pluginMcpProvided };
 }
@@ -194,8 +232,7 @@ function integrationPlan(root, runtimes, storage, installationContext = null, { 
 // Legacy metadata owned both Claude files together. New metadata records each
 // independently; a manual existing file is never adopted by the other part.
 function claudePartManaged(integration, part) {
-  return integration && Object.hasOwn(integration, part)
-    ? integration[part]?.status === "managed" : integration?.status === "managed";
+  return integration && Object.hasOwn(integration, part) ? integration[part]?.status === "managed" : integration?.status === "managed";
 }
 
 function projectFiles(root, pluginRoot, runtimes, integrations, storage) {
@@ -240,7 +277,10 @@ function projectFiles(root, pluginRoot, runtimes, integrations, storage) {
   });
   const files = new Map([
     [relativeProjectArtifact(storage, "project.json"), json(project)],
-    [relativeProjectArtifact(storage, "instructions/project.md"), "# Project-specific Lode context\n\nRecord project identity, canonical sources, repository boundaries, and fixed constraints here.\n"],
+    [
+      relativeProjectArtifact(storage, "instructions/project.md"),
+      "# Project-specific Lode context\n\nRecord project identity, canonical sources, repository boundaries, and fixed constraints here.\n",
+    ],
     [relativeProjectArtifact(storage, "generated/lode-instructions.md"), lodeInstructions()],
     [relativeProjectArtifact(storage, "generated/claude.mcp.json"), json(claudeMcpProjection(pluginRoot, root))],
     [relativeProjectArtifact(storage, "generated/opencode.json"), json(opencodeProjection(pluginRoot, storage, root))],
@@ -248,23 +288,32 @@ function projectFiles(root, pluginRoot, runtimes, integrations, storage) {
     [relativeProjectArtifact(storage, "roles/developer.md"), roleInstruction("developer")],
     [relativeProjectArtifact(storage, "roles/coder.md"), roleInstruction("coder")],
     [relativeProjectArtifact(storage, "roles/reviewer.md"), roleInstruction("reviewer")],
-    [relativeProjectArtifact(storage, "context/knowledge.json"), json({
-      schemaVersion: SCHEMA_VERSION,
-      evidence: [],
-      claims: [],
-      decisions: [],
-      unknowns: [{
-        id: "unknown-repository-index",
-        statement: "High-resolution repository coverage remains incomplete for AST-accurate semantics, structured VCS decision inference, and live runtime systems beyond point-in-time exports; consumers must inspect the recorded coverage.",
-        status: "open",
-        importance: 5,
-        tags: ["repository", "coverage", "context-compiler"]
-      }]
-    })],
+    [
+      relativeProjectArtifact(storage, "context/knowledge.json"),
+      json({
+        schemaVersion: SCHEMA_VERSION,
+        evidence: [],
+        claims: [],
+        decisions: [],
+        unknowns: [
+          {
+            id: "unknown-repository-index",
+            statement:
+              "High-resolution repository coverage remains incomplete for AST-accurate semantics, structured VCS decision inference, and live runtime systems beyond point-in-time exports; consumers must inspect the recorded coverage.",
+            status: "open",
+            importance: 5,
+            tags: ["repository", "coverage", "context-compiler"],
+          },
+        ],
+      }),
+    ],
     [relativeProjectArtifact(storage, "context/product-model.json"), json(productModelDocument)],
     [relativeProjectArtifact(storage, "sessions/current.json"), json(sessionState)],
     [relativeProjectArtifact(storage, "sessions", "records", `${onboarding.sessionRecord.sessionId}.json`), json(onboarding.sessionRecord)],
-    [relativeProjectArtifact(storage, "onboarding", "storage-selections", `${onboarding.storageSelection.storageSelectionId}.json`), json(onboarding.storageSelection)],
+    [
+      relativeProjectArtifact(storage, "onboarding", "storage-selections", `${onboarding.storageSelection.storageSelectionId}.json`),
+      json(onboarding.storageSelection),
+    ],
     [relativeProjectArtifact(storage, "onboarding", "current.json"), json(onboarding.state)],
   ]);
   if (claudePartManaged(integrations.claude, "instruction")) files.set("CLAUDE.md", lodeInstructions());
@@ -277,7 +326,9 @@ function projectFiles(root, pluginRoot, runtimes, integrations, storage) {
 function pruneEmptyDirectories(root, directories) {
   for (const directory of [...directories].sort((a, b) => b.length - a.length)) {
     if (directory === root || !fs.existsSync(directory)) continue;
-    try { fs.rmdirSync(directory); } catch {}
+    try {
+      fs.rmdirSync(directory);
+    } catch {}
   }
 }
 
@@ -286,11 +337,18 @@ export function initializeProject({ root = ".", pluginRoot, runtimes, installati
   const canonicalPluginRoot = fs.realpathSync(path.resolve(pluginRoot));
   const selectedRuntimes = normalizeRuntimes(runtimes);
   if (resolveProjectStorage(canonicalRoot)) fail("Lode Agent Core is already initialized for this project.", "ALREADY_INITIALIZED");
-  const storage = Object.freeze({ projectRoot: canonicalRoot, projectId: `lode-${sha256(canonicalRoot).slice(0, 20)}`, dialect: "lode", directory: ".lode", projectFile: path.join(canonicalRoot, ".lode", "project.json") });
+  const storage = Object.freeze({
+    projectRoot: canonicalRoot,
+    projectId: `lode-${sha256(canonicalRoot).slice(0, 20)}`,
+    dialect: "lode",
+    directory: ".lode",
+    projectFile: path.join(canonicalRoot, ".lode", "project.json"),
+  });
   const projectFile = storage.projectFile;
   assertNoSymlinkAncestors(canonicalRoot, projectFile);
   const target = path.join(canonicalRoot, storage.directory);
-  if (fs.existsSync(target) && (!fs.statSync(target).isDirectory() || fs.readdirSync(target).length)) fail("Fresh Project storage target is occupied.", "MANAGED_COLLISION");
+  if (fs.existsSync(target) && (!fs.statSync(target).isDirectory() || fs.readdirSync(target).length))
+    fail("Fresh Project storage target is occupied.", "MANAGED_COLLISION");
 
   const { integrations, pluginMcpProvided } = integrationPlan(canonicalRoot, selectedRuntimes, storage, installationContext, { writeRootInstructionFiles });
   const { files, project } = projectFiles(canonicalRoot, canonicalPluginRoot, selectedRuntimes, integrations, storage);
@@ -316,20 +374,40 @@ export function initializeProject({ root = ".", pluginRoot, runtimes, installati
       relativeProjectArtifact(storage, "sessions/current.json"),
       relativeProjectArtifact(storage, "onboarding", "current.json"),
     ]);
-    const managed = [...files.keys()].filter((relative) => !mutableCanon.has(relative)).map((relative) => ({
-      path: relative.replaceAll("\\", "/"),
-      sha256: sha256(fs.readFileSync(path.join(canonicalRoot, relative))),
-    }));
+    const managed = [...files.keys()]
+      .filter((relative) => !mutableCanon.has(relative))
+      .map((relative) => ({
+        path: relative.replaceAll("\\", "/"),
+        sha256: sha256(fs.readFileSync(path.join(canonicalRoot, relative))),
+      }));
     const manifestFile = path.join(canonicalRoot, storage.directory, "generated", "manifest.json");
-    atomicWrite(manifestFile, json({ schemaVersion: SCHEMA_VERSION, generatedAt: now(), pluginRoot: canonicalPluginRoot, packageVersion: packageVersionAt(canonicalPluginRoot), managed }));
+    atomicWrite(
+      manifestFile,
+      json({
+        schemaVersion: SCHEMA_VERSION,
+        generatedAt: now(),
+        pluginRoot: canonicalPluginRoot,
+        packageVersion: packageVersionAt(canonicalPluginRoot),
+        managed,
+      }),
+    );
     createdFiles.push(manifestFile);
     const generatedIgnore = ensureProjectStorageIgnore({ root: canonicalRoot, storage: resolveProjectStorage(canonicalRoot) });
     if (generatedIgnore.status === "created") createdFiles.push(path.join(canonicalRoot, generatedIgnore.path));
     noteProjectGraphChange(canonicalRoot);
     return {
-      status: Object.entries(integrations).some(([runtime, item]) => item.status === "manual"
-        && !(runtime === "claude" && item.instruction.status === "managed" && pluginMcpProvided
-          && pluginMcpServesProject(installationContext, canonicalRoot, storage.projectId))) ? "ready_with_manual_integration" : "ready",
+      status: Object.entries(integrations).some(
+        ([runtime, item]) =>
+          item.status === "manual" &&
+          !(
+            runtime === "claude" &&
+            item.instruction.status === "managed" &&
+            pluginMcpProvided &&
+            pluginMcpServesProject(installationContext, canonicalRoot, storage.projectId)
+          ),
+      )
+        ? "ready_with_manual_integration"
+        : "ready",
       project,
       storage: resolveProjectStorage(canonicalRoot),
       integrations,
@@ -338,14 +416,23 @@ export function initializeProject({ root = ".", pluginRoot, runtimes, installati
     };
   } catch (error) {
     for (const file of createdFiles.reverse()) {
-      try { fs.unlinkSync(file); } catch {}
+      try {
+        fs.unlinkSync(file);
+      } catch {}
     }
     pruneEmptyDirectories(canonicalRoot, createdDirectories);
     throw error;
   }
 }
 
-export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes = null, onValidatedSessionSelection = null, installationContext = null, writeRootInstructionFiles = false } = {}) {
+export function convergeProjectInstallation({
+  root = ".",
+  pluginRoot,
+  runtimes = null,
+  onValidatedSessionSelection = null,
+  installationContext = null,
+  writeRootInstructionFiles = false,
+} = {}) {
   const canonicalPluginRoot = fs.realpathSync(path.resolve(pluginRoot));
   const packageVersion = packageVersionAt(canonicalPluginRoot);
   const inspected = inspectProject(root);
@@ -366,11 +453,20 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
   const manifest = readJson(manifestFile, "Managed manifest");
   const additions = new Map();
   if (inspected.project.runtimes.includes("claude")) {
-    for (const [relative, content] of [["CLAUDE.md", lodeInstructions()], [".mcp.json", json(claudeMcpProjection(canonicalPluginRoot, projectRoot))]]) {
+    for (const [relative, content] of [
+      ["CLAUDE.md", lodeInstructions()],
+      [".mcp.json", json(claudeMcpProjection(canonicalPluginRoot, projectRoot))],
+    ]) {
       const file = path.join(projectRoot, relative);
-      try { fs.lstatSync(file); continue; } catch (error) { if (error.code !== "ENOENT") throw error; }
+      try {
+        fs.lstatSync(file);
+        continue;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
       // A missing managed original is drift, never permission to regenerate it.
-      if (manifest.managed.some(item => item.path === relative)) fail(`Managed installation projection is missing: ${relative}`, "MANAGED_INSTALLATION_PROJECTION_MISSING");
+      if (manifest.managed.some((item) => item.path === relative))
+        fail(`Managed installation projection is missing: ${relative}`, "MANAGED_INSTALLATION_PROJECTION_MISSING");
       // A moved/imported Project does not make absent root settings ours.
       // Keep its historical integration fields unchanged; current ownership is
       // the target manifest, and existing direct installation keeps its flow.
@@ -382,21 +478,24 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
     }
   }
   if (writeRootInstructionFiles) {
-    for (const [runtime, relative, content] of [["codex", "AGENTS.md", lodeInstructions()],
-      ["opencode", "opencode.json", json(opencodeProjection(canonicalPluginRoot, storage, projectRoot))]]) {
+    for (const [runtime, relative, content] of [
+      ["codex", "AGENTS.md", lodeInstructions()],
+      ["opencode", "opencode.json", json(opencodeProjection(canonicalPluginRoot, storage, projectRoot))],
+    ]) {
       if (!inspected.project.runtimes.includes(runtime)) continue;
       const file = path.join(projectRoot, relative);
       if (fs.lstatSync(file, { throwIfNoEntry: false })) continue;
       if (runtime === "opencode" && fs.lstatSync(path.join(projectRoot, "opencode.jsonc"), { throwIfNoEntry: false })) continue;
-      if (manifest.managed.some(item => item.path === relative)) fail("Managed installation projection is missing.", "MANAGED_INSTALLATION_PROJECTION_MISSING");
+      if (manifest.managed.some((item) => item.path === relative))
+        fail("Managed installation projection is missing.", "MANAGED_INSTALLATION_PROJECTION_MISSING");
       assertNoSymlinkAncestors(projectRoot, file);
       additions.set(relative, content);
     }
   }
   // Synchronous optional Host observation AFTER readiness/runtime/identity/input
   // preflight. No existing pure refusal can leave a P5 pending selection.
-  if (onValidatedSessionSelection) onValidatedSessionSelection({ root: projectRoot,
-    projectId: inspected.project.projectId, sessionId: inspected.state.sessionId });
+  if (onValidatedSessionSelection)
+    onValidatedSessionSelection({ root: projectRoot, projectId: inspected.project.projectId, sessionId: inspected.state.sessionId });
   const generatedIgnore = ensureProjectStorageIgnore({ root: projectRoot, storage });
   if (manifest.pluginRoot === canonicalPluginRoot && manifest.packageVersion === packageVersion && !additions.size) {
     return {
@@ -412,7 +511,7 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
   const replacements = new Map();
   const addReplacement = (relative, content) => {
     if (additions.has(relative)) return;
-    if (!manifest.managed.some(item => item.path === relative)) {
+    if (!manifest.managed.some((item) => item.path === relative)) {
       if (["AGENTS.md", "CLAUDE.md", ".mcp.json", "opencode.json"].includes(relative)) return;
       fail(`Managed manifest does not own installation projection: ${relative}`, "MANAGED_INSTALLATION_PROJECTION_UNOWNED");
     }
@@ -439,17 +538,26 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
     if (inspected.project.integrations.opencode?.status === "managed") addReplacement("opencode.json", projection);
   }
   if (additions.size) {
-    const project = structuredClone(inspected.project), integration = project.integrations.claude;
+    const project = structuredClone(inspected.project),
+      integration = project.integrations.claude;
     if (additions.has("AGENTS.md")) project.integrations.codex = { status: "managed", path: "AGENTS.md" };
     if (additions.has("opencode.json")) project.integrations.opencode = { status: "managed", path: "opencode.json" };
-    if (integration) for (const [part, relative] of [["instruction", "CLAUDE.md"], ["mcp", ".mcp.json"]]) {
-      if (additions.has(relative)) integration[part] = { status: "managed", path: relative };
-      else if (!integration[part]) integration[part] = {
-        status: claudePartManaged(inspected.project.integrations.claude, part) ? "managed" : "manual", path: relative };
-      // Preserve explicit withheld/manual/provider-owned state and its reasons
-      // when a different part is added. Absence never implies manual setup.
-    }
-    if (integration) integration.paths = [integration.instruction.status === "managed" && "CLAUDE.md", integration.mcp.status === "managed" && ".mcp.json"].filter(Boolean);
+    if (integration)
+      for (const [part, relative] of [
+        ["instruction", "CLAUDE.md"],
+        ["mcp", ".mcp.json"],
+      ]) {
+        if (additions.has(relative)) integration[part] = { status: "managed", path: relative };
+        else if (!integration[part])
+          integration[part] = {
+            status: claudePartManaged(inspected.project.integrations.claude, part) ? "managed" : "manual",
+            path: relative,
+          };
+        // Preserve explicit withheld/manual/provider-owned state and its reasons
+        // when a different part is added. Absence never implies manual setup.
+      }
+    if (integration)
+      integration.paths = [integration.instruction.status === "managed" && "CLAUDE.md", integration.mcp.status === "managed" && ".mcp.json"].filter(Boolean);
     if (integration) integration.status = integration.paths.length === 2 ? "managed" : "manual";
     addReplacement(relativeProjectArtifact(storage, "project.json"), json(project));
   }
@@ -471,20 +579,23 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
       const file = path.join(projectRoot, relative);
       assertNoSymlinkAncestors(projectRoot, file);
       if (!fs.existsSync(file)) fail(`Managed installation projection is missing: ${relative}`, "MANAGED_INSTALLATION_PROJECTION_MISSING");
-      const beforeBytes = fs.readFileSync(file), afterBytes = Buffer.from(content);
-      const expected = manifest.managed.find(item => item.path === relative);
+      const beforeBytes = fs.readFileSync(file),
+        afterBytes = Buffer.from(content);
+      const expected = manifest.managed.find((item) => item.path === relative);
       if (sha256(beforeBytes) !== expected.sha256) fail(`Installation projection changed: ${relative}`, "PROJECT_NOT_READY");
-      atomicWriteArtifact(file, afterBytes, { beforePublish() {
-        if (!fs.readFileSync(file).equals(beforeBytes)) fail(`Installation projection changed: ${relative}`, "PROJECT_NOT_READY");
-      } });
+      atomicWriteArtifact(file, afterBytes, {
+        beforePublish() {
+          if (!fs.readFileSync(file).equals(beforeBytes)) fail(`Installation projection changed: ${relative}`, "PROJECT_NOT_READY");
+        },
+      });
       published.set(file, { before: beforeBytes, after: afterBytes });
     }
     for (const [file, change] of published) {
       if (!fs.readFileSync(file).equals(change.after)) fail("Installation projection changed after publication.", "MANAGED_PROJECTION_CHANGED_AFTER_WRITE");
     }
-    const managed = (manifest.managed || []).map((item) => replacements.has(item.path)
-      ? { ...item, sha256: sha256(fs.readFileSync(path.join(projectRoot, item.path))) }
-      : item);
+    const managed = (manifest.managed || []).map((item) =>
+      replacements.has(item.path) ? { ...item, sha256: sha256(fs.readFileSync(path.join(projectRoot, item.path))) } : item,
+    );
     for (const [relative, content] of additions) managed.push({ path: relative, sha256: sha256(content) });
     for (const relative of replacements.keys()) {
       if (!managed.some((item) => item.path === relative)) {
@@ -492,30 +603,40 @@ export function convergeProjectInstallation({ root = ".", pluginRoot, runtimes =
       }
     }
     const manifestAfter = Buffer.from(json({ ...manifest, generatedAt: now(), pluginRoot: canonicalPluginRoot, packageVersion, managed }));
-    atomicWriteArtifact(manifestFile, manifestAfter, { beforePublish() {
-      if (!fs.readFileSync(manifestFile).equals(manifestBefore)) fail("Installation manifest changed.", "PROJECT_NOT_READY");
-    } });
+    atomicWriteArtifact(manifestFile, manifestAfter, {
+      beforePublish() {
+        if (!fs.readFileSync(manifestFile).equals(manifestBefore)) fail("Installation manifest changed.", "PROJECT_NOT_READY");
+      },
+    });
     published.set(manifestFile, { before: manifestBefore, after: manifestAfter });
   } catch (error) {
     // Roll back only our exact after state. A later user edit is not our stage.
     for (const [file, change] of [...published.entries()].reverse()) {
       try {
         if (!fs.readFileSync(file).equals(change.after)) {
-          error.projectionCleanup = { code: "MANAGED_PROJECTION_CHANGED_AFTER_WRITE", preservedPath: file }; continue;
+          error.projectionCleanup = { code: "MANAGED_PROJECTION_CHANGED_AFTER_WRITE", preservedPath: file };
+          continue;
         }
-        atomicWriteArtifact(file, change.before, { beforePublish() {
-          if (!fs.readFileSync(file).equals(change.after)) fail("Projection changed before rollback.", "MANAGED_PROJECTION_CHANGED_AFTER_WRITE");
-        } });
-      } catch (cleanup) { error.projectionCleanup = { code: cleanup.code, preservedPath: file }; }
-    }
-    for (const [file, owned] of [...created].reverse()) try {
-      const stat = fs.lstatSync(file);
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.dev !== owned.dev || stat.ino !== owned.ino
-        || sha256(fs.readFileSync(file)) !== owned.sha256) {
-        error.projectionCleanup = { code: "CREATED_PROJECTION_CHANGED", preservedPath: file }; continue;
+        atomicWriteArtifact(file, change.before, {
+          beforePublish() {
+            if (!fs.readFileSync(file).equals(change.after)) fail("Projection changed before rollback.", "MANAGED_PROJECTION_CHANGED_AFTER_WRITE");
+          },
+        });
+      } catch (cleanup) {
+        error.projectionCleanup = { code: cleanup.code, preservedPath: file };
       }
-      fs.unlinkSync(file);
-    } catch (cleanup) { error.projectionCleanup = { code: cleanup.code, preservedPath: file }; }
+    }
+    for (const [file, owned] of [...created].reverse())
+      try {
+        const stat = fs.lstatSync(file);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.dev !== owned.dev || stat.ino !== owned.ino || sha256(fs.readFileSync(file)) !== owned.sha256) {
+          error.projectionCleanup = { code: "CREATED_PROJECTION_CHANGED", preservedPath: file };
+          continue;
+        }
+        fs.unlinkSync(file);
+      } catch (cleanup) {
+        error.projectionCleanup = { code: cleanup.code, preservedPath: file };
+      }
     throw error;
   }
   const converged = inspectProject(projectRoot);
@@ -543,10 +664,21 @@ function inspectProjectOwner(root, sessionScope) {
   }
   let state;
   try {
-    const original=readJsonOriginal(stateFile,"Session canon");state=original.document;
-    if(state?.projectId == null && stateFile !== defaultSessionStatePath(canonicalRoot,storage)
-      && !verifyImportedDefaultSession({root:canonicalRoot,directory:storage.directory,project,sessionId:state?.sessionId,stateFile,stateBytes:original.bytes})) {
-      fail("Named Session has no verified Project owner.","HEAD_SESSION_IDENTITY_MISMATCH");
+    const original = readJsonOriginal(stateFile, "Session canon");
+    state = original.document;
+    if (
+      state?.projectId == null &&
+      stateFile !== defaultSessionStatePath(canonicalRoot, storage) &&
+      !verifyImportedDefaultSession({
+        root: canonicalRoot,
+        directory: storage.directory,
+        project,
+        sessionId: state?.sessionId,
+        stateFile,
+        stateBytes: original.bytes,
+      })
+    ) {
+      fail("Named Session has no verified Project owner.", "HEAD_SESSION_IDENTITY_MISMATCH");
     }
     if (!state || state.schemaVersion !== SCHEMA_VERSION || !/^session-[a-fA-F0-9-]{36}$/.test(state.sessionId || "")) {
       fail("Session canon has an invalid canonical identity.", "INVALID_SESSION_CANON");
@@ -598,17 +730,40 @@ export function inspectProject(root = ".", { sessionScope = "selected" } = {}) {
 // generated projections may drift without invalidating artifact-only recovery.
 // Keep inspectProject.status and all existing mutation preflights unchanged.
 const RECOVERY_INDEPENDENT_PROJECTIONS = new Set([
-  "AGENTS.md", "CLAUDE.md", ".mcp.json", "opencode.json",
-  ".head/generated/head-instructions.md", ".head/generated/claude.mcp.json", ".head/generated/opencode.json",
-  ".head/roles/head.md", ".head/roles/developer.md", ".head/roles/coder.md", ".head/roles/reviewer.md",
+  "AGENTS.md",
+  "CLAUDE.md",
+  ".mcp.json",
+  "opencode.json",
+  ".head/generated/head-instructions.md",
+  ".head/generated/claude.mcp.json",
+  ".head/generated/opencode.json",
+  ".head/roles/head.md",
+  ".head/roles/developer.md",
+  ".head/roles/coder.md",
+  ".head/roles/reviewer.md",
 ]);
 export function isProjectRecoveryReadable(inspected) {
-  if (!["ready", "drifted"].includes(inspected.status)
-    || inspected.state?.schemaVersion !== SCHEMA_VERSION
-    || !/^session-[a-fA-F0-9-]{36}$/.test(inspected.state?.sessionId || "")) return false;
-  const canonicalProjections = new Set([".lode/generated/lode-instructions.md", ".lode/generated/claude.mcp.json", ".lode/generated/opencode.json", ".lode/roles/lode.md", ".lode/roles/developer.md", ".lode/roles/coder.md", ".lode/roles/reviewer.md"]);
-  return inspected.status === "ready" || inspected.drift.every(item => RECOVERY_INDEPENDENT_PROJECTIONS.has(item.path)
-    || inspected.storage?.dialect === "lode" && canonicalProjections.has(item.path));
+  if (
+    !["ready", "drifted"].includes(inspected.status) ||
+    inspected.state?.schemaVersion !== SCHEMA_VERSION ||
+    !/^session-[a-fA-F0-9-]{36}$/.test(inspected.state?.sessionId || "")
+  )
+    return false;
+  const canonicalProjections = new Set([
+    ".lode/generated/lode-instructions.md",
+    ".lode/generated/claude.mcp.json",
+    ".lode/generated/opencode.json",
+    ".lode/roles/lode.md",
+    ".lode/roles/developer.md",
+    ".lode/roles/coder.md",
+    ".lode/roles/reviewer.md",
+  ]);
+  return (
+    inspected.status === "ready" ||
+    inspected.drift.every(
+      (item) => RECOVERY_INDEPENDENT_PROJECTIONS.has(item.path) || (inspected.storage?.dialect === "lode" && canonicalProjections.has(item.path)),
+    )
+  );
 }
 
 export async function inspectRuntimeAdapters(root = ".") {
@@ -636,9 +791,10 @@ export async function inspectRuntimeAdapters(root = ".") {
     projectId: inspected.project.projectId,
     projectStatus: inspected.status,
     ...contracts,
-    status: projectBinding.status === formatForVerifiedOwner(inspected).value("verified-head-project-session-capability-binding")
-      ? "bounded-non-session-protocol-and-project-binding-verified"
-      : "bounded-non-session-protocol-and-project-binding-partial",
+    status:
+      projectBinding.status === formatForVerifiedOwner(inspected).value("verified-head-project-session-capability-binding")
+        ? "bounded-non-session-protocol-and-project-binding-verified"
+        : "bounded-non-session-protocol-and-project-binding-partial",
     machineInterfaces,
     versionEvidence,
     protocolEvidence,
@@ -658,18 +814,19 @@ export function createCheckpoint({ root = ".", summary, next = "" } = {}) {
   );
 }
 
-
 // Current installation projections only. No source client configuration,
 // Project identity, user policy, binding, or root integration is imported.
 export function buildCurrentInstallationProjections({ projectRoot, pluginRoot, directory = ".lode" } = {}) {
-  if(![".lode",".head"].includes(directory))fail("Unknown Project format.","PROJECT_IDENTITY_MISMATCH");
-  const currentPluginRoot=fs.realpathSync(path.resolve(pluginRoot)),version=packageVersionAt(currentPluginRoot);
-  const storage={dialect:directory===".lode"?"lode":"head",directory},format=formatForVerifiedOwner(storage);
-  const files=new Map([
-    [relativeProjectArtifact(storage,"generated",format.dialect+"-instructions.md"),lodeInstructions()],
-    [relativeProjectArtifact(storage,"generated","claude.mcp.json"),json(claudeMcpProjection(currentPluginRoot,projectRoot))],
-    [relativeProjectArtifact(storage,"generated","opencode.json"),json(opencodeProjection(currentPluginRoot,storage,projectRoot))],
-    ...[format.roleField,"developer","coder","reviewer"].map(role=>[relativeProjectArtifact(storage,"roles",role+".md"),roleInstruction(role)]),
+  if (![".lode", ".head"].includes(directory)) fail("Unknown Project format.", "PROJECT_IDENTITY_MISMATCH");
+  const currentPluginRoot = fs.realpathSync(path.resolve(pluginRoot)),
+    version = packageVersionAt(currentPluginRoot);
+  const storage = { dialect: directory === ".lode" ? "lode" : "head", directory },
+    format = formatForVerifiedOwner(storage);
+  const files = new Map([
+    [relativeProjectArtifact(storage, "generated", format.dialect + "-instructions.md"), lodeInstructions()],
+    [relativeProjectArtifact(storage, "generated", "claude.mcp.json"), json(claudeMcpProjection(currentPluginRoot, projectRoot))],
+    [relativeProjectArtifact(storage, "generated", "opencode.json"), json(opencodeProjection(currentPluginRoot, storage, projectRoot))],
+    ...[format.roleField, "developer", "coder", "reviewer"].map((role) => [relativeProjectArtifact(storage, "roles", role + ".md"), roleInstruction(role)]),
   ]);
-  return {pluginRoot:currentPluginRoot,packageVersion:version,files,rootIntegrationPolicy:"preserve-unowned-root-files"};
+  return { pluginRoot: currentPluginRoot, packageVersion: version, files, rootIntegrationPolicy: "preserve-unowned-root-files" };
 }

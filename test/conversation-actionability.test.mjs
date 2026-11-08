@@ -23,7 +23,8 @@ function fixture(t, { initialized = true } = {}) {
   return { root, layout: initialized ? inspectProject(root).storage : null };
 }
 function checkpoint(root) {
-  return createRecoveryCheckpoint({ root,
+  return createRecoveryCheckpoint({
+    root,
     purpose: "Investigate a synthetic service without deployment",
     approvedDecisions: ["Historical permission does not authorize current effects"],
     currentPosition: "Read-only conversation entry is under test",
@@ -31,26 +32,42 @@ function checkpoint(root) {
   }).checkpoint;
 }
 function bytes(root) {
-  return Object.fromEntries(fs.readdirSync(root, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile())
-    .map((entry) => {
-      const file = path.join(entry.parentPath, entry.name);
-      return [path.relative(root, file).replaceAll("\\", "/"), fs.readFileSync(file, "base64")];
-    }).sort(([a], [b]) => a.localeCompare(b)));
+  return Object.fromEntries(
+    fs
+      .readdirSync(root, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => {
+        const file = path.join(entry.parentPath, entry.name);
+        return [path.relative(root, file).replaceAll("\\", "/"), fs.readFileSync(file, "base64")];
+      })
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
 }
 function readSnapshot(root) {
-  return fs.readdirSync(root, { recursive: true, withFileTypes: true }).filter(item => item.isFile()).map(item => {
-    const file = path.join(item.parentPath, item.name), stat = fs.statSync(file);
-    return [path.relative(root, file), fs.readFileSync(file, "base64"), stat.mtimeMs, stat.mode];
-  }).sort(([a], [b]) => a.localeCompare(b));
+  return fs
+    .readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((item) => item.isFile())
+    .map((item) => {
+      const file = path.join(item.parentPath, item.name),
+        stat = fs.statSync(file);
+      return [path.relative(root, file), fs.readFileSync(file, "base64"), stat.mtimeMs, stat.mode];
+    })
+    .sort(([a], [b]) => a.localeCompare(b));
 }
-async function verifySurfaces(root, { headActionRequired, recoveryBlocked = false, recoveryHeadAction = false, presentation = headActionRequired ? "exception" : "quiet" }) {
+async function verifySurfaces(
+  root,
+  { headActionRequired, recoveryBlocked = false, recoveryHeadAction = false, presentation = headActionRequired ? "exception" : "quiet" },
+) {
   const before = bytes(root);
-  const status = (await inspectProjectExperience({ root }));
-  const entry = (await enterConversationRecovery({ root }));
-  const cli = (await runCommand(["conversation-enter", root]));
-  const mcp = await dispatch({ jsonrpc: "2.0", id: "actionability", method: "tools/call",
-    params: { name: "head_conversation_enter", arguments: { project_root: root } } });
+  const status = await inspectProjectExperience({ root });
+  const entry = await enterConversationRecovery({ root });
+  const cli = await runCommand(["conversation-enter", root]);
+  const mcp = await dispatch({
+    jsonrpc: "2.0",
+    id: "actionability",
+    method: "tools/call",
+    params: { name: "head_conversation_enter", arguments: { project_root: root } },
+  });
   assert.equal(mcp.result?.isError, undefined, JSON.stringify(mcp));
   const mcpEntry = mcp.result.structuredContent;
   for (const experience of [status, entry.projectStatus, cli.projectStatus, mcpEntry.projectStatus]) {
@@ -58,8 +75,20 @@ async function verifySurfaces(root, { headActionRequired, recoveryBlocked = fals
     assert.equal(experience.readiness.recovery.headActionRequired, recoveryHeadAction);
     assert.equal(experience.readiness.recovery.recoveryDependentWorkBlocked, recoveryBlocked);
   }
-  for (const view of [status, status.attention, status.presentation, entry, entry.attention, entry.presentation,
-    cli, cli.attention, cli.presentation, mcpEntry, mcpEntry.attention, mcpEntry.presentation]) {
+  for (const view of [
+    status,
+    status.attention,
+    status.presentation,
+    entry,
+    entry.attention,
+    entry.presentation,
+    cli,
+    cli.attention,
+    cli.presentation,
+    mcpEntry,
+    mcpEntry.attention,
+    mcpEntry.presentation,
+  ]) {
     assert.equal(view.headActionRequired, headActionRequired, view.kind || view.status);
     assert.equal(view.userDecisionRequired, false);
     assert.equal(view.ordinaryWorkBlocked, false);
@@ -70,7 +99,7 @@ async function verifySurfaces(root, { headActionRequired, recoveryBlocked = fals
   assert.equal(entry.authorityChanged, false);
   assert.equal(entry.persisted, false);
   assert.equal(entry.projectStatus.authority.grantsAuthorization, false);
-  const hostless = (await processCompactionLifecycle({ root }));
+  const hostless = await processCompactionLifecycle({ root });
   assert.equal(hostless.headActionRequired, entry.headActionRequired);
   assert.equal(hostless.recoveryDependentWorkBlocked, recoveryBlocked);
   assert.equal(hostless.userDecisionRequired, false);
@@ -80,11 +109,15 @@ async function verifySurfaces(root, { headActionRequired, recoveryBlocked = fals
   const text = formatCliResult("conversation-enter", cli);
   assert.equal(mcp.result.content[0].text, text);
   assert.equal(JSON.stringify(cli), beforeFormatting, "Text formatting must not mutate the CLI JSON/Core value");
-  assert.deepEqual(mcpEntry.projectStatus.currentProjectDirection, cli.projectStatus.currentProjectDirection,
-    "MCP structured content retains the unchanged current direction");
+  assert.deepEqual(
+    mcpEntry.projectStatus.currentProjectDirection,
+    cli.projectStatus.currentProjectDirection,
+    "MCP structured content retains the unchanged current direction",
+  );
   const direction = entry.projectStatus.currentProjectDirection;
-  if (direction) for (const literal of [direction.input.goal, ...direction.input.constraints,
-    ...direction.input.decisions, ...direction.input.cancelledActions]) assert(text.includes(literal), literal);
+  if (direction)
+    for (const literal of [direction.input.goal, ...direction.input.constraints, ...direction.input.decisions, ...direction.input.cancelledActions])
+      assert(text.includes(literal), literal);
   if (entry.restore) {
     const checkpoint = entry.restore.checkpoint;
     assert.deepEqual(mcpEntry.restore.checkpoint, cli.restore.checkpoint);
@@ -94,8 +127,8 @@ async function verifySurfaces(root, { headActionRequired, recoveryBlocked = fals
     assert.match(text, /Latest retained Session checkpoint \(historical context, not current execution or permission\)/u);
     assert.equal(entry.restore.projection.consumerInstruction.historicalApprovalGrantsCurrentEffect, false);
   }
-  if (["work_context_available", "work_context_partial", "work_context_not_recorded"].includes(entry.workContext?.status)
-    && entry.workContext.sessionPurpose) assert(text.includes(entry.workContext.sessionPurpose));
+  if (["work_context_available", "work_context_partial", "work_context_not_recorded"].includes(entry.workContext?.status) && entry.workContext.sessionPurpose)
+    assert(text.includes(entry.workContext.sessionPurpose));
   return entry;
 }
 
@@ -104,15 +137,26 @@ test("uninitialized Core advises initialization without blocking direct work; al
   const entry = await verifySurfaces(root, { headActionRequired: true });
   assert.equal(entry.status, "conversation_recovery_unavailable");
   assert.equal(entry.projectStatus.nextAction.id, "initialize_core");
-  assert.equal(entry.projectStatus.capabilities.filter((capability) => capability.id !== "direct-work")
-    .every((capability) => capability.availability === "blocked-until-core-ready"), true);
+  assert.equal(
+    entry.projectStatus.capabilities
+      .filter((capability) => capability.id !== "direct-work")
+      .every((capability) => capability.availability === "blocked-until-core-ready"),
+    true,
+  );
   assert.deepEqual(entry.blockedOperations, ["head-managed-capabilities"]);
 });
 
 test("ready Core without checkpoint has consistent quiet flags and adds no recovery gate", async (t) => {
   const { root, layout } = fixture(t);
-  updateProjectDirection({ root, input: { goal: "Inspect only the synthetic local service",
-    constraints: ["Do not contact or modify a service"], decisions: ["Local investigation only"], cancelledActions: ["publish"] } });
+  updateProjectDirection({
+    root,
+    input: {
+      goal: "Inspect only the synthetic local service",
+      constraints: ["Do not contact or modify a service"],
+      decisions: ["Local investigation only"],
+      cancelledActions: ["publish"],
+    },
+  });
   const entry = await verifySurfaces(root, { headActionRequired: false });
   assert.equal(entry.status, "conversation_ready");
   assert.equal(entry.projectStatus.readiness.recovery.state, "no-current-checkpoint");
@@ -174,16 +218,23 @@ test("managed projection drift with no checkpoint never invents a checkpoint-dep
   assert.equal(entry.projectStatus.readiness.recovery.state, "no-current-checkpoint");
   assert.deepEqual(entry.blockedOperations, ["head-managed-mutation"]);
   assert.equal(entry.attention.items.find((item) => item.id === "managed-projection-drift").actionability, "when-managed-mutation-is-in-scope");
-  assert.equal(entry.attention.items.some((item) => item.id === "recovery-verification"), false);
+  assert.equal(
+    entry.attention.items.some((item) => item.id === "recovery-verification"),
+    false,
+  );
   assert.match(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"), /local project change/u);
   assert.throws(() => checkpoint(root), { code: "MANAGED_DRIFT" });
 });
 
 test("entry retains its second managed-file observation instead of trusting final pointer equality", async (t) => {
-  const { root, layout } = fixture(t), target = path.join(root, "AGENTS.md"), originalRead = fs.readFileSync;
-  const original = originalRead(target), altered = Buffer.concat([original, Buffer.from("\nConcurrent synthetic managed drift.\n")]);
+  const { root, layout } = fixture(t),
+    target = path.join(root, "AGENTS.md"),
+    originalRead = fs.readFileSync;
+  const original = originalRead(target),
+    altered = Buffer.concat([original, Buffer.from("\nConcurrent synthetic managed drift.\n")]);
   const before = readSnapshot(root);
-  let reads = 0, entry;
+  let reads = 0,
+    entry;
   fs.readFileSync = function (file, ...args) {
     if (path.resolve(String(file)) === target) {
       reads++;
@@ -193,24 +244,33 @@ test("entry retains its second managed-file observation instead of trusting fina
     }
     return originalRead.call(this, file, ...args);
   };
-  try { entry = (await enterConversationRecovery({ root })); } finally { fs.readFileSync = originalRead; }
+  try {
+    entry = await enterConversationRecovery({ root });
+  } finally {
+    fs.readFileSync = originalRead;
+  }
   assert.ok(reads >= 2, "The later managed-file hash must still be observed");
   assert.equal(entry.projectStatus.readiness.core.state, "drifted");
-  assert.ok(entry.projectStatus.drift.some(item => item.path === "AGENTS.md" && item.reason === "modified"));
+  assert.ok(entry.projectStatus.drift.some((item) => item.path === "AGENTS.md" && item.reason === "modified"));
   assert.equal(entry.ordinaryWorkBlocked, false);
   assert.equal(entry.userDecisionRequired, false);
   assert.equal(entry.projectStatus.nextAction.id, "work_directly");
-  assert.equal(entry.attention.items.find(item => item.id === "managed-projection-drift").actionability,
-    "when-managed-mutation-is-in-scope");
+  assert.equal(entry.attention.items.find((item) => item.id === "managed-projection-drift").actionability, "when-managed-mutation-is-in-scope");
   assert.deepEqual(readSnapshot(root), before, "Both observations are read-only, including original mtimes/modes");
 });
 
 test("optional Product review stays conditional, not an immediate user or HEAD gate", async (t) => {
   const { root, layout } = fixture(t);
-  await startOnboarding({ root, mode: "new", brief: {
-    schemaVersion: 1, name: "Synthetic delivery service", summary: "Deliver a message",
-    capabilities: [{ key: "delivery", name: "Delivery", description: "Deliver a message" }],
-  } });
+  await startOnboarding({
+    root,
+    mode: "new",
+    brief: {
+      schemaVersion: 1,
+      name: "Synthetic delivery service",
+      summary: "Deliver a message",
+      capabilities: [{ key: "delivery", name: "Delivery", description: "Deliver a message" }],
+    },
+  });
   const entry = await verifySurfaces(root, { headActionRequired: false, presentation: "notice" });
   assert.equal(entry.projectStatus.readiness.product.state, "review_required");
   assert.equal(entry.attention.counts.availableUserDecision, 1);
@@ -218,17 +278,18 @@ test("optional Product review stays conditional, not an immediate user or HEAD g
   assert.deepEqual(entry.blockedOperations, ["product-canon-promotion"]);
 });
 
-for (const hasCheckpoint of [false, true]) test(`outdated runtime aggregates HEAD follow-up with ${hasCheckpoint ? "restored checkpoint" : "no checkpoint"}, while recovery flags stay scoped`, async (t) => {
-  const { root, layout } = fixture(t);
-  if (hasCheckpoint) checkpoint(root);
-  const file = path.join(root, layout.directory, "generated/manifest.json");
-  const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
-  manifest.packageVersion = "0.0.0-fixture-outdated";
-  fs.writeFileSync(file, JSON.stringify(manifest));
-  const entry = await verifySurfaces(root, { headActionRequired: true });
-  assert.equal(entry.runtime.state, "project-integration-outdated");
-  assert.equal(entry.runtime.restartRequired, true);
-  assert.deepEqual(entry.blockedOperations, ["new-plugin-capabilities"]);
-  assert.match(formatCliResult("conversation-enter", entry), /Lode follow-up: Converge the project integration, then restart the Host/u);
-  assert.equal(entry.projectStatus.readiness.recovery.headActionRequired, false);
-});
+for (const hasCheckpoint of [false, true])
+  test(`outdated runtime aggregates HEAD follow-up with ${hasCheckpoint ? "restored checkpoint" : "no checkpoint"}, while recovery flags stay scoped`, async (t) => {
+    const { root, layout } = fixture(t);
+    if (hasCheckpoint) checkpoint(root);
+    const file = path.join(root, layout.directory, "generated/manifest.json");
+    const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+    manifest.packageVersion = "0.0.0-fixture-outdated";
+    fs.writeFileSync(file, JSON.stringify(manifest));
+    const entry = await verifySurfaces(root, { headActionRequired: true });
+    assert.equal(entry.runtime.state, "project-integration-outdated");
+    assert.equal(entry.runtime.restartRequired, true);
+    assert.deepEqual(entry.blockedOperations, ["new-plugin-capabilities"]);
+    assert.match(formatCliResult("conversation-enter", entry), /Lode follow-up: Converge the project integration, then restart the Host/u);
+    assert.equal(entry.projectStatus.readiness.recovery.headActionRequired, false);
+  });

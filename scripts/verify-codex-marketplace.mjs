@@ -10,7 +10,10 @@ import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -30,14 +33,20 @@ const allowLegacyInterfaceForOwnership = process.argv.includes("--allow-legacy-i
 const requireNativeBundle = process.argv.includes("--require-native");
 
 if (providedRoot) {
-  process.stdout.write(`${JSON.stringify(verifyCodexMarketplaceSnapshot({
-    root: path.resolve(providedRoot),
-    expectedRepository,
-    expectedMarketplaceName,
-    allowLegacyBytePreservation,
-    allowLegacyInterfaceForOwnership,
-    requireNativeBundle,
-  }), null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      verifyCodexMarketplaceSnapshot({
+        root: path.resolve(providedRoot),
+        expectedRepository,
+        expectedMarketplaceName,
+        allowLegacyBytePreservation,
+        allowLegacyInterfaceForOwnership,
+        requireNativeBundle,
+      }),
+      null,
+      2,
+    )}\n`,
+  );
 } else {
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lode-agent-codex-marketplace-"));
   const snapshotRoot = path.join(temporaryRoot, "snapshot");
@@ -51,13 +60,19 @@ if (providedRoot) {
     assert.equal(carrier.pluginName, "head-agent-core");
     const carrierPluginRoot = path.join(carrierRoot, "plugins", carrier.pluginName);
     assert.equal(JSON.parse(fs.readFileSync(path.join(carrierPluginRoot, "package.json"), "utf8")).name, "@local/head-agent-core-plugin");
-    assert.equal(JSON.parse(fs.readFileSync(path.join(carrierRoot, ".head-agent-marketplace-generated.json"), "utf8")).kind, "HeadAgentCodexMarketplaceSnapshot");
+    assert.equal(
+      JSON.parse(fs.readFileSync(path.join(carrierRoot, ".head-agent-marketplace-generated.json"), "utf8")).kind,
+      "HeadAgentCodexMarketplaceSnapshot",
+    );
     assert.equal(fs.existsSync(path.join(carrierRoot, ".lode-agent-marketplace-generated.json")), false);
     const skillFiles = ["SKILL.md", "references/runtime-composition.md", "references/conversation-ux.md", "references/authority-and-roles.md"];
     for (const file of skillFiles) {
       const relative = path.join("skills", ARTIFACT_COMPOSITION.skills.core, file);
-      assert.deepEqual(fs.readFileSync(path.join(snapshotRoot, "plugins", built.pluginName, relative)),
-        fs.readFileSync(path.resolve(relative)), `Generated Codex skill bytes differ: ${file}`);
+      assert.deepEqual(
+        fs.readFileSync(path.join(snapshotRoot, "plugins", built.pluginName, relative)),
+        fs.readFileSync(path.resolve(relative)),
+        `Generated Codex skill bytes differ: ${file}`,
+      );
     }
     assert.equal(fs.existsSync(path.join(snapshotRoot, "plugins", built.pluginName, "test")), false);
     assert.equal(fs.existsSync(path.join(snapshotRoot, "plugins", built.pluginName, "node_modules")), false);
@@ -67,22 +82,36 @@ if (providedRoot) {
     const conversationSkill = `skills/${ARTIFACT_COMPOSITION.skills.conversation}/SKILL.md`;
     const conversationBytes = fs.readFileSync(path.resolve(conversationSkill));
     assert.deepEqual(fs.readFileSync(path.join(snapshotRoot, "plugins", built.pluginName, conversationSkill)), conversationBytes);
-    const conversationEntry = runtimeManifest.files.find(file => file.path === conversationSkill);
+    const conversationEntry = runtimeManifest.files.find((file) => file.path === conversationSkill);
     assert.ok(conversationEntry, "The new conversation Skill must be packaged, not just linked");
     assert.equal(conversationEntry.sha256, sha256(conversationBytes));
     assert.equal(conversationEntry.bytes, conversationBytes.length);
-    assert.equal(runtimeManifest.files.some((file) => file.path === "legacy" || file.path.startsWith("legacy/")), false);
+    assert.equal(
+      runtimeManifest.files.some((file) => file.path === "legacy" || file.path.startsWith("legacy/")),
+      false,
+    );
     assert.equal(fs.readFileSync(path.join(snapshotRoot, "plugins", built.pluginName, "LICENSE"), "utf8").startsWith("MIT License\n"), true);
     const pluginManifestFile = path.join(snapshotRoot, "plugins", built.pluginName, ".codex-plugin", "plugin.json");
     const pluginManifestBytes = fs.readFileSync(pluginManifestFile, "utf8");
     assert.equal(JSON.parse(pluginManifestBytes).license, "MIT");
     assert.equal(JSON.parse(pluginManifestBytes).hooks, "./hooks/codex.json");
     const startupHooks = JSON.parse(fs.readFileSync(path.join(snapshotRoot, "plugins", built.pluginName, "hooks", "codex.json"), "utf8"));
-    assert.deepEqual(Object.keys(startupHooks.hooks), ["SessionStart", "UserPromptSubmit", "PreCompact", "Stop", "SubagentStart", "SubagentStop", "SessionEnd"]);
+    assert.deepEqual(Object.keys(startupHooks.hooks), [
+      "SessionStart",
+      "UserPromptSubmit",
+      "PreCompact",
+      "Stop",
+      "SubagentStart",
+      "SubagentStop",
+      "SessionEnd",
+    ]);
     assert.match(startupHooks.hooks.SessionStart[0].hooks[0].command, /session-host-hook\.mjs/);
     assert.ok(runtimeManifest.files.some((file) => file.path === "scripts/lib/session-host-adapter.mjs"));
     for (const file of ["scripts/lib/native-session-observations.mjs", "scripts/lib/native-session-process.mjs", "scripts/opencode-plugin.mjs"]) {
-      assert.ok(runtimeManifest.files.some(entry => entry.path === file), `Native observer dependency must be packaged: ${file}`);
+      assert.ok(
+        runtimeManifest.files.some((entry) => entry.path === file),
+        `Native observer dependency must be packaged: ${file}`,
+      );
       assert.deepEqual(fs.readFileSync(path.join(snapshotRoot, "plugins", built.pluginName, file)), fs.readFileSync(path.resolve(file)));
     }
 
@@ -118,14 +147,10 @@ if (providedRoot) {
     legacyMarker.snapshotId = `codex-marketplace-${sha256(Buffer.from(canonical(legacyMarkerIdentity))).slice(0, 24)}`;
     fs.writeFileSync(legacyMarkerFile, `${JSON.stringify(legacyMarker, null, 2)}\n`, "utf8");
 
-    assert.throws(
-      () => verifyCodexMarketplaceSnapshot({ root: legacySnapshotRoot }),
-      { code: "HEAD_CODEX_MARKETPLACE_DEFAULT_PROMPTS_INVALID" },
-    );
-    assert.throws(
-      () => verifyCodexMarketplaceSnapshot({ root: legacySnapshotRoot, allowLegacyInterfaceForOwnership: true }),
-      { code: "HEAD_CODEX_MARKETPLACE_LEGACY_INTERFACE_SCOPE" },
-    );
+    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: legacySnapshotRoot }), { code: "HEAD_CODEX_MARKETPLACE_DEFAULT_PROMPTS_INVALID" });
+    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: legacySnapshotRoot, allowLegacyInterfaceForOwnership: true }), {
+      code: "HEAD_CODEX_MARKETPLACE_LEGACY_INTERFACE_SCOPE",
+    });
     const legacyOwnership = verifyCodexMarketplaceSnapshot({
       root: legacySnapshotRoot,
       expectedRepository: "local",
@@ -137,55 +162,51 @@ if (providedRoot) {
     const excessivePrompts = JSON.parse(pluginManifestBytes);
     excessivePrompts.interface.defaultPrompt.push("This fourth prompt must fail closed before Codex silently ignores it.");
     fs.writeFileSync(pluginManifestFile, `${JSON.stringify(excessivePrompts, null, 2)}\n`, "utf8");
-    assert.throws(
-      () => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }),
-      { code: "HEAD_CODEX_MARKETPLACE_DEFAULT_PROMPTS_INVALID" },
-    );
+    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }), { code: "HEAD_CODEX_MARKETPLACE_DEFAULT_PROMPTS_INVALID" });
     fs.writeFileSync(pluginManifestFile, pluginManifestBytes, "utf8");
 
     const unexpectedDirectory = path.join(snapshotRoot, "plugins", built.pluginName, "unexpected-empty-directory");
     fs.mkdirSync(unexpectedDirectory);
-    assert.throws(
-      () => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }),
-      { code: "HEAD_CODEX_MARKETPLACE_TREE_MISMATCH" },
-    );
+    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }), { code: "HEAD_CODEX_MARKETPLACE_TREE_MISMATCH" });
     fs.rmdirSync(unexpectedDirectory);
 
     const catalogFile = path.join(snapshotRoot, ".agents", "plugins", "marketplace.json");
     const catalog = JSON.parse(fs.readFileSync(catalogFile, "utf8"));
     catalog.plugins[0].source.path = "../outside";
     fs.writeFileSync(catalogFile, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
-    assert.throws(
-      () => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }),
-      { code: "HEAD_CODEX_MARKETPLACE_ENTRY_INVALID" },
-    );
+    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }), { code: "HEAD_CODEX_MARKETPLACE_ENTRY_INVALID" });
 
-    process.stdout.write(`${JSON.stringify({
-      status: "codex_marketplace_packaging_verified",
-      legacyCarrierIdentityVerified: true,
-      marketplaceName: built.marketplaceName,
-      pluginName: built.pluginName,
-      pluginVersion: built.pluginVersion,
-      distributionReleaseId: built.distributionReleaseId,
-      pluginFileCount: built.pluginFileCount,
-      pathEscapeRejected: true,
-      unexpectedTreeContentRejected: true,
-      invalidDefaultPromptsRejected: true,
-      legacyPromptOwnershipMigrationVerified: true,
-      legacyPromptMigrationRequiresExpectedIdentity: true,
-      excludedDevelopmentTrees: true,
-      credentialInputsAccepted: false,
-      sourceAllowlistOnly: true,
-      authorityEffect: "none",
-      mitLicensePackaged: true,
-      exactSkillFilesVerified: skillFiles,
-      conversationSkillVerified: { path: conversationSkill, sha256: conversationEntry.sha256, bytes: conversationBytes.length },
-    }, null, 2)}\n`);
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          status: "codex_marketplace_packaging_verified",
+          legacyCarrierIdentityVerified: true,
+          marketplaceName: built.marketplaceName,
+          pluginName: built.pluginName,
+          pluginVersion: built.pluginVersion,
+          distributionReleaseId: built.distributionReleaseId,
+          pluginFileCount: built.pluginFileCount,
+          pathEscapeRejected: true,
+          unexpectedTreeContentRejected: true,
+          invalidDefaultPromptsRejected: true,
+          legacyPromptOwnershipMigrationVerified: true,
+          legacyPromptMigrationRequiresExpectedIdentity: true,
+          excludedDevelopmentTrees: true,
+          credentialInputsAccepted: false,
+          sourceAllowlistOnly: true,
+          authorityEffect: "none",
+          mitLicensePackaged: true,
+          exactSkillFilesVerified: skillFiles,
+          conversationSkillVerified: { path: conversationSkill, sha256: conversationEntry.sha256, bytes: conversationBytes.length },
+        },
+        null,
+        2,
+      )}\n`,
+    );
   } finally {
     const resolvedTemporaryRoot = path.resolve(temporaryRoot);
     const resolvedOsTemp = path.resolve(os.tmpdir());
-    if (path.dirname(resolvedTemporaryRoot) === resolvedOsTemp
-      && path.basename(resolvedTemporaryRoot).startsWith("lode-agent-codex-marketplace-")) {
+    if (path.dirname(resolvedTemporaryRoot) === resolvedOsTemp && path.basename(resolvedTemporaryRoot).startsWith("lode-agent-codex-marketplace-")) {
       fs.rmSync(resolvedTemporaryRoot, { recursive: true, force: true });
     }
   }

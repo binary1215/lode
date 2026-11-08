@@ -18,8 +18,12 @@ function marketplaceComposition(name) {
   fail("HEAD_CLAUDE_MARKETPLACE_NAME_INVALID", "Marketplace identity must match one exact supported artifact composition.");
 }
 
-function generatedMarker(composition) { return `.${composition.identity}-agent-claude-marketplace-generated.json`; }
-function sourceDistributionFile(composition) { return `.${composition.identity}-source-distribution-manifest.json`; }
+function generatedMarker(composition) {
+  return `.${composition.identity}-agent-claude-marketplace-generated.json`;
+}
+function sourceDistributionFile(composition) {
+  return `.${composition.identity}-source-distribution-manifest.json`;
+}
 
 function fail(code, message) {
   const error = new Error(message);
@@ -30,7 +34,10 @@ function fail(code, message) {
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -113,7 +120,8 @@ function expectedTreeEntries(files) {
     for (let index = 1; index < parts.length; index += 1) entries.set(parts.slice(0, index).join("/"), "directory");
     entries.set(file, "file");
   }
-  return [...entries].map(([entryPath, type]) => ({ path: entryPath, type }))
+  return [...entries]
+    .map(([entryPath, type]) => ({ path: entryPath, type }))
     .sort((left, right) => left.path.localeCompare(right.path, "en") || left.type.localeCompare(right.type, "en"));
 }
 
@@ -128,7 +136,12 @@ function fileInventory(root, excluded = new Set()) {
 }
 
 function sourceDistributionIdentity(manifest) {
-  assertExactKeys(manifest, ["protocolVersion", "name", "version", "files", "releaseId", "packageName"], "Source distribution manifest", "HEAD_CLAUDE_MARKETPLACE_SOURCE_DISTRIBUTION_INVALID");
+  assertExactKeys(
+    manifest,
+    ["protocolVersion", "name", "version", "files", "releaseId", "packageName"],
+    "Source distribution manifest",
+    "HEAD_CLAUDE_MARKETPLACE_SOURCE_DISTRIBUTION_INVALID",
+  );
   if (!Array.isArray(manifest.files) || !manifest.files.length) {
     fail("HEAD_CLAUDE_MARKETPLACE_SOURCE_DISTRIBUTION_INVALID", "Source distribution file list is empty.");
   }
@@ -139,9 +152,18 @@ function sourceDistributionIdentity(manifest) {
   for (const file of manifest.files) {
     assertExactKeys(file, ["path", "bytes", "sha256"], "Source distribution file", "HEAD_CLAUDE_MARKETPLACE_SOURCE_DISTRIBUTION_INVALID");
     const pathSegments = typeof file.path === "string" ? file.path.split("/") : [];
-    if (typeof file.path !== "string" || !file.path || file.path.includes("\\") || file.path.includes(":") || file.path.startsWith("/")
-      || pathSegments.some((segment) => !segment || segment === "." || segment === "..") || seenPaths.has(file.path)
-      || !Number.isSafeInteger(file.bytes) || file.bytes < 0 || !/^[a-f0-9]{64}$/.test(file.sha256)) {
+    if (
+      typeof file.path !== "string" ||
+      !file.path ||
+      file.path.includes("\\") ||
+      file.path.includes(":") ||
+      file.path.startsWith("/") ||
+      pathSegments.some((segment) => !segment || segment === "." || segment === "..") ||
+      seenPaths.has(file.path) ||
+      !Number.isSafeInteger(file.bytes) ||
+      file.bytes < 0 ||
+      !/^[a-f0-9]{64}$/.test(file.sha256)
+    ) {
       fail("HEAD_CLAUDE_MARKETPLACE_SOURCE_DISTRIBUTION_INVALID", `Invalid source distribution entry: ${file.path || "<missing>"}`);
     }
     seenPaths.add(file.path);
@@ -196,13 +218,15 @@ function marketplaceDocument({ name, plugin }) {
     owner: { name: plugin.author.name },
     description,
     metadata: { description },
-    plugins: [{
-      name: plugin.name,
-      source: `./plugins/${plugin.name}`,
-      description: plugin.description,
-      version: plugin.version,
-      author: { name: plugin.author.name },
-    }],
+    plugins: [
+      {
+        name: plugin.name,
+        source: `./plugins/${plugin.name}`,
+        description: plugin.description,
+        version: plugin.version,
+        author: { name: plugin.author.name },
+      },
+    ],
   };
 }
 
@@ -253,13 +277,14 @@ export function buildClaudeMarketplaceSnapshot({
   const temporary = fs.mkdtempSync(`${output}.stage-`);
   try {
     const pluginRoot = path.join(temporary, "plugins", composition.pluginName);
-    const distribution = stageDistributionRelease({ sourceRoot: source, destinationRoot: pluginRoot, nativeOverlayRoot, artifactIdentity: composition.identity });
-    fs.renameSync(
-      path.join(pluginRoot, "distribution-manifest.json"),
-      path.join(pluginRoot, sourceManifestFile),
-    );
-    const entry = distribution.files.some(file => file.path === "scripts/mcp-plugin-server.mjs")
-      ? "scripts/mcp-plugin-server.mjs" : "scripts/mcp-server.mjs";
+    const distribution = stageDistributionRelease({
+      sourceRoot: source,
+      destinationRoot: pluginRoot,
+      nativeOverlayRoot,
+      artifactIdentity: composition.identity,
+    });
+    fs.renameSync(path.join(pluginRoot, "distribution-manifest.json"), path.join(pluginRoot, sourceManifestFile));
+    const entry = distribution.files.some((file) => file.path === "scripts/mcp-plugin-server.mjs") ? "scripts/mcp-plugin-server.mjs" : "scripts/mcp-server.mjs";
     replaceJson(path.join(pluginRoot, ".mcp.json"), claudeMcpDocument(composition, entry));
     const stagedPlugin = readJson(path.join(pluginRoot, ".codex-plugin", "plugin.json"), "HEAD_CLAUDE_MARKETPLACE_PLUGIN_INVALID");
     const claudePlugin = claudePluginDocument(stagedPlugin);
@@ -268,15 +293,20 @@ export function buildClaudeMarketplaceSnapshot({
     writeJson(path.join(temporary, ".claude-plugin", "marketplace.json"), marketplaceDocument({ name, plugin: claudePlugin }));
 
     const contentDigest = sha256(Buffer.from(canonical(fileInventory(temporary))));
-    writeJson(path.join(temporary, markerFile), snapshotMarker(markerIdentity({
-      marketplaceName: name,
-      pluginName: composition.pluginName,
-      pluginVersion: sourcePlugin.version,
-      releaseId: distribution.releaseId,
-      repository,
-      commit,
-      contentDigest,
-    })));
+    writeJson(
+      path.join(temporary, markerFile),
+      snapshotMarker(
+        markerIdentity({
+          marketplaceName: name,
+          pluginName: composition.pluginName,
+          pluginVersion: sourcePlugin.version,
+          releaseId: distribution.releaseId,
+          repository,
+          commit,
+          contentDigest,
+        }),
+      ),
+    );
     verifyClaudeMarketplaceSnapshot({ root: temporary, requireNativeBundle: Boolean(nativeOverlayRoot) });
     fs.renameSync(temporary, output);
     return verifyClaudeMarketplaceSnapshot({ root: output, requireNativeBundle: Boolean(nativeOverlayRoot) });
@@ -295,18 +325,36 @@ export function verifyClaudePluginPayload({ pluginRoot, composition = ARTIFACT_C
     if (!stat.isFile() || stat.isSymbolicLink()) fail("HEAD_CLAUDE_MARKETPLACE_SOURCE_FILE_DRIFT", "Plugin metadata must be regular package-local files.");
   }
   const plugin = readJson(path.join(pluginRoot, ".claude-plugin", "plugin.json"), "HEAD_CLAUDE_MARKETPLACE_PLUGIN_INVALID");
-  assertExactKeys(plugin, ["name", "version", "description", "author", "license", "keywords", "skills", "mcpServers", ...(Object.hasOwn(plugin, "hooks") ? ["hooks"] : [])], "Claude plugin manifest", "HEAD_CLAUDE_MARKETPLACE_PLUGIN_INVALID");
+  assertExactKeys(
+    plugin,
+    ["name", "version", "description", "author", "license", "keywords", "skills", "mcpServers", ...(Object.hasOwn(plugin, "hooks") ? ["hooks"] : [])],
+    "Claude plugin manifest",
+    "HEAD_CLAUDE_MARKETPLACE_PLUGIN_INVALID",
+  );
   assertExactKeys(plugin.author, ["name"], "Claude plugin author", "HEAD_CLAUDE_MARKETPLACE_PLUGIN_INVALID");
-  if (entry && (plugin.name !== entry.name || plugin.version !== entry.version || plugin.description !== entry.description
-    || plugin.author.name !== entry.author.name) || plugin.skills !== "./skills/" || plugin.mcpServers !== "./.mcp.json"
-    || Object.hasOwn(plugin, "hooks") && plugin.hooks !== "./hooks/claude.json") {
+  if (
+    (entry &&
+      (plugin.name !== entry.name ||
+        plugin.version !== entry.version ||
+        plugin.description !== entry.description ||
+        plugin.author.name !== entry.author.name)) ||
+    plugin.skills !== "./skills/" ||
+    plugin.mcpServers !== "./.mcp.json" ||
+    (Object.hasOwn(plugin, "hooks") && plugin.hooks !== "./hooks/claude.json")
+  ) {
     fail("HEAD_CLAUDE_MARKETPLACE_PLUGIN_MISMATCH", "Marketplace entry and Claude plugin manifest do not match.");
   }
   const pkg = readJson(path.join(pluginRoot, "package.json"), "HEAD_CLAUDE_MARKETPLACE_PLUGIN_INVALID");
   const codexPlugin = readJson(path.join(pluginRoot, ".codex-plugin", "plugin.json"), "HEAD_CLAUDE_MARKETPLACE_PLUGIN_INVALID");
-  if (codexPlugin.hooks && plugin.hooks !== "./hooks/claude.json") fail("HEAD_CLAUDE_MARKETPLACE_PLUGIN_MISMATCH", "Current source hooks require the exact Claude hook projection.");
-  if (pkg.version !== plugin.version || codexPlugin.name !== plugin.name || codexPlugin.version !== plugin.version
-    || plugin.name !== composition.pluginName || pkg.name !== composition.packageName) {
+  if (codexPlugin.hooks && plugin.hooks !== "./hooks/claude.json")
+    fail("HEAD_CLAUDE_MARKETPLACE_PLUGIN_MISMATCH", "Current source hooks require the exact Claude hook projection.");
+  if (
+    pkg.version !== plugin.version ||
+    codexPlugin.name !== plugin.name ||
+    codexPlugin.version !== plugin.version ||
+    plugin.name !== composition.pluginName ||
+    pkg.name !== composition.packageName
+  ) {
     fail("HEAD_CLAUDE_MARKETPLACE_PLUGIN_MISMATCH", "Claude projection does not match the provider-neutral source metadata.");
   }
 
@@ -340,8 +388,11 @@ export function verifyClaudePluginPayload({ pluginRoot, composition = ARTIFACT_C
     const descriptor = fs.readFileSync(path.join(pluginRoot, ...descriptorEntry.path.split("/")), "utf8");
     const literals = descriptor.match(/const ARTIFACT_IDENTITY = "(?:lode|head)";/g) || [];
     const skills = fs.readdirSync(path.join(pluginRoot, "skills")).sort();
-    if (literals.length !== 1 || literals[0] !== `const ARTIFACT_IDENTITY = ${JSON.stringify(composition.identity)};`
-      || canonical(skills) !== canonical(Object.values(composition.skills).sort())) {
+    if (
+      literals.length !== 1 ||
+      literals[0] !== `const ARTIFACT_IDENTITY = ${JSON.stringify(composition.identity)};` ||
+      canonical(skills) !== canonical(Object.values(composition.skills).sort())
+    ) {
       fail("HEAD_CLAUDE_MARKETPLACE_SOURCE_DISTRIBUTION_MISMATCH", "Claude carrier descriptor and Skill vocabulary must match its exact package identity.");
     }
   } else if (composition.identity !== "head") {
@@ -351,8 +402,9 @@ export function verifyClaudePluginPayload({ pluginRoot, composition = ARTIFACT_C
   // Resolve only from the descriptor whose bytes the source manifest verified.
   // Current producers still emit one current server; old snapshots are not rewritten.
   const verifiedServerName = historicalArtifactServerName(composition.identity, descriptorEntry?.sha256) || composition.serverName;
-  const mcpEntry = sourceDistribution.files.some(file => file.path === "scripts/mcp-plugin-server.mjs")
-    ? "scripts/mcp-plugin-server.mjs" : "scripts/mcp-server.mjs";
+  const mcpEntry = sourceDistribution.files.some((file) => file.path === "scripts/mcp-plugin-server.mjs")
+    ? "scripts/mcp-plugin-server.mjs"
+    : "scripts/mcp-server.mjs";
   if (mcpEntry === "scripts/mcp-plugin-server.mjs" && canonical(plugin) !== canonical(claudePluginDocument(codexPlugin))) {
     fail("HEAD_CLAUDE_MARKETPLACE_PLUGIN_MISMATCH", "Plugin entry metadata must match its exact source projection.");
   }
@@ -360,9 +412,8 @@ export function verifyClaudePluginPayload({ pluginRoot, composition = ARTIFACT_C
     fail("HEAD_CLAUDE_MARKETPLACE_MCP_INVALID", "Claude MCP projection must use its verified artifact server and exact plugin cache root.");
   }
 
-  const expectedFiles = [...sourceDistribution.files.map(file => file.path), ".claude-plugin/plugin.json", sourceManifestFile];
-  const actualTree = treeEntries(pluginRoot)
-    .sort((left, right) => left.path.localeCompare(right.path, "en") || left.type.localeCompare(right.type, "en"));
+  const expectedFiles = [...sourceDistribution.files.map((file) => file.path), ".claude-plugin/plugin.json", sourceManifestFile];
+  const actualTree = treeEntries(pluginRoot).sort((left, right) => left.path.localeCompare(right.path, "en") || left.type.localeCompare(right.type, "en"));
   if (canonical(actualTree) !== canonical(expectedTreeEntries(expectedFiles))) {
     fail("HEAD_CLAUDE_MARKETPLACE_TREE_MISMATCH", "Plugin payload contains missing or unexpected files or directories.");
   }
@@ -400,18 +451,29 @@ export function verifyClaudeMarketplaceSnapshot({
   if (markerFile !== generatedMarker(composition)) fail("HEAD_CLAUDE_MARKETPLACE_MARKER_MISMATCH", "Marketplace marker and catalog identities disagree.");
   assertExactKeys(marketplace.owner, ["name"], "Marketplace owner", "HEAD_CLAUDE_MARKETPLACE_CATALOG_INVALID");
   assertExactKeys(marketplace.metadata, ["description"], "Marketplace metadata", "HEAD_CLAUDE_MARKETPLACE_CATALOG_INVALID");
-  if (typeof marketplace.owner.name !== "string" || !marketplace.owner.name.trim()
-    || typeof marketplace.description !== "string" || !marketplace.description.trim()
-    || marketplace.metadata.description !== marketplace.description
-    || !Array.isArray(marketplace.plugins) || marketplace.plugins.length !== 1) {
+  if (
+    typeof marketplace.owner.name !== "string" ||
+    !marketplace.owner.name.trim() ||
+    typeof marketplace.description !== "string" ||
+    !marketplace.description.trim() ||
+    marketplace.metadata.description !== marketplace.description ||
+    !Array.isArray(marketplace.plugins) ||
+    marketplace.plugins.length !== 1
+  ) {
     fail("HEAD_CLAUDE_MARKETPLACE_CATALOG_INVALID", "Marketplace metadata is incomplete.");
   }
   const entry = marketplace.plugins[0];
   assertExactKeys(entry, ["name", "source", "description", "version", "author"], "Marketplace plugin entry", "HEAD_CLAUDE_MARKETPLACE_ENTRY_INVALID");
   marketplaceName(entry.name);
   assertExactKeys(entry.author, ["name"], "Marketplace plugin author", "HEAD_CLAUDE_MARKETPLACE_ENTRY_INVALID");
-  if (entry.source !== `./plugins/${entry.name}` || entry.author.name !== marketplace.owner.name
-    || typeof entry.description !== "string" || !entry.description.trim() || typeof entry.version !== "string" || !entry.version) {
+  if (
+    entry.source !== `./plugins/${entry.name}` ||
+    entry.author.name !== marketplace.owner.name ||
+    typeof entry.description !== "string" ||
+    !entry.description.trim() ||
+    typeof entry.version !== "string" ||
+    !entry.version
+  ) {
     fail("HEAD_CLAUDE_MARKETPLACE_ENTRY_INVALID", "Marketplace plugin entry does not match the supported install contract.");
   }
 
@@ -423,23 +485,39 @@ export function verifyClaudeMarketplaceSnapshot({
   const { plugin, pkg, sourceDistribution, nativeBundle } = verifyClaudePluginPayload({ pluginRoot, composition, entry, requireNativeBundle });
 
   const marker = readJson(path.join(marketplaceRoot, markerFile), "HEAD_CLAUDE_MARKETPLACE_MARKER_INVALID");
-  assertExactKeys(marker, [
-    "protocolVersion", "kind", "marketplaceName", "pluginName", "pluginVersion", "sourceDistributionReleaseId",
-    "sourceRepository", "sourceCommit", "projectionContentDigest", "authorityEffect", "snapshotId",
-  ], "Marketplace generation marker", "HEAD_CLAUDE_MARKETPLACE_MARKER_INVALID");
+  assertExactKeys(
+    marker,
+    [
+      "protocolVersion",
+      "kind",
+      "marketplaceName",
+      "pluginName",
+      "pluginVersion",
+      "sourceDistributionReleaseId",
+      "sourceRepository",
+      "sourceCommit",
+      "projectionContentDigest",
+      "authorityEffect",
+      "snapshotId",
+    ],
+    "Marketplace generation marker",
+    "HEAD_CLAUDE_MARKETPLACE_MARKER_INVALID",
+  );
   marketplaceName(marker.marketplaceName);
   sourceRepository(marker.sourceRepository);
   sourceCommit(marker.sourceCommit);
   const contentDigest = sha256(Buffer.from(canonical(fileInventory(marketplaceRoot, new Set([markerFile])))));
-  const expectedMarker = snapshotMarker(markerIdentity({
-    marketplaceName: marketplace.name,
-    pluginName: plugin.name,
-    pluginVersion: plugin.version,
-    releaseId: sourceDistribution.releaseId,
-    repository: marker.sourceRepository,
-    commit: marker.sourceCommit,
-    contentDigest,
-  }));
+  const expectedMarker = snapshotMarker(
+    markerIdentity({
+      marketplaceName: marketplace.name,
+      pluginName: plugin.name,
+      pluginVersion: plugin.version,
+      releaseId: sourceDistribution.releaseId,
+      repository: marker.sourceRepository,
+      commit: marker.sourceCommit,
+      contentDigest,
+    }),
+  );
   if (canonical(marker) !== canonical(expectedMarker)) {
     fail("HEAD_CLAUDE_MARKETPLACE_MARKER_MISMATCH", "Marketplace generation marker does not match the verified snapshot.");
   }
@@ -461,8 +539,7 @@ export function verifyClaudeMarketplaceSnapshot({
     `plugins/${plugin.name}/.claude-plugin/plugin.json`,
     `plugins/${plugin.name}/${sourceManifestFile}`,
   ].sort((left, right) => left.localeCompare(right, "en"));
-  const actualTree = treeEntries(marketplaceRoot)
-    .sort((left, right) => left.path.localeCompare(right.path, "en") || left.type.localeCompare(right.type, "en"));
+  const actualTree = treeEntries(marketplaceRoot).sort((left, right) => left.path.localeCompare(right.path, "en") || left.type.localeCompare(right.type, "en"));
   if (canonical(actualTree) !== canonical(expectedTreeEntries(expectedFiles))) {
     fail("HEAD_CLAUDE_MARKETPLACE_TREE_MISMATCH", "Marketplace snapshot contains missing or unexpected files or directories.");
   }

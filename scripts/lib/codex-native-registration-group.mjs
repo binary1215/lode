@@ -6,16 +6,14 @@ import { readSnapshotFile, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-co
 const groups = new WeakMap();
 const bytes = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
-export const codexRegistrationMetadataDigest = (value) =>
-  value === null ? null : sha(JSON.stringify(value));
+export const codexRegistrationMetadataDigest = (value) => (value === null ? null : sha(JSON.stringify(value)));
 const fail = (code) => {
   throw Object.assign(Error(code), { code });
 };
 function read(root, relative) {
   const file = copiedProjectFile(root, relative),
     stat = fs.lstatSync(file);
-  if (!stat.isFile() || stat.nlink !== 1 || stat.size > SNAPSHOT_STORAGE_LIMITS.decodedBytes)
-    fail("NATIVE_CODEX_REGISTRATION_GROUP_INVALID");
+  if (!stat.isFile() || stat.nlink !== 1 || stat.size > SNAPSHOT_STORAGE_LIMITS.decodedBytes) fail("NATIVE_CODEX_REGISTRATION_GROUP_INVALID");
   return readSnapshotFile(file);
 }
 const flags = {
@@ -35,10 +33,7 @@ function validateRows(selection, rows) {
     rows.length !== selection.length ||
     rows.some(
       (row, i) =>
-        !row ||
-        Object.keys(row).length !== 2 ||
-        row.threadId !== selection[i].threadId ||
-        (row.digest !== null && !/^[a-f0-9]{64}$/.test(row.digest)),
+        !row || Object.keys(row).length !== 2 || row.threadId !== selection[i].threadId || (row.digest !== null && !/^[a-f0-9]{64}$/.test(row.digest)),
     )
   )
     fail("NATIVE_CODEX_REGISTRATION_GROUP_INVALID");
@@ -53,14 +48,8 @@ function state(group) {
   if (!value) fail("NATIVE_CODEX_REGISTRATION_GROUP_REQUIRED");
   return value;
 }
-export function prepareCodexRegistrationGroup({
-  operationRoot,
-  identity,
-  selection,
-  metadata,
-}) {
-  const groupId =
-      "codex-registration-group-" + sha(bytes({ identity, selection })).slice(0, 24),
+export function prepareCodexRegistrationGroup({ operationRoot, identity, selection, metadata }) {
+  const groupId = "codex-registration-group-" + sha(bytes({ identity, selection })).slice(0, 24),
     relative = groupId + ".json";
   let rows = metadataRows(selection, metadata),
     published = false;
@@ -81,8 +70,7 @@ export function prepareCodexRegistrationGroup({
   };
   const encoded = bytes(document),
     groupDigest = sha(encoded);
-  if (published && !read(operationRoot, relative).bytes.equals(encoded))
-    fail("NATIVE_CODEX_REGISTRATION_GROUP_INVALID");
+  if (published && !read(operationRoot, relative).bytes.equals(encoded)) fail("NATIVE_CODEX_REGISTRATION_GROUP_INVALID");
   const group = Object.freeze({
     groupId,
     groupDigest,
@@ -99,8 +87,7 @@ export function assertCodexRegistrationGroupCurrent(group) {
     if (value.published) fail("NATIVE_CODEX_REGISTRATION_GROUP_CHANGED");
     return;
   }
-  if (!read(value.operationRoot, value.relative).bytes.equals(value.encoded))
-    fail("NATIVE_CODEX_REGISTRATION_GROUP_CHANGED");
+  if (!read(value.operationRoot, value.relative).bytes.equals(value.encoded)) fail("NATIVE_CODEX_REGISTRATION_GROUP_CHANGED");
 }
 export function persistCodexRegistrationGroup(group) {
   const value = state(group);
@@ -118,8 +105,7 @@ export function assertCodexRegistrationMetadata(group, metadata, expected = null
     actual = metadataRows(value.document.selection, metadata),
     wanted = expected ?? value.document.initialMetadata;
   validateRows(value.document.selection, wanted);
-  if (JSON.stringify(actual) !== JSON.stringify(wanted))
-    fail("NATIVE_CODEX_REGISTRATION_TARGET_APPEARED");
+  if (JSON.stringify(actual) !== JSON.stringify(wanted)) fail("NATIVE_CODEX_REGISTRATION_TARGET_APPEARED");
 }
 function evidence(groupDigest, progressDigest, apiEvidenceDigest) {
   return sha(
@@ -131,17 +117,7 @@ function evidence(groupDigest, progressDigest, apiEvidenceDigest) {
     }),
   );
 }
-function progressDocument(
-  group,
-  {
-    index,
-    operationId,
-    inputDigest,
-    previousProgressDigest,
-    selectedMetadata,
-    apiEvidenceDigest,
-  },
-) {
+function progressDocument(group, { index, operationId, inputDigest, previousProgressDigest, selectedMetadata, apiEvidenceDigest }) {
   const value = state(group);
   if (
     !Number.isSafeInteger(index) ||
@@ -183,8 +159,7 @@ export function recordCodexRegistrationMember(group, { metadata, ...options }) {
     atomicCreateArtifact(copiedProjectFile(value.operationRoot, relative), encoded);
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
-    if (!read(value.operationRoot, relative).bytes.equals(encoded))
-      fail("NATIVE_CODEX_REGISTRATION_GROUP_CHANGED");
+    if (!read(value.operationRoot, relative).bytes.equals(encoded)) fail("NATIVE_CODEX_REGISTRATION_GROUP_CHANGED");
   }
   const progressDigest = sha(encoded);
   return {
@@ -195,10 +170,7 @@ export function recordCodexRegistrationMember(group, { metadata, ...options }) {
 }
 // A snapshot alone is not completion. Only the exact actual member result may
 // anchor it; missing/uncertain results never authorize another SDK delivery.
-export function readCodexRegistrationMember(
-  group,
-  { index, operationId, inputDigest, previousProgressDigest, evidenceDigest },
-) {
+export function readCodexRegistrationMember(group, { index, operationId, inputDigest, previousProgressDigest, evidenceDigest }) {
   assertCodexRegistrationGroupCurrent(group);
   const value = state(group),
     original = read(value.operationRoot, value.relative + ".member-" + index + ".json"),
@@ -213,9 +185,6 @@ export function readCodexRegistrationMember(
   });
   if (!original.bytes.equals(bytes(expected))) fail("NATIVE_CODEX_REGISTRATION_GROUP_CHANGED");
   const progressDigest = sha(original.bytes);
-  if (
-    evidence(value.groupDigest, progressDigest, expected.apiEvidenceDigest) !== evidenceDigest
-  )
-    fail("NATIVE_CODEX_REGISTRATION_GROUP_RESULT_MISMATCH");
+  if (evidence(value.groupDigest, progressDigest, expected.apiEvidenceDigest) !== evidenceDigest) fail("NATIVE_CODEX_REGISTRATION_GROUP_RESULT_MISMATCH");
   return { progressDigest, evidenceDigest, selectedMetadata: expected.selectedMetadata };
 }

@@ -42,23 +42,16 @@ export function operationPointerHash(state) {
 export function completedTransitionMatches(run, state, patch) {
   const transition = run.sessionTransition;
   const terminal =
-    transition.kind === "start"
-      ? run.status === "active"
-      : transition.kind === "finish"
-        ? run.status === "awaiting_review"
-        : run.status === "reviewed";
+    transition.kind === "start" ? run.status === "active" : transition.kind === "finish" ? run.status === "awaiting_review" : run.status === "reviewed";
   return terminal && Object.entries(patch).every(([key, value]) => sameValue(state[key], value));
 }
 
-export const sameValue = (left, right) =>
-  JSON.stringify(canonical(left ?? null)) === JSON.stringify(canonical(right ?? null));
+export const sameValue = (left, right) => JSON.stringify(canonical(left ?? null)) === JSON.stringify(canonical(right ?? null));
 export function unchangedSession(state, transition, patch) {
   return transition.before
-    ? Object.entries(transition.before).every(([key, value]) => sameValue(state[key], value)) &&
-        sameValue(transition.patch, patch)
+    ? Object.entries(transition.before).every(([key, value]) => sameValue(state[key], value)) && sameValue(transition.patch, patch)
     : sessionStateHash(state) === transition.beforeSessionHash &&
-        sessionStateHash({ ...state, ...patch, updatedAt: transition.changedAt }) ===
-          transition.afterSessionHash;
+        sessionStateHash({ ...state, ...patch, updatedAt: transition.changedAt }) === transition.afterSessionHash;
 }
 
 export const startPatch = (run) => ({
@@ -88,9 +81,7 @@ export const reviewPatch = (run, artifact) => ({
     artifact.disposition === "accept"
       ? null
       : {
-          kind: ["revise", "expand"].includes(artifact.disposition)
-            ? "next-whole-plan"
-            : "user-direction",
+          kind: ["revise", "expand"].includes(artifact.disposition) ? "next-whole-plan" : "user-direction",
           disposition: artifact.disposition,
           wholePlanId: run.wholePlanId,
           reviewDecisionId: run.reviewDecisionId,
@@ -98,10 +89,8 @@ export const reviewPatch = (run, artifact) => ({
 });
 
 function verifyRunLineage(root, run, inspected, requireArtifact, readContextCapsule) {
-  if (run.sessionId != null && run.sessionId !== inspected.state.sessionId)
-    fail("Run belongs to another Session.", "RUN_SESSION_MISMATCH");
-  if (run.projectId !== inspected.project.projectId)
-    fail("Run belongs to another Project.", "RUN_LINEAGE_CONFLICT");
+  if (run.sessionId != null && run.sessionId !== inspected.state.sessionId) fail("Run belongs to another Session.", "RUN_SESSION_MISMATCH");
+  if (run.projectId !== inspected.project.projectId) fail("Run belongs to another Project.", "RUN_LINEAGE_CONFLICT");
   const contract = requireArtifact(root, run.executionContractId, "ExecutionContract");
   requireArtifact(root, run.wholePlanId, "WholePlanSnapshot");
   readContextCapsule({ root, capsuleId: run.capsuleId });
@@ -135,17 +124,11 @@ function verifyStartOperation(root, run, inspected, requireArtifact, readContext
   return op;
 }
 
-export function verifyRunTransitionOriginal({
-  inspected,
-  run,
-  requireArtifact,
-  readContextCapsule,
-}) {
+export function verifyRunTransitionOriginal({ inspected, run, requireArtifact, readContextCapsule }) {
   const root = inspected.project.projectRoot;
   verifyRunLineage(root, run, inspected, requireArtifact, readContextCapsule);
   const transition = run.sessionTransition;
-  if (!transition)
-    return { status: "stable", runId: run.runId, transition: null, executionReplayAllowed: false };
+  if (!transition) return { status: "stable", runId: run.runId, transition: null, executionReplayAllowed: false };
   if (!transition.before || !transition.patch)
     return {
       status: "legacy",
@@ -158,35 +141,21 @@ export function verifyRunTransitionOriginal({
     patch;
   if (kind === "start") {
     const op = verifyStartOperation(root, run, inspected, requireArtifact, readContextCapsule);
-    if (!op || !sameValue(transition, op.transition))
-      fail(
-        "Run start transition differs from its request identity.",
-        "RUN_START_IDENTITY_CONFLICT",
-      );
+    if (!op || !sameValue(transition, op.transition)) fail("Run start transition differs from its request identity.", "RUN_START_IDENTITY_CONFLICT");
     patch = startPatch(run);
     if (run.status !== "active") fail("Start transition is not active.", "RUN_TRANSITION_CONFLICT");
   } else {
-    if (!["finish", "review"].includes(kind))
-      fail("Unknown Run transition.", "RUN_TRANSITION_CONFLICT");
+    if (!["finish", "review"].includes(kind)) fail("Unknown Run transition.", "RUN_TRANSITION_CONFLICT");
     const id = kind === "finish" ? run.resultPacketId : run.reviewDecisionId;
-    if (
-      transition.artifactId !== id ||
-      run.status !== (kind === "finish" ? "awaiting_review" : "reviewed")
-    )
+    if (transition.artifactId !== id || run.status !== (kind === "finish" ? "awaiting_review" : "reviewed"))
       fail("Run transition identity differs.", "RUN_TRANSITION_CONFLICT");
     try {
       artifact = requireArtifact(root, id, kind === "finish" ? "ResultPacket" : "ReviewDecision");
     } catch (error) {
       if (error.code !== "LINEAGE_ARTIFACT_NOT_FOUND") throw error;
       const alreadyStored =
-        kind === "finish" &&
-        sameValue(transition.patch, finishPatch(run)) &&
-        completedTransitionMatches(run, inspected.state, finishPatch(run));
-      if (
-        transition.projectId !== inspected.project.projectId ||
-        transition.sessionId !== inspected.state.sessionId ||
-        transition.runId !== run.runId
-      )
+        kind === "finish" && sameValue(transition.patch, finishPatch(run)) && completedTransitionMatches(run, inspected.state, finishPatch(run));
+      if (transition.projectId !== inspected.project.projectId || transition.sessionId !== inspected.state.sessionId || transition.runId !== run.runId)
         fail("Run transition owner differs.", "RUN_TRANSITION_CONFLICT");
       return {
         status: alreadyStored ? "committed" : "incomplete",
@@ -199,9 +168,7 @@ export function verifyRunTransitionOriginal({
     if (
       (kind === "finish" && artifact.executionContractId !== run.executionContractId) ||
       (kind === "review" &&
-        (artifact.resultPacketId !== run.resultPacketId ||
-          artifact.wholePlanId !== run.wholePlanId ||
-          artifact.disposition !== run.reviewDisposition))
+        (artifact.resultPacketId !== run.resultPacketId || artifact.wholePlanId !== run.wholePlanId || artifact.disposition !== run.reviewDisposition))
     )
       fail("Run transition artifact lineage differs.", "RUN_TRANSITION_CONFLICT");
     patch = kind === "finish" ? finishPatch(run) : reviewPatch(run, artifact);
@@ -214,15 +181,7 @@ export function verifyRunTransitionOriginal({
     !sameValue(transition.patch, patch) ||
     !sameValue(
       Object.keys(transition.before).sort(),
-      [
-        ...new Set([
-          ...Object.keys(patch),
-          "currentWholePlanId",
-          "activeRunId",
-          "activeExecutionContractId",
-          "lastReviewedRunId",
-        ]),
-      ].sort(),
+      [...new Set([...Object.keys(patch), "currentWholePlanId", "activeRunId", "activeExecutionContractId", "lastReviewedRunId"])].sort(),
     )
   )
     fail("Run Session preimage/patch is invalid.", "RUN_TRANSITION_CONFLICT");

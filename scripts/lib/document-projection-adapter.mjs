@@ -36,7 +36,11 @@ function compare(left, right) {
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compare).map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort(compare)
+        .map((key) => [key, canonical(value[key])]),
+    );
   }
   return value;
 }
@@ -65,17 +69,25 @@ function candidateSetId(value) {
 }
 
 function safeRelativePath(value) {
-  if (typeof value !== "string" || !value || value.includes("\\") || value.startsWith("/")
-    || value.split("/").some((part) => !part || part === "." || part === "..")
-    || !value.endsWith(".md")) {
+  if (
+    typeof value !== "string" ||
+    !value ||
+    value.includes("\\") ||
+    value.startsWith("/") ||
+    value.split("/").some((part) => !part || part === "." || part === "..") ||
+    !value.endsWith(".md")
+  ) {
     fail("Document projection paths must be safe relative Markdown paths.", "INVALID_DOCUMENT_PROJECTION_PATH");
   }
   return value;
 }
 
 function parseDocument(file, label) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`${label} is invalid JSON: ${error.message}`, "INVALID_DOCUMENT_PROJECTION_DOCUMENT"); }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(`${label} is invalid JSON: ${error.message}`, "INVALID_DOCUMENT_PROJECTION_DOCUMENT");
+  }
 }
 
 function atomicWrite(file, content) {
@@ -112,19 +124,30 @@ export function assertDocumentProjectionAdapter(adapter) {
   if (adapter.adapterVersion !== DOCUMENT_PROJECTION_ADAPTER_VERSION) {
     fail(`DocumentProjectionAdapter version must be ${DOCUMENT_PROJECTION_ADAPTER_VERSION}.`, "INCOMPATIBLE_DOCUMENT_PROJECTION_ADAPTER");
   }
-  for (const method of REQUIRED_METHODS) if (typeof adapter[method] !== "function") {
-    fail(`DocumentProjectionAdapter is missing ${method}().`, "INVALID_DOCUMENT_PROJECTION_ADAPTER");
-  }
+  for (const method of REQUIRED_METHODS)
+    if (typeof adapter[method] !== "function") {
+      fail(`DocumentProjectionAdapter is missing ${method}().`, "INVALID_DOCUMENT_PROJECTION_ADAPTER");
+    }
   const value = adapter.describe();
-  if (!value || value.contract !== DOCUMENT_PROJECTION_CONTRACT
-    || typeof value.adapterKind !== "string" || !value.adapterKind.trim()
-    || value.adapterVersion !== DOCUMENT_PROJECTION_ADAPTER_VERSION
-    || documentProjectionCanonicalJson(value.formats) !== documentProjectionCanonicalJson(["markdown"])) {
+  if (
+    !value ||
+    value.contract !== DOCUMENT_PROJECTION_CONTRACT ||
+    typeof value.adapterKind !== "string" ||
+    !value.adapterKind.trim() ||
+    value.adapterVersion !== DOCUMENT_PROJECTION_ADAPTER_VERSION ||
+    documentProjectionCanonicalJson(value.formats) !== documentProjectionCanonicalJson(["markdown"])
+  ) {
     fail("DocumentProjectionAdapter descriptor is invalid.", "INVALID_DOCUMENT_PROJECTION_ADAPTER");
   }
-  if (value.authority !== "derived-human-view-only" || value.rebuildable !== true || value.uniqueAuthority !== false
-    || value.instructionAuthority !== false || value.promotionAuthority !== false || value.publishedViewIsCanon !== false
-    || value.inboundEdits !== "document-change-candidates-only") {
+  if (
+    value.authority !== "derived-human-view-only" ||
+    value.rebuildable !== true ||
+    value.uniqueAuthority !== false ||
+    value.instructionAuthority !== false ||
+    value.promotionAuthority !== false ||
+    value.publishedViewIsCanon !== false ||
+    value.inboundEdits !== "document-change-candidates-only"
+  ) {
     fail("DocumentProjectionAdapter cannot claim canon, instruction, promotion, or unique authority.", "INVALID_DOCUMENT_PROJECTION_AUTHORITY");
   }
   if (typeof value.remote !== "boolean" || typeof value.durable !== "boolean") {
@@ -145,7 +168,11 @@ function markdown(value) {
 }
 
 function slug(value) {
-  const base = String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
+  const base =
+    String(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "item";
   return `${base.slice(0, 48)}-${digest(String(value)).slice(0, 8)}`;
 }
 
@@ -239,14 +266,24 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
   ];
   for (const kind of [...nodeGroups.keys()].sort(compare)) {
     const pages = nodePages.filter((page) => page.kind === kind);
-    indexLines.push(`| ${markdown(kind)} | ${nodeGroups.get(kind).length} | ${pages.map((page, index) => `[${index + 1}](${page.relativePath})`).join(", ")} |`);
+    indexLines.push(
+      `| ${markdown(kind)} | ${nodeGroups.get(kind).length} | ${pages.map((page, index) => `[${index + 1}](${page.relativePath})`).join(", ")} |`,
+    );
   }
   indexLines.push("", "## Relation types", "", "| Relation | Count | Pages |", "| --- | ---: | --- |");
   for (const type of [...edgeGroups.keys()].sort(compare)) {
     const pages = relationPages.filter((page) => page.type === type);
-    indexLines.push(`| ${markdown(type)} | ${edgeGroups.get(type).length} | ${pages.map((page, index) => `[${index + 1}](${page.relativePath})`).join(", ")} |`);
+    indexLines.push(
+      `| ${markdown(type)} | ${edgeGroups.get(type).length} | ${pages.map((page, index) => `[${index + 1}](${page.relativePath})`).join(", ")} |`,
+    );
   }
-  output.push(document("index.md", formatForVerifiedOwner(storage).dialect === "lode" ? "Lode Agent derived knowledge graph" : "HEAD Agent derived knowledge graph", indexLines.join("\n")));
+  output.push(
+    document(
+      "index.md",
+      formatForVerifiedOwner(storage).dialect === "lode" ? "Lode Agent derived knowledge graph" : "HEAD Agent derived knowledge graph",
+      indexLines.join("\n"),
+    ),
+  );
 
   for (const page of nodePages) {
     const lines = [
@@ -261,7 +298,9 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
     ];
     for (const node of page.nodes) {
       const relations = [...(relationTypesByNode.get(node.nodeId) || [])].sort(compare);
-      lines.push(`<a id="${nodeAnchor(node.nodeId)}"></a>| \`${markdown(node.nodeId)}\` | ${markdown(nodeLabel(node))} | ${markdown(node.authorityClass)} | ${markdown(node.freshness)} | ${markdown(node.origin)} | ${markdown((node.evidenceIds || []).join(", "))} | ${markdown(relations.join(", "))} |`);
+      lines.push(
+        `<a id="${nodeAnchor(node.nodeId)}"></a>| \`${markdown(node.nodeId)}\` | ${markdown(nodeLabel(node))} | ${markdown(node.authorityClass)} | ${markdown(node.freshness)} | ${markdown(node.origin)} | ${markdown((node.evidenceIds || []).join(", "))} | ${markdown(relations.join(", "))} |`,
+      );
     }
     output.push(document(page.relativePath, `${page.kind} nodes`, lines.join("\n")));
   }
@@ -284,7 +323,9 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
       const toLocation = nodeLocations.get(edge.to);
       const fromLink = fromLocation ? `[${markdown(nodeLabel(from))}](../${fromLocation.relativePath}#${fromLocation.anchor})` : `\`${markdown(edge.from)}\``;
       const toLink = toLocation ? `[${markdown(nodeLabel(to))}](../${toLocation.relativePath}#${toLocation.anchor})` : `\`${markdown(edge.to)}\``;
-      lines.push(`| \`${markdown(edge.edgeId)}\` | ${fromLink} | ${toLink} | ${markdown(edge.authorityClass)} | ${markdown(edge.freshness)} | ${markdown(edge.origin)} | ${markdown((edge.evidenceIds || []).join(", "))} | ${edge.confidence == null ? "" : markdown(edge.confidence)} |`);
+      lines.push(
+        `| \`${markdown(edge.edgeId)}\` | ${fromLink} | ${toLink} | ${markdown(edge.authorityClass)} | ${markdown(edge.freshness)} | ${markdown(edge.origin)} | ${markdown((edge.evidenceIds || []).join(", "))} | ${edge.confidence == null ? "" : markdown(edge.confidence)} |`,
+      );
     }
     output.push(document(page.relativePath, `${page.type} relations`, lines.join("\n")));
   }
@@ -325,18 +366,30 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
 }
 
 export function verifyDocumentProjection(value, expectedGraph = null, storage = undefined) {
-  if (!value || value.kind !== "DocumentProjection" || value.schemaVersion !== 1
-    || !familyFormatForOriginal("head-agent-core-document-projection", value, storage)
-    || value.protocol?.version !== DOCUMENT_PROJECTION_ADAPTER_VERSION
-    || value.renderer?.name !== familyFormatForOriginal("head-agent-core-document-projection", value, storage)?.protocol("head-agent-core-markdown") || value.renderer?.version !== MARKDOWN_PROJECTION_VERSION
-    || value.format !== "markdown" || typeof value.projectId !== "string" || !value.projectId
-    || !/^graph-snapshot-[a-f0-9]{24}$/.test(value.graphSnapshotId || "")
-    || !/^[a-f0-9]{64}$/.test(value.graphSnapshotHash || "")
-    || !/^source-snapshot-[a-f0-9]{24}$/.test(value.sourceSnapshotId || "")
-    || value.authority !== "derived-human-view-only" || value.rebuildable !== true || value.uniqueAuthority !== false
-    || value.instructionAuthority !== false || value.promotionAuthority !== false
-    || value.inboundEdits !== "document-change-candidates-only"
-    || !Array.isArray(value.documents) || value.documents.length < 1 || value.documents.length > MAX_DOCUMENTS) {
+  if (
+    !value ||
+    value.kind !== "DocumentProjection" ||
+    value.schemaVersion !== 1 ||
+    !familyFormatForOriginal("head-agent-core-document-projection", value, storage) ||
+    value.protocol?.version !== DOCUMENT_PROJECTION_ADAPTER_VERSION ||
+    value.renderer?.name !== familyFormatForOriginal("head-agent-core-document-projection", value, storage)?.protocol("head-agent-core-markdown") ||
+    value.renderer?.version !== MARKDOWN_PROJECTION_VERSION ||
+    value.format !== "markdown" ||
+    typeof value.projectId !== "string" ||
+    !value.projectId ||
+    !/^graph-snapshot-[a-f0-9]{24}$/.test(value.graphSnapshotId || "") ||
+    !/^[a-f0-9]{64}$/.test(value.graphSnapshotHash || "") ||
+    !/^source-snapshot-[a-f0-9]{24}$/.test(value.sourceSnapshotId || "") ||
+    value.authority !== "derived-human-view-only" ||
+    value.rebuildable !== true ||
+    value.uniqueAuthority !== false ||
+    value.instructionAuthority !== false ||
+    value.promotionAuthority !== false ||
+    value.inboundEdits !== "document-change-candidates-only" ||
+    !Array.isArray(value.documents) ||
+    value.documents.length < 1 ||
+    value.documents.length > MAX_DOCUMENTS
+  ) {
     fail("DocumentProjection is invalid.", "INVALID_DOCUMENT_PROJECTION");
   }
   const paths = new Set();
@@ -344,31 +397,41 @@ export function verifyDocumentProjection(value, expectedGraph = null, storage = 
   let previous = "";
   for (const item of value.documents) {
     safeRelativePath(item?.relativePath);
-    if (paths.has(item.relativePath) || (previous && compare(previous, item.relativePath) >= 0)
-      || typeof item.title !== "string" || !item.title
-      || typeof item.content !== "string" || item.content.includes("\r") || !item.content.endsWith("\n")
-      || item.contentHash !== digest(item.content) || item.byteLength !== byteLength(item.content)
-      || item.byteLength > MAX_DOCUMENT_BYTES) {
+    if (
+      paths.has(item.relativePath) ||
+      (previous && compare(previous, item.relativePath) >= 0) ||
+      typeof item.title !== "string" ||
+      !item.title ||
+      typeof item.content !== "string" ||
+      item.content.includes("\r") ||
+      !item.content.endsWith("\n") ||
+      item.contentHash !== digest(item.content) ||
+      item.byteLength !== byteLength(item.content) ||
+      item.byteLength > MAX_DOCUMENT_BYTES
+    ) {
       fail("DocumentProjection contains invalid, unsorted, duplicate, or digest-mismatched documents.", "DOCUMENT_PROJECTION_DIGEST_MISMATCH");
     }
     paths.add(item.relativePath);
     previous = item.relativePath;
     totalBytes += item.byteLength;
   }
-  if (totalBytes > MAX_TOTAL_BYTES || value.summary?.documentCount !== value.documents.length
-    || value.summary?.totalBytes !== totalBytes) {
+  if (totalBytes > MAX_TOTAL_BYTES || value.summary?.documentCount !== value.documents.length || value.summary?.totalBytes !== totalBytes) {
     fail("DocumentProjection summary is invalid.", "DOCUMENT_PROJECTION_DIGEST_MISMATCH");
   }
   const payload = { ...value };
   delete payload.documentProjectionId;
   delete payload.documentProjectionHash;
   const expectedHash = digest(documentProjectionCanonicalJson(payload));
-  if (value.documentProjectionHash !== expectedHash
-    || value.documentProjectionId !== `document-projection-${expectedHash.slice(0, 24)}`) {
+  if (value.documentProjectionHash !== expectedHash || value.documentProjectionId !== `document-projection-${expectedHash.slice(0, 24)}`) {
     fail("DocumentProjection digest verification failed.", "DOCUMENT_PROJECTION_DIGEST_MISMATCH");
   }
-  if (expectedGraph && (value.projectId !== expectedGraph.projectId || value.graphSnapshotId !== expectedGraph.graphSnapshotId
-    || value.graphSnapshotHash !== expectedGraph.graphSnapshotHash || value.sourceSnapshotId !== expectedGraph.sourceSnapshotId)) {
+  if (
+    expectedGraph &&
+    (value.projectId !== expectedGraph.projectId ||
+      value.graphSnapshotId !== expectedGraph.graphSnapshotId ||
+      value.graphSnapshotHash !== expectedGraph.graphSnapshotHash ||
+      value.sourceSnapshotId !== expectedGraph.sourceSnapshotId)
+  ) {
     fail("DocumentProjection does not match the expected GraphSnapshot.", "DOCUMENT_PROJECTION_STALE");
   }
   return value;
@@ -397,18 +460,26 @@ function pointerFor(projection, storage) {
 }
 
 export function verifyDocumentProjectionPointer(value, expectedProjection = null, storage = undefined) {
-  if (!value || value.kind !== "DocumentProjectionPointer" || value.schemaVersion !== 1
-    || !familyFormatForOriginal("head-agent-core-document-projection", value, storage)
-    || value.protocol?.version !== DOCUMENT_PROJECTION_ADAPTER_VERSION
-    || typeof value.projectId !== "string" || !value.projectId
-    || !/^document-projection-[a-f0-9]{24}$/.test(value.documentProjectionId || "")
-    || !/^[a-f0-9]{64}$/.test(value.documentProjectionHash || "")
-    || !/^graph-snapshot-[a-f0-9]{24}$/.test(value.graphSnapshotId || "")
-    || !/^[a-f0-9]{64}$/.test(value.graphSnapshotHash || "")
-    || !/^source-snapshot-[a-f0-9]{24}$/.test(value.sourceSnapshotId || "")
-    || value.format !== "markdown" || value.authority !== "derived-human-view-only"
-    || value.rebuildable !== true || value.uniqueAuthority !== false
-    || value.instructionAuthority !== false || value.promotionAuthority !== false) {
+  if (
+    !value ||
+    value.kind !== "DocumentProjectionPointer" ||
+    value.schemaVersion !== 1 ||
+    !familyFormatForOriginal("head-agent-core-document-projection", value, storage) ||
+    value.protocol?.version !== DOCUMENT_PROJECTION_ADAPTER_VERSION ||
+    typeof value.projectId !== "string" ||
+    !value.projectId ||
+    !/^document-projection-[a-f0-9]{24}$/.test(value.documentProjectionId || "") ||
+    !/^[a-f0-9]{64}$/.test(value.documentProjectionHash || "") ||
+    !/^graph-snapshot-[a-f0-9]{24}$/.test(value.graphSnapshotId || "") ||
+    !/^[a-f0-9]{64}$/.test(value.graphSnapshotHash || "") ||
+    !/^source-snapshot-[a-f0-9]{24}$/.test(value.sourceSnapshotId || "") ||
+    value.format !== "markdown" ||
+    value.authority !== "derived-human-view-only" ||
+    value.rebuildable !== true ||
+    value.uniqueAuthority !== false ||
+    value.instructionAuthority !== false ||
+    value.promotionAuthority !== false
+  ) {
     fail("Document projection pointer is invalid.", "INVALID_DOCUMENT_PROJECTION_POINTER");
   }
   const payload = { ...value };
@@ -418,11 +489,16 @@ export function verifyDocumentProjectionPointer(value, expectedProjection = null
   if (value.pointerHash !== expectedHash || value.pointerId !== `document-projection-pointer-${expectedHash.slice(0, 24)}`) {
     fail("Document projection pointer digest verification failed.", "DOCUMENT_PROJECTION_POINTER_DIGEST_MISMATCH");
   }
-  if (expectedProjection && (value.protocol.name !== expectedProjection.protocol?.name
-    || value.documentProjectionId !== expectedProjection.documentProjectionId
-    || value.documentProjectionHash !== expectedProjection.documentProjectionHash
-    || value.graphSnapshotId !== expectedProjection.graphSnapshotId || value.graphSnapshotHash !== expectedProjection.graphSnapshotHash
-    || value.sourceSnapshotId !== expectedProjection.sourceSnapshotId || value.projectId !== expectedProjection.projectId)) {
+  if (
+    expectedProjection &&
+    (value.protocol.name !== expectedProjection.protocol?.name ||
+      value.documentProjectionId !== expectedProjection.documentProjectionId ||
+      value.documentProjectionHash !== expectedProjection.documentProjectionHash ||
+      value.graphSnapshotId !== expectedProjection.graphSnapshotId ||
+      value.graphSnapshotHash !== expectedProjection.graphSnapshotHash ||
+      value.sourceSnapshotId !== expectedProjection.sourceSnapshotId ||
+      value.projectId !== expectedProjection.projectId)
+  ) {
     fail("Document projection pointer does not match the projection.", "DOCUMENT_PROJECTION_POINTER_MISMATCH");
   }
   return value;
@@ -436,14 +512,16 @@ function publishedDrift(projection, actualDocuments) {
     const base = expected.get(relativePath) || null;
     const proposed = actual.get(relativePath) || null;
     if (base?.contentHash === proposed?.contentHash) return [];
-    return [{
-      relativePath,
-      changeType: !base ? "added" : !proposed ? "removed" : "modified",
-      baseContentHash: base?.contentHash || null,
-      proposedContentHash: proposed?.contentHash || null,
-      baseByteLength: base?.byteLength || 0,
-      proposedByteLength: proposed?.byteLength || 0,
-    }];
+    return [
+      {
+        relativePath,
+        changeType: !base ? "added" : !proposed ? "removed" : "modified",
+        baseContentHash: base?.contentHash || null,
+        proposedContentHash: proposed?.contentHash || null,
+        baseByteLength: base?.byteLength || 0,
+        proposedByteLength: proposed?.byteLength || 0,
+      },
+    ];
   });
 }
 
@@ -464,7 +542,14 @@ export class LocalMarkdownProjectionAdapter {
   }
 
   projectionLocation(id) {
-    return path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "document-projection", "markdown", "snapshots", `${projectionId(id)}.json`);
+    return path.join(
+      this.projectRoot,
+      formatForVerifiedOwner(this.storage).directory,
+      "document-projection",
+      "markdown",
+      "snapshots",
+      `${projectionId(id)}.json`,
+    );
   }
 
   publishedRoot() {
@@ -505,9 +590,11 @@ export class LocalMarkdownProjectionAdapter {
   listProjectionIds() {
     const directory = path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "document-projection", "markdown", "snapshots");
     if (!fs.existsSync(directory)) return [];
-    return fs.readdirSync(directory, { withFileTypes: true })
+    return fs
+      .readdirSync(directory, { withFileTypes: true })
       .filter((entry) => entry.isFile() && /^document-projection-[a-f0-9]{24}\.json$/.test(entry.name))
-      .map((entry) => entry.name.slice(0, -5)).sort(compare);
+      .map((entry) => entry.name.slice(0, -5))
+      .sort(compare);
   }
 
   readPublishedDocuments() {
@@ -558,8 +645,12 @@ export class InMemoryMarkdownProjectionAdapter {
     this.published = new Map();
   }
 
-  describe() { return descriptor(this.adapterKind, { remote: false, durable: false }); }
-  readPointer() { return this.pointer ? { location: "memory://document-projection/current", document: clone(this.pointer) } : null; }
+  describe() {
+    return descriptor(this.adapterKind, { remote: false, durable: false });
+  }
+  readPointer() {
+    return this.pointer ? { location: "memory://document-projection/current", document: clone(this.pointer) } : null;
+  }
   readProjection(id) {
     projectionId(id);
     const value = this.projections.get(id);
@@ -575,11 +666,19 @@ export class InMemoryMarkdownProjectionAdapter {
     this.pointer = clone(value);
     return { location: "memory://document-projection/current", document: clone(value) };
   }
-  listProjectionIds() { return [...this.projections.keys()].sort(compare); }
+  listProjectionIds() {
+    return [...this.projections.keys()].sort(compare);
+  }
   readPublishedDocuments() {
-    return [...this.published.entries()].sort(([left], [right]) => compare(left, right)).map(([relativePath, content]) => ({
-      relativePath, content, contentHash: digest(content), byteLength: byteLength(content), location: `memory://published/${relativePath}`,
-    }));
+    return [...this.published.entries()]
+      .sort(([left], [right]) => compare(left, right))
+      .map(([relativePath, content]) => ({
+        relativePath,
+        content,
+        contentHash: digest(content),
+        byteLength: byteLength(content),
+        location: `memory://published/${relativePath}`,
+      }));
   }
   publishDocuments(documents, { removeRelativePaths = [] } = {}) {
     for (const item of documents) this.published.set(safeRelativePath(item.relativePath), item.content);
@@ -614,14 +713,14 @@ export function materializeMarkdownProjection({ projectRoot, storage, graph, ada
   }
   if (current.projection) {
     const drift = publishedDrift(current.projection, actualBefore);
-    if (drift.length) fail("Published Markdown contains unreviewed edits; capture DocumentChangeCandidates before rebuilding.", "DOCUMENT_PROJECTION_UNREVIEWED_DRIFT");
+    if (drift.length)
+      fail("Published Markdown contains unreviewed edits; capture DocumentChangeCandidates before rebuilding.", "DOCUMENT_PROJECTION_UNREVIEWED_DRIFT");
   }
 
   return persistMarkdownProjection({ selected, graph, next, current }, storage);
 }
 
 function persistMarkdownProjection({ selected, graph, next, current }, storage) {
-
   const existing = selected.readProjection(next.documentProjectionId);
   let projectionEntry;
   if (existing) {
@@ -638,8 +737,10 @@ function persistMarkdownProjection({ selected, graph, next, current }, storage) 
     }
   }
 
-  const removeRelativePaths = current.projection?.documents.map((item) => item.relativePath)
-    .filter((relativePath) => !next.documents.some((item) => item.relativePath === relativePath)) || [];
+  const removeRelativePaths =
+    current.projection?.documents
+      .map((item) => item.relativePath)
+      .filter((relativePath) => !next.documents.some((item) => item.relativePath === relativePath)) || [];
   const published = selected.publishDocuments(clone(next.documents), { removeRelativePaths });
   const driftAfter = publishedDrift(next, published);
   if (driftAfter.length) fail("Document projection adapter changed published Markdown content.", "DOCUMENT_PROJECTION_PUBLISH_MISMATCH");
@@ -665,15 +766,19 @@ export function inspectMarkdownProjection({ projectRoot, storage, graph, adapter
   const selected = createDocumentProjectionAdapter({ projectRoot, storage, adapter });
   const current = loadCurrentProjection(selected, storage);
   const actual = selected.readPublishedDocuments();
-  if (!current.projection) return {
-    status: actual.length ? "unmanaged" : "not-materialized",
-    graphSnapshotId: graph.graphSnapshotId,
-    candidateRequired: actual.length > 0,
-    drift: actual.map((item) => ({ relativePath: item.relativePath, changeType: "added", baseContentHash: null, proposedContentHash: item.contentHash })),
-    adapter: selected.describe(),
-  };
-  const stale = current.projection.projectId !== graph.projectId || current.projection.graphSnapshotId !== graph.graphSnapshotId
-    || current.projection.graphSnapshotHash !== graph.graphSnapshotHash || current.projection.sourceSnapshotId !== graph.sourceSnapshotId;
+  if (!current.projection)
+    return {
+      status: actual.length ? "unmanaged" : "not-materialized",
+      graphSnapshotId: graph.graphSnapshotId,
+      candidateRequired: actual.length > 0,
+      drift: actual.map((item) => ({ relativePath: item.relativePath, changeType: "added", baseContentHash: null, proposedContentHash: item.contentHash })),
+      adapter: selected.describe(),
+    };
+  const stale =
+    current.projection.projectId !== graph.projectId ||
+    current.projection.graphSnapshotId !== graph.graphSnapshotId ||
+    current.projection.graphSnapshotHash !== graph.graphSnapshotHash ||
+    current.projection.sourceSnapshotId !== graph.sourceSnapshotId;
   if (!stale) {
     const expected = buildMarkdownDocumentProjection(graph, storage);
     if (documentProjectionCanonicalJson(current.projection) !== documentProjectionCanonicalJson(expected)) {
@@ -702,40 +807,56 @@ function candidateDocument(projectRoot, id, storage) {
 }
 
 export function verifyDocumentChangeCandidateSet(value, storage = undefined) {
-  if (!value || value.kind !== "DocumentChangeCandidateSet" || value.schemaVersion !== 1
-    || !familyFormatForOriginal("head-agent-core-document-change-candidates", value, storage)
-    || value.protocol?.version !== DOCUMENT_PROJECTION_ADAPTER_VERSION
-    || typeof value.projectId !== "string" || !value.projectId
-    || !/^document-projection-[a-f0-9]{24}$/.test(value.documentProjectionId || "")
-    || !/^[a-f0-9]{64}$/.test(value.documentProjectionHash || "")
-    || !/^graph-snapshot-[a-f0-9]{24}$/.test(value.graphSnapshotId || "")
-    || !/^[a-f0-9]{64}$/.test(value.graphSnapshotHash || "")
-    || !/^source-snapshot-[a-f0-9]{24}$/.test(value.sourceSnapshotId || "")
-    || !Array.isArray(value.candidates) || value.candidates.length < 1 || value.candidates.length > MAX_DOCUMENTS
-    || value.authority !== "unreviewed-candidate" || value.instructionAuthority !== false || value.promotionAuthority !== false
-    || value.requiresReviewDecision !== true) {
+  if (
+    !value ||
+    value.kind !== "DocumentChangeCandidateSet" ||
+    value.schemaVersion !== 1 ||
+    !familyFormatForOriginal("head-agent-core-document-change-candidates", value, storage) ||
+    value.protocol?.version !== DOCUMENT_PROJECTION_ADAPTER_VERSION ||
+    typeof value.projectId !== "string" ||
+    !value.projectId ||
+    !/^document-projection-[a-f0-9]{24}$/.test(value.documentProjectionId || "") ||
+    !/^[a-f0-9]{64}$/.test(value.documentProjectionHash || "") ||
+    !/^graph-snapshot-[a-f0-9]{24}$/.test(value.graphSnapshotId || "") ||
+    !/^[a-f0-9]{64}$/.test(value.graphSnapshotHash || "") ||
+    !/^source-snapshot-[a-f0-9]{24}$/.test(value.sourceSnapshotId || "") ||
+    !Array.isArray(value.candidates) ||
+    value.candidates.length < 1 ||
+    value.candidates.length > MAX_DOCUMENTS ||
+    value.authority !== "unreviewed-candidate" ||
+    value.instructionAuthority !== false ||
+    value.promotionAuthority !== false ||
+    value.requiresReviewDecision !== true
+  ) {
     fail("DocumentChangeCandidateSet is invalid.", "INVALID_DOCUMENT_CHANGE_CANDIDATE_SET");
   }
   let previous = "";
   const ids = new Set();
   for (const candidate of value.candidates) {
     safeRelativePath(candidate?.relativePath);
-    if (previous && compare(previous, candidate.relativePath) >= 0
-      || candidate.schemaVersion !== 1 || candidate.kind !== "DocumentChangeCandidate"
-      || !["added", "modified", "removed"].includes(candidate.changeType)
-      || !/^document-change-candidate-[a-f0-9]{24}$/.test(candidate.candidateId || "")
-      || ids.has(candidate.candidateId)
-      || candidate.documentProjectionId !== value.documentProjectionId || candidate.graphSnapshotId !== value.graphSnapshotId
-      || candidate.authority !== "unreviewed-candidate" || candidate.instructionAuthority !== false || candidate.promotionAuthority !== false
-      || (candidate.baseContentHash !== null && !/^[a-f0-9]{64}$/.test(candidate.baseContentHash || ""))
-      || (candidate.proposedContentHash !== null && !/^[a-f0-9]{64}$/.test(candidate.proposedContentHash || ""))
-      || (candidate.baseContent !== null && (typeof candidate.baseContent !== "string" || byteLength(candidate.baseContent) > MAX_DOCUMENT_BYTES))
-      || (candidate.proposedContent !== null && (typeof candidate.proposedContent !== "string" || byteLength(candidate.proposedContent) > MAX_DOCUMENT_BYTES))
-      || (candidate.baseContent !== null && digest(candidate.baseContent) !== candidate.baseContentHash)
-      || (candidate.proposedContent !== null && digest(candidate.proposedContent) !== candidate.proposedContentHash)
-      || (candidate.changeType === "added" && (candidate.baseContent !== null || candidate.baseContentHash !== null || candidate.proposedContent === null))
-      || (candidate.changeType === "removed" && (candidate.proposedContent !== null || candidate.proposedContentHash !== null || candidate.baseContent === null))
-      || (candidate.changeType === "modified" && (candidate.baseContent === null || candidate.proposedContent === null))) {
+    if (
+      (previous && compare(previous, candidate.relativePath) >= 0) ||
+      candidate.schemaVersion !== 1 ||
+      candidate.kind !== "DocumentChangeCandidate" ||
+      !["added", "modified", "removed"].includes(candidate.changeType) ||
+      !/^document-change-candidate-[a-f0-9]{24}$/.test(candidate.candidateId || "") ||
+      ids.has(candidate.candidateId) ||
+      candidate.documentProjectionId !== value.documentProjectionId ||
+      candidate.graphSnapshotId !== value.graphSnapshotId ||
+      candidate.authority !== "unreviewed-candidate" ||
+      candidate.instructionAuthority !== false ||
+      candidate.promotionAuthority !== false ||
+      (candidate.baseContentHash !== null && !/^[a-f0-9]{64}$/.test(candidate.baseContentHash || "")) ||
+      (candidate.proposedContentHash !== null && !/^[a-f0-9]{64}$/.test(candidate.proposedContentHash || "")) ||
+      (candidate.baseContent !== null && (typeof candidate.baseContent !== "string" || byteLength(candidate.baseContent) > MAX_DOCUMENT_BYTES)) ||
+      (candidate.proposedContent !== null && (typeof candidate.proposedContent !== "string" || byteLength(candidate.proposedContent) > MAX_DOCUMENT_BYTES)) ||
+      (candidate.baseContent !== null && digest(candidate.baseContent) !== candidate.baseContentHash) ||
+      (candidate.proposedContent !== null && digest(candidate.proposedContent) !== candidate.proposedContentHash) ||
+      (candidate.changeType === "added" && (candidate.baseContent !== null || candidate.baseContentHash !== null || candidate.proposedContent === null)) ||
+      (candidate.changeType === "removed" &&
+        (candidate.proposedContent !== null || candidate.proposedContentHash !== null || candidate.baseContent === null)) ||
+      (candidate.changeType === "modified" && (candidate.baseContent === null || candidate.proposedContent === null))
+    ) {
       fail("DocumentChangeCandidateSet contains invalid candidates.", "DOCUMENT_CHANGE_CANDIDATE_DIGEST_MISMATCH");
     }
     const candidatePayload = { ...candidate };
@@ -812,11 +933,14 @@ export function captureDocumentChangeCandidates({ projectRoot, storage, graph, a
     requiresReviewDecision: true,
   };
   const candidateSetHash = digest(documentProjectionCanonicalJson(payload));
-  const candidateSet = verifyDocumentChangeCandidateSet({
-    ...payload,
-    candidateSetId: `document-change-candidate-set-${candidateSetHash.slice(0, 24)}`,
-    candidateSetHash,
-  }, storage);
+  const candidateSet = verifyDocumentChangeCandidateSet(
+    {
+      ...payload,
+      candidateSetId: `document-change-candidate-set-${candidateSetHash.slice(0, 24)}`,
+      candidateSetHash,
+    },
+    storage,
+  );
   let file = null;
   if (persist) {
     file = candidateDocument(projectRoot, candidateSet.candidateSetId, storage);
@@ -840,11 +964,13 @@ export function verifyDocumentChangeCandidateSetAgainstPublished({ projectRoot, 
   const verified = verifyDocumentChangeCandidateSet(candidateSet, storage);
   const selected = createDocumentProjectionAdapter({ projectRoot, storage, adapter });
   const current = loadCurrentProjection(selected, storage);
-  if (!current.projection
-    || current.projection.documentProjectionId !== verified.documentProjectionId
-    || current.projection.documentProjectionHash !== verified.documentProjectionHash
-    || current.projection.graphSnapshotId !== verified.graphSnapshotId
-    || current.projection.graphSnapshotHash !== verified.graphSnapshotHash) {
+  if (
+    !current.projection ||
+    current.projection.documentProjectionId !== verified.documentProjectionId ||
+    current.projection.documentProjectionHash !== verified.documentProjectionHash ||
+    current.projection.graphSnapshotId !== verified.graphSnapshotId ||
+    current.projection.graphSnapshotHash !== verified.graphSnapshotHash
+  ) {
     fail("DocumentChangeCandidateSet no longer matches the current published projection base.", "DOCUMENT_CHANGE_CANDIDATE_BASE_DRIFT");
   }
   const expected = new Map(current.projection.documents.map((item) => [item.relativePath, item]));
@@ -876,25 +1002,29 @@ export function verifyDocumentChangeCandidateSetAgainstPublished({ projectRoot, 
 export function materializeReviewedMarkdownProjection({ projectRoot, storage, graph, candidateSet, reviewDecision, adapter = null } = {}) {
   verifyTemporalProvenanceGraph(graph);
   const verified = verifyDocumentChangeCandidateSet(candidateSet, storage);
-  if (!reviewDecision || reviewDecision.kind !== "ReviewDecision"
-    || reviewDecision.decisionScope !== "document-to-product-canon"
-    || reviewDecision.candidateSetId !== verified.candidateSetId
-    || reviewDecision.candidateSetHash !== verified.candidateSetHash
-    || reviewDecision.authority !== "explicit-user-document-change-review"
-    || reviewDecision.instructionAuthority !== true
-    || !Array.isArray(reviewDecision.acceptedCandidateIds)
-    || !Array.isArray(reviewDecision.rejectedCandidateIds)) {
+  if (
+    !reviewDecision ||
+    reviewDecision.kind !== "ReviewDecision" ||
+    reviewDecision.decisionScope !== "document-to-product-canon" ||
+    reviewDecision.candidateSetId !== verified.candidateSetId ||
+    reviewDecision.candidateSetHash !== verified.candidateSetHash ||
+    reviewDecision.authority !== "explicit-user-document-change-review" ||
+    reviewDecision.instructionAuthority !== true ||
+    !Array.isArray(reviewDecision.acceptedCandidateIds) ||
+    !Array.isArray(reviewDecision.rejectedCandidateIds)
+  ) {
     fail("A verified explicit document-change ReviewDecision is required to reconcile published Markdown.", "DOCUMENT_CHANGE_REVIEW_REQUIRED");
   }
   const known = verified.candidates.map((candidate) => candidate.candidateId).sort(compare);
   const partition = [...reviewDecision.acceptedCandidateIds, ...reviewDecision.rejectedCandidateIds].sort(compare);
-  if (documentProjectionCanonicalJson(known) !== documentProjectionCanonicalJson(partition)
-    || new Set(partition).size !== partition.length) {
+  if (documentProjectionCanonicalJson(known) !== documentProjectionCanonicalJson(partition) || new Set(partition).size !== partition.length) {
     fail("Document-change ReviewDecision does not partition the candidate set.", "DOCUMENT_CHANGE_REVIEW_SELECTION_MISMATCH");
   }
-  return { ...resumeReviewedMarkdownProjection({ projectRoot, storage, graph, adapter,
-    baseProjectionId: verified.documentProjectionId, candidateSet: verified }),
-    reviewDecisionId: reviewDecision.reviewDecisionId, candidateSetId: verified.candidateSetId };
+  return {
+    ...resumeReviewedMarkdownProjection({ projectRoot, storage, graph, adapter, baseProjectionId: verified.documentProjectionId, candidateSet: verified }),
+    reviewDecisionId: reviewDecision.reviewDecisionId,
+    candidateSetId: verified.candidateSetId,
+  };
 }
 
 // Internal application primitive. The caller verifies the durable ReviewDecision.
@@ -936,7 +1066,8 @@ export function resumeReviewedMarkdownProjection({ projectRoot, storage, graph, 
   check();
   const stored = selected.writeProjection(next.documentProjectionId, clone(next));
   verifyDocumentProjection(stored.document, graph, storage);
-  if (documentProjectionCanonicalJson(stored.document) !== documentProjectionCanonicalJson(next)) fail("Target projection differs.", "DOCUMENT_PROJECTION_CONFLICT");
+  if (documentProjectionCanonicalJson(stored.document) !== documentProjectionCanonicalJson(next))
+    fail("Target projection differs.", "DOCUMENT_PROJECTION_CONFLICT");
   for (const item of next.documents) {
     if (check().get(item.relativePath) !== item.content) selected.publishDocuments([clone(item)]);
   }
@@ -960,15 +1091,24 @@ export function verifyDocumentProjectionAdapterConformance({ projectRoot, storag
   const candidate = createDocumentProjectionAdapter({ projectRoot, storage, adapter: candidateAdapter });
   const referenceResult = materializeMarkdownProjection({ projectRoot, storage, graph, adapter: reference });
   const candidateResult = materializeMarkdownProjection({ projectRoot, storage, graph, adapter: candidate });
-  if (documentProjectionCanonicalJson(referenceResult.projection) !== documentProjectionCanonicalJson(candidateResult.projection)
-    || documentProjectionCanonicalJson(reference.readPublishedDocuments().map(({ relativePath, contentHash, byteLength: bytes }) => ({ relativePath, contentHash, byteLength: bytes })))
-      !== documentProjectionCanonicalJson(candidate.readPublishedDocuments().map(({ relativePath, contentHash, byteLength: bytes }) => ({ relativePath, contentHash, byteLength: bytes })))) {
+  if (
+    documentProjectionCanonicalJson(referenceResult.projection) !== documentProjectionCanonicalJson(candidateResult.projection) ||
+    documentProjectionCanonicalJson(
+      reference.readPublishedDocuments().map(({ relativePath, contentHash, byteLength: bytes }) => ({ relativePath, contentHash, byteLength: bytes })),
+    ) !==
+      documentProjectionCanonicalJson(
+        candidate.readPublishedDocuments().map(({ relativePath, contentHash, byteLength: bytes }) => ({ relativePath, contentHash, byteLength: bytes })),
+      )
+  ) {
     fail("Document projection adapters produced different semantic Markdown output.", "DOCUMENT_PROJECTION_CONFORMANCE_MISMATCH");
   }
   const payload = {
     schemaVersion: 1,
     kind: "DocumentProjectionConformanceReport",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-document-projection-conformance"), version: DOCUMENT_PROJECTION_ADAPTER_VERSION },
+    protocol: {
+      name: formatForVerifiedOwner(storage).protocol("head-agent-core-document-projection-conformance"),
+      version: DOCUMENT_PROJECTION_ADAPTER_VERSION,
+    },
     graphSnapshotId: graph.graphSnapshotId,
     graphSnapshotHash: graph.graphSnapshotHash,
     documentProjectionId: referenceResult.projection.documentProjectionId,

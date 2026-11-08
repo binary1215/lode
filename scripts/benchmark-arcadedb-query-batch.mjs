@@ -79,7 +79,11 @@ function percentile(values, ratio) {
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   }
   return value;
 }
@@ -131,28 +135,34 @@ try {
     throw new Error("installed native adapter smoke did not select the verified Go exact child");
   }
   installedAdapterSmoke = true;
-  process.stdout.write(`${JSON.stringify({
-    schemaVersion: 1,
-    kind: "ArcadeDbQueryBatchBenchmark",
-    protocolVersion: "0.1.0",
-    iterations,
-    server: { pid: ready.pid, port: ready.port, ownership: "benchmark-exact-child" },
-    native: {
-      executableSha256: crypto.createHash("sha256").update(fs.readFileSync(nativeBridge)).digest("hex"),
-      medianMs: Number(nativeMedian.toFixed(3)),
-      p95Ms: Number(percentile(native, 0.95).toFixed(3)),
-    },
-    javascript: {
-      medianMs: Number(javascriptMedian.toFixed(3)),
-      p95Ms: Number(percentile(javascript, 0.95).toFixed(3)),
-    },
-    medianSpeedup: Number(speedup.toFixed(3)),
-    semanticParity: true,
-    installedAdapterSmoke,
-    defaultActivationThreshold: "native-median-at-most-80-percent-of-javascript-median",
-    defaultActivationEligible: activationEligible,
-    authorityEffect: "none",
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        kind: "ArcadeDbQueryBatchBenchmark",
+        protocolVersion: "0.1.0",
+        iterations,
+        server: { pid: ready.pid, port: ready.port, ownership: "benchmark-exact-child" },
+        native: {
+          executableSha256: crypto.createHash("sha256").update(fs.readFileSync(nativeBridge)).digest("hex"),
+          medianMs: Number(nativeMedian.toFixed(3)),
+          p95Ms: Number(percentile(native, 0.95).toFixed(3)),
+        },
+        javascript: {
+          medianMs: Number(javascriptMedian.toFixed(3)),
+          p95Ms: Number(percentile(javascript, 0.95).toFixed(3)),
+        },
+        medianSpeedup: Number(speedup.toFixed(3)),
+        semanticParity: true,
+        installedAdapterSmoke,
+        defaultActivationThreshold: "native-median-at-most-80-percent-of-javascript-median",
+        defaultActivationEligible: activationEligible,
+        authorityEffect: "none",
+      },
+      null,
+      2,
+    )}\n`,
+  );
 } finally {
   const exited = new Promise((resolve) => server.once("exit", resolve));
   if (server.connected) server.send({ kind: "shutdown" });

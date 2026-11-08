@@ -11,7 +11,11 @@ const digest = (value) => crypto.createHash("sha256").update(value).digest("hex"
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   }
   return value;
 }
@@ -34,8 +38,11 @@ function repositoryModule(filesByPath, fromPath, specifier, language) {
   const base = path.posix.normalize(path.posix.join(path.posix.dirname(fromPath), specifier));
   const candidates = path.posix.extname(base)
     ? [base]
-    : [base, ...[".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx", ".py"].map((extension) => `${base}${extension}`),
-      ...["index.js", "index.jsx", "index.mjs", "index.mts", "index.ts", "index.tsx", "__init__.py"].map((name) => `${base}/${name}`)];
+    : [
+        base,
+        ...[".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx", ".py"].map((extension) => `${base}${extension}`),
+        ...["index.js", "index.jsx", "index.mjs", "index.mts", "index.ts", "index.tsx", "__init__.py"].map((name) => `${base}/${name}`),
+      ];
   return candidates.find((candidate) => filesByPath.has(candidate)) || null;
 }
 
@@ -90,8 +97,16 @@ export function buildSemanticGraph({ files, sources, sourceRelationEvidence = nu
       const identitySignature = overloaded ? symbol.signature : "";
       const identityOccurrence = identityAmbiguous ? occurrence : 1;
       return {
-        id: nodeId("Symbol", JSON.stringify({ path: file.path, symbolKind: symbol.kind, qualifiedName: symbol.qualifiedName,
-          signature: identitySignature, occurrence: identityOccurrence })),
+        id: nodeId(
+          "Symbol",
+          JSON.stringify({
+            path: file.path,
+            symbolKind: symbol.kind,
+            qualifiedName: symbol.qualifiedName,
+            signature: identitySignature,
+            occurrence: identityOccurrence,
+          }),
+        ),
         kind: "Symbol",
         path: file.path,
         fileDigest: file.digest,
@@ -112,10 +127,18 @@ export function buildSemanticGraph({ files, sources, sourceRelationEvidence = nu
     symbolNodesByFile.set(file.path, symbols);
     for (const symbol of symbols) {
       nodes.push(symbol);
-      edges.push(edgeRecord("DECLARES", fileNode.id, symbol.id, { path: file.path, line: symbol.line, digest: file.digest }, {
-        confidence: "heuristic",
-        evidenceSource: { kind: "heuristic-qualified-declaration-scan", sourceAnalysisVersion: SOURCE_ANALYSIS_VERSION },
-      }));
+      edges.push(
+        edgeRecord(
+          "DECLARES",
+          fileNode.id,
+          symbol.id,
+          { path: file.path, line: symbol.line, digest: file.digest },
+          {
+            confidence: "heuristic",
+            evidenceSource: { kind: "heuristic-qualified-declaration-scan", sourceAnalysisVersion: SOURCE_ANALYSIS_VERSION },
+          },
+        ),
+      );
     }
   }
 
@@ -147,11 +170,19 @@ export function buildSemanticGraph({ files, sources, sourceRelationEvidence = nu
       const targetNode = targetPath ? nodeByFile.get(targetPath) : externalNode(dependency.specifier);
       if (!targetPath && dependency.specifier.startsWith(".")) unresolvedImportCount += 1;
       dependencyTargets.set(dependency.specifier, { targetPath, targetNode });
-      edges.push(edgeRecord("IMPORTS", fromNode.id, targetNode.id, { path: file.path, line: dependency.line || 1, digest: file.digest }, {
-        specifier: dependency.specifier,
-        resolution: targetPath ? "repository-file" : "external-or-unresolved",
-        confidence: "heuristic",
-      }));
+      edges.push(
+        edgeRecord(
+          "IMPORTS",
+          fromNode.id,
+          targetNode.id,
+          { path: file.path, line: dependency.line || 1, digest: file.digest },
+          {
+            specifier: dependency.specifier,
+            resolution: targetPath ? "repository-file" : "external-or-unresolved",
+            confidence: "heuristic",
+          },
+        ),
+      );
     }
     const bindingByLocal = new Map(bindings.map((binding) => [binding.local, binding]));
     const localSymbols = symbolNodesByFile.get(file.path) || [];
@@ -174,56 +205,70 @@ export function buildSemanticGraph({ files, sources, sourceRelationEvidence = nu
         if (resolved.targetPath) {
           const targetName = member || (binding.imported === "default" || binding.imported === "*" ? null : binding.imported);
           if (targetName) {
-            const importedTargets = (symbolNodesByFile.get(resolved.targetPath) || [])
-              .filter((symbol) => symbol.name === targetName && !symbol.identityAmbiguous);
+            const importedTargets = (symbolNodesByFile.get(resolved.targetPath) || []).filter(
+              (symbol) => symbol.name === targetName && !symbol.identityAmbiguous,
+            );
             if (importedTargets.length === 1) target = importedTargets[0];
           }
         }
       }
-      if (!target) { unresolvedCallCount += 1; continue; }
-      edges.push(edgeRecord("CALLS", caller.id, target.id, { path: file.path, line: call.line, digest: file.digest }, {
-        callee: call.callee,
-        confidence: "heuristic",
-        evidenceSource: {
-          kind: "heuristic-syntax-scan",
-          sourceAnalysisVersion: SOURCE_ANALYSIS_VERSION,
-          callerQualifiedName: call.callerQualifiedName,
-          callerIdentityAmbiguous: call.callerIdentityAmbiguous,
-        },
-      }));
+      if (!target) {
+        unresolvedCallCount += 1;
+        continue;
+      }
+      edges.push(
+        edgeRecord(
+          "CALLS",
+          caller.id,
+          target.id,
+          { path: file.path, line: call.line, digest: file.digest },
+          {
+            callee: call.callee,
+            confidence: "heuristic",
+            evidenceSource: {
+              kind: "heuristic-syntax-scan",
+              sourceAnalysisVersion: SOURCE_ANALYSIS_VERSION,
+              callerQualifiedName: call.callerQualifiedName,
+              callerIdentityAmbiguous: call.callerIdentityAmbiguous,
+            },
+          },
+        ),
+      );
     }
   }
 
   const currentManifest = files.map((file) => ({ path: file.path, digest: file.digest, language: file.language }));
-  const verifiedRelationEvidence = sourceRelationEvidence
-    ? verifySourceRelationEvidenceSet(sourceRelationEvidence, { files: currentManifest })
-    : null;
+  const verifiedRelationEvidence = sourceRelationEvidence ? verifySourceRelationEvidenceSet(sourceRelationEvidence, { files: currentManifest }) : null;
   const endpointNode = (endpoint) => {
     if (endpoint.kind === "file") return nodeByFile.get(endpoint.path) || null;
     if (endpoint.kind === "external") return externalNode(endpoint.specifier);
-    const matches = (symbolNodesByFile.get(endpoint.path) || []).filter((symbol) => symbol.name === endpoint.name
-      && symbol.symbolKind === endpoint.symbolKind && symbol.line === endpoint.line);
+    const matches = (symbolNodesByFile.get(endpoint.path) || []).filter(
+      (symbol) => symbol.name === endpoint.name && symbol.symbolKind === endpoint.symbolKind && symbol.line === endpoint.line,
+    );
     return matches.length === 1 ? matches[0] : null;
   };
-  if (verifiedRelationEvidence) for (const relation of verifiedRelationEvidence.relations) {
-    const from = endpointNode(relation.from);
-    const to = endpointNode(relation.to);
-    if (!from || !to) {
-      const error = new Error(`AST source relation endpoints are absent from the current semantic graph: ${relation.relationId}`);
-      error.code = "SOURCE_RELATION_EVIDENCE_ENDPOINT_MISSING";
-      throw error;
+  if (verifiedRelationEvidence)
+    for (const relation of verifiedRelationEvidence.relations) {
+      const from = endpointNode(relation.from);
+      const to = endpointNode(relation.to);
+      if (!from || !to) {
+        const error = new Error(`AST source relation endpoints are absent from the current semantic graph: ${relation.relationId}`);
+        error.code = "SOURCE_RELATION_EVIDENCE_ENDPOINT_MISSING";
+        throw error;
+      }
+      edges.push(
+        edgeRecord(relation.type, from.id, to.id, relation.evidence, {
+          confidence: relation.confidence,
+          evidenceSource: {
+            kind: "language-ast-adapter",
+            analyzer: verifiedRelationEvidence.analyzer,
+            evidenceSetId: verifiedRelationEvidence.evidenceSetId,
+            relationId: relation.relationId,
+            authority: verifiedRelationEvidence.authority,
+          },
+        }),
+      );
     }
-    edges.push(edgeRecord(relation.type, from.id, to.id, relation.evidence, {
-      confidence: relation.confidence,
-      evidenceSource: {
-        kind: "language-ast-adapter",
-        analyzer: verifiedRelationEvidence.analyzer,
-        evidenceSetId: verifiedRelationEvidence.evidenceSetId,
-        relationId: relation.relationId,
-        authority: verifiedRelationEvidence.authority,
-      },
-    }));
-  }
 
   nodes.sort((left, right) => left.id.localeCompare(right.id));
   edges.sort((left, right) => left.id.localeCompare(right.id));
@@ -232,18 +277,20 @@ export function buildSemanticGraph({ files, sources, sourceRelationEvidence = nu
     protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-semantic-graph"), version: SEMANTIC_GRAPH_VERSION },
     authority: "derived-evidence-only",
     accuracy: verifiedRelationEvidence ? "heuristic-fallback-plus-source-separated-ast-evidence" : "heuristic-not-ast-complete",
-    sourceRelationEvidence: verifiedRelationEvidence ? {
-      status: "provided",
-      evidenceSetId: verifiedRelationEvidence.evidenceSetId,
-      evidenceSetHash: verifiedRelationEvidence.evidenceSetHash,
-      analyzer: verifiedRelationEvidence.analyzer,
-      relationCount: verifiedRelationEvidence.relations.length,
-      authority: verifiedRelationEvidence.authority,
-    } : {
-      status: "not-provided",
-      fallback: "heuristic-source-analysis-retained",
-      authority: "none",
-    },
+    sourceRelationEvidence: verifiedRelationEvidence
+      ? {
+          status: "provided",
+          evidenceSetId: verifiedRelationEvidence.evidenceSetId,
+          evidenceSetHash: verifiedRelationEvidence.evidenceSetHash,
+          analyzer: verifiedRelationEvidence.analyzer,
+          relationCount: verifiedRelationEvidence.relations.length,
+          authority: verifiedRelationEvidence.authority,
+        }
+      : {
+          status: "not-provided",
+          fallback: "heuristic-source-analysis-retained",
+          authority: "none",
+        },
     nodes,
     edges,
     summary: {
@@ -272,27 +319,33 @@ export function verifySemanticGraph(graph) {
   if (graph.semanticGraphHash !== actual || graph.semanticGraphId !== `semantic-graph-${actual.slice(0, 24)}`) {
     throw Object.assign(new Error("Semantic graph digest verification failed."), { code: "SEMANTIC_GRAPH_DIGEST_MISMATCH" });
   }
-  if (!familyFormatForOriginal("head-agent-core-semantic-graph", graph)) throw Object.assign(new Error("Semantic graph is invalid."), { code: "INVALID_SEMANTIC_GRAPH" });
+  if (!familyFormatForOriginal("head-agent-core-semantic-graph", graph))
+    throw Object.assign(new Error("Semantic graph is invalid."), { code: "INVALID_SEMANTIC_GRAPH" });
   return graph;
 }
 
 export function querySemanticGraph(graph, { query, depth = 1, maxResults = 100 } = {}) {
   verifySemanticGraph(graph);
-  const normalizedQuery = String(query || "").trim().toLocaleLowerCase();
+  const normalizedQuery = String(query || "")
+    .trim()
+    .toLocaleLowerCase();
   if (!normalizedQuery) throw Object.assign(new Error("Semantic graph query is required."), { code: "SEMANTIC_GRAPH_QUERY_REQUIRED" });
   const safeDepth = Number(depth);
   const safeMaximum = Number(maxResults);
-  if (!Number.isInteger(safeDepth) || safeDepth < 0 || safeDepth > 3) throw Object.assign(new Error("Semantic graph depth must be from 0 to 3."), { code: "INVALID_SEMANTIC_GRAPH_DEPTH" });
-  if (!Number.isInteger(safeMaximum) || safeMaximum < 1 || safeMaximum > 500) throw Object.assign(new Error("Semantic graph maxResults must be from 1 to 500."), { code: "INVALID_SEMANTIC_GRAPH_LIMIT" });
+  if (!Number.isInteger(safeDepth) || safeDepth < 0 || safeDepth > 3)
+    throw Object.assign(new Error("Semantic graph depth must be from 0 to 3."), { code: "INVALID_SEMANTIC_GRAPH_DEPTH" });
+  if (!Number.isInteger(safeMaximum) || safeMaximum < 1 || safeMaximum > 500)
+    throw Object.assign(new Error("Semantic graph maxResults must be from 1 to 500."), { code: "INVALID_SEMANTIC_GRAPH_LIMIT" });
   const searchable = (node) => [node.id, node.kind, node.path, node.name, node.specifier, node.symbolKind].filter(Boolean).join(" ").toLocaleLowerCase();
   const matches = graph.nodes.filter((node) => searchable(node).includes(normalizedQuery)).slice(0, safeMaximum);
   const selected = new Set(matches.map((node) => node.id));
   let frontier = new Set(selected);
   for (let level = 0; level < safeDepth && frontier.size && selected.size < safeMaximum; level += 1) {
     const next = new Set();
-    for (const edge of graph.edges) if (frontier.has(edge.from) || frontier.has(edge.to)) {
-      for (const id of [edge.from, edge.to]) if (!selected.has(id) && selected.size + next.size < safeMaximum) next.add(id);
-    }
+    for (const edge of graph.edges)
+      if (frontier.has(edge.from) || frontier.has(edge.to)) {
+        for (const id of [edge.from, edge.to]) if (!selected.has(id) && selected.size + next.size < safeMaximum) next.add(id);
+      }
     for (const id of next) selected.add(id);
     frontier = next;
   }

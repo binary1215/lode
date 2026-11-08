@@ -1,25 +1,13 @@
 import { nativeSqlitePath } from "./codex-native-backup.mjs";
-import {
-  readSelectedCodexStateEvidence,
-  verifySelectedCodexStateEvidence,
-} from "./codex-native-state-evidence.mjs";
+import { readSelectedCodexStateEvidence, verifySelectedCodexStateEvidence } from "./codex-native-state-evidence.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { assertCodexNativeOffline } from "./codex-native-offline.mjs";
-import {
-  inspectCodexNativeDatabase,
-  readSelectedCodexHistory,
-  codexNativePortabilityProfile,
-} from "./codex-native-portability.mjs";
+import { inspectCodexNativeDatabase, readSelectedCodexHistory, codexNativePortabilityProfile } from "./codex-native-portability.mjs";
 import { inspectCodexRolloutOriginal } from "./codex-native-rollout.mjs";
-import {
-  copiedProjectFile,
-  inspectCopiedProjectFile,
-  verifyCopiedProjectFile,
-  copyOriginal,
-} from "./project-copy-evidence.mjs";
+import { copiedProjectFile, inspectCopiedProjectFile, verifyCopiedProjectFile, copyOriginal } from "./project-copy-evidence.mjs";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
 
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -33,8 +21,7 @@ const cancelled = (signal) => {
   if (signal?.aborted) fail("NATIVE_CODEX_CAPTURE_CANCELLED");
 };
 const version = (db) => db.prepare("PRAGMA data_version").get().data_version;
-const physical = (stat) =>
-  [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].map(String).join(":");
+const physical = (stat) => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].map(String).join(":");
 function exact(file, bytes) {
   if (fs.existsSync(file)) {
     if (!fs.readFileSync(file).equals(bytes)) fail("NATIVE_CODEX_CAPTURE_CONFLICT");
@@ -43,17 +30,12 @@ function exact(file, bytes) {
   atomicCreateArtifact(file, bytes);
 }
 function destinationRoot(destination, home) {
-  if (typeof destination !== "string" || !destination.trim())
-    fail("NATIVE_CODEX_CAPTURE_DESTINATION_REQUIRED");
+  if (typeof destination !== "string" || !destination.trim()) fail("NATIVE_CODEX_CAPTURE_DESTINATION_REQUIRED");
   const absolute = path.resolve(destination),
     parent = fs.realpathSync(path.dirname(absolute));
   const target = copiedProjectFile(parent, path.basename(absolute));
   const relative = path.relative(home, target);
-  if (
-    !relative ||
-    (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))
-  )
-    fail("NATIVE_CODEX_CAPTURE_INSIDE_HOME");
+  if (!relative || (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))) fail("NATIVE_CODEX_CAPTURE_INSIDE_HOME");
   return target;
 }
 
@@ -118,15 +100,11 @@ export async function captureCodexNativeHistory({
     const selected = threadIds.map((threadId) => {
       checkAuthority();
       const row = stateRecords.find((row) => row.id === threadId);
-      if (!row || row.id !== threadId || typeof row.rollout_path !== "string")
-        fail("NATIVE_CODEX_SELECTED_STATE_UNAVAILABLE");
-      const relative = path
-        .relative(nativeSqlitePath(offline.home), nativeSqlitePath(row.rollout_path))
-        .replaceAll("\\", "/");
+      if (!row || row.id !== threadId || typeof row.rollout_path !== "string") fail("NATIVE_CODEX_SELECTED_STATE_UNAVAILABLE");
+      const relative = path.relative(nativeSqlitePath(offline.home), nativeSqlitePath(row.rollout_path)).replaceAll("\\", "/");
       if (
         !/^(?:sessions|archived_sessions)\/.+\.jsonl(?:\.zst)?$/.test(relative) ||
-        (!path.basename(relative).endsWith("-" + threadId + ".jsonl") &&
-          !path.basename(relative).endsWith("-" + threadId + ".jsonl.zst"))
+        (!path.basename(relative).endsWith("-" + threadId + ".jsonl") && !path.basename(relative).endsWith("-" + threadId + ".jsonl.zst"))
       )
         fail("NATIVE_CODEX_SELECTED_ROLLOUT_UNSAFE");
       copiedProjectFile(offline.home, relative);
@@ -189,10 +167,7 @@ export async function captureCodexNativeHistory({
         threadId: item.selection.threadId,
         rawFormat: item.coverage.formatAndAddressReady ? "verified" : "partial",
         unresolvedClosure: item.coverage.unresolvedClosure || ["compressed-format-unverified"],
-        parentClosure:
-          item.selection.parentThreadId == null || threadIds.includes(item.selection.parentThreadId)
-            ? "selected-or-none"
-            : "not-selected",
+        parentClosure: item.selection.parentThreadId == null || threadIds.includes(item.selection.parentThreadId) ? "selected-or-none" : "not-selected",
         archived: item.selection.archived,
       })),
       sourceState: "historical selected typed projection only; never inserted into target state",
@@ -214,13 +189,9 @@ export async function captureCodexNativeHistory({
     if (!fs.existsSync(root)) fs.mkdirSync(root);
     if (!fs.lstatSync(root).isDirectory()) fail("NATIVE_CODEX_CAPTURE_DESTINATION_INVALID");
     const intent = copiedProjectFile(root, "capture-intent.json");
-    if (!fs.existsSync(intent) && fs.readdirSync(root).length)
-      fail("NATIVE_CODEX_CAPTURE_DESTINATION_NOT_EMPTY");
+    if (!fs.existsSync(intent) && fs.readdirSync(root).length) fail("NATIVE_CODEX_CAPTURE_DESTINATION_NOT_EMPTY");
     checkAuthority();
-    exact(
-      intent,
-      json({ schemaVersion: 1, kind: "NativeHistoryCaptureIntent", payloadId, payloadDigest }),
-    );
+    exact(intent, json({ schemaVersion: 1, kind: "NativeHistoryCaptureIntent", payloadId, payloadDigest }));
     checkAuthority();
     const objects = copiedProjectFile(root, "objects");
     if (!fs.existsSync(objects)) fs.mkdirSync(objects);
@@ -243,8 +214,7 @@ export async function captureCodexNativeHistory({
       selected.db.exec("COMMIT");
       selected.transaction = false;
     }
-    for (const selected of databases)
-      if (version(selected.db) !== selected.before) fail("NATIVE_CODEX_CAPTURE_GENERATION_CHANGED");
+    for (const selected of databases) if (version(selected.db) !== selected.before) fail("NATIVE_CODEX_CAPTURE_GENERATION_CHANGED");
     await assertCodexNativeOffline(witness, { signal, onProcess });
     checkAuthority();
     // No await or caller hook follows this final original-data reconciliation.
@@ -255,16 +225,13 @@ export async function captureCodexNativeHistory({
       });
     for (const selected of databases) {
       const location = copiedProjectFile(offline.home, selected.file);
-      if (physical(fs.lstatSync(location, { bigint: true })) !== selected.physical)
-        fail("NATIVE_CODEX_CAPTURE_PHYSICAL_BASIS_CHANGED");
+      if (physical(fs.lstatSync(location, { bigint: true })) !== selected.physical) fail("NATIVE_CODEX_CAPTURE_PHYSICAL_BASIS_CHANGED");
       if (version(selected.db) !== selected.before) fail("NATIVE_CODEX_CAPTURE_GENERATION_CHANGED");
     }
     checkAuthority();
     exact(copiedProjectFile(root, "manifest.json"), encoded);
     return {
-      status: payload.coverage.every(
-        (item) => item.rawFormat === "verified" && item.parentClosure === "selected-or-none",
-      )
+      status: payload.coverage.every((item) => item.rawFormat === "verified" && item.parentClosure === "selected-or-none")
         ? "captured-native-originals"
         : "captured-partial-native-originals",
       payloadId,
@@ -297,8 +264,7 @@ export async function captureCodexNativeHistory({
       }
     }
     if (cleanupFailure) {
-      if (primary)
-        primary.nativeCleanupFailure = cleanupFailure.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
+      if (primary) primary.nativeCleanupFailure = cleanupFailure.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
       else throw cleanupFailure;
     }
   }

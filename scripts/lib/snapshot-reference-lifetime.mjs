@@ -28,12 +28,21 @@ function namespace(root, supplied) {
   const projectRoot = fs.realpathSync(path.resolve(root));
   if (projectRoot !== storage.projectRoot) fail("Snapshot coordination Project changed.");
   const base = path.join(projectRoot, storage.directory);
-  const excludedReason = /^(?:\\\\|\/\/)/.test(projectRoot) ? "UNSUPPORTED_SHARED_STORAGE"
-    : !["win32", "linux"].includes(process.platform) ? "UNSUPPORTED_GC_PLATFORM"
+  const excludedReason = /^(?:\\\\|\/\/)/.test(projectRoot)
+    ? "UNSUPPORTED_SHARED_STORAGE"
+    : !["win32", "linux"].includes(process.platform)
+      ? "UNSUPPORTED_GC_PLATFORM"
       : process.platform === "linux" && classifySnapshotFileSystem({ platform: "linux", type: fs.statfsSync(projectRoot).type }) !== "qualified-local"
-        ? "UNSUPPORTED_OR_UNKNOWN_GC_FILESYSTEM" : null;
-  return { storage, projectRoot, base, excludedReason, directory: path.join(base, ".snapshot-gc"),
-    admission: path.join(base, ".operations", "snapshot-reference-admission.lock") };
+        ? "UNSUPPORTED_OR_UNKNOWN_GC_FILESYSTEM"
+        : null;
+  return {
+    storage,
+    projectRoot,
+    base,
+    excludedReason,
+    directory: path.join(base, ".snapshot-gc"),
+    admission: path.join(base, ".operations", "snapshot-reference-admission.lock"),
+  };
 }
 function safeDirectory(directory, create = false) {
   if (create) fs.mkdirSync(directory, { recursive: true });
@@ -49,10 +58,11 @@ function retainedBackend(ns) {
   // A malformed placeholder store is not made collectable merely by existing.
   // Valid Git/domain/source backends now participate in the supported closure.
   safeDirectory(ns.base);
-  const directory=path.join(ns.base,"snapshot-objects.git");
-  if(fs.existsSync(directory)) {
+  const directory = path.join(ns.base, "snapshot-objects.git");
+  if (fs.existsSync(directory)) {
     safeDirectory(directory);
-    if(!fs.existsSync(path.join(directory,"lode-owner.json"))||!fs.existsSync(path.join(directory,"config")))return {path:directory,reasonCode:"UNVERIFIED_GC_GIT_BACKEND"};
+    if (!fs.existsSync(path.join(directory, "lode-owner.json")) || !fs.existsSync(path.join(directory, "config")))
+      return { path: directory, reasonCode: "UNVERIFIED_GC_GIT_BACKEND" };
   }
   return null;
 }
@@ -84,19 +94,27 @@ function original(file) {
 }
 function attempts(ns) {
   const names = fs.readdirSync(ns.directory);
-  if(names.includes("staging"))safeDirectory(path.join(ns.directory,"staging"));
-  if (names.some(name => name !== "participants" && name !== "staging" && !/^(?:attempt|cancel)-[a-f0-9]{32}\.json$/.test(name))) fail("Unknown snapshot coordination state.");
-  return names.filter(name => name.startsWith("attempt-"));
+  if (names.includes("staging")) safeDirectory(path.join(ns.directory, "staging"));
+  if (names.some((name) => name !== "participants" && name !== "staging" && !/^(?:attempt|cancel)-[a-f0-9]{32}\.json$/.test(name)))
+    fail("Unknown snapshot coordination state.");
+  return names.filter((name) => name.startsWith("attempt-"));
 }
 function owner(ns, nonce) {
-  return { schemaVersion: 1, projectId: ns.storage.projectId, nonce, host, pid: process.pid,
-    processBirth, processBirthBasis: "node-runtime-time-origin" };
+  return { schemaVersion: 1, projectId: ns.storage.projectId, nonce, host, pid: process.pid, processBirth, processBirthBasis: "node-runtime-time-origin" };
 }
 function verifyOwner(ns, document, nonce) {
-  if (document?.schemaVersion !== 1 || document.projectId !== ns.storage.projectId || document.nonce !== nonce
-    || document.host !== host || !Number.isSafeInteger(document.pid) || document.pid < 1
-    || !Number.isFinite(document.processBirth) || document.processBirth <= 0
-    || document.processBirthBasis !== "node-runtime-time-origin") fail("Unknown snapshot coordination ownership.");
+  if (
+    document?.schemaVersion !== 1 ||
+    document.projectId !== ns.storage.projectId ||
+    document.nonce !== nonce ||
+    document.host !== host ||
+    !Number.isSafeInteger(document.pid) ||
+    document.pid < 1 ||
+    !Number.isFinite(document.processBirth) ||
+    document.processBirth <= 0 ||
+    document.processBirthBasis !== "node-runtime-time-origin"
+  )
+    fail("Unknown snapshot coordination ownership.");
   return document;
 }
 function invalidate(ns) {
@@ -105,8 +123,9 @@ function invalidate(ns) {
     verifyOwner(ns, original(path.join(ns.directory, name)), nonce);
     const file = path.join(ns.directory, `cancel-${nonce}.json`);
     const body = JSON.stringify({ nonce, invalidated: true });
-    try { fs.writeFileSync(file, body, { flag: "wx" }); }
-    catch (error) {
+    try {
+      fs.writeFileSync(file, body, { flag: "wx" });
+    } catch (error) {
       if (error.code !== "EEXIST") throw error;
       const existing = original(file);
       if (existing.nonce !== nonce || existing.invalidated !== true) fail("Invalid snapshot cancellation latch.");
@@ -131,7 +150,10 @@ function begin(root, storage) {
   // Only a structurally unowned placeholder is statically excluded. Valid
   // mixed backends enroll publishers and are verified by the collector; a
   // momentary absence of GC never permits unguarded publication.
-  if (retainedBackend(ns)) { assertNoEligiblePriorAttempt(ns); return null; }
+  if (retainedBackend(ns)) {
+    assertNoEligiblePriorAttempt(ns);
+    return null;
+  }
   return admission(ns, () => {
     invalidate(ns);
     const nonce = crypto.randomBytes(16).toString("hex");
@@ -154,11 +176,16 @@ function run(token, operation) {
   return context.run(active, operation);
 }
 function releaseAfterOperation(token, { failed, primaryError, completed }) {
-  try { release(token); }
-  catch (error) {
+  try {
+    release(token);
+  } catch (error) {
     if (failed) {
       if (primaryError && typeof primaryError === "object") {
-        try { primaryError.snapshotReferenceCleanup = { code: error.code || "SNAPSHOT_REFERENCE_RELEASE_FAILED" }; } catch { /* Preserve the primary error even when frozen. */ }
+        try {
+          primaryError.snapshotReferenceCleanup = { code: error.code || "SNAPSHOT_REFERENCE_RELEASE_FAILED" };
+        } catch {
+          /* Preserve the primary error even when frozen. */
+        }
       }
     } else {
       error.operationCompleted = completed;
@@ -169,23 +196,51 @@ function releaseAfterOperation(token, { failed, primaryError, completed }) {
 }
 export function withSnapshotReferences({ root = ".", storage } = {}, operation) {
   let token;
-  try { token = begin(root, storage); } catch (error) { error.retryable = true; throw error; }
-  let failed = false, primaryError, completed = false;
+  try {
+    token = begin(root, storage);
+  } catch (error) {
+    error.retryable = true;
+    throw error;
+  }
+  let failed = false,
+    primaryError,
+    completed = false;
   try {
     const result = run(token, operation);
-    if (result && typeof result.then === "function") fail("Asynchronous snapshot publication requires its awaited lifetime.", "INVALID_SNAPSHOT_REFERENCE_OPERATION");
+    if (result && typeof result.then === "function")
+      fail("Asynchronous snapshot publication requires its awaited lifetime.", "INVALID_SNAPSHOT_REFERENCE_OPERATION");
     completed = true;
     return result;
-  } catch (error) { failed = true; primaryError = error; throw error; }
-  finally { releaseAfterOperation(token, { failed, primaryError, completed }); }
+  } catch (error) {
+    failed = true;
+    primaryError = error;
+    throw error;
+  } finally {
+    releaseAfterOperation(token, { failed, primaryError, completed });
+  }
 }
 export async function withSnapshotReferencesAsync({ root = ".", storage } = {}, operation) {
   let token;
-  try { token = begin(root, storage); } catch (error) { error.retryable = true; throw error; }
-  let failed = false, primaryError, completed = false;
-  try { const result = await run(token, operation); completed = true; return result; }
-  catch (error) { failed = true; primaryError = error; throw error; }
-  finally { releaseAfterOperation(token, { failed, primaryError, completed }); }
+  try {
+    token = begin(root, storage);
+  } catch (error) {
+    error.retryable = true;
+    throw error;
+  }
+  let failed = false,
+    primaryError,
+    completed = false;
+  try {
+    const result = await run(token, operation);
+    completed = true;
+    return result;
+  } catch (error) {
+    failed = true;
+    primaryError = error;
+    throw error;
+  } finally {
+    releaseAfterOperation(token, { failed, primaryError, completed });
+  }
 }
 
 export function beginSnapshotCollection({ root = ".", storage } = {}) {
@@ -195,29 +250,51 @@ export function beginSnapshotCollection({ root = ".", storage } = {}) {
   try {
     const excluded = retainedBackend(ns);
     if (excluded) return { status: "preserved", reasonCode: excluded.reasonCode };
-    return admission(ns, () => {
-      if (attempts(ns).length || fs.readdirSync(ns.directory).some(name => name.startsWith("cancel-"))
-        || fs.readdirSync(path.join(ns.directory, "participants")).length || fs.existsSync(path.join(ns.directory,"staging")) && fs.readdirSync(path.join(ns.directory,"staging")).length) return { status: "yielded", reasonCode: "ACTIVE_OR_UNKNOWN_SNAPSHOT_OPERATION" };
-      const nonce = crypto.randomBytes(16).toString("hex");
-      const file = path.join(ns.directory, `attempt-${nonce}.json`);
-      fs.writeFileSync(file, JSON.stringify(owner(ns, nonce)), { flag: "wx" });
-      return { status: "active", ns, nonce, file };
-    }, 0);
-  } catch (error) { return { status: "preserved", reasonCode: error.code || "SNAPSHOT_COORDINATION_UNAVAILABLE" }; }
+    return admission(
+      ns,
+      () => {
+        if (
+          attempts(ns).length ||
+          fs.readdirSync(ns.directory).some((name) => name.startsWith("cancel-")) ||
+          fs.readdirSync(path.join(ns.directory, "participants")).length ||
+          (fs.existsSync(path.join(ns.directory, "staging")) && fs.readdirSync(path.join(ns.directory, "staging")).length)
+        )
+          return { status: "yielded", reasonCode: "ACTIVE_OR_UNKNOWN_SNAPSHOT_OPERATION" };
+        const nonce = crypto.randomBytes(16).toString("hex");
+        const file = path.join(ns.directory, `attempt-${nonce}.json`);
+        fs.writeFileSync(file, JSON.stringify(owner(ns, nonce)), { flag: "wx" });
+        return { status: "active", ns, nonce, file };
+      },
+      0,
+    );
+  } catch (error) {
+    return { status: "preserved", reasonCode: error.code || "SNAPSHOT_COORDINATION_UNAVAILABLE" };
+  }
 }
 export function snapshotCollectionCancelled(attempt) {
   try {
     verifyOwner(attempt.ns, original(attempt.file), attempt.nonce);
     return fs.existsSync(path.join(attempt.ns.directory, `cancel-${attempt.nonce}.json`));
-  } catch { return true; }
+  } catch {
+    return true;
+  }
 }
 export function withSnapshotCollectionUnlink(attempt, operation) {
-  return admission(attempt.ns, () => {
-    const actual = verifyOwner(attempt.ns, original(attempt.file), attempt.nonce);
-    if (actual.pid !== process.pid || actual.processBirth !== processBirth || fs.existsSync(path.join(attempt.ns.directory, `cancel-${attempt.nonce}.json`))
-      || fs.readdirSync(path.join(attempt.ns.directory, "participants")).length) fail("Snapshot collection yielded to ordinary work.", "SNAPSHOT_COLLECTION_INVALIDATED");
-    return operation(Object.freeze(actual));
-  }, 0);
+  return admission(
+    attempt.ns,
+    () => {
+      const actual = verifyOwner(attempt.ns, original(attempt.file), attempt.nonce);
+      if (
+        actual.pid !== process.pid ||
+        actual.processBirth !== processBirth ||
+        fs.existsSync(path.join(attempt.ns.directory, `cancel-${attempt.nonce}.json`)) ||
+        fs.readdirSync(path.join(attempt.ns.directory, "participants")).length
+      )
+        fail("Snapshot collection yielded to ordinary work.", "SNAPSHOT_COLLECTION_INVALIDATED");
+      return operation(Object.freeze(actual));
+    },
+    0,
+  );
 }
 export function finishSnapshotCollection(attempt) {
   if (attempt?.status !== "active") return;

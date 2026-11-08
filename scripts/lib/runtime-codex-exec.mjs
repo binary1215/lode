@@ -1,9 +1,9 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
-const sessionIdOf = record => {
+const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
-const originalFormat = record => familyFormatForOriginal({ kind: record?.kind }, record);
+const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -26,9 +26,7 @@ import {
   recordRuntimeInvocationStartFailure,
   createRuntimePreConsumeGateCapability,
 } from "./runtime-execution-lease.mjs";
-import {
-  resolveVerifiedProcessSupervisor,
-} from "./runtime-process-supervisor.mjs";
+import { resolveVerifiedProcessSupervisor } from "./runtime-process-supervisor.mjs";
 import { runSupervisedRuntimeOneShot } from "./runtime-supervised-one-shot.mjs";
 import { inspectCodexWorkerPolicyCapability, verifyCodexWorkerPolicyCapability, withCodexWorkerPolicyCapability } from "./runtime-codex-worker-policy.mjs";
 import { inspectCodexNativeForkHost, verifyCodexNativeForkHostBinding, runCodexNativeFork } from "./runtime-codex-native-fork.mjs";
@@ -43,13 +41,17 @@ const fail = (message, code = "CODEX_EXEC_PROVIDER_ERROR") => {
   throw error;
 };
 
-const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
 function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compareText).map((key) => [key, canonicalValue(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort(compareText)
+        .map((key) => [key, canonicalValue(value[key])]),
+    );
   }
   return value;
 }
@@ -81,25 +83,55 @@ export function buildCodexExecWireResultSchema(scopeKind, schema = CODEX_EXEC_RE
   verifyCodexExecWireResultSchema(schema);
   const result = structuredClone(schema);
   if (scopeKind === "session") {
-    result.properties.planDelta = { type: "string", enum: [""], description: "Session fixed value: empty string. Report local changes in outcome and evidence." };
-    result.properties.impactRadius = { type: "array", items: { type: "string" }, maxItems: 0,
-      description: "Session fixed value: empty array. Report local effects in outcome and evidence, not this Run-only field." };
+    result.properties.planDelta = {
+      type: "string",
+      enum: [""],
+      description: "Session fixed value: empty string. Report local changes in outcome and evidence.",
+    };
+    result.properties.impactRadius = {
+      type: "array",
+      items: { type: "string" },
+      maxItems: 0,
+      description: "Session fixed value: empty array. Report local effects in outcome and evidence, not this Run-only field.",
+    };
   }
   return verifyCodexExecWireResultSchema(result);
 }
 
 const NON_PORTABLE_WIRE_SCHEMA_KEYWORDS = new Set([
-  "$schema", "allOf", "dependentRequired", "dependentSchemas", "else", "format", "if", "maxItems",
-  "maxLength", "maximum", "minItems", "minLength", "minimum", "multipleOf", "not", "pattern",
-  "patternProperties", "then",
+  "$schema",
+  "allOf",
+  "dependentRequired",
+  "dependentSchemas",
+  "else",
+  "format",
+  "if",
+  "maxItems",
+  "maxLength",
+  "maximum",
+  "minItems",
+  "minLength",
+  "minimum",
+  "multipleOf",
+  "not",
+  "pattern",
+  "patternProperties",
+  "then",
 ]);
 
 export function verifyCodexExecWireResultSchema(schema = CODEX_EXEC_RESULT_SCHEMA) {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)
-    || schema.type !== "object" || schema.additionalProperties !== false
-    || !schema.properties || typeof schema.properties !== "object" || Array.isArray(schema.properties)
-    || !Array.isArray(schema.required)
-    || canonicalJson([...schema.required].sort(compareText)) !== canonicalJson(Object.keys(schema.properties).sort(compareText))) {
+  if (
+    !schema ||
+    typeof schema !== "object" ||
+    Array.isArray(schema) ||
+    schema.type !== "object" ||
+    schema.additionalProperties !== false ||
+    !schema.properties ||
+    typeof schema.properties !== "object" ||
+    Array.isArray(schema.properties) ||
+    !Array.isArray(schema.required) ||
+    canonicalJson([...schema.required].sort(compareText)) !== canonicalJson(Object.keys(schema.properties).sort(compareText))
+  ) {
     fail("Codex exec wire schema does not satisfy the fixed Structured Outputs object boundary.", "INVALID_CODEX_EXEC_WIRE_SCHEMA");
   }
   const visit = (value) => {
@@ -125,9 +157,28 @@ export function verifyCodexExecWireResultSchema(schema = CODEX_EXEC_RESULT_SCHEM
 
 function providerEnvironment(environment = process.env) {
   const allowed = new Set([
-    "appdata", "codex_api_key", "codex_home", "comspec", "home", "homedrive", "homepath",
-    "http_proxy", "https_proxy", "lang", "lc_all", "localappdata", "no_proxy", "openai_api_key",
-    "path", "ssl_cert_dir", "ssl_cert_file", "systemroot", "temp", "tmp", "userprofile", "windir",
+    "appdata",
+    "codex_api_key",
+    "codex_home",
+    "comspec",
+    "home",
+    "homedrive",
+    "homepath",
+    "http_proxy",
+    "https_proxy",
+    "lang",
+    "lc_all",
+    "localappdata",
+    "no_proxy",
+    "openai_api_key",
+    "path",
+    "ssl_cert_dir",
+    "ssl_cert_file",
+    "systemroot",
+    "temp",
+    "tmp",
+    "userprofile",
+    "windir",
   ]);
   const result = {};
   for (const [key, value] of Object.entries(environment || {})) {
@@ -141,16 +192,11 @@ function providerEnvironment(environment = process.env) {
 
 function isWithin(parent, child) {
   const relative = path.relative(parent, child);
-  return relative === "" || relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 function operationalProviderDirectory(operationalStateRoot, authorization) {
-  const directory = path.join(
-    operationalStateRoot,
-    "runtime-provider-invocations",
-    authorization.projectId,
-    authorization.authorizationId,
-  );
+  const directory = path.join(operationalStateRoot, "runtime-provider-invocations", authorization.projectId, authorization.authorizationId);
   if (!isWithin(operationalStateRoot, directory) || directory === operationalStateRoot) {
     fail("Codex operational invocation directory escaped its host-local root.", "UNSAFE_CODEX_OPERATIONAL_STATE");
   }
@@ -186,18 +232,14 @@ function removeOperationalSchemaFile(operationalStateRoot, authorization, state)
     fail("Refusing unsafe Codex operational cleanup.", "UNSAFE_CODEX_OPERATIONAL_STATE");
   }
   const entries = fs.readdirSync(resolved).sort(compareText);
-  const expectedEntries = fs.existsSync(state.controlFile)
-    ? ["result.schema.json", "supervisor-control.jsonl"] : ["result.schema.json"];
+  const expectedEntries = fs.existsSync(state.controlFile) ? ["result.schema.json", "supervisor-control.jsonl"] : ["result.schema.json"];
   if (canonicalJson(entries) !== canonicalJson(expectedEntries)) {
     fail("Codex operational invocation directory contains unexpected files.", "UNSAFE_CODEX_OPERATIONAL_STATE");
   }
   if (fs.existsSync(state.controlFile)) fs.unlinkSync(state.controlFile);
   fs.unlinkSync(state.file);
   fs.rmdirSync(resolved);
-  for (const parent of [
-    path.dirname(resolved),
-    path.join(operationalStateRoot, "runtime-provider-invocations"),
-  ]) {
+  for (const parent of [path.dirname(resolved), path.join(operationalStateRoot, "runtime-provider-invocations")]) {
     if (!fs.existsSync(parent) || fs.readdirSync(parent).length) break;
     const stat = fs.lstatSync(parent);
     const canonical = fs.realpathSync(parent);
@@ -215,11 +257,15 @@ function codexArguments({ projectRoot, schemaFile, workspaceMode, model, workerP
     "--ephemeral",
     ...(workerPolicy ? ["--ignore-user-config", "--ignore-rules"] : []),
     ...(model ? ["--model", model] : []),
-    "--color", "never",
-    "--sandbox", workspaceMode,
+    "--color",
+    "never",
+    "--sandbox",
+    workspaceMode,
     "--skip-git-repo-check",
-    "--cd", projectRoot,
-    "--output-schema", schemaFile,
+    "--cd",
+    projectRoot,
+    "--output-schema",
+    schemaFile,
     "-",
   ];
 }
@@ -256,7 +302,10 @@ export function extractCodexStructuredResult(record, { scopeKind = null } = {}) 
 }
 
 const CODEX_DIAGNOSTIC_RULES = Object.freeze([
-  Object.freeze({ code: "codex.structured-output-rejected", pattern: /json schema|output schema|response format|response_format|structured output|invalid schema/ }),
+  Object.freeze({
+    code: "codex.structured-output-rejected",
+    pattern: /json schema|output schema|response format|response_format|structured output|invalid schema/,
+  }),
   Object.freeze({ code: "codex.authentication", pattern: /authentication|unauthorized|not logged in|api key|\b401\b|\b403\b/ }),
   Object.freeze({ code: "codex.rate-limit", pattern: /rate limit|quota|\b429\b/ }),
   Object.freeze({ code: "codex.transport", pattern: /network|connection|connect|dns|proxy|tls|certificate|stream disconnected|timed? out/ }),
@@ -273,11 +322,14 @@ const CODEX_INVALID_EVENT_DIAGNOSTIC_CODES = new Set([
   "codex.sensitive-root-exposure",
 ]);
 
-export function classifyCodexProviderDiagnostics({ record = null, stderr = "", exitCode = null,
-  structuredResultObserved = null, eventTypes = [] } = {}) {
+export function classifyCodexProviderDiagnostics({ record = null, stderr = "", exitCode = null, structuredResultObserved = null, eventTypes = [] } = {}) {
   const codes = new Set();
-  const type = record && typeof record === "object" && !Array.isArray(record)
-    ? String(record.type || record.eventType || record.kind || "").trim().toLowerCase() : "";
+  const type =
+    record && typeof record === "object" && !Array.isArray(record)
+      ? String(record.type || record.eventType || record.kind || "")
+          .trim()
+          .toLowerCase()
+      : "";
   const errorRecord = /error|fail/.test(type);
   const sources = [];
   if (errorRecord) sources.push(canonicalJson(record).toLowerCase());
@@ -292,20 +344,30 @@ export function classifyCodexProviderDiagnostics({ record = null, stderr = "", e
   return [...codes].sort(compareText);
 }
 
-function verifyCurrentCodexTarget({ authorization, protocolEvidence, projectBinding, targetResolver, platform, environment, fileSystem, requireInvocationSurface }) {
+function verifyCurrentCodexTarget({
+  authorization,
+  protocolEvidence,
+  projectBinding,
+  targetResolver,
+  platform,
+  environment,
+  fileSystem,
+  requireInvocationSurface,
+}) {
   const protocol = verifyRuntimeProtocolEvidence(protocolEvidence);
   const binding = verifyRuntimeProjectBinding(projectBinding);
   if (authorization.runtime !== "codex") fail("Codex exec requires a Codex authorization.", "CODEX_AUTHORIZATION_REQUIRED");
-  if (protocol.evidenceId !== authorization.runtimeProtocolEvidenceId
-    || binding.bindingId !== authorization.runtimeProjectBindingId
-    || binding.protocolEvidenceId !== protocol.evidenceId
-    || binding.projectId !== authorization.projectId
-    || sessionIdOf(binding) !== sessionIdOf(authorization)) {
+  if (
+    protocol.evidenceId !== authorization.runtimeProtocolEvidenceId ||
+    binding.bindingId !== authorization.runtimeProjectBindingId ||
+    binding.protocolEvidenceId !== protocol.evidenceId ||
+    binding.projectId !== authorization.projectId ||
+    sessionIdOf(binding) !== sessionIdOf(authorization)
+  ) {
     fail("Codex capability and project binding changed after authorization.", "CODEX_EXEC_CAPABILITY_BINDING_DRIFT");
   }
   const observation = protocol.observations.find((item) => item.runtime === "codex");
-  if (!observation || observation.observationId !== authorization.runtimeProtocolObservationId
-    || !observation.protocolNegotiationObserved) {
+  if (!observation || observation.observationId !== authorization.runtimeProtocolObservationId || !observation.protocolNegotiationObserved) {
     fail("Authorized Codex protocol observation is unavailable.", "CODEX_EXEC_PROTOCOL_NOT_VERIFIED");
   }
   const invocationSurface = observation.capabilities.find((item) => item.capability === "one-shot-invocation-surface");
@@ -313,46 +375,55 @@ function verifyCurrentCodexTarget({ authorization, protocolEvidence, projectBind
     fail("The authorized Codex executable does not prove every fixed one-shot invocation option.", "CODEX_EXEC_INVOCATION_SURFACE_NOT_VERIFIED");
   }
   const target = targetResolver({ runtime: "codex", platform, environment, fileSystem });
-  if (!target?.executablePath || !path.isAbsolute(target.executablePath)
-    || canonicalJson(target.observation) !== canonicalJson(observation.executable)
-    || target.observation.availability !== "candidate-found" || !target.observation.directSpawnSafe
-    || target.observation.symbolicLink) {
+  if (
+    !target?.executablePath ||
+    !path.isAbsolute(target.executablePath) ||
+    canonicalJson(target.observation) !== canonicalJson(observation.executable) ||
+    target.observation.availability !== "candidate-found" ||
+    !target.observation.directSpawnSafe ||
+    target.observation.symbolicLink
+  ) {
     fail("Codex executable identity changed or is not safe for direct spawn.", "CODEX_EXEC_EXECUTABLE_DRIFT");
   }
   return { target, observation };
 }
 
-export async function executeCodexRuntimeInvocation({
-  root = ".",
-  authorization,
-  sessionRequest = "",
-  protocolEvidence,
-  projectBinding,
-  signal = null,
-  platform = process.platform,
-  environment = process.env,
-  fileSystem = fs,
-  spawnImplementation = spawn,
-  targetResolver = resolveReadOnlyRuntimeExecutableTarget,
-  supervisorSelection = null,
-  providerArguments = null,
-  onProcessEvent = () => {},
-  evidenceMode = "actual-provider",
-  persist = true,
-} = {}, { preConsumeGate = null, workerPolicyCapability = null, nativeForkHost = null } = {}) {
+export async function executeCodexRuntimeInvocation(
+  {
+    root = ".",
+    authorization,
+    sessionRequest = "",
+    protocolEvidence,
+    projectBinding,
+    signal = null,
+    platform = process.platform,
+    environment = process.env,
+    fileSystem = fs,
+    spawnImplementation = spawn,
+    targetResolver = resolveReadOnlyRuntimeExecutableTarget,
+    supervisorSelection = null,
+    providerArguments = null,
+    onProcessEvent = () => {},
+    evidenceMode = "actual-provider",
+    persist = true,
+  } = {},
+  { preConsumeGate = null, workerPolicyCapability = null, nativeForkHost = null } = {},
+) {
   const verified = verifyRuntimeInvocationAuthorization(authorization);
-  const selected = verified.workerInput?.executionBoundary
-    ? inspectCodexWorkerPolicyCapability(workerPolicyCapability) : null;
+  const selected = verified.workerInput?.executionBoundary ? inspectCodexWorkerPolicyCapability(workerPolicyCapability) : null;
   if (!selected && workerPolicyCapability !== null) fail("An unbound authorization cannot acquire a selected workspace.", "CODEX_WORKER_POLICY_BINDING_DRIFT");
   if (selected && preConsumeGate !== null) fail("Selected Codex execution owns its exact policy-to-lease callback.", "CODEX_WORKER_POLICY_GATE_CONFLICT");
-  if (!new Set(["actual-provider", "protocol-fixture"]).has(evidenceMode)) fail("Codex execution evidence mode is invalid.", "INVALID_CODEX_EXEC_EVIDENCE_MODE");
-  if (selected && selected.policy.evidenceMode !== evidenceMode) fail("Synthetic policy cannot authorize an actual Codex invocation.", "CODEX_WORKER_POLICY_EVIDENCE_MISMATCH");
+  if (!new Set(["actual-provider", "protocol-fixture"]).has(evidenceMode))
+    fail("Codex execution evidence mode is invalid.", "INVALID_CODEX_EXEC_EVIDENCE_MODE");
+  if (selected && selected.policy.evidenceMode !== evidenceMode)
+    fail("Synthetic policy cannot authorize an actual Codex invocation.", "CODEX_WORKER_POLICY_EVIDENCE_MISMATCH");
   if (selected?.policy.mode === "native-fork") {
     const native = inspectCodexNativeForkHost(nativeForkHost);
-    if (!native.available || native.evidenceMode !== evidenceMode) fail("Native Codex fork is unavailable for the required policy evidence.", "WORKER_JOB_POLICY_UNAVAILABLE");
-    if (native.sourcePrefixDigest !== selected.policy.retainedContextDigest) fail("Native Codex fork inherited context differs from its pre-authorized policy.", "CODEX_WORKER_POLICY_BINDING_DRIFT");
-  }
-  else if (nativeForkHost !== null) fail("Native fork requires its exact pre-authorized policy.", "CODEX_WORKER_POLICY_BINDING_DRIFT");
+    if (!native.available || native.evidenceMode !== evidenceMode)
+      fail("Native Codex fork is unavailable for the required policy evidence.", "WORKER_JOB_POLICY_UNAVAILABLE");
+    if (native.sourcePrefixDigest !== selected.policy.retainedContextDigest)
+      fail("Native Codex fork inherited context differs from its pre-authorized policy.", "CODEX_WORKER_POLICY_BINDING_DRIFT");
+  } else if (nativeForkHost !== null) fail("Native fork requires its exact pre-authorized policy.", "CODEX_WORKER_POLICY_BINDING_DRIFT");
   const prepared = prepareRuntimeInvocationExecution({ root, authorization: verified, sessionRequest });
   const { target } = verifyCurrentCodexTarget({
     authorization: verified,
@@ -373,94 +444,134 @@ export async function executeCodexRuntimeInvocation({
   const providerMode = evidenceMode === "actual-provider" ? "actual-codex" : "codex-protocol-fixture";
   const executionRoot = selected?.workspaceBinding.executionRoot || prepared.projectRoot;
   const verifyNativeBinding = () => {
-    if (selected?.policy.mode === "native-fork") verifyCodexNativeForkHostBinding({ host: nativeForkHost,
-      authorization: verified, input: prepared.input, projectRoot: prepared.projectRoot, executionRoot, policy: selected.policy });
+    if (selected?.policy.mode === "native-fork")
+      verifyCodexNativeForkHostBinding({
+        host: nativeForkHost,
+        authorization: verified,
+        input: prepared.input,
+        projectRoot: prepared.projectRoot,
+        executionRoot,
+        policy: selected.policy,
+      });
   };
   verifyNativeBinding();
   const revalidateTarget = () => {
     verifyNativeBinding();
-    if (selected?.policy.mode === "native-fork"
-      && inspectCodexNativeForkHost(nativeForkHost).sourcePrefixDigest !== selected.policy.retainedContextDigest) fail("Native Codex fork inherited context changed before consumption.", "CODEX_WORKER_POLICY_BINDING_DRIFT");
-    return verifyCurrentCodexTarget({ authorization: verified, protocolEvidence, projectBinding,
-      targetResolver, platform, environment, fileSystem, requireInvocationSurface: evidenceMode === "actual-provider" });
+    if (selected?.policy.mode === "native-fork" && inspectCodexNativeForkHost(nativeForkHost).sourcePrefixDigest !== selected.policy.retainedContextDigest)
+      fail("Native Codex fork inherited context changed before consumption.", "CODEX_WORKER_POLICY_BINDING_DRIFT");
+    return verifyCurrentCodexTarget({
+      authorization: verified,
+      protocolEvidence,
+      projectBinding,
+      targetResolver,
+      platform,
+      environment,
+      fileSystem,
+      requireInvocationSurface: evidenceMode === "actual-provider",
+    });
   };
   let policyScopeSignal = signal;
   let policyDeadlineUnixMs = null;
-  const policyGate = selected ? createRuntimePreConsumeGateCapability(({ commitConsumption }) => {
-    revalidateTarget();
-    verifyCodexWorkerPolicyCapability({ capability: workerPolicyCapability, authorization: verified, root: prepared.projectRoot, target });
-    if (policyScopeSignal?.aborted) fail("Codex policy was cancelled immediately before consumption.", "CODEX_WORKER_POLICY_CANCELLED");
-    if (policyDeadlineUnixMs !== null && Date.now() >= policyDeadlineUnixMs) fail("Codex policy deadline expired immediately before consumption.", "CODEX_WORKER_POLICY_TIMEOUT");
-    commitConsumption();
-  }) : preConsumeGate;
+  const policyGate = selected
+    ? createRuntimePreConsumeGateCapability(({ commitConsumption }) => {
+        revalidateTarget();
+        verifyCodexWorkerPolicyCapability({ capability: workerPolicyCapability, authorization: verified, root: prepared.projectRoot, target });
+        if (policyScopeSignal?.aborted) fail("Codex policy was cancelled immediately before consumption.", "CODEX_WORKER_POLICY_CANCELLED");
+        if (policyDeadlineUnixMs !== null && Date.now() >= policyDeadlineUnixMs)
+          fail("Codex policy deadline expired immediately before consumption.", "CODEX_WORKER_POLICY_TIMEOUT");
+        commitConsumption();
+      })
+    : preConsumeGate;
   const executeLeased = ({ signal: executionSignal = signal, deadlineUnixMs = null } = {}) => {
     policyScopeSignal = executionSignal;
     policyDeadlineUnixMs = deadlineUnixMs;
-    return withRuntimeExecutionLease({
-    projectRoot: prepared.projectRoot,
-    authorization: verified,
-    ownerFenceDigest: callerFenceDigest,
-  }, async ({ lease, consumption, operationalStateRoot }) => {
-    verifyRuntimeExecutionLeaseOwnership({
-      projectRoot: prepared.projectRoot,
-      operationalStateRoot,
-      authorization: verified,
-      lease,
-      consumption,
-    });
-    let schemaState;
-    try {
-      if (selected?.policy.mode === "native-fork") return await runCodexNativeFork({ host: nativeForkHost,
-        authorization: verified, input: prepared.input, projectRoot: prepared.projectRoot, executionRoot,
-        policy: selected.policy, consumption, lease, operationalStateRoot, callerFenceDigest,
-        resultSchema: buildCodexExecWireResultSchema(verified.scope.kind),
-        signal: executionSignal, onProcessEvent, providerMode, supervisorSelection: selectedSupervisor,
-        sensitiveRoots: [prepared.projectRoot, executionRoot, operationalStateRoot] });
-      schemaState = createOperationalSchemaFile(operationalStateRoot, verified);
-      return await runSupervisedRuntimeOneShot({
-        runtime: "codex",
-        operationalStateRoot,
-        onNeverStarted: (errorCode) => recordRuntimeInvocationStartFailure({ projectRoot: prepared.projectRoot, authorization: verified, lease, consumption, errorCode }),
-        executablePath: target.executablePath,
-        args: providerArguments === null
-          ? codexArguments({
-            projectRoot: executionRoot,
-            schemaFile: schemaState.file,
-            workspaceMode: verified.workspaceMode,
-            model: selected?.policy.wireModel || verified.runtimeSelection?.model || null,
-            workerPolicy: selected?.policy || null,
-          })
-          : selectedArguments,
+    return withRuntimeExecutionLease(
+      {
         projectRoot: prepared.projectRoot,
-        executionRoot,
-        providerEnvironment: providerEnvironment(environment),
         authorization: verified,
-        input: prepared.input,
-        consumption,
-        callerFenceDigest,
-        signal: executionSignal,
-        spawnImplementation,
-        onProcessEvent,
-        providerMode,
-        sensitiveRoots: [prepared.projectRoot, executionRoot, operationalStateRoot],
-        supervisorSelection: selectedSupervisor,
-        supervisorControlFile: schemaState.controlFile,
-        commandLabel: "codex exec",
-        spawnFailureCode: "CODEX_EXEC_SPAWN_FAILED",
-        classifyProviderDiagnostics: classifyCodexProviderDiagnostics,
-        extractStructuredResult: extractCodexStructuredResult,
-        completionEventTypes: ["turn.completed"],
-      });
-    } finally {
-      removeOperationalSchemaFile(operationalStateRoot, verified, schemaState);
-    }
-  }, { preConsumeGate: policyGate });
+        ownerFenceDigest: callerFenceDigest,
+      },
+      async ({ lease, consumption, operationalStateRoot }) => {
+        verifyRuntimeExecutionLeaseOwnership({
+          projectRoot: prepared.projectRoot,
+          operationalStateRoot,
+          authorization: verified,
+          lease,
+          consumption,
+        });
+        let schemaState;
+        try {
+          if (selected?.policy.mode === "native-fork")
+            return await runCodexNativeFork({
+              host: nativeForkHost,
+              authorization: verified,
+              input: prepared.input,
+              projectRoot: prepared.projectRoot,
+              executionRoot,
+              policy: selected.policy,
+              consumption,
+              lease,
+              operationalStateRoot,
+              callerFenceDigest,
+              resultSchema: buildCodexExecWireResultSchema(verified.scope.kind),
+              signal: executionSignal,
+              onProcessEvent,
+              providerMode,
+              supervisorSelection: selectedSupervisor,
+              sensitiveRoots: [prepared.projectRoot, executionRoot, operationalStateRoot],
+            });
+          schemaState = createOperationalSchemaFile(operationalStateRoot, verified);
+          return await runSupervisedRuntimeOneShot({
+            runtime: "codex",
+            operationalStateRoot,
+            onNeverStarted: (errorCode) =>
+              recordRuntimeInvocationStartFailure({ projectRoot: prepared.projectRoot, authorization: verified, lease, consumption, errorCode }),
+            executablePath: target.executablePath,
+            args:
+              providerArguments === null
+                ? codexArguments({
+                    projectRoot: executionRoot,
+                    schemaFile: schemaState.file,
+                    workspaceMode: verified.workspaceMode,
+                    model: selected?.policy.wireModel || verified.runtimeSelection?.model || null,
+                    workerPolicy: selected?.policy || null,
+                  })
+                : selectedArguments,
+            projectRoot: prepared.projectRoot,
+            executionRoot,
+            providerEnvironment: providerEnvironment(environment),
+            authorization: verified,
+            input: prepared.input,
+            consumption,
+            callerFenceDigest,
+            signal: executionSignal,
+            spawnImplementation,
+            onProcessEvent,
+            providerMode,
+            sensitiveRoots: [prepared.projectRoot, executionRoot, operationalStateRoot],
+            supervisorSelection: selectedSupervisor,
+            supervisorControlFile: schemaState.controlFile,
+            commandLabel: "codex exec",
+            spawnFailureCode: "CODEX_EXEC_SPAWN_FAILED",
+            classifyProviderDiagnostics: classifyCodexProviderDiagnostics,
+            extractStructuredResult: extractCodexStructuredResult,
+            completionEventTypes: ["turn.completed"],
+          });
+        } finally {
+          removeOperationalSchemaFile(operationalStateRoot, verified, schemaState);
+        }
+      },
+      { preConsumeGate: policyGate },
+    );
   };
   // The Host guard encloses consumption, provider execution and tree cleanup.
   // Releasing it after a preflight-only callback would remove enforcement before
   // the provider starts. The inner gate rechecks identity at actual consumption.
-  const leased = selected ? await withCodexWorkerPolicyCapability({ capability: workerPolicyCapability,
-    authorization: verified, root: prepared.projectRoot, target, revalidate: revalidateTarget, signal }, executeLeased)
+  const leased = selected
+    ? await withCodexWorkerPolicyCapability(
+        { capability: workerPolicyCapability, authorization: verified, root: prepared.projectRoot, target, revalidate: revalidateTarget, signal },
+        executeLeased,
+      )
     : await executeLeased();
   const draft = buildRuntimeResultPacketDraft({
     authorization: verified,
@@ -469,7 +580,13 @@ export async function executeCodexRuntimeInvocation({
     providerResult: leased.result.providerResult,
   });
   const record = persist
-    ? persistRuntimeInvocationRecord({ projectRoot: prepared.projectRoot, authorization: verified, events: leased.result.events, receipt: leased.result.receipt, draft })
+    ? persistRuntimeInvocationRecord({
+        projectRoot: prepared.projectRoot,
+        authorization: verified,
+        events: leased.result.events,
+        receipt: leased.result.receipt,
+        draft,
+      })
     : { recorded: false, eventCount: leased.result.events.length, receiptId: leased.result.receipt.receiptId, draftId: draft.draftId };
   return {
     status: leased.result.receipt.status === "completed" ? "provider_invocation_completed" : "provider_invocation_finished_with_evidence",

@@ -10,7 +10,11 @@ import {
 } from "./observation-contract.mjs";
 import { assertObservationProjectReady, recordCollectedObservation } from "./observation-store.mjs";
 
-const fail = (message, code = "OBSERVATION_ADAPTER_ERROR") => { const error = new Error(message); error.code = code; throw error; };
+const fail = (message, code = "OBSERVATION_ADAPTER_ERROR") => {
+  const error = new Error(message);
+  error.code = code;
+  throw error;
+};
 const JSON_EVENT_FILE_ADAPTER_KEY = "head.json-event-file-observation";
 const MAX_EVENT_FILE_BYTES = 512 * 1024;
 const MAX_INSPECTED_SOURCES = 64;
@@ -24,7 +28,8 @@ function exactFields(value, allowed, label) {
 }
 
 function requiredText(value, label, maxBytes = 8192) {
-  if (typeof value !== "string" || !value.trim() || Buffer.byteLength(value, "utf8") > maxBytes) fail(`${label} is invalid.`, "INVALID_OBSERVATION_SOURCE_EVENT");
+  if (typeof value !== "string" || !value.trim() || Buffer.byteLength(value, "utf8") > maxBytes)
+    fail(`${label} is invalid.`, "INVALID_OBSERVATION_SOURCE_EVENT");
   return value.trim();
 }
 
@@ -41,20 +46,25 @@ function optionalTimestamp(value, label) {
 }
 
 function normalizeSourceAvailability(value = {}) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) fail("Observation source availability must be an object.", "INVALID_OBSERVATION_SOURCE_AVAILABILITY");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    fail("Observation source availability must be an object.", "INVALID_OBSERVATION_SOURCE_AVAILABILITY");
   const unexpected = Object.keys(value).filter((key) => !["state", "observedAt", "retryAfter", "reasonCode"].includes(key));
-  if (unexpected.length) fail(`Observation source availability contains unsupported fields: ${unexpected.sort().join(", ")}`, "INVALID_OBSERVATION_SOURCE_AVAILABILITY");
+  if (unexpected.length)
+    fail(`Observation source availability contains unsupported fields: ${unexpected.sort().join(", ")}`, "INVALID_OBSERVATION_SOURCE_AVAILABILITY");
   const state = String(value.state || "unknown").trim();
   if (!SOURCE_AVAILABILITY_STATES.has(state)) fail("Observation source availability state is invalid.", "INVALID_OBSERVATION_SOURCE_AVAILABILITY");
   const observedAt = optionalTimestamp(value.observedAt, "Observation source availability observedAt");
   const retryAfter = optionalTimestamp(value.retryAfter, "Observation source availability retryAfter");
   const reasonCode = optionalStableKey(value.reasonCode, "Observation source availability reasonCode", 96) || null;
-  if (state === "ready" && (retryAfter || reasonCode)) fail("A ready Observation source cannot carry an unavailable reason or retry time.", "INVALID_OBSERVATION_SOURCE_AVAILABILITY");
+  if (state === "ready" && (retryAfter || reasonCode))
+    fail("A ready Observation source cannot carry an unavailable reason or retry time.", "INVALID_OBSERVATION_SOURCE_AVAILABILITY");
   return { state, observedAt, retryAfter, reasonCode, evidence: "host-local-operational-hint", semanticAuthority: false };
 }
 
 function sourceShape(descriptor) {
-  const fields = descriptor.payloadSchema.fields.slice(0, MAX_SOURCE_SHAPE_FIELDS).map((field) => ({ key: field.key, type: field.type, required: field.required }));
+  const fields = descriptor.payloadSchema.fields
+    .slice(0, MAX_SOURCE_SHAPE_FIELDS)
+    .map((field) => ({ key: field.key, type: field.type, required: field.required }));
   return {
     typeKey: descriptor.typeKey,
     typeVersion: descriptor.typeVersion,
@@ -68,18 +78,20 @@ function sourceShape(descriptor) {
 
 function readBoundedRegularFile(file, maxBytes) {
   let initial;
-  try { initial = fs.lstatSync(file); }
-  catch (error) {
+  try {
+    initial = fs.lstatSync(file);
+  } catch (error) {
     if (error.code === "ENOENT") fail("JSON Observation event file does not exist.", "OBSERVATION_EVENT_FILE_MISSING");
     fail(`JSON Observation event file cannot be inspected: ${error.message}`, "UNSAFE_OBSERVATION_EVENT_FILE");
   }
-  if (!initial.isFile() || initial.isSymbolicLink() || initial.size > maxBytes) fail("JSON Observation event file is unsafe or exceeds its byte bound.", "UNSAFE_OBSERVATION_EVENT_FILE");
+  if (!initial.isFile() || initial.isSymbolicLink() || initial.size > maxBytes)
+    fail("JSON Observation event file is unsafe or exceeds its byte bound.", "UNSAFE_OBSERVATION_EVENT_FILE");
   let descriptor;
   try {
     descriptor = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
     const opened = fs.fstatSync(descriptor);
-    if (!opened.isFile() || opened.size > maxBytes
-      || initial.dev !== opened.dev || initial.ino !== opened.ino) fail("JSON Observation event file changed identity or exceeds its byte bound.", "UNSAFE_OBSERVATION_EVENT_FILE");
+    if (!opened.isFile() || opened.size > maxBytes || initial.dev !== opened.dev || initial.ino !== opened.ino)
+      fail("JSON Observation event file changed identity or exceeds its byte bound.", "UNSAFE_OBSERVATION_EVENT_FILE");
     const bytes = Buffer.alloc(maxBytes + 1);
     let offset = 0;
     while (offset <= maxBytes) {
@@ -104,9 +116,13 @@ function digestValue(value, label) {
 }
 export function normalizeObservationSourceBinding(binding = {}) {
   const allowed = new Set(["adapterKey", "adapterVersion", "sourceScopeDigest", "credentialReferenceNames"]);
-  if (!binding || typeof binding !== "object" || Array.isArray(binding) || Object.keys(binding).some((key) => !allowed.has(key))) fail("ObservationSourceBinding fields are invalid.", "INVALID_OBSERVATION_SOURCE_BINDING");
-  const credentialReferenceNames = Array.isArray(binding.credentialReferenceNames) ? [...new Set(binding.credentialReferenceNames.map((item) => String(item).trim()))].sort() : [];
-  if (credentialReferenceNames.length > 16 || credentialReferenceNames.some((item) => !/^[A-Z][A-Z0-9_]{2,127}$/u.test(item))) fail("ObservationSourceBinding credential references are invalid.", "INVALID_OBSERVATION_SOURCE_BINDING");
+  if (!binding || typeof binding !== "object" || Array.isArray(binding) || Object.keys(binding).some((key) => !allowed.has(key)))
+    fail("ObservationSourceBinding fields are invalid.", "INVALID_OBSERVATION_SOURCE_BINDING");
+  const credentialReferenceNames = Array.isArray(binding.credentialReferenceNames)
+    ? [...new Set(binding.credentialReferenceNames.map((item) => String(item).trim()))].sort()
+    : [];
+  if (credentialReferenceNames.length > 16 || credentialReferenceNames.some((item) => !/^[A-Z][A-Z0-9_]{2,127}$/u.test(item)))
+    fail("ObservationSourceBinding credential references are invalid.", "INVALID_OBSERVATION_SOURCE_BINDING");
   return {
     adapterKey: stableKey(binding.adapterKey, "ObservationSourceBinding adapterKey", 192),
     adapterVersion: stableKey(binding.adapterVersion, "ObservationSourceBinding adapterVersion", 64),
@@ -119,7 +135,10 @@ export class StructuredObservationAdapter {
   constructor({ descriptor, input } = {}, storage = null) {
     this.format = formatForVerifiedOwner(storage);
     this.adapterVersion = OBSERVATION_PROTOCOL_VERSION;
-    this.descriptor = descriptor?.kind === "ObservationTypeDescriptor" ? verifyObservationTypeDescriptor(descriptor, storage) : createObservationTypeDescriptor(descriptor, storage);
+    this.descriptor =
+      descriptor?.kind === "ObservationTypeDescriptor"
+        ? verifyObservationTypeDescriptor(descriptor, storage)
+        : createObservationTypeDescriptor(descriptor, storage);
     this.input = input;
   }
 
@@ -137,16 +156,23 @@ export class StructuredObservationAdapter {
     };
   }
 
-  collect() { return this.input; }
+  collect() {
+    return this.input;
+  }
 }
 
 export class JsonEventFileObservationAdapter {
   constructor({ descriptor, eventFile, maxBytes = MAX_EVENT_FILE_BYTES } = {}, storage = null) {
     this.format = formatForVerifiedOwner(storage);
     this.adapterVersion = OBSERVATION_PROTOCOL_VERSION;
-    this.descriptor = descriptor?.kind === "ObservationTypeDescriptor" ? verifyObservationTypeDescriptor(descriptor, storage) : createObservationTypeDescriptor(descriptor, storage);
-    if (typeof eventFile !== "string" || !path.isAbsolute(eventFile)) fail("JSON Observation event file must be an absolute Host path.", "INVALID_OBSERVATION_EVENT_FILE");
-    if (!Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_EVENT_FILE_BYTES) fail("JSON Observation event file byte bound is invalid.", "INVALID_OBSERVATION_EVENT_FILE_BOUND");
+    this.descriptor =
+      descriptor?.kind === "ObservationTypeDescriptor"
+        ? verifyObservationTypeDescriptor(descriptor, storage)
+        : createObservationTypeDescriptor(descriptor, storage);
+    if (typeof eventFile !== "string" || !path.isAbsolute(eventFile))
+      fail("JSON Observation event file must be an absolute Host path.", "INVALID_OBSERVATION_EVENT_FILE");
+    if (!Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_EVENT_FILE_BYTES)
+      fail("JSON Observation event file byte bound is invalid.", "INVALID_OBSERVATION_EVENT_FILE_BOUND");
     this.eventFile = path.resolve(eventFile);
     this.maxBytes = maxBytes;
   }
@@ -168,8 +194,11 @@ export class JsonEventFileObservationAdapter {
   collect({ sourceScopeDigest } = {}) {
     const source = readBoundedRegularFile(this.eventFile, this.maxBytes);
     let event;
-    try { event = JSON.parse(source); }
-    catch (error) { fail(`JSON Observation event file is invalid: ${error.message}`, "INVALID_OBSERVATION_SOURCE_EVENT"); }
+    try {
+      event = JSON.parse(source);
+    } catch (error) {
+      fail(`JSON Observation event file is invalid: ${error.message}`, "INVALID_OBSERVATION_SOURCE_EVENT");
+    }
     exactFields(event, ["schemaVersion", "eventKey", "subject", "form", "temporalScope", "coverage", "payload"], "JSON Observation source event");
     if (event.schemaVersion !== 1) fail("JSON Observation source event schemaVersion must be 1.", "INVALID_OBSERVATION_SOURCE_EVENT");
     const eventKey = requiredText(event.eventKey, "JSON Observation source event key");
@@ -189,14 +218,26 @@ export class JsonEventFileObservationAdapter {
 }
 
 export function assertObservationAdapter(adapter, binding, descriptor, storage = undefined) {
-  if (!adapter || typeof adapter !== "object" || typeof adapter.describe !== "function" || typeof adapter.collect !== "function") fail("ObservationAdapter is invalid.", "INVALID_OBSERVATION_ADAPTER");
+  if (!adapter || typeof adapter !== "object" || typeof adapter.describe !== "function" || typeof adapter.collect !== "function")
+    fail("ObservationAdapter is invalid.", "INVALID_OBSERVATION_ADAPTER");
   const selectedBinding = normalizeObservationSourceBinding(binding);
-  const selectedDescriptor = descriptor?.kind === "ObservationTypeDescriptor" ? verifyObservationTypeDescriptor(descriptor, storage) : createObservationTypeDescriptor(descriptor, storage);
+  const selectedDescriptor =
+    descriptor?.kind === "ObservationTypeDescriptor"
+      ? verifyObservationTypeDescriptor(descriptor, storage)
+      : createObservationTypeDescriptor(descriptor, storage);
   const described = adapter.describe();
-  if (described.adapterKey !== selectedBinding.adapterKey || described.adapterVersion !== selectedBinding.adapterVersion
-    || described.descriptorId !== selectedDescriptor.descriptorId || described.descriptorHash !== selectedDescriptor.descriptorHash
-    || described.authority !== "observed-evidence-only" || described.providerNeutral !== true
-    || described.persistsCredentials !== false || described.persistsProviderIdentity !== false || described.executesProjectCode !== false) fail("ObservationAdapter crosses its source, descriptor, or authority boundary.", "INVALID_OBSERVATION_ADAPTER_AUTHORITY");
+  if (
+    described.adapterKey !== selectedBinding.adapterKey ||
+    described.adapterVersion !== selectedBinding.adapterVersion ||
+    described.descriptorId !== selectedDescriptor.descriptorId ||
+    described.descriptorHash !== selectedDescriptor.descriptorHash ||
+    described.authority !== "observed-evidence-only" ||
+    described.providerNeutral !== true ||
+    described.persistsCredentials !== false ||
+    described.persistsProviderIdentity !== false ||
+    described.executesProjectCode !== false
+  )
+    fail("ObservationAdapter crosses its source, descriptor, or authority boundary.", "INVALID_OBSERVATION_ADAPTER_AUTHORITY");
   return { adapter, binding: selectedBinding, descriptor: selectedDescriptor, descriptorDigest: observationDigest(described), described };
 }
 
@@ -208,7 +249,8 @@ export class ObservationAdapterRegistry {
     const inspected = assertObservationProjectReady(projectRoot);
     const normalizedSourceKey = stableKey(sourceKey, "Observation adapter source key", 192);
     const storageKey = `${inspected.project.projectId}:${normalizedSourceKey}`;
-    if (this.#sources.has(storageKey)) fail("Observation adapter source key is already registered for this HEAD Project.", "DUPLICATE_OBSERVATION_ADAPTER_SOURCE");
+    if (this.#sources.has(storageKey))
+      fail("Observation adapter source key is already registered for this HEAD Project.", "DUPLICATE_OBSERVATION_ADAPTER_SOURCE");
     const asserted = assertObservationAdapter(adapter, binding, descriptor, inspected.storage);
     const sourceId = `observation-source-${observationDigest({
       projectId: inspected.project.projectId,
@@ -252,26 +294,34 @@ export class ObservationAdapterRegistry {
   }
 
   inspect({ root, typeKey = "", adapterKey = "", availabilityState = "", limit = MAX_INSPECTED_SOURCES, projectionId = "", cursor = "" } = {}) {
-    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_INSPECTED_SOURCES) fail("Observation adapter registry inspection limit is invalid.", "INVALID_OBSERVATION_ADAPTER_INSPECTION_LIMIT");
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_INSPECTED_SOURCES)
+      fail("Observation adapter registry inspection limit is invalid.", "INVALID_OBSERVATION_ADAPTER_INSPECTION_LIMIT");
     const inspected = assertObservationProjectReady(root);
     const filters = {
       typeKey: optionalStableKey(typeKey, "Observation source typeKey"),
       adapterKey: optionalStableKey(adapterKey, "Observation source adapterKey"),
       availabilityState: String(availabilityState || "").trim(),
     };
-    if (filters.availabilityState && !SOURCE_AVAILABILITY_STATES.has(filters.availabilityState)) fail("Observation source availability filter is invalid.", "INVALID_OBSERVATION_ADAPTER_INSPECTION_FILTER");
+    if (filters.availabilityState && !SOURCE_AVAILABILITY_STATES.has(filters.availabilityState))
+      fail("Observation source availability filter is invalid.", "INVALID_OBSERVATION_ADAPTER_INSPECTION_FILTER");
     const cursorId = String(cursor || "").trim();
     const expectedProjectionId = String(projectionId || "").trim();
-    if (Boolean(cursorId) !== Boolean(expectedProjectionId)) fail("Observation source cursor and projectionId must be supplied together.", "INVALID_OBSERVATION_ADAPTER_INSPECTION_CURSOR");
-    if (cursorId && !/^observation-source-[a-f0-9]{24}$/.test(cursorId)) fail("Observation source cursor is invalid.", "INVALID_OBSERVATION_ADAPTER_INSPECTION_CURSOR");
-    if (expectedProjectionId && !/^observation-source-projection-[a-f0-9]{24}$/.test(expectedProjectionId)) fail("Observation source projectionId is invalid.", "INVALID_OBSERVATION_ADAPTER_INSPECTION_CURSOR");
+    if (Boolean(cursorId) !== Boolean(expectedProjectionId))
+      fail("Observation source cursor and projectionId must be supplied together.", "INVALID_OBSERVATION_ADAPTER_INSPECTION_CURSOR");
+    if (cursorId && !/^observation-source-[a-f0-9]{24}$/.test(cursorId))
+      fail("Observation source cursor is invalid.", "INVALID_OBSERVATION_ADAPTER_INSPECTION_CURSOR");
+    if (expectedProjectionId && !/^observation-source-projection-[a-f0-9]{24}$/.test(expectedProjectionId))
+      fail("Observation source projectionId is invalid.", "INVALID_OBSERVATION_ADAPTER_INSPECTION_CURSOR");
     const projectSources = [...this.#sources.values()]
       .filter((entry) => entry.projectId === inspected.project.projectId && entry.projectRoot === inspected.project.projectRoot)
       .map((entry) => this.#project(entry))
       .sort((a, b) => a.sourceId.localeCompare(b.sourceId));
-    const matchingSources = projectSources.filter((source) => (!filters.typeKey || source.typeKey === filters.typeKey)
-      && (!filters.adapterKey || source.adapterKey === filters.adapterKey)
-      && (!filters.availabilityState || source.availability.state === filters.availabilityState));
+    const matchingSources = projectSources.filter(
+      (source) =>
+        (!filters.typeKey || source.typeKey === filters.typeKey) &&
+        (!filters.adapterKey || source.adapterKey === filters.adapterKey) &&
+        (!filters.availabilityState || source.availability.state === filters.availabilityState),
+    );
     const projectionHash = observationDigest({ projectId: inspected.project.projectId, filters, sources: matchingSources });
     const currentProjectionId = `observation-source-projection-${projectionHash.slice(0, 24)}`;
     let start = 0;
@@ -323,7 +373,8 @@ export class ObservationAdapterRegistry {
 
   async collect({ root = ".", sourceKey = "", sourceId = "" } = {}) {
     const inspected = assertObservationProjectReady(root);
-    if (Boolean(sourceKey) === Boolean(sourceId)) fail("Exactly one Observation adapter source selector is required.", "INVALID_OBSERVATION_ADAPTER_SOURCE_SELECTOR");
+    if (Boolean(sourceKey) === Boolean(sourceId))
+      fail("Exactly one Observation adapter source selector is required.", "INVALID_OBSERVATION_ADAPTER_SOURCE_SELECTOR");
     let storageKey;
     if (sourceId) {
       if (!/^observation-source-[a-f0-9]{24}$/.test(sourceId)) fail("Observation adapter source ID is invalid.", "INVALID_OBSERVATION_ADAPTER_SOURCE_SELECTOR");
@@ -331,8 +382,14 @@ export class ObservationAdapterRegistry {
     } else storageKey = `${inspected.project.projectId}:${stableKey(sourceKey, "Observation adapter source key", 192)}`;
     const entry = this.#sources.get(storageKey);
     if (!entry) fail("Observation adapter source is not registered in this Host process.", "OBSERVATION_ADAPTER_SOURCE_NOT_FOUND");
-    if (entry.projectId !== inspected.project.projectId || entry.projectRoot !== inspected.project.projectRoot) fail("Observation adapter source belongs to another HEAD Project.", "OBSERVATION_ADAPTER_SOURCE_PROJECT_MISMATCH");
-    const result = await collectObservation({ root: inspected.project.projectRoot, binding: entry.binding, descriptor: entry.descriptor, adapter: entry.adapter });
+    if (entry.projectId !== inspected.project.projectId || entry.projectRoot !== inspected.project.projectRoot)
+      fail("Observation adapter source belongs to another HEAD Project.", "OBSERVATION_ADAPTER_SOURCE_PROJECT_MISMATCH");
+    const result = await collectObservation({
+      root: inspected.project.projectRoot,
+      binding: entry.binding,
+      descriptor: entry.descriptor,
+      adapter: entry.adapter,
+    });
     return {
       ...result,
       hostSource: this.#project(entry),
@@ -344,8 +401,18 @@ export class ObservationAdapterRegistry {
 export async function collectObservation({ root = ".", binding, descriptor, adapter } = {}) {
   const inspected = assertObservationProjectReady(root);
   const asserted = assertObservationAdapter(adapter, binding, descriptor, inspected.storage);
-  const input = await asserted.adapter.collect({ root: inspected.project.projectRoot, sourceScopeDigest: asserted.binding.sourceScopeDigest, credentialReferenceNames: [...asserted.binding.credentialReferenceNames] });
-  const recorded = recordCollectedObservation({ root: inspected.project.projectRoot, descriptor: asserted.descriptor, input, adapterDescriptor: asserted.described, sourceScopeDigest: asserted.binding.sourceScopeDigest });
+  const input = await asserted.adapter.collect({
+    root: inspected.project.projectRoot,
+    sourceScopeDigest: asserted.binding.sourceScopeDigest,
+    credentialReferenceNames: [...asserted.binding.credentialReferenceNames],
+  });
+  const recorded = recordCollectedObservation({
+    root: inspected.project.projectRoot,
+    descriptor: asserted.descriptor,
+    input,
+    adapterDescriptor: asserted.described,
+    sourceScopeDigest: asserted.binding.sourceScopeDigest,
+  });
   return {
     status: recorded.status,
     descriptor: recorded.descriptor,
@@ -368,7 +435,7 @@ export async function ingestStructuredObservation({ root = ".", binding, descrip
   // Only the subsequently verified owner selects the persisted wire family.
   new StructuredObservationAdapter({ descriptor, input });
   const inspected = assertObservationProjectReady(root);
-  return (await collectObservation({ root, binding, descriptor, adapter: new StructuredObservationAdapter({ descriptor, input }, inspected.storage) }));
+  return await collectObservation({ root, binding, descriptor, adapter: new StructuredObservationAdapter({ descriptor, input }, inspected.storage) });
 }
 
 export async function ingestJsonObservationEventFile({ root = ".", sourceKey, binding, descriptor, eventFile, maxBytes } = {}) {
@@ -378,12 +445,14 @@ export async function ingestJsonObservationEventFile({ root = ".", sourceKey, bi
   const registry = new ObservationAdapterRegistry();
   const adapter = new JsonEventFileObservationAdapter({ descriptor, eventFile, maxBytes }, inspected.storage);
   const selectedBinding = normalizeObservationSourceBinding(binding);
-  const selectedSourceKey = String(sourceKey || "").trim() || `one-shot-${observationDigest({
-    adapterKey: selectedBinding.adapterKey,
-    adapterVersion: selectedBinding.adapterVersion,
-    sourceScopeDigest: selectedBinding.sourceScopeDigest,
-    descriptorId: adapter.descriptor.descriptorId,
-  }).slice(0, 24)}`;
+  const selectedSourceKey =
+    String(sourceKey || "").trim() ||
+    `one-shot-${observationDigest({
+      adapterKey: selectedBinding.adapterKey,
+      adapterVersion: selectedBinding.adapterVersion,
+      sourceScopeDigest: selectedBinding.sourceScopeDigest,
+      descriptorId: adapter.descriptor.descriptorId,
+    }).slice(0, 24)}`;
   registry.register({
     projectRoot: root,
     sourceKey: selectedSourceKey,
@@ -395,12 +464,17 @@ export async function ingestJsonObservationEventFile({ root = ".", sourceKey, bi
 }
 
 export async function collectRegisteredObservation({ root = ".", registry, sourceId } = {}) {
-  if (!(registry instanceof ObservationAdapterRegistry)) fail("No trusted Host Observation adapter registry is configured in this process.", "OBSERVATION_ADAPTER_REGISTRY_UNAVAILABLE");
+  if (!(registry instanceof ObservationAdapterRegistry))
+    fail("No trusted Host Observation adapter registry is configured in this process.", "OBSERVATION_ADAPTER_REGISTRY_UNAVAILABLE");
   return registry.collect({ root, sourceId });
 }
 
-export function inspectObservationSources({ root = "", registry = null, typeKey = "", adapterKey = "", availabilityState = "", limit = MAX_INSPECTED_SOURCES, projectionId = "", cursor = "" } = {}, storage = null) {
-  if (registry != null && !(registry instanceof ObservationAdapterRegistry)) fail("Host Observation adapter registry is invalid.", "INVALID_OBSERVATION_ADAPTER_REGISTRY");
+export function inspectObservationSources(
+  { root = "", registry = null, typeKey = "", adapterKey = "", availabilityState = "", limit = MAX_INSPECTED_SOURCES, projectionId = "", cursor = "" } = {},
+  storage = null,
+) {
+  if (registry != null && !(registry instanceof ObservationAdapterRegistry))
+    fail("Host Observation adapter registry is invalid.", "INVALID_OBSERVATION_ADAPTER_REGISTRY");
   const configured = registry == null ? null : registry.inspect({ root, typeKey, adapterKey, availabilityState, limit, projectionId, cursor });
   const format = configured ? familyFormatForOriginal("head-agent-core-observation", configured) : formatForVerifiedOwner(storage);
   return {

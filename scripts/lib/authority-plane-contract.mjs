@@ -13,7 +13,11 @@ const fail = (message, code = "AUTHORITY_PLANE_ERROR") => {
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   }
   return value;
 }
@@ -181,7 +185,7 @@ const ARTIFACT_PLANES_V01 = Object.freeze({
 
 function boundaryPayload(kind, contractVersion = AUTHORITY_PLANE_CONTRACT_VERSION) {
   const artifactPlanes = contractVersion === "0.1.0" ? ARTIFACT_PLANES_V01 : ARTIFACT_PLANES;
-  const planeId = artifactPlanes[kind] || ({ LodeSession: "P2", LodeContinuitySnapshot: "P4" })[kind];
+  const planeId = artifactPlanes[kind] || { LodeSession: "P2", LodeContinuitySnapshot: "P4" }[kind];
   if (!planeId) fail(`Artifact kind is not assigned to an authority plane: ${kind}`, "UNKNOWN_AUTHORITY_PLANE_ARTIFACT");
   const plane = PLANE_DEFINITIONS[planeId];
   return {
@@ -254,8 +258,11 @@ export function assertNoAuthorityAmplification({ sourceKind, targetKind, reviewD
   const target = artifactAuthorityBoundary(targetKind);
   if (target.planeId === "P1" && source.planeId !== "P1") {
     const reviewDecisionId = reviewDecision?.reviewDecisionId;
-    if (reviewDecision?.kind !== "ReviewDecision" || reviewDecision?.promotionAuthority !== true
-      || !/^(?:review-decision|document-change-review-decision)-[a-f0-9]{24}$/.test(reviewDecisionId || "")) {
+    if (
+      reviewDecision?.kind !== "ReviewDecision" ||
+      reviewDecision?.promotionAuthority !== true ||
+      !/^(?:review-decision|document-change-review-decision)-[a-f0-9]{24}$/.test(reviewDecisionId || "")
+    ) {
       fail(`Authority amplification from ${sourceKind} to ${targetKind} requires an explicit verified ReviewDecision.`, "AUTHORITY_AMPLIFICATION_REJECTED");
     }
     verifyArtifactAuthorityBoundary("ReviewDecision", reviewDecision.authorityBoundary);
@@ -284,17 +291,38 @@ export function assertProjectionDidNotMutateCanon({ beforeBytes, afterBytes } = 
   return true;
 }
 
-export function assertReceiptProjectedOnlyInChild({ receiptId, namedGraphSnapshotId, namedGraphReceiptIds, childGraphSnapshotId, childParentSourceSnapshotIds, namedSourceSnapshotId, childGraphReceiptIds } = {}) {
-  if (typeof receiptId !== "string" || !receiptId || typeof namedGraphSnapshotId !== "string" || !namedGraphSnapshotId
-    || typeof childGraphSnapshotId !== "string" || !childGraphSnapshotId || typeof namedSourceSnapshotId !== "string" || !namedSourceSnapshotId
-    || !Array.isArray(namedGraphReceiptIds) || !Array.isArray(childParentSourceSnapshotIds) || !Array.isArray(childGraphReceiptIds)) {
+export function assertReceiptProjectedOnlyInChild({
+  receiptId,
+  namedGraphSnapshotId,
+  namedGraphReceiptIds,
+  childGraphSnapshotId,
+  childParentSourceSnapshotIds,
+  namedSourceSnapshotId,
+  childGraphReceiptIds,
+} = {}) {
+  if (
+    typeof receiptId !== "string" ||
+    !receiptId ||
+    typeof namedGraphSnapshotId !== "string" ||
+    !namedGraphSnapshotId ||
+    typeof childGraphSnapshotId !== "string" ||
+    !childGraphSnapshotId ||
+    typeof namedSourceSnapshotId !== "string" ||
+    !namedSourceSnapshotId ||
+    !Array.isArray(namedGraphReceiptIds) ||
+    !Array.isArray(childParentSourceSnapshotIds) ||
+    !Array.isArray(childGraphReceiptIds)
+  ) {
     fail("Receipt child-projection proof is incomplete.", "INVALID_RECEIPT_CHILD_PROJECTION_PROOF");
   }
   if (namedGraphReceiptIds.includes(receiptId)) {
     fail("A receipt cannot appear in the GraphSnapshot that it names.", "GRAPH_SNAPSHOT_RECEIPT_SELF_REFERENCE");
   }
-  if (childGraphSnapshotId === namedGraphSnapshotId || !childParentSourceSnapshotIds.includes(namedSourceSnapshotId)
-    || !childGraphReceiptIds.includes(receiptId)) {
+  if (
+    childGraphSnapshotId === namedGraphSnapshotId ||
+    !childParentSourceSnapshotIds.includes(namedSourceSnapshotId) ||
+    !childGraphReceiptIds.includes(receiptId)
+  ) {
     fail("A receipt must appear only in a later child GraphSnapshot.", "GRAPH_SNAPSHOT_RECEIPT_CHILD_REQUIRED");
   }
   return true;

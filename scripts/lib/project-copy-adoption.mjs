@@ -2,17 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
-import {
-  copiedProjectFile,
-  inspectCopiedProjectFiles,
-  verifyCopiedProjectFile,
-  validateCopiedManagedPaths,
-} from "./project-copy-evidence.mjs";
-import {
-  inspectProjectCopyOrigin,
-  verifyProjectLocation,
-  locationJournalRelative,
-} from "./project-location-proof.mjs";
+import { copiedProjectFile, inspectCopiedProjectFiles, verifyCopiedProjectFile, validateCopiedManagedPaths } from "./project-copy-evidence.mjs";
+import { inspectProjectCopyOrigin, verifyProjectLocation, locationJournalRelative } from "./project-location-proof.mjs";
 import { inspectCopiedProjectCanon, verifyProjectMetadataOriginal } from "./project-copy-canon.mjs";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { COPIED_PROJECT_LOCATION_KIND } from "./project-copy-proof.mjs";
@@ -27,10 +18,7 @@ const read = (file) => fs.readFileSync(file);
 const decode = (bytes) => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 
 function pendingCopy(input) {
-  const file = copiedProjectFile(
-    input.currentRoot,
-    `${input.directory}/${locationJournalRelative}`,
-  );
+  const file = copiedProjectFile(input.currentRoot, `${input.directory}/${locationJournalRelative}`);
   if (!fs.existsSync(file)) return null;
   const bytes = read(file),
     transaction = decode(bytes);
@@ -48,15 +36,9 @@ function publishCopy(input, transaction, pendingBytes, onPublication, inspectOnl
   if (
     transaction.kind !== "ProjectCopyPublication" ||
     transaction.targetRoot !== currentRoot ||
-    !["beforeProject", "afterProject", "beforeManifest", "afterManifest"].every(
-      (field) => typeof transaction[field] === "string",
-    ) ||
-    ![transaction.beforeProject, transaction.afterProject].some((value) =>
-      projectBytes.equals(Buffer.from(value)),
-    ) ||
-    ![transaction.beforeManifest, transaction.afterManifest].some((value) =>
-      manifestBytes.equals(Buffer.from(value)),
-    )
+    !["beforeProject", "afterProject", "beforeManifest", "afterManifest"].every((field) => typeof transaction[field] === "string") ||
+    ![transaction.beforeProject, transaction.afterProject].some((value) => projectBytes.equals(Buffer.from(value))) ||
+    ![transaction.beforeManifest, transaction.afterManifest].some((value) => manifestBytes.equals(Buffer.from(value)))
   )
     fail("PROJECT_COPY_PUBLICATION_CONFLICT");
   const before = decode(Buffer.from(transaction.beforeProject)),
@@ -80,21 +62,12 @@ function publishCopy(input, transaction, pendingBytes, onPublication, inspectOnl
   });
   const expectedManifest = json({
     ...manifest,
-    managed: manifest.managed.map((entry) =>
-      entry.path === `${directory}/project.json`
-        ? { ...entry, sha256: hash(Buffer.from(expectedProject)) }
-        : entry,
-    ),
+    managed: manifest.managed.map((entry) => (entry.path === `${directory}/project.json` ? { ...entry, sha256: hash(Buffer.from(expectedProject)) } : entry)),
   });
-  if (
-    transaction.afterProject !== expectedProject ||
-    transaction.afterManifest !== expectedManifest
-  )
-    fail("PROJECT_COPY_PUBLICATION_CONFLICT");
+  if (transaction.afterProject !== expectedProject || transaction.afterManifest !== expectedManifest) fail("PROJECT_COPY_PUBLICATION_CONFLICT");
   const requiredOriginals = canon.originals.map((original) => {
     const entry = proof.copyAdmission.inventory.files.find((item) => item.path === original.path);
-    if (!entry || entry.sha256 !== original.sha256 || entry.bytes !== original.bytes)
-      fail("PROJECT_COPY_SOURCE_CHANGED");
+    if (!entry || entry.sha256 !== original.sha256 || entry.bytes !== original.bytes) fail("PROJECT_COPY_SOURCE_CHANGED");
     return entry;
   });
   const verifyRequiredOriginals = () => {
@@ -118,26 +91,16 @@ function publishCopy(input, transaction, pendingBytes, onPublication, inspectOnl
     if (actual.equals(Buffer.from(expected))) return;
     atomicWriteArtifact(copiedProjectFile(currentRoot, relative), Buffer.from(expected), {
       beforePublish() {
-        if (!read(copiedProjectFile(currentRoot, relative)).equals(actual))
-          fail("PROJECT_COPY_SOURCE_CHANGED");
+        if (!read(copiedProjectFile(currentRoot, relative)).equals(actual)) fail("PROJECT_COPY_SOURCE_CHANGED");
       },
     });
     onPublication?.(stage);
   };
   publish(`${directory}/project.json`, projectBytes, transaction.afterProject, "copy-project");
-  publish(
-    `${directory}/generated/manifest.json`,
-    manifestBytes,
-    transaction.afterManifest,
-    "copy-manifest",
-  );
+  publish(`${directory}/generated/manifest.json`, manifestBytes, transaction.afterManifest, "copy-manifest");
   if (
-    !read(copiedProjectFile(currentRoot, `${directory}/project.json`)).equals(
-      Buffer.from(transaction.afterProject),
-    ) ||
-    !read(copiedProjectFile(currentRoot, `${directory}/generated/manifest.json`)).equals(
-      Buffer.from(transaction.afterManifest),
-    )
+    !read(copiedProjectFile(currentRoot, `${directory}/project.json`)).equals(Buffer.from(transaction.afterProject)) ||
+    !read(copiedProjectFile(currentRoot, `${directory}/generated/manifest.json`)).equals(Buffer.from(transaction.afterManifest))
   )
     fail("PROJECT_COPY_PUBLICATION_CONFLICT");
   verifyRequiredOriginals();
@@ -147,52 +110,34 @@ function publishCopy(input, transaction, pendingBytes, onPublication, inspectOnl
   return result;
 }
 
-export function inspectProjectCopyInput({
-  root,
-  pluginRoot,
-  runtimes,
-  validateSelection = null,
-} = {}) {
+export function inspectProjectCopyInput({ root, pluginRoot, runtimes, validateSelection = null } = {}) {
   const currentRoot = fs.realpathSync(path.resolve(root));
   let selected = null;
   try {
     selected = resolveProjectStorage(currentRoot);
   } catch (error) {
-    if (!["PROJECT_IDENTITY_MISMATCH", "PROJECT_RELOCATION_PENDING"].includes(error.code))
-      throw error;
+    if (!["PROJECT_IDENTITY_MISMATCH", "PROJECT_RELOCATION_PENDING"].includes(error.code)) throw error;
   }
   const directories = selected
     ? [selected.directory]
-    : [".lode", ".head"].filter((dir) =>
-        fs.existsSync(copiedProjectFile(currentRoot, `${dir}/project.json`)),
-      );
-  if (directories.length !== 1)
-    fail(directories.length ? "PROJECT_STORAGE_CONFLICT" : "PROJECT_COPY_NOT_FOUND");
+    : [".lode", ".head"].filter((dir) => fs.existsSync(copiedProjectFile(currentRoot, `${dir}/project.json`)));
+  if (directories.length !== 1) fail(directories.length ? "PROJECT_STORAGE_CONFLICT" : "PROJECT_COPY_NOT_FOUND");
   const directory = directories[0],
     dialect = directory === ".lode" ? "lode" : "head";
   const projectBytes = read(copiedProjectFile(currentRoot, `${directory}/project.json`));
-  const manifestBytes = read(
-    copiedProjectFile(currentRoot, `${directory}/generated/manifest.json`),
-  );
+  const manifestBytes = read(copiedProjectFile(currentRoot, `${directory}/generated/manifest.json`));
   const project = decode(projectBytes),
     manifest = decode(manifestBytes);
   verifyProjectMetadataOriginal(project, directory);
   const packageRoot = fs.realpathSync(path.resolve(pluginRoot));
   const metadata = decode(read(path.join(packageRoot, "package.json")));
-  if (typeof metadata.version !== "string" || !metadata.version)
-    fail("PROJECT_COPY_PACKAGE_INVALID");
+  if (typeof metadata.version !== "string" || !metadata.version) fail("PROJECT_COPY_PACKAGE_INVALID");
   if (runtimes != null) {
-    if (!Array.isArray(runtimes) || !runtimes.every((value) => typeof value === "string"))
-      fail("UNSUPPORTED_RUNTIME");
+    if (!Array.isArray(runtimes) || !runtimes.every((value) => typeof value === "string")) fail("UNSUPPORTED_RUNTIME");
     const selected = [
-      ...new Set(
-        (runtimes.length ? runtimes : ["claude", "codex", "opencode"])
-          .map((value) => value.trim().toLowerCase())
-          .filter(Boolean),
-      ),
+      ...new Set((runtimes.length ? runtimes : ["claude", "codex", "opencode"]).map((value) => value.trim().toLowerCase()).filter(Boolean)),
     ].sort();
-    if (JSON.stringify(selected) !== JSON.stringify(project.runtimes))
-      fail("PROJECT_RUNTIME_MISMATCH");
+    if (JSON.stringify(selected) !== JSON.stringify(project.runtimes)) fail("PROJECT_RUNTIME_MISMATCH");
   }
   validateCopiedManagedPaths({ root: currentRoot, directory, manifest });
   const selectedSession = validateSelection?.({
@@ -218,28 +163,20 @@ export function adoptVerifiedProjectCopy(options = {}) {
   const initial = inspectProjectCopyInput(options);
   const pending = pendingCopy(initial);
   if (pending) {
-    if (options.inspectOnly)
-      return publishCopy(initial, pending.transaction, pending.bytes, null, true);
+    if (options.inspectOnly) return publishCopy(initial, pending.transaction, pending.bytes, null, true);
     return withLocalMutation(
       {
-        directory: copiedProjectFile(
-          initial.currentRoot,
-          `${initial.directory}/.operations/project-relocation.lock`,
-        ),
+        directory: copiedProjectFile(initial.currentRoot, `${initial.directory}/.operations/project-relocation.lock`),
       },
       () => {
         const current = inspectProjectCopyInput(options),
           observed = pendingCopy(current);
-        if (!observed || !observed.bytes.equals(pending.bytes))
-          fail("PROJECT_COPY_PUBLICATION_CONFLICT");
+        if (!observed || !observed.bytes.equals(pending.bytes)) fail("PROJECT_COPY_PUBLICATION_CONFLICT");
         return publishCopy(current, observed.transaction, observed.bytes, options.onPublication);
       },
     );
   }
-  if (
-    [COPIED_PROJECT_LOCATION_KIND, "portable-project-copy"].includes(initial.project.location?.kind)
-  )
-    return null;
+  if ([COPIED_PROJECT_LOCATION_KIND, "portable-project-copy"].includes(initial.project.location?.kind)) return null;
   const origin = inspectProjectCopyOrigin(initial.currentRoot, initial.directory, initial.project);
   if (origin.status === "origin-verified") return null;
   inspectCopiedProjectCanon({
@@ -248,10 +185,7 @@ export function adoptVerifiedProjectCopy(options = {}) {
     project: initial.project,
     selectedSession: initial.selectedSession,
   });
-  const pendingFile = copiedProjectFile(
-    initial.currentRoot,
-    `${initial.directory}/${locationJournalRelative}`,
-  );
+  const pendingFile = copiedProjectFile(initial.currentRoot, `${initial.directory}/${locationJournalRelative}`);
   if (fs.existsSync(pendingFile)) fail("PROJECT_RELOCATION_PENDING");
   if (options.inspectOnly)
     return {
@@ -265,21 +199,13 @@ export function adoptVerifiedProjectCopy(options = {}) {
     };
   return withLocalMutation(
     {
-      directory: copiedProjectFile(
-        initial.currentRoot,
-        `${initial.directory}/.operations/project-relocation.lock`,
-      ),
+      directory: copiedProjectFile(initial.currentRoot, `${initial.directory}/.operations/project-relocation.lock`),
     },
     () => {
       const input = inspectProjectCopyInput(options);
-      if (
-        !input.projectBytes.equals(initial.projectBytes) ||
-        !input.manifestBytes.equals(initial.manifestBytes)
-      )
-        fail("PROJECT_COPY_SOURCE_CHANGED");
+      if (!input.projectBytes.equals(initial.projectBytes) || !input.manifestBytes.equals(initial.manifestBytes)) fail("PROJECT_COPY_SOURCE_CHANGED");
       const { currentRoot, directory, project, manifest, projectBytes, manifestBytes } = input;
-      if (manifest?.schemaVersion !== 1 || !Array.isArray(manifest.managed))
-        fail("PROJECT_REPAIR_MANIFEST_INVALID");
+      if (manifest?.schemaVersion !== 1 || !Array.isArray(manifest.managed)) fail("PROJECT_REPAIR_MANIFEST_INVALID");
       const managed = new Set();
       for (const entry of manifest.managed) {
         if (
@@ -288,13 +214,11 @@ export function adoptVerifiedProjectCopy(options = {}) {
           managed.has(entry.path) ||
           typeof entry.sha256 !== "string" ||
           !/^[a-f0-9]{64}$/.test(entry.sha256) ||
-          (!entry.path.startsWith(`${directory}/`) &&
-            !["AGENTS.md", "CLAUDE.md", ".mcp.json", "opencode.json"].includes(entry.path))
+          (!entry.path.startsWith(`${directory}/`) && !["AGENTS.md", "CLAUDE.md", ".mcp.json", "opencode.json"].includes(entry.path))
         )
           fail("PROJECT_REPAIR_MANIFEST_INVALID");
         managed.add(entry.path);
-        if (hash(read(copiedProjectFile(currentRoot, entry.path))) !== entry.sha256)
-          fail("PROJECT_NOT_READY");
+        if (hash(read(copiedProjectFile(currentRoot, entry.path))) !== entry.sha256) fail("PROJECT_NOT_READY");
       }
       if (!managed.has(`${directory}/project.json`)) fail("PROJECT_REPAIR_MANIFEST_INVALID");
       inspectCopiedProjectCanon({
@@ -331,11 +255,7 @@ export function adoptVerifiedProjectCopy(options = {}) {
       const afterManifest = Buffer.from(
         json({
           ...manifest,
-          managed: manifest.managed.map((entry) =>
-            entry.path === `${directory}/project.json`
-              ? { ...entry, sha256: hash(afterProject) }
-              : entry,
-          ),
+          managed: manifest.managed.map((entry) => (entry.path === `${directory}/project.json` ? { ...entry, sha256: hash(afterProject) } : entry)),
         }),
       );
       const createExact = (relative, bytes) => {
@@ -345,10 +265,7 @@ export function adoptVerifiedProjectCopy(options = {}) {
         } else atomicCreateArtifact(file, bytes);
       };
       createExact(`${directory}/project-location/history/${hash(projectBytes)}.json`, projectBytes);
-      createExact(
-        `${directory}/project-location/copy-originals/${hash(manifestBytes)}.json`,
-        manifestBytes,
-      );
+      createExact(`${directory}/project-location/copy-originals/${hash(manifestBytes)}.json`, manifestBytes);
       createExact(`${directory}/project-location/copies/${admissionDigest}.json`, admissionBytes);
       const transaction = {
         kind: "ProjectCopyPublication",

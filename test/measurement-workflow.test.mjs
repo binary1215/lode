@@ -68,13 +68,16 @@ test("metric evidence remains P3/P4, discloses partial coverage, and requires th
   assert.equal(defined.ordinaryWorkBlocked, false);
 
   const baseline = await recordMetricObservation({ root, ...observationInput() });
-  const current = await recordMetricObservation({ root, ...observationInput({
-    value: 90,
-    observedAt: "2026-01-02T00:00:00.000Z",
-    coverage: { state: "partial", basis: "bounded-window", examinedCount: 1 },
-    sourceEventKeyDigest: sha("current-event"),
-    sourceEvidenceDigest: sha("current-evidence"),
-  }) });
+  const current = await recordMetricObservation({
+    root,
+    ...observationInput({
+      value: 90,
+      observedAt: "2026-01-02T00:00:00.000Z",
+      coverage: { state: "partial", basis: "bounded-window", examinedCount: 1 },
+      sourceEventKeyDigest: sha("current-event"),
+      sourceEvidenceDigest: sha("current-evidence"),
+    }),
+  });
   const compared = await compareMetricObservations({
     root,
     baselineObservationId: baseline.observation.observationId,
@@ -119,11 +122,27 @@ test("metric evidence remains P3/P4, discloses partial coverage, and requires th
   assert.ok(ids.has(compared.comparison.derivedObservationId));
   assert.ok(ids.has(assessed.hypothesis.hypothesisId));
   assert.ok(ids.has(followUp.initiativeCandidate.initiativeCandidateId));
-  assert.ok(graph.edges.some((edge) => edge.type === "DERIVED_FROM" && edge.from === compared.comparison.derivedObservationId && edge.to === baseline.observation.observationId));
-  assert.ok(graph.edges.some((edge) => edge.type === "REFERENCES" && edge.from === assessed.hypothesis.hypothesisId && edge.to === compared.comparison.derivedObservationId));
-  assert.ok(graph.edges.some((edge) => edge.type === "PROPOSES_FROM" && edge.from === followUp.initiativeCandidate.initiativeCandidateId && edge.to === assessed.hypothesis.hypothesisId));
-  assert.equal(graph.nodes.some((node) => node.kind === "ProductInitiativeReviewDecision"), false);
-  const trace = (await traceMeasurementLineage({ root, anchorId: compared.comparison.derivedObservationId }));
+  assert.ok(
+    graph.edges.some(
+      (edge) => edge.type === "DERIVED_FROM" && edge.from === compared.comparison.derivedObservationId && edge.to === baseline.observation.observationId,
+    ),
+  );
+  assert.ok(
+    graph.edges.some(
+      (edge) => edge.type === "REFERENCES" && edge.from === assessed.hypothesis.hypothesisId && edge.to === compared.comparison.derivedObservationId,
+    ),
+  );
+  assert.ok(
+    graph.edges.some(
+      (edge) =>
+        edge.type === "PROPOSES_FROM" && edge.from === followUp.initiativeCandidate.initiativeCandidateId && edge.to === assessed.hypothesis.hypothesisId,
+    ),
+  );
+  assert.equal(
+    graph.nodes.some((node) => node.kind === "ProductInitiativeReviewDecision"),
+    false,
+  );
+  const trace = await traceMeasurementLineage({ root, anchorId: compared.comparison.derivedObservationId });
   const reference = queryTemporalProvenanceGraph(graph, trace.queryParameters);
   assert.equal(trace.graph.resultId, reference.resultId);
   assert.equal(trace.graph.resultHash, reference.resultHash);
@@ -131,9 +150,13 @@ test("metric evidence remains P3/P4, discloses partial coverage, and requires th
   assert.deepEqual(trace.graph.edges, reference.edges);
   assert.equal(trace.authority.ordinaryWorkBlocked, false);
   assert.equal(trace.semantics.correlationImpliesCausation, false);
-  const reviewed = await reviewProductInitiative({ root, initiativeCandidateId: followUp.initiativeCandidate.initiativeCandidateId,
-    disposition: "accept", rationale: "The exact hypothesis is a conditional follow-up, not a proved effect.",
-    featureResolution: { kind: "gap", reason: "No Product Canon feature decision is implied." } });
+  const reviewed = await reviewProductInitiative({
+    root,
+    initiativeCandidateId: followUp.initiativeCandidate.initiativeCandidateId,
+    disposition: "accept",
+    rationale: "The exact hypothesis is a conditional follow-up, not a proved effect.",
+    featureResolution: { kind: "gap", reason: "No Product Canon feature decision is implied." },
+  });
   assert.equal(reviewed.reviewDecision.initiativeCandidateId, followUp.initiativeCandidate.initiativeCandidateId);
   assert.equal(reviewed.reviewDecision.initiativeCandidateHash, followUp.initiativeCandidate.initiativeCandidateHash);
   assert.equal(reviewed.productCanonMutated, false);
@@ -147,30 +170,35 @@ test("metric comparison fails closed only for real comparability mismatches", as
   const exactDefinitionReplay = await defineMetric({ root, metricKey: "request-latency", unit: "milliseconds", direction: "decrease", typeVersion: "1" });
   assert.equal(exactDefinitionReplay.status, "existing");
   assert.equal(exactDefinitionReplay.descriptor.descriptorHash, firstDefinition.descriptor.descriptorHash);
-  await assert.rejects(
-    async () => (await defineMetric({ root, metricKey: "request-latency", unit: "seconds", direction: "decrease", typeVersion: "1" })),
-    { code: "METRIC_DEFINITION_CONFLICT" },
-  );
+  await assert.rejects(async () => await defineMetric({ root, metricKey: "request-latency", unit: "seconds", direction: "decrease", typeVersion: "1" }), {
+    code: "METRIC_DEFINITION_CONFLICT",
+  });
   await defineMetric({ root, metricKey: "request-latency", unit: "seconds", direction: "decrease", typeVersion: "2" });
-  const baseline = await recordMetricObservation({ root, ...observationInput({
-    typeVersion: "1",
-    form: "aggregate",
-    start: "2026-01-01T00:00:00.000Z",
-    end: "2026-01-02T00:00:00.000Z",
-    observedAt: "2026-01-02T00:00:00.000Z",
-    sampleSize: 100,
-  }) });
-  const comparable = await recordMetricObservation({ root, ...observationInput({
-    typeVersion: "1",
-    value: 110,
-    form: "aggregate",
-    start: "2026-01-02T00:00:00.000Z",
-    end: "2026-01-03T00:00:00.000Z",
-    observedAt: "2026-01-03T00:00:00.000Z",
-    sampleSize: 100,
-    sourceEventKeyDigest: sha("comparable-event"),
-    sourceEvidenceDigest: sha("comparable-evidence"),
-  }) });
+  const baseline = await recordMetricObservation({
+    root,
+    ...observationInput({
+      typeVersion: "1",
+      form: "aggregate",
+      start: "2026-01-01T00:00:00.000Z",
+      end: "2026-01-02T00:00:00.000Z",
+      observedAt: "2026-01-02T00:00:00.000Z",
+      sampleSize: 100,
+    }),
+  });
+  const comparable = await recordMetricObservation({
+    root,
+    ...observationInput({
+      typeVersion: "1",
+      value: 110,
+      form: "aggregate",
+      start: "2026-01-02T00:00:00.000Z",
+      end: "2026-01-03T00:00:00.000Z",
+      observedAt: "2026-01-03T00:00:00.000Z",
+      sampleSize: 100,
+      sourceEventKeyDigest: sha("comparable-event"),
+      sourceEvidenceDigest: sha("comparable-evidence"),
+    }),
+  });
   const comparableResult = await compareMetricObservations({
     root,
     baselineObservationId: baseline.observation.observationId,
@@ -179,24 +207,46 @@ test("metric comparison fails closed only for real comparability mismatches", as
   assert.equal(comparableResult.comparability.recordedCollectionConditionsEquivalent, true);
   assert.equal(comparableResult.comparability.semanticEquivalenceEstablished, false);
   assert.equal(comparableResult.comparability.semanticEquivalenceAssessment, "not-assessed");
-  const otherVersion = await recordMetricObservation({ root, ...observationInput({
-    typeVersion: "2",
-    value: 0.09,
-    observedAt: "2026-01-02T00:00:00.000Z",
-    sourceEventKeyDigest: sha("other-version-event"),
-    sourceEvidenceDigest: sha("other-version-evidence"),
-  }) });
-  await assert.rejects(async () => (await compareMetricObservations({ root, baselineObservationId: baseline.observation.observationId, currentObservationId: otherVersion.observation.observationId })), { code: "INCOMPARABLE_METRIC_OBSERVATIONS" });
+  const otherVersion = await recordMetricObservation({
+    root,
+    ...observationInput({
+      typeVersion: "2",
+      value: 0.09,
+      observedAt: "2026-01-02T00:00:00.000Z",
+      sourceEventKeyDigest: sha("other-version-event"),
+      sourceEvidenceDigest: sha("other-version-evidence"),
+    }),
+  });
+  await assert.rejects(
+    async () =>
+      await compareMetricObservations({
+        root,
+        baselineObservationId: baseline.observation.observationId,
+        currentObservationId: otherVersion.observation.observationId,
+      }),
+    { code: "INCOMPARABLE_METRIC_OBSERVATIONS" },
+  );
 
-  const otherSubject = await recordMetricObservation({ root, ...observationInput({
-    typeVersion: "1",
-    subjectKey: "internal-api",
-    value: 95,
-    observedAt: "2026-01-02T00:00:00.000Z",
-    sourceEventKeyDigest: sha("other-subject-event"),
-    sourceEvidenceDigest: sha("other-subject-evidence"),
-  }) });
-  await assert.rejects(async () => (await compareMetricObservations({ root, baselineObservationId: baseline.observation.observationId, currentObservationId: otherSubject.observation.observationId })), { code: "INCOMPARABLE_METRIC_OBSERVATIONS" });
+  const otherSubject = await recordMetricObservation({
+    root,
+    ...observationInput({
+      typeVersion: "1",
+      subjectKey: "internal-api",
+      value: 95,
+      observedAt: "2026-01-02T00:00:00.000Z",
+      sourceEventKeyDigest: sha("other-subject-event"),
+      sourceEvidenceDigest: sha("other-subject-evidence"),
+    }),
+  });
+  await assert.rejects(
+    async () =>
+      await compareMetricObservations({
+        root,
+        baselineObservationId: baseline.observation.observationId,
+        currentObservationId: otherSubject.observation.observationId,
+      }),
+    { code: "INCOMPARABLE_METRIC_OBSERVATIONS" },
+  );
   assert.equal(inspectMeasurements({ root }).ordinaryWorkBlocked, false);
 });
 
@@ -210,34 +260,37 @@ test("metric observation retry without an observed timestamp reuses the durable 
   assert.equal(replay.status, "existing");
   assert.equal(replay.observation.observationId, first.observation.observationId);
   assert.equal(replay.observation.temporalScope.observedAt, first.observation.temporalScope.observedAt);
-  await assert.rejects(
-    async () => (await recordMetricObservation({ root, ...input, value: 121 })),
-    { code: "DIVERGENT_OBSERVATION_REPLAY" },
-  );
+  await assert.rejects(async () => await recordMetricObservation({ root, ...input, value: 121 }), { code: "DIVERGENT_OBSERVATION_REPLAY" });
 });
 
 test("metric comparison remains available while disclosing unequal collection conditions", async (t) => {
   const { root, layout } = fixture(t);
   await defineMetric({ root, metricKey: "request-latency", unit: "milliseconds", direction: "decrease" });
-  const baseline = await recordMetricObservation({ root, ...observationInput({
-    form: "aggregate",
-    start: "2026-01-01T00:00:00.000Z",
-    end: "2026-01-02T00:00:00.000Z",
-    observedAt: "2026-01-02T00:00:00.000Z",
-    sampleSize: 100,
-  }) });
-  const current = await recordMetricObservation({ root, ...observationInput({
-    form: "aggregate",
-    start: "2026-01-02T00:00:00.000Z",
-    end: "2026-01-09T00:00:00.000Z",
-    observedAt: "2026-01-09T00:00:00.000Z",
-    sampleSize: 1000,
-    value: 90,
-    adapterVersion: "2.0.0",
-    sourceScopeDigest: sha("different-source-scope"),
-    sourceEventKeyDigest: sha("condition-current-event"),
-    sourceEvidenceDigest: sha("condition-current-evidence"),
-  }) });
+  const baseline = await recordMetricObservation({
+    root,
+    ...observationInput({
+      form: "aggregate",
+      start: "2026-01-01T00:00:00.000Z",
+      end: "2026-01-02T00:00:00.000Z",
+      observedAt: "2026-01-02T00:00:00.000Z",
+      sampleSize: 100,
+    }),
+  });
+  const current = await recordMetricObservation({
+    root,
+    ...observationInput({
+      form: "aggregate",
+      start: "2026-01-02T00:00:00.000Z",
+      end: "2026-01-09T00:00:00.000Z",
+      observedAt: "2026-01-09T00:00:00.000Z",
+      sampleSize: 1000,
+      value: 90,
+      adapterVersion: "2.0.0",
+      sourceScopeDigest: sha("different-source-scope"),
+      sourceEventKeyDigest: sha("condition-current-event"),
+      sourceEvidenceDigest: sha("condition-current-evidence"),
+    }),
+  });
   const result = await compareMetricObservations({
     root,
     baselineObservationId: baseline.observation.observationId,
@@ -267,16 +320,37 @@ test("CLI and typed MCP expose the same nonblocking metric status", async (t) =>
   assert.ok(tools.some((tool) => tool.name === "lode_metric_define"));
   assert.ok(tools.some((tool) => tool.name === "lode_metric_status"));
   assert.ok(tools.some((tool) => tool.name === "lode_metric_trace"));
-  const defined = await dispatch({ jsonrpc: "2.0", id: "metric-define", method: "tools/call", params: { name: "head_metric_define", arguments: {
-    project_root: root, metric_key: "request-latency", unit: "milliseconds", direction: "decrease",
-  } } });
+  const defined = await dispatch({
+    jsonrpc: "2.0",
+    id: "metric-define",
+    method: "tools/call",
+    params: {
+      name: "head_metric_define",
+      arguments: {
+        project_root: root,
+        metric_key: "request-latency",
+        unit: "milliseconds",
+        direction: "decrease",
+      },
+    },
+  });
   assert.equal(defined.error, undefined, JSON.stringify(defined.error));
-  const mcp = await dispatch({ jsonrpc: "2.0", id: "metric-status", method: "tools/call", params: { name: "head_metric_status", arguments: { project_root: root } } });
+  const mcp = await dispatch({
+    jsonrpc: "2.0",
+    id: "metric-status",
+    method: "tools/call",
+    params: { name: "head_metric_status", arguments: { project_root: root } },
+  });
   assert.equal(mcp.error, undefined, JSON.stringify(mcp.error));
   const cli = await runCommand(["metric-status", root]);
   assert.equal(mcp.result.structuredContent.status, cli.status);
   assert.deepEqual(mcp.result.structuredContent.definitions, cli.definitions);
-  const traceMcp = await dispatch({ jsonrpc: "2.0", id: "metric-trace", method: "tools/call", params: { name: "head_metric_trace", arguments: { project_root: root, metric_key: "request-latency", depth: 0 } } });
+  const traceMcp = await dispatch({
+    jsonrpc: "2.0",
+    id: "metric-trace",
+    method: "tools/call",
+    params: { name: "head_metric_trace", arguments: { project_root: root, metric_key: "request-latency", depth: 0 } },
+  });
   assert.equal(traceMcp.error, undefined, JSON.stringify(traceMcp.error));
   const traceCli = await runCommand(["metric-trace", root, "--metric", "request-latency", "--depth", "0"]);
   assert.equal(traceMcp.result.structuredContent.graph.resultId, traceCli.graph.resultId);

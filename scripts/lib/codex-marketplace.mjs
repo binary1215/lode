@@ -24,7 +24,10 @@ function fail(code, message) {
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -43,8 +46,12 @@ function readJson(file, code) {
 
 function validateCodexPluginInterface(manifest) {
   const prompts = manifest?.interface?.defaultPrompt;
-  if (!Array.isArray(prompts) || prompts.length < 1 || prompts.length > 3
-    || prompts.some((prompt) => typeof prompt !== "string" || !prompt.trim() || prompt.length > 128)) {
+  if (
+    !Array.isArray(prompts) ||
+    prompts.length < 1 ||
+    prompts.length > 3 ||
+    prompts.some((prompt) => typeof prompt !== "string" || !prompt.trim() || prompt.length > 128)
+  ) {
     fail(
       "HEAD_CODEX_MARKETPLACE_DEFAULT_PROMPTS_INVALID",
       "Codex plugin defaultPrompt must contain one to three non-empty prompts of at most 128 characters each.",
@@ -93,7 +100,8 @@ function expectedTreeEntries(files) {
     }
     entries.set(file, "file");
   }
-  return [...entries].map(([entryPath, type]) => ({ path: entryPath, type }))
+  return [...entries]
+    .map(([entryPath, type]) => ({ path: entryPath, type }))
     .sort((left, right) => left.path.localeCompare(right.path, "en") || left.type.localeCompare(right.type, "en"));
 }
 
@@ -156,12 +164,14 @@ function marketplaceDocument({ name, displayName, pluginName }) {
   return {
     name,
     interface: { displayName },
-    plugins: [{
-      name: pluginName,
-      source: { source: "local", path: `./plugins/${pluginName}` },
-      policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
-      category: "Developer Tools",
-    }],
+    plugins: [
+      {
+        name: pluginName,
+        source: { source: "local", path: `./plugins/${pluginName}` },
+        policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
+        category: "Developer Tools",
+      },
+    ],
   };
 }
 
@@ -193,13 +203,21 @@ export function buildCodexMarketplaceSnapshot({
   const temporary = fs.mkdtempSync(`${output}.stage-`);
   try {
     const pluginRoot = path.join(temporary, "plugins", composition.pluginName);
-    const distribution = stageDistributionRelease({ sourceRoot: source, destinationRoot: pluginRoot, nativeOverlayRoot, artifactIdentity: composition.identity });
+    const distribution = stageDistributionRelease({
+      sourceRoot: source,
+      destinationRoot: pluginRoot,
+      nativeOverlayRoot,
+      artifactIdentity: composition.identity,
+    });
     fs.writeFileSync(path.join(temporary, ".gitattributes"), MARKETPLACE_GIT_ATTRIBUTES, { flag: "wx" });
-    writeJson(path.join(temporary, ".agents", "plugins", "marketplace.json"), marketplaceDocument({
-      name,
-      displayName: displayName.trim(),
-      pluginName: composition.pluginName,
-    }));
+    writeJson(
+      path.join(temporary, ".agents", "plugins", "marketplace.json"),
+      marketplaceDocument({
+        name,
+        displayName: displayName.trim(),
+        pluginName: composition.pluginName,
+      }),
+    );
     const identity = markerIdentity({
       marketplaceName: name,
       pluginName: composition.pluginName,
@@ -240,24 +258,15 @@ export function verifyCodexMarketplaceSnapshot({
   const markerFile = markers[0];
   const hasGitAttributes = rootEntries.includes(".gitattributes");
   const legacyBytePreservationCandidate = allowLegacyBytePreservation && !hasGitAttributes;
-  const expectedRootEntries = [
-    ".agents",
-    ...(legacyBytePreservationCandidate ? [] : [".gitattributes"]),
-    markerFile,
-    "plugins",
-  ].sort();
-  if (rootEntries.length !== expectedRootEntries.length
-    || rootEntries.some((entry, index) => entry !== expectedRootEntries[index])) {
+  const expectedRootEntries = [".agents", ...(legacyBytePreservationCandidate ? [] : [".gitattributes"]), markerFile, "plugins"].sort();
+  if (rootEntries.length !== expectedRootEntries.length || rootEntries.some((entry, index) => entry !== expectedRootEntries[index])) {
     fail("HEAD_CODEX_MARKETPLACE_ROOT_CONTENT", "Marketplace root contains unexpected files or directories.");
   }
   if (hasGitAttributes && fs.readFileSync(path.join(marketplaceRoot, ".gitattributes"), "utf8") !== MARKETPLACE_GIT_ATTRIBUTES) {
     fail("HEAD_CODEX_MARKETPLACE_GIT_ATTRIBUTES", "Marketplace Git attributes must preserve exact cross-platform bytes.");
   }
 
-  const marketplace = readJson(
-    path.join(marketplaceRoot, ".agents", "plugins", "marketplace.json"),
-    "HEAD_CODEX_MARKETPLACE_CATALOG_INVALID",
-  );
+  const marketplace = readJson(path.join(marketplaceRoot, ".agents", "plugins", "marketplace.json"), "HEAD_CODEX_MARKETPLACE_CATALOG_INVALID");
   assertExactKeys(marketplace, ["name", "interface", "plugins"], "Marketplace catalog", "HEAD_CODEX_MARKETPLACE_CATALOG_INVALID");
   marketplaceName(marketplace.name);
   const composition = marketplaceComposition(marketplace.name);
@@ -274,9 +283,13 @@ export function verifyCodexMarketplaceSnapshot({
   marketplaceName(entry.name);
   assertExactKeys(entry.source, ["source", "path"], "Marketplace plugin source", "HEAD_CODEX_MARKETPLACE_ENTRY_INVALID");
   assertExactKeys(entry.policy, ["installation", "authentication"], "Marketplace plugin policy", "HEAD_CODEX_MARKETPLACE_ENTRY_INVALID");
-  if (entry.source.source !== "local" || entry.source.path !== `./plugins/${entry.name}`
-    || entry.policy.installation !== "AVAILABLE" || entry.policy.authentication !== "ON_INSTALL"
-    || entry.category !== "Developer Tools") {
+  if (
+    entry.source.source !== "local" ||
+    entry.source.path !== `./plugins/${entry.name}` ||
+    entry.policy.installation !== "AVAILABLE" ||
+    entry.policy.authentication !== "ON_INSTALL" ||
+    entry.category !== "Developer Tools"
+  ) {
     fail("HEAD_CODEX_MARKETPLACE_ENTRY_INVALID", "Marketplace plugin entry does not match the supported install contract.");
   }
 
@@ -307,32 +320,35 @@ export function verifyCodexMarketplaceSnapshot({
     fail("HEAD_CODEX_MARKETPLACE_NATIVE_REQUIRED", "Marketplace snapshot is missing the verified cross-platform native bundle.");
   }
 
-  const marker = readJson(
-    path.join(marketplaceRoot, markerFile),
+  const marker = readJson(path.join(marketplaceRoot, markerFile), "HEAD_CODEX_MARKETPLACE_MARKER_INVALID");
+  assertExactKeys(
+    marker,
+    ["protocolVersion", "kind", "marketplaceName", "pluginName", "pluginVersion", "distributionReleaseId", "sourceRepository", "sourceCommit", "snapshotId"],
+    "Marketplace generation marker",
     "HEAD_CODEX_MARKETPLACE_MARKER_INVALID",
   );
-  assertExactKeys(marker, [
-    "protocolVersion", "kind", "marketplaceName", "pluginName", "pluginVersion", "distributionReleaseId",
-    "sourceRepository", "sourceCommit", "snapshotId",
-  ], "Marketplace generation marker", "HEAD_CODEX_MARKETPLACE_MARKER_INVALID");
   marketplaceName(marker.marketplaceName);
   sourceRepository(marker.sourceRepository);
   sourceCommit(marker.sourceCommit);
-  const expectedMarker = snapshotMarker(markerIdentity({
-    marketplaceName: marketplace.name,
-    pluginName: manifest.name,
-    pluginVersion: manifest.version,
-    releaseId: distribution.releaseId,
-    repository: marker.sourceRepository,
-    commit: marker.sourceCommit,
-  }));
+  const expectedMarker = snapshotMarker(
+    markerIdentity({
+      marketplaceName: marketplace.name,
+      pluginName: manifest.name,
+      pluginVersion: manifest.version,
+      releaseId: distribution.releaseId,
+      repository: marker.sourceRepository,
+      commit: marker.sourceCommit,
+    }),
+  );
   if (canonical(marker) !== canonical(expectedMarker)) {
     fail("HEAD_CODEX_MARKETPLACE_MARKER_MISMATCH", "Marketplace generation marker does not match the verified snapshot.");
   }
-  if (!hasGitAttributes
-    && (!legacyBytePreservationCandidate
-      || manifest.version !== LEGACY_BYTE_PRESERVATION_MIGRATION.pluginVersion
-      || marker.sourceCommit !== LEGACY_BYTE_PRESERVATION_MIGRATION.sourceCommit)) {
+  if (
+    !hasGitAttributes &&
+    (!legacyBytePreservationCandidate ||
+      manifest.version !== LEGACY_BYTE_PRESERVATION_MIGRATION.pluginVersion ||
+      marker.sourceCommit !== LEGACY_BYTE_PRESERVATION_MIGRATION.sourceCommit)
+  ) {
     fail("HEAD_CODEX_MARKETPLACE_LEGACY_MIGRATION", "Marketplace snapshot is not the one approved byte-preservation migration source.");
   }
   if (expectedRepository && marker.sourceRepository !== sourceRepository(expectedRepository)) {
@@ -349,8 +365,7 @@ export function verifyCodexMarketplaceSnapshot({
     ...distribution.files.map((file) => `plugins/${manifest.name}/${file.path}`),
     `plugins/${manifest.name}/distribution-manifest.json`,
   ].sort((left, right) => left.localeCompare(right, "en"));
-  const actualTree = treeEntries(marketplaceRoot)
-    .sort((left, right) => left.path.localeCompare(right.path, "en") || left.type.localeCompare(right.type, "en"));
+  const actualTree = treeEntries(marketplaceRoot).sort((left, right) => left.path.localeCompare(right.path, "en") || left.type.localeCompare(right.type, "en"));
   if (canonical(actualTree) !== canonical(expectedTreeEntries(expectedFiles))) {
     fail("HEAD_CODEX_MARKETPLACE_TREE_MISMATCH", "Marketplace snapshot contains missing or unexpected files or directories.");
   }

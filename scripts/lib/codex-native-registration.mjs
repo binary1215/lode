@@ -19,25 +19,13 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { nativeSqlitePath } from "./codex-native-backup.mjs";
-import {
-  codexNativeRegistrationScope,
-  assertCodexNativeOffline,
-} from "./codex-native-offline.mjs";
+import { codexNativeRegistrationScope, assertCodexNativeOffline } from "./codex-native-offline.mjs";
 import { inspectCodexNativePayload } from "./codex-native-payload.mjs";
-import {
-  inspectCodexNativeDatabase,
-  readSelectedCodexHistory,
-} from "./codex-native-portability.mjs";
+import { inspectCodexNativeDatabase, readSelectedCodexHistory } from "./codex-native-portability.mjs";
 import { copiedProjectFile, inspectCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { decodeSqliteCell, readTypedSqliteRows } from "./native-sqlite-values.mjs";
-import {
-  codexNativeApiExpectation,
-  readCodexNativeApiHistory,
-} from "./codex-native-api-evidence.mjs";
-import {
-  requestNativeRegistration,
-  inspectNativeRegistration,
-} from "./native-registration-journal.mjs";
+import { codexNativeApiExpectation, readCodexNativeApiHistory } from "./codex-native-api-evidence.mjs";
+import { requestNativeRegistration, inspectNativeRegistration } from "./native-registration-journal.mjs";
 import { openCodexNativeRegistrationRpc } from "./codex-native-registration-rpc.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -45,8 +33,7 @@ const digest = (value) => hash(JSON.stringify(value));
 const fail = (code) => {
   throw Object.assign(new Error(code), { code });
 };
-const samePath = (left, right) =>
-  nativeSqlitePath(path.resolve(left)) === nativeSqlitePath(path.resolve(right));
+const samePath = (left, right) => nativeSqlitePath(path.resolve(left)) === nativeSqlitePath(path.resolve(right));
 const canonical = (rows) => rows.map((row) => JSON.stringify(row)).sort();
 
 // Registration may append an SDK context/projection record. Original raw bytes
@@ -64,13 +51,9 @@ function verifyPublishedOriginals(inspected, home, basis, signal) {
         remaining -= prefix.length;
       },
     });
-    if (remaining || observed.bytes < entry.bytes || sha.digest("hex") !== entry.sha256)
-      fail("NATIVE_CODEX_REGISTER_RAW_DIVERGED");
+    if (remaining || observed.bytes < entry.bytes || sha.digest("hex") !== entry.sha256) fail("NATIVE_CODEX_REGISTER_RAW_DIVERGED");
   }
-  const db = new DatabaseSync(
-    nativeSqlitePath(copiedProjectFile(home, "thread_history_1.sqlite")),
-    { readOnly: true },
-  );
+  const db = new DatabaseSync(nativeSqlitePath(copiedProjectFile(home, "thread_history_1.sqlite")), { readOnly: true });
   try {
     const actual = readSelectedCodexHistory(db, {
       ...basis,
@@ -79,14 +62,10 @@ function verifyPublishedOriginals(inspected, home, basis, signal) {
     for (const expected of inspected.payload.history.tables) {
       const table = actual.tables.find((value) => value.name === expected.name);
       if (expected.name !== "thread_history_projection_state") {
-        if (JSON.stringify(canonical(table.rows)) !== JSON.stringify(canonical(expected.rows)))
-          fail("NATIVE_CODEX_REGISTER_HISTORY_DIVERGED");
+        if (JSON.stringify(canonical(table.rows)) !== JSON.stringify(canonical(expected.rows))) fail("NATIVE_CODEX_REGISTER_HISTORY_DIVERGED");
         continue;
       }
-      const record = (row) =>
-        Object.fromEntries(
-          expected.columns.map((key, index) => [key, decodeSqliteCell(row[index])]),
-        );
+      const record = (row) => Object.fromEntries(expected.columns.map((key, index) => [key, decodeSqliteCell(row[index])]));
       const byId = new Map(table.rows.map(record).map((row) => [row.thread_id, row]));
       if (byId.size !== expected.rows.length) fail("NATIVE_CODEX_REGISTER_HISTORY_DIVERGED");
       for (const row of expected.rows.map(record)) {
@@ -94,8 +73,7 @@ function verifyPublishedOriginals(inspected, home, basis, signal) {
         for (const key of expected.columns) {
           if (key === "next_rollout_byte_offset" || key === "next_rollout_ordinal") {
             if (current?.[key] < row[key]) fail("NATIVE_CODEX_REGISTER_HISTORY_DIVERGED");
-          } else if (current?.[key] !== row[key])
-            fail("NATIVE_CODEX_REGISTER_HISTORY_DIVERGED");
+          } else if (current?.[key] !== row[key]) fail("NATIVE_CODEX_REGISTER_HISTORY_DIVERGED");
         }
       }
     }
@@ -117,22 +95,9 @@ function targetMetadata(home, basis, entry) {
       parameters: [entry.threadId],
     });
     if (rows.length > 1) fail("NATIVE_CODEX_TARGET_THREAD_BINDING_DIVERGED");
-    const record = rows[0]
-      ? Object.fromEntries(
-          CODEX_NATIVE_TARGET_CHOICE_COLUMNS.map((key, index) => [
-            key,
-            decodeSqliteCell(rows[0][index]),
-          ]),
-        )
-      : null;
-    const row = record
-      ? { id: record.id, rollout_path: record.rollout_path, protectedOriginals: rows[0] }
-      : null;
-    if (
-      row &&
-      (!row.rollout_path || !samePath(row.rollout_path, copiedProjectFile(home, entry.path)))
-    )
-      fail("NATIVE_CODEX_TARGET_THREAD_BINDING_DIVERGED");
+    const record = rows[0] ? Object.fromEntries(CODEX_NATIVE_TARGET_CHOICE_COLUMNS.map((key, index) => [key, decodeSqliteCell(rows[0][index])])) : null;
+    const row = record ? { id: record.id, rollout_path: record.rollout_path, protectedOriginals: rows[0] } : null;
+    if (row && (!row.rollout_path || !samePath(row.rollout_path, copiedProjectFile(home, entry.path)))) fail("NATIVE_CODEX_TARGET_THREAD_BINDING_DIVERGED");
     return row || null;
   } finally {
     db.close();
@@ -152,9 +117,7 @@ export function selectCodexNativeRegistrationPolicy(config) {
     approvalsReviewer: config?.approvals_reviewer ?? "user",
   };
   if (
-    [selected.model, selected.modelProvider, selected.reasoningEffort].some(
-      (value) => typeof value !== "string" || !value,
-    ) ||
+    [selected.model, selected.modelProvider, selected.reasoningEffort].some((value) => typeof value !== "string" || !value) ||
     !["never", "on-request", "on-failure", "untrusted"].includes(selected.approvalPolicy) ||
     !["read-only", "workspace-write", "danger-full-access"].includes(selected.sandbox) ||
     (selected.serviceTier !== null && typeof selected.serviceTier !== "string")
@@ -163,35 +126,18 @@ export function selectCodexNativeRegistrationPolicy(config) {
   // The pinned SDK's measured path-resume did not reproduce workspace-write
   // effective sandbox settings, even with default options. Preserve the
   // native originals without issuing an unqualified policy-changing resume.
-  if (selected.sandbox === "workspace-write")
-    fail("NATIVE_CODEX_WORKSPACE_POLICY_PROFILE_UNVERIFIED");
-  if (!["user", "auto_review", "guardian_subagent"].includes(selected.approvalsReviewer))
-    fail("NATIVE_CODEX_CURRENT_POLICY_UNRESOLVED");
-  selected.expectedSandbox =
-    selected.sandbox === "read-only"
-      ? { type: "readOnly", networkAccess: false }
-      : { type: "dangerFullAccess" };
+  if (selected.sandbox === "workspace-write") fail("NATIVE_CODEX_WORKSPACE_POLICY_PROFILE_UNVERIFIED");
+  if (!["user", "auto_review", "guardian_subagent"].includes(selected.approvalsReviewer)) fail("NATIVE_CODEX_CURRENT_POLICY_UNRESOLVED");
+  selected.expectedSandbox = selected.sandbox === "read-only" ? { type: "readOnly", networkAccess: false } : { type: "dangerFullAccess" };
   return selected;
 }
 
 export function verifyCodexNativeRegistrationPolicy(resumed, policy, threadId, root) {
   const rootsEqual = (left, right) =>
-    Array.isArray(left) &&
-    left.length === right.length &&
-    left.every((value, index) => typeof value === "string" && samePath(value, right[index]));
+    Array.isArray(left) && left.length === right.length && left.every((value, index) => typeof value === "string" && samePath(value, right[index]));
   if ((resumed?.serviceTier ?? null) !== policy.serviceTier) {
-    const label = (value) =>
-      value == null
-        ? "none"
-        : ["auto", "default", "standard", "fast", "flex", "priority"].includes(value)
-          ? value
-          : "unrecognized";
-    fail(
-      "NATIVE_CODEX_EFFECTIVE_POLICY_MISMATCH_serviceTier_" +
-        label(policy.serviceTier) +
-        "_to_" +
-        label(resumed?.serviceTier),
-    );
+    const label = (value) => (value == null ? "none" : ["auto", "default", "standard", "fast", "flex", "priority"].includes(value) ? value : "unrecognized");
+    fail("NATIVE_CODEX_EFFECTIVE_POLICY_MISMATCH_serviceTier_" + label(policy.serviceTier) + "_to_" + label(resumed?.serviceTier));
   }
   const checks = {
     identity: resumed?.thread?.id === threadId,
@@ -205,12 +151,10 @@ export function verifyCodexNativeRegistrationPolicy(resumed, policy, threadId, r
     approvalPolicy: resumed?.approvalPolicy === policy.approvalPolicy,
     reasoningEffort: resumed?.reasoningEffort === policy.reasoningEffort,
   };
-  for (const [field, matched] of Object.entries(checks))
-    if (!matched) fail("NATIVE_CODEX_EFFECTIVE_POLICY_MISMATCH_" + field);
+  for (const [field, matched] of Object.entries(checks)) if (!matched) fail("NATIVE_CODEX_EFFECTIVE_POLICY_MISMATCH_" + field);
   const actual = resumed.sandbox,
     expected = policy.expectedSandbox;
-  if (!actual || Object.keys(actual).some((key) => !Object.hasOwn(expected, key)))
-    fail("NATIVE_CODEX_EFFECTIVE_POLICY_MISMATCH_sandbox_shape");
+  if (!actual || Object.keys(actual).some((key) => !Object.hasOwn(expected, key))) fail("NATIVE_CODEX_EFFECTIVE_POLICY_MISMATCH_sandbox_shape");
   for (const key of Object.keys(expected)) {
     if (key === "writableRoots") {
       if (!rootsEqual(actual[key], expected[key]))
@@ -220,20 +164,14 @@ export function verifyCodexNativeRegistrationPolicy(resumed, policy, threadId, r
             "_to_" +
             (Array.isArray(actual[key]) ? actual[key].length : "invalid"),
         );
-    } else if (actual[key] !== expected[key])
-      fail("NATIVE_CODEX_EFFECTIVE_POLICY_MISMATCH_sandbox_" + key);
+    } else if (actual[key] !== expected[key]) fail("NATIVE_CODEX_EFFECTIVE_POLICY_MISMATCH_sandbox_" + key);
   }
   // The legacy sandbox view cannot prove a named permission profile. Preserve
   // the returned evidence and stop this native action rather than flattening
   // or silently changing that profile. Ordinary Core work remains available.
-  if ((resumed.activePermissionProfile ?? null) !== null)
-    fail("NATIVE_CODEX_NAMED_PERMISSION_PROFILE_UNVERIFIED");
+  if ((resumed.activePermissionProfile ?? null) !== null) fail("NATIVE_CODEX_NAMED_PERMISSION_PROFILE_UNVERIFIED");
   const local = resumed.thread.environments?.filter((entry) => entry.environmentId === "local");
-  if (
-    local?.length !== 1 ||
-    !samePath(local[0].cwd, root) ||
-    !rootsEqual(local[0].runtimeWorkspaceRoots, [root])
-  )
+  if (local?.length !== 1 || !samePath(local[0].cwd, root) || !rootsEqual(local[0].runtimeWorkspaceRoots, [root]))
     fail("NATIVE_CODEX_EFFECTIVE_POLICY_MISMATCH_localEnvironment");
 }
 
@@ -254,16 +192,10 @@ function currentConfigurationBasis(home, root, environment) {
     files,
     root,
     metadataProfile: "finite-no-model-v1",
-    environmentHomes: [
-      "HOME",
-      "USERPROFILE",
-      "CODEX_HOME",
-      "APPDATA",
-      "LOCALAPPDATA",
-      "XDG_CONFIG_HOME",
-      "XDG_DATA_HOME",
-      "XDG_STATE_HOME",
-    ].map((key) => [key, environment?.[key] ?? null]),
+    environmentHomes: ["HOME", "USERPROFILE", "CODEX_HOME", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"].map((key) => [
+      key,
+      environment?.[key] ?? null,
+    ]),
   });
 }
 
@@ -285,8 +217,7 @@ export async function registerCodexNativeHistory({
   onProcess,
   assertCurrentAuthority = () => {},
 } = {}) {
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 300000)
-    fail("NATIVE_CODEX_RPC_LIMIT_INVALID");
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 300000) fail("NATIVE_CODEX_RPC_LIMIT_INVALID");
   const deadlineAt = Date.now() + timeoutMs;
   const authority = () => {
     if (signal?.aborted) fail("NATIVE_CODEX_REGISTRATION_CANCELLED");
@@ -315,38 +246,18 @@ export async function registerCodexNativeHistory({
     };
   const inside = (base, file) => {
     const relative = path.relative(base, file);
-    return (
-      !relative ||
-      (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))
-    );
+    return !relative || (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative));
   };
-  if (inside(home, inspected.directory) || inside(inspected.directory, home))
-    fail("NATIVE_CODEX_SOURCE_TARGET_OVERLAP");
-  const expectations = new Map(
-    inspected.payload.threadIds.map((id) => [
-      id,
-      codexNativeApiExpectation(inspected.payload.history, id),
-    ]),
-  );
+  if (inside(home, inspected.directory) || inside(inspected.directory, home)) fail("NATIVE_CODEX_SOURCE_TARGET_OVERLAP");
+  const expectations = new Map(inspected.payload.threadIds.map((id) => [id, codexNativeApiExpectation(inspected.payload.history, id)]));
   verifyPublishedOriginals(inspected, home, basis, signal);
-  const initialMetadata = new Map(
-    inspected.payload.files.map((entry) => [
-      entry.threadId,
-      targetMetadata(home, basis, entry),
-    ]),
-  );
+  const initialMetadata = new Map(inspected.payload.files.map((entry) => [entry.threadId, targetMetadata(home, basis, entry)]));
   let expectedMetadata;
-  const readMetadataSet = () =>
-    new Map(
-      inspected.payload.files.map((file) => [file.threadId, targetMetadata(home, basis, file)]),
-    );
+  const readMetadataSet = () => new Map(inspected.payload.files.map((file) => [file.threadId, targetMetadata(home, basis, file)]));
   const assertMetadataSet = (expected) => {
     const observed = readMetadataSet();
-    if (!(expected instanceof Map))
-      return assertCodexRegistrationMetadata(group, observed, expected);
-    for (const [id, row] of expected)
-      if (JSON.stringify(observed.get(id)) !== JSON.stringify(row))
-        fail("NATIVE_CODEX_REGISTRATION_TARGET_APPEARED");
+    if (!(expected instanceof Map)) return assertCodexRegistrationMetadata(group, observed, expected);
+    for (const [id, row] of expected) if (JSON.stringify(observed.get(id)) !== JSON.stringify(row)) fail("NATIVE_CODEX_REGISTRATION_TARGET_APPEARED");
   };
   const choiceOptions = { signal, deadlineAt, assertCurrentAuthority: authority };
   const unrelatedChoices = observeCodexNativeTargetChoices({
@@ -359,19 +270,12 @@ export async function registerCodexNativeHistory({
   const operationRoot = copiedProjectFile(home, ".lode-native-portability");
   authority();
   fs.mkdirSync(operationRoot, { recursive: true });
-  const operationRootOriginal = fs.lstatSync(
-    copiedProjectFile(home, ".lode-native-portability"),
-    { bigint: true },
-  );
+  const operationRootOriginal = fs.lstatSync(copiedProjectFile(home, ".lode-native-portability"), { bigint: true });
   const assertOperationRoot = () => {
     const current = fs.lstatSync(copiedProjectFile(home, ".lode-native-portability"), {
       bigint: true,
     });
-    if (
-      !current.isDirectory() ||
-      current.dev !== operationRootOriginal.dev ||
-      current.ino !== operationRootOriginal.ino
-    )
+    if (!current.isDirectory() || current.dev !== operationRootOriginal.dev || current.ino !== operationRootOriginal.ino)
       fail("NATIVE_CODEX_REGISTRATION_OPERATION_ROOT_CHANGED");
   };
   const group = prepareCodexRegistrationGroup({
@@ -438,10 +342,8 @@ export async function registerCodexNativeHistory({
         expectedPayloadId: inspected.payloadId,
         signal,
       });
-      if (current.payloadDigest !== inspected.payloadDigest)
-        fail("NATIVE_CODEX_PAYLOAD_IDENTITY_MISMATCH");
-      if (currentConfigurationBasis(home, root, environment) !== policyBasisDigest)
-        fail("NATIVE_CODEX_CURRENT_CONFIGURATION_CHANGED");
+      if (current.payloadDigest !== inspected.payloadDigest) fail("NATIVE_CODEX_PAYLOAD_IDENTITY_MISMATCH");
+      if (currentConfigurationBasis(home, root, environment) !== policyBasisDigest) fail("NATIVE_CODEX_CURRENT_CONFIGURATION_CHANGED");
       verifyPublishedOriginals(inspected, home, basis, signal);
       verifyCodexNativeTargetChoices(unrelatedChoices, choiceOptions);
     };
@@ -450,11 +352,8 @@ export async function registerCodexNativeHistory({
     const readStatus = async ({ inputDigest }) => {
       verifyCurrentOriginals();
       const saved = inspectNativeRegistration({ operationRoot, input });
-      const evidenceDigest =
-        completedEvidence?.evidenceDigest ||
-        (saved.status === "verified" ? savedProgress.get(index)?.evidenceDigest : null);
-      if (evidenceDigest && targetMetadata(home, basis, entry))
-        return { inputDigest, state: "matches", evidenceDigest };
+      const evidenceDigest = completedEvidence?.evidenceDigest || (saved.status === "verified" ? savedProgress.get(index)?.evidenceDigest : null);
+      if (evidenceDigest && targetMetadata(home, basis, entry)) return { inputDigest, state: "matches", evidenceDigest };
       return { inputDigest, state: "absent" };
     };
     const existing = inspectNativeRegistration({ operationRoot, input });
@@ -520,12 +419,7 @@ export async function registerCodexNativeHistory({
           verifyCurrentOriginals();
           if (!previous) {
             const policy = selectCodexNativeRegistrationPolicy(response?.config);
-            const mcpDisabled = Object.fromEntries(
-              Object.keys(response.config.mcp_servers || {}).map((key) => [
-                key,
-                { enabled: false },
-              ]),
-            );
+            const mcpDisabled = Object.fromEntries(Object.keys(response.config.mcp_servers || {}).map((key) => [key, { enabled: false }]));
             await rpc.assertExclusiveWriter({ onProcess });
             verifyCurrentOriginals();
             explicitResumeRequestedThisCall = true;
@@ -551,27 +445,19 @@ export async function registerCodexNativeHistory({
               { requestId, beforeWrite: verifyCurrentOriginals },
             );
             verifyCodexNativeRegistrationPolicy(resumed, policy, entry.threadId, root);
-          } else if (
-            codexRegistrationMetadataDigest(targetMetadata(home, basis, entry)) !== previous
-          ) {
+          } else if (codexRegistrationMetadataDigest(targetMetadata(home, basis, entry)) !== previous) {
             fail("NATIVE_CODEX_EXISTING_TARGET_METADATA_CHANGED");
           }
           const metadata = await rpc.request("thread/read", {
             threadId: entry.threadId,
             includeTurns: false,
           });
-          if (
-            metadata?.thread?.id !== entry.threadId ||
-            !samePath(metadata.thread.path, copiedProjectFile(home, entry.path))
-          )
+          if (metadata?.thread?.id !== entry.threadId || !samePath(metadata.thread.path, copiedProjectFile(home, entry.path)))
             fail("NATIVE_CODEX_TARGET_THREAD_BINDING_DIVERGED");
           evidence = await readCodexNativeApiHistory(rpc, expectations.get(entry.threadId));
           await rpc.assertExclusiveWriter({ onProcess });
           verifyCurrentOriginals();
-          if (
-            previous &&
-            codexRegistrationMetadataDigest(targetMetadata(home, basis, entry)) !== previous
-          )
+          if (previous && codexRegistrationMetadataDigest(targetMetadata(home, basis, entry)) !== previous)
             fail("NATIVE_CODEX_EXISTING_TARGET_METADATA_CHANGED");
           await rpc.request("thread/unsubscribe", { threadId: entry.threadId });
           await rpc.assertExclusiveWriter({ onProcess });
@@ -618,8 +504,7 @@ export async function registerCodexNativeHistory({
   }
   return {
     status:
-      results.length === inspected.payload.threadIds.length &&
-      results.every((result) => result.status === "native-registration-verified")
+      results.length === inspected.payload.threadIds.length && results.every((result) => result.status === "native-registration-verified")
         ? "native-registered-read-verified"
         : "native-registration-incomplete",
     results,
@@ -629,8 +514,7 @@ export async function registerCodexNativeHistory({
     localBeforeBackups,
     explicitResumeRequestedThisCall,
     sdkMayHaveChangedMetadataThisCall: sdkLifecycleRequestedThisCall,
-    targetChoicePreservation:
-      "preexisting-protected-fields-checked; new-discovery/cache-fields-are-distinct",
+    targetChoicePreservation: "preexisting-protected-fields-checked; new-discovery/cache-fields-are-distinct",
     continuationReady: false,
     currentInstructionBinding: "not-verified",
     ordinaryCoreBlocked: false,

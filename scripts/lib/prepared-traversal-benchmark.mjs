@@ -1,10 +1,6 @@
 import crypto from "node:crypto";
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
-import {
-  buildPreparedTraversalRequest,
-  graphProjectionCanonicalJson,
-  verifyPreparedTraversalRequest,
-} from "./graph-projection-adapter.mjs";
+import { buildPreparedTraversalRequest, graphProjectionCanonicalJson, verifyPreparedTraversalRequest } from "./graph-projection-adapter.mjs";
 import { queryTemporalProvenanceGraph, verifyTemporalProvenanceGraph } from "./temporal-provenance.mjs";
 
 export const PREPARED_TRAVERSAL_COST_VERSION = "0.1.0";
@@ -70,12 +66,8 @@ function evidencePayload({ graph, request, storage = null }) {
     graphSnapshotBytes: bytes(graph),
     fullTopologyRecordsBytes: bytes({ nodes: graph.nodes, edges: graph.edges }),
   };
-  const preparedQueryBytes = components.identityEnvelopeBytes
-    + components.graphManifestBytes
-    + components.boundedExpansionBytes;
-  const fullReloadBaselineBytes = preparedQueryBytes
-    + components.graphSnapshotBytes
-    + components.fullTopologyRecordsBytes;
+  const preparedQueryBytes = components.identityEnvelopeBytes + components.graphManifestBytes + components.boundedExpansionBytes;
+  const fullReloadBaselineBytes = preparedQueryBytes + components.graphSnapshotBytes + components.fullTopologyRecordsBytes;
   const savedBytes = fullReloadBaselineBytes - preparedQueryBytes;
   return {
     schemaVersion: 1,
@@ -122,59 +114,101 @@ export function buildPreparedTraversalCostEvidence({ graph, request, storage = n
 
 export function verifyPreparedTraversalCostEvidence(document, { graph = null, request = null } = {}) {
   const format = familyFormatForOriginal("head-agent-core-prepared-traversal-cost", document);
-  assertFields(document, [
-    "schemaVersion", "kind", "protocol", "payloadModel", "projectId", "graphSnapshotId", "graphSnapshotHash",
-    "sourceSnapshotId", "requestId", "requestHash", "queryId", "queryHash", "resultId", "resultHash",
-    "expansionHash", "graphManifestHash", "nodeCount", "edgeCount", "expansionNodeCount", "expansionEdgeCount",
-    "components", "preparedQueryBytes", "fullReloadBaselineBytes", "savedBytes", "reductionBasisPoints", "authority",
-    "semanticIdentityEffect", "instructionAuthority", "promotionAuthority", "evidenceId", "evidenceHash",
-  ], "Prepared traversal cost evidence");
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocol",
+      "payloadModel",
+      "projectId",
+      "graphSnapshotId",
+      "graphSnapshotHash",
+      "sourceSnapshotId",
+      "requestId",
+      "requestHash",
+      "queryId",
+      "queryHash",
+      "resultId",
+      "resultHash",
+      "expansionHash",
+      "graphManifestHash",
+      "nodeCount",
+      "edgeCount",
+      "expansionNodeCount",
+      "expansionEdgeCount",
+      "components",
+      "preparedQueryBytes",
+      "fullReloadBaselineBytes",
+      "savedBytes",
+      "reductionBasisPoints",
+      "authority",
+      "semanticIdentityEffect",
+      "instructionAuthority",
+      "promotionAuthority",
+      "evidenceId",
+      "evidenceHash",
+    ],
+    "Prepared traversal cost evidence",
+  );
   assertFields(document.protocol, ["name", "version"], "Prepared traversal cost protocol");
-  assertFields(document.components, [
-    "identityEnvelopeBytes", "graphManifestBytes", "boundedExpansionBytes", "graphSnapshotBytes", "fullTopologyRecordsBytes",
-  ], "Prepared traversal cost components");
+  assertFields(
+    document.components,
+    ["identityEnvelopeBytes", "graphManifestBytes", "boundedExpansionBytes", "graphSnapshotBytes", "fullTopologyRecordsBytes"],
+    "Prepared traversal cost components",
+  );
   const integers = [
-    document.nodeCount, document.edgeCount, document.expansionNodeCount, document.expansionEdgeCount,
-    ...Object.values(document.components), document.preparedQueryBytes, document.fullReloadBaselineBytes,
-    document.savedBytes, document.reductionBasisPoints,
+    document.nodeCount,
+    document.edgeCount,
+    document.expansionNodeCount,
+    document.expansionEdgeCount,
+    ...Object.values(document.components),
+    document.preparedQueryBytes,
+    document.fullReloadBaselineBytes,
+    document.savedBytes,
+    document.reductionBasisPoints,
   ];
-  if (document.schemaVersion !== 1 || document.kind !== "PreparedTraversalCostEvidence"
-    || !format
-    || document.protocol?.version !== PREPARED_TRAVERSAL_COST_VERSION
-    || document.payloadModel !== "normalized-utf8-canonical-json-response-components"
-    || typeof document.projectId !== "string" || !document.projectId
-    || !/^graph-snapshot-[a-f0-9]{24}$/.test(document.graphSnapshotId || "")
-    || !/^[a-f0-9]{64}$/.test(document.graphSnapshotHash || "")
-    || !/^source-snapshot-[a-f0-9]{24}$/.test(document.sourceSnapshotId || "")
-    || !/^prepared-traversal-[a-f0-9]{24}$/.test(document.requestId || "")
-    || !/^[a-f0-9]{64}$/.test(document.requestHash || "")
-    || !/^traversal-query-[a-f0-9]{24}$/.test(document.queryId || "")
-    || !/^[a-f0-9]{64}$/.test(document.queryHash || "")
-    || !/^traversal-result-[a-f0-9]{24}$/.test(document.resultId || "")
-    || !/^[a-f0-9]{64}$/.test(document.resultHash || "")
-    || !/^[a-f0-9]{64}$/.test(document.expansionHash || "")
-    || !/^[a-f0-9]{64}$/.test(document.graphManifestHash || "")
-    || integers.some((value) => !Number.isSafeInteger(value) || value < 0)
-    || document.reductionBasisPoints > 10000
-    || document.preparedQueryBytes !== document.components.identityEnvelopeBytes
-      + document.components.graphManifestBytes + document.components.boundedExpansionBytes
-    || document.fullReloadBaselineBytes !== document.preparedQueryBytes
-      + document.components.graphSnapshotBytes + document.components.fullTopologyRecordsBytes
-    || document.savedBytes !== document.fullReloadBaselineBytes - document.preparedQueryBytes
-    || document.reductionBasisPoints !== (document.fullReloadBaselineBytes === 0
-      ? 0 : Math.floor((document.savedBytes * 10000) / document.fullReloadBaselineBytes))
-    || document.authority !== "derived-performance-evidence-only" || document.semanticIdentityEffect !== "none"
-    || document.instructionAuthority !== false || document.promotionAuthority !== false
-    || !/^prepared-traversal-cost-[a-f0-9]{24}$/.test(document.evidenceId || "")
-    || !/^[a-f0-9]{64}$/.test(document.evidenceHash || "")) {
+  if (
+    document.schemaVersion !== 1 ||
+    document.kind !== "PreparedTraversalCostEvidence" ||
+    !format ||
+    document.protocol?.version !== PREPARED_TRAVERSAL_COST_VERSION ||
+    document.payloadModel !== "normalized-utf8-canonical-json-response-components" ||
+    typeof document.projectId !== "string" ||
+    !document.projectId ||
+    !/^graph-snapshot-[a-f0-9]{24}$/.test(document.graphSnapshotId || "") ||
+    !/^[a-f0-9]{64}$/.test(document.graphSnapshotHash || "") ||
+    !/^source-snapshot-[a-f0-9]{24}$/.test(document.sourceSnapshotId || "") ||
+    !/^prepared-traversal-[a-f0-9]{24}$/.test(document.requestId || "") ||
+    !/^[a-f0-9]{64}$/.test(document.requestHash || "") ||
+    !/^traversal-query-[a-f0-9]{24}$/.test(document.queryId || "") ||
+    !/^[a-f0-9]{64}$/.test(document.queryHash || "") ||
+    !/^traversal-result-[a-f0-9]{24}$/.test(document.resultId || "") ||
+    !/^[a-f0-9]{64}$/.test(document.resultHash || "") ||
+    !/^[a-f0-9]{64}$/.test(document.expansionHash || "") ||
+    !/^[a-f0-9]{64}$/.test(document.graphManifestHash || "") ||
+    integers.some((value) => !Number.isSafeInteger(value) || value < 0) ||
+    document.reductionBasisPoints > 10000 ||
+    document.preparedQueryBytes !==
+      document.components.identityEnvelopeBytes + document.components.graphManifestBytes + document.components.boundedExpansionBytes ||
+    document.fullReloadBaselineBytes !== document.preparedQueryBytes + document.components.graphSnapshotBytes + document.components.fullTopologyRecordsBytes ||
+    document.savedBytes !== document.fullReloadBaselineBytes - document.preparedQueryBytes ||
+    document.reductionBasisPoints !==
+      (document.fullReloadBaselineBytes === 0 ? 0 : Math.floor((document.savedBytes * 10000) / document.fullReloadBaselineBytes)) ||
+    document.authority !== "derived-performance-evidence-only" ||
+    document.semanticIdentityEffect !== "none" ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false ||
+    !/^prepared-traversal-cost-[a-f0-9]{24}$/.test(document.evidenceId || "") ||
+    !/^[a-f0-9]{64}$/.test(document.evidenceHash || "")
+  ) {
     fail("Prepared traversal cost evidence is invalid.", "INVALID_PREPARED_TRAVERSAL_COST_EVIDENCE");
   }
   const payload = { ...document };
   delete payload.evidenceId;
   delete payload.evidenceHash;
   const evidenceHash = digest(graphProjectionCanonicalJson(payload));
-  if (document.evidenceHash !== evidenceHash
-    || document.evidenceId !== `prepared-traversal-cost-${evidenceHash.slice(0, 24)}`) {
+  if (document.evidenceHash !== evidenceHash || document.evidenceId !== `prepared-traversal-cost-${evidenceHash.slice(0, 24)}`) {
     fail("Prepared traversal cost evidence digest verification failed.", "PREPARED_TRAVERSAL_COST_DIGEST_MISMATCH");
   }
   if (graph || request) {

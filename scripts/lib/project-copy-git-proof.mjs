@@ -39,16 +39,7 @@ export function verifyCopiedGitOwner({ root, directory, projectId, dialect, admi
   if (!original(root, admission, base + "config", 16384)) return false;
   return true;
 }
-export function verifyCopiedGitRef({
-  root,
-  directory,
-  projectId,
-  dialect,
-  admission,
-  owner,
-  snapshotId,
-  treeObjectId,
-}) {
+export function verifyCopiedGitRef({ root, directory, projectId, dialect, admission, owner, snapshotId, treeObjectId }) {
   if (
     !/^(?:world-model|graph-snapshot)-[a-f0-9]{24}$/.test(snapshotId || "") ||
     (treeObjectId !== null && !/^[a-f0-9]{64}$/.test(treeObjectId || "")) ||
@@ -59,7 +50,7 @@ export function verifyCopiedGitRef({
     ref = "refs/lode-snapshots/" + snapshotId;
   const loose = original(root, admission, base + ref, 256);
   if (loose) {
-    const oid=loose.toString("ascii").trim();
+    const oid = loose.toString("ascii").trim();
     return /^[a-f0-9]{64}$/.test(oid) && (treeObjectId === null || oid === treeObjectId);
   }
   const packed = original(root, admission, base + "packed-refs", 16 * 1024 * 1024);
@@ -68,6 +59,5 @@ export function verifyCopiedGitRef({
     .toString("ascii")
     .split(/\r?\n/)
     .filter((line) => line.endsWith(" " + ref));
-  return matches.length === 1 && /^[a-f0-9]{64} /.test(matches[0])
-    && (treeObjectId === null || matches[0] === treeObjectId + " " + ref);
+  return matches.length === 1 && /^[a-f0-9]{64} /.test(matches[0]) && (treeObjectId === null || matches[0] === treeObjectId + " " + ref);
 }

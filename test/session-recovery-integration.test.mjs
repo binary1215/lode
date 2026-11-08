@@ -11,17 +11,12 @@ import { compileContext } from "../scripts/lib/context-compiler.mjs";
 import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
 import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
 import { createRecoveryCheckpoint, readRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import {
-  integrateReviewedRunCheckpoint,
-  readRunResultIntegration,
-  restoreSessionFromArtifacts,
-} from "../scripts/lib/session-recovery.mjs";
+import { integrateReviewedRunCheckpoint, readRunResultIntegration, restoreSessionFromArtifacts } from "../scripts/lib/session-recovery.mjs";
 import { dispatch, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
 
 import { seedLegacyProject } from "./helpers/legacy-project-fixture.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const cliFile = path.join(pluginRoot, "scripts", "head.mjs");
@@ -106,7 +101,12 @@ function childRestore(root, environment) {
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   return value;
 }
 
@@ -115,16 +115,19 @@ const canonicalJson = (value) => JSON.stringify(canonical(value));
 test("the public checkpoint surface creates one content-addressed P2 canon and restores identically across fresh provider processes", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const beforeCheckpoint = (await inspectProjectExperience({ root }));
+  const beforeCheckpoint = await inspectProjectExperience({ root });
   assert.equal(beforeCheckpoint.readiness.recovery.state, "no-current-checkpoint");
   assert.equal(beforeCheckpoint.readiness.recovery.userDecisionRequired, false);
   assert.throws(() => createCheckpoint({ root, summary: "legacy", next: "legacy" }), { code: "LEGACY_CHECKPOINT_API_RETIRED" });
 
-  const checkpointed = (await runCommand([
-    "checkpoint", root,
-    "--summary", "Preserve the exact provider-neutral Session direction",
-    "--next", "Continue from the verified artifact projection",
-  ]));
+  const checkpointed = await runCommand([
+    "checkpoint",
+    root,
+    "--summary",
+    "Preserve the exact provider-neutral Session direction",
+    "--next",
+    "Continue from the verified artifact projection",
+  ]);
   assert.match(checkpointed.checkpoint.checkpointId, /^checkpoint-[a-f0-9]{24}$/u);
   assert.equal(checkpointed.checkpoint.kind, "SessionRunCheckpoint");
   assert.equal(checkpointed.checkpoint.authorityBoundary.planeId, "P2");
@@ -134,7 +137,7 @@ test("the public checkpoint surface creates one content-addressed P2 canon and r
   const checkpointFile = path.join(root, directory, "sessions", "ledger", `${checkpointed.checkpoint.checkpointId}.json`);
   const stateBeforeReadiness = fs.readFileSync(stateFile, "utf8");
   const checkpointBeforeReadiness = fs.readFileSync(checkpointFile, "utf8");
-  const afterCheckpoint = (await inspectProjectExperience({ root }));
+  const afterCheckpoint = await inspectProjectExperience({ root });
   assert.equal(afterCheckpoint.readiness.recovery.state, "verified-current-checkpoint");
   assert.equal(afterCheckpoint.readiness.recovery.restorable, true);
   assert.equal(afterCheckpoint.readiness.recovery.authority.writesRecoveryDirection, false);
@@ -157,7 +160,7 @@ test("the public checkpoint surface creates one content-addressed P2 canon and r
 test("artifact-only restore revalidates the exact active Run lineage and rejects pointer drift", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const fixture = (await startFixtureRun(root, "active Run restore"));
+  const fixture = await startFixtureRun(root, "active Run restore");
   const checkpoint = createRecoveryCheckpoint({
     root,
     purpose: "Recover the active Run without a provider session",
@@ -180,7 +183,7 @@ test("artifact-only restore revalidates the exact active Run lineage and rejects
   state.activeExecutionContractId = "execution-contract-000000000000000000000000";
   fs.writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`);
   assert.equal(restoreSessionFromArtifacts({ root }).projection.currentExecution.status, "conflict");
-  const attention = (await inspectProjectExperience({ root }));
+  const attention = await inspectProjectExperience({ root });
   assert.equal(attention.readiness.recovery.state, "verified-current-checkpoint");
   assert.equal(attention.readiness.recovery.userDecisionRequired, false);
   assert.equal(attention.readiness.recovery.headActionRequired, true);
@@ -202,7 +205,11 @@ test("legacy content-addressed checkpoints stay readable but cannot drive curren
     currentPosition: "Session is idle",
     nextExpectedResult: "A legacy compatibility read",
   }).checkpoint;
-  const payload = { ...current, protocol: { ...current.protocol, version: "0.2.0" }, authorityBoundary: { ...current.authorityBoundary, contractVersion: "0.2.0" } };
+  const payload = {
+    ...current,
+    protocol: { ...current.protocol, version: "0.2.0" },
+    authorityBoundary: { ...current.authorityBoundary, contractVersion: "0.2.0" },
+  };
   delete payload.checkpointId;
   delete payload.checkpointDigest;
   delete payload.sessionPointer;
@@ -222,7 +229,7 @@ test("legacy content-addressed checkpoints stay readable but cannot drive curren
 test("checkpoint direction survives deletion of pending ResultPacket evidence without inventing a Fresh HEAD review", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  (await startFixtureRun(root, "pending review recovery"));
+  await startFixtureRun(root, "pending review recovery");
   const finished = finishFixtureRun(root);
   const nextExpectedResult = "Recover the exact pending position and request missing evidence instead of guessing";
   createRecoveryCheckpoint({
@@ -246,7 +253,7 @@ test("checkpoint direction survives deletion of pending ResultPacket evidence wi
 test("accepted worker evidence integrates once through Fresh HEAD into an explicit P2 checkpoint", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const fixture = (await startFixtureRun(root, "bounded worker integration"));
+  const fixture = await startFixtureRun(root, "bounded worker integration");
   const finished = finishFixtureRun(root);
   const reviewed = reviewFixtureRun(root, "accept");
   const input = integrationInput(fixture.run, reviewed.reviewDecision);
@@ -263,37 +270,52 @@ test("accepted worker evidence integrates once through Fresh HEAD into an explic
   assert.match(integrated.checkpoint.reviewedRunIntegration.integrationInputHash, /^[a-f0-9]{64}$/);
   assert.equal(integrated.checkpoint.nextExpectedResult, input.nextExpectedResult);
 
-  assert.throws(() => createRecoveryCheckpoint({
-    root,
-    purpose: input.purpose,
-    approvedDecisions: input.approvedDecisions,
-    currentPosition: input.currentPosition,
-    nextExpectedResult: input.nextExpectedResult,
-    openReviewIds: input.openReviewIds,
-    reviewedRunIntegration: { runId: input.runId, reviewDecisionId: input.reviewDecisionId },
-  }), { code: "INVALID_RUN_RESULT_INTEGRATION" });
-  assert.throws(() => createRecoveryCheckpoint({
-    root,
-    purpose: input.purpose,
-    approvedDecisions: input.approvedDecisions,
-    currentPosition: input.currentPosition,
-    nextExpectedResult: "A direction that differs from the exact stored checkpoint",
-    openReviewIds: input.openReviewIds,
-    reviewedRunIntegration: {
-      runId: input.runId,
-      reviewDecisionId: input.reviewDecisionId,
-      integrationInputHash: integrated.integration.integrationInputHash,
-    },
-  }), { code: "RUN_RESULT_INTEGRATION_CONFLICT" });
+  assert.throws(
+    () =>
+      createRecoveryCheckpoint({
+        root,
+        purpose: input.purpose,
+        approvedDecisions: input.approvedDecisions,
+        currentPosition: input.currentPosition,
+        nextExpectedResult: input.nextExpectedResult,
+        openReviewIds: input.openReviewIds,
+        reviewedRunIntegration: { runId: input.runId, reviewDecisionId: input.reviewDecisionId },
+      }),
+    { code: "INVALID_RUN_RESULT_INTEGRATION" },
+  );
+  assert.throws(
+    () =>
+      createRecoveryCheckpoint({
+        root,
+        purpose: input.purpose,
+        approvedDecisions: input.approvedDecisions,
+        currentPosition: input.currentPosition,
+        nextExpectedResult: "A direction that differs from the exact stored checkpoint",
+        openReviewIds: input.openReviewIds,
+        reviewedRunIntegration: {
+          runId: input.runId,
+          reviewDecisionId: input.reviewDecisionId,
+          integrationInputHash: integrated.integration.integrationInputHash,
+        },
+      }),
+    { code: "RUN_RESULT_INTEGRATION_CONFLICT" },
+  );
 
   const retry = integrateReviewedRunCheckpoint({ root, ...input });
   assert.equal(retry.status, "run_result_integration_existing");
   assert.equal(retry.checkpoint.checkpointId, integrated.checkpoint.checkpointId);
   assert.deepEqual(retry.integration, integrated.integration);
-  assert.throws(() => integrateReviewedRunCheckpoint({ root, ...integrationInput(fixture.run, reviewed.reviewDecision, { nextExpectedResult: "A conflicting direction" }) }), {
-    code: "RUN_RESULT_INTEGRATION_CONFLICT",
-  });
-  assert.equal(readRunResultIntegration({ root, reviewDecisionId: reviewed.reviewDecision.reviewDecisionId }).checkpoint.checkpointId, integrated.checkpoint.checkpointId);
+  assert.throws(
+    () =>
+      integrateReviewedRunCheckpoint({ root, ...integrationInput(fixture.run, reviewed.reviewDecision, { nextExpectedResult: "A conflicting direction" }) }),
+    {
+      code: "RUN_RESULT_INTEGRATION_CONFLICT",
+    },
+  );
+  assert.equal(
+    readRunResultIntegration({ root, reviewDecisionId: reviewed.reviewDecision.reviewDecisionId }).checkpoint.checkpointId,
+    integrated.checkpoint.checkpointId,
+  );
 
   const resultFile = path.join(root, directory, "lineage", "result-packets", `${finished.resultPacket.resultPacketId}.json`);
   fs.unlinkSync(resultFile);
@@ -308,7 +330,7 @@ test("accepted worker evidence integrates once through Fresh HEAD into an explic
 test("non-accept review cannot be mislabeled as worker-result integration", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const fixture = (await startFixtureRun(root, "rejected worker integration"));
+  const fixture = await startFixtureRun(root, "rejected worker integration");
   finishFixtureRun(root);
   const reviewed = reviewFixtureRun(root, "revise");
   assert.throws(() => integrateReviewedRunCheckpoint({ root, ...integrationInput(fixture.run, reviewed.reviewDecision) }), {
@@ -321,28 +343,79 @@ test("non-accept review cannot be mislabeled as worker-result integration", asyn
 test("CLI help and MCP expose artifact restore plus explicit integration without provider resume", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const fixture = (await startFixtureRun(root, "MCP integration surface"));
+  const fixture = await startFixtureRun(root, "MCP integration surface");
   finishFixtureRun(root);
   const reviewed = reviewFixtureRun(root, "accept");
   const input = integrationInput(fixture.run, reviewed.reviewDecision);
 
-  assert.equal((await runCommand(["help"])).commands.some((command) => command.includes("session-restore")), false);
-  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("session-restore")), true);
-  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("session-continue")), true);
-  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("worker-dispatch")), false);
-  assert.equal((await runCommand(["managed-maintenance", "help-all"])).commands.some((command) => command.includes("worker-wave-create")), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_session_restore"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_session_continue"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_bounded_worker_dispatch"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_bounded_worker_wait"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_create"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_read"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_seal"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_status"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_results"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_wait"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_abandon"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_run_integrate_checkpoint"), true);
+  assert.equal(
+    (await runCommand(["help"])).commands.some((command) => command.includes("session-restore")),
+    false,
+  );
+  assert.equal(
+    (await runCommand(["help-all"])).commands.some((command) => command.includes("session-restore")),
+    true,
+  );
+  assert.equal(
+    (await runCommand(["help-all"])).commands.some((command) => command.includes("session-continue")),
+    true,
+  );
+  assert.equal(
+    (await runCommand(["help-all"])).commands.some((command) => command.includes("worker-dispatch")),
+    false,
+  );
+  assert.equal(
+    (await runCommand(["managed-maintenance", "help-all"])).commands.some((command) => command.includes("worker-wave-create")),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_session_restore"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_session_continue"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_bounded_worker_dispatch"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_bounded_worker_wait"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_create"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_read"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_seal"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_status"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_results"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_wait"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_bounded_worker_wave_abandon"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_run_integrate_checkpoint"),
+    true,
+  );
 
   const integrated = await dispatch({
     jsonrpc: "2.0",

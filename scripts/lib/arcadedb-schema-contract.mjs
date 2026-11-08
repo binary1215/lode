@@ -1,22 +1,25 @@
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
 
 // Only the owned semantic keys, not a general database migration engine.
-export const ARCADEDB_REQUIRED_KEYS = Object.freeze(Object.fromEntries(Object.entries({
-  HeadAgentGraphSnapshot: ["projectId", "graphSnapshotId"],
-  HeadAgentGraphSnapshotChunk: ["projectId", "graphSnapshotId", "chunkIndex"],
-  HeadAgentGraphPointer: ["projectId"],
-  HeadAgentGraphNode: ["projectId", "graphSnapshotId", "nodeId"],
-  HeadAgentGraphEdge: ["projectId", "graphSnapshotId", "edgeId"],
-  HeadAgentGraphTopology: ["projectId", "graphSnapshotId"],
-  HeadAgentGraphTopologyChunk: ["projectId", "graphSnapshotId", "chunkIndex"],
-  HeadAgentGraphSyncManifest: ["projectId", "syncId"],
-  HeadAgentGraphSyncCheckpoint: ["projectId", "syncId", "batchId"],
-}).map(([name, keys]) => [name, Object.freeze(keys)])));
+export const ARCADEDB_REQUIRED_KEYS = Object.freeze(
+  Object.fromEntries(
+    Object.entries({
+      HeadAgentGraphSnapshot: ["projectId", "graphSnapshotId"],
+      HeadAgentGraphSnapshotChunk: ["projectId", "graphSnapshotId", "chunkIndex"],
+      HeadAgentGraphPointer: ["projectId"],
+      HeadAgentGraphNode: ["projectId", "graphSnapshotId", "nodeId"],
+      HeadAgentGraphEdge: ["projectId", "graphSnapshotId", "edgeId"],
+      HeadAgentGraphTopology: ["projectId", "graphSnapshotId"],
+      HeadAgentGraphTopologyChunk: ["projectId", "graphSnapshotId", "chunkIndex"],
+      HeadAgentGraphSyncManifest: ["projectId", "syncId"],
+      HeadAgentGraphSyncCheckpoint: ["projectId", "syncId", "batchId"],
+    }).map(([name, keys]) => [name, Object.freeze(keys)]),
+  ),
+);
 
 export function arcadeDbRequiredKeysFor(owner) {
   const format = formatForVerifiedOwner(owner);
-  return Object.freeze(Object.fromEntries(Object.entries(ARCADEDB_REQUIRED_KEYS)
-    .map(([name, keys]) => [format.kind(name), keys])));
+  return Object.freeze(Object.fromEntries(Object.entries(ARCADEDB_REQUIRED_KEYS).map(([name, keys]) => [format.kind(name), keys])));
 }
 
 const keysByName = Object.freeze({
@@ -49,7 +52,8 @@ export function inspectRequiredIndex(record) {
     }
     if (JSON.stringify(index.properties) === JSON.stringify(keys)) {
       if (!index.unique) return { status: "conflict", reason: "required-key-not-unique" };
-      if (index.status != null && !["AVAILABLE", "ONLINE", "VALID"].includes(String(index.status).toUpperCase())) return { status: "unverifiable", reason: "required-index-not-ready" };
+      if (index.status != null && !["AVAILABLE", "ONLINE", "VALID"].includes(String(index.status).toUpperCase()))
+        return { status: "unverifiable", reason: "required-index-not-ready" };
       matching = true;
     } else if (index.unique && !keys.every((key) => index.properties.includes(key))) {
       return { status: "conflict", reason: "additional-unique-key-restricts-head-writes" };

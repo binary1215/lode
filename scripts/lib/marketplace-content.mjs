@@ -27,14 +27,23 @@ function hasRuntimeRecord(value) {
     const current = pending.pop();
     if (!current || typeof current !== "object") continue;
     if (!Array.isArray(current) && current.schemaVersion === 1) {
-      const project = typeof current.projectId === "string" && PROJECT_ID.test(current.projectId)
-        && typeof current.projectRoot === "string"
-        && (path.posix.isAbsolute(current.projectRoot) || path.win32.isAbsolute(current.projectRoot))
-        && typeof current.createdAt === "string" && Array.isArray(current.runtimes)
-        && current.integrations && typeof current.integrations === "object";
-      const session = typeof current.sessionId === "string" && SESSION_ID.test(current.sessionId) && current.mode === "session"
-        && Object.hasOwn(current, "currentWholePlanId") && Object.hasOwn(current, "activeRunId")
-        && Object.hasOwn(current, "latestCheckpoint") && typeof current.updatedAt === "string";
+      const project =
+        typeof current.projectId === "string" &&
+        PROJECT_ID.test(current.projectId) &&
+        typeof current.projectRoot === "string" &&
+        (path.posix.isAbsolute(current.projectRoot) || path.win32.isAbsolute(current.projectRoot)) &&
+        typeof current.createdAt === "string" &&
+        Array.isArray(current.runtimes) &&
+        current.integrations &&
+        typeof current.integrations === "object";
+      const session =
+        typeof current.sessionId === "string" &&
+        SESSION_ID.test(current.sessionId) &&
+        current.mode === "session" &&
+        Object.hasOwn(current, "currentWholePlanId") &&
+        Object.hasOwn(current, "activeRunId") &&
+        Object.hasOwn(current, "latestCheckpoint") &&
+        typeof current.updatedAt === "string";
       if (project || session) return true;
     }
     for (const child of Object.values(current)) pending.push(child);
@@ -53,7 +62,11 @@ export function verifyMarketplaceContent({ root, files }) {
     if (hasConcreteHomePath(text)) fail(relative, "a concrete personal home path in executable configuration");
     if (extension === ".json") {
       let value;
-      try { value = JSON.parse(text); } catch { continue; }
+      try {
+        value = JSON.parse(text);
+      } catch {
+        continue;
+      }
       // Standalone canonical-shaped records are not schema definitions or the
       // illustrative fenced JSON in documentation, which is intentionally read as prose.
       if (hasRuntimeRecord(value)) fail(relative, "a concrete Project or Session runtime record");

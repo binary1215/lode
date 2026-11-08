@@ -48,8 +48,7 @@ const physical = (stat) => {
 };
 function guard({ signal, deadlineAt, assertCurrentAuthority }) {
   if (signal?.aborted) fail("NATIVE_CODEX_REGISTRATION_CANCELLED");
-  if (!Number.isSafeInteger(deadlineAt) || Date.now() >= deadlineAt)
-    fail("NATIVE_CODEX_REGISTRATION_DEADLINE");
+  if (!Number.isSafeInteger(deadlineAt) || Date.now() >= deadlineAt) fail("NATIVE_CODEX_REGISTRATION_DEADLINE");
   if (typeof assertCurrentAuthority !== "function") fail("NATIVE_CODEX_AUTHORITY_CHECK_REQUIRED");
   const result = assertCurrentAuthority();
   if (result && typeof result.then === "function") {
@@ -57,19 +56,11 @@ function guard({ signal, deadlineAt, assertCurrentAuthority }) {
     fail("NATIVE_CODEX_SYNCHRONOUS_AUTHORITY_REQUIRED");
   }
 }
-function observe(
-  home,
-  basis,
-  excludedKeys,
-  options,
-  expectedPhysical = null,
-  relative = "state_5.sqlite",
-) {
+function observe(home, basis, excludedKeys, options, expectedPhysical = null, relative = "state_5.sqlite") {
   guard(options);
   const file = copiedProjectFile(home, relative),
     identity = physical(fs.lstatSync(file, { bigint: true }));
-  if (expectedPhysical !== null && expectedPhysical !== identity)
-    fail("NATIVE_CODEX_TARGET_STATE_FILE_CHANGED");
+  if (expectedPhysical !== null && expectedPhysical !== identity) fail("NATIVE_CODEX_TARGET_STATE_FILE_CHANGED");
   const db = new DatabaseSync(nativeSqlitePath(file), { readOnly: true });
   let primary = null;
   try {
@@ -78,13 +69,10 @@ function observe(
     db.exec("BEGIN");
     // No account selectors, preview, first-user-message or transcript fields.
     // Check lengths before materializing TEXT; then keep only opaque hashes.
-    const lengths = CODEX_NATIVE_TARGET_CHOICE_COLUMNS.map(
-      (column) => 'coalesce(length(CAST("' + column + '" AS BLOB)),0)',
-    ).join("+");
+    const lengths = CODEX_NATIVE_TARGET_CHOICE_COLUMNS.map((column) => 'coalesce(length(CAST("' + column + '" AS BLOB)),0)').join("+");
     const length = db.prepare("SELECT coalesce(sum(" + lengths + "),0) AS bytes FROM threads");
     length.setReadBigInts(true);
-    if (length.get().bytes > BigInt(SNAPSHOT_STORAGE_LIMITS.decodedBytes))
-      fail("NATIVE_CODEX_TARGET_CHOICE_OBSERVATION_LIMIT");
+    if (length.get().bytes > BigInt(SNAPSHOT_STORAGE_LIMITS.decodedBytes)) fail("NATIVE_CODEX_TARGET_CHOICE_OBSERVATION_LIMIT");
     guard(options);
     const rows = new Map();
     let encodedBytes = 0;
@@ -94,14 +82,12 @@ function observe(
       if (excludedKeys.has(key)) continue;
       const encoded = JSON.stringify(row);
       encodedBytes += Buffer.byteLength(encoded);
-      if (encodedBytes > SNAPSHOT_STORAGE_LIMITS.decodedBytes)
-        fail("NATIVE_CODEX_TARGET_CHOICE_OBSERVATION_LIMIT");
+      if (encodedBytes > SNAPSHOT_STORAGE_LIMITS.decodedBytes) fail("NATIVE_CODEX_TARGET_CHOICE_OBSERVATION_LIMIT");
       if (rows.has(key)) fail("NATIVE_CODEX_TARGET_CHOICES_INVALID");
       rows.set(key, hash(encoded));
     }
     guard(options);
-    if (physical(fs.lstatSync(file, { bigint: true })) !== identity)
-      fail("NATIVE_CODEX_TARGET_STATE_FILE_CHANGED");
+    if (physical(fs.lstatSync(file, { bigint: true })) !== identity) fail("NATIVE_CODEX_TARGET_STATE_FILE_CHANGED");
     return { rows, identity };
   } catch (error) {
     primary = error;
@@ -119,8 +105,7 @@ function observe(
       cleanup ??= error;
     }
     if (cleanup) {
-      if (primary)
-        primary.nativeCleanupFailure = cleanup.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
+      if (primary) primary.nativeCleanupFailure = cleanup.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
       else throw cleanup;
     }
   }
@@ -139,23 +124,13 @@ export function observeCodexNativeTargetChoices({ home, basis, selectedThreadIds
 export function verifyCodexNativeTargetChoices(witness, options) {
   const original = snapshots.get(witness);
   if (!original) fail("NATIVE_CODEX_TARGET_CHOICES_WITNESS_REQUIRED");
-  const current = observe(
-    original.home,
-    original.basis,
-    original.excludedKeys,
-    options,
-    original.identity,
-  );
+  const current = observe(original.home, original.basis, original.excludedKeys, options, original.identity);
   for (const [key, digest] of original.rows)
-    if (!original.excludedKeys.has(key) && current.rows.get(key) !== digest)
-      fail("NATIVE_CODEX_TARGET_CHOICES_CHANGED");
+    if (!original.excludedKeys.has(key) && current.rows.get(key) !== digest) fail("NATIVE_CODEX_TARGET_CHOICES_CHANGED");
   return {
     status: "preexisting-target-choices-preserved",
-    protectedRows: [...original.rows.keys()].filter((key) => !original.excludedKeys.has(key))
-      .length,
-    additionalRowsObserved:
-      current.rows.size -
-      [...original.rows.keys()].filter((key) => !original.excludedKeys.has(key)).length,
+    protectedRows: [...original.rows.keys()].filter((key) => !original.excludedKeys.has(key)).length,
+    additionalRowsObserved: current.rows.size - [...original.rows.keys()].filter((key) => !original.excludedKeys.has(key)).length,
     newRowOrigin: "not-inferred",
     scope: "pinned user-choice columns only; not full state-row equivalence",
     authorityPlane: "P4",
@@ -165,9 +140,7 @@ export function verifyCodexNativeTargetChoices(witness, options) {
 
 function generation(home, options) {
   guard(options);
-  const names = ["state_5.sqlite", "state_5.sqlite-wal"].filter((name) =>
-    fs.existsSync(copiedProjectFile(home, name)),
-  );
+  const names = ["state_5.sqlite", "state_5.sqlite-wal"].filter((name) => fs.existsSync(copiedProjectFile(home, name)));
   const files = names.map((name) =>
     inspectCopiedProjectFile(home, name, {
       signal: options.signal,
@@ -176,21 +149,16 @@ function generation(home, options) {
   );
   return { files, digest: hash(JSON.stringify(files)) };
 }
-const rowsDigest = (rows) =>
-  hash(JSON.stringify([...rows].sort(([left], [right]) => left.localeCompare(right))));
+const rowsDigest = (rows) => hash(JSON.stringify([...rows].sort(([left], [right]) => left.localeCompare(right))));
 function matchingRows(expected, current) {
-  if (rowsDigest(expected) !== rowsDigest(current))
-    fail("NATIVE_CODEX_TARGET_BEFORE_BACKUP_MISMATCH");
+  if (rowsDigest(expected) !== rowsDigest(current)) fail("NATIVE_CODEX_TARGET_BEFORE_BACKUP_MISMATCH");
 }
 
 // Consistent target-local SQLite backup before a metadata lifecycle. Its full
 // local bytes can contain existing account-related data; no account column is
 // queried or exported. Reuse verifies schema, integrity, the saved raw hash and
 // exact protected fields, not universal full-row semantic equivalence.
-export async function backupCodexNativeTargetChoices(
-  witness,
-  { operationRoot, operationId, ...options },
-) {
+export async function backupCodexNativeTargetChoices(witness, { operationRoot, operationId, ...options }) {
   const original = snapshots.get(witness);
   if (!original) fail("NATIVE_CODEX_TARGET_CHOICES_WITNESS_REQUIRED");
   if (
@@ -210,8 +178,7 @@ export async function backupCodexNativeTargetChoices(
     receiptFile = copiedProjectFile(original.home, receiptRelative);
   const verifyBackup = () => {
     const stat = fs.lstatSync(receiptFile);
-    if (!stat.isFile() || stat.nlink !== 1 || stat.size > 65536)
-      fail("NATIVE_CODEX_TARGET_BACKUP_INVALID");
+    if (!stat.isFile() || stat.nlink !== 1 || stat.size > 65536) fail("NATIVE_CODEX_TARGET_BACKUP_INVALID");
     const value = readSnapshotFile(receiptFile, { decodedBytes: 65536 }).document;
     if (
       value.schemaVersion !== 1 ||
@@ -239,8 +206,7 @@ export async function backupCodexNativeTargetChoices(
   };
   if (fs.existsSync(receiptFile)) {
     const value = verifyBackup();
-    if (generation(original.home, options).digest !== before.digest)
-      fail("NATIVE_CODEX_TARGET_BEFORE_GENERATION_CHANGED");
+    if (generation(original.home, options).digest !== before.digest) fail("NATIVE_CODEX_TARGET_BEFORE_GENERATION_CHANGED");
     return { ...value, status: "verified-local-before-backup", reused: true };
   }
   guard(options);
@@ -248,10 +214,7 @@ export async function backupCodexNativeTargetChoices(
   copiedProjectFile(original.home, base);
   const temporary = base + "/." + crypto.randomUUID() + ".partial.sqlite",
     stage = copiedProjectFile(original.home, temporary);
-  const db = new DatabaseSync(
-    nativeSqlitePath(copiedProjectFile(original.home, "state_5.sqlite")),
-    { readOnly: true },
-  );
+  const db = new DatabaseSync(nativeSqlitePath(copiedProjectFile(original.home, "state_5.sqlite")), { readOnly: true });
   let primary = null;
   try {
     guard(options);
@@ -269,18 +232,13 @@ export async function backupCodexNativeTargetChoices(
     try {
       db.close();
     } catch (error) {
-      if (primary)
-        primary.nativeCleanupFailure = error.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
+      if (primary) primary.nativeCleanupFailure = error.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
       else throw error;
     }
   }
   guard(options);
-  if (generation(original.home, options).digest !== before.digest)
-    fail("NATIVE_CODEX_TARGET_BEFORE_GENERATION_CHANGED");
-  matchingRows(
-    current.rows,
-    observe(original.home, original.basis, new Set(), options, null, temporary).rows,
-  );
+  if (generation(original.home, options).digest !== before.digest) fail("NATIVE_CODEX_TARGET_BEFORE_GENERATION_CHANGED");
+  matchingRows(current.rows, observe(original.home, original.basis, new Set(), options, null, temporary).rows);
   const observed = inspectCopiedProjectFile(original.home, temporary, {
     signal: options.signal,
     assertCurrentAuthority: () => guard(options),
@@ -290,11 +248,7 @@ export async function backupCodexNativeTargetChoices(
     fs.linkSync(stage, target);
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
-    verifyCopiedProjectFile(
-      original.home,
-      { ...observed, path: relative },
-      { signal: options.signal, assertCurrentAuthority: () => guard(options) },
-    );
+    verifyCopiedProjectFile(original.home, { ...observed, path: relative }, { signal: options.signal, assertCurrentAuthority: () => guard(options) });
   }
   fs.unlinkSync(stage);
   const value = {
@@ -307,8 +261,7 @@ export async function backupCodexNativeTargetChoices(
     sha256: observed.sha256,
     beforeGenerationDigest: before.digest,
     beforeChoiceDigest: choiceDigest,
-    scope:
-      "target-local consistent SQLite before-backup; protected fields verified; no account values queried/exported; never automatically restored",
+    scope: "target-local consistent SQLite before-backup; protected fields verified; no account values queried/exported; never automatically restored",
     transferred: false,
     grantsRecoveryAuthority: false,
     restoresExecutionPermission: false,
@@ -321,7 +274,6 @@ export async function backupCodexNativeTargetChoices(
     if (error.code !== "EEXIST") throw error;
   }
   const verified = verifyBackup();
-  if (generation(original.home, options).digest !== before.digest)
-    fail("NATIVE_CODEX_TARGET_BEFORE_GENERATION_CHANGED");
+  if (generation(original.home, options).digest !== before.digest) fail("NATIVE_CODEX_TARGET_BEFORE_GENERATION_CHANGED");
   return { ...verified, status: "verified-local-before-backup", reused: false };
 }

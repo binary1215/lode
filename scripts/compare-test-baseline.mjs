@@ -45,7 +45,8 @@ function splitDirective(text) {
 }
 
 export function compareFailing(base, branch) {
-  const added = [], fixed = [];
+  const added = [],
+    fixed = [];
   for (const [name, count] of branch.failing) {
     for (let i = base.failing.get(name) ?? 0; i < count; i++) added.push(name);
   }
@@ -64,18 +65,18 @@ function count(map) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const json = args.includes("--json");
-  const files = args.filter(arg => arg !== "--json");
+  const files = args.filter((arg) => arg !== "--json");
   if (files.length !== 2) {
     process.stderr.write("usage: node scripts/compare-test-baseline.mjs <base.tap> <branch.tap> [--json]\n");
     process.exit(2);
   }
-  const [base, branch] = files.map(file => failingTests(fs.readFileSync(file, "utf8")));
+  const [base, branch] = files.map((file) => failingTests(fs.readFileSync(file, "utf8")));
   const { added, fixed } = compareFailing(base, branch);
   const summary = {
     base: { file: files[0], tests: base.total, failing: count(base.failing) },
     branch: { file: files[1], tests: branch.total, failing: count(branch.failing) },
     newFailures: added,
-    fixedFailures: fixed
+    fixedFailures: fixed,
   };
   if (json) {
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
@@ -84,9 +85,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       `base:   ${summary.base.tests ?? "?"} tests, ${summary.base.failing} failing (${files[0]})`,
       `branch: ${summary.branch.tests ?? "?"} tests, ${summary.branch.failing} failing (${files[1]})`,
       `new failures: ${added.length}`,
-      ...added.map(name => `  + ${name}`),
+      ...added.map((name) => `  + ${name}`),
       `fixed failures: ${fixed.length}`,
-      ...fixed.map(name => `  - ${name}`)
+      ...fixed.map((name) => `  - ${name}`),
     ];
     process.stdout.write(`${lines.join("\n")}\n`);
   }

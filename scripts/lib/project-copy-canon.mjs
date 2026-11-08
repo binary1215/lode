@@ -4,17 +4,11 @@ import { verifyRunTransitionOriginal } from "./run-source-verification.mjs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { copiedProjectFile, inspectCopiedProjectFile } from "./project-copy-evidence.mjs";
-import {
-  inspectProjectDirectionOriginalFiles,
-  verifyProjectDirectionOriginal,
-} from "./project-direction.mjs";
+import { inspectProjectDirectionOriginalFiles, verifyProjectDirectionOriginal } from "./project-direction.mjs";
 import { validateKnowledge, verifyContextCapsuleOriginal } from "./context-compiler.mjs";
 import { normalizeProductModelDocument } from "./product-model.mjs";
 import { verifyRecoveryCheckpointOriginal } from "./compaction-recovery.mjs";
-import {
-  lineageArtifactRelativePath,
-  verifyLineageArtifactOriginal,
-} from "./execution-lineage.mjs";
+import { lineageArtifactRelativePath, verifyLineageArtifactOriginal } from "./execution-lineage.mjs";
 
 const fail = (code) => {
   throw Object.assign(new Error(code), { code });
@@ -22,36 +16,15 @@ const fail = (code) => {
 
 // Shared source-data verifier. It neither selects a Core owner nor resolves an
 // historical root on disk. read/has/list address an already chosen source.
-export function verifySelectedProjectOriginals({
-  directory,
-  project,
-  selectedSessionPath,
-  selectedSessionId = null,
-  read,
-  has,
-  list,
-  verifyRunOwner = null,
-}) {
+export function verifySelectedProjectOriginals({ directory, project, selectedSessionPath, selectedSessionId = null, read, has, list, verifyRunOwner = null }) {
   if (![".lode", ".head"].includes(directory)) fail("PROJECT_COPY_PATH_INVALID");
   const format = { dialect: directory === ".lode" ? "lode" : "head", directory };
   const directionPath = directory + "/project-direction/current.json";
   if (has(directionPath)) {
     const pointer = read(directionPath);
-    if (
-      typeof pointer.directionId !== "string" ||
-      !/^direction-[a-f0-9]{24}$/.test(pointer.directionId)
-    )
-      fail("INVALID_PROJECT_DIRECTION");
-    verifyProjectDirectionOriginal(
-      read(directory + "/project-direction/revisions/" + pointer.directionId + ".json"),
-      project,
-    );
-  } else if (
-    list(directory + "/project-direction/revisions").some((name) =>
-      /^direction-.*\.json$/.test(name),
-    )
-  )
-    fail("PROJECT_DIRECTION_UNAVAILABLE");
+    if (typeof pointer.directionId !== "string" || !/^direction-[a-f0-9]{24}$/.test(pointer.directionId)) fail("INVALID_PROJECT_DIRECTION");
+    verifyProjectDirectionOriginal(read(directory + "/project-direction/revisions/" + pointer.directionId + ".json"), project);
+  } else if (list(directory + "/project-direction/revisions").some((name) => /^direction-.*\.json$/.test(name))) fail("PROJECT_DIRECTION_UNAVAILABLE");
   validateKnowledge(read(directory + "/context/knowledge.json"));
   normalizeProductModelDocument(read(directory + "/context/product-model.json"), format);
   const sessionRelative = selectedSessionPath;
@@ -59,9 +32,7 @@ export function verifySelectedProjectOriginals({
     typeof sessionRelative !== "string" ||
     !(
       sessionRelative === directory + "/sessions/current.json" ||
-      new RegExp(
-        "^\\" + directory + "/sessions/by-id/session-[a-fA-F0-9-]{36}/current\\.json$",
-      ).test(sessionRelative)
+      new RegExp("^\\" + directory + "/sessions/by-id/session-[a-fA-F0-9-]{36}/current\\.json$").test(sessionRelative)
     )
   )
     fail("INVALID_SESSION_CANON");
@@ -103,11 +74,7 @@ export function verifySelectedProjectOriginals({
     for (const link of object.lineage || []) {
       // Fresh HEAD review context is a non-persisted P4 projection. Its exact
       // reference remains in ReviewDecision; it is not a missing P3 original.
-      if (
-        link.relation === "reviewed-through" &&
-        /^fresh-(?:head|lode)-review-[a-f0-9]{24}$/.test(link.targetId)
-      )
-        continue;
+      if (link.relation === "reviewed-through" && /^fresh-(?:head|lode)-review-[a-f0-9]{24}$/.test(link.targetId)) continue;
       enqueue(link.targetId);
     }
     if (object.sessionPointer) references(object.sessionPointer);
@@ -207,11 +174,9 @@ export function inspectCopiedProjectCanon({ root, directory, project, selectedSe
   const read = (relative) => {
     const observed = inspectCopiedProjectFile(root, relative),
       bytes = fs.readFileSync(copiedProjectFile(root, relative));
-    if (crypto.createHash("sha256").update(bytes).digest("hex") !== observed.sha256)
-      fail("PROJECT_COPY_SOURCE_CHANGED");
+    if (crypto.createHash("sha256").update(bytes).digest("hex") !== observed.sha256) fail("PROJECT_COPY_SOURCE_CHANGED");
     const after = inspectCopiedProjectFile(root, relative);
-    if (after.sha256 !== observed.sha256 || after.bytes !== bytes.length)
-      fail("PROJECT_COPY_SOURCE_CHANGED");
+    if (after.sha256 !== observed.sha256 || after.bytes !== bytes.length) fail("PROJECT_COPY_SOURCE_CHANGED");
     const document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     originals.set(relative, observed);
     return document;
@@ -247,8 +212,7 @@ export function inspectCopiedProjectCanon({ root, directory, project, selectedSe
           runOwnerOriginals.add(relative);
           if (
             document?.kind === "VerifiedProjectCopyAdmission" ||
-            (document?.kind === "PortableProjectAdmission" &&
-              document.selectedSessionId !== selectedSession?.sessionId)
+            (document?.kind === "PortableProjectAdmission" && document.selectedSessionId !== selectedSession?.sessionId)
           )
             runOwnerGlobalMetadata = true;
         },

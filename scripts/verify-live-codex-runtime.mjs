@@ -25,7 +25,9 @@ import { integrateReviewedRunCheckpoint } from "./lib/session-recovery.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nonce = `${process.pid}-${Date.now()}`;
-const providerRuntime = String(process.env.HEAD_AGENT_LIVE_RUNTIME || "codex").trim().toLowerCase();
+const providerRuntime = String(process.env.HEAD_AGENT_LIVE_RUNTIME || "codex")
+  .trim()
+  .toLowerCase();
 const providerName = providerRuntime === "opencode" ? "OpenCode" : providerRuntime === "claude" ? "Claude Code" : "Codex";
 const runtimeModel = String(process.env.HEAD_AGENT_LIVE_RUNTIME_MODEL || "").trim() || null;
 const projectRoot = path.join(pluginRoot, `.qa-live-${providerRuntime}-${nonce}`);
@@ -65,7 +67,9 @@ function digest(value) {
 }
 
 function resolveLivePlan(environment = process.env) {
-  const mode = String(environment[liveModeEnv] || environment[legacyLiveModeEnv] || "run-only").trim().toLowerCase();
+  const mode = String(environment[liveModeEnv] || environment[legacyLiveModeEnv] || "run-only")
+    .trim()
+    .toLowerCase();
   const plan = LIVE_MODE_PLANS[mode];
   if (!plan) {
     throw Object.assign(new Error(`${liveModeEnv} must be run-only or session-and-run when provided.`), {
@@ -77,7 +81,9 @@ function resolveLivePlan(environment = process.env) {
 
 function recordProcess(event) {
   if (event.type === "spawn") {
-    process.stderr.write(`NESTED_CHILD_START pid=${event.pid} parent=${event.parentPid} command=${event.command} cwd=${event.cwd} ports=${event.ports || "none"}\n`);
+    process.stderr.write(
+      `NESTED_CHILD_START pid=${event.pid} parent=${event.parentPid} command=${event.command} cwd=${event.cwd} ports=${event.ports || "none"}\n`,
+    );
   } else {
     process.stderr.write(`NESTED_CHILD_END pid=${event.pid} parent=${event.parentPid} exit=${event.exitCode ?? "null"} signal=${event.signal || "none"}\n`);
   }
@@ -85,21 +91,25 @@ function recordProcess(event) {
 
 function recordingSpawn(command, args, options) {
   const child = spawn(command, args, options);
-  child.once("spawn", () => recordProcess({
-    type: "spawn",
-    pid: child.pid,
-    parentPid: process.pid,
-    command: `${path.basename(command)} ${args.join(" ")}`.trim(),
-    cwd: options.cwd,
-    ports: "none",
-  }));
-  child.once("exit", (exitCode, signal) => recordProcess({
-    type: "exit",
-    pid: child.pid,
-    parentPid: process.pid,
-    exitCode,
-    signal: signal || "none",
-  }));
+  child.once("spawn", () =>
+    recordProcess({
+      type: "spawn",
+      pid: child.pid,
+      parentPid: process.pid,
+      command: `${path.basename(command)} ${args.join(" ")}`.trim(),
+      cwd: options.cwd,
+      ports: "none",
+    }),
+  );
+  child.once("exit", (exitCode, signal) =>
+    recordProcess({
+      type: "exit",
+      pid: child.pid,
+      parentPid: process.pid,
+      exitCode,
+      signal: signal || "none",
+    }),
+  );
   return child;
 }
 
@@ -129,14 +139,24 @@ async function buildActualRuntimeEvidence(root) {
 
 async function main() {
   assert(new Set(["claude", "codex", "opencode"]).has(providerRuntime), "HEAD_AGENT_LIVE_RUNTIME must be claude, codex, or opencode.");
-  assert(providerRuntime !== "opencode" || runtimeModel !== null,
-    "HEAD_AGENT_LIVE_RUNTIME_MODEL=provider/model is required for live OpenCode so execution cannot drift to a user-global default.");
+  assert(
+    providerRuntime !== "opencode" || runtimeModel !== null,
+    "HEAD_AGENT_LIVE_RUNTIME_MODEL=provider/model is required for live OpenCode so execution cannot drift to a user-global default.",
+  );
   activeLivePlan = resolveLivePlan();
   if (process.env[liveOptIn] !== "1" && process.env[legacyLiveOptIn] !== "1") {
-    throw Object.assign(new Error(`${liveOptIn}=1 is required because ${activeLivePlan.mode} performs real ${providerName} model calls.`), { code: "LIVE_RUNTIME_E2E_OPT_IN_REQUIRED" });
+    throw Object.assign(new Error(`${liveOptIn}=1 is required because ${activeLivePlan.mode} performs real ${providerName} model calls.`), {
+      code: "LIVE_RUNTIME_E2E_OPT_IN_REQUIRED",
+    });
   }
-  for (const [root, prefix] of [[projectRoot, `.qa-live-${providerRuntime}-`], [operationalRoot, `.qa-live-${providerRuntime}-operational-`]]) {
-    assert(root.startsWith(`${pluginRoot}${path.sep}`) && path.basename(root).startsWith(prefix), `Live ${providerName} fixture root escaped the plugin workspace.`);
+  for (const [root, prefix] of [
+    [projectRoot, `.qa-live-${providerRuntime}-`],
+    [operationalRoot, `.qa-live-${providerRuntime}-operational-`],
+  ]) {
+    assert(
+      root.startsWith(`${pluginRoot}${path.sep}`) && path.basename(root).startsWith(prefix),
+      `Live ${providerName} fixture root escaped the plugin workspace.`,
+    );
     assert(!fs.existsSync(root), `Live ${providerName} fixture root already exists.`);
   }
   const supervisorFixtureRoot = path.resolve(process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot);
@@ -187,14 +207,25 @@ async function main() {
         onProcessEvent: recordProcess,
         persist: true,
       });
-      assert(sessionExecution.receipt.status === "completed" && sessionExecution.actualProviderInvoked === true,
-        `Live ${providerName} Session did not complete as an actual provider invocation: ${JSON.stringify(safeExecutionFailureSummary(sessionExecution))}`);
+      assert(
+        sessionExecution.receipt.status === "completed" && sessionExecution.actualProviderInvoked === true,
+        `Live ${providerName} Session did not complete as an actual provider invocation: ${JSON.stringify(safeExecutionFailureSummary(sessionExecution))}`,
+      );
       assert(sessionExecution.descendantTreeOwnershipValidated === true, `Live ${providerName} Session did not prove descendant-tree ownership.`);
-      assert(sessionExecution.draft.scopeKind === "session" && sessionExecution.draft.freshHeadReviewRequired === false, `Live ${providerName} Session acquired Run review semantics.`);
-      assert(sessionExecution.draft.providerResult?.planDelta === "" && sessionExecution.draft.providerResult?.impactRadius.length === 0, `Live ${providerName} Session returned a Run-shaped result.`);
+      assert(
+        sessionExecution.draft.scopeKind === "session" && sessionExecution.draft.freshHeadReviewRequired === false,
+        `Live ${providerName} Session acquired Run review semantics.`,
+      );
+      assert(
+        sessionExecution.draft.providerResult?.planDelta === "" && sessionExecution.draft.providerResult?.impactRadius.length === 0,
+        `Live ${providerName} Session returned a Run-shaped result.`,
+      );
       assert(digest(fs.readFileSync(fixtureFile)) === fixtureDigest, `Live ${providerName} Session changed the read-only fixture.`);
       const afterSession = inspectProject(projectRoot);
-      assert(afterSession.state.mode === "session" && !afterSession.state.activeRunId && !afterSession.state.pendingReview, "Live Codex Session manufactured Run or Review state.");
+      assert(
+        afterSession.state.mode === "session" && !afterSession.state.activeRunId && !afterSession.state.pendingReview,
+        "Live Codex Session manufactured Run or Review state.",
+      );
       sessionSummary = {
         authorizationId: sessionAuthorization.authorizationId,
         lifecycleReceiptId: sessionExecution.receipt.receiptId,
@@ -206,12 +237,14 @@ async function main() {
       };
     }
 
-    const capsule = (await compileContext({
-      root: projectRoot,
-      task: "Create run-output.txt with the exact required marker and verify it without external effects.",
-      budget: 32_768,
-      persist: true,
-    })).capsule;
+    const capsule = (
+      await compileContext({
+        root: projectRoot,
+        task: "Create run-output.txt with the exact required marker and verify it without external effects.",
+        budget: 32_768,
+        persist: true,
+      })
+    ).capsule;
     const plan = createWholePlanSnapshot({
       root: projectRoot,
       objective: "Prove one consequential live Codex Run through canonical Execution Lineage.",
@@ -228,7 +261,11 @@ async function main() {
       wholePlanId: plan.wholePlanId,
       capsuleId: capsule.capsuleId,
       scope: "Create and verify only run-output.txt in the isolated fixture project.",
-      acceptanceCriteria: ["run-output.txt has the exact required content", "Structured result reports evidence and verification", "Fresh HEAD receives a canonical ResultPacket"],
+      acceptanceCriteria: [
+        "run-output.txt has the exact required content",
+        "Structured result reports evidence and verification",
+        "Fresh HEAD receives a canonical ResultPacket",
+      ],
       constraints: ["No Product Canon mutation", "No external write", "No absolute path in the provider result"],
       allowedActions: ["runtime.invoke", "project.write", "project.read"],
       forbiddenActions: ["canon.mutate", "external.write", "deploy", "publish", "irreversible.delete"],
@@ -276,11 +313,19 @@ async function main() {
       },
     });
     const runExecution = boundedExecution.result;
-    assert(runExecution.receipt.status === "completed" && runExecution.actualProviderInvoked === true,
-      `Live ${providerName} Run did not complete as an actual provider invocation: ${JSON.stringify(safeExecutionFailureSummary(runExecution))}`);
+    assert(
+      runExecution.receipt.status === "completed" && runExecution.actualProviderInvoked === true,
+      `Live ${providerName} Run did not complete as an actual provider invocation: ${JSON.stringify(safeExecutionFailureSummary(runExecution))}`,
+    );
     assert(runExecution.descendantTreeOwnershipValidated === true, `Live ${providerName} Run did not prove descendant-tree ownership.`);
-    assert(runExecution.draft.scopeKind === "run" && runExecution.draft.freshHeadReviewRequired === true, `Live ${providerName} Run did not retain Run review semantics.`);
-    assert(fs.readFileSync(path.join(projectRoot, "run-output.txt"), "utf8") === "HEAD live Run verified\n", `Live ${providerName} Run did not create the exact accepted output.`);
+    assert(
+      runExecution.draft.scopeKind === "run" && runExecution.draft.freshHeadReviewRequired === true,
+      `Live ${providerName} Run did not retain Run review semantics.`,
+    );
+    assert(
+      fs.readFileSync(path.join(projectRoot, "run-output.txt"), "utf8") === "HEAD live Run verified\n",
+      `Live ${providerName} Run did not create the exact accepted output.`,
+    );
     assert(digest(fs.readFileSync(fixtureFile)) === fixtureDigest, `Live ${providerName} Run changed the protected fixture marker.`);
 
     const afterExecution = await waitForBoundedWorkerDispatch({
@@ -312,9 +357,15 @@ async function main() {
     });
     const applied = boundedApplication.applied;
     assert(applied.status === "runtime_run_result_applied", "Live Codex Run draft was not applied to canonical Execution Lineage.");
-    assert(applied.freshHeadReview?.resultPacket?.resultPacketId === applied.resultPacket.resultPacketId, "Fresh HEAD did not receive the canonical ResultPacket.");
+    assert(
+      applied.freshHeadReview?.resultPacket?.resultPacketId === applied.resultPacket.resultPacketId,
+      "Fresh HEAD did not receive the canonical ResultPacket.",
+    );
     const pending = getPendingReviewContext({ root: projectRoot });
-    assert(pending.review.reviewContextId === applied.application.reviewContextId && pending.pendingReview.runId === run.runId, "Fresh HEAD review identity does not match the live Run.");
+    assert(
+      pending.review.reviewContextId === applied.application.reviewContextId && pending.pendingReview.runId === run.runId,
+      "Fresh HEAD review identity does not match the live Run.",
+    );
     const reviewed = reviewRun({
       root: projectRoot,
       reviewContextId: pending.review.reviewContextId,
@@ -335,44 +386,56 @@ async function main() {
     const recorded = readRuntimeInvocationResult({ root: projectRoot, authorizationId: runAuthorization.authorizationId });
     const completed = inspectProject(projectRoot);
     assert(recorded.application?.applicationId === applied.application.applicationId, "Runtime Run result application was not durably recoverable.");
-    assert(completed.state.mode === "session" && completed.state.lastReviewDecisionId === reviewed.reviewDecision.reviewDecisionId, "Live Run did not return to the reviewed HEAD Session state.");
+    assert(
+      completed.state.mode === "session" && completed.state.lastReviewDecisionId === reviewed.reviewDecision.reviewDecisionId,
+      "Live Run did not return to the reviewed HEAD Session state.",
+    );
 
-    process.stdout.write(`${JSON.stringify({
-      status: activeLivePlan.includeSession ? `live_${providerRuntime}_session_and_run_verified` : `live_${providerRuntime}_run_verified`,
-      runtime: providerRuntime,
-      mode: activeLivePlan.mode,
-      runtimeModelSelected: runtimeModel !== null,
-      runtimeModelDigest: runtimeModel === null ? "" : digest(runtimeModel),
-      projectId: initialized.project.projectId,
-      headSessionId: completed.state.sessionId,
-      session: sessionSummary,
-      run: {
-        runId: run.runId,
-        authorizationId: runAuthorization.authorizationId,
-        lifecycleReceiptId: runExecution.receipt.receiptId,
-        draftId: runExecution.draft.draftId,
-        resultPacketId: applied.resultPacket.resultPacketId,
-        applicationId: applied.application.applicationId,
-        freshHeadReviewId: applied.application.reviewContextId,
-        reviewDecisionId: reviewed.reviewDecision.reviewDecisionId,
-        dispatchId: dispatched.dispatch.dispatchId,
-        pendingWaitOutcomeId: beforeExecution.waitOutcome.waitOutcomeId,
-        completedWaitOutcomeId: afterExecution.waitOutcome.waitOutcomeId,
-        duplicateWorkerConsumptionRejected,
-        integrationCheckpointId: integrated.checkpoint.checkpointId,
-        reviewedRunIntegration: integrated.checkpoint.reviewedRunIntegration,
-        actualProviderInvoked: true,
-        descendantTreeOwnershipValidated: true,
-        exactWorkspaceMutationVerified: true,
-      },
-      rawTranscriptPersisted: false,
-      providerSessionIdentityCanonical: false,
-      productCanonMutated: false,
-    }, null, 2)}\n`);
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          status: activeLivePlan.includeSession ? `live_${providerRuntime}_session_and_run_verified` : `live_${providerRuntime}_run_verified`,
+          runtime: providerRuntime,
+          mode: activeLivePlan.mode,
+          runtimeModelSelected: runtimeModel !== null,
+          runtimeModelDigest: runtimeModel === null ? "" : digest(runtimeModel),
+          projectId: initialized.project.projectId,
+          headSessionId: completed.state.sessionId,
+          session: sessionSummary,
+          run: {
+            runId: run.runId,
+            authorizationId: runAuthorization.authorizationId,
+            lifecycleReceiptId: runExecution.receipt.receiptId,
+            draftId: runExecution.draft.draftId,
+            resultPacketId: applied.resultPacket.resultPacketId,
+            applicationId: applied.application.applicationId,
+            freshHeadReviewId: applied.application.reviewContextId,
+            reviewDecisionId: reviewed.reviewDecision.reviewDecisionId,
+            dispatchId: dispatched.dispatch.dispatchId,
+            pendingWaitOutcomeId: beforeExecution.waitOutcome.waitOutcomeId,
+            completedWaitOutcomeId: afterExecution.waitOutcome.waitOutcomeId,
+            duplicateWorkerConsumptionRejected,
+            integrationCheckpointId: integrated.checkpoint.checkpointId,
+            reviewedRunIntegration: integrated.checkpoint.reviewedRunIntegration,
+            actualProviderInvoked: true,
+            descendantTreeOwnershipValidated: true,
+            exactWorkspaceMutationVerified: true,
+          },
+          rawTranscriptPersisted: false,
+          providerSessionIdentityCanonical: false,
+          productCanonMutated: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
   } finally {
     if (previousOperationalRoot === undefined) delete process.env[RUNTIME_OPERATIONAL_STATE_ENV];
     else process.env[RUNTIME_OPERATIONAL_STATE_ENV] = previousOperationalRoot;
-    for (const [root, prefix] of [[projectRoot, `.qa-live-${providerRuntime}-`], [operationalRoot, `.qa-live-${providerRuntime}-operational-`]]) {
+    for (const [root, prefix] of [
+      [projectRoot, `.qa-live-${providerRuntime}-`],
+      [operationalRoot, `.qa-live-${providerRuntime}-operational-`],
+    ]) {
       if (!root.startsWith(`${pluginRoot}${path.sep}`) || !path.basename(root).startsWith(prefix)) {
         throw new Error(`Refusing to remove an unverified live ${providerName} fixture directory.`);
       }
@@ -382,11 +445,13 @@ async function main() {
 }
 
 main().catch((error) => {
-  process.stderr.write(`${JSON.stringify({
-    status: "failed",
-    mode: activeLivePlan?.mode || "unresolved",
-    code: error.code || "LIVE_CODEX_E2E_ERROR",
-    error: error.message,
-  })}\n`);
+  process.stderr.write(
+    `${JSON.stringify({
+      status: "failed",
+      mode: activeLivePlan?.mode || "unresolved",
+      code: error.code || "LIVE_CODEX_E2E_ERROR",
+      error: error.message,
+    })}\n`,
+  );
   process.exitCode = 1;
 });

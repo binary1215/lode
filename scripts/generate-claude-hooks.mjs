@@ -7,7 +7,7 @@ import { generateClaudeHooks } from "./lib/claude-hooks-generation.mjs";
 
 const flags = process.argv.slice(2);
 try {
-  if (flags.some(flag => flag !== "--check")) throw new Error("Usage: node scripts/generate-claude-hooks.mjs [--check]");
+  if (flags.some((flag) => flag !== "--check")) throw new Error("Usage: node scripts/generate-claude-hooks.mjs [--check]");
   const result = await generateClaudeHooks({ root: path.resolve(import.meta.dirname, ".."), check: flags.includes("--check") });
   process.stdout.write(`${JSON.stringify(result)}\n`);
   if (result.status === "stale") {

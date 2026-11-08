@@ -25,7 +25,7 @@ function projectRelativeScript(pluginRoot, projectRoot) {
   const relative = path.relative(projectRoot, path.join(pluginRoot, "scripts", "mcp-server.mjs"));
   if (!relative || path.isAbsolute(relative)) return null;
   const parts = relative.split(/[\\/]/);
-  if (parts.some(part => !part || part === "..")) return null;
+  if (parts.some((part) => !part || part === "..")) return null;
   return parts.join("/");
 }
 
@@ -35,7 +35,10 @@ export function portableMcpLaunch({ client, pluginRoot, projectRoot, projection 
   if (!PORTABLE_MCP_CLIENTS.includes(client)) {
     throw Object.assign(new Error("Unsupported MCP client."), { code: "UNSUPPORTED_MCP_CLIENT" });
   }
-  if (!["portable", "installed-project", "project-file"].includes(projection) || ["installed-project", "project-file"].includes(projection) && client !== "claude") {
+  if (
+    !["portable", "installed-project", "project-file"].includes(projection) ||
+    (["installed-project", "project-file"].includes(projection) && client !== "claude")
+  ) {
     throw Object.assign(new Error("Unsupported MCP projection."), { code: "UNSUPPORTED_MCP_PROJECTION" });
   }
   if (projection === "project-file") {

@@ -31,74 +31,119 @@ export function buildAttentionProjection(experience, storage = undefined) {
   const runtime = experience?.runtime || {};
   const items = [];
 
-  if (["relocation_available", "relocation_pending"].includes(core.state)) items.push(item({
-    id: "project-location-resume", owner, actionability: "when-resuming-this-project",
-    summary: "Existing Project location verified for explicit resume. Session, Run and recovery remain uninspected; no Host binding was restored.",
-    blockedOperations: [],
-  }));
+  if (["relocation_available", "relocation_pending"].includes(core.state))
+    items.push(
+      item({
+        id: "project-location-resume",
+        owner,
+        actionability: "when-resuming-this-project",
+        summary: "Existing Project location verified for explicit resume. Session, Run and recovery remain uninspected; no Host binding was restored.",
+        blockedOperations: [],
+      }),
+    );
 
-  if (core.state === "not_initialized") items.push(item({
-    id: "core-initialization",
-    owner,
-    summary: "Initialize the Core only because Lode use was requested for this project.",
-    blockedOperations: ["head-managed-capabilities"],
-  }));
-  if (core.state === "drifted") items.push(item({
-    id: "managed-projection-drift",
-    owner,
-    severity: "integrity",
-    actionability: core.projectionDriftOnly ? "when-managed-mutation-is-in-scope" : "immediate",
-    summary: "Inspect managed projection drift before a mutating Lode operation.",
-    blockedOperations: ["head-managed-mutation"],
-  }));
-  if (experience?.currentProjectDirectionAvailability?.status === "unavailable") items.push(item({
-    id: "current-project-direction-unavailable", owner, severity: "integrity",
-    actionability: "when-current-direction-dependent-work-is-in-scope",
-    summary: "Current common direction is unavailable. Retained Session context remains readable; assess only dependent effects or direction publication without guessing a revision.",
-    blockedOperations: ["current-project-direction-dependent-effects", "checkpoint-direction-publication"],
-  }));
-  if (recovery.headActionRequired) items.push(item({
-    id: "recovery-verification",
-    owner,
-    severity: "integrity",
-    summary: `Inspect recovery readiness for the affected Lode operations (${recovery.reasonCode || recovery.state}).`,
-    blockedOperations: recovery.blockedOperations || [],
-  }));
-  if (product.state === "review_required") items.push(item({
-    id: "product-canon-review",
-    owner: "user",
-    severity: "decision",
-    actionability: "when-product-governance-is-in-scope",
-    summary: "Product candidates need an explicit review before Product Canon promotion.",
-    blockedOperations: ["product-canon-promotion"],
-  }));
-  if (product.state === "integrity_attention") items.push(item({
-    id: "product-integrity", owner, severity: "integrity",
-    actionability: "when-product-governance-is-in-scope",
-    summary: `Inspect optional Product evidence (${product.reasonCode}); ordinary Core work remains available.`,
-    blockedOperations: ["product-governance-dependent-work"],
-  }));
-  if (["evidence_required", "refresh_required", "migration_required"].includes(product.state)) items.push(item({
-    id: "product-governance-follow-up",
-    owner,
-    actionability: "when-product-governance-is-in-scope",
-    summary: "Product governance needs bounded follow-up only when the current task depends on it.",
-    blockedOperations: ["product-governance-dependent-work"],
-  }));
-  if (runtime.state === "project-integration-outdated") items.push(item({
-    id: "plugin-integration-update",
-    owner,
-    summary: "Converge the project integration, then restart the Host to load the configured package.",
-    blockedOperations: ["new-plugin-capabilities"],
-  }));
+  if (core.state === "not_initialized")
+    items.push(
+      item({
+        id: "core-initialization",
+        owner,
+        summary: "Initialize the Core only because Lode use was requested for this project.",
+        blockedOperations: ["head-managed-capabilities"],
+      }),
+    );
+  if (core.state === "drifted")
+    items.push(
+      item({
+        id: "managed-projection-drift",
+        owner,
+        severity: "integrity",
+        actionability: core.projectionDriftOnly ? "when-managed-mutation-is-in-scope" : "immediate",
+        summary: "Inspect managed projection drift before a mutating Lode operation.",
+        blockedOperations: ["head-managed-mutation"],
+      }),
+    );
+  if (experience?.currentProjectDirectionAvailability?.status === "unavailable")
+    items.push(
+      item({
+        id: "current-project-direction-unavailable",
+        owner,
+        severity: "integrity",
+        actionability: "when-current-direction-dependent-work-is-in-scope",
+        summary:
+          "Current common direction is unavailable. Retained Session context remains readable; assess only dependent effects or direction publication without guessing a revision.",
+        blockedOperations: ["current-project-direction-dependent-effects", "checkpoint-direction-publication"],
+      }),
+    );
+  if (recovery.headActionRequired)
+    items.push(
+      item({
+        id: "recovery-verification",
+        owner,
+        severity: "integrity",
+        summary: `Inspect recovery readiness for the affected Lode operations (${recovery.reasonCode || recovery.state}).`,
+        blockedOperations: recovery.blockedOperations || [],
+      }),
+    );
+  if (product.state === "review_required")
+    items.push(
+      item({
+        id: "product-canon-review",
+        owner: "user",
+        severity: "decision",
+        actionability: "when-product-governance-is-in-scope",
+        summary: "Product candidates need an explicit review before Product Canon promotion.",
+        blockedOperations: ["product-canon-promotion"],
+      }),
+    );
+  if (product.state === "integrity_attention")
+    items.push(
+      item({
+        id: "product-integrity",
+        owner,
+        severity: "integrity",
+        actionability: "when-product-governance-is-in-scope",
+        summary: `Inspect optional Product evidence (${product.reasonCode}); ordinary Core work remains available.`,
+        blockedOperations: ["product-governance-dependent-work"],
+      }),
+    );
+  if (["evidence_required", "refresh_required", "migration_required"].includes(product.state))
+    items.push(
+      item({
+        id: "product-governance-follow-up",
+        owner,
+        actionability: "when-product-governance-is-in-scope",
+        summary: "Product governance needs bounded follow-up only when the current task depends on it.",
+        blockedOperations: ["product-governance-dependent-work"],
+      }),
+    );
+  if (runtime.state === "project-integration-outdated")
+    items.push(
+      item({
+        id: "plugin-integration-update",
+        owner,
+        summary: "Converge the project integration, then restart the Host to load the configured package.",
+        blockedOperations: ["new-plugin-capabilities"],
+      }),
+    );
 
   for (const layer of experience?.readiness?.storage?.layers || []) {
-    if (["unsupported", "unavailable", "not-inspected"].includes(layer.state)) items.push(item({
-      id: "snapshot-reader-" + layer.layer, owner, severity: layer.state === "unavailable" ? "integrity" : "notice",
-      actionability: "when-world-graph-evidence-is-in-scope",
-      summary: layer.layer + " storage reader: " + layer.state + " (" + layer.reasonCode + "). Core work remains available; inspect only the needed projection with a compatible reader.",
-      blockedOperations: [],
-    }));
+    if (["unsupported", "unavailable", "not-inspected"].includes(layer.state))
+      items.push(
+        item({
+          id: "snapshot-reader-" + layer.layer,
+          owner,
+          severity: layer.state === "unavailable" ? "integrity" : "notice",
+          actionability: "when-world-graph-evidence-is-in-scope",
+          summary:
+            layer.layer +
+            " storage reader: " +
+            layer.state +
+            " (" +
+            layer.reasonCode +
+            "). Core work remains available; inspect only the needed projection with a compatible reader.",
+          blockedOperations: [],
+        }),
+      );
   }
 
   const immediate = items.filter((entry) => entry.actionability === "immediate");
@@ -136,9 +181,7 @@ export function buildAttentionProjection(experience, storage = undefined) {
 
 export function buildPresentationProjection(attention, storage = undefined) {
   const format = formatForVerifiedOwner(storage);
-  const mode = attention.userDecisionRequired ? "decision"
-    : attention.headActionRequired ? "exception"
-      : attention.status === "notice" ? "notice" : "quiet";
+  const mode = attention.userDecisionRequired ? "decision" : attention.headActionRequired ? "exception" : attention.status === "notice" ? "notice" : "quiet";
   return {
     kind: format.kind("HeadPresentationProjection"),
     protocolVersion: EXPERIENCE_PROJECTION_PROTOCOL_VERSION,

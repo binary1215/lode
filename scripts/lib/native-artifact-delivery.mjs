@@ -13,18 +13,78 @@ const MAX_CHECKSUM_BYTES = 1024 * 1024;
 const MAX_ARCHIVE_BYTES = 128 * 1024 * 1024;
 const MAX_EXPANDED_BYTES = 256 * 1024 * 1024;
 const LEGACY_TARGETS = Object.freeze({
-  "darwin-arm64": Object.freeze({ package: "head-agent-worker-darwin-arm64", directory: "darwin-arm64", goos: "darwin", goarch: "arm64", binaries: ["head-agent-worker", "head-agent-supervisor", "head-agent-arcadedb-bridge"] }),
-  "darwin-x64": Object.freeze({ package: "head-agent-worker-darwin-amd64", directory: "darwin-x64", goos: "darwin", goarch: "amd64", binaries: ["head-agent-worker", "head-agent-supervisor", "head-agent-arcadedb-bridge"] }),
-  "linux-arm64": Object.freeze({ package: "head-agent-worker-linux-arm64", directory: "linux-arm64", goos: "linux", goarch: "arm64", binaries: ["head-agent-worker", "head-agent-supervisor", "head-agent-arcadedb-bridge"] }),
-  "linux-x64": Object.freeze({ package: "head-agent-worker-linux-amd64", directory: "linux-x64", goos: "linux", goarch: "amd64", binaries: ["head-agent-worker", "head-agent-supervisor", "head-agent-arcadedb-bridge"] }),
-  "win32-x64": Object.freeze({ package: "head-agent-worker-windows-amd64", directory: "windows-x64", goos: "windows", goarch: "amd64", binaries: ["head-agent-worker.exe", "head-agent-supervisor.exe", "head-agent-arcadedb-bridge.exe"] }),
+  "darwin-arm64": Object.freeze({
+    package: "head-agent-worker-darwin-arm64",
+    directory: "darwin-arm64",
+    goos: "darwin",
+    goarch: "arm64",
+    binaries: ["head-agent-worker", "head-agent-supervisor", "head-agent-arcadedb-bridge"],
+  }),
+  "darwin-x64": Object.freeze({
+    package: "head-agent-worker-darwin-amd64",
+    directory: "darwin-x64",
+    goos: "darwin",
+    goarch: "amd64",
+    binaries: ["head-agent-worker", "head-agent-supervisor", "head-agent-arcadedb-bridge"],
+  }),
+  "linux-arm64": Object.freeze({
+    package: "head-agent-worker-linux-arm64",
+    directory: "linux-arm64",
+    goos: "linux",
+    goarch: "arm64",
+    binaries: ["head-agent-worker", "head-agent-supervisor", "head-agent-arcadedb-bridge"],
+  }),
+  "linux-x64": Object.freeze({
+    package: "head-agent-worker-linux-amd64",
+    directory: "linux-x64",
+    goos: "linux",
+    goarch: "amd64",
+    binaries: ["head-agent-worker", "head-agent-supervisor", "head-agent-arcadedb-bridge"],
+  }),
+  "win32-x64": Object.freeze({
+    package: "head-agent-worker-windows-amd64",
+    directory: "windows-x64",
+    goos: "windows",
+    goarch: "amd64",
+    binaries: ["head-agent-worker.exe", "head-agent-supervisor.exe", "head-agent-arcadedb-bridge.exe"],
+  }),
 });
 const TARGETS = Object.freeze({
-  "darwin-arm64": Object.freeze({ package: "lode-agent-worker-darwin-arm64", directory: "darwin-arm64", goos: "darwin", goarch: "arm64", binaries: ["lode-agent-worker", "lode-agent-supervisor", "lode-agent-arcadedb-bridge"] }),
-  "darwin-x64": Object.freeze({ package: "lode-agent-worker-darwin-amd64", directory: "darwin-x64", goos: "darwin", goarch: "amd64", binaries: ["lode-agent-worker", "lode-agent-supervisor", "lode-agent-arcadedb-bridge"] }),
-  "linux-arm64": Object.freeze({ package: "lode-agent-worker-linux-arm64", directory: "linux-arm64", goos: "linux", goarch: "arm64", binaries: ["lode-agent-worker", "lode-agent-supervisor", "lode-agent-arcadedb-bridge"] }),
-  "linux-x64": Object.freeze({ package: "lode-agent-worker-linux-amd64", directory: "linux-x64", goos: "linux", goarch: "amd64", binaries: ["lode-agent-worker", "lode-agent-supervisor", "lode-agent-arcadedb-bridge"] }),
-  "win32-x64": Object.freeze({ package: "lode-agent-worker-windows-amd64", directory: "windows-x64", goos: "windows", goarch: "amd64", binaries: ["lode-agent-worker.exe", "lode-agent-supervisor.exe", "lode-agent-arcadedb-bridge.exe"] }),
+  "darwin-arm64": Object.freeze({
+    package: "lode-agent-worker-darwin-arm64",
+    directory: "darwin-arm64",
+    goos: "darwin",
+    goarch: "arm64",
+    binaries: ["lode-agent-worker", "lode-agent-supervisor", "lode-agent-arcadedb-bridge"],
+  }),
+  "darwin-x64": Object.freeze({
+    package: "lode-agent-worker-darwin-amd64",
+    directory: "darwin-x64",
+    goos: "darwin",
+    goarch: "amd64",
+    binaries: ["lode-agent-worker", "lode-agent-supervisor", "lode-agent-arcadedb-bridge"],
+  }),
+  "linux-arm64": Object.freeze({
+    package: "lode-agent-worker-linux-arm64",
+    directory: "linux-arm64",
+    goos: "linux",
+    goarch: "arm64",
+    binaries: ["lode-agent-worker", "lode-agent-supervisor", "lode-agent-arcadedb-bridge"],
+  }),
+  "linux-x64": Object.freeze({
+    package: "lode-agent-worker-linux-amd64",
+    directory: "linux-x64",
+    goos: "linux",
+    goarch: "amd64",
+    binaries: ["lode-agent-worker", "lode-agent-supervisor", "lode-agent-arcadedb-bridge"],
+  }),
+  "win32-x64": Object.freeze({
+    package: "lode-agent-worker-windows-amd64",
+    directory: "windows-x64",
+    goos: "windows",
+    goarch: "amd64",
+    binaries: ["lode-agent-worker.exe", "lode-agent-supervisor.exe", "lode-agent-arcadedb-bridge.exe"],
+  }),
 });
 
 function fail(code, message) {
@@ -38,13 +98,18 @@ const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex"
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }
 
 function normalizedMode(mode) {
-  const value = String(mode || "auto").trim().toLowerCase();
+  const value = String(mode || "auto")
+    .trim()
+    .toLowerCase();
   if (!new Set(["auto", "off", "required"]).has(value)) {
     fail("HEAD_NATIVE_MODE_INVALID", "Native artifact mode must be auto, off, or required.");
   }
@@ -56,12 +121,17 @@ function supportedTarget(platform, arch, legacy = false) {
 }
 
 function releaseUrls(version, target, releaseRoot = DEFAULT_RELEASE_ROOT) {
-  if (!/^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u.test(version)) {
+  if (
+    !/^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u.test(version)
+  ) {
     fail("HEAD_NATIVE_VERSION_INVALID", `Native artifact version is invalid: ${version}`);
   }
   let root;
-  try { root = new URL(`${releaseRoot.replace(/\/+$/u, "")}/v${version}/`); }
-  catch { fail("HEAD_NATIVE_RELEASE_URL_INVALID", "Native artifact release root is invalid."); }
+  try {
+    root = new URL(`${releaseRoot.replace(/\/+$/u, "")}/v${version}/`);
+  } catch {
+    fail("HEAD_NATIVE_RELEASE_URL_INVALID", "Native artifact release root is invalid.");
+  }
   if (root.protocol !== "https:" && root.hostname !== "127.0.0.1" && root.hostname !== "localhost") {
     fail("HEAD_NATIVE_RELEASE_URL_INVALID", "Native artifact release root must use HTTPS.");
   }
@@ -86,8 +156,11 @@ async function fetchBytes(url, { fetchImplementation, maximumBytes, unavailableC
   }
   if (!response.ok) fail(unavailableCode, `Native artifact request returned HTTP ${response.status}.`);
   let finalUrl;
-  try { finalUrl = new URL(response.url || url); }
-  catch { fail("HEAD_NATIVE_RELEASE_URL_INVALID", "Native artifact response URL is invalid."); }
+  try {
+    finalUrl = new URL(response.url || url);
+  } catch {
+    fail("HEAD_NATIVE_RELEASE_URL_INVALID", "Native artifact response URL is invalid.");
+  }
   if (finalUrl.protocol !== "https:" && finalUrl.hostname !== "127.0.0.1" && finalUrl.hostname !== "localhost") {
     fail("HEAD_NATIVE_RELEASE_URL_INVALID", "Native artifact response left the HTTPS boundary.");
   }
@@ -101,7 +174,11 @@ async function fetchBytes(url, { fetchImplementation, maximumBytes, unavailableC
 }
 
 function expectedChecksum(checksums, assetName) {
-  const matches = checksums.toString("utf8").split(/\r?\n/u).map((line) => line.trim()).filter(Boolean)
+  const matches = checksums
+    .toString("utf8")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
     .map((line) => line.match(/^([a-f0-9]{64})\s+\*?([^/\\\s]+)$/u))
     .filter(Boolean)
     .filter((match) => match[2] === assetName);
@@ -111,7 +188,10 @@ function expectedChecksum(checksums, assetName) {
 
 function tarText(block, start, length) {
   const end = block.indexOf(0, start);
-  return block.subarray(start, end >= start && end < start + length ? end : start + length).toString("utf8").trim();
+  return block
+    .subarray(start, end >= start && end < start + length ? end : start + length)
+    .toString("utf8")
+    .trim();
 }
 
 function tarOctal(block, start, length, label) {
@@ -145,8 +225,11 @@ function safeArchivePath(value, targetDirectory) {
 
 function extractTarGz(archive, destination, target) {
   let tar;
-  try { tar = zlib.gunzipSync(archive, { maxOutputLength: MAX_EXPANDED_BYTES }); }
-  catch (error) { fail("HEAD_NATIVE_ARCHIVE_INVALID", `Native archive decompression failed: ${error.message}`); }
+  try {
+    tar = zlib.gunzipSync(archive, { maxOutputLength: MAX_EXPANDED_BYTES });
+  } catch (error) {
+    fail("HEAD_NATIVE_ARCHIVE_INVALID", `Native archive decompression failed: ${error.message}`);
+  }
   const expectedFiles = new Set([
     `${target.directory}/BUILD-METADATA.json`,
     `${target.directory}/WORKER-MANIFEST.json`,
@@ -182,9 +265,13 @@ function extractTarGz(archive, destination, target) {
     if (type === "5") {
       fs.mkdirSync(absolute, { recursive: true });
     } else if (type === "0") {
-      if ((!expectedFiles.has(relative) && relative !== noticeFile) || observedFiles.has(relative)) fail("HEAD_NATIVE_ARCHIVE_CONTENT_INVALID", `Unexpected or duplicate native archive file: ${relative}`);
+      if ((!expectedFiles.has(relative) && relative !== noticeFile) || observedFiles.has(relative))
+        fail("HEAD_NATIVE_ARCHIVE_CONTENT_INVALID", `Unexpected or duplicate native archive file: ${relative}`);
       fs.mkdirSync(path.dirname(absolute), { recursive: true });
-      fs.writeFileSync(absolute, tar.subarray(dataStart, dataEnd), { flag: "wx", mode: target.binaries.some((nameValue) => relative.endsWith(`/${nameValue}`)) ? 0o755 : 0o644 });
+      fs.writeFileSync(absolute, tar.subarray(dataStart, dataEnd), {
+        flag: "wx",
+        mode: target.binaries.some((nameValue) => relative.endsWith(`/${nameValue}`)) ? 0o755 : 0o644,
+      });
       observedFiles.add(relative);
     } else {
       fail("HEAD_NATIVE_ARCHIVE_CONTENT_INVALID", `Native archive entry type is unsupported: ${type}`);
@@ -202,12 +289,20 @@ function extractTarGz(archive, destination, target) {
 function verifyBuildMetadata(pluginRoot, target, version) {
   const file = path.join(pluginRoot, "dist", target.directory, "BUILD-METADATA.json");
   let metadata;
-  try { metadata = JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch { fail("HEAD_NATIVE_BUILD_METADATA_INVALID", "Native BUILD-METADATA.json is invalid."); }
+  try {
+    metadata = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    fail("HEAD_NATIVE_BUILD_METADATA_INVALID", "Native BUILD-METADATA.json is invalid.");
+  }
   const keys = Object.keys(metadata).sort();
-  if (JSON.stringify(keys) !== JSON.stringify(["cgoEnabled", "commit", "goarch", "goos", "version"].sort())
-    || metadata.version !== version || metadata.goos !== target.goos || metadata.goarch !== target.goarch
-    || metadata.cgoEnabled !== false || !/^[a-f0-9]{40}$/u.test(metadata.commit || "")) {
+  if (
+    JSON.stringify(keys) !== JSON.stringify(["cgoEnabled", "commit", "goarch", "goos", "version"].sort()) ||
+    metadata.version !== version ||
+    metadata.goos !== target.goos ||
+    metadata.goarch !== target.goarch ||
+    metadata.cgoEnabled !== false ||
+    !/^[a-f0-9]{40}$/u.test(metadata.commit || "")
+  ) {
     fail("HEAD_NATIVE_BUILD_METADATA_INVALID", "Native build metadata does not match the selected plugin version and target.");
   }
   return metadata;
@@ -244,9 +339,14 @@ export async function acquireVerifiedNativeArtifact({
     let checksums;
     let archive;
     try {
-      checksums = await fetchBytes(urls.checksumsUrl, { fetchImplementation, maximumBytes: MAX_CHECKSUM_BYTES, unavailableCode: "HEAD_NATIVE_RELEASE_UNAVAILABLE" });
-      try { expectedChecksum(checksums, urls.assetName); }
-      catch (error) {
+      checksums = await fetchBytes(urls.checksumsUrl, {
+        fetchImplementation,
+        maximumBytes: MAX_CHECKSUM_BYTES,
+        unavailableCode: "HEAD_NATIVE_RELEASE_UNAVAILABLE",
+      });
+      try {
+        expectedChecksum(checksums, urls.assetName);
+      } catch (error) {
         if (error.code !== "HEAD_NATIVE_CHECKSUM_MISSING") throw error;
         target = supportedTarget(platform, arch, true);
         urls = releaseUrls(version, target, releaseRoot);
@@ -297,16 +397,29 @@ export function verifyNativeOverlay({ pluginRoot, platform = process.platform, a
     const targetStat = fs.lstatSync(targetRoot);
     if (!targetStat.isDirectory() || targetStat.isSymbolicLink()) throw new Error("unsafe target directory");
     entries = fs.readdirSync(targetRoot).sort();
+  } catch {
+    fail("HEAD_NATIVE_OVERLAY_INVALID", "Native overlay target directory is unavailable.");
   }
-  catch { fail("HEAD_NATIVE_OVERLAY_INVALID", "Native overlay target directory is unavailable."); }
   // File names select only a candidate tuple; every original manifest and
   // binary is still verified below before this overlay is accepted.
   const requiredEntries = entries.filter((entry) => entry !== "GO-NOTICES.txt");
   const legacyTarget = supportedTarget(platform, arch, true);
-  const legacyEntries = ["ARCADEDB-BRIDGE-MANIFEST.json", "BUILD-METADATA.json", "SUPERVISOR-MANIFEST.json", "WORKER-MANIFEST.json", ...legacyTarget.binaries].sort();
+  const legacyEntries = [
+    "ARCADEDB-BRIDGE-MANIFEST.json",
+    "BUILD-METADATA.json",
+    "SUPERVISOR-MANIFEST.json",
+    "WORKER-MANIFEST.json",
+    ...legacyTarget.binaries,
+  ].sort();
   const legacy = JSON.stringify(requiredEntries) === JSON.stringify(legacyEntries);
   target = legacy ? legacyTarget : target;
-  const expectedEntries = ["ARCADEDB-BRIDGE-MANIFEST.json", "BUILD-METADATA.json", "SUPERVISOR-MANIFEST.json", "WORKER-MANIFEST.json", ...target.binaries].sort();
+  const expectedEntries = [
+    "ARCADEDB-BRIDGE-MANIFEST.json",
+    "BUILD-METADATA.json",
+    "SUPERVISOR-MANIFEST.json",
+    "WORKER-MANIFEST.json",
+    ...target.binaries,
+  ].sort();
   if (JSON.stringify(requiredEntries) !== JSON.stringify(expectedEntries)) {
     fail("HEAD_NATIVE_OVERLAY_INVALID", "Native overlay must contain the exact verified target file set.");
   }
@@ -319,8 +432,11 @@ export function verifyNativeOverlay({ pluginRoot, platform = process.platform, a
   const verifyForeignBinary = (manifestName, validateManifest) => {
     const manifestPath = path.join(targetRoot, manifestName);
     let manifest;
-    try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); }
-    catch { fail("HEAD_NATIVE_OVERLAY_INVALID", `Native overlay manifest is invalid: ${manifestName}`); }
+    try {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    } catch {
+      fail("HEAD_NATIVE_OVERLAY_INVALID", `Native overlay manifest is invalid: ${manifestName}`);
+    }
     validateManifest(manifest, { platform, arch });
     const binaryPath = path.resolve(targetRoot, ...manifest.binary.relativePath.split("/"));
     const relative = path.relative(targetRoot, binaryPath);
@@ -346,9 +462,11 @@ export function verifyNativeOverlay({ pluginRoot, platform = process.platform, a
   const arcadedbBridge = currentTarget
     ? resolveVerifiedArcadeDbNativeBridge({ pluginRoot, platform, arch })
     : verifyForeignBinary("ARCADEDB-BRIDGE-MANIFEST.json", verifyArcadeDbNativeBridgeManifest);
-  if (worker.manifest.kind !== (legacy ? "HeadAgentWorkerManifest" : "LodeAgentWorkerManifest")
-    || supervisor.manifest.kind !== (legacy ? "HeadAgentProcessSupervisorManifest" : "LodeAgentProcessSupervisorManifest")
-    || arcadedbBridge.manifest.kind !== (legacy ? "HeadAgentArcadeDbBridgeManifest" : "LodeAgentArcadeDbBridgeManifest")) {
+  if (
+    worker.manifest.kind !== (legacy ? "HeadAgentWorkerManifest" : "LodeAgentWorkerManifest") ||
+    supervisor.manifest.kind !== (legacy ? "HeadAgentProcessSupervisorManifest" : "LodeAgentProcessSupervisorManifest") ||
+    arcadedbBridge.manifest.kind !== (legacy ? "HeadAgentArcadeDbBridgeManifest" : "LodeAgentArcadeDbBridgeManifest")
+  ) {
     fail("HEAD_NATIVE_OVERLAY_INVALID", "Native overlay manifest families are incoherent.");
   }
   return {
@@ -364,33 +482,40 @@ export function verifyNativeBundleOverlay({ pluginRoot, version, commit = null }
   if (!pluginRoot || !version) fail("HEAD_NATIVE_BUNDLE_ARGUMENTS", "Native bundle root and version are required.");
   const root = path.resolve(pluginRoot);
   const distRoot = path.join(root, "dist");
-  const expectedDirectories = Object.values(TARGETS).map((target) => target.directory).sort();
+  const expectedDirectories = Object.values(TARGETS)
+    .map((target) => target.directory)
+    .sort();
   let entries;
-  try { entries = fs.readdirSync(distRoot, { withFileTypes: true }); }
-  catch { fail("HEAD_NATIVE_BUNDLE_INVALID", "Native bundle dist directory is unavailable."); }
+  try {
+    entries = fs.readdirSync(distRoot, { withFileTypes: true });
+  } catch {
+    fail("HEAD_NATIVE_BUNDLE_INVALID", "Native bundle dist directory is unavailable.");
+  }
   const actualDirectories = entries.map((entry) => entry.name).sort();
-  if (entries.some((entry) => !entry.isDirectory() || entry.isSymbolicLink())
-    || JSON.stringify(actualDirectories) !== JSON.stringify(expectedDirectories)) {
+  if (entries.some((entry) => !entry.isDirectory() || entry.isSymbolicLink()) || JSON.stringify(actualDirectories) !== JSON.stringify(expectedDirectories)) {
     fail("HEAD_NATIVE_BUNDLE_INVALID", "Native bundle must contain the exact supported platform directories.");
   }
-  const targets = Object.entries(TARGETS).sort(([left], [right]) => left.localeCompare(right, "en")).map(([targetKey]) => {
-    const separator = targetKey.lastIndexOf("-");
-    const platform = targetKey.slice(0, separator);
-    const arch = targetKey.slice(separator + 1);
-    const verified = verifyNativeOverlay({ pluginRoot: root, platform, arch, version });
-    if (commit && verified.buildCommit !== commit) {
-      fail("HEAD_NATIVE_BUNDLE_COMMIT_MISMATCH", "Native bundle target does not match the expected source commit.");
-    }
-    return { platform, arch, ...verified };
-  });
+  const targets = Object.entries(TARGETS)
+    .sort(([left], [right]) => left.localeCompare(right, "en"))
+    .map(([targetKey]) => {
+      const separator = targetKey.lastIndexOf("-");
+      const platform = targetKey.slice(0, separator);
+      const arch = targetKey.slice(separator + 1);
+      const verified = verifyNativeOverlay({ pluginRoot: root, platform, arch, version });
+      if (commit && verified.buildCommit !== commit) {
+        fail("HEAD_NATIVE_BUNDLE_COMMIT_MISMATCH", "Native bundle target does not match the expected source commit.");
+      }
+      return { platform, arch, ...verified };
+    });
   const buildCommits = [...new Set(targets.map((target) => target.buildCommit))];
   if (buildCommits.length !== 1) fail("HEAD_NATIVE_BUNDLE_COMMIT_MISMATCH", "Native bundle targets do not share one source commit.");
-  const manifestKinds = new Set(targets.map(target => JSON.parse(fs.readFileSync(path.join(distRoot, target.targetDirectory, "WORKER-MANIFEST.json"), "utf8")).kind));
+  const manifestKinds = new Set(
+    targets.map((target) => JSON.parse(fs.readFileSync(path.join(distRoot, target.targetDirectory, "WORKER-MANIFEST.json"), "utf8")).kind),
+  );
   if (manifestKinds.size !== 1) fail("HEAD_NATIVE_BUNDLE_INVALID", "Native bundle targets do not share one manifest family.");
   const identity = {
     protocolVersion: NATIVE_ARTIFACT_DELIVERY_VERSION,
-    kind: manifestKinds.has("HeadAgentWorkerManifest")
-      ? "HeadAgentNativeBundle" : "LodeAgentNativeBundle",
+    kind: manifestKinds.has("HeadAgentWorkerManifest") ? "HeadAgentNativeBundle" : "LodeAgentNativeBundle",
     version,
     buildCommit: buildCommits[0],
     targets,
@@ -418,11 +543,14 @@ export function assembleVerifiedNativeBundle({ artifactsRoot, outputRoot, versio
     fail("HEAD_NATIVE_BUNDLE_ARTIFACTS_INVALID", "Native bundle artifact directory is unavailable or unsafe.");
   }
   const actualArchives = artifactEntries.map((entry) => entry.name).sort();
-  const legacyArchives = Object.values(LEGACY_TARGETS).map((target) => `${target.package}.tar.gz`).sort();
+  const legacyArchives = Object.values(LEGACY_TARGETS)
+    .map((target) => `${target.package}.tar.gz`)
+    .sort();
   const selectedTargets = JSON.stringify(actualArchives) === JSON.stringify(legacyArchives) ? LEGACY_TARGETS : TARGETS;
-  const expectedArchives = Object.values(selectedTargets).map((target) => `${target.package}.tar.gz`).sort();
-  if (artifactEntries.some((entry) => !entry.isFile() || entry.isSymbolicLink())
-    || JSON.stringify(actualArchives) !== JSON.stringify(expectedArchives)) {
+  const expectedArchives = Object.values(selectedTargets)
+    .map((target) => `${target.package}.tar.gz`)
+    .sort();
+  if (artifactEntries.some((entry) => !entry.isFile() || entry.isSymbolicLink()) || JSON.stringify(actualArchives) !== JSON.stringify(expectedArchives)) {
     fail("HEAD_NATIVE_BUNDLE_ARTIFACTS_INVALID", "Native bundle requires the exact supported platform archives.");
   }
   fs.mkdirSync(path.join(output, "dist"), { recursive: true });

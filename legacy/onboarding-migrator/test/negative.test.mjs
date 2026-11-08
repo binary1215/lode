@@ -11,15 +11,8 @@ import {
   verifyProductModelRevisionForProjection,
 } from "../../../scripts/lib/onboarding-projection.mjs";
 import { verifyTemporalProvenanceGraph } from "../../../scripts/lib/temporal-provenance.mjs";
-import {
-  createRecoveryCheckpoint,
-  inspectRecoveryCheckpointBasis,
-  readRecoveryCheckpoint,
-} from "../../../scripts/lib/compaction-recovery.mjs";
-import {
-  createVerifiedHistoricalInventoryCapability,
-  applyHistoricalArtifactBoundary,
-} from "../../../scripts/lib/historical-artifact-boundary.mjs";
+import { createRecoveryCheckpoint, inspectRecoveryCheckpointBasis, readRecoveryCheckpoint } from "../../../scripts/lib/compaction-recovery.mjs";
+import { createVerifiedHistoricalInventoryCapability, applyHistoricalArtifactBoundary } from "../../../scripts/lib/historical-artifact-boundary.mjs";
 import {
   historicalBoundaryStorageFiles,
   historicalBoundaryDigest,
@@ -32,7 +25,9 @@ import { legacyReadyFixture, pluginRoot, snapshotFiles } from "./fixture.mjs";
 
 const boundaryFiles = (root) => snapshotFiles(root, (name) => name.startsWith(".head/onboarding/historical-boundaries/"));
 
-function readJson(file) { return JSON.parse(fs.readFileSync(file, "utf8")); }
+function readJson(file) {
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
 function writeJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
@@ -63,18 +58,51 @@ async function expectNoBoundaryWrite(t, mutate, expectedCode) {
   t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
   await mutate(fixture);
   const before = snapshotFiles(fixture.root);
-  assert.throws(() => applyMigration({ root: fixture.root }), (error) => expectedCode == null || error.code === expectedCode);
+  assert.throws(
+    () => applyMigration({ root: fixture.root }),
+    (error) => expectedCode == null || error.code === expectedCode,
+  );
   assert.deepEqual(snapshotFiles(fixture.root), before);
   assert.deepEqual(boundaryFiles(fixture.root), {});
 }
 
 test("first slice rejects unsupported, incomplete, and current-unreadable bases with zero writes", async (t) => {
-  await expectNoBoundaryWrite(t, async ({ root }) => rewriteState(root, (state) => { state.protocol.version = "0.1.0"; }), "LEGACY_MIGRATOR_UNSUPPORTED_STATE");
-  await expectNoBoundaryWrite(t, async ({ root }) => rewriteState(root, (state) => { state.phase = "awaiting-review"; }), "LEGACY_MIGRATOR_INCOMPLETE_READY");
-  await expectNoBoundaryWrite(t, async ({ root, candidate }) => fs.rmSync(path.join(root, ".head", "onboarding", "candidate-sets", `${candidate.candidateSetId}.json`)), "LEGACY_MIGRATOR_UNSUPPORTED_CHAIN");
-  await expectNoBoundaryWrite(t, async ({ root, review }) => fs.rmSync(path.join(root, ".head", "onboarding", "review-decisions", `${review.reviewDecisionId}.json`)), "LEGACY_MIGRATOR_UNSUPPORTED_CHAIN");
-  await expectNoBoundaryWrite(t, async ({ root, review }) => fs.rmSync(path.join(root, ".head", "onboarding", "product-model-revisions", `${review.resultingProductModelId}.json`)), "LEGACY_MIGRATOR_ARTIFACT_MISSING");
-  await expectNoBoundaryWrite(t, async ({ root }) => fs.rmSync(path.join(root, ".head", "context", "product-model.json")), "LEGACY_MIGRATOR_CURRENT_CANON_UNSUPPORTED");
+  await expectNoBoundaryWrite(
+    t,
+    async ({ root }) =>
+      rewriteState(root, (state) => {
+        state.protocol.version = "0.1.0";
+      }),
+    "LEGACY_MIGRATOR_UNSUPPORTED_STATE",
+  );
+  await expectNoBoundaryWrite(
+    t,
+    async ({ root }) =>
+      rewriteState(root, (state) => {
+        state.phase = "awaiting-review";
+      }),
+    "LEGACY_MIGRATOR_INCOMPLETE_READY",
+  );
+  await expectNoBoundaryWrite(
+    t,
+    async ({ root, candidate }) => fs.rmSync(path.join(root, ".head", "onboarding", "candidate-sets", `${candidate.candidateSetId}.json`)),
+    "LEGACY_MIGRATOR_UNSUPPORTED_CHAIN",
+  );
+  await expectNoBoundaryWrite(
+    t,
+    async ({ root, review }) => fs.rmSync(path.join(root, ".head", "onboarding", "review-decisions", `${review.reviewDecisionId}.json`)),
+    "LEGACY_MIGRATOR_UNSUPPORTED_CHAIN",
+  );
+  await expectNoBoundaryWrite(
+    t,
+    async ({ root, review }) => fs.rmSync(path.join(root, ".head", "onboarding", "product-model-revisions", `${review.resultingProductModelId}.json`)),
+    "LEGACY_MIGRATOR_ARTIFACT_MISSING",
+  );
+  await expectNoBoundaryWrite(
+    t,
+    async ({ root }) => fs.rmSync(path.join(root, ".head", "context", "product-model.json")),
+    "LEGACY_MIGRATOR_CURRENT_CANON_UNSUPPORTED",
+  );
   await expectNoBoundaryWrite(t, async ({ root }) => fs.rmSync(path.join(root, ".head", "sessions", "current.json")), null);
 });
 
@@ -84,8 +112,12 @@ test("legacy family binding violations fail without publishing a boundary", asyn
     t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
     const file = path.join(fixture.root, ".head", "onboarding", "candidate-sets", `${fixture.candidate.candidateSetId}.json`);
     const candidate = readJson(file);
-    candidate.candidates[0] = identify({ ...candidate.candidates[0], producerVersion: version === "0.1.0" ? "0.2.0" : "0.1.0" },
-      "candidateId", "candidateHash", "onboarding-candidate");
+    candidate.candidates[0] = identify(
+      { ...candidate.candidates[0], producerVersion: version === "0.1.0" ? "0.2.0" : "0.1.0" },
+      "candidateId",
+      "candidateHash",
+      "onboarding-candidate",
+    );
     const rewritten = identify(candidate, "candidateSetId", "candidateSetHash", "onboarding-candidates");
     fs.rmSync(file);
     writeJson(path.join(path.dirname(file), `${rewritten.candidateSetId}.json`), rewritten);
@@ -97,9 +129,14 @@ test("legacy family binding violations fail without publishing a boundary", asyn
 });
 
 test("ready review pointer and closed parent ancestry are exact preconditions", async (t) => {
-  await expectNoBoundaryWrite(t, async ({ root }) => rewriteState(root, (state) => {
-    state.latestReviewDecisionId = `onboarding-review-decision-${"f".repeat(24)}`;
-  }), "LEGACY_MIGRATOR_INCOMPLETE_READY");
+  await expectNoBoundaryWrite(
+    t,
+    async ({ root }) =>
+      rewriteState(root, (state) => {
+        state.latestReviewDecisionId = `onboarding-review-decision-${"f".repeat(24)}`;
+      }),
+    "LEGACY_MIGRATOR_INCOMPLETE_READY",
+  );
 
   const fixture = await legacyReadyFixture({ version: "0.3.0" });
   t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
@@ -114,8 +151,9 @@ test("ready review pointer and closed parent ancestry are exact preconditions", 
   delete reviewPayload.reviewDecisionId;
   delete reviewPayload.reviewDecisionHash;
   reviewPayload.candidateSetId = candidate.candidateSetId;
-  reviewPayload.lineage = reviewPayload.lineage.map((lineage) => lineage.relation === "reviews-candidate-set"
-    ? { ...lineage, targetId: candidate.candidateSetId } : lineage);
+  reviewPayload.lineage = reviewPayload.lineage.map((lineage) =>
+    lineage.relation === "reviews-candidate-set" ? { ...lineage, targetId: candidate.candidateSetId } : lineage,
+  );
   const review = identify(reviewPayload, "reviewDecisionId", "reviewDecisionHash", "onboarding-review-decision");
   fs.rmSync(candidateFile);
   fs.rmSync(reviewFile);
@@ -135,10 +173,13 @@ test("first apply rejects a capability whose exact preflight basis drifted", asy
   const fixture = await legacyReadyFixture({ version: "0.3.0" });
   t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
   const inspected = inspectLegacyOnboarding({ root: fixture.root });
-  rewriteState(fixture.root, (state) => { state.updatedAt = "2099-01-01T00:00:00.000Z"; });
+  rewriteState(fixture.root, (state) => {
+    state.updatedAt = "2099-01-01T00:00:00.000Z";
+  });
   const before = snapshotFiles(fixture.root);
-  assert.throws(() => applyHistoricalArtifactBoundary({ root: fixture.root, verifiedInventory: inspected.capability,
-    hostMode: "explicit-one-shot" }), { code: "HISTORICAL_BOUNDARY_PREFLIGHT_BASIS_DRIFT" });
+  assert.throws(() => applyHistoricalArtifactBoundary({ root: fixture.root, verifiedInventory: inspected.capability, hostMode: "explicit-one-shot" }), {
+    code: "HISTORICAL_BOUNDARY_PREFLIGHT_BASIS_DRIFT",
+  });
   assert.deepEqual(snapshotFiles(fixture.root), before);
   assert.deepEqual(boundaryFiles(fixture.root), {});
 });
@@ -158,8 +199,13 @@ test("first apply requires current-readable checkpoint and Run P2 while acceptin
 
   const crossProject = await legacyReadyFixture({ version: "0.3.0" });
   t.after(() => fs.rmSync(crossProject.root, { recursive: true, force: true }));
-  const original = createRecoveryCheckpoint({ root: crossProject.root, purpose: "Fixture-only validation",
-    approvedDecisions: [], currentPosition: "Before migration", nextExpectedResult: "Validate current P2" });
+  const original = createRecoveryCheckpoint({
+    root: crossProject.root,
+    purpose: "Fixture-only validation",
+    approvedDecisions: [],
+    currentPosition: "Before migration",
+    nextExpectedResult: "Validate current P2",
+  });
   const payload = { ...original.checkpoint, projectId: `head-${"f".repeat(20)}` };
   delete payload.checkpointId;
   delete payload.checkpointDigest;
@@ -177,8 +223,13 @@ test("first apply requires current-readable checkpoint and Run P2 while acceptin
 
   const verified = await legacyReadyFixture({ version: "0.3.0" });
   t.after(() => fs.rmSync(verified.root, { recursive: true, force: true }));
-  const validCheckpoint = createRecoveryCheckpoint({ root: verified.root, purpose: "Fixture-only validation",
-    approvedDecisions: [], currentPosition: "Before migration", nextExpectedResult: "Preserve current P2" });
+  const validCheckpoint = createRecoveryCheckpoint({
+    root: verified.root,
+    purpose: "Fixture-only validation",
+    approvedDecisions: [],
+    currentPosition: "Before migration",
+    nextExpectedResult: "Preserve current P2",
+  });
   assert.equal(readRecoveryCheckpoint({ root: verified.root, checkpointId: validCheckpoint.checkpoint.checkpointId }).status, "verified");
   assert.equal(applyMigration({ root: verified.root }).status, "applied");
 });
@@ -214,8 +265,7 @@ test("candidate and review filenames must equal their document identities", asyn
     const document = role === "candidate" ? fixture.candidate : fixture.review;
     const directory = path.join(fixture.root, ".head", "onboarding", role === "candidate" ? "candidate-sets" : "review-decisions");
     const id = role === "candidate" ? document.candidateSetId : document.reviewDecisionId;
-    const renamed = role === "candidate" ? `onboarding-candidates-${"f".repeat(24)}.json`
-      : `onboarding-review-decision-${"f".repeat(24)}.json`;
+    const renamed = role === "candidate" ? `onboarding-candidates-${"f".repeat(24)}.json` : `onboarding-review-decision-${"f".repeat(24)}.json`;
     fs.renameSync(path.join(directory, `${id}.json`), path.join(directory, renamed));
     const before = snapshotFiles(fixture.root);
     assert.throws(() => applyMigration({ root: fixture.root }), { code: "LEGACY_MIGRATOR_ARTIFACT_ID_PATH_MISMATCH" });
@@ -227,9 +277,14 @@ test("candidate and review filenames must equal their document identities", asyn
   t.after(() => fs.rmSync(canonical.root, { recursive: true, force: true }));
   const inspected = inspectLegacyOnboarding({ root: canonical.root });
   const candidateEntry = inspected.entries.find((entry) => entry.role === "historical-candidate-set");
-  assert.throws(() => verifyHistoricalInventoryEntries([{ ...candidateEntry,
-    path: `.head/onboarding/candidate-sets/onboarding-candidates-${"f".repeat(24)}.json` }],
-  { projectRoot: canonical.root, verifyBytes: false }), { code: "HISTORICAL_BOUNDARY_ROLE_PATH_MISMATCH" });
+  assert.throws(
+    () =>
+      verifyHistoricalInventoryEntries([{ ...candidateEntry, path: `.head/onboarding/candidate-sets/onboarding-candidates-${"f".repeat(24)}.json` }], {
+        projectRoot: canonical.root,
+        verifyBytes: false,
+      }),
+    { code: "HISTORICAL_BOUNDARY_ROLE_PATH_MISMATCH" },
+  );
 });
 
 test("current Core independently derives every historical Product revision interpretation", async (t) => {
@@ -238,13 +293,23 @@ test("current Core independently derives every historical Product revision inter
   const opaquePreflight = inspectLegacyOnboarding({ root: opaque.root });
   const opaqueEntry = opaquePreflight.entries.find((entry) => entry.interpretationMode === "opaque-legacy-revision");
   assert.ok(opaqueEntry);
-  assert.throws(() => verifyProductModelRevisionForProjection(readJson(path.join(opaque.root, opaqueEntry.path))),
-    { code: "INVALID_ONBOARDING_PRODUCT_REVISION" });
-  const falselyTyped = opaquePreflight.entries.map((entry) => entry.path === opaqueEntry.path
-    ? { ...entry, interpretationMode: "current-typed-with-historical-provenance" } : entry);
+  assert.throws(() => verifyProductModelRevisionForProjection(readJson(path.join(opaque.root, opaqueEntry.path))), {
+    code: "INVALID_ONBOARDING_PRODUCT_REVISION",
+  });
+  const falselyTyped = opaquePreflight.entries.map((entry) =>
+    entry.path === opaqueEntry.path ? { ...entry, interpretationMode: "current-typed-with-historical-provenance" } : entry,
+  );
   const beforeOpaque = snapshotFiles(opaque.root);
-  assert.throws(() => createVerifiedHistoricalInventoryCapability({ root: opaque.root, projectId: opaquePreflight.projectId,
-    entries: falselyTyped, validation: opaquePreflight.validation }), { code: "HISTORICAL_BOUNDARY_REVISION_INTERPRETATION_MISMATCH" });
+  assert.throws(
+    () =>
+      createVerifiedHistoricalInventoryCapability({
+        root: opaque.root,
+        projectId: opaquePreflight.projectId,
+        entries: falselyTyped,
+        validation: opaquePreflight.validation,
+      }),
+    { code: "HISTORICAL_BOUNDARY_REVISION_INTERPRETATION_MISMATCH" },
+  );
   assert.deepEqual(snapshotFiles(opaque.root), beforeOpaque);
   assert.deepEqual(boundaryFiles(opaque.root), {});
 
@@ -253,11 +318,20 @@ test("current Core independently derives every historical Product revision inter
   const typedPreflight = inspectLegacyOnboarding({ root: typed.root });
   const typedEntry = typedPreflight.entries.find((entry) => entry.interpretationMode === "current-typed-with-historical-provenance");
   assert.ok(typedEntry);
-  const falselyOpaque = typedPreflight.entries.map((entry) => entry.path === typedEntry.path
-    ? { ...entry, interpretationMode: "opaque-legacy-revision" } : entry);
+  const falselyOpaque = typedPreflight.entries.map((entry) =>
+    entry.path === typedEntry.path ? { ...entry, interpretationMode: "opaque-legacy-revision" } : entry,
+  );
   const beforeTyped = snapshotFiles(typed.root);
-  assert.throws(() => createVerifiedHistoricalInventoryCapability({ root: typed.root, projectId: typedPreflight.projectId,
-    entries: falselyOpaque, validation: typedPreflight.validation }), { code: "HISTORICAL_BOUNDARY_REVISION_INTERPRETATION_MISMATCH" });
+  assert.throws(
+    () =>
+      createVerifiedHistoricalInventoryCapability({
+        root: typed.root,
+        projectId: typedPreflight.projectId,
+        entries: falselyOpaque,
+        validation: typedPreflight.validation,
+      }),
+    { code: "HISTORICAL_BOUNDARY_REVISION_INTERPRETATION_MISMATCH" },
+  );
   assert.deepEqual(snapshotFiles(typed.root), beforeTyped);
   assert.deepEqual(boundaryFiles(typed.root), {});
 });
@@ -266,14 +340,20 @@ test("historical projection and temporal coverage reject surplus and orphan refe
   const fixture = await legacyReadyFixture({ version: "0.3.0" });
   t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
   const applied = applyMigration({ root: fixture.root });
-  const projection = loadOnboardingGraphProjection({ projectRoot: fixture.root, projectId: applied.boundary.projectId,
-    currentProductModelId: applied.boundary.appliedAtBasis.canon.id });
+  const projection = loadOnboardingGraphProjection({
+    projectRoot: fixture.root,
+    projectId: applied.boundary.projectId,
+    currentProductModelId: applied.boundary.appliedAtBasis.canon.id,
+  });
   const forgedProjectionPayload = structuredClone(projection);
   delete forgedProjectionPayload.projectionInputId;
   delete forgedProjectionPayload.projectionInputHash;
   forgedProjectionPayload.historicalCoverage.references.push({
-    path: "unrecognized/example.json", role: "unrecognized-role", artifactId: `product-model-${"d".repeat(24)}`,
-    sha256: "d".repeat(64), interpretationMode: "unrecognized-mode",
+    path: "unrecognized/example.json",
+    role: "unrecognized-role",
+    artifactId: `product-model-${"d".repeat(24)}`,
+    sha256: "d".repeat(64),
+    interpretationMode: "unrecognized-mode",
   });
   const forgedProjection = identify(forgedProjectionPayload, "projectionInputId", "projectionInputHash", "onboarding-graph-input");
   assert.throws(() => verifyOnboardingGraphProjectionInput(forgedProjection), { code: "INVALID_ONBOARDING_HISTORICAL_COVERAGE" });
@@ -287,12 +367,16 @@ test("historical projection and temporal coverage reject surplus and orphan refe
 });
 
 test("current-unreadable live historical result cannot gain P1 through the boundary", async (t) => {
-  await expectNoBoundaryWrite(t, async ({ root, review }) => {
-    const file = path.join(root, ".head", "onboarding", "product-model-revisions", `${review.resultingProductModelId}.json`);
-    const revision = readJson(file);
-    delete revision.authority;
-    writeJson(file, revision);
-  }, "LEGACY_MIGRATOR_CURRENT_CANON_UNSUPPORTED");
+  await expectNoBoundaryWrite(
+    t,
+    async ({ root, review }) => {
+      const file = path.join(root, ".head", "onboarding", "product-model-revisions", `${review.resultingProductModelId}.json`);
+      const revision = readJson(file);
+      delete revision.authority;
+      writeJson(file, revision);
+    },
+    "LEGACY_MIGRATOR_CURRENT_CANON_UNSUPPORTED",
+  );
 });
 
 test("exact partial retry completes, while partial basis drift refuses finalization", async (t) => {
@@ -314,43 +398,78 @@ test("exact partial retry completes, while partial basis drift refuses finalizat
   const driftFiles = historicalBoundaryStorageFiles(drift.root, driftApplied.boundary.boundaryId);
   fs.rmSync(driftFiles.receipt);
   fs.rmSync(driftFiles.commit);
-  rewriteState(drift.root, (state) => { state.worldModelId = null; });
+  rewriteState(drift.root, (state) => {
+    state.worldModelId = null;
+  });
   const before = snapshotFiles(drift.root);
-  assert.throws(() => applyHistoricalArtifactBoundary({ root: drift.root, verifiedInventory: driftInspected.capability, hostMode: "explicit-one-shot" }),
-    { code: "INCOMPLETE_HISTORICAL_BOUNDARY_BASIS_DRIFT" });
+  assert.throws(() => applyHistoricalArtifactBoundary({ root: drift.root, verifiedInventory: driftInspected.capability, hostMode: "explicit-one-shot" }), {
+    code: "INCOMPLETE_HISTORICAL_BOUNDARY_BASIS_DRIFT",
+  });
   assert.deepEqual(snapshotFiles(drift.root), before);
 });
 
 test("committed replay rejects a divergent inventory and cross-project or wrong-host application", async (t) => {
   const fixture = await legacyReadyFixture({ version: "0.3.0" });
   const other = await legacyReadyFixture({ version: "0.3.0" });
-  t.after(() => { fs.rmSync(fixture.root, { recursive: true, force: true }); fs.rmSync(other.root, { recursive: true, force: true }); });
+  t.after(() => {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+    fs.rmSync(other.root, { recursive: true, force: true });
+  });
   const inspected = inspectLegacyOnboarding({ root: fixture.root });
-  assert.throws(() => applyHistoricalArtifactBoundary({ root: fixture.root, verifiedInventory: inspected.capability, hostMode: "automatic" }), { code: "HISTORICAL_BOUNDARY_HOST_MODE_REQUIRED" });
-  assert.throws(() => applyHistoricalArtifactBoundary({ root: other.root, verifiedInventory: inspected.capability, hostMode: "explicit-one-shot" }), { code: "HISTORICAL_BOUNDARY_PROJECT_MISMATCH" });
+  assert.throws(() => applyHistoricalArtifactBoundary({ root: fixture.root, verifiedInventory: inspected.capability, hostMode: "automatic" }), {
+    code: "HISTORICAL_BOUNDARY_HOST_MODE_REQUIRED",
+  });
+  assert.throws(() => applyHistoricalArtifactBoundary({ root: other.root, verifiedInventory: inspected.capability, hostMode: "explicit-one-shot" }), {
+    code: "HISTORICAL_BOUNDARY_PROJECT_MISMATCH",
+  });
   applyHistoricalArtifactBoundary({ root: fixture.root, verifiedInventory: inspected.capability, hostMode: "explicit-one-shot" });
   const worldModelId = fixture.accepted.state.worldModelId;
   const worldPath = `.head/world-model/snapshots/${worldModelId}.json`;
   const worldFile = path.join(fixture.root, ...worldPath.split("/"));
   const world = readJson(worldFile);
   const worldBytes = fs.readFileSync(worldFile);
-  const extraEntries = [...inspected.entries, {
-    path: worldPath, role: "legacy-world-embedding-reference", artifactId: worldModelId,
-    protocolFamily: world.protocol?.name || world.kind, protocolVersion: world.protocol?.version || String(world.schemaVersion), byteLength: worldBytes.byteLength,
-    sha256: historicalBoundaryDigest(worldBytes), interpretationMode: "opaque-historical",
-  }].sort((left, right) => left.path.localeCompare(right.path, "en"));
-  const divergent = createVerifiedHistoricalInventoryCapability({ root: fixture.root, projectId: inspected.projectId, entries: extraEntries, validation: inspected.validation });
-  assert.throws(() => applyHistoricalArtifactBoundary({ root: fixture.root, verifiedInventory: divergent, hostMode: "explicit-one-shot" }), { code: "HISTORICAL_BOUNDARY_DIVERGENT_REPLAY" });
+  const extraEntries = [
+    ...inspected.entries,
+    {
+      path: worldPath,
+      role: "legacy-world-embedding-reference",
+      artifactId: worldModelId,
+      protocolFamily: world.protocol?.name || world.kind,
+      protocolVersion: world.protocol?.version || String(world.schemaVersion),
+      byteLength: worldBytes.byteLength,
+      sha256: historicalBoundaryDigest(worldBytes),
+      interpretationMode: "opaque-historical",
+    },
+  ].sort((left, right) => left.path.localeCompare(right.path, "en"));
+  const divergent = createVerifiedHistoricalInventoryCapability({
+    root: fixture.root,
+    projectId: inspected.projectId,
+    entries: extraEntries,
+    validation: inspected.validation,
+  });
+  assert.throws(() => applyHistoricalArtifactBoundary({ root: fixture.root, verifiedInventory: divergent, hostMode: "explicit-one-shot" }), {
+    code: "HISTORICAL_BOUNDARY_DIVERGENT_REPLAY",
+  });
 });
 
 test("inventory bounds reject path escape, oversize, excessive count, and symlink entries", async (t) => {
   const fixture = await legacyReadyFixture({ version: "0.3.0" });
   t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
   const base = inspectLegacyOnboarding({ root: fixture.root }).entries[0];
-  assert.throws(() => verifyHistoricalInventoryEntries([{ ...base, path: "../outside.json" }], { projectRoot: fixture.root }), { code: "HISTORICAL_BOUNDARY_PATH_ESCAPE" });
-  assert.throws(() => verifyHistoricalInventoryEntries([{ ...base, byteLength: 8 * 1024 * 1024 + 1 }], { projectRoot: fixture.root, verifyBytes: false }), { code: "HISTORICAL_BOUNDARY_LIMIT" });
-  assert.throws(() => verifyHistoricalInventoryEntries(Array.from({ length: 513 }, (_, index) => ({ ...base, path: `fixture/${index}.json` })),
-    { projectRoot: fixture.root, verifyBytes: false }), { code: "HISTORICAL_BOUNDARY_LIMIT" });
+  assert.throws(() => verifyHistoricalInventoryEntries([{ ...base, path: "../outside.json" }], { projectRoot: fixture.root }), {
+    code: "HISTORICAL_BOUNDARY_PATH_ESCAPE",
+  });
+  assert.throws(() => verifyHistoricalInventoryEntries([{ ...base, byteLength: 8 * 1024 * 1024 + 1 }], { projectRoot: fixture.root, verifyBytes: false }), {
+    code: "HISTORICAL_BOUNDARY_LIMIT",
+  });
+  assert.throws(
+    () =>
+      verifyHistoricalInventoryEntries(
+        Array.from({ length: 513 }, (_, index) => ({ ...base, path: `fixture/${index}.json` })),
+        { projectRoot: fixture.root, verifyBytes: false },
+      ),
+    { code: "HISTORICAL_BOUNDARY_LIMIT" },
+  );
   const target = path.join(fixture.root, "README.md");
   const link = path.join(fixture.root, "legacy-link.json");
   try {
@@ -361,8 +480,21 @@ test("inventory bounds reject path escape, oversize, excessive count, and symlin
     try {
       fs.symlinkSync(path.join(fixture.root, ".head", "onboarding"), junction, "junction");
       const stateBytes = fs.readFileSync(path.join(junction, "current.json"));
-      assert.throws(() => verifyHistoricalInventoryEntries([{ ...base, path: "legacy-junction/current.json", byteLength: stateBytes.byteLength,
-        sha256: crypto.createHash("sha256").update(stateBytes).digest("hex") }], { projectRoot: fixture.root }), { code: "HISTORICAL_BOUNDARY_SYMLINK" });
+      assert.throws(
+        () =>
+          verifyHistoricalInventoryEntries(
+            [
+              {
+                ...base,
+                path: "legacy-junction/current.json",
+                byteLength: stateBytes.byteLength,
+                sha256: crypto.createHash("sha256").update(stateBytes).digest("hex"),
+              },
+            ],
+            { projectRoot: fixture.root },
+          ),
+        { code: "HISTORICAL_BOUNDARY_SYMLINK" },
+      );
       return;
     } catch (junctionError) {
       if (["EPERM", "EACCES"].includes(junctionError.code)) return t.skip(`Symlink and junction creation unavailable: ${error.code}/${junctionError.code}`);
@@ -370,8 +502,14 @@ test("inventory bounds reject path escape, oversize, excessive count, and symlin
     }
   }
   const bytes = fs.readFileSync(target);
-  assert.throws(() => verifyHistoricalInventoryEntries([{ ...base, path: "legacy-link.json", byteLength: bytes.byteLength,
-    sha256: crypto.createHash("sha256").update(bytes).digest("hex") }], { projectRoot: fixture.root }), { code: "HISTORICAL_BOUNDARY_SYMLINK" });
+  assert.throws(
+    () =>
+      verifyHistoricalInventoryEntries(
+        [{ ...base, path: "legacy-link.json", byteLength: bytes.byteLength, sha256: crypto.createHash("sha256").update(bytes).digest("hex") }],
+        { projectRoot: fixture.root },
+      ),
+    { code: "HISTORICAL_BOUNDARY_SYMLINK" },
+  );
 });
 
 test("committed original, marker, missing-file, and extra-legacy drift fail closed", async (t) => {
@@ -389,7 +527,12 @@ test("committed original, marker, missing-file, and extra-legacy drift fail clos
     }
     if (mode === "extra") {
       const source = fixture.candidate;
-      const extra = identify({ ...source, inputMode: source.inputMode === "new" ? "existing" : "new" }, "candidateSetId", "candidateSetHash", "onboarding-candidates");
+      const extra = identify(
+        { ...source, inputMode: source.inputMode === "new" ? "existing" : "new" },
+        "candidateSetId",
+        "candidateSetHash",
+        "onboarding-candidates",
+      );
       writeJson(path.join(fixture.root, ".head", "onboarding", "candidate-sets", `${extra.candidateSetId}.json`), extra);
     }
     await assert.rejects(() => buildWorldModel({ root: fixture.root, persist: false }));
@@ -400,17 +543,26 @@ test("two standalone apply processes serialize and converge on one committed bou
   const fixture = await legacyReadyFixture({ version: "0.3.0" });
   t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
   const cli = path.join(pluginRoot, "legacy", "onboarding-migrator", "bin", "head-onboarding-migrate.mjs");
-  const launch = () => new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, "apply", fixture.root], { cwd: pluginRoot, windowsHide: true });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ pid: child.pid, code, stdout, stderr }));
-  });
+  const launch = () =>
+    new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [cli, "apply", fixture.root], { cwd: pluginRoot, windowsHide: true });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk;
+      });
+      child.on("error", reject);
+      child.on("close", (code) => resolve({ pid: child.pid, code, stdout, stderr }));
+    });
   const results = await Promise.all([launch(), launch()]);
-  assert.equal(results.every((result) => result.code === 0), true, JSON.stringify(results));
+  assert.equal(
+    results.every((result) => result.code === 0),
+    true,
+    JSON.stringify(results),
+  );
   const statuses = results.map((result) => JSON.parse(result.stdout).status).sort();
   assert.deepEqual(statuses, ["already-applied", "applied"]);
   assert.equal(Object.keys(boundaryFiles(fixture.root)).length, 3);

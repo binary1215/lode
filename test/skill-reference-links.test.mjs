@@ -8,22 +8,33 @@ import { buildClaudeMarketplaceSnapshot } from "../scripts/lib/claude-marketplac
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const skillRoot = path.join(pluginRoot, "skills", "lode-agent-core");
-const files = ["SKILL.md", "references/runtime-composition.md", "references/conversation-ux.md", "references/authority-and-roles.md",
-  "references/project-discovery.md", "references/context-workflow.md", "references/recovery-workflow.md", "references/context-compiler.md"];
+const files = [
+  "SKILL.md",
+  "references/runtime-composition.md",
+  "references/conversation-ux.md",
+  "references/authority-and-roles.md",
+  "references/project-discovery.md",
+  "references/context-workflow.md",
+  "references/recovery-workflow.md",
+  "references/context-compiler.md",
+];
 
 // This checks this Skill's inline Markdown links and ATX heading anchors, not
 // model behavior or every CommonMark extension. Ignore examples in code fences.
 function prose(markdown) {
   let fence = null;
-  return markdown.split(/\r?\n/).filter((line) => {
-    const marker = line.match(/^\s*(`{3,}|~{3,})/);
-    if (marker) {
-      if (!fence) fence = marker[1];
-      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
-      return false;
-    }
-    return !fence;
-  }).join("\n");
+  return markdown
+    .split(/\r?\n/)
+    .filter((line) => {
+      const marker = line.match(/^\s*(`{3,}|~{3,})/);
+      if (marker) {
+        if (!fence) fence = marker[1];
+        else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+        return false;
+      }
+      return !fence;
+    })
+    .join("\n");
 }
 
 function anchors(markdown) {
@@ -31,8 +42,12 @@ function anchors(markdown) {
   for (const line of prose(markdown).split("\n")) {
     const heading = line.match(/^ {0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$/);
     if (!heading) continue;
-    const base = heading[1].toLowerCase().replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, "").replace(/\s/g, "-");
-    let candidate = base, suffix = 0;
+    const base = heading[1]
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, "")
+      .replace(/\s/g, "-");
+    let candidate = base,
+      suffix = 0;
     while (found.has(candidate)) candidate = `${base}-${++suffix}`;
     found.add(candidate);
   }
@@ -59,8 +74,12 @@ function verifyLinks(file, root) {
 function fixture(t) {
   const parent = fs.realpathSync(process.env.LODE_AGENT_TEST_TMP || process.env.HEAD_AGENT_TEST_TMP || os.tmpdir());
   const root = fs.mkdtempSync(path.join(parent, "lode-skill-links-"));
-  t.after(() => { assert.equal(path.dirname(root), parent); fs.rmSync(root, { recursive: true }); });
-  const source = path.join(root, "SKILL.md"), reference = path.join(root, "reference.md");
+  t.after(() => {
+    assert.equal(path.dirname(root), parent);
+    fs.rmSync(root, { recursive: true });
+  });
+  const source = path.join(root, "SKILL.md"),
+    reference = path.join(root, "reference.md");
   fs.writeFileSync(reference, "# Follow-up handoffs\n## Follow-up handoffs\n\n```md\n## Not a heading\n```\n");
   return { root, source, reference };
 }
@@ -82,16 +101,26 @@ test("Lode Skills and all Core references route to existing files and anchors", 
   }
 });
 
-test("S1-S6: packaged Codex/Claude guidance retains direct work, uninstalled entry and conditional discovery/recovery/handoff routes", t => {
+test("S1-S6: packaged Codex/Claude guidance retains direct work, uninstalled entry and conditional discovery/recovery/handoff routes", (t) => {
   const { root } = fixture(t);
-  for (const [client, build] of [["codex", buildCodexMarketplaceSnapshot], ["claude", buildClaudeMarketplaceSnapshot]]) {
-    const outputRoot = path.join(root, client), built = build({ sourceRoot: pluginRoot, outputRoot, name: "lode-agent-plugin" });
-    const packaged = path.join(outputRoot, "plugins", built.pluginName), skill = path.join(packaged, "skills/lode-agent-core");
+  for (const [client, build] of [
+    ["codex", buildCodexMarketplaceSnapshot],
+    ["claude", buildClaudeMarketplaceSnapshot],
+  ]) {
+    const outputRoot = path.join(root, client),
+      built = build({ sourceRoot: pluginRoot, outputRoot, name: "lode-agent-plugin" });
+    const packaged = path.join(outputRoot, "plugins", built.pluginName),
+      skill = path.join(packaged, "skills/lode-agent-core");
     for (const file of files) verifyLinks(path.join(skill, file), packaged);
     const main = fs.readFileSync(path.join(skill, "SKILL.md"), "utf8");
-    for (const target of ["../../README.md#install", "references/project-discovery.md#installation-and-adoption",
-      "references/project-discovery.md#existing-work-and-recorded-conclusions", "references/recovery-workflow.md#retained-project-storage",
-      "references/runtime-composition.md#continuing-in-an-existing-conversation"]) assert(main.includes(target), `${client}: ${target}`);
+    for (const target of [
+      "../../README.md#install",
+      "references/project-discovery.md#installation-and-adoption",
+      "references/project-discovery.md#existing-work-and-recorded-conclusions",
+      "references/recovery-workflow.md#retained-project-storage",
+      "references/runtime-composition.md#continuing-in-an-existing-conversation",
+    ])
+      assert(main.includes(target), `${client}: ${target}`);
     assert.match(main, /Work directly for small tasks/u);
     assert.match(main, /installed-Skill prerequisite/u);
     assert.match(main, /Current user direction\/cancellations and P2 take precedence/u);

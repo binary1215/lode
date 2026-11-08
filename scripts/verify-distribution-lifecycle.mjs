@@ -5,12 +5,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import {
-  installDistribution,
-  inspectDistribution,
-  rollbackDistribution,
-  uninstallDistribution,
-} from "./lib/distribution-lifecycle.mjs";
+import { installDistribution, inspectDistribution, rollbackDistribution, uninstallDistribution } from "./lib/distribution-lifecycle.mjs";
 import { resolveProjectStorage } from "./lib/project-storage-format.mjs";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,10 +18,7 @@ const upgradedSource = path.join(scratchRoot, "upgraded-source");
 const projectRoot = path.join(scratchRoot, "project-without-git-or-graphdb");
 const coreOnlyProjectRoot = path.join(scratchRoot, "core-only-project");
 const evidenceResumeProjectRoot = path.join(scratchRoot, "project-awaiting-evidence");
-const runtimeForbiddenMarkers = [
-  ["ultimate", "goal"].join("_"),
-  ["neo", "pick"].join(""),
-];
+const runtimeForbiddenMarkers = [["ultimate", "goal"].join("_"), ["neo", "pick"].join("")];
 const runtimeTextExtensions = new Set([".json", ".js", ".md", ".mjs", ".ps1", ".sh", ".txt"]);
 
 function assertRuntimeSurfaceIsolated(root) {
@@ -35,20 +27,45 @@ function assertRuntimeSurfaceIsolated(root) {
     const directory = stack.pop();
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const absolute = path.join(directory, entry.name);
-      if (entry.isDirectory()) { stack.push(absolute); continue; }
+      if (entry.isDirectory()) {
+        stack.push(absolute);
+        continue;
+      }
       if (!entry.isFile()) continue;
       const relative = path.relative(root, absolute).replaceAll("\\", "/");
-      assert.equal(runtimeForbiddenMarkers.some((marker) => relative.toLowerCase().includes(marker)), false, relative);
+      assert.equal(
+        runtimeForbiddenMarkers.some((marker) => relative.toLowerCase().includes(marker)),
+        false,
+        relative,
+      );
       if (!runtimeTextExtensions.has(path.extname(entry.name).toLowerCase())) continue;
       const text = fs.readFileSync(absolute, "utf8").toLowerCase();
-      assert.equal(runtimeForbiddenMarkers.some((marker) => text.includes(marker)), false, relative);
+      assert.equal(
+        runtimeForbiddenMarkers.some((marker) => text.includes(marker)),
+        false,
+        relative,
+      );
     }
   }
 }
 
 function copySourceFixture() {
   fs.mkdirSync(upgradedSource, { recursive: true });
-  for (const entry of [".codex-plugin", ".mcp.json", "LICENSE", "README.md", "README.ko.md", "assets", "compat", "docs", "hooks", "native", "package.json", "scripts", "skills"]) {
+  for (const entry of [
+    ".codex-plugin",
+    ".mcp.json",
+    "LICENSE",
+    "README.md",
+    "README.ko.md",
+    "assets",
+    "compat",
+    "docs",
+    "hooks",
+    "native",
+    "package.json",
+    "scripts",
+    "skills",
+  ]) {
     const source = path.join(sourceRoot, entry);
     if (!fs.existsSync(source)) continue;
     fs.cpSync(source, path.join(upgradedSource, entry), {
@@ -62,7 +79,19 @@ function copySourceFixture() {
     value.version = upgradedVersion;
     fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   }
-  for (const relative of [".agent-work/review.md", "docs/.agent-work/review.md", "scripts/nested/.agent-work/result.json", "skills/.AGENT-WORK/review.md", ".lode/context.json", "docs/.lode/context.json", "scripts/nested/.lode/result.json", "skills/.LODE/context.json", "docs/.lode-state.json", "docs/file-case/.lode", "docs/.custom-source/keep.md"]) {
+  for (const relative of [
+    ".agent-work/review.md",
+    "docs/.agent-work/review.md",
+    "scripts/nested/.agent-work/result.json",
+    "skills/.AGENT-WORK/review.md",
+    ".lode/context.json",
+    "docs/.lode/context.json",
+    "scripts/nested/.lode/result.json",
+    "skills/.LODE/context.json",
+    "docs/.lode-state.json",
+    "docs/file-case/.lode",
+    "docs/.custom-source/keep.md",
+  ]) {
     const file = path.join(upgradedSource, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, "work evidence fixture\n");
@@ -80,13 +109,20 @@ async function verifyOpenCodeInstallation(expectedRoot) {
   const manifest = JSON.parse(fs.readFileSync(path.join(projectRoot, storage.directory, "generated/manifest.json"), "utf8"));
   assert.equal(fs.realpathSync(manifest.pluginRoot), fs.realpathSync(expectedRoot));
   assert.equal(manifest.packageVersion, JSON.parse(fs.readFileSync(path.join(expectedRoot, "package.json"), "utf8")).version);
-  const file = path.join(projectRoot, "opencode.json"), original = fs.readFileSync(file, "utf8");
+  const file = path.join(projectRoot, "opencode.json"),
+    original = fs.readFileSync(file, "utf8");
   // Model the pinned Host's env-before-JSON order with the optional env unset.
   const config = JSON.parse(original.replace(/\{env:LODE_PLUGIN_ROOT\}/g, ""));
   const { default: plugin } = await import(pathToFileURL(path.join(expectedRoot, "scripts/opencode-plugin.mjs")).href);
-  const hooks = await plugin.server({ client: {}, project: { id: "synthetic-distribution-host" }, directory: projectRoot },
-    { environment: { HEAD_AGENT_OPERATIONAL_STATE_ROOT: path.join(scratchRoot, "operational") } });
-  try { await hooks.config(config); } finally { await hooks.dispose(); }
+  const hooks = await plugin.server(
+    { client: {}, project: { id: "synthetic-distribution-host" }, directory: projectRoot },
+    { environment: { HEAD_AGENT_OPERATIONAL_STATE_ROOT: path.join(scratchRoot, "operational") } },
+  );
+  try {
+    await hooks.config(config);
+  } finally {
+    await hooks.dispose();
+  }
   assert.deepEqual(config.mcp.lode.command, ["node", path.join(expectedRoot, "scripts/mcp-server.mjs")]);
   assert.equal(fs.readFileSync(file, "utf8"), original, "Runtime resolution must not rewrite the portable shared file.");
   assert.equal(original.includes(expectedRoot), false);
@@ -95,20 +131,32 @@ async function verifyOpenCodeInstallation(expectedRoot) {
 function runGlobal(args, identity = "lode", directory = binDirectory) {
   const command = process.platform === "win32" ? path.join(directory, `${identity}-agent.cmd`) : path.join(directory, `${identity}-agent`);
   const machineArgs = args.includes("--json") ? args : [...args, "--json"];
-  const result = process.platform === "win32"
-    ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${command}" ${machineArgs.map((item) => `"${item}"`).join(" ")}"`], { encoding: "utf8", shell: false, windowsHide: true, windowsVerbatimArguments: true })
-    : spawnSync(command, machineArgs, { encoding: "utf8", shell: false });
+  const result =
+    process.platform === "win32"
+      ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${command}" ${machineArgs.map((item) => `"${item}"`).join(" ")}"`], {
+          encoding: "utf8",
+          shell: false,
+          windowsHide: true,
+          windowsVerbatimArguments: true,
+        })
+      : spawnSync(command, machineArgs, { encoding: "utf8", shell: false });
   assert.equal(result.status, 0, result.stderr || result.error?.message || result.stdout);
   return JSON.parse(result.stdout);
 }
 
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object") return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+  if (value && typeof value === "object")
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
+      .join(",")}}`;
   return JSON.stringify(value);
 }
 
-function sha256(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
 
 function verifyHistoricalEntrypointRollback() {
   const root = path.join(scratchRoot, "owned-legacy-install");
@@ -121,8 +169,12 @@ function verifyHistoricalEntrypointRollback() {
     ["scripts/head.mjs", 'process.stdout.write(JSON.stringify({ version: "old-fixture" }) + "\\n");\n'],
   ]);
   const identity = {
-    protocolVersion: "0.1.0", name: "head-agent-core", version: "old-fixture",
-    files: [...files].map(([relative, text]) => ({ path: relative, bytes: Buffer.byteLength(text), sha256: sha256(text) })).sort((a, b) => a.path.localeCompare(b.path, "en")),
+    protocolVersion: "0.1.0",
+    name: "head-agent-core",
+    version: "old-fixture",
+    files: [...files]
+      .map(([relative, text]) => ({ path: relative, bytes: Buffer.byteLength(text), sha256: sha256(text) }))
+      .sort((a, b) => a.path.localeCompare(b.path, "en")),
   };
   const releaseId = `release-${sha256(canonical(identity)).slice(0, 24)}`;
   const release = path.join(root, "releases", releaseId);
@@ -141,8 +193,10 @@ function verifyHistoricalEntrypointRollback() {
   assert.equal(upgraded.previousReleaseId, releaseId);
   // Upgrade retains the historical owner and records the explicitly selected
   // launcher directory; immutable release bytes remain unchanged below.
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, "installation.json"), "utf8")),
-    { ...JSON.parse(oldOwnership), binDirectory: path.resolve(directory) });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, "installation.json"), "utf8")), {
+    ...JSON.parse(oldOwnership),
+    binDirectory: path.resolve(directory),
+  });
   for (const name of ["head", "lode"]) assert.equal(runGlobal(["--version"], name, directory).version, sourceVersion);
   rollbackDistribution({ installRoot: root, binDirectory: directory });
   for (const name of ["head", "lode"]) assert.equal(runGlobal(["--version"], name, directory).version, "old-fixture");
@@ -152,12 +206,16 @@ function verifyHistoricalEntrypointRollback() {
   assert.equal(runGlobal(["--version"], "lode", directory).version, "old-fixture");
   const oldHead = fs.readFileSync(path.join(release, "scripts", "head.mjs"));
   fs.appendFileSync(path.join(release, "scripts", "head.mjs"), "// integrity drift\n");
-  const rejected = spawnSync(process.execPath, [path.join(directory, "lode-agent-launcher.mjs"), "--version"], { encoding: "utf8", shell: false, windowsHide: true });
+  const rejected = spawnSync(process.execPath, [path.join(directory, "lode-agent-launcher.mjs"), "--version"], {
+    encoding: "utf8",
+    shell: false,
+    windowsHide: true,
+  });
   assert.notEqual(rejected.status, 0);
   assert.match(rejected.stderr, /HEAD_DISTRIBUTION_FILE_DRIFT/);
   fs.writeFileSync(path.join(release, "scripts", "head.mjs"), oldHead);
   const aliases = ["HEAD_AGENT_INSTALL_ROOT", "LODE_AGENT_INSTALL_ROOT", "HEAD_AGENT_BIN_DIR", "LODE_AGENT_BIN_DIR"];
-  const saved = aliases.map(name => process.env[name]);
+  const saved = aliases.map((name) => process.env[name]);
   try {
     process.env.HEAD_AGENT_INSTALL_ROOT = root;
     process.env.LODE_AGENT_INSTALL_ROOT = root;
@@ -167,7 +225,10 @@ function verifyHistoricalEntrypointRollback() {
     process.env.LODE_AGENT_INSTALL_ROOT = path.join(scratchRoot, "different-install");
     assert.throws(() => inspectDistribution(), { code: "HEAD_DISTRIBUTION_INSTALL_ROOT_CONFLICT" });
   } finally {
-    aliases.forEach((name, index) => { if (saved[index] === undefined) delete process.env[name]; else process.env[name] = saved[index]; });
+    aliases.forEach((name, index) => {
+      if (saved[index] === undefined) delete process.env[name];
+      else process.env[name] = saved[index];
+    });
   }
   const conflictingBin = path.join(scratchRoot, "unowned-lode-bin");
   fs.mkdirSync(conflictingBin);
@@ -181,9 +242,15 @@ function verifyHistoricalEntrypointRollback() {
 function runGlobalFailure(args) {
   const command = process.platform === "win32" ? path.join(binDirectory, "head-agent.cmd") : path.join(binDirectory, "head-agent");
   const machineArgs = args.includes("--json") ? args : [...args, "--json"];
-  const result = process.platform === "win32"
-    ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${command}" ${machineArgs.map((item) => `"${item}"`).join(" ")}"`], { encoding: "utf8", shell: false, windowsHide: true, windowsVerbatimArguments: true })
-    : spawnSync(command, machineArgs, { encoding: "utf8", shell: false });
+  const result =
+    process.platform === "win32"
+      ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${command}" ${machineArgs.map((item) => `"${item}"`).join(" ")}"`], {
+          encoding: "utf8",
+          shell: false,
+          windowsHide: true,
+          windowsVerbatimArguments: true,
+        })
+      : spawnSync(command, machineArgs, { encoding: "utf8", shell: false });
   assert.notEqual(result.status, 0);
   return JSON.parse(result.stdout);
 }
@@ -194,14 +261,21 @@ try {
   const installed = runNode([
     path.join(sourceRoot, "scripts", "distribution.mjs"),
     "install",
-    "--source", sourceRoot,
-    "--install-root", installRoot,
-    "--bin-dir", binDirectory,
-    "--native", "off",
-    "--project", projectRoot,
-    "--runtime", "claude,codex,opencode",
+    "--source",
+    sourceRoot,
+    "--install-root",
+    installRoot,
+    "--bin-dir",
+    binDirectory,
+    "--native",
+    "off",
+    "--project",
+    projectRoot,
+    "--runtime",
+    "claude,codex,opencode",
     "--write-root-instructions",
-    "--profile", "product",
+    "--profile",
+    "product",
   ]);
   assert.equal(installed.status, "installed");
   assert.equal(installed.version, sourceVersion);
@@ -212,12 +286,20 @@ try {
   assert.equal(installed.project.onboarding.candidateCount, 0);
   const projectStorage = resolveProjectStorage(projectRoot);
   assert.ok(projectStorage);
-  const generatedInstructions = fs.readFileSync(path.join(projectRoot, projectStorage.directory, "generated", `${projectStorage.dialect}-instructions.md`), "utf8").toLowerCase();
-  assert.equal(runtimeForbiddenMarkers.some((marker) => generatedInstructions.includes(marker)), false);
+  const generatedInstructions = fs
+    .readFileSync(path.join(projectRoot, projectStorage.directory, "generated", `${projectStorage.dialect}-instructions.md`), "utf8")
+    .toLowerCase();
+  assert.equal(
+    runtimeForbiddenMarkers.some((marker) => generatedInstructions.includes(marker)),
+    false,
+  );
   const installedReleaseRoot = path.join(installRoot, "releases", installed.releaseId);
   assert.equal(fs.existsSync(path.join(installedReleaseRoot, "legacy")), false, "standalone legacy migrator must not enter the installed runtime");
   const installedManifest = JSON.parse(fs.readFileSync(path.join(installedReleaseRoot, "distribution-manifest.json"), "utf8"));
-  assert.equal(installedManifest.files.some((file) => file.path === "legacy" || file.path.startsWith("legacy/")), false);
+  assert.equal(
+    installedManifest.files.some((file) => file.path === "legacy" || file.path.startsWith("legacy/")),
+    false,
+  );
   assert.equal(fs.existsSync(path.join(installedReleaseRoot, "scripts", "workspace-host-export-mcp.mjs")), true);
   assert.equal(fs.existsSync(path.join(installedReleaseRoot, "scripts", "verify-live-provider-coordination.mjs")), false);
   assert.equal(fs.existsSync(path.join(installedReleaseRoot, "scripts", "lib", "role-coordination.mjs")), false);
@@ -234,9 +316,15 @@ try {
   assert.equal(inspectDistribution({ installRoot, binDirectory }).activeReleaseId, installed.releaseId);
 
   const command = process.platform === "win32" ? path.join(binDirectory, "lode-agent.cmd") : path.join(binDirectory, "lode-agent");
-  const version = process.platform === "win32"
-    ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${command}" --version"`], { encoding: "utf8", shell: false, windowsHide: true, windowsVerbatimArguments: true })
-    : spawnSync(command, ["--version"], { encoding: "utf8", shell: false });
+  const version =
+    process.platform === "win32"
+      ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${command}" --version"`], {
+          encoding: "utf8",
+          shell: false,
+          windowsHide: true,
+          windowsVerbatimArguments: true,
+        })
+      : spawnSync(command, ["--version"], { encoding: "utf8", shell: false });
   assert.equal(version.status, 0, version.stderr || version.error?.message);
   assert.equal(JSON.parse(version.stdout).version, sourceVersion);
 
@@ -313,19 +401,35 @@ try {
   const upgraded = runNode([
     path.join(sourceRoot, "scripts", "distribution.mjs"),
     "upgrade",
-    "--source", upgradedSource,
-    "--install-root", installRoot,
-    "--bin-dir", binDirectory,
-    "--native", "off",
-    "--project", projectRoot,
-    "--runtime", "claude,codex,opencode",
+    "--source",
+    upgradedSource,
+    "--install-root",
+    installRoot,
+    "--bin-dir",
+    binDirectory,
+    "--native",
+    "off",
+    "--project",
+    projectRoot,
+    "--runtime",
+    "claude,codex,opencode",
     "--write-root-instructions",
-    "--profile", "product",
+    "--profile",
+    "product",
   ]);
   assert.equal(upgraded.status, "upgraded");
   assert.notEqual(upgraded.releaseId, installed.releaseId);
   const upgradedReleaseRoot = path.join(installRoot, "releases", upgraded.releaseId);
-  for (const relative of [".agent-work", "docs/.agent-work", "scripts/nested/.agent-work", "skills/.AGENT-WORK", ".lode", "docs/.lode", "scripts/nested/.lode", "skills/.LODE"]) {
+  for (const relative of [
+    ".agent-work",
+    "docs/.agent-work",
+    "scripts/nested/.agent-work",
+    "skills/.AGENT-WORK",
+    ".lode",
+    "docs/.lode",
+    "scripts/nested/.lode",
+    "skills/.LODE",
+  ]) {
     assert.equal(fs.existsSync(path.join(upgradedReleaseRoot, relative)), false);
   }
   for (const relative of ["docs/.custom-source/keep.md", "docs/.lode-state.json", "docs/file-case/.lode"]) {
@@ -360,29 +464,35 @@ try {
 
   verifyHistoricalEntrypointRollback();
 
-  process.stdout.write(`${JSON.stringify({
-    status: "passed",
-    installedReleaseId: installed.releaseId,
-    upgradedReleaseId: upgraded.releaseId,
-    rollbackVerified: true,
-    syntheticHistoricalEntrypointRollbackVerified: true,
-    bothLauncherAliasesVerified: true,
-    failedUpgradePreservedCurrent: true,
-    launcherVerified: true,
-    workspaceHostExportBridgePackaged: true,
-    retiredRoleAndLiveCoordinationImplementationsExcluded: true,
-    hostlessSessionRecoveryVerifierPackaged: true,
-    publicInitializeResumeVerified: true,
-    constitutionalCoreDefaultVerified: true,
-    runtimeDevelopmentContextExcluded: true,
-    mitLicensePackaged: true,
-    projectAuthorityDeduplicated: true,
-    gitAndGraphDbIndependentOnboardingVerified: true,
-    managedProjectionConvergenceVerified: true,
-    managedDriftRejectedWithoutOverwrite: true,
-    awaitingEvidenceResumeVerified: true,
-    projectStatePreserved: true,
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        status: "passed",
+        installedReleaseId: installed.releaseId,
+        upgradedReleaseId: upgraded.releaseId,
+        rollbackVerified: true,
+        syntheticHistoricalEntrypointRollbackVerified: true,
+        bothLauncherAliasesVerified: true,
+        failedUpgradePreservedCurrent: true,
+        launcherVerified: true,
+        workspaceHostExportBridgePackaged: true,
+        retiredRoleAndLiveCoordinationImplementationsExcluded: true,
+        hostlessSessionRecoveryVerifierPackaged: true,
+        publicInitializeResumeVerified: true,
+        constitutionalCoreDefaultVerified: true,
+        runtimeDevelopmentContextExcluded: true,
+        mitLicensePackaged: true,
+        projectAuthorityDeduplicated: true,
+        gitAndGraphDbIndependentOnboardingVerified: true,
+        managedProjectionConvergenceVerified: true,
+        managedDriftRejectedWithoutOverwrite: true,
+        awaitingEvidenceResumeVerified: true,
+        projectStatePreserved: true,
+      },
+      null,
+      2,
+    )}\n`,
+  );
 } finally {
   if (fs.existsSync(scratchRoot)) fs.rmSync(scratchRoot, { recursive: true, force: true });
 }

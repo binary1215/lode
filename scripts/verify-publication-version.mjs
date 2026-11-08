@@ -1,13 +1,25 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { BUILD_RECIPE, decideMarketplacePublication, decideReleasePublication, logicalPublicationDigest, publicationGithub, readPublicationSnapshot } from "./lib/publication-version.mjs";
+import {
+  BUILD_RECIPE,
+  decideMarketplacePublication,
+  decideReleasePublication,
+  logicalPublicationDigest,
+  publicationGithub,
+  readPublicationSnapshot,
+} from "./lib/publication-version.mjs";
 
 const options = Object.create(null);
 for (let i = 2; i < process.argv.length; i += 2) {
   const key = process.argv[i];
-  if (!["--provider", "--root", "--previous-root", "--previous-commit", "--repository", "--marketplace-name", "--source-commit", "--source-root"].includes(key)
-    || options[key] || !process.argv[i + 1] || process.argv[i + 1].startsWith("--")) throw new Error("Invalid publication verifier arguments.");
+  if (
+    !["--provider", "--root", "--previous-root", "--previous-commit", "--repository", "--marketplace-name", "--source-commit", "--source-root"].includes(key) ||
+    options[key] ||
+    !process.argv[i + 1] ||
+    process.argv[i + 1].startsWith("--")
+  )
+    throw new Error("Invalid publication verifier arguments.");
   options[key] = process.argv[i + 1];
 }
 const sourceRoot = path.resolve(options["--source-root"] || ".");
@@ -26,8 +38,9 @@ if (options["--provider"] === "release") {
   if (candidate.sourceCommit !== sourceCommit) throw new Error("Snapshot source does not match build.");
   let previous = null;
   if (options["--previous-root"]) {
-    try { previous = readPublicationSnapshot({ ...args, root: options["--previous-root"] }); }
-    catch (error) {
+    try {
+      previous = readPublicationSnapshot({ ...args, root: options["--previous-root"] });
+    } catch (error) {
       // Historical exceptions stay outside distributed runtime modules. Candidates never use them.
       const { readPreviousPublication } = await import("../legacy/marketplace-ownership/publication.mjs");
       previous = readPreviousPublication({ ...args, root: options["--previous-root"], snapshotCommit: options["--previous-commit"] });

@@ -16,18 +16,23 @@ const REQUIRED = [
 ];
 
 const requiredEnvironment = (environment, name) => {
-  const pair = ENVIRONMENT_NAME_PAIRS.find(item => item.legacy === name);
+  const pair = ENVIRONMENT_NAME_PAIRS.find((item) => item.legacy === name);
   const legacy = String(environment[name] || "").trim();
   const canonical = pair ? String(environment[pair.canonical] || "").trim() : "";
   if (legacy && canonical) {
-    const comparePath = value => {
-      if (!path.isAbsolute(value)) throw Object.assign(new Error("Host-export path references must be absolute."), { code: "WORKSPACE_HOST_EXPORT_ENVIRONMENT_CONFLICT" });
-      let target = path.resolve(value), suffix = [];
+    const comparePath = (value) => {
+      if (!path.isAbsolute(value))
+        throw Object.assign(new Error("Host-export path references must be absolute."), { code: "WORKSPACE_HOST_EXPORT_ENVIRONMENT_CONFLICT" });
+      let target = path.resolve(value),
+        suffix = [];
       for (;;) {
-        try { target = path.resolve(fs.realpathSync(target), ...suffix); break; }
-        catch (error) {
+        try {
+          target = path.resolve(fs.realpathSync(target), ...suffix);
+          break;
+        } catch (error) {
           if (error.code !== "ENOENT") throw error;
-          suffix.unshift(path.basename(target)); const parent = path.dirname(target);
+          suffix.unshift(path.basename(target));
+          const parent = path.dirname(target);
           if (parent === target) throw error;
           target = parent;
         }

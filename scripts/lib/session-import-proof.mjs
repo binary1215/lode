@@ -43,8 +43,7 @@ export function verifyImportedDefaultSession({
   const originalSha256 = hash(stateBytes);
   const ownerPath = sessionDirectory + "/imports/owners/" + originalSha256 + ".json";
   const ownerFile = copiedProjectFile(root, ownerPath);
-  if (readOriginal ? !readOriginal(ownerPath) : !fs.lstatSync(ownerFile, { throwIfNoEntry: false }))
-    return false;
+  if (readOriginal ? !readOriginal(ownerPath) : !fs.lstatSync(ownerFile, { throwIfNoEntry: false })) return false;
   const owner = sourceRead(ownerPath).document;
   if (
     owner.schemaVersion !== 1 ||
@@ -90,15 +89,8 @@ export function verifyImportedDefaultSession({
   validatePortableManifestFormat(bundle.document);
   const sourceBytes = (relative) => {
     const declared = bundle.document.files.find((entry) => entry.path === relative);
-    const mapping = receipt.historicalOriginals.find(
-      (entry) => entry.sourcePath === relative && entry.sha256 === declared?.sha256,
-    );
-    if (
-      !declared ||
-      !mapping ||
-      mapping.storedPath !== archive + "/originals/" + declared.sha256 + ".bin"
-    )
-      fail();
+    const mapping = receipt.historicalOriginals.find((entry) => entry.sourcePath === relative && entry.sha256 === declared?.sha256);
+    if (!declared || !mapping || mapping.storedPath !== archive + "/originals/" + declared.sha256 + ".bin") fail();
     if (!readOriginal)
       verifyCopiedProjectFile(root, {
         path: mapping.storedPath,
@@ -109,24 +101,13 @@ export function verifyImportedDefaultSession({
     if (bytes.length !== declared.bytes || hash(bytes) !== declared.sha256) fail();
     return bytes;
   };
-  const sourceProject = JSON.parse(
-    new TextDecoder("utf-8", { fatal: true }).decode(sourceBytes(directory + "/project.json")),
-  );
-  if (
-    sourceProject.projectId !== project.projectId ||
-    hash(sourceBytes(directory + "/project.json")) !== bundle.document.sourceProjectDigest
-  )
-    fail();
+  const sourceProject = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(sourceBytes(directory + "/project.json")));
+  if (sourceProject.projectId !== project.projectId || hash(sourceBytes(directory + "/project.json")) !== bundle.document.sourceProjectDigest) fail();
   verifyProjectLocationOriginals({ directory, project: sourceProject, readOriginal: sourceBytes });
   const originalState = sourceBytes(owner.sourcePath);
   if (hash(originalState) !== originalSha256 || !originalState.equals(stateBytes)) fail();
   const state = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(originalState));
-  if (
-    state.schemaVersion !== 1 ||
-    state.sessionId !== sessionId ||
-    (state.projectId != null && state.projectId !== project.projectId)
-  )
-    fail();
+  if (state.schemaVersion !== 1 || state.sessionId !== sessionId || (state.projectId != null && state.projectId !== project.projectId)) fail();
   if (verifyOriginal && verifyOriginal({ sourceBytes, state, receipt }) !== true) fail();
   return true;
 }

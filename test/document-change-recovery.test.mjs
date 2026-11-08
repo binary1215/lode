@@ -17,12 +17,28 @@ async function fixture(disposition = "accept-all") {
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const layout = inspectProject(root).storage;
   await buildWorldModel({ root });
-  (await materializeWorldMarkdownProjection({ root }));
+  await materializeWorldMarkdownProjection({ root });
   fs.appendFileSync(path.join(root, layout.directory, "generated/knowledge/index.md"), "\nReviewed proposal: message delivery.\n");
-  const captured = (await captureWorldMarkdownChanges({ root, persist: true }));
-  const request = { root, candidateSetId: captured.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Adopt the reviewed delivery capability.",
-    resultingProductModel: { schemaVersion: 1, featureGroups: [], capabilities: [{ key: "delivery", name: "Delivery", description: "Deliver a message." }], features: [], requirements: [], constraints: [], decisions: [] } };
-  if (disposition === "reject") { request.disposition = "reject"; delete request.resultingProductModel; }
+  const captured = await captureWorldMarkdownChanges({ root, persist: true });
+  const request = {
+    root,
+    candidateSetId: captured.candidateSet.candidateSetId,
+    disposition: "accept-all",
+    rationale: "Adopt the reviewed delivery capability.",
+    resultingProductModel: {
+      schemaVersion: 1,
+      featureGroups: [],
+      capabilities: [{ key: "delivery", name: "Delivery", description: "Deliver a message." }],
+      features: [],
+      requirements: [],
+      constraints: [],
+      decisions: [],
+    },
+  };
+  if (disposition === "reject") {
+    request.disposition = "reject";
+    delete request.resultingProductModel;
+  }
   const reviewed = await reviewDocumentChanges({ ...request, apply: false });
   return { root, layout, request, review: reviewed.reviewDecision };
 }
@@ -32,19 +48,32 @@ test("final gap: existing document-change revision family remains citable with i
   try {
     await applyDocumentChangeReview({ root, reviewDecisionId: review.reviewDecisionId });
     const relative = `${layout.directory}/document-changes/product-model-revisions/${review.resultingProductModelId}.json`;
-    const file = path.join(root, relative), bytes = fs.readFileSync(file), stat = fs.statSync(file), hash = value => crypto.createHash("sha256").update(value).digest("hex");
+    const file = path.join(root, relative),
+      bytes = fs.readFileSync(file),
+      stat = fs.statSync(file),
+      hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
     const revision = JSON.parse(bytes);
-    assert.equal(revision.authority, "explicit-user-reviewed-product-canon-revision"); assert.ok(revision.revisionHash);
+    assert.equal(revision.authority, "explicit-user-reviewed-product-canon-revision");
+    assert.ok(revision.revisionHash);
     const saved = recordSessionWorkEvidence({ root, input: { references: [{ path: relative, digest: hash(bytes), kind: "artifact" }] } });
     const read = readSessionWorkContext({ root, evidenceIds: [saved.evidence.evidenceId], maxRecords: 1 });
     assert.equal(read.records[0].references[0].status, "intact-retained-original");
     assert.equal(read.records[0].references[0].originalOwner.projectId, inspectProject(root).project.projectId);
     assert.equal(read.records[0].references[0].instructionAuthority, false);
-    const corrupt = { ...revision, revisionHash: "0".repeat(64) }, corruptBytes = Buffer.from(JSON.stringify(corrupt));
+    const corrupt = { ...revision, revisionHash: "0".repeat(64) },
+      corruptBytes = Buffer.from(JSON.stringify(corrupt));
     fs.writeFileSync(path.join(root, "forged-document-revision.json"), corruptBytes);
-    assert.throws(() => recordSessionWorkEvidence({ root, input: { references: [{ path: "forged-document-revision.json", digest: hash(corruptBytes), kind: "artifact" }] } }), { code: "DOCUMENT_CHANGE_PRODUCT_REVISION_DIGEST_MISMATCH" });
-    assert.deepEqual(fs.readFileSync(file), bytes); assert.equal(fs.statSync(file).mode, stat.mode); assert.equal(fs.statSync(file).mtimeMs, stat.mtimeMs);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    assert.throws(
+      () =>
+        recordSessionWorkEvidence({ root, input: { references: [{ path: "forged-document-revision.json", digest: hash(corruptBytes), kind: "artifact" }] } }),
+      { code: "DOCUMENT_CHANGE_PRODUCT_REVISION_DIGEST_MISMATCH" },
+    );
+    assert.deepEqual(fs.readFileSync(file), bytes);
+    assert.equal(fs.statSync(file).mode, stat.mode);
+    assert.equal(fs.statSync(file).mtimeMs, stat.mtimeMs);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 function crash(root, reviewDecisionId, boundary, layout) {
@@ -92,7 +121,9 @@ test("durable document approval resumes actual Canon, partial Markdown, receipt 
       assert.equal((await inspectDocumentChangeReviewStatus({ root, candidateSetId: request.candidateSetId })).projectionsReady, true);
       assert.equal((await reviewDocumentChanges(request)).status, "already-applied");
       assert.equal(fs.readdirSync(path.join(root, layout.directory, "document-changes/review-decisions")).length, 1);
-    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -104,10 +135,14 @@ test("document recovery preserves later user edits and never rolls approved Cano
     fs.appendFileSync(file, "\nLater user edit must survive.\n");
     const edited = fs.readFileSync(file);
     const canon = fs.readFileSync(path.join(root, layout.directory, "context/product-model.json"));
-    await assert.rejects(() => applyDocumentChangeReview({ root, reviewDecisionId: review.reviewDecisionId }), { code: "DOCUMENT_CHANGE_CANDIDATE_PUBLISHED_DRIFT" });
+    await assert.rejects(() => applyDocumentChangeReview({ root, reviewDecisionId: review.reviewDecisionId }), {
+      code: "DOCUMENT_CHANGE_CANDIDATE_PUBLISHED_DRIFT",
+    });
     assert.deepEqual(fs.readFileSync(file), edited);
     assert.deepEqual(fs.readFileSync(path.join(root, layout.directory, "context/product-model.json")), canon);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("durable reject resumes partial publication before and after receipt without another approval", async () => {
@@ -117,12 +152,15 @@ test("durable reject resumes partial publication before and after receipt withou
       const canon = fs.readFileSync(path.join(root, layout.directory, "context/product-model.json"));
       const p2 = fs.readFileSync(path.join(root, layout.directory, "sessions/current.json"));
       crash(root, review.reviewDecisionId, boundary === "receipt" ? "receipt" : "markdown", layout);
-      if (boundary === "legacy-markdown") fs.unlinkSync(path.join(root, layout.directory, "document-changes/application-bases", `${review.reviewDecisionId}.json`));
+      if (boundary === "legacy-markdown")
+        fs.unlinkSync(path.join(root, layout.directory, "document-changes/application-bases", `${review.reviewDecisionId}.json`));
       if (boundary === "later-edit") {
         const file = path.join(root, layout.directory, "generated/knowledge/index.md");
         fs.appendFileSync(file, "\nLater edit stays.\n");
         const edited = fs.readFileSync(file);
-        await assert.rejects(() => applyDocumentChangeReview({ root, reviewDecisionId: review.reviewDecisionId }), { code: "DOCUMENT_CHANGE_CANDIDATE_PUBLISHED_DRIFT" });
+        await assert.rejects(() => applyDocumentChangeReview({ root, reviewDecisionId: review.reviewDecisionId }), {
+          code: "DOCUMENT_CHANGE_CANDIDATE_PUBLISHED_DRIFT",
+        });
         assert.deepEqual(fs.readFileSync(file), edited);
       } else {
         await applyDocumentChangeReview({ root, reviewDecisionId: review.reviewDecisionId });
@@ -132,6 +170,8 @@ test("durable reject resumes partial publication before and after receipt withou
       assert.deepEqual(fs.readFileSync(path.join(root, layout.directory, "context/product-model.json")), canon);
       assert.deepEqual(fs.readFileSync(path.join(root, layout.directory, "sessions/current.json")), p2);
       assert.equal(fs.readdirSync(path.join(root, layout.directory, "document-changes/review-decisions")).length, 1);
-    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 });

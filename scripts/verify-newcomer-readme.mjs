@@ -61,8 +61,11 @@ function spawnCaptured(command, args, options = {}) {
 function parseResult(result, expectedExitCode = 0) {
   assert.equal(result.outputExceeded, false, "Newcomer command exceeded its fixed output budget.");
   assert.equal(result.exitCode, expectedExitCode, result.stderr || result.stdout);
-  try { return JSON.parse(result.stdout); }
-  catch (error) { throw new Error(`Newcomer command did not return JSON: ${error.message}\n${result.stdout.slice(0, 1000)}`); }
+  try {
+    return JSON.parse(result.stdout);
+  } catch (error) {
+    throw new Error(`Newcomer command did not return JSON: ${error.message}\n${result.stdout.slice(0, 1000)}`);
+  }
 }
 
 async function runNode(args, expectedExitCode = 0) {
@@ -81,10 +84,13 @@ async function runGlobal(args, expectedExitCode = 0) {
   }
   const command = path.join(binDirectory, "lode-agent.cmd");
   const commandLine = `""${command}" ${machineArgs.map(commandArgument).join(" ")}"`;
-  return parseResult(await spawnCaptured(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", commandLine], {
-    cwd: scratchRoot,
-    windowsVerbatimArguments: true,
-  }), expectedExitCode);
+  return parseResult(
+    await spawnCaptured(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", commandLine], {
+      cwd: scratchRoot,
+      windowsVerbatimArguments: true,
+    }),
+    expectedExitCode,
+  );
 }
 
 function assertReadmeContract() {
@@ -110,16 +116,27 @@ function assertReadmeContract() {
   const advancedContracts = [
     ["README.md", "command-reference", ["core_ready", "readiness.product", "requires-session-or-run-authorization"]],
     ["context-compiler.md", "context-examples", ["lode-agent context-prepare", "lode-agent context-preview", "ready_for_head_semantic_assessment"]],
-    ["onboarding.md", "product-cli-examples", [
-      "lode-agent onboarding-status", '"disposition": "accept-all"',
-      "lode-agent onboarding-review", "lode-agent world-status",
-      "lode-agent world-docs-build", "lode-agent resume", "--profile product",
-    ]],
+    [
+      "onboarding.md",
+      "product-cli-examples",
+      [
+        "lode-agent onboarding-status",
+        '"disposition": "accept-all"',
+        "lode-agent onboarding-review",
+        "lode-agent world-status",
+        "lode-agent world-docs-build",
+        "lode-agent resume",
+        "--profile product",
+      ],
+    ],
     ["architecture.md", "detailed-core-model", ["evidenceGaps"]],
     ["verification-evidence.md", "source-verification", ["verify:claude-marketplace"]],
   ];
   for (const [file, anchor, required] of advancedContracts) {
-    for (const [entry, directory] of [[readme, "docs"], [koreanReadme, "docs/ko"]]) {
+    for (const [entry, directory] of [
+      [readme, "docs"],
+      [koreanReadme, "docs/ko"],
+    ]) {
       assert(entry.includes(`(${directory}/${file}#${anchor})`), `README must link the advanced contract: ${directory}/${file}#${anchor}`);
       const content = fs.readFileSync(path.join(sourceRoot, directory, file), "utf8");
       assert(content.includes(`id="${anchor}"`), `Advanced contract anchor is missing: ${anchor}`);
@@ -146,23 +163,34 @@ try {
   assertReadmeContract();
   fs.mkdirSync(path.join(projectRoot, "src"), { recursive: true });
   fs.writeFileSync(path.join(projectRoot, "README.md"), "# Request workspace\n\nAccept and validate a request before publishing its receipt.\n", "utf8");
-  fs.writeFileSync(path.join(projectRoot, "src", "request-service.mjs"), [
-    "export function acceptRequest(queue) { return queue.take(); }",
-    "export function validateRequest(fields) { return { fieldCount: fields.length, valid: fields.length > 2 }; }",
-    "export function publishReceipt(request) { return { accepted: request.valid === true }; }",
-    "",
-  ].join("\n"), "utf8");
+  fs.writeFileSync(
+    path.join(projectRoot, "src", "request-service.mjs"),
+    [
+      "export function acceptRequest(queue) { return queue.take(); }",
+      "export function validateRequest(fields) { return { fieldCount: fields.length, valid: fields.length > 2 }; }",
+      "export function publishReceipt(request) { return { accepted: request.valid === true }; }",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
 
   const installed = await runNode([
     path.join(sourceRoot, "scripts", "distribution.mjs"),
     "install",
-    "--source", sourceRoot,
-    "--install-root", installRoot,
-    "--bin-dir", binDirectory,
-    "--native", "off",
-    "--project", projectRoot,
-    "--runtime", "claude,codex,opencode",
-    "--profile", "product",
+    "--source",
+    sourceRoot,
+    "--install-root",
+    installRoot,
+    "--bin-dir",
+    binDirectory,
+    "--native",
+    "off",
+    "--project",
+    projectRoot,
+    "--runtime",
+    "claude,codex,opencode",
+    "--profile",
+    "product",
   ]);
   assert.equal(installed.status, "installed");
   assert.equal(installed.native.status, "javascript-fallback");
@@ -179,29 +207,44 @@ try {
   assert.equal(doctor.project.projectRoot, fs.realpathSync(projectRoot));
   const evidenceRequired = await runGlobal(["onboarding-status", projectRoot]);
   assert.equal(evidenceRequired.status, "awaiting_evidence");
-  fs.writeFileSync(proposalFile, `${JSON.stringify({
-    mode: "existing",
-    semanticProposal: {
-      schemaVersion: 1,
-      sourceSnapshotId: evidenceRequired.state.sourceSnapshotId,
-      candidates: [
-        {
-          productKind: "Capability",
-          proposedEntity: { key: "capability:requests", name: "Request processing", description: "Accept current user requests." },
-          evidence: [{ path: "src/request-service.mjs", line: 1 }],
-          explanation: "Fresh Lode semantic proposal for the newcomer flow.",
-          confidence: 0.8,
+  fs.writeFileSync(
+    proposalFile,
+    `${JSON.stringify(
+      {
+        mode: "existing",
+        semanticProposal: {
+          schemaVersion: 1,
+          sourceSnapshotId: evidenceRequired.state.sourceSnapshotId,
+          candidates: [
+            {
+              productKind: "Capability",
+              proposedEntity: { key: "capability:requests", name: "Request processing", description: "Accept current user requests." },
+              evidence: [{ path: "src/request-service.mjs", line: 1 }],
+              explanation: "Fresh Lode semantic proposal for the newcomer flow.",
+              confidence: 0.8,
+            },
+            {
+              productKind: "Feature",
+              proposedEntity: {
+                key: "feature:accept-request",
+                name: "Accept a request",
+                description: "Accept one current user request.",
+                featureGroupKeys: [],
+                capabilityKeys: ["capability:requests"],
+                governedBy: [],
+              },
+              evidence: [{ path: "src/request-service.mjs", line: 1 }],
+              explanation: "Fresh Lode semantic proposal for the newcomer flow.",
+              confidence: 0.8,
+            },
+          ],
         },
-        {
-          productKind: "Feature",
-          proposedEntity: { key: "feature:accept-request", name: "Accept a request", description: "Accept one current user request.", featureGroupKeys: [], capabilityKeys: ["capability:requests"], governedBy: [] },
-          evidence: [{ path: "src/request-service.mjs", line: 1 }],
-          explanation: "Fresh Lode semantic proposal for the newcomer flow.",
-          confidence: 0.8,
-        },
-      ],
-    },
-  }, null, 2)}\n`, "utf8");
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
   const proposed = await runGlobal(["onboarding-start", projectRoot, "--input", proposalFile]);
   assert.equal(proposed.status, "awaiting_onboarding_review");
   const pending = await runGlobal(["onboarding-status", projectRoot]);
@@ -213,11 +256,19 @@ try {
   assert.equal(candidates.candidateSet.candidateSetId, pending.state.candidateSetId);
   assert.equal(candidates.candidateSet.candidates.length > 0, true);
 
-  fs.writeFileSync(reviewFile, `${JSON.stringify({
-    candidateSetId: pending.state.candidateSetId,
-    disposition: "accept-all",
-    rationale: "Fixture reviewer inspected every evidence-linked candidate and adopts this bootstrap batch.",
-  }, null, 2)}\n`, "utf8");
+  fs.writeFileSync(
+    reviewFile,
+    `${JSON.stringify(
+      {
+        candidateSetId: pending.state.candidateSetId,
+        disposition: "accept-all",
+        rationale: "Fixture reviewer inspected every evidence-linked candidate and adopts this bootstrap batch.",
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
   const reviewed = await runGlobal(["onboarding-review", projectRoot, "--input", reviewFile]);
   assert.equal(reviewed.status, "onboarding_ready");
   assert.equal(reviewed.reviewDecision.promotionAuthority, true);
@@ -256,16 +307,20 @@ try {
   const distributionStatus = await runNode([
     path.join(sourceRoot, "scripts", "distribution.mjs"),
     "status",
-    "--install-root", installRoot,
-    "--bin-dir", binDirectory,
+    "--install-root",
+    installRoot,
+    "--bin-dir",
+    binDirectory,
   ]);
   assert.equal(distributionStatus.status, "ready");
 
   const uninstalled = await runNode([
     path.join(sourceRoot, "scripts", "distribution.mjs"),
     "uninstall",
-    "--install-root", installRoot,
-    "--bin-dir", binDirectory,
+    "--install-root",
+    installRoot,
+    "--bin-dir",
+    binDirectory,
     "--purge",
   ]);
   assert.equal(uninstalled.status, "uninstalled");
@@ -273,17 +328,23 @@ try {
   assert.equal(fs.existsSync(path.join(projectRoot, ".lode", "project.json")), true);
   assert.equal(fs.existsSync(installRoot), false);
 
-  process.stdout.write(`${JSON.stringify({
-    status: "passed",
-    platform: process.platform,
-    sourceControlRequired: false,
-    graphDbRequired: false,
-    nativeBinaryRequired: false,
-    explicitReviewPromotedCanon: true,
-    graphContextAndDocumentsVerified: true,
-    resumePreservedProjectAndSession: true,
-    uninstallPreservedProjectState: true,
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        status: "passed",
+        platform: process.platform,
+        sourceControlRequired: false,
+        graphDbRequired: false,
+        nativeBinaryRequired: false,
+        explicitReviewPromotedCanon: true,
+        graphContextAndDocumentsVerified: true,
+        resumePreservedProjectAndSession: true,
+        uninstallPreservedProjectState: true,
+      },
+      null,
+      2,
+    )}\n`,
+  );
 } finally {
   fs.rmSync(scratchRoot, { recursive: true, force: true });
 }

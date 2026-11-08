@@ -27,16 +27,27 @@ export async function legacyReadyFixture({ version = "0.3.0", opaquePreviousRevi
   fs.mkdirSync(path.join(root, "src"));
   fs.writeFileSync(path.join(root, "src", "delivery.mjs"), "export const deliver = value => ({ delivered: value });\n");
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
-  const started = await startOnboarding({ root, mode: "new", brief: {
-    schemaVersion: 1, name: "Delivery", summary: "Deliver one message.",
-    capabilities: [{ key: "delivery", name: "Delivery", description: "Deliver a message." }],
-  } });
-  const accepted = await reviewOnboarding({ root, candidateSetId: started.candidateSet.candidateSetId,
-    disposition: "accept-all", rationale: "Fixture-only approval." });
+  const started = await startOnboarding({
+    root,
+    mode: "new",
+    brief: {
+      schemaVersion: 1,
+      name: "Delivery",
+      summary: "Deliver one message.",
+      capabilities: [{ key: "delivery", name: "Delivery", description: "Deliver a message." }],
+    },
+  });
+  const accepted = await reviewOnboarding({
+    root,
+    candidateSetId: started.candidateSet.candidateSetId,
+    disposition: "accept-all",
+    rationale: "Fixture-only approval.",
+  });
   const oldCandidateFile = path.join(root, ".head", "onboarding", "candidate-sets", `${started.candidateSet.candidateSetId}.json`);
   const oldReviewFile = path.join(root, ".head", "onboarding", "review-decisions", `${accepted.reviewDecision.reviewDecisionId}.json`);
-  const legacyCandidates = started.candidateSet.candidates.map((item) => identified({ ...item,
-    producer: "head-agent-core-onboarding-inference", producerVersion: version }, "candidateId", "candidateHash", "onboarding-candidate"));
+  const legacyCandidates = started.candidateSet.candidates.map((item) =>
+    identified({ ...item, producer: "head-agent-core-onboarding-inference", producerVersion: version }, "candidateId", "candidateHash", "onboarding-candidate"),
+  );
   const candidatePayload = structuredClone(started.candidateSet);
   delete candidatePayload.candidateSetId;
   delete candidatePayload.candidateSetHash;
@@ -56,8 +67,9 @@ export async function legacyReadyFixture({ version = "0.3.0", opaquePreviousRevi
   delete reviewPayload.reviewDecisionHash;
   reviewPayload.candidateSetId = candidate.candidateSetId;
   reviewPayload.acceptedCandidateIds = legacyCandidates.map((item) => item.candidateId).sort();
-  reviewPayload.lineage = reviewPayload.lineage.map((lineage) => lineage.relation === "reviews-candidate-set"
-    ? { ...lineage, targetId: candidate.candidateSetId } : lineage);
+  reviewPayload.lineage = reviewPayload.lineage.map((lineage) =>
+    lineage.relation === "reviews-candidate-set" ? { ...lineage, targetId: candidate.candidateSetId } : lineage,
+  );
   const review = identified(reviewPayload, "reviewDecisionId", "reviewDecisionHash", "onboarding-review-decision");
   const stateFile = path.join(root, ".head", "onboarding", "current.json");
   const statePayload = structuredClone(accepted.state);
@@ -85,16 +97,30 @@ export async function legacyRevisedReadyFixture() {
   fs.mkdirSync(path.join(root, "src"));
   fs.writeFileSync(path.join(root, "src", "delivery.mjs"), "export const deliver = value => ({ delivered: value });\n");
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
-  const started = await startOnboarding({ root, mode: "new", brief: {
-    schemaVersion: 1, name: "Delivery", summary: "Deliver one message.",
-    capabilities: [{ key: "delivery", name: "Delivery", description: "Deliver a message." }],
-  } });
+  const started = await startOnboarding({
+    root,
+    mode: "new",
+    brief: {
+      schemaVersion: 1,
+      name: "Delivery",
+      summary: "Deliver one message.",
+      capabilities: [{ key: "delivery", name: "Delivery", description: "Deliver a message." }],
+    },
+  });
   const sourceCapability = started.candidateSet.candidates.find((candidate) => candidate.productKind === "Capability");
-  const revised = await reviewOnboarding({ root, candidateSetId: started.candidateSet.candidateSetId,
-    disposition: "revise", userEdits: [{ candidateId: sourceCapability.candidateId,
-      entity: { ...sourceCapability.proposedEntity, name: "Reviewed Delivery" } }], rationale: "Fixture-only revision." });
-  const accepted = await reviewOnboarding({ root, candidateSetId: revised.candidateSet.candidateSetId,
-    disposition: "accept-all", rationale: "Fixture-only revised approval." });
+  const revised = await reviewOnboarding({
+    root,
+    candidateSetId: started.candidateSet.candidateSetId,
+    disposition: "revise",
+    userEdits: [{ candidateId: sourceCapability.candidateId, entity: { ...sourceCapability.proposedEntity, name: "Reviewed Delivery" } }],
+    rationale: "Fixture-only revision.",
+  });
+  const accepted = await reviewOnboarding({
+    root,
+    candidateSetId: revised.candidateSet.candidateSetId,
+    disposition: "accept-all",
+    rationale: "Fixture-only revised approval.",
+  });
   const legacyCandidate = (source, { parents, producerReviewDecisionId }) => {
     const payload = structuredClone(source);
     delete payload.candidateSetId;
@@ -102,9 +128,14 @@ export async function legacyRevisedReadyFixture() {
     payload.protocol.version = "0.3.0";
     payload.parentCandidateSetIds = parents;
     payload.producerReviewDecisionId = producerReviewDecisionId;
-    payload.candidates = payload.candidates.map((item) => identified({ ...item,
-      producer: "head-agent-core-onboarding-inference", producerVersion: "0.3.0" },
-    "candidateId", "candidateHash", "onboarding-candidate"));
+    payload.candidates = payload.candidates.map((item) =>
+      identified(
+        { ...item, producer: "head-agent-core-onboarding-inference", producerVersion: "0.3.0" },
+        "candidateId",
+        "candidateHash",
+        "onboarding-candidate",
+      ),
+    );
     payload.limits = { maxInferredSymbols: 24, maxCandidates: 200, maxEvidenceRecords: 250, maxUnknowns: 100 };
     delete payload.worldModelId;
     return identified(payload, "candidateSetId", "candidateSetHash", "onboarding-candidates");
@@ -116,18 +147,22 @@ export async function legacyRevisedReadyFixture() {
   firstReviewPayload.candidateSetId = firstCandidate.candidateSetId;
   firstReviewPayload.acceptedCandidateIds = [];
   firstReviewPayload.rejectedCandidateIds = [];
-  firstReviewPayload.lineage = firstReviewPayload.lineage.map((lineage) => lineage.relation === "reviews-candidate-set"
-    ? { ...lineage, targetId: firstCandidate.candidateSetId } : lineage);
+  firstReviewPayload.lineage = firstReviewPayload.lineage.map((lineage) =>
+    lineage.relation === "reviews-candidate-set" ? { ...lineage, targetId: firstCandidate.candidateSetId } : lineage,
+  );
   const firstReview = identified(firstReviewPayload, "reviewDecisionId", "reviewDecisionHash", "onboarding-review-decision");
-  const secondCandidate = legacyCandidate(revised.candidateSet,
-    { parents: [firstCandidate.candidateSetId], producerReviewDecisionId: firstReview.reviewDecisionId });
+  const secondCandidate = legacyCandidate(revised.candidateSet, {
+    parents: [firstCandidate.candidateSetId],
+    producerReviewDecisionId: firstReview.reviewDecisionId,
+  });
   const secondReviewPayload = structuredClone(accepted.reviewDecision);
   delete secondReviewPayload.reviewDecisionId;
   delete secondReviewPayload.reviewDecisionHash;
   secondReviewPayload.candidateSetId = secondCandidate.candidateSetId;
   secondReviewPayload.acceptedCandidateIds = secondCandidate.candidates.map((candidate) => candidate.candidateId).sort();
-  secondReviewPayload.lineage = secondReviewPayload.lineage.map((lineage) => lineage.relation === "reviews-candidate-set"
-    ? { ...lineage, targetId: secondCandidate.candidateSetId } : lineage);
+  secondReviewPayload.lineage = secondReviewPayload.lineage.map((lineage) =>
+    lineage.relation === "reviews-candidate-set" ? { ...lineage, targetId: secondCandidate.candidateSetId } : lineage,
+  );
   const secondReview = identified(secondReviewPayload, "reviewDecisionId", "reviewDecisionHash", "onboarding-review-decision");
   const candidateDirectory = path.join(root, ".head", "onboarding", "candidate-sets");
   const reviewDirectory = path.join(root, ".head", "onboarding", "review-decisions");

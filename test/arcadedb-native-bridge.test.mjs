@@ -97,15 +97,19 @@ test("the exact child receives only its credential references and bounded operat
   assert.equal("NODE_OPTIONS" in environment, false);
   assert.equal("UNRELATED_API_KEY" in environment, false);
 
-  assert.throws(() => buildStorageSelection({
-    projectId: "head-test",
-    selection: {
-      mode: "graphdb",
-      endpoint: "https://graph.example.invalid",
-      database: "head-test",
-      secretReferenceNames: { username: "NODE_OPTIONS", password: "HEAD_TEST_PASSWORD" },
-    },
-  }), { code: "INVALID_ONBOARDING_SECRET_REFERENCE" });
+  assert.throws(
+    () =>
+      buildStorageSelection({
+        projectId: "head-test",
+        selection: {
+          mode: "graphdb",
+          endpoint: "https://graph.example.invalid",
+          database: "head-test",
+          secretReferenceNames: { username: "NODE_OPTIONS", password: "HEAD_TEST_PASSWORD" },
+        },
+      }),
+    { code: "INVALID_ONBOARDING_SECRET_REFERENCE" },
+  );
 });
 
 test("native batch policy keeps off explicit and fails closed on post-selection integrity drift", () => {
@@ -121,10 +125,7 @@ test("native batch policy keeps off explicit and fails closed on post-selection 
   const disabled = new ArcadeDbHttpTransport({ storageSelection, nativeBatchBridge: "off" });
   assert.equal(disabled.describe().nativeBatchMode, "off");
   assert.equal(disabled.describe().nativeBatchCandidateSelected, false);
-  assert.throws(
-    () => new ArcadeDbHttpTransport({ storageSelection, nativeBatchBridge: "sometimes" }),
-    { code: "INVALID_ARCADEDB_NATIVE_BRIDGE_MODE" },
-  );
+  assert.throws(() => new ArcadeDbHttpTransport({ storageSelection, nativeBatchBridge: "sometimes" }), { code: "INVALID_ARCADEDB_NATIVE_BRIDGE_MODE" });
 
   const actualDigest = crypto.createHash("sha256").update(fs.readFileSync(process.execPath)).digest("hex");
   const driftedDigest = `${actualDigest[0] === "0" ? "1" : "0"}${actualDigest.slice(1)}`;
@@ -133,10 +134,7 @@ test("native batch policy keeps off explicit and fails closed on post-selection 
     nativeBatchBridge: { executablePath: process.execPath, sha256: driftedDigest },
   });
   assert.equal(required.describe().nativeBatchMode, "required");
-  assert.throws(
-    () => required.invokeQueryBatch([{ language: "sql", command: "SELECT 1", params: {} }]),
-    { code: "ARCADEDB_NATIVE_BRIDGE_INTEGRITY_MISMATCH" },
-  );
+  assert.throws(() => required.invokeQueryBatch([{ language: "sql", command: "SELECT 1", params: {} }]), { code: "ARCADEDB_NATIVE_BRIDGE_INTEGRITY_MISMATCH" });
   assert.deepEqual(required.preparedReadBatchDiagnostics(), {
     backend: "javascript-exact-child",
     fallbackUsed: false,

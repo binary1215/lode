@@ -25,11 +25,27 @@ class FixtureTransport {
     this.actions = [];
   }
 
-  ready() { return true; }
-  databaseExists() { return this.exists; }
-  readSchemaTypes() { return structuredClone(this.types); }
-  createDatabase() { this.actions.push("create"); this.exists = true; this.types = []; return true; }
-  dropDatabase() { this.actions.push("drop"); this.exists = false; this.types = []; return true; }
+  ready() {
+    return true;
+  }
+  databaseExists() {
+    return this.exists;
+  }
+  readSchemaTypes() {
+    return structuredClone(this.types);
+  }
+  createDatabase() {
+    this.actions.push("create");
+    this.exists = true;
+    this.types = [];
+    return true;
+  }
+  dropDatabase() {
+    this.actions.push("drop");
+    this.exists = false;
+    this.types = [];
+    return true;
+  }
 }
 
 function write(relative, content) {
@@ -98,8 +114,12 @@ try {
   assert.equal(reset.after.status, "compatible-empty-reserved-schema");
   assert.equal(JSON.stringify(reset).includes("fixturedb"), false);
 
-  transport.types = reservedSchema.map((type) => ({ name: type.name, type: type.type,
-    properties: Object.entries(type.properties).map(([name, type]) => ({ name, type })), indexes: [] }));
+  transport.types = reservedSchema.map((type) => ({
+    name: type.name,
+    type: type.type,
+    properties: Object.entries(type.properties).map(([name, type]) => ({ name, type })),
+    indexes: [],
+  }));
   const noIndexes = inspectArcadeDbDatabaseCompatibility({ root, transport, storage });
   assert.equal(noIndexes.status, "compatible-partial-reserved-schema");
   assert.equal(noIndexes.canActivateNow, false);
@@ -131,16 +151,34 @@ try {
   const unknown = inspectArcadeDbDatabaseCompatibility({ root, transport, storage });
   assert.equal(unknown.status, "unverifiable-reserved-schema");
   assert.equal(unknown.resetEligible, false);
-  assert.throws(() => initializeArcadeDbDatabase({ root, transport, storage, resetIncompatible: true, confirmDatabase: "fixturedb" }), { code: "ARCADEDB_SCHEMA_UNVERIFIED" });
+  assert.throws(() => initializeArcadeDbDatabase({ root, transport, storage, resetIncompatible: true, confirmDatabase: "fixturedb" }), {
+    code: "ARCADEDB_SCHEMA_UNVERIFIED",
+  });
   assert.deepEqual(transport.actions, ["create", "drop", "create"], "inspection performs no DDL");
 
-  process.stdout.write(`${JSON.stringify({
-    status: "arcadedb_database_lifecycle_verified",
-    scenarios: ["missing-create", "unrelated-data-coexistence", "partial-compatible", "reserved-name-conflict", "exact-target-reset", "missing-unique-index", "nonunique-conflict", "unknown-not-reset", "index-bound-audit"],
-    credentialsPersisted: false,
-    targetValuePersisted: false,
-    authorityEffect: "none",
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        status: "arcadedb_database_lifecycle_verified",
+        scenarios: [
+          "missing-create",
+          "unrelated-data-coexistence",
+          "partial-compatible",
+          "reserved-name-conflict",
+          "exact-target-reset",
+          "missing-unique-index",
+          "nonunique-conflict",
+          "unknown-not-reset",
+          "index-bound-audit",
+        ],
+        credentialsPersisted: false,
+        targetValuePersisted: false,
+        authorityEffect: "none",
+      },
+      null,
+      2,
+    )}\n`,
+  );
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }

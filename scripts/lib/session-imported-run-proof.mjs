@@ -12,24 +12,8 @@ const fail = () => {
 };
 // An exact old default-owned Run remains historical evidence. This proof never
 // assigns ownership to new/changed ownerless Runs or creates execution rights.
-export function verifyImportedDefaultRun({
-  root,
-  directory,
-  project,
-  sessionId,
-  runFile,
-  runBytes,
-  run,
-  onOriginal = null,
-  readOriginal = null,
-}) {
-  if (
-    !run ||
-    run.sessionId != null ||
-    typeof run.runId !== "string" ||
-    !/^run-[0-9]+-[a-f0-9]{6}$/.test(run.runId)
-  )
-    return false;
+export function verifyImportedDefaultRun({ root, directory, project, sessionId, runFile, runBytes, run, onOriginal = null, readOriginal = null }) {
+  if (!run || run.sessionId != null || typeof run.runId !== "string" || !/^run-[0-9]+-[a-f0-9]{6}$/.test(run.runId)) return false;
   if (JSON.stringify(JSON.parse(runBytes)) !== JSON.stringify(run)) fail();
   const relative = path.relative(root, runFile).replaceAll("\\", "/");
   if (relative !== directory + "/sessions/runs/" + run.runId + "/run.json") return false;
@@ -45,8 +29,7 @@ export function verifyImportedDefaultRun({
   };
   const digest = sha(runBytes),
     indexPath = sessionDirectory + "/imports/run-owners/" + digest + ".json";
-  if (!readOriginal && !fs.lstatSync(copiedProjectFile(root, indexPath), { throwIfNoEntry: false }))
-    return false;
+  if (!readOriginal && !fs.lstatSync(copiedProjectFile(root, indexPath), { throwIfNoEntry: false })) return false;
   const index = sourceRead(indexPath)?.document;
   if (!index) return false;
   if (
@@ -64,23 +47,9 @@ export function verifyImportedDefaultRun({
     index.grantsExecutionAuthorization !== false
   )
     fail();
-  const owner = sourceRead(
-    sessionDirectory + "/imports/owners/" + index.sourceStateSha256 + ".json",
-  )?.document;
-  if (
-    !owner ||
-    typeof owner.bundleId !== "string" ||
-    !/^project-bundle-[a-f0-9]{24}$/.test(owner.bundleId)
-  )
-    fail();
-  const sourceState = sourceRead(
-    sessionDirectory +
-      "/imports/" +
-      owner.bundleId +
-      "/originals/" +
-      index.sourceStateSha256 +
-      ".bin",
-  );
+  const owner = sourceRead(sessionDirectory + "/imports/owners/" + index.sourceStateSha256 + ".json")?.document;
+  if (!owner || typeof owner.bundleId !== "string" || !/^project-bundle-[a-f0-9]{24}$/.test(owner.bundleId)) fail();
+  const sourceState = sourceRead(sessionDirectory + "/imports/" + owner.bundleId + "/originals/" + index.sourceStateSha256 + ".bin");
   if (!sourceState || sha(sourceState.bytes) !== index.sourceStateSha256) fail();
   return verifyImportedDefaultSession({
     root,
@@ -92,12 +61,7 @@ export function verifyImportedDefaultRun({
     onOriginal,
     readOriginal,
     verifyOriginal({ sourceBytes, state }) {
-      if (
-        ![state.activeRunId, state.pendingReview?.runId, state.lastReviewedRunId].includes(
-          run.runId,
-        )
-      )
-        return false;
+      if (![state.activeRunId, state.pendingReview?.runId, state.lastReviewedRunId].includes(run.runId)) return false;
       return sourceBytes(relative).equals(runBytes);
     },
   });

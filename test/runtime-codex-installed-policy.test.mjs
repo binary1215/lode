@@ -5,8 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { inspectCodexInstalledPolicySnapshot } from "../scripts/lib/runtime-codex-installed-policy.mjs";
-import { inspectCodexNativeForkCandidate, inspectCurrentCodexNativeForkCompatibility,
-  assertCodexInstalledForkRequest } from "../scripts/lib/runtime-codex-fork-compatibility.mjs";
+import {
+  inspectCodexNativeForkCandidate,
+  inspectCurrentCodexNativeForkCompatibility,
+  assertCodexInstalledForkRequest,
+} from "../scripts/lib/runtime-codex-fork-compatibility.mjs";
 
 test("native candidate checks known source restrictions without claiming enforcement", () => {
   const current = inspectCurrentCodexNativeForkCompatibility();
@@ -17,34 +20,67 @@ test("native candidate checks known source restrictions without claiming enforce
     [{ ephemeral: true, excludeTurns: false }, "paginated"],
     [{ lastTurnId: "a", beforeTurnId: "b" }, "legacy"],
     [{ permissions: "read", sandbox: "read-only" }, "legacy"],
-  ]) assert.throws(() => assertCodexInstalledForkRequest(params, historyMode), { code: "CODEX_NATIVE_FORK_API_CONFLICT" });
+  ])
+    assert.throws(() => assertCodexInstalledForkRequest(params, historyMode), { code: "CODEX_NATIVE_FORK_API_CONFLICT" });
   for (const sourceHistoryMode of ["legacy", "paginated"]) {
-    const candidate = inspectCodexNativeForkCandidate({ forkParams: { ephemeral: true, excludeTurns: sourceHistoryMode === "paginated" }, sourceHistoryMode,
-      goalsEnabled: false });
+    const candidate = inspectCodexNativeForkCandidate({
+      forkParams: { ephemeral: true, excludeTurns: sourceHistoryMode === "paginated" },
+      sourceHistoryMode,
+      goalsEnabled: false,
+    });
     assert.equal(candidate.apiCandidate, true);
     assert.equal(candidate.enforcementVerified, false);
     assert.equal(candidate.capabilityIssued, false);
     // Removing defer cannot fix the old post-fork sequence.
-    const unchanged = inspectCodexNativeForkCandidate({ forkParams: { ephemeral: true, excludeTurns: true }, sourceHistoryMode,
-      goalsEnabled: false, requiresChildHistoryRead: true, requiresGoalReadOrClear: true });
+    const unchanged = inspectCodexNativeForkCandidate({
+      forkParams: { ephemeral: true, excludeTurns: true },
+      sourceHistoryMode,
+      goalsEnabled: false,
+      requiresChildHistoryRead: true,
+      requiresGoalReadOrClear: true,
+    });
     assert.equal(unchanged.knownApiConflicts.length, 3);
   }
-  const durable = inspectCodexNativeForkCandidate({ forkParams: { ephemeral: false, deferGoalContinuation: true },
-    goalsEnabled: true, requiresChildHistoryRead: true, requiresGoalReadOrClear: true });
+  const durable = inspectCodexNativeForkCandidate({
+    forkParams: { ephemeral: false, deferGoalContinuation: true },
+    goalsEnabled: true,
+    requiresChildHistoryRead: true,
+    requiresGoalReadOrClear: true,
+  });
   assert.equal(durable.apiCandidate, true);
   assert.equal(durable.capabilityIssued, false, "API compatibility does not authorize new persistence");
 });
-import { buildCodexWorkerPolicyPlan, verifyCodexWorkerPolicyPlan, inspectCodexWorkerPolicyCapability,
-  CODEX_WORKER_REQUIRED_ENFORCEMENT } from "../scripts/lib/runtime-codex-worker-policy.mjs";
+import {
+  buildCodexWorkerPolicyPlan,
+  verifyCodexWorkerPolicyPlan,
+  inspectCodexWorkerPolicyCapability,
+  CODEX_WORKER_REQUIRED_ENFORCEMENT,
+} from "../scripts/lib/runtime-codex-worker-policy.mjs";
 
-const hash = value => crypto.createHash("sha256").update(value).digest("hex");
-const clone = value => JSON.parse(JSON.stringify(value));
-console.log(JSON.stringify({ event: "owned-codex-installed-policy-tests", pid: process.pid, parentPid: process.ppid,
-  command: process.execPath, args: process.argv.slice(1), cwd: process.cwd(), ports: [], actualProviderInvoked: false }));
+const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
+const clone = (value) => JSON.parse(JSON.stringify(value));
+console.log(
+  JSON.stringify({
+    event: "owned-codex-installed-policy-tests",
+    pid: process.pid,
+    parentPid: process.ppid,
+    command: process.execPath,
+    args: process.argv.slice(1),
+    cwd: process.cwd(),
+    ports: [],
+    actualProviderInvoked: false,
+  }),
+);
 
 function plan(options = {}) {
-  return buildCodexWorkerPolicyPlan({ executablePath: process.execPath, executableDigest: hash("synthetic-identity-only"),
-    model: "openai/gpt-5.6-sol", wireModel: "gpt-5.6-sol", wireModelProvider: "openai", ...options });
+  return buildCodexWorkerPolicyPlan({
+    executablePath: process.execPath,
+    executableDigest: hash("synthetic-identity-only"),
+    model: "openai/gpt-5.6-sol",
+    wireModel: "gpt-5.6-sol",
+    wireModelProvider: "openai",
+    ...options,
+  });
 }
 
 function fixture(t) {
@@ -52,11 +88,23 @@ function fixture(t) {
   const directory = fs.mkdtempSync(path.join(parent, "head-codex-installed-policy-"));
   const schemaDirectory = path.join(directory, "schemas");
   fs.mkdirSync(path.join(schemaDirectory, "v2"), { recursive: true });
-  const schemaFiles = ["PermissionsRequestApprovalParams.json", ...[
-    "CommandExecParams", "CommandExecResponse", "WindowsSandboxReadinessResponse", "PermissionProfileListResponse",
-    "ThreadStartParams", "ThreadStartResponse", "ConfigRequirementsReadResponse", "ConfigReadResponse",
-    "AppsInstalledResponse", "ListMcpServerStatusResponse", "CommandExecTerminateParams", "ProcessSpawnParams",
-  ].map(file => `v2/${file}.json`)];
+  const schemaFiles = [
+    "PermissionsRequestApprovalParams.json",
+    ...[
+      "CommandExecParams",
+      "CommandExecResponse",
+      "WindowsSandboxReadinessResponse",
+      "PermissionProfileListResponse",
+      "ThreadStartParams",
+      "ThreadStartResponse",
+      "ConfigRequirementsReadResponse",
+      "ConfigReadResponse",
+      "AppsInstalledResponse",
+      "ListMcpServerStatusResponse",
+      "CommandExecTerminateParams",
+      "ProcessSpawnParams",
+    ].map((file) => `v2/${file}.json`),
+  ];
   for (const file of schemaFiles) fs.writeFileSync(path.join(schemaDirectory, file), "{}");
   const executablePath = path.join(directory, "synthetic-codex.exe");
   const executableBytes = "Never executed. Synthetic identity is not an installed backend.";
@@ -69,8 +117,13 @@ function fixture(t) {
     assert.match(path.basename(directory), /^head-codex-installed-policy-/u);
     fs.rmSync(directory, { recursive: true, force: true });
   });
-  return { ...options, directory, schemaFiles, executableDigest: hash(executableBytes),
-    inspect: extra => inspectCodexInstalledPolicySnapshot({ ...options, ...extra }) };
+  return {
+    ...options,
+    directory,
+    schemaFiles,
+    executableDigest: hash(executableBytes),
+    inspect: (extra) => inspectCodexInstalledPolicySnapshot({ ...options, ...extra }),
+  };
 }
 
 test("0.2 plan binds the actor scope and denies automatic trusted-substrate exemptions", () => {
@@ -81,9 +134,12 @@ test("0.2 plan binds the actor scope and denies automatic trusted-substrate exem
   assert.equal(selected.policyScope.instructions, "additional-configured-or-inherited-instructions");
   assert.equal(selected.policyScope.providerBaselineInstructions, "provider-owned-not-a-zero-semantic-influence-claim");
   assert.deepEqual(selected.policyScope.trustedSubstrate, {
-    actor: "trusted-p5-host-and-provider-runtime", purposes: ["os-runtime", "provider-runtime", "provider-authentication"],
-    automaticExemptions: false, exactHostVerifiedConstraintsRequired: true,
-    mayExposeUnselectedTaskData: false, mayExposeProviderCredentialsToModelOrTools: false,
+    actor: "trusted-p5-host-and-provider-runtime",
+    purposes: ["os-runtime", "provider-runtime", "provider-authentication"],
+    automaticExemptions: false,
+    exactHostVerifiedConstraintsRequired: true,
+    mayExposeUnselectedTaskData: false,
+    mayExposeProviderCredentialsToModelOrTools: false,
   });
   assert.deepEqual(selected.requiredEnforcement, CODEX_WORKER_REQUIRED_ENFORCEMENT);
   assert.equal(selected.enforcementVerified, false);
@@ -113,27 +169,50 @@ test("historical 0.1 policy identity is rejected, not upgraded or silently reint
 
 test("scope/exception changes cannot reuse the exact 0.2 plan", () => {
   for (const modify of [
-    item => { delete item.policyScope; },
-    item => { item.policyScope.taskData = "all-host-process-files"; },
-    item => { item.policyScope.trustedSubstrate.automaticExemptions = true; },
-    item => { item.policyScope.trustedSubstrate.exactHostVerifiedConstraintsRequired = false; },
-    item => { item.policyScope.trustedSubstrate.mayExposeUnselectedTaskData = true; },
-    item => { item.policyScope.trustedSubstrate.mayExposeProviderCredentialsToModelOrTools = true; },
-    item => { item.policyScope.trustedSubstrate.purposes.push("all-local-task-data"); },
-    item => { item.policyScope.providerBaselineInstructions = "all-extra-instructions-allowed"; },
-    item => { item.invocationConstraints.tools = "all-tools"; },
+    (item) => {
+      delete item.policyScope;
+    },
+    (item) => {
+      item.policyScope.taskData = "all-host-process-files";
+    },
+    (item) => {
+      item.policyScope.trustedSubstrate.automaticExemptions = true;
+    },
+    (item) => {
+      item.policyScope.trustedSubstrate.exactHostVerifiedConstraintsRequired = false;
+    },
+    (item) => {
+      item.policyScope.trustedSubstrate.mayExposeUnselectedTaskData = true;
+    },
+    (item) => {
+      item.policyScope.trustedSubstrate.mayExposeProviderCredentialsToModelOrTools = true;
+    },
+    (item) => {
+      item.policyScope.trustedSubstrate.purposes.push("all-local-task-data");
+    },
+    (item) => {
+      item.policyScope.providerBaselineInstructions = "all-extra-instructions-allowed";
+    },
+    (item) => {
+      item.invocationConstraints.tools = "all-tools";
+    },
   ]) {
-    const changed = clone(plan()); modify(changed);
+    const changed = clone(plan());
+    modify(changed);
     assert.throws(() => verifyCodexWorkerPolicyPlan(changed), { code: "INVALID_CODEX_WORKER_POLICY" });
   }
 });
 
-test("synthetic schema controls and help never become an installed enforcement capability", t => {
+test("synthetic schema controls and help never become an installed enforcement capability", (t) => {
   const f = fixture(t);
-  fs.writeFileSync(path.join(f.schemaDirectory, "PermissionsRequestApprovalParams.json"), JSON.stringify({
-    definitions: { FileSystemAccessMode: { enum: ["read", "write", "deny"] } },
-    enforcementAvailable: true, effectivePolicy: "a fabricated field is not proof",
-  }));
+  fs.writeFileSync(
+    path.join(f.schemaDirectory, "PermissionsRequestApprovalParams.json"),
+    JSON.stringify({
+      definitions: { FileSystemAccessMode: { enum: ["read", "write", "deny"] } },
+      enforcementAvailable: true,
+      effectivePolicy: "a fabricated field is not proof",
+    }),
+  );
   const before = fs.readdirSync(f.directory, { recursive: true });
   const diagnostic = f.inspect();
   assert.equal(diagnostic.kind, "CodexInstalledPolicyDiagnostic");
@@ -143,10 +222,13 @@ test("synthetic schema controls and help never become an installed enforcement c
   assert.equal(diagnostic.actualProviderInvoked, false);
   assert.equal(diagnostic.audit.status, "requires-new-snapshot-audit");
   assert.equal(diagnostic.setup.status, "not-probed");
-  assert.deepEqual(diagnostic.obligations.map(row => row.id), CODEX_WORKER_REQUIRED_ENFORCEMENT);
-  assert.equal(diagnostic.obligations.find(row => row.id === "outside-root-denials").controls[0].present, true);
-  assert.ok(diagnostic.obligations.every(row => !row.enforcementVerified && !row.osSetupAloneSufficient));
-  assert.ok(diagnostic.obligations.every(row => row.apiObservation === "requires-new-snapshot-audit"));
+  assert.deepEqual(
+    diagnostic.obligations.map((row) => row.id),
+    CODEX_WORKER_REQUIRED_ENFORCEMENT,
+  );
+  assert.equal(diagnostic.obligations.find((row) => row.id === "outside-root-denials").controls[0].present, true);
+  assert.ok(diagnostic.obligations.every((row) => !row.enforcementVerified && !row.osSetupAloneSufficient));
+  assert.ok(diagnostic.obligations.every((row) => row.apiObservation === "requires-new-snapshot-audit"));
   assert.equal(diagnostic.execHelp.ignoreUserConfigDocumented, true);
   assert.equal(diagnostic.execHelp.ignoreRulesDocumented, true);
   assert.ok(Object.isFrozen(diagnostic.obligations[0].controls));
@@ -154,7 +236,7 @@ test("synthetic schema controls and help never become an installed enforcement c
   assert.deepEqual(fs.readdirSync(f.directory, { recursive: true }), before);
 });
 
-test("retained readiness distinguishes setup requirements from enforcement and unknown current state", t => {
+test("retained readiness distinguishes setup requirements from enforcement and unknown current state", (t) => {
   const f = fixture(t);
   const observation = { observedAt: "2026-09-22T18:00:00.000Z", executableDigest: f.executableDigest };
   for (const status of ["notConfigured", "updateRequired", "ready"]) {
@@ -166,11 +248,12 @@ test("retained readiness distinguishes setup requirements from enforcement and u
   }
   const changed = f.inspect({ windowsReadinessObservation: { ...observation, status: "ready", executableDigest: "a".repeat(64) } });
   assert.equal(changed.setup.status, "unbound-observation");
-  assert.throws(() => f.inspect({ windowsReadinessObservation: { ...observation, status: "ready", enforced: true } }),
-    { code: "INVALID_CODEX_INSTALLED_POLICY_SNAPSHOT" });
+  assert.throws(() => f.inspect({ windowsReadinessObservation: { ...observation, status: "ready", enforced: true } }), {
+    code: "INVALID_CODEX_INSTALLED_POLICY_SNAPSHOT",
+  });
 });
 
-test("malformed, oversized and linked snapshot files fail closed without runtime admission", t => {
+test("malformed, oversized and linked snapshot files fail closed without runtime admission", (t) => {
   const f = fixture(t);
   const file = path.join(f.schemaDirectory, "v2", "CommandExecParams.json");
   fs.writeFileSync(file, "not JSON");
@@ -185,20 +268,27 @@ test("malformed, oversized and linked snapshot files fail closed without runtime
   assert.throws(() => f.inspect({ schemaDirectory: "relative-schema-root" }), { code: "INVALID_CODEX_INSTALLED_POLICY_SNAPSHOT" });
 });
 
-const installedDirectory = (process.env.LODE_AGENT_CODEX_INSTALLED_POLICY_SCHEMA_DIRECTORY || process.env.HEAD_AGENT_CODEX_INSTALLED_POLICY_SCHEMA_DIRECTORY);
-const installedExecutable = (process.env.LODE_AGENT_CODEX_INSTALLED_POLICY_EXECUTABLE || process.env.HEAD_AGENT_CODEX_INSTALLED_POLICY_EXECUTABLE);
-test("optional developer preflight recognizes retained installed bytes but still issues no proof", {
-  skip: !installedDirectory || !installedExecutable,
-}, () => {
-  const diagnostic = inspectCodexInstalledPolicySnapshot({ schemaDirectory: installedDirectory, executablePath: installedExecutable,
-    execHelpFile: (process.env.LODE_AGENT_CODEX_INSTALLED_POLICY_EXEC_HELP || process.env.HEAD_AGENT_CODEX_INSTALLED_POLICY_EXEC_HELP) });
-  assert.equal(diagnostic.audit.status, "recognized-retained-schema-snapshot");
-  assert.ok(diagnostic.obligations.every(row => row.controls.every(control => control.present)));
-  assert.ok(diagnostic.obligations.every(row => row.apiObservation === "not-established-by-installed-api"));
-  assert.equal(diagnostic.enforcementAvailable, false);
-  assert.equal(diagnostic.backendStatus, "missing-backend");
-  assert.equal(diagnostic.capabilityIssued, false);
-  assert.equal(diagnostic.nativeFork.apiCandidate, false);
-  assert.equal(diagnostic.nativeFork.knownApiConflicts.length, 4);
-  console.log(JSON.stringify({ event: "installed-policy-read-only-diagnostic", diagnostic }));
-});
+const installedDirectory = process.env.LODE_AGENT_CODEX_INSTALLED_POLICY_SCHEMA_DIRECTORY || process.env.HEAD_AGENT_CODEX_INSTALLED_POLICY_SCHEMA_DIRECTORY;
+const installedExecutable = process.env.LODE_AGENT_CODEX_INSTALLED_POLICY_EXECUTABLE || process.env.HEAD_AGENT_CODEX_INSTALLED_POLICY_EXECUTABLE;
+test(
+  "optional developer preflight recognizes retained installed bytes but still issues no proof",
+  {
+    skip: !installedDirectory || !installedExecutable,
+  },
+  () => {
+    const diagnostic = inspectCodexInstalledPolicySnapshot({
+      schemaDirectory: installedDirectory,
+      executablePath: installedExecutable,
+      execHelpFile: process.env.LODE_AGENT_CODEX_INSTALLED_POLICY_EXEC_HELP || process.env.HEAD_AGENT_CODEX_INSTALLED_POLICY_EXEC_HELP,
+    });
+    assert.equal(diagnostic.audit.status, "recognized-retained-schema-snapshot");
+    assert.ok(diagnostic.obligations.every((row) => row.controls.every((control) => control.present)));
+    assert.ok(diagnostic.obligations.every((row) => row.apiObservation === "not-established-by-installed-api"));
+    assert.equal(diagnostic.enforcementAvailable, false);
+    assert.equal(diagnostic.backendStatus, "missing-backend");
+    assert.equal(diagnostic.capabilityIssued, false);
+    assert.equal(diagnostic.nativeFork.apiCandidate, false);
+    assert.equal(diagnostic.nativeFork.knownApiConflicts.length, 4);
+    console.log(JSON.stringify({ event: "installed-policy-read-only-diagnostic", diagnostic }));
+  },
+);

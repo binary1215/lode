@@ -75,14 +75,16 @@ function productDocument({ suffix = "" } = {}) {
     schemaVersion: 1,
     featureGroups: [{ key: `group:core${suffix}`, name: `Core${suffix}`, description: "Primary product grouping", parentFeatureGroupKeys: [] }],
     capabilities: [{ key: `capability:serve${suffix}`, name: `Serve${suffix}`, description: "Serve a verified request" }],
-    features: [{
-      key: `feature:serve${suffix}`,
-      name: `Serve${suffix}`,
-      description: "Serve one request",
-      featureGroupKeys: [`group:core${suffix}`],
-      capabilityKeys: [`capability:serve${suffix}`],
-      governedBy: [],
-    }],
+    features: [
+      {
+        key: `feature:serve${suffix}`,
+        name: `Serve${suffix}`,
+        description: "Serve one request",
+        featureGroupKeys: [`group:core${suffix}`],
+        capabilityKeys: [`capability:serve${suffix}`],
+        governedBy: [],
+      },
+    ],
     requirements: [],
     constraints: [],
     decisions: [],
@@ -90,7 +92,7 @@ function productDocument({ suffix = "" } = {}) {
 }
 
 async function semanticProductProposal(root, relativePath, document = productDocument()) {
-  const world = (await inspectWorldModel({ root }));
+  const world = await inspectWorldModel({ root });
   assert.equal(world.status, "current");
   const file = world.snapshot.files.find((item) => item.path === relativePath);
   assert.ok(file);
@@ -112,24 +114,30 @@ async function semanticProductProposal(root, relativePath, document = productDoc
   return {
     schemaVersion: 1,
     sourceSnapshotId: world.snapshot.temporalProvenanceGraph.sourceSnapshotId,
-    candidates: Object.entries(arrays).flatMap(([productKind, field]) => document[field].map((proposedEntity) => ({
-      productKind,
-      proposedEntity,
-      evidence: [evidence],
-      explanation: "Fresh HEAD proposes this product concept from current repository evidence; Core only validates and gates it.",
-      confidence: 0.8,
-    }))),
+    candidates: Object.entries(arrays).flatMap(([productKind, field]) =>
+      document[field].map((proposedEntity) => ({
+        productKind,
+        proposedEntity,
+        evidence: [evidence],
+        explanation: "Fresh HEAD proposes this product concept from current repository evidence; Core only validates and gates it.",
+        confidence: 0.8,
+      })),
+    ),
   };
 }
 
 async function verifyExistingProjectPromotion() {
   const root = temporaryProject("existing");
   write(root, "README.md", "# Request Service\n\nObserved repository documentation.\n");
-  write(root, "src/service.mjs", "export function serveRequest(value) { return value; }\nexport function closeWindow() { return true; }\nexport function configure_process_logging() { return true; }\n");
+  write(
+    root,
+    "src/service.mjs",
+    "export function serveRequest(value) { return value; }\nexport function closeWindow() { return true; }\nexport function configure_process_logging() { return true; }\n",
+  );
   write(root, "tests/service.test.mjs", "export function verifiesDelivery() { return true; }\n");
   write(root, ".generated-evidence/draft.md", "# Draft Internal Model\n\nThis is intentionally outside the selected product source scope.\n");
   initializeProject({ root, pluginRoot, runtimes: ["codex", "opencode"] });
-  const initial = (await inspectOnboarding({ root }));
+  const initial = await inspectOnboarding({ root });
   assert.equal(initial.status, "initialized");
   assert.equal(initial.sessionRecord.identityBoundary, "project-scoped-lode-session-not-provider-conversation");
 
@@ -137,41 +145,72 @@ async function verifyExistingProjectPromotion() {
   assert.equal(discovery.status, "awaiting_onboarding_evidence");
   assert.equal(discovery.candidateSet.candidates.length, 0);
   assert.match(discovery.candidateSet.unknowns[0].statement, /semantic product candidates are required/i);
-  const driftedProposal = (await semanticProductProposal(root, "src/service.mjs"));
+  const driftedProposal = await semanticProductProposal(root, "src/service.mjs");
   driftedProposal.candidates[0].evidence[0].contentDigest = "0".repeat(64);
-  await rejectsCode(async () => (await startOnboarding({ root, mode: "existing", semanticProposal: driftedProposal })), "ONBOARDING_SEMANTIC_EVIDENCE_DRIFT");
+  await rejectsCode(async () => await startOnboarding({ root, mode: "existing", semanticProposal: driftedProposal }), "ONBOARDING_SEMANTIC_EVIDENCE_DRIFT");
   const started = await startOnboarding({
     root,
     mode: "existing",
-    semanticProposal: (await semanticProductProposal(root, "src/service.mjs")),
+    semanticProposal: await semanticProductProposal(root, "src/service.mjs"),
   });
   assert.equal(started.status, "awaiting_onboarding_review");
   assert.equal(started.storageSelection.mode, "local");
   assert.deepEqual(started.sourceScope.excludeRoots, [".generated-evidence"]);
   assert.deepEqual((await runCommand(["source-scope-status", root])).sourceScope.excludeRoots, [".generated-evidence"]);
-  assert.equal(started.candidateSet.candidates.some((candidate) => candidate.productKind === "FeatureGroup"), true);
-  assert.equal(started.candidateSet.candidates.some((candidate) => candidate.productKind === "Capability"), true);
-  assert.equal(started.candidateSet.candidates.some((candidate) => candidate.productKind === "Feature"), true);
-  assert.equal(started.candidateSet.candidates.some((candidate) => candidate.productKind === "Capability" && candidate.proposedEntity.name === "Serve"), true);
-  assert.equal(started.candidateSet.candidates.filter((candidate) => candidate.productKind === "Feature").every((candidate) => candidate.proposedEntity.featureGroupKeys.length === 1), true);
-  assert.equal(started.candidateSet.candidates.every((candidate) => candidate.origin === formatForVerifiedOwner(fixtureStorage(root)).value("fresh-head-semantic-proposal")), true);
-  assert.equal(started.candidateSet.evidence.every((record) => record.contentDigest && record.path === "src/service.mjs"), true);
-  assert.equal(started.candidateSet.candidates.every((candidate) => candidate.instructionAuthority === false && candidate.promotionAuthority === false), true);
+  assert.equal(
+    started.candidateSet.candidates.some((candidate) => candidate.productKind === "FeatureGroup"),
+    true,
+  );
+  assert.equal(
+    started.candidateSet.candidates.some((candidate) => candidate.productKind === "Capability"),
+    true,
+  );
+  assert.equal(
+    started.candidateSet.candidates.some((candidate) => candidate.productKind === "Feature"),
+    true,
+  );
+  assert.equal(
+    started.candidateSet.candidates.some((candidate) => candidate.productKind === "Capability" && candidate.proposedEntity.name === "Serve"),
+    true,
+  );
+  assert.equal(
+    started.candidateSet.candidates
+      .filter((candidate) => candidate.productKind === "Feature")
+      .every((candidate) => candidate.proposedEntity.featureGroupKeys.length === 1),
+    true,
+  );
+  assert.equal(
+    started.candidateSet.candidates.every(
+      (candidate) => candidate.origin === formatForVerifiedOwner(fixtureStorage(root)).value("fresh-head-semantic-proposal"),
+    ),
+    true,
+  );
+  assert.equal(
+    started.candidateSet.evidence.every((record) => record.contentDigest && record.path === "src/service.mjs"),
+    true,
+  );
+  assert.equal(
+    started.candidateSet.candidates.every((candidate) => candidate.instructionAuthority === false && candidate.promotionAuthority === false),
+    true,
+  );
   assert.equal(normalizeProductModelDocument().features.length, 0);
-  const candidateGraph = (await inspectWorldModel({ root }));
+  const candidateGraph = await inspectWorldModel({ root });
   assert.equal(candidateGraph.status, "current");
-  assert.equal(candidateGraph.snapshot.files.some((file) => file.path.startsWith(".generated-evidence/")), false);
+  assert.equal(
+    candidateGraph.snapshot.files.some((file) => file.path.startsWith(".generated-evidence/")),
+    false,
+  );
   assert.deepEqual(candidateGraph.snapshot.repositoryScan.sourceScope.excludeRoots, [".generated-evidence"]);
   assert.equal(candidateGraph.snapshot.temporalProvenanceGraph.summary.onboardingCandidateSetCount, 2);
   assert.equal(candidateGraph.snapshot.temporalProvenanceGraph.summary.onboardingCandidateCount, started.candidateSet.candidates.length);
   assert.equal(candidateGraph.snapshot.temporalProvenanceGraph.summary.onboardingReviewDecisionCount, 0);
   const candidateId = started.candidateSet.candidates[0].candidateId;
-  const hiddenCandidate = (await queryWorldTemporalGraph({
+  const hiddenCandidate = await queryWorldTemporalGraph({
     root,
     query: candidateId,
     kinds: ["OnboardingProductCandidate"],
     depth: 0,
-  }));
+  });
   assert.equal(hiddenCandidate.nodes.length, 0);
   assert.equal(hiddenCandidate.exclusion.unreviewedCandidatesExcluded > 0, true);
   const explicitCandidate = await runCommand([
@@ -186,8 +225,14 @@ async function verifyExistingProjectPromotion() {
     "--depth",
     "1",
   ]);
-  assert.equal(explicitCandidate.nodes.some((node) => node.nodeId === candidateId), true);
-  assert.equal(explicitCandidate.edges.some((edge) => edge.type === "SUPPORTED_BY"), true);
+  assert.equal(
+    explicitCandidate.nodes.some((node) => node.nodeId === candidateId),
+    true,
+  );
+  assert.equal(
+    explicitCandidate.edges.some((edge) => edge.type === "SUPPORTED_BY"),
+    true,
+  );
   const mcpCandidate = await dispatchMcp({
     jsonrpc: "2.0",
     id: 7,
@@ -210,12 +255,16 @@ async function verifyExistingProjectPromotion() {
   const sourceFile = path.join(root, "src", "service.mjs");
   const sourceBytes = fs.readFileSync(sourceFile, "utf8");
   fs.appendFileSync(sourceFile, "export const drift = () => true;\n");
-  await rejectsCode(async () => (await reviewOnboarding({
-    root,
-    candidateSetId: started.candidateSet.candidateSetId,
-    disposition: "accept-all",
-    rationale: "Stale source evidence must not be promoted.",
-  })), "ONBOARDING_SOURCE_DRIFT");
+  await rejectsCode(
+    async () =>
+      await reviewOnboarding({
+        root,
+        candidateSetId: started.candidateSet.candidateSetId,
+        disposition: "accept-all",
+        rationale: "Stale source evidence must not be promoted.",
+      }),
+    "ONBOARDING_SOURCE_DRIFT",
+  );
   fs.writeFileSync(sourceFile, sourceBytes);
   const accepted = await reviewOnboarding({
     root,
@@ -227,7 +276,7 @@ async function verifyExistingProjectPromotion() {
   assert.equal(accepted.reviewDecision.decisionScope, "product-canon-bootstrap");
   assert.equal(accepted.reviewDecision.promotionAuthority, true);
   assert.equal(accepted.productModel.features.length > 0, true);
-  const ready = (await inspectOnboarding({ root }));
+  const ready = await inspectOnboarding({ root });
   assert.equal(ready.status, "ready");
   assert.equal(ready.worldModel.status, "current");
   assert.equal(ready.productModel.productModelId, accepted.productModel.productModelId);
@@ -235,53 +284,78 @@ async function verifyExistingProjectPromotion() {
   const promotedGraph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
   assert.equal(promotedGraph.summary.onboardingReviewDecisionCount, 1);
   assert.equal(promotedGraph.summary.productModelRevisionReceiptCount, 2);
-  assert.equal(promotedGraph.edges.some((edge) => edge.type === "REVIEWED_BY" && edge.to === accepted.reviewDecision.reviewDecisionId), true);
-  assert.equal(promotedGraph.edges.some((edge) => edge.type === "PRODUCES" && edge.to === accepted.productModel.productModelId), true);
-  assert.equal(promotedGraph.edges.some((edge) => edge.type === "PROMOTED_FROM"), true);
+  assert.equal(
+    promotedGraph.edges.some((edge) => edge.type === "REVIEWED_BY" && edge.to === accepted.reviewDecision.reviewDecisionId),
+    true,
+  );
+  assert.equal(
+    promotedGraph.edges.some((edge) => edge.type === "PRODUCES" && edge.to === accepted.productModel.productModelId),
+    true,
+  );
+  assert.equal(
+    promotedGraph.edges.some((edge) => edge.type === "PROMOTED_FROM"),
+    true,
+  );
   assert.equal(promotedGraph.nodes.find((node) => node.nodeId === candidateId).instructionAuthority, false);
   assert.equal(verifyTemporalProvenanceGraph(promotedGraph).temporalGraphId, promotedGraph.temporalGraphId);
   const tamperedGraph = structuredClone(promotedGraph);
   tamperedGraph.nodes.find((node) => node.kind === "OnboardingReviewDecision").disposition = "reject";
   assert.throws(() => verifyTemporalProvenanceGraph(tamperedGraph), { code: "TEMPORAL_GRAPH_DIGEST_MISMATCH" });
-  const reviewTraversal = (await queryWorldTemporalGraph({
+  const reviewTraversal = await queryWorldTemporalGraph({
     root,
     query: accepted.reviewDecision.reviewDecisionId,
     kinds: ["OnboardingReviewDecision", "ProductModelRevision"],
     relations: ["PRODUCES", "PARENT_OF"],
     depth: 1,
-  }));
-  assert.equal(reviewTraversal.nodes.some((node) => node.kind === "OnboardingReviewDecision"), true);
-  assert.equal(reviewTraversal.nodes.some((node) => node.kind === "ProductModelRevision"), true);
+  });
+  assert.equal(
+    reviewTraversal.nodes.some((node) => node.kind === "OnboardingReviewDecision"),
+    true,
+  );
+  assert.equal(
+    reviewTraversal.nodes.some((node) => node.kind === "ProductModelRevision"),
+    true,
+  );
   const capsule = (await compileContext({ root, task: "Explain the accepted product capability.", budget: 32_768, persist: false })).capsule;
   assert.equal(capsule.productContext.length > 0, true);
-  assert.equal(capsule.productContext.every((item) => item.trustBoundary === "derived-projection-of-user-owned-product-canon"), true);
-  const anchoredProductContext = (await compileContext({
-    root,
-    task: "Resolve opaque ticket omega without relying on vocabulary overlap.",
-    evidenceNeeds: [{ id: "accepted-capability", kind: "product-context", entityKeys: ["capability:serve"] }],
-  })).capsule;
+  assert.equal(
+    capsule.productContext.every((item) => item.trustBoundary === "derived-projection-of-user-owned-product-canon"),
+    true,
+  );
+  const anchoredProductContext = (
+    await compileContext({
+      root,
+      task: "Resolve opaque ticket omega without relying on vocabulary overlap.",
+      evidenceNeeds: [{ id: "accepted-capability", kind: "product-context", entityKeys: ["capability:serve"] }],
+    })
+  ).capsule;
   assert.deepEqual(anchoredProductContext.evidenceGaps, []);
-  assert.equal(anchoredProductContext.productContext.some((item) => item.entities.some((entity) => entity.semantic?.key === "capability:serve" || entity.key === "capability:serve")), true);
-  const multipleProductKeys = (await compileContext({
-    root,
-    task: "Resolve opaque ticket sigma without relying on vocabulary overlap.",
-    evidenceNeeds: [{
-      id: "accepted-product-entities",
-      kind: "product-context",
-      entityKeys: ["capability:serve", "feature:serve"],
-      minimumItems: 2,
-    }],
-  })).capsule;
+  assert.equal(
+    anchoredProductContext.productContext.some((item) =>
+      item.entities.some((entity) => entity.semantic?.key === "capability:serve" || entity.key === "capability:serve"),
+    ),
+    true,
+  );
+  const multipleProductKeys = (
+    await compileContext({
+      root,
+      task: "Resolve opaque ticket sigma without relying on vocabulary overlap.",
+      evidenceNeeds: [
+        {
+          id: "accepted-product-entities",
+          kind: "product-context",
+          entityKeys: ["capability:serve", "feature:serve"],
+          minimumItems: 2,
+        },
+      ],
+    })
+  ).capsule;
   assert.deepEqual(multipleProductKeys.evidenceGaps, []);
-  const includedKeys = new Set(multipleProductKeys.productContext.flatMap(item => item.entities.map(entity => entity.semantic?.key || entity.key)));
+  const includedKeys = new Set(multipleProductKeys.productContext.flatMap((item) => item.entities.map((entity) => entity.semantic?.key || entity.key)));
   assert.equal(includedKeys.has("capability:serve") && includedKeys.has("feature:serve"), true);
-  const previousRevision = JSON.parse(fs.readFileSync(path.join(
-    root,
-    fixtureDirectory(root),
-    "onboarding",
-    "product-model-revisions",
-    `${started.state.productModelId}.json`,
-  ), "utf8"));
+  const previousRevision = JSON.parse(
+    fs.readFileSync(path.join(root, fixtureDirectory(root), "onboarding", "product-model-revisions", `${started.state.productModelId}.json`), "utf8"),
+  );
   assert.equal(previousRevision.document.features.length, 0);
 
   const candidateFile = reread.file;
@@ -289,25 +363,19 @@ async function verifyExistingProjectPromotion() {
   const tampered = JSON.parse(original);
   tampered.candidates[0].confidence = 0;
   fs.writeFileSync(candidateFile, `${JSON.stringify(tampered, null, 2)}\n`);
-  (await assert.rejects(async () => (await inspectOnboarding({ root })), { code: "ONBOARDING_CANDIDATE_SET_DIGEST_MISMATCH" }));
+  await assert.rejects(async () => await inspectOnboarding({ root }), { code: "ONBOARDING_CANDIDATE_SET_DIGEST_MISMATCH" });
   fs.writeFileSync(candidateFile, original);
   assert.equal((await inspectOnboarding({ root })).status, "ready");
-  const revisionFile = path.join(
-    root,
-    fixtureDirectory(root),
-    "onboarding",
-    "product-model-revisions",
-    `${accepted.productModel.productModelId}.json`,
-  );
+  const revisionFile = path.join(root, fixtureDirectory(root), "onboarding", "product-model-revisions", `${accepted.productModel.productModelId}.json`);
   const revisionBytes = fs.readFileSync(revisionFile, "utf8");
   const tamperedRevision = JSON.parse(revisionBytes);
   tamperedRevision.document.features[0].name = "Tampered";
   fs.writeFileSync(revisionFile, `${JSON.stringify(tamperedRevision, null, 2)}\n`);
-  (await assert.rejects(async () => (await inspectOnboarding({ root })), { code: "PRODUCT_MODEL_REVISION_DIGEST_MISMATCH" }));
+  await assert.rejects(async () => await inspectOnboarding({ root }), { code: "PRODUCT_MODEL_REVISION_DIGEST_MISMATCH" });
   fs.writeFileSync(revisionFile, revisionBytes);
   assert.equal((await inspectOnboarding({ root })).status, "ready");
   fs.appendFileSync(sourceFile, "export const laterChange = true;\n");
-  const driftedReady = (await inspectOnboarding({ root }));
+  const driftedReady = await inspectOnboarding({ root });
   assert.equal(driftedReady.status, "ready_world_changed");
   assert.equal(driftedReady.worldModel.status, "stale");
   fs.writeFileSync(sourceFile, sourceBytes);
@@ -321,7 +389,10 @@ async function verifyNewProjectBriefAndRevision() {
   const brief = { schemaVersion: 1, name: "Brief Product", summary: "User-owned bootstrap brief", ...productDocument({ suffix: "-brief" }) };
   const started = await startOnboarding({ root, mode: "new", brief });
   assert.equal(started.status, "awaiting_onboarding_review");
-  assert.equal(started.candidateSet.candidates.every((candidate) => candidate.origin === "user-owned-brief-candidate"), true);
+  assert.equal(
+    started.candidateSet.candidates.every((candidate) => candidate.origin === "user-owned-brief-candidate"),
+    true,
+  );
   const capability = started.candidateSet.candidates.find((candidate) => candidate.productKind === "Capability");
   const revisedEntity = { ...capability.proposedEntity, name: "Serve Reviewed Request" };
   const revised = await reviewOnboarding({
@@ -335,7 +406,7 @@ async function verifyNewProjectBriefAndRevision() {
   assert.notEqual(revised.candidateSet.candidateSetId, started.candidateSet.candidateSetId);
   assert.equal(revised.candidateSet.parentCandidateSetIds.includes(started.candidateSet.candidateSetId), true);
   assert.equal(revised.candidateSet.producerReviewDecisionId, revised.reviewDecision.reviewDecisionId);
-  const awaitingReview = (await inspectOnboarding({ root }));
+  const awaitingReview = await inspectOnboarding({ root });
   assert.equal(awaitingReview.status, "awaiting_review");
   assert.equal(awaitingReview.reviewLineage.producerReviewDecisionId, revised.reviewDecision.reviewDecisionId);
   assert.equal(awaitingReview.reviewLineage.latestReviewDecisionId, revised.reviewDecision.reviewDecisionId);
@@ -348,14 +419,16 @@ async function verifyNewProjectBriefAndRevision() {
     rationale: "Accept the revised brief batch.",
   });
   assert.equal(accepted.productModel.capabilities[0].name, "Serve Reviewed Request");
-  const ready = (await inspectOnboarding({ root }));
+  const ready = await inspectOnboarding({ root });
   assert.equal(ready.status, "ready");
   assert.equal(ready.reviewLineage.producerReviewDecisionId, revised.reviewDecision.reviewDecisionId);
   assert.equal(ready.reviewLineage.latestReviewDecisionId, accepted.reviewDecision.reviewDecisionId);
   assert.notEqual(ready.reviewLineage.producerReviewDecisionId, ready.reviewLineage.latestReviewDecisionId);
   assert.equal(accepted.reviewDecision.protocol.version, "0.1.0");
-  assert.equal(verifyOnboardingReviewDecisionForProjection(accepted.reviewDecision, revised.candidateSet, ready.state.projectId).reviewDecisionId,
-    accepted.reviewDecision.reviewDecisionId);
+  assert.equal(
+    verifyOnboardingReviewDecisionForProjection(accepted.reviewDecision, revised.candidateSet, ready.state.projectId).reviewDecisionId,
+    accepted.reviewDecision.reviewDecisionId,
+  );
   const legacyState = structuredClone(ready.state);
   legacyState.protocol.version = "0.1.0";
   legacyState.reviewDecisionId = legacyState.latestReviewDecisionId;
@@ -366,12 +439,18 @@ async function verifyNewProjectBriefAndRevision() {
   const fixtureBytesBefore = Object.fromEntries(filesUnder(root).map((file) => [path.relative(root, file), fs.readFileSync(file).toString("base64")]));
   assert.throws(() => verifyOnboardingState(legacyState, { storage: fixtureStorage(root) }), { code: "ONBOARDING_LEGACY_STATE_REQUIRES_MIGRATOR" });
   assert.deepEqual(legacyState, legacyInputBefore);
-  assert.deepEqual(Object.fromEntries(filesUnder(root).map((file) => [path.relative(root, file), fs.readFileSync(file).toString("base64")])),
-    fixtureBytesBefore, "legacy state verification is read-only and writes no files");
+  assert.deepEqual(
+    Object.fromEntries(filesUnder(root).map((file) => [path.relative(root, file), fs.readFileSync(file).toString("base64")])),
+    fixtureBytesBefore,
+    "legacy state verification is read-only and writes no files",
+  );
   const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
-  assert.equal(graph.edges.some((edge) => edge.type === "PRODUCES"
-    && edge.from === revised.reviewDecision.reviewDecisionId
-    && edge.to === revised.candidateSet.candidateSetId), true);
+  assert.equal(
+    graph.edges.some(
+      (edge) => edge.type === "PRODUCES" && edge.from === revised.reviewDecision.reviewDecisionId && edge.to === revised.candidateSet.candidateSetId,
+    ),
+    true,
+  );
   const guide = await dispatchMcp({
     jsonrpc: "2.0",
     id: 8,
@@ -382,7 +461,7 @@ async function verifyNewProjectBriefAndRevision() {
   const producerFile = path.join(root, fixtureDirectory(root), "onboarding", "review-decisions", `${revised.reviewDecision.reviewDecisionId}.json`);
   const producerBytes = fs.readFileSync(producerFile, "utf8");
   fs.rmSync(producerFile);
-  (await assert.rejects(async () => (await inspectOnboarding({ root })), { code: "ONBOARDING_REVIEW_NOT_FOUND" }));
+  await assert.rejects(async () => await inspectOnboarding({ root }), { code: "ONBOARDING_REVIEW_NOT_FOUND" });
   fs.writeFileSync(producerFile, producerBytes);
   assert.equal((await inspectOnboarding({ root })).status, "ready");
   return { initialCandidateSetId: started.candidateSet.candidateSetId, revisedCandidateSetId: revised.candidateSet.candidateSetId };
@@ -395,27 +474,33 @@ async function verifyEmptyEvidenceAndAddition() {
   assert.equal(started.status, "awaiting_onboarding_evidence");
   assert.equal(started.candidateSet.candidates.length, 0);
   assert.equal(started.candidateSet.unknowns.length > 0, true);
-  await rejectsCode(async () => (await reviewOnboarding({
-    root,
-    candidateSetId: started.candidateSet.candidateSetId,
-    disposition: "accept-all",
-    rationale: "This must not accept empty evidence.",
-  })), "ONBOARDING_EVIDENCE_REQUIRED");
+  await rejectsCode(
+    async () =>
+      await reviewOnboarding({
+        root,
+        candidateSetId: started.candidateSet.candidateSetId,
+        disposition: "accept-all",
+        rationale: "This must not accept empty evidence.",
+      }),
+    "ONBOARDING_EVIDENCE_REQUIRED",
+  );
   const revised = await reviewOnboarding({
     root,
     candidateSetId: started.candidateSet.candidateSetId,
     disposition: "revise",
-    addedEntities: [{
-      kind: "Feature",
-      entity: {
-        key: "feature:user-seeded",
-        name: "User Seeded Feature",
-        description: "Explicitly proposed during onboarding review",
-        featureGroupKeys: [],
-        capabilityKeys: [],
-        governedBy: [],
+    addedEntities: [
+      {
+        kind: "Feature",
+        entity: {
+          key: "feature:user-seeded",
+          name: "User Seeded Feature",
+          description: "Explicitly proposed during onboarding review",
+          featureGroupKeys: [],
+          capabilityKeys: [],
+          governedBy: [],
+        },
       },
-    }],
+    ],
     rationale: "Supply the missing user-owned product evidence.",
   });
   assert.equal(revised.candidateSet.candidates.length, 1);
@@ -432,41 +517,51 @@ async function verifyEmptyEvidenceAndAddition() {
 
 async function verifySemanticNeutralityAndRetiredCandidateProtocols() {
   const root = temporaryProject("semantic-neutrality");
-  write(root, "src/storage.mjs", [
-    "export function writeFileEntry() {}",
-    "export function saveFileEntry() {}",
-    "export function persistFileEntry() {}",
-    "export function exportFileEntry() {}",
-    "",
-  ].join("\n"));
+  write(
+    root,
+    "src/storage.mjs",
+    [
+      "export function writeFileEntry() {}",
+      "export function saveFileEntry() {}",
+      "export function persistFileEntry() {}",
+      "export function exportFileEntry() {}",
+      "",
+    ].join("\n"),
+  );
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const awaitingEvidence = await startOnboarding({ root, mode: "existing" });
   assert.equal(awaitingEvidence.status, "awaiting_onboarding_evidence");
   assert.equal(awaitingEvidence.candidateSet.candidates.length, 0);
-  assert.equal(awaitingEvidence.candidateSet.unknowns.some((item) => /semantic product candidates/i.test(item.statement)), true);
+  assert.equal(
+    awaitingEvidence.candidateSet.unknowns.some((item) => /semantic product candidates/i.test(item.statement)),
+    true,
+  );
 
-  const current = await startOnboarding({ root, semanticProposal: (await semanticProductProposal(root, "src/storage.mjs")) });
+  const current = await startOnboarding({ root, semanticProposal: await semanticProductProposal(root, "src/storage.mjs") });
   const retired = structuredClone(current.candidateSet);
   retired.protocol.version = "0.3.0";
   delete retired.candidateSetId;
   delete retired.candidateSetHash;
   retired.candidateSetHash = onboardingDigest(onboardingCanonicalJson(retired));
   retired.candidateSetId = `onboarding-candidates-${retired.candidateSetHash.slice(0, 24)}`;
-  assert.throws(
-    () => verifyOnboardingCandidateSetForProjection(retired, retired.projectId, fixtureStorage(root)),
-    { code: "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET" },
-  );
+  assert.throws(() => verifyOnboardingCandidateSetForProjection(retired, retired.projectId, fixtureStorage(root)), {
+    code: "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET",
+  });
 }
 
 async function verifySuccessorSelectionAndRejection() {
   const selectionRoot = temporaryProject("successor-selection");
   initializeProject({ root: selectionRoot, pluginRoot, runtimes: ["codex"] });
-  const selectionStarted = await startOnboarding({ root: selectionRoot, mode: "new", brief: {
-    schemaVersion: 1,
-    name: "Successor Selection",
-    summary: "Exercise phase-aware successor review lineage.",
-    ...productDocument({ suffix: "-successor-selection" }),
-  } });
+  const selectionStarted = await startOnboarding({
+    root: selectionRoot,
+    mode: "new",
+    brief: {
+      schemaVersion: 1,
+      name: "Successor Selection",
+      summary: "Exercise phase-aware successor review lineage.",
+      ...productDocument({ suffix: "-successor-selection" }),
+    },
+  });
   const selectionCapability = selectionStarted.candidateSet.candidates.find((candidate) => candidate.productKind === "Capability");
   const selectionRevised = await reviewOnboarding({
     root: selectionRoot,
@@ -488,12 +583,16 @@ async function verifySuccessorSelectionAndRejection() {
 
   const rejectionRoot = temporaryProject("successor-rejection");
   initializeProject({ root: rejectionRoot, pluginRoot, runtimes: ["codex"] });
-  const rejectionStarted = await startOnboarding({ root: rejectionRoot, mode: "new", brief: {
-    schemaVersion: 1,
-    name: "Successor Rejection",
-    summary: "Exercise rejection after revision.",
-    ...productDocument({ suffix: "-successor-rejection" }),
-  } });
+  const rejectionStarted = await startOnboarding({
+    root: rejectionRoot,
+    mode: "new",
+    brief: {
+      schemaVersion: 1,
+      name: "Successor Rejection",
+      summary: "Exercise rejection after revision.",
+      ...productDocument({ suffix: "-successor-rejection" }),
+    },
+  });
   const rejectionCapability = rejectionStarted.candidateSet.candidates.find((candidate) => candidate.productKind === "Capability");
   const rejectionRevised = await reviewOnboarding({
     root: rejectionRoot,
@@ -508,7 +607,7 @@ async function verifySuccessorSelectionAndRejection() {
     disposition: "reject",
     rationale: "Reject the reviewed successor without mutating Product Canon.",
   });
-  const rejected = (await inspectOnboarding({ root: rejectionRoot }));
+  const rejected = await inspectOnboarding({ root: rejectionRoot });
   assert.equal(rejected.status, "rejected");
   assert.equal(rejected.reviewLineage.producerReviewDecisionId, rejectionRevised.reviewDecision.reviewDecisionId);
   assert.notEqual(rejected.reviewLineage.producerReviewDecisionId, rejected.reviewLineage.latestReviewDecisionId);
@@ -519,7 +618,7 @@ async function verifyRejection() {
   write(root, "src/reject.mjs", "export function rejectMe() {}\n");
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   await startOnboarding({ root });
-  const started = await startOnboarding({ root, semanticProposal: (await semanticProductProposal(root, "src/reject.mjs")) });
+  const started = await startOnboarding({ root, semanticProposal: await semanticProductProposal(root, "src/reject.mjs") });
   const rejected = await reviewOnboarding({
     root,
     candidateSetId: started.candidateSet.candidateSetId,
@@ -527,10 +626,10 @@ async function verifyRejection() {
     rationale: "Observed implementation does not represent intended product meaning.",
   });
   assert.equal(rejected.productCanonChanged, false);
-  const status = (await inspectOnboarding({ root }));
+  const status = await inspectOnboarding({ root });
   assert.equal(status.status, "rejected");
   assert.equal(status.productModel.features.length, 0);
-  const restarted = await startOnboarding({ root, semanticProposal: (await semanticProductProposal(root, "src/reject.mjs")) });
+  const restarted = await startOnboarding({ root, semanticProposal: await semanticProductProposal(root, "src/reject.mjs") });
   assert.notEqual(restarted.candidateSet.candidateSetId, started.candidateSet.candidateSetId);
   assert.deepEqual(restarted.candidateSet.parentCandidateSetIds, [started.candidateSet.candidateSetId]);
   const capability = restarted.candidateSet.candidates.find((candidate) => candidate.productKind === "Capability");
@@ -547,8 +646,14 @@ async function verifyRejection() {
   assert.equal(graph.summary.onboardingReviewDecisionCount, 2);
   assert.equal(graph.summary.onboardingAcceptedCandidateCount, 1);
   assert.equal(graph.summary.onboardingRejectedCandidateCount > 0, true);
-  assert.equal(graph.edges.some((edge) => edge.type === "ACCEPTED_BY"), true);
-  assert.equal(graph.edges.some((edge) => edge.type === "REJECTED_BY"), true);
+  assert.equal(
+    graph.edges.some((edge) => edge.type === "ACCEPTED_BY"),
+    true,
+  );
+  assert.equal(
+    graph.edges.some((edge) => edge.type === "REJECTED_BY"),
+    true,
+  );
 }
 
 async function verifyExistingCanonSkip() {
@@ -569,38 +674,48 @@ async function verifyCandidateBounds() {
     name: `Bounded ${index}`,
     description: "Candidate bound fixture",
   }));
-  await rejectsCode(async () => (await startOnboarding({
-    root,
-    mode: "new",
-    brief: {
-      schemaVersion: 1,
-      name: "Oversized brief",
-      summary: "Must fail the candidate bound.",
-      featureGroups: [],
-      capabilities,
-      features: [],
-      requirements: [],
-      constraints: [],
-      decisions: [],
-    },
-  })), "ONBOARDING_CANDIDATE_SET_LIMIT");
+  await rejectsCode(
+    async () =>
+      await startOnboarding({
+        root,
+        mode: "new",
+        brief: {
+          schemaVersion: 1,
+          name: "Oversized brief",
+          summary: "Must fail the candidate bound.",
+          featureGroups: [],
+          capabilities,
+          features: [],
+          requirements: [],
+          constraints: [],
+          decisions: [],
+        },
+      }),
+    "ONBOARDING_CANDIDATE_SET_LIMIT",
+  );
   assert.equal((await inspectOnboarding({ root })).status, "initialized");
 }
 
 async function verifyGraphDbSelectionAndSecretRejection() {
   const rejectedRoot = temporaryProject("secret");
   initializeProject({ root: rejectedRoot, pluginRoot, runtimes: ["codex"] });
-  await rejectsCode(async () => (await startOnboarding({
-    root: rejectedRoot,
-    storage: {
-      mode: "graphdb",
-      endpoint: "https://graph.example.test",
-      database: "head",
-      secretReferenceNames: { username: "HEAD_GRAPHDB_USERNAME", password: "HEAD_GRAPHDB_PASSWORD" },
-      password: "plaintext-secret",
-    },
-  })), "ONBOARDING_SECRET_VALUE_REJECTED");
-  const rejectedContent = filesUnder(rejectedRoot).map((file) => fs.readFileSync(file, "utf8")).join("\n");
+  await rejectsCode(
+    async () =>
+      await startOnboarding({
+        root: rejectedRoot,
+        storage: {
+          mode: "graphdb",
+          endpoint: "https://graph.example.test",
+          database: "head",
+          secretReferenceNames: { username: "HEAD_GRAPHDB_USERNAME", password: "HEAD_GRAPHDB_PASSWORD" },
+          password: "plaintext-secret",
+        },
+      }),
+    "ONBOARDING_SECRET_VALUE_REJECTED",
+  );
+  const rejectedContent = filesUnder(rejectedRoot)
+    .map((file) => fs.readFileSync(file, "utf8"))
+    .join("\n");
   assert.equal(rejectedContent.includes("plaintext-secret"), false);
 
   const root = temporaryProject("graphdb");
@@ -618,7 +733,9 @@ async function verifyGraphDbSelectionAndSecretRejection() {
   assert.equal(started.storageSelection.graphdb.capabilityStatus, "pending-unverified-adapter");
   assert.equal(started.storageSelection.localFallback, true);
   assert.match(started.disclosure, /local materialization remains active/i);
-  const content = filesUnder(root).map((file) => fs.readFileSync(file, "utf8")).join("\n");
+  const content = filesUnder(root)
+    .map((file) => fs.readFileSync(file, "utf8"))
+    .join("\n");
   assert.equal(content.includes("plaintext-secret"), false);
 }
 
@@ -626,25 +743,26 @@ async function verifyLegacyMigrationAndReadOnlyMcp() {
   const root = temporaryProject("migration");
   write(root, "src/legacy.mjs", "export function legacyFeature() {}\n");
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
-  const initial = (await inspectOnboarding({ root }));
+  const initial = await inspectOnboarding({ root });
   const managedManifestFile = path.join(root, fixtureDirectory(root), "generated", "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(managedManifestFile, "utf8"));
-  manifest.managed = manifest.managed.filter((item) => (
-    item.path !== `${fixtureDirectory(root)}/onboarding/current.json`
-    && !item.path.startsWith(`${fixtureDirectory(root)}/onboarding/storage-selections/`)
-    && !item.path.startsWith(`${fixtureDirectory(root)}/sessions/records/`)
-  ));
+  manifest.managed = manifest.managed.filter(
+    (item) =>
+      item.path !== `${fixtureDirectory(root)}/onboarding/current.json` &&
+      !item.path.startsWith(`${fixtureDirectory(root)}/onboarding/storage-selections/`) &&
+      !item.path.startsWith(`${fixtureDirectory(root)}/sessions/records/`),
+  );
   fs.writeFileSync(managedManifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
   fs.rmSync(path.join(root, fixtureDirectory(root), "onboarding"), { recursive: true, force: true });
   fs.rmSync(path.join(root, fixtureDirectory(root), "sessions", "records"), { recursive: true, force: true });
   fs.rmSync(path.join(root, fixtureDirectory(root), "context", "product-model.json"), { force: true });
-  const migration = (await inspectOnboarding({ root }));
+  const migration = await inspectOnboarding({ root });
   assert.equal(migration.status, "migration_required");
   assert.equal(fs.existsSync(path.join(root, fixtureDirectory(root), "onboarding")), false);
   const started = await runCommand(["onboarding-start", root]);
   assert.equal(started.state.migration, "legacy-missing-state-v1");
   assert.equal(started.state.sessionId, initial.state.sessionId);
-  const proposed = await startOnboarding({ root, semanticProposal: (await semanticProductProposal(root, "src/legacy.mjs")) });
+  const proposed = await startOnboarding({ root, semanticProposal: await semanticProductProposal(root, "src/legacy.mjs") });
   assert.equal((await runCommand(["onboarding-status", root])).state.candidateSetId, proposed.candidateSet.candidateSetId);
   const mcp = await dispatchMcp({
     jsonrpc: "2.0",
@@ -675,33 +793,39 @@ try {
   await verifyCandidateBounds();
   await verifyGraphDbSelectionAndSecretRejection();
   await verifyLegacyMigrationAndReadOnlyMcp();
-  process.stdout.write(`${JSON.stringify({
-    status: "verified",
-    scenarios: [
-      "existing-project-semantic-proposal-and-promotion",
-      "post-ready-world-drift-disclosure",
-      "new-project-brief-revision-and-promotion",
-      "empty-evidence-user-seed",
-      "helper-symbols-do-not-become-product-taxonomy",
-      "retired-lexical-candidate-protocols-rejected",
-      "successor-selection-and-phase-aware-ready-status",
-      "successor-rejection-and-phase-aware-rejected-status",
-      "successor-producer-review-missing-fail-closed",
-      "candidate-rejection",
-      "deterministic-restart-and-selection-acceptance",
-      "candidate-review-promotion-temporal-projection",
-      "candidate-traversal-opt-in-and-context-exclusion",
-      "temporal-projection-tamper-detection",
-      "pre-existing-canon-skip",
-      "candidate-set-resource-bounds",
-      "graphdb-pending-local-fallback-and-secret-rejection",
-      "legacy-state-migration-and-read-only-mcp",
-      "git-absent",
-      "go-binary-absent-javascript-fallback",
-    ],
-    artifactEvidence: { ...existing, ...brief },
-    authorityEffect: "only-explicit-onboarding-review-promotes-product-canon",
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        status: "verified",
+        scenarios: [
+          "existing-project-semantic-proposal-and-promotion",
+          "post-ready-world-drift-disclosure",
+          "new-project-brief-revision-and-promotion",
+          "empty-evidence-user-seed",
+          "helper-symbols-do-not-become-product-taxonomy",
+          "retired-lexical-candidate-protocols-rejected",
+          "successor-selection-and-phase-aware-ready-status",
+          "successor-rejection-and-phase-aware-rejected-status",
+          "successor-producer-review-missing-fail-closed",
+          "candidate-rejection",
+          "deterministic-restart-and-selection-acceptance",
+          "candidate-review-promotion-temporal-projection",
+          "candidate-traversal-opt-in-and-context-exclusion",
+          "temporal-projection-tamper-detection",
+          "pre-existing-canon-skip",
+          "candidate-set-resource-bounds",
+          "graphdb-pending-local-fallback-and-secret-rejection",
+          "legacy-state-migration-and-read-only-mcp",
+          "git-absent",
+          "go-binary-absent-javascript-fallback",
+        ],
+        artifactEvidence: { ...existing, ...brief },
+        authorityEffect: "only-explicit-onboarding-review-promotes-product-canon",
+      },
+      null,
+      2,
+    )}\n`,
+  );
 } finally {
   for (const root of roots.reverse()) fs.rmSync(root, { recursive: true, force: true });
 }

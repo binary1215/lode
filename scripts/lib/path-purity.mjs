@@ -43,8 +43,8 @@ function walkFiles(root) {
 }
 
 export function findHomePathFindings({ root, files = null, allowlist = [] } = {}) {
-  const allowed = new Set(allowlist.map(file => file.replaceAll("\\", "/")));
-  const selected = files || walkFiles(root).map(file => path.relative(root, file));
+  const allowed = new Set(allowlist.map((file) => file.replaceAll("\\", "/")));
+  const selected = files || walkFiles(root).map((file) => path.relative(root, file));
   const findings = [];
   for (const relative of selected) {
     const normalized = relative.replaceAll("\\", "/");
@@ -52,8 +52,11 @@ export function findHomePathFindings({ root, files = null, allowlist = [] } = {}
     const absolute = path.join(root, ...normalized.split("/"));
     if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) continue;
     let text;
-    try { text = fs.readFileSync(absolute, "utf8"); }
-    catch { continue; }
+    try {
+      text = fs.readFileSync(absolute, "utf8");
+    } catch {
+      continue;
+    }
     if (hasConcreteHomePath(text)) findings.push(normalized);
   }
   return findings.sort();

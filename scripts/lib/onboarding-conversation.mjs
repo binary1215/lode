@@ -19,18 +19,22 @@ function boundedLimit(value) {
 }
 
 function compactCandidateSet(candidateSet, limit) {
-  if (!candidateSet) return {
-    candidateSetId: null,
-    candidateCount: 0,
-    returnedCandidateCount: 0,
-    truncated: false,
-    candidates: [],
-    unknownCount: 0,
-    unknowns: [],
-  };
+  if (!candidateSet)
+    return {
+      candidateSetId: null,
+      candidateCount: 0,
+      returnedCandidateCount: 0,
+      truncated: false,
+      candidates: [],
+      unknownCount: 0,
+      unknowns: [],
+    };
   const evidenceById = new Map(candidateSet.evidence.map((record) => [record.evidenceId, record]));
   const candidates = candidateSet.candidates.slice(0, limit).map((candidate) => {
-    const evidence = candidate.evidenceIds.slice(0, 3).map((evidenceId) => evidenceById.get(evidenceId)).filter(Boolean)
+    const evidence = candidate.evidenceIds
+      .slice(0, 3)
+      .map((evidenceId) => evidenceById.get(evidenceId))
+      .filter(Boolean)
       .map((record) => ({
         evidenceId: record.evidenceId,
         sourceKind: record.sourceKind,
@@ -74,8 +78,12 @@ function actionFor({ status, world, graph, documents }) {
   // Product governance now needs a user brief or a fresh semantic proposal
   // (profile "product"), the same action the project status names.
   if (new Set(["initialized", "awaiting_evidence", "rejected"]).has(status)) return "provide_product_evidence";
-  if (status === "ready_world_changed" || world?.status !== "current"
-    || (new Set(["awaiting_review", "revision_required"]).has(status) && world.matchesCandidateSource === false)) return "refresh_or_reconcile_world";
+  if (
+    status === "ready_world_changed" ||
+    world?.status !== "current" ||
+    (new Set(["awaiting_review", "revision_required"]).has(status) && world.matchesCandidateSource === false)
+  )
+    return "refresh_or_reconcile_world";
   if (new Set(["awaiting_review", "revision_required"]).has(status)) return "review_candidates";
   if (graph?.status !== "current") return "verify_graph_projection";
   if (documents?.status !== "current") return "build_document_projection";
@@ -91,10 +99,14 @@ function choicesFor(status) {
 }
 
 async function optionalProjection(read) {
-  try { return await read(); }
-  catch (error) {
-    if (!/^(?:INVALID_)?(?:GRAPH_|DOCUMENT_|PUBLISHED_|ARCADEDB|WORLD_MODEL|TEMPORAL_)/.test(error.code || "")
-      && !["ENOENT", "EACCES", "EPERM", "EISDIR"].includes(error.code)) throw error;
+  try {
+    return await read();
+  } catch (error) {
+    if (
+      !/^(?:INVALID_)?(?:GRAPH_|DOCUMENT_|PUBLISHED_|ARCADEDB|WORLD_MODEL|TEMPORAL_)/.test(error.code || "") &&
+      !["ENOENT", "EACCES", "EPERM", "EISDIR"].includes(error.code)
+    )
+      throw error;
     return { status: "integrity_attention", reasonCode: error.code };
   }
 }
@@ -102,58 +114,65 @@ async function optionalProjection(read) {
 export async function inspectConversationalOnboarding({ root = ".", candidateLimit = 25 } = {}) {
   const limit = boundedLimit(candidateLimit);
   const project = inspectProject(root);
-  if (project.status === "not_initialized") return {
-    schemaVersion: 1,
-    kind: "ConversationalOnboardingProjection",
-    protocolVersion: ONBOARDING_CONVERSATION_PROTOCOL_VERSION,
-    status: "not_initialized",
-    nextAction: "initialize_or_resume",
-    materialChoicesRequired: choicesFor("not_initialized"),
-    defaults: { projectMode: "existing", storageMode: "local", runtimes: ["claude", "codex", "opencode"] },
-    project: { projectId: null, sessionId: null },
-    storage: { mode: "unselected", graphdbConfigured: false, credentialValuesPersisted: false },
-    review: compactCandidateSet(null, limit),
-    readiness: { world: "missing", graph: "missing", documents: "missing" },
-    authority: {
-      productCanon: "user-owned-project-canon",
-      conversationProjection: "non-authoritative-guidance",
-      graph: "rebuildable-derived-evidence",
-    },
-  };
+  if (project.status === "not_initialized")
+    return {
+      schemaVersion: 1,
+      kind: "ConversationalOnboardingProjection",
+      protocolVersion: ONBOARDING_CONVERSATION_PROTOCOL_VERSION,
+      status: "not_initialized",
+      nextAction: "initialize_or_resume",
+      materialChoicesRequired: choicesFor("not_initialized"),
+      defaults: { projectMode: "existing", storageMode: "local", runtimes: ["claude", "codex", "opencode"] },
+      project: { projectId: null, sessionId: null },
+      storage: { mode: "unselected", graphdbConfigured: false, credentialValuesPersisted: false },
+      review: compactCandidateSet(null, limit),
+      readiness: { world: "missing", graph: "missing", documents: "missing" },
+      authority: {
+        productCanon: "user-owned-project-canon",
+        conversationProjection: "non-authoritative-guidance",
+        graph: "rebuildable-derived-evidence",
+      },
+    };
 
-  const onboarding = (await inspectOptionalOnboarding({ root }));
-  if (onboarding.status === "integrity_attention") return {
-    schemaVersion: 1, kind: "ConversationalOnboardingProjection",
-    protocolVersion: ONBOARDING_CONVERSATION_PROTOCOL_VERSION,
-    status: onboarding.status, reasonCode: onboarding.reasonCode,
-    nextAction: "inspect_product_governance", materialChoicesRequired: [],
-    ordinaryWorkBlocked: false, userReviewRequired: false,
-    project: { projectId: project.project.projectId, sessionId: project.state.sessionId },
-    review: { candidateCount: null, candidates: [], verification: "unverified" },
-    readiness: { world: "unverified", graph: "unverified", documents: "unverified" },
-    authority: { conversationProjection: "non-authoritative-guidance" },
-  };
-  if (onboarding.status === "migration_required") return {
-    schemaVersion: 1,
-    kind: "ConversationalOnboardingProjection",
-    protocolVersion: ONBOARDING_CONVERSATION_PROTOCOL_VERSION,
-    status: onboarding.status,
-    nextAction: "initialize_or_resume",
-    materialChoicesRequired: [],
-    project: { projectId: onboarding.projectId, sessionId: onboarding.sessionId },
-    storage: { mode: "migration-required", graphdbConfigured: false, credentialValuesPersisted: false },
-    review: compactCandidateSet(null, limit),
-    readiness: { world: "missing", graph: "missing", documents: "missing" },
-    authority: {
-      productCanon: "user-owned-project-canon",
-      conversationProjection: "non-authoritative-guidance",
-      graph: "rebuildable-derived-evidence",
-    },
-  };
+  const onboarding = await inspectOptionalOnboarding({ root });
+  if (onboarding.status === "integrity_attention")
+    return {
+      schemaVersion: 1,
+      kind: "ConversationalOnboardingProjection",
+      protocolVersion: ONBOARDING_CONVERSATION_PROTOCOL_VERSION,
+      status: onboarding.status,
+      reasonCode: onboarding.reasonCode,
+      nextAction: "inspect_product_governance",
+      materialChoicesRequired: [],
+      ordinaryWorkBlocked: false,
+      userReviewRequired: false,
+      project: { projectId: project.project.projectId, sessionId: project.state.sessionId },
+      review: { candidateCount: null, candidates: [], verification: "unverified" },
+      readiness: { world: "unverified", graph: "unverified", documents: "unverified" },
+      authority: { conversationProjection: "non-authoritative-guidance" },
+    };
+  if (onboarding.status === "migration_required")
+    return {
+      schemaVersion: 1,
+      kind: "ConversationalOnboardingProjection",
+      protocolVersion: ONBOARDING_CONVERSATION_PROTOCOL_VERSION,
+      status: onboarding.status,
+      nextAction: "initialize_or_resume",
+      materialChoicesRequired: [],
+      project: { projectId: onboarding.projectId, sessionId: onboarding.sessionId },
+      storage: { mode: "migration-required", graphdbConfigured: false, credentialValuesPersisted: false },
+      review: compactCandidateSet(null, limit),
+      readiness: { world: "missing", graph: "missing", documents: "missing" },
+      authority: {
+        productCanon: "user-owned-project-canon",
+        conversationProjection: "non-authoritative-guidance",
+        graph: "rebuildable-derived-evidence",
+      },
+    };
 
   const availableWorld = onboarding.worldModel && onboarding.worldModel.status !== "unavailable";
-  const graph = availableWorld ? (await optionalProjection(async () => (await inspectWorldGraphProjection({ root })))) : null;
-  const documents = availableWorld ? (await optionalProjection(async () => (await inspectWorldMarkdownProjection({ root })))) : null;
+  const graph = availableWorld ? await optionalProjection(async () => await inspectWorldGraphProjection({ root })) : null;
+  const documents = availableWorld ? await optionalProjection(async () => await inspectWorldMarkdownProjection({ root })) : null;
   const nextAction = actionFor({ status: onboarding.status, world: onboarding.worldModel, graph, documents });
   return {
     schemaVersion: 1,
@@ -176,13 +195,15 @@ export async function inspectConversationalOnboarding({ root = ".", candidateLim
       credentialValuesPersisted: false,
     },
     review: compactCandidateSet(["promotion_recovery_pending", "review_recovery_pending"].includes(onboarding.status) ? null : onboarding.candidateSet, limit),
-    historical: onboarding.historical ? {
-      status: "historical-ready-opaque",
-      boundaryId: onboarding.historical.boundaryId,
-      boundaryIntegrity: onboarding.historical.boundaryIntegrity,
-      applicationStatus: onboarding.historical.applicationStatus,
-      nextAction: onboarding.historical.nextAction,
-    } : null,
+    historical: onboarding.historical
+      ? {
+          status: "historical-ready-opaque",
+          boundaryId: onboarding.historical.boundaryId,
+          boundaryIntegrity: onboarding.historical.boundaryIntegrity,
+          applicationStatus: onboarding.historical.applicationStatus,
+          nextAction: onboarding.historical.nextAction,
+        }
+      : null,
     readiness: {
       world: onboarding.worldModel?.status || "missing",
       worldModelId: onboarding.worldModel?.worldModelId || null,

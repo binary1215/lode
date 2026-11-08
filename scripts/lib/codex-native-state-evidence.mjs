@@ -30,8 +30,7 @@ export function readSelectedCodexStateEvidence(database, threadIds) {
     columns: [...columns],
     rows,
     omittedFields: [...omittedFields],
-    scope:
-      "typed projection of selected source state fields; not full original-row byte equivalence",
+    scope: "typed projection of selected source state fields; not full original-row byte equivalence",
     targetPolicyAuthority: false,
     grantsRecoveryAuthority: false,
   };
@@ -54,11 +53,8 @@ export function verifySelectedCodexStateEvidence(evidence, threadIds) {
   const seen = new Set(),
     records = evidence.rows.map((row) => {
       if (!Array.isArray(row) || row.length !== columns.length) fail();
-      const record = Object.fromEntries(
-        columns.map((column, index) => [column, decodeSqliteCell(row[index])]),
-      );
-      if (typeof record.id !== "string" || !threadIds.includes(record.id) || seen.has(record.id))
-        fail();
+      const record = Object.fromEntries(columns.map((column, index) => [column, decodeSqliteCell(row[index])]));
+      if (typeof record.id !== "string" || !threadIds.includes(record.id) || seen.has(record.id)) fail();
       seen.add(record.id);
       return record;
     });
