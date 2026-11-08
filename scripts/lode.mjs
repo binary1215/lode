@@ -25,13 +25,13 @@ import {
 import { resolveProjectStorage } from "./lib/project-storage-format.mjs";
 import { validateRuntimeInvocationRecordIdentity } from "./lib/runtime-invocation-record.mjs";
 import { prepareLocalBoundedWorker, startLocalBoundedWorker } from "./lib/local-worker-host.mjs";
-import { compileContext, DEFAULT_CONTEXT_BUDGET, readContextCapsule } from "./lib/context-compiler.mjs";
+import { compileContext, DEFAULT_CONTEXT_BUDGET } from "./lib/context-compiler.mjs";
 import { prepareContextWorkflow, previewContextWorkflow } from "./lib/context-workflow.mjs";
 import { prepareSourceContext, inspectSourceObservation } from "./lib/source-context-workflow.mjs";
-import { createExecutionContract, createNextWholePlanSnapshot, createWholePlanSnapshot, readLineageArtifact } from "./lib/execution-lineage.mjs";
+import { createExecutionContract, createNextWholePlanSnapshot, createWholePlanSnapshot } from "./lib/execution-lineage.mjs";
 import { GitLogFileHistoryAdapter } from "./lib/git-history.mjs";
 import { RuntimeStateFileAdapter } from "./lib/runtime-state.mjs";
-import { finishRun, getPendingReviewContext, reviewRun, startRun } from "./lib/run-lineage.mjs";
+import { finishRun, reviewRun, startRun } from "./lib/run-lineage.mjs";
 import {
   buildWorldModel,
   captureWorldMarkdownChanges,
@@ -63,11 +63,9 @@ import {
 } from "./lib/feature-mapping.mjs";
 import {
   attachVcsEvidence,
-  inspectChangeSets,
   readChangeImpactCandidateSet,
   readChangeImpactReviewDecision,
   readChangeSet,
-  readVcsEvidence,
   recordChangeSet,
   reviewChangeImpact,
 } from "./lib/change-set.mjs";
@@ -131,7 +129,6 @@ import {
   inspectObservationSources,
 } from "./lib/observation-adapter.mjs";
 import { queryObservations } from "./lib/observation-projection.mjs";
-import { diffGraphLineage, inspectGraphLineage, traceGraphLineage } from "./lib/graph-lineage.mjs";
 import { readObservation, recordDerivedObservation } from "./lib/observation-store.mjs";
 import { prepareObservationEvidence } from "./lib/observation-workflow.mjs";
 import {
@@ -143,20 +140,10 @@ import {
   recordConformanceDisposition,
 } from "./lib/conformance-reconciliation.mjs";
 import { formatCliError, formatCliResult } from "./lib/cli-presentation.mjs";
-import {
-  abortCompaction,
-  continueCompaction,
-  createRecoveryCheckpoint,
-  inspectCompaction,
-  inspectRecoveryCheckpointBasis,
-  prepareCompaction,
-  syncRecoveryCheckpoint,
-  verifyCompaction,
-} from "./lib/compaction-recovery.mjs";
+import { createRecoveryCheckpoint } from "./lib/compaction-recovery.mjs";
 import { enterConversationRecovery, processCompactionLifecycle } from "./lib/compaction-lifecycle.mjs";
 import { readSessionWorkContext, readSessionWorkList } from "./lib/session-work-context.mjs";
-import { integrateReviewedRunCheckpoint, readRunResultIntegration, restoreSessionFromArtifacts } from "./lib/session-recovery.mjs";
-import { inspectRecoveryCheckpointDiagnosis } from "./lib/recovery-checkpoint-diagnosis.mjs";
+import { integrateReviewedRunCheckpoint, restoreSessionFromArtifacts } from "./lib/session-recovery.mjs";
 import { continueSessionFromArtifacts } from "./lib/runtime-session-continuation.mjs";
 import { executeBoundedWorkerDispatch, readBoundedWorkerDispatch } from "./lib/bounded-worker-dispatch.mjs";
 
@@ -891,13 +878,11 @@ async function runRoutedCommand(
   if (command === "feature-mapping-candidates") return readFeatureMappingCandidateSet({ root, candidateSetId: options["candidate-set"] });
   if (command === "feature-mapping-review-read") return readFeatureMappingReviewDecision({ root, reviewDecisionId: options.review });
   if (command === "change-set-record") return await recordChangeSet({ ...inputJson(options, "ChangeSet"), root });
-  if (command === "change-set-status") return await inspectChangeSets({ root });
   if (command === "change-set-read") return readChangeSet({ root, changeSetId: options["change-set"] });
   if (command === "change-impact-candidates") return readChangeImpactCandidateSet({ root, candidateSetId: options["candidate-set"] });
   if (command === "change-impact-review") return await reviewChangeImpact({ ...inputJson(options, "Change impact ReviewDecision"), root });
   if (command === "change-impact-review-read") return readChangeImpactReviewDecision({ root, reviewDecisionId: options.review });
   if (command === "change-set-vcs-attach") return await attachVcsEvidence({ ...inputJson(options, "VCS evidence attachment"), root });
-  if (command === "change-set-vcs-read") return readVcsEvidence({ root, vcsEvidenceId: options["vcs-evidence"] });
   if (command === "conformance-prepare")
     return await prepareConformanceAssessment({
       root,
@@ -1161,32 +1146,6 @@ async function runRoutedCommand(
       query: options.query || "",
       limit: options.limit == null ? 50 : Number(options.limit),
     });
-  if (command === "graph-lineage-status")
-    return await inspectGraphLineage({
-      root,
-      cursor: options.cursor || "",
-      limit: options.limit == null ? 25 : Number(options.limit),
-    });
-  if (command === "graph-lineage-trace")
-    return await traceGraphLineage({
-      root,
-      worldModelId: options.world || "",
-      anchorId: options.anchor || "",
-      query: options.query || "",
-      depth: options.depth == null ? 2 : Number(options.depth),
-      maxNodes: options.limit == null ? 100 : Number(options.limit),
-      maxEdges: options["edge-limit"] == null ? 200 : Number(options["edge-limit"]),
-      includeExecution: options["include-execution"] !== "false",
-    });
-  if (command === "graph-lineage-diff")
-    return await diffGraphLineage({
-      root,
-      fromWorldModelId: options.from,
-      toWorldModelId: options.to,
-      limit: options.limit == null ? 100 : Number(options.limit),
-      scopePaths: options.path ? [options.path] : null,
-      cursor: options.cursor || "",
-    });
   if (command === "world-runtime")
     return await queryWorldRuntimeState({
       root,
@@ -1205,9 +1164,6 @@ async function runRoutedCommand(
       approvedDecisions: [],
       openReviewIds: [],
     });
-  if (command === "checkpoint-basis") return inspectRecoveryCheckpointBasis({ root });
-  if (command === "checkpoint-diagnose") return inspectRecoveryCheckpointDiagnosis({ root });
-  if (command === "checkpoint-sync") return syncRecoveryCheckpoint({ ...inputJson(options, "Recovery checkpoint sync"), root });
   if (command === "session-work-record") {
     const input = inputJson(options, "Selected Session work evidence");
     let documentSelection, documentSelectionError;
@@ -1258,11 +1214,6 @@ async function runRoutedCommand(
       runtime: options.runtime,
     });
   }
-  if (command === "compact-prepare") return prepareCompaction({ ...inputJson(options, "Compaction prepare"), root });
-  if (command === "compact-verify") return verifyCompaction({ ...inputJson(options, "Compaction verification"), root });
-  if (command === "compact-continue") return continueCompaction({ ...inputJson(options, "Compaction continuation"), root });
-  if (command === "compact-status") return inspectCompaction({ root });
-  if (command === "compact-abort") return abortCompaction({ ...inputJson(options, "Compaction abort"), root });
   if (command === "conversation-enter") return await enterConversationRecovery({ root });
   if (command === "compaction-lifecycle-step")
     return await processCompactionLifecycle({
@@ -1275,10 +1226,8 @@ async function runRoutedCommand(
   if (command === "lineage-contract") return createExecutionContract({ ...inputJson(options, "Execution Contract"), root, persist: true });
   if (command === "run-start") return startRun({ root, executionContractId: options.contract, startRequestId: options["start-request"] });
   if (command === "run-finish") return finishRun({ ...inputJson(options, "Result Packet"), root });
-  if (command === "run-review-context") return getPendingReviewContext({ root });
   if (command === "run-review") return reviewRun({ ...inputJson(options, "ReviewDecision"), root });
   if (command === "run-integrate-checkpoint") return integrateReviewedRunCheckpoint({ ...inputJson(options, "Run result integration"), root });
-  if (command === "run-integration-read") return readRunResultIntegration({ root, reviewDecisionId: options.review });
   if (command === "context-prepare")
     return await prepareContextWorkflow({ root, task: options.task, budget: options.budget == null ? DEFAULT_CONTEXT_BUDGET : Number(options.budget) });
   if (command === "source-context")
@@ -1319,8 +1268,6 @@ async function runRoutedCommand(
       evidenceNeeds: evidenceNeedsInput(options),
       persist: true,
     });
-  if (command === "context-read") return readContextCapsule({ root, capsuleId: options.capsule });
-  if (command === "lineage-read") return readLineageArtifact({ root, artifactId: options.artifact });
   throw new Error(`Unknown command: ${command}`);
 }
 
