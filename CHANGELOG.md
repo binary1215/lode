@@ -11,7 +11,29 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
-## 0.3.0-beta.87 — publication tracked separately
+## 0.3.0-beta.89 — publication tracked separately
+
+- Turn the Lode Skills into an entry procedure. The core Skill opens with a
+  table from the entry state (`conversation_ready`, `session_selection_unresolved`,
+  `conversation_recovery_unavailable` with `NOT_INITIALIZED` or
+  `PROJECT_RELOCATION_*`, MCP `error.data.reasonCode`) to the call to make and
+  how to use its result; authority doctrine becomes one-line rules that link
+  `docs/lode-constitution.md`. The conversation Skill maps result fields to the
+  sentences they produce, and the onboarding Skill lists every `nextAction` value.
+- Emit `node <plugin-root>/scripts/lode.mjs …`, the entry point every install
+  has, as `nextAction.entrypoint.cli` and in readiness hints; CLI help explains
+  the optional `lode-agent` launcher spelling.
+- Generate the PreToolUse matchers in `hooks/claude.json` from the tool catalog
+  (`scripts/generate-claude-hooks.mjs`, `--check`), verified byte-for-byte by a
+  test. The matcher is built from the full catalog, so the Hook now also runs on
+  `lode_tools_read` / `lode_tools_call` and the other router and discovery tools.
+- Add `docs/glossary.md` (and Korean), open the README with what/why, the two
+  installs, the first request and the glossary, and document the required keys
+  and formats for `session-create --new-session`, `checkpoint-sync` and
+  `session-work-record --input`. Their validation errors name the offending key
+  or expected format; reason codes are unchanged.
+
+## 0.3.0-beta.88 — publication tracked separately
 
 - Enforce the declared `project_root` argument of every MCP tool before dispatch.
   A missing, empty or non-string root is refused as `INVALID_TOOL_ARGUMENTS`
@@ -35,6 +57,8 @@ Host/MCP reload.
 - Document that instruction linking creates a missing CLAUDE.md/AGENTS.md with
   only the link block, and that a copy whose records prove their origin is
   adopted as a relocation on explicit resume.
+## 0.3.0-beta.87 — publication tracked separately
+
 - Apply the existing controlled cleanup clock to the two remaining semantic
   clean-close fixture tests. Preserve the real native EOF/exit/tree/PID proof,
   production grace policy and forced/uncertain/nonzero negative tests.
