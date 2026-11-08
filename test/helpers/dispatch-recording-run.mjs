@@ -16,6 +16,9 @@ import { OPERATIONS } from "../../scripts/lib/operation-registry.mjs";
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 // An identifiable stand-in, so a recording shows where the host registry is passed on.
 const OBSERVATION_REGISTRY = Object.freeze({ lodeRecordingPlaceholder: "observationRegistry" });
+const GRAPHDB_TRANSPORT = Object.freeze({ lodeRecordingPlaceholder: "graphDbTransport" });
+const COMPACTION_LIFECYCLE_HOST = Object.freeze({ lodeRecordingPlaceholder: "compactionLifecycleHost" });
+const READ_RELATED_NATIVE_CONTEXT = Object.freeze({ lodeRecordingPlaceholder: "readRelatedNativeContext" });
 export const FIXTURE_ROOT = "/lode-dispatch-fixture/project";
 
 // Dispatch infrastructure that must run for real for a call to reach its
@@ -138,11 +141,12 @@ export function cliCommands() {
 const NUMERIC_FLAGS = /^(budget|depth|limit|offset|timeout|max-[\w-]+|min-[\w-]+|candidate-limit|iterations|wait-ms|wait-timeout-ms|edge-limit|ttl[\w-]*)$/;
 const BOOLEAN_FLAGS = new Set(["details", "fresh", "scan-evidence", "inventory-page", "apply", "diagnostics", "history", "share", "write-root-instructions"]);
 // Options whose non-default branch needs a specific text value.
-const SAMPLE_VALUES = { "include-execution": "false" };
+const SAMPLE_VALUES = { "include-execution": "false", "include-candidates": "true", retain: "true" };
 const isJsonFlag = (flag) => ["input", "evidence-needs"].includes(flag) || /-file$|-json$/.test(flag);
 
 // No options; every option it reads; and, for JSON input, the same with one
-// unsupported field so per-command field checks are recorded too.
+// unsupported field so per-command field checks are recorded too, plus every
+// other option without the JSON input so the option-built branch is recorded.
 export function cliArgvs(command, flags, jsonFile, extraFieldJsonFile) {
   const argvs = [[command, FIXTURE_ROOT]];
   const withOptions = (file) => {
@@ -150,13 +154,16 @@ export function cliArgvs(command, flags, jsonFile, extraFieldJsonFile) {
     for (const flag of flags) {
       if (flag === "session") continue;
       if (BOOLEAN_FLAGS.has(flag)) argv.push(`--${flag}`, ...(["details", "scan-evidence", "inventory-page"].includes(flag) ? ["true"] : []));
-      else if (isJsonFlag(flag)) argv.push(`--${flag}`, file);
+      else if (isJsonFlag(flag)) {
+        if (file) argv.push(`--${flag}`, file);
+      }
       else argv.push(`--${flag}`, SAMPLE_VALUES[flag] ?? (NUMERIC_FLAGS.test(flag) ? "3" : `sample-${flag}`));
     }
     return argv;
   };
   if (flags.length) argvs.push(withOptions(jsonFile));
   if (flags.some(isJsonFlag)) argvs.push(withOptions(extraFieldJsonFile));
+  if (flags.some(isJsonFlag) && flags.some((flag) => !isJsonFlag(flag) && flag !== "session")) argvs.push(withOptions(null));
   return argvs;
 }
 
@@ -253,7 +260,14 @@ export async function recordDispatch() {
       const surface = isManagedMutation(tool.name) ? "managed-maintenance" : "ordinary";
       for (const input of mcpInputs(tool)) {
         const request = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool.name, arguments: input } };
-        const result = await capture(() => mcp.dispatch(request, { surface, hostEnvironment: {}, observationRegistry: OBSERVATION_REGISTRY }));
+        const result = await capture(() => mcp.dispatch(request, {
+            surface,
+            hostEnvironment: {},
+            observationRegistry: OBSERVATION_REGISTRY,
+            graphDbTransport: GRAPHDB_TRANSPORT,
+            compactionLifecycleHost: COMPACTION_LIFECYCLE_HOST,
+            readRelatedNativeContext: READ_RELATED_NATIVE_CONTEXT,
+          }));
         entries.push({ surface: "mcp", tool: tool.name, input: normalize(input), ...result });
       }
     }
@@ -262,7 +276,7 @@ export async function recordDispatch() {
       const managed = isManagedMutation(command);
       for (const argv of cliArgvs(command, flags, jsonFile, extraFieldJsonFile)) {
         const full = managed ? ["managed-maintenance", ...argv] : argv;
-        const result = await capture(() => cli.runCommand(full, { observationRegistry: OBSERVATION_REGISTRY }));
+        const result = await capture(() => cli.runCommand(full, { observationRegistry: OBSERVATION_REGISTRY, compactionLifecycleHost: COMPACTION_LIFECYCLE_HOST }));
         entries.push({ surface: "cli", command, argv: normalize(full), ...result });
       }
     }
