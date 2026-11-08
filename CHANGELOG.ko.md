@@ -9,6 +9,16 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.97 — 게시 결과는 별도 확인
+
+- 모든 MCP 도구를 operation registry로 디스패치하며, 레지스트리가 MCP 도구 목록
+  자체가 됩니다. `mcp-server.mjs`의 삼항 디스패치 체인을 제거했고, 마지막 32개 MCP
+  작업을 어댑터와 함께 옮겼으며 `project_status`와 conformance trigger 도구는 명시적
+  핸들러로, `world_model`의 4 MiB 응답 상한은 같은 지점에서 검사하는 레지스트리
+  필드로 옮겼습니다. 동작 변경은 없습니다.
+- Claude hook matcher를 operation registry에서 생성하고 선언된 `project_root`
+  스키마도 거기서 읽습니다. CLI 명령 분기는 다음 릴리스까지 남아 있습니다.
+
 ## 0.3.0-beta.96 — 게시 결과는 별도 확인
 
 - 44개 작업을 추가로 operation registry로 디스패치합니다(144개 중 111개): project
