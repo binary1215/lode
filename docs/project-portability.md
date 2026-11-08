@@ -8,8 +8,11 @@ a Run or a new save/approval ceremony.
 
 ## A copied folder
 
-Ordinary `resume` verifies the Project's existing location chain. An older copy
-without a provable original location can instead use the explicit
+Ordinary `resume` verifies the Project's existing location chain: a copy whose
+records prove their original location (its Project ID was derived from the
+recorded root, or its location history verifies) is adopted as a relocation on
+explicit resume, whether or not the original folder still exists. A status read
+alone adopts nothing. An older copy without that proof can instead use the explicit
 `copied_project: "verified-copy"` initialize/resume choice, after Lode explains
 that the first origin remains unverified. This is a choice for that exact copy,
 not permission to trust every record carrying its old path or Project ID.

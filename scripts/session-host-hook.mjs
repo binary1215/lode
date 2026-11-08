@@ -27,8 +27,16 @@ export async function sessionStartContext({ runtime, event, environment = proces
   } catch (error) {
     const code = typeof error?.code === "string" && /^[A-Z0-9_]{1,128}$/.test(error.code)
       ? error.code : "HOST_CONTEXT_UNAVAILABLE";
+    // A folder holding a Lode Project recorded for another root is an existing
+    // Project, not an uninitialized one: say so, matching the status command.
+    // This read adopts nothing; it only names the explicit resume.
+    let relocation = null;
+    if (code === "NOT_INITIALIZED" && typeof event?.cwd === "string") {
+      try { relocation = require("./lib/compaction-lifecycle.mjs").projectRelocationHint(event.cwd); } catch { relocation = null; }
+    }
     return { hookSpecificOutput: { hookEventName: "SessionStart",
-      additionalContext: JSON.stringify({ status: "host_context_unavailable", reasonCode: code,
+      additionalContext: JSON.stringify({ status: "host_context_unavailable", reasonCode: relocation ? relocation.reasonCode : code,
+        ...(relocation ? { projectLocation: relocation.projectLocation, nextAction: relocation.nextAction } : {}),
         coreGuidance: coreEntryGuidance(), recoveryContext: "unknown", sessionSelection: "not-inferred",
         ordinaryWorkBlocked: false, persisted: false }) } };
   }

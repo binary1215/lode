@@ -11,6 +11,25 @@ GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 �
 
 ## 0.3.0-beta.87 — 게시 결과는 별도 확인
 
+- 모든 MCP 도구가 선언한 `project_root` 인자를 디스패치 전에 강제합니다. 없거나
+  비었거나 문자열이 아닌 루트는 서버의 현재 디렉터리로 조용히 해석되거나 Node
+  `TypeError`로 드러나는 대신 `INVALID_TOOL_ARGUMENTS`로 거부합니다. 라우터 경유
+  호출은 라우터의 형태·읽기 전용 검사 뒤에 확인합니다. 그 밖의 인자 규칙은 CLI와
+  MCP에서 동일한, 해당 작업 자체의 거부 메시지를 유지합니다.
+- 라이브러리의 이유 코드를 MCP 오류의 `error.data.reasonCode`로 전달해 에이전트가
+  메시지 문자열이 아니라 문서화된 코드로 분기할 수 있게 합니다.
+- 다른 루트로 기록된 Lode Project가 있는 폴더를 대화 진입과 SessionStart Hook에서
+  기존 Project로 보고합니다(`PROJECT_RELOCATION_AVAILABLE`/`PROJECT_RELOCATION_PENDING`,
+  다음 행동은 명시적 resume). `status`와 같은 판정입니다. 암묵적 읽기는 여전히
+  아무것도 채택하지 않습니다. 초기화되지 않은 폴더의 Session 작업 읽기는 구형
+  경로의 `ENOENT` 대신 `NOT_INITIALIZED`로 실패합니다.
+- 미해결 진입이 탐색 호출로 지목하는 `lode_session_list`를 기본 목록(23개 도구)에서
+  직접 호출할 수 있게 합니다. 온보딩 가이드는 Core가 초기화된 프로젝트에서
+  `initialize_or_resume`을 반복하지 않고 `provide_product_evidence`를 답합니다.
+  보류된 루트 지침 파일 안내에 `undefined`가 더 이상 찍히지 않습니다.
+- 지침 연결이 없는 CLAUDE.md/AGENTS.md를 링크 블록만으로 새로 만든다는 점과,
+  기록이 출처를 증명하는 사본은 명시적 resume에서 이동으로 받아들인다는 점을
+  문서에 명시합니다.
 - 의미 검증인데 실제 OS의 짧은 종료 시간을 가정하던 나머지 두 시험에 기존
   정리 시계 제어를 적용합니다. 실제 EOF·종료·트리·PID 증명과 제품 정리 정책,
   강제 종료·불확실·비정상 종료 부정 시험은 유지합니다.

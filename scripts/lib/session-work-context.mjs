@@ -31,6 +31,8 @@ function identity(root, storage) {
     verifySessionWorkEvidenceOwner({ root: base, projectBytes, stateBytes });
     return JSON.parse(projectBytes);
   } });
+  // No owned storage at all: say so, instead of a raw ENOENT on a legacy path.
+  if (!storage) fail("Lode Agent Core is not initialized.", "NOT_INITIALIZED");
   const projectBytes = fs.readFileSync(safeSessionPath(base, formatForVerifiedOwner(storage).directory, "project.json"));
   const stateBytes = fs.readFileSync(sessionStatePath(base, storage));
   return { ...verifySessionWorkEvidenceOwner({ root: base, projectBytes, stateBytes, storage }),

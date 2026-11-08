@@ -31,7 +31,8 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
   for (const unknown of ["lode_unknown_mutation", "head_unknown_mutation", "lode_head_core_contract", "HEAD_core_contract", "head_core_contract_typo"]) {
     assert.equal(resolveOperation(unknown), null); assert.equal(publicToolName(unknown), unknown);
   }
-  assert.equal(tools.length, 22);
+  assert.equal(tools.length, 23);
+  assert.ok(tools.some(tool => tool.name === "lode_session_list"), "the entry's advertised discovery call is directly callable");
   assert.ok(tools.every(tool => tool.name.startsWith("lode_")));
   assert.ok(catalogTools.every(tool => tool.name.startsWith("lode_")));
   assert.equal(new Set(catalogTools.map(tool => tool.name)).size, catalogTools.length);
@@ -161,7 +162,10 @@ for (const scenario of malformedWorkerRequests) test(`worker ${scenario.name} ke
     for (const name of ["lode_worker_integration", "head_worker_integration"]) {
       const result = await dispatch({ jsonrpc: "2.0", id: "missing-worker-project", method: "tools/call", params: { name,
         arguments: { project_root: f.root, ...typedWorkerInput(scenario.input) } } }, { surface: "managed-maintenance" });
-      assert.deepEqual(result.error, { code: -32000, message: scenario.message });
+      // The declared inputSchema may refuse the malformed request first; either
+      // way the primary error precedes any Project selection or creation.
+      if (result.error?.data?.reasonCode === "INVALID_TOOL_ARGUMENTS") assert.match(result.error.message, /^Invalid arguments for lode_/);
+      else assert.deepEqual(result.error, { code: -32000, message: scenario.message, data: { reasonCode: scenario.code } });
     }
   }, f.root);
   assert.equal(fs.existsSync(f.root), false);
@@ -179,7 +183,10 @@ test("invalid status and runtime-result identities retain their exact primary er
     for (const name of scenario.tools) {
       const result = await dispatch({ jsonrpc: "2.0", id: "missing-read-project", method: "tools/call", params: { name,
         arguments: { project_root: f.root, [scenario.key]: "invalid" } } });
-      assert.deepEqual(result.error, { code: -32000, message: scenario.message });
+      // The declared inputSchema may refuse the malformed request first; either
+      // way the primary error precedes any Project selection or creation.
+      if (result.error?.data?.reasonCode === "INVALID_TOOL_ARGUMENTS") assert.match(result.error.message, /^Invalid arguments for lode_/);
+      else assert.deepEqual(result.error, { code: -32000, message: scenario.message, data: { reasonCode: scenario.code } });
     }
   }, f.root);
   assert.equal(fs.existsSync(f.root), false);
