@@ -174,7 +174,7 @@ lode-agent graph-query <project> --session <logical-session> --query "<task>"
 생략하면 Lode가 생성합니다. 다른 형식은 `INVALID_HEAD_SESSION_INPUT`으로 거절됩니다.
 
 ```text
-lode-agent session-create <project> --new-session session-12345678-1234-1234-1234-123456789abc --purpose "<independent work>"
+node <plugin-root>/scripts/lode.mjs session-create <project> --new-session session-12345678-1234-1234-1234-123456789abc --purpose "<independent work>"
 ```
 
 `lode_project_graph_index` / `graph-index`는 교체 가능한 기존 관측 색인을

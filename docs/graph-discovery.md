@@ -192,7 +192,7 @@ form `session-<36 hex digits and hyphens>` (the regular expression
 is refused with `INVALID_HEAD_SESSION_INPUT`.
 
 ```text
-lode-agent session-create <project> --new-session session-12345678-1234-1234-1234-123456789abc --purpose "<independent work>"
+node <plugin-root>/scripts/lode.mjs session-create <project> --new-session session-12345678-1234-1234-1234-123456789abc --purpose "<independent work>"
 ```
 
 `lode_project_graph_index` / `graph-index` explicitly updates the replaceable

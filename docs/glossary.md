@@ -1,7 +1,5 @@
 # Glossary
 
-[한국어](ko/glossary.md)
-
 Short definitions of the terms Lode uses in tool results, Skills and these
 documents. Each entry links to the document that defines it in full.
 

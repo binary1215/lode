@@ -135,6 +135,10 @@ messaging authority; see
   `lode_project_document_prepare/publish/status`. Retry a verified rejected write
   only through `retry_rejected_writes` with the returned attempt reference; unknown
   outcomes allow readback only. See [work documents](../../docs/work-document-projection.md).
+- A `lode_session_work_record` result with document status `head-selection-required`
+  (`headActionRequired: true`, `userActionRequired: false`) keeps the successful save;
+  finish prepare and publish in the same turn from its returned prior selection and
+  `recorded` evidence (or pass `document_selection`), without asking the user.
 - Saving is not execution permission: after a save, effects still need current
   user authority. A permission denial is not capability absence; do not switch
   tools or write files directly to get the refused effect.
