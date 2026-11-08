@@ -2,6 +2,7 @@
 import readline from "node:readline";
 import { workDocumentTools, workDocumentFromMcp, workDocumentCompositionSchema } from "./lib/work-document-surface.mjs";
 import { resolveOperation } from "./lib/lode-operation-contract.mjs";
+import { callRegistered, registeredOperation, registeredTools } from "./lib/operation-registry.mjs";
 import { assertProjectRootArgument } from "./lib/mcp-argument-validation.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
 import { DISCOVERY_PREFIX_PAIRS } from "../compat/head/public-names.mjs";
@@ -1966,58 +1967,14 @@ const allTools = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
-  ...["status", "reconcile", "cancel", "patch"].map((operation) => ({
-    name: operation === "cancel" ? "head_bounded_worker_cancel" : `head_bounded_worker_job_${operation}`,
-    description:
-      operation === "cancel"
-        ? "Request cancellation of one exact owned bounded job. A request is not proof of cleanup; inspect until terminal and owner exit are verified. No arbitrary PID or path is accepted."
-        : operation === "patch"
-          ? "Read exact owner-frozen workspace patch evidence bound to native terminal output and invocation lineage. This never applies edits, approves them or changes P2; later child edits cannot replace the frozen candidate."
-          : operation === "reconcile"
-            ? "Reconcile an exited worker against exact cleanup, durable lease and bounded provider output. Restore only missing matching P3 invocation evidence; never infer a release, relaunch, apply a result, or change P2."
-            : "Read the same immutable bounded worker job after frontend loss. This does not relaunch, repair P2, or infer success from a spool alone.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        authorization_id: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "authorization_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: operation === "status" || operation === "patch", destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  })),
-  {
-    name: "head_bounded_worker_reconcile",
-    description:
-      "Recover a current logical worker's exact frozen authorization after interrupted publication, without recapturing changed or missing source files. This repairs only missing lookup records; it never launches, retries, grants new authority, or changes P2 recovery direction.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        task_key: { type: "string", pattern: "^[a-z][a-z0-9-]{0,95}$" },
-      },
-      required: ["project_root", "task_key"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_bounded_worker_dispatch",
-    description:
-      "Create or verify one P3 non-HEAD worker ownership record bound to an exact current Run or idle Session ExecutionAuthorization. Execute via CLI worker-execute; for Session pass --input with the exact sessionRequest. This cannot change WholePlan, recovery direction, or review state.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        authorization_id: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
-        role: { type: "string", enum: ["developer", "coder", "reviewer"] },
-      },
-      required: ["project_root", "authorization_id", "role"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools([
+    "head_bounded_worker_job_status",
+    "head_bounded_worker_job_reconcile",
+    "head_bounded_worker_cancel",
+    "head_bounded_worker_job_patch",
+    "head_bounded_worker_reconcile",
+    "head_bounded_worker_dispatch",
+  ]),
   {
     name: "head_bounded_worker_status",
     description:
@@ -2033,151 +1990,17 @@ const allTools = [
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
-  {
-    name: "head_bounded_worker_wait",
-    description:
-      "Boundedly observe one worker's operational P5 lease/result state. Session results are evidence for HEAD consumption, without Run application or a review gate. The returned cursor is non-persisted and cannot create a ReviewDecision or recovery direction.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        authorization_id: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
-        wait_timeout_ms: { type: "integer", minimum: 0, maximum: 600000, default: 0 },
-      },
-      required: ["project_root", "authorization_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_bounded_worker_apply_result",
-    description:
-      "Run-only: map one completed, actual-provider, native-supervised bounded-worker draft into the canonical ResultPacket and Fresh HEAD review context. This does not create a ReviewDecision or integrate checkpoint direction.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        authorization_id: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "authorization_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_bounded_worker_wave_create",
-    description:
-      "Create one P3 grouping over 2-64 already-created bounded worker dispatches sharing the exact current Project/HEAD Session/Run/WholePlan/ExecutionContract/ContextCapsule lineage. It creates no authorization and widens no member scope.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        authorization_ids: {
-          type: "array",
-          minItems: 2,
-          maxItems: 64,
-          uniqueItems: true,
-          items: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
-        },
-      },
-      required: ["project_root", "authorization_ids"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_bounded_worker_wave_read",
-    description:
-      "Read and reverify one P3 worker wave, every member dispatch, current P2 lineage, and any create-only seal or abandonment evidence. This read cannot seal the wave.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        wave_id: { type: "string", pattern: "^bounded-worker-wave-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "wave_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_bounded_worker_wave_seal",
-    description:
-      "Create one P3 wave seal only after every independent member authorization has verified at-most-once lease consumption. A seal is not completion, review, or checkpoint integration.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        wave_id: { type: "string", pattern: "^bounded-worker-wave-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "wave_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_bounded_worker_wave_status",
-    description:
-      "Return one non-persisted P4 requested/started/returned/waiting/succeeded/failed projection. Status is observational and cannot create a seal, ReviewDecision, or recovery direction.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        wave_id: { type: "string", pattern: "^bounded-worker-wave-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "wave_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_bounded_worker_wave_results",
-    description:
-      "Read one non-persisted P4 aggregate of member result references after an explicit verified wave seal. It never applies ResultPackets or creates Fresh HEAD review.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        wave_id: { type: "string", pattern: "^bounded-worker-wave-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "wave_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_bounded_worker_wave_wait",
-    description:
-      "Boundedly observe one sealed wave as a non-persisted P5 outcome. Open or abandoned waves fail closed, and completion requires every member to succeed.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        wave_id: { type: "string", pattern: "^bounded-worker-wave-[a-f0-9]{24}$" },
-        wait_timeout_ms: { type: "integer", minimum: 0, maximum: 600000, default: 0 },
-      },
-      required: ["project_root", "wave_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_bounded_worker_wave_abandon",
-    description:
-      "Create one P3 non-success abandoned handoff for an unsealed wave using a bounded reason code and non-authoritative sanitized summary. This cannot create review or recovery direction.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        wave_id: { type: "string", pattern: "^bounded-worker-wave-[a-f0-9]{24}$" },
-        reason_code: { type: "string", enum: ["partial-launch", "lineage-drift", "operator-stop", "unrecoverable-member", "other"] },
-        reason_summary: { type: "string", maxLength: 256, default: "" },
-      },
-      required: ["project_root", "wave_id", "reason_code"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools([
+    "head_bounded_worker_wait",
+    "head_bounded_worker_apply_result",
+    "head_bounded_worker_wave_create",
+    "head_bounded_worker_wave_read",
+    "head_bounded_worker_wave_seal",
+    "head_bounded_worker_wave_status",
+    "head_bounded_worker_wave_results",
+    "head_bounded_worker_wave_wait",
+    "head_bounded_worker_wave_abandon",
+  ]),
   {
     name: "head_run_integrate_checkpoint",
     description:
@@ -3999,1794 +3822,1614 @@ async function dispatchRouted(
     // argument rules stay with the operation's own, CLI-identical refusal.
     const declaredSchema = allTools.find((tool) => semanticToolName(tool.name) === name)?.inputSchema;
     if (declaredSchema) assertProjectRootArgument(publicToolName(name), declaredSchema, args);
-    const value = await (name === "head_run_start"
-      ? (await import("./lib/run-lineage.mjs")).startRun({
-          root: args.project_root,
-          executionContractId: args.execution_contract_id,
-          startRequestId: args.start_request_id,
-        })
-      : name === "head_core_contract"
-        ? {
-            ...coreContract(),
-            runtime: {
-              activePackageVersion: packageVersion,
-              reloadPolicy: "restart-host-after-install-or-upgrade",
-              providerSessionIdentityPersisted: false,
-              compactionLifecycle: {
-                conversationEntryRecovery: "active",
-                injectedHostContract: "active",
-                packagedProviderEventAdapters: { claude: "not-bound", codex: "not-bound", opencode: "not-bound" },
-                unavailableBehavior: "non-blocking-p2-artifact-entry-recovery",
-              },
-            },
-          }
-        : name === "head_project_status"
-          ? (projectLocationProjection ?? (await (await import("./lib/project-bootstrap.mjs")).inspectProjectExperience({ root: args.project_root })))
-          : name === "head_project_graph"
-            ? await (
-                await import("./lib/project-graph.mjs")
-              ).queryProjectGraph({
-                root: args.project_root,
-                query: args.query ?? "",
-                view: args.view ?? "all",
-                anchorIds: args.anchor_ids ?? [],
-                paths: args.paths ?? [],
-                depth: args.depth,
-                details: args.details ?? false,
-                maxNodes: args.max_nodes,
-                maxEdges: args.max_edges,
-                worldModelId: args.world_model_id ?? "",
-                includeCandidates: args.include_candidates ?? true,
-                previousResult: args.previous_result ?? null,
-                inventoryPage: args.inventory_page === true,
-                inventoryPaths: args.inventory_paths,
-                inventoryCursor: args.inventory_cursor,
-              })
-            : name === "head_project_graph_index"
-              ? (await import("./lib/project-graph.mjs")).indexProjectGraph({ root: args.project_root })
-              : name === "head_project_native_history"
-                ? await projectNativeHistoryFromMcp(args, signal, nativeHistoryHost, onProcess)
-                : name === "head_project_bundle_export" || name === "head_project_bundle_read" || name === "head_project_bundle_import"
-                  ? await projectBundleFromMcp(name, args, signal, onExportScope)
-                  : name === "head_session_create"
-                    ? (await import("./lib/session-routing.mjs")).createHeadSession({
-                        root: args.project_root,
-                        sessionId: args.new_session_id,
-                        purpose: args.purpose,
-                      })
-                    : name === "head_session_list"
-                      ? await (
-                          await import("./lib/session-work-context.mjs")
-                        ).readSessionWorkList({
-                          root: args.project_root,
-                          sessionId: args.session_id ?? null,
-                          maxSessions: args.max_sessions ?? 16,
-                          afterSessionId: args.after_session_id ?? null,
-                          conversationCandidates: args.conversation_candidates,
-                          conversationEnvironment: hostEnvironment,
-                        })
-                      : name === "head_project_direction_read"
-                        ? (await import("./lib/session-routing.mjs")).readProjectDirection({ root: args.project_root })
-                        : name === "head_project_direction_update"
-                          ? (await import("./lib/session-routing.mjs")).updateProjectDirection({
+    const registered = registeredOperation(name);
+    const value = registered
+      ? await callRegistered(registered, registered.mcp.args(args, { onProcess, workerJobSupervisor }))
+      : await (name === "head_run_start"
+          ? (await import("./lib/run-lineage.mjs")).startRun({
+              root: args.project_root,
+              executionContractId: args.execution_contract_id,
+              startRequestId: args.start_request_id,
+            })
+          : name === "head_core_contract"
+            ? {
+                ...coreContract(),
+                runtime: {
+                  activePackageVersion: packageVersion,
+                  reloadPolicy: "restart-host-after-install-or-upgrade",
+                  providerSessionIdentityPersisted: false,
+                  compactionLifecycle: {
+                    conversationEntryRecovery: "active",
+                    injectedHostContract: "active",
+                    packagedProviderEventAdapters: { claude: "not-bound", codex: "not-bound", opencode: "not-bound" },
+                    unavailableBehavior: "non-blocking-p2-artifact-entry-recovery",
+                  },
+                },
+              }
+            : name === "head_project_status"
+              ? (projectLocationProjection ?? (await (await import("./lib/project-bootstrap.mjs")).inspectProjectExperience({ root: args.project_root })))
+              : name === "head_project_graph"
+                ? await (
+                    await import("./lib/project-graph.mjs")
+                  ).queryProjectGraph({
+                    root: args.project_root,
+                    query: args.query ?? "",
+                    view: args.view ?? "all",
+                    anchorIds: args.anchor_ids ?? [],
+                    paths: args.paths ?? [],
+                    depth: args.depth,
+                    details: args.details ?? false,
+                    maxNodes: args.max_nodes,
+                    maxEdges: args.max_edges,
+                    worldModelId: args.world_model_id ?? "",
+                    includeCandidates: args.include_candidates ?? true,
+                    previousResult: args.previous_result ?? null,
+                    inventoryPage: args.inventory_page === true,
+                    inventoryPaths: args.inventory_paths,
+                    inventoryCursor: args.inventory_cursor,
+                  })
+                : name === "head_project_graph_index"
+                  ? (await import("./lib/project-graph.mjs")).indexProjectGraph({ root: args.project_root })
+                  : name === "head_project_native_history"
+                    ? await projectNativeHistoryFromMcp(args, signal, nativeHistoryHost, onProcess)
+                    : name === "head_project_bundle_export" || name === "head_project_bundle_read" || name === "head_project_bundle_import"
+                      ? await projectBundleFromMcp(name, args, signal, onExportScope)
+                      : name === "head_session_create"
+                        ? (await import("./lib/session-routing.mjs")).createHeadSession({
+                            root: args.project_root,
+                            sessionId: args.new_session_id,
+                            purpose: args.purpose,
+                          })
+                        : name === "head_session_list"
+                          ? await (
+                              await import("./lib/session-work-context.mjs")
+                            ).readSessionWorkList({
                               root: args.project_root,
-                              expectedDirectionId: args.expected_direction_id,
-                              input: args.direction,
+                              sessionId: args.session_id ?? null,
+                              maxSessions: args.max_sessions ?? 16,
+                              afterSessionId: args.after_session_id ?? null,
+                              conversationCandidates: args.conversation_candidates,
+                              conversationEnvironment: hostEnvironment,
                             })
-                          : name === "head_onboarding_guide"
-                            ? await (
-                                await import("./lib/onboarding-conversation.mjs")
-                              ).inspectConversationalOnboarding({ root: args.project_root, candidateLimit: args.candidate_limit ?? 25 })
-                            : name === "head_project_initialize_or_resume"
-                              ? await initializeProjectFromMcp(args, {
-                                  projectSessionRoute,
-                                  onValidatedSessionSelection,
-                                  pluginLaunch,
-                                  servingModuleUrl,
-                                  installationCaller,
+                          : name === "head_project_direction_read"
+                            ? (await import("./lib/session-routing.mjs")).readProjectDirection({ root: args.project_root })
+                            : name === "head_project_direction_update"
+                              ? (await import("./lib/session-routing.mjs")).updateProjectDirection({
+                                  root: args.project_root,
+                                  expectedDirectionId: args.expected_direction_id,
+                                  input: args.direction,
                                 })
-                              : name === "head_onboarding_semantic_refresh"
+                              : name === "head_onboarding_guide"
                                 ? await (
-                                    await import("./lib/onboarding.mjs")
-                                  ).proposeOnboardingSemanticRefresh({
-                                    root: args.project_root,
-                                    semanticProposal: args.semantic_proposal,
-                                    recoveryBasis: args.recovery_basis || null,
-                                  })
-                                : name === "head_onboarding_candidate_restore"
-                                  ? (await import("./lib/onboarding.mjs")).restoreOnboardingCandidate({
-                                      root: args.project_root,
-                                      candidateSetId: args.candidate_set_id,
-                                      sourceContent: args.source_content,
-                                      expectedRawHash: args.expected_raw_hash,
+                                    await import("./lib/onboarding-conversation.mjs")
+                                  ).inspectConversationalOnboarding({ root: args.project_root, candidateLimit: args.candidate_limit ?? 25 })
+                                : name === "head_project_initialize_or_resume"
+                                  ? await initializeProjectFromMcp(args, {
+                                      projectSessionRoute,
+                                      onValidatedSessionSelection,
+                                      pluginLaunch,
+                                      servingModuleUrl,
+                                      installationCaller,
                                     })
-                                  : name === "head_onboarding_review"
-                                    ? compactReviewResult(
-                                        await (
-                                          await import("./lib/onboarding.mjs")
-                                        ).reviewOnboarding({
+                                  : name === "head_onboarding_semantic_refresh"
+                                    ? await (
+                                        await import("./lib/onboarding.mjs")
+                                      ).proposeOnboardingSemanticRefresh({
+                                        root: args.project_root,
+                                        semanticProposal: args.semantic_proposal,
+                                        recoveryBasis: args.recovery_basis || null,
+                                      })
+                                    : name === "head_onboarding_candidate_restore"
+                                      ? (await import("./lib/onboarding.mjs")).restoreOnboardingCandidate({
                                           root: args.project_root,
                                           candidateSetId: args.candidate_set_id,
-                                          disposition: args.disposition,
-                                          acceptedCandidateIds: args.accepted_candidate_ids || [],
-                                          removedCandidateIds: args.removed_candidate_ids || [],
-                                          userEdits: (args.user_edits || []).map((edit) => ({ candidateId: edit.candidate_id, entity: edit.entity })),
-                                          addedEntities: args.added_entities || [],
-                                          rationale: args.rationale,
-                                        }),
-                                      )
-                                    : name === "head_product_policy_propose"
-                                      ? await (
-                                          await import("./lib/product-policy.mjs")
-                                        ).proposeProductPolicy({
-                                          root: args.project_root,
-                                          operation: args.operation,
-                                          key: args.key,
-                                          name: args.name,
-                                          description: args.description,
-                                          statement: args.statement,
-                                          appliesTo: args.applies_to,
-                                          governedBy: args.governed_by,
-                                          evidenceAnchors: args.evidence_anchors || [],
-                                          explanation: args.explanation || "",
+                                          sourceContent: args.source_content,
+                                          expectedRawHash: args.expected_raw_hash,
                                         })
-                                      : name === "head_product_policy_review"
-                                        ? await (
-                                            await import("./lib/product-policy.mjs")
-                                          ).reviewProductPolicy({
-                                            root: args.project_root,
-                                            candidateId: args.candidate_id,
-                                            disposition: args.disposition,
-                                            rationale: args.rationale,
-                                          })
-                                        : name === "head_product_policy_status"
-                                          ? (await import("./lib/product-policy.mjs")).inspectProductPolicyStatus({
+                                      : name === "head_onboarding_review"
+                                        ? compactReviewResult(
+                                            await (
+                                              await import("./lib/onboarding.mjs")
+                                            ).reviewOnboarding({
                                               root: args.project_root,
-                                              candidateId: args.candidate_id,
+                                              candidateSetId: args.candidate_set_id,
+                                              disposition: args.disposition,
+                                              acceptedCandidateIds: args.accepted_candidate_ids || [],
+                                              removedCandidateIds: args.removed_candidate_ids || [],
+                                              userEdits: (args.user_edits || []).map((edit) => ({ candidateId: edit.candidate_id, entity: edit.entity })),
+                                              addedEntities: args.added_entities || [],
+                                              rationale: args.rationale,
+                                            }),
+                                          )
+                                        : name === "head_product_policy_propose"
+                                          ? await (
+                                              await import("./lib/product-policy.mjs")
+                                            ).proposeProductPolicy({
+                                              root: args.project_root,
+                                              operation: args.operation,
+                                              key: args.key,
+                                              name: args.name,
+                                              description: args.description,
+                                              statement: args.statement,
+                                              appliesTo: args.applies_to,
+                                              governedBy: args.governed_by,
+                                              evidenceAnchors: args.evidence_anchors || [],
+                                              explanation: args.explanation || "",
                                             })
-                                          : name === "head_product_policy_candidate"
-                                            ? (await import("./lib/product-policy.mjs")).readProductPolicyCandidate({
+                                          : name === "head_product_policy_review"
+                                            ? await (
+                                                await import("./lib/product-policy.mjs")
+                                              ).reviewProductPolicy({
                                                 root: args.project_root,
                                                 candidateId: args.candidate_id,
+                                                disposition: args.disposition,
+                                                rationale: args.rationale,
                                               })
-                                            : name === "head_product_policy_review_decision"
-                                              ? (await import("./lib/product-policy.mjs")).readProductPolicyReviewDecision({
+                                            : name === "head_product_policy_status"
+                                              ? (await import("./lib/product-policy.mjs")).inspectProductPolicyStatus({
                                                   root: args.project_root,
-                                                  reviewDecisionId: args.review_decision_id,
+                                                  candidateId: args.candidate_id,
                                                 })
-                                              : name === "head_metric_define"
-                                                ? await (
-                                                    await import("./lib/measurement-workflow.mjs")
-                                                  ).defineMetric({
+                                              : name === "head_product_policy_candidate"
+                                                ? (await import("./lib/product-policy.mjs")).readProductPolicyCandidate({
                                                     root: args.project_root,
-                                                    metricKey: args.metric_key,
-                                                    unit: args.unit,
-                                                    direction: args.direction,
-                                                    typeVersion: args.type_version || "1",
+                                                    candidateId: args.candidate_id,
                                                   })
-                                                : name === "head_metric_observe"
-                                                  ? await (
-                                                      await import("./lib/measurement-workflow.mjs")
-                                                    ).recordMetricObservation({
+                                                : name === "head_product_policy_review_decision"
+                                                  ? (await import("./lib/product-policy.mjs")).readProductPolicyReviewDecision({
                                                       root: args.project_root,
-                                                      metricKey: args.metric_key,
-                                                      typeVersion: args.type_version || "",
-                                                      subjectType: args.subject_type,
-                                                      subjectKey: args.subject_key,
-                                                      value: args.value,
-                                                      sampleSize: args.sample_size ?? null,
-                                                      form: args.form || "snapshot",
-                                                      observedAt: args.observed_at ?? null,
-                                                      start: args.start ?? null,
-                                                      end: args.end ?? null,
-                                                      coverage: args.coverage
-                                                        ? {
-                                                            state: args.coverage.state,
-                                                            basis: args.coverage.basis,
-                                                            queryDigest: args.coverage.query_digest,
-                                                            examinedCount: args.coverage.examined_count,
-                                                            sourceReportedTotal: args.coverage.source_reported_total,
-                                                            omittedCount: args.coverage.omitted_count,
-                                                            cursorStartDigest: args.coverage.cursor_start_digest,
-                                                            cursorEndDigest: args.coverage.cursor_end_digest,
-                                                          }
-                                                        : {},
-                                                      adapterKey: args.adapter_key,
-                                                      adapterVersion: args.adapter_version,
-                                                      sourceScopeDigest: args.source_scope_digest,
-                                                      sourceEventKeyDigest: args.source_event_key_digest,
-                                                      sourceEvidenceDigest: args.source_evidence_digest,
+                                                      reviewDecisionId: args.review_decision_id,
                                                     })
-                                                  : name === "head_metric_compare"
+                                                  : name === "head_metric_define"
                                                     ? await (
                                                         await import("./lib/measurement-workflow.mjs")
-                                                      ).compareMetricObservations({
+                                                      ).defineMetric({
                                                         root: args.project_root,
-                                                        baselineObservationId: args.baseline_observation_id,
-                                                        currentObservationId: args.current_observation_id,
+                                                        metricKey: args.metric_key,
+                                                        unit: args.unit,
+                                                        direction: args.direction,
+                                                        typeVersion: args.type_version || "1",
                                                       })
-                                                    : name === "head_metric_assess"
+                                                    : name === "head_metric_observe"
                                                       ? await (
                                                           await import("./lib/measurement-workflow.mjs")
-                                                        ).assessMetricComparison({
+                                                        ).recordMetricObservation({
                                                           root: args.project_root,
-                                                          comparisonObservationId: args.comparison_observation_id,
-                                                          assessment: args.assessment,
-                                                          statement: args.statement,
-                                                          rationale: args.rationale || "",
+                                                          metricKey: args.metric_key,
+                                                          typeVersion: args.type_version || "",
+                                                          subjectType: args.subject_type,
+                                                          subjectKey: args.subject_key,
+                                                          value: args.value,
+                                                          sampleSize: args.sample_size ?? null,
+                                                          form: args.form || "snapshot",
+                                                          observedAt: args.observed_at ?? null,
+                                                          start: args.start ?? null,
+                                                          end: args.end ?? null,
+                                                          coverage: args.coverage
+                                                            ? {
+                                                                state: args.coverage.state,
+                                                                basis: args.coverage.basis,
+                                                                queryDigest: args.coverage.query_digest,
+                                                                examinedCount: args.coverage.examined_count,
+                                                                sourceReportedTotal: args.coverage.source_reported_total,
+                                                                omittedCount: args.coverage.omitted_count,
+                                                                cursorStartDigest: args.coverage.cursor_start_digest,
+                                                                cursorEndDigest: args.coverage.cursor_end_digest,
+                                                              }
+                                                            : {},
+                                                          adapterKey: args.adapter_key,
+                                                          adapterVersion: args.adapter_version,
+                                                          sourceScopeDigest: args.source_scope_digest,
+                                                          sourceEventKeyDigest: args.source_event_key_digest,
+                                                          sourceEvidenceDigest: args.source_evidence_digest,
                                                         })
-                                                      : name === "head_metric_status"
-                                                        ? (await import("./lib/measurement-workflow.mjs")).inspectMeasurements({ root: args.project_root })
-                                                        : name === "head_metric_trace"
+                                                      : name === "head_metric_compare"
+                                                        ? await (
+                                                            await import("./lib/measurement-workflow.mjs")
+                                                          ).compareMetricObservations({
+                                                            root: args.project_root,
+                                                            baselineObservationId: args.baseline_observation_id,
+                                                            currentObservationId: args.current_observation_id,
+                                                          })
+                                                        : name === "head_metric_assess"
                                                           ? await (
                                                               await import("./lib/measurement-workflow.mjs")
-                                                            ).traceMeasurementLineage({
+                                                            ).assessMetricComparison({
                                                               root: args.project_root,
-                                                              anchorId: args.anchor_id || "",
-                                                              metricKey: args.metric_key || "",
-                                                              typeVersion: args.type_version || "",
-                                                              depth: args.depth ?? 3,
-                                                              maxNodes: args.max_nodes ?? 128,
-                                                              maxEdges: args.max_edges ?? 256,
+                                                              comparisonObservationId: args.comparison_observation_id,
+                                                              assessment: args.assessment,
+                                                              statement: args.statement,
+                                                              rationale: args.rationale || "",
                                                             })
-                                                          : name === "head_delivery_observe"
-                                                            ? await (
-                                                                await import("./lib/delivery-observation.mjs")
-                                                              ).recordDeliveryObservation({
-                                                                root: args.project_root,
-                                                                environmentKey: args.environment_key,
-                                                                targetKey: args.target_key,
-                                                                artifactKey: args.artifact_key,
-                                                                revisionKey: args.revision_key,
-                                                                revisionDigest: args.revision_digest,
-                                                                outcome: args.outcome,
-                                                                sequence: args.sequence,
-                                                                predecessorObservationId: args.predecessor_observation_id ?? null,
-                                                                rollbackTargetObservationId: args.rollback_target_observation_id ?? null,
-                                                                observedAt: args.observed_at ?? null,
-                                                                sourceScopeDigest: args.source_scope_digest,
-                                                                sourceEventKeyDigest: args.source_event_key_digest,
-                                                                sourceEvidenceDigest: args.source_evidence_digest,
-                                                                adapterKey: args.adapter_key,
-                                                                adapterVersion: args.adapter_version,
-                                                                revisionReference: args.revision_reference
-                                                                  ? {
-                                                                      worldModelId: args.revision_reference.world_model_id,
-                                                                      revisionId: args.revision_reference.revision_id,
-                                                                      sourcePath: args.revision_reference.source_path,
-                                                                      digest: args.revision_reference.digest,
-                                                                    }
-                                                                  : null,
-                                                              })
-                                                            : name === "head_delivery_status"
-                                                              ? (await import("./lib/delivery-observation.mjs")).inspectDeliveryState({
+                                                          : name === "head_metric_status"
+                                                            ? (await import("./lib/measurement-workflow.mjs")).inspectMeasurements({ root: args.project_root })
+                                                            : name === "head_metric_trace"
+                                                              ? await (
+                                                                  await import("./lib/measurement-workflow.mjs")
+                                                                ).traceMeasurementLineage({
                                                                   root: args.project_root,
-                                                                  environmentKey: args.environment_key || "",
-                                                                  targetKey: args.target_key || "",
-                                                                  historyLimit: args.history_limit ?? 100,
+                                                                  anchorId: args.anchor_id || "",
+                                                                  metricKey: args.metric_key || "",
+                                                                  typeVersion: args.type_version || "",
+                                                                  depth: args.depth ?? 3,
+                                                                  maxNodes: args.max_nodes ?? 128,
+                                                                  maxEdges: args.max_edges ?? 256,
                                                                 })
-                                                              : name === "head_feature_mapping_propose"
+                                                              : name === "head_delivery_observe"
                                                                 ? await (
-                                                                    await import("./lib/feature-mapping.mjs")
-                                                                  ).startFeatureMapping({
+                                                                    await import("./lib/delivery-observation.mjs")
+                                                                  ).recordDeliveryObservation({
                                                                     root: args.project_root,
-                                                                    semanticProposal: featureMappingProposalFromMcp(args.semantic_proposal),
-                                                                    expectedCandidateSetId: args.expected_candidate_set_id ?? null,
+                                                                    environmentKey: args.environment_key,
+                                                                    targetKey: args.target_key,
+                                                                    artifactKey: args.artifact_key,
+                                                                    revisionKey: args.revision_key,
+                                                                    revisionDigest: args.revision_digest,
+                                                                    outcome: args.outcome,
+                                                                    sequence: args.sequence,
+                                                                    predecessorObservationId: args.predecessor_observation_id ?? null,
+                                                                    rollbackTargetObservationId: args.rollback_target_observation_id ?? null,
+                                                                    observedAt: args.observed_at ?? null,
+                                                                    sourceScopeDigest: args.source_scope_digest,
+                                                                    sourceEventKeyDigest: args.source_event_key_digest,
+                                                                    sourceEvidenceDigest: args.source_evidence_digest,
+                                                                    adapterKey: args.adapter_key,
+                                                                    adapterVersion: args.adapter_version,
+                                                                    revisionReference: args.revision_reference
+                                                                      ? {
+                                                                          worldModelId: args.revision_reference.world_model_id,
+                                                                          revisionId: args.revision_reference.revision_id,
+                                                                          sourcePath: args.revision_reference.source_path,
+                                                                          digest: args.revision_reference.digest,
+                                                                        }
+                                                                      : null,
                                                                   })
-                                                                : name === "head_feature_mapping_review"
-                                                                  ? (requireMcpConfirmation(
-                                                                      args.confirm_user_review,
-                                                                      "Feature mapping review requires explicit user confirmation.",
-                                                                      "FEATURE_MAPPING_REVIEW_CONFIRMATION_REQUIRED",
-                                                                    ),
-                                                                    await (
-                                                                      await import("./lib/feature-mapping.mjs")
-                                                                    ).reviewFeatureMapping({
+                                                                : name === "head_delivery_status"
+                                                                  ? (await import("./lib/delivery-observation.mjs")).inspectDeliveryState({
                                                                       root: args.project_root,
-                                                                      candidateSetId: args.candidate_set_id,
-                                                                      disposition: args.disposition,
-                                                                      acceptedCandidateIds: args.accepted_candidate_ids || [],
-                                                                      rationale: args.rationale,
-                                                                    }))
-                                                                  : name === "head_markdown_projection_build"
-                                                                    ? compactMarkdownBuild(
+                                                                      environmentKey: args.environment_key || "",
+                                                                      targetKey: args.target_key || "",
+                                                                      historyLimit: args.history_limit ?? 100,
+                                                                    })
+                                                                  : name === "head_feature_mapping_propose"
+                                                                    ? await (
+                                                                        await import("./lib/feature-mapping.mjs")
+                                                                      ).startFeatureMapping({
+                                                                        root: args.project_root,
+                                                                        semanticProposal: featureMappingProposalFromMcp(args.semantic_proposal),
+                                                                        expectedCandidateSetId: args.expected_candidate_set_id ?? null,
+                                                                      })
+                                                                    : name === "head_feature_mapping_review"
+                                                                      ? (requireMcpConfirmation(
+                                                                          args.confirm_user_review,
+                                                                          "Feature mapping review requires explicit user confirmation.",
+                                                                          "FEATURE_MAPPING_REVIEW_CONFIRMATION_REQUIRED",
+                                                                        ),
                                                                         await (
-                                                                          await import("./lib/world-model.mjs")
-                                                                        ).materializeWorldMarkdownProjection({ root: args.project_root }),
-                                                                      )
-                                                                    : name === "head_runtime_adapters"
-                                                                      ? await (await import("./lib/lode-core.mjs")).inspectRuntimeAdapters(args.project_root)
-                                                                      : name === "head_runtime_invocation_authorization"
-                                                                        ? await preparedRuntimeRead(
-                                                                            args.project_root,
-                                                                            (
-                                                                              await import("./lib/runtime-invocation-lifecycle.mjs")
-                                                                            ).readRuntimeInvocationAuthorization({
-                                                                              root: args.project_root,
-                                                                              authorizationId: args.authorization_id,
-                                                                            }),
+                                                                          await import("./lib/feature-mapping.mjs")
+                                                                        ).reviewFeatureMapping({
+                                                                          root: args.project_root,
+                                                                          candidateSetId: args.candidate_set_id,
+                                                                          disposition: args.disposition,
+                                                                          acceptedCandidateIds: args.accepted_candidate_ids || [],
+                                                                          rationale: args.rationale,
+                                                                        }))
+                                                                      : name === "head_markdown_projection_build"
+                                                                        ? compactMarkdownBuild(
+                                                                            await (
+                                                                              await import("./lib/world-model.mjs")
+                                                                            ).materializeWorldMarkdownProjection({ root: args.project_root }),
                                                                           )
-                                                                        : name === "head_runtime_invocation_lease_status"
-                                                                          ? (
-                                                                              await import("./lib/runtime-invocation-lifecycle.mjs")
-                                                                            ).inspectRuntimeInvocationExecutionLease({
-                                                                              root: args.project_root,
-                                                                              authorizationId: args.authorization_id,
-                                                                            })
-                                                                          : name === "head_runtime_invocation_result"
-                                                                            ? await runtimeResultFromMcp(args)
-                                                                            : name === "head_onboarding_status"
-                                                                              ? await (
-                                                                                  await import("./lib/onboarding.mjs")
-                                                                                ).inspectOnboarding({ root: args.project_root })
-                                                                              : name === "head_feature_mapping_status"
-                                                                                ? await (
-                                                                                    await import("./lib/feature-mapping.mjs")
-                                                                                  ).inspectFeatureMapping({ root: args.project_root })
-                                                                                : name === "head_change_set_status"
+                                                                        : name === "head_runtime_adapters"
+                                                                          ? await (
+                                                                              await import("./lib/lode-core.mjs")
+                                                                            ).inspectRuntimeAdapters(args.project_root)
+                                                                          : name === "head_runtime_invocation_authorization"
+                                                                            ? await preparedRuntimeRead(
+                                                                                args.project_root,
+                                                                                (
+                                                                                  await import("./lib/runtime-invocation-lifecycle.mjs")
+                                                                                ).readRuntimeInvocationAuthorization({
+                                                                                  root: args.project_root,
+                                                                                  authorizationId: args.authorization_id,
+                                                                                }),
+                                                                              )
+                                                                            : name === "head_runtime_invocation_lease_status"
+                                                                              ? (
+                                                                                  await import("./lib/runtime-invocation-lifecycle.mjs")
+                                                                                ).inspectRuntimeInvocationExecutionLease({
+                                                                                  root: args.project_root,
+                                                                                  authorizationId: args.authorization_id,
+                                                                                })
+                                                                              : name === "head_runtime_invocation_result"
+                                                                                ? await runtimeResultFromMcp(args)
+                                                                                : name === "head_onboarding_status"
                                                                                   ? await (
-                                                                                      await import("./lib/change-set.mjs")
-                                                                                    ).inspectChangeSets({ root: args.project_root })
-                                                                                  : name === "head_vcs_evidence"
-                                                                                    ? (await import("./lib/change-set.mjs")).readVcsEvidence({
-                                                                                        root: args.project_root,
-                                                                                        vcsEvidenceId: args.vcs_evidence_id,
-                                                                                      })
-                                                                                    : name === "head_conformance_prepare"
+                                                                                      await import("./lib/onboarding.mjs")
+                                                                                    ).inspectOnboarding({ root: args.project_root })
+                                                                                  : name === "head_feature_mapping_status"
+                                                                                    ? await (
+                                                                                        await import("./lib/feature-mapping.mjs")
+                                                                                      ).inspectFeatureMapping({ root: args.project_root })
+                                                                                    : name === "head_change_set_status"
                                                                                       ? await (
-                                                                                          await import("./lib/conformance-reconciliation.mjs")
-                                                                                        ).prepareConformanceAssessment({
-                                                                                          root: args.project_root,
-                                                                                          limit: args.limit ?? 32,
-                                                                                          projectionId: args.projection_id || "",
-                                                                                          cursor: args.cursor || "",
-                                                                                        })
-                                                                                      : name === "head_conformance_propose"
-                                                                                        ? await (
-                                                                                            await import("./lib/conformance-reconciliation.mjs")
-                                                                                          ).proposeConformanceFindings({
+                                                                                          await import("./lib/change-set.mjs")
+                                                                                        ).inspectChangeSets({ root: args.project_root })
+                                                                                      : name === "head_vcs_evidence"
+                                                                                        ? (await import("./lib/change-set.mjs")).readVcsEvidence({
                                                                                             root: args.project_root,
-                                                                                            baseline: conformanceBaselineFromMcp(args.baseline),
-                                                                                            findings: args.findings.map(conformanceFindingFromMcp),
+                                                                                            vcsEvidenceId: args.vcs_evidence_id,
                                                                                           })
-                                                                                        : name === "head_conformance_queue"
+                                                                                        : name === "head_conformance_prepare"
                                                                                           ? await (
                                                                                               await import("./lib/conformance-reconciliation.mjs")
-                                                                                            ).inspectConformanceQueue({
+                                                                                            ).prepareConformanceAssessment({
                                                                                               root: args.project_root,
-                                                                                              status: args.status || "all",
-                                                                                              riskHint: args.risk_hint || "",
-                                                                                              limit: args.limit ?? 25,
+                                                                                              limit: args.limit ?? 32,
                                                                                               projectionId: args.projection_id || "",
                                                                                               cursor: args.cursor || "",
-                                                                                              canonAnchor:
-                                                                                                args.canon_anchor == null
-                                                                                                  ? null
-                                                                                                  : {
-                                                                                                      entityKind: args.canon_anchor.entity_kind,
-                                                                                                      entityKey: args.canon_anchor.entity_key,
-                                                                                                    },
                                                                                             })
-                                                                                          : name === "head_conformance_read"
-                                                                                            ? (
+                                                                                          : name === "head_conformance_propose"
+                                                                                            ? await (
                                                                                                 await import("./lib/conformance-reconciliation.mjs")
-                                                                                              ).readConformanceFinding({
+                                                                                              ).proposeConformanceFindings({
                                                                                                 root: args.project_root,
-                                                                                                findingId: args.finding_id,
+                                                                                                baseline: conformanceBaselineFromMcp(args.baseline),
+                                                                                                findings: args.findings.map(conformanceFindingFromMcp),
                                                                                               })
-                                                                                            : name === "head_conformance_disposition"
+                                                                                            : name === "head_conformance_queue"
                                                                                               ? await (
                                                                                                   await import("./lib/conformance-reconciliation.mjs")
-                                                                                                ).recordConformanceDisposition({
+                                                                                                ).inspectConformanceQueue({
                                                                                                   root: args.project_root,
-                                                                                                  findingId: args.finding_id,
-                                                                                                  disposition: args.disposition,
-                                                                                                  rationale: args.rationale,
-                                                                                                  deferUntil: args.defer_until ?? null,
-                                                                                                  resolutionId: args.resolution_id ?? null,
-                                                                                                  confirmUserDisposition: args.confirm_user_disposition,
-                                                                                                  actor: args.actor ?? "user",
+                                                                                                  status: args.status || "all",
+                                                                                                  riskHint: args.risk_hint || "",
+                                                                                                  limit: args.limit ?? 25,
+                                                                                                  projectionId: args.projection_id || "",
+                                                                                                  cursor: args.cursor || "",
+                                                                                                  canonAnchor:
+                                                                                                    args.canon_anchor == null
+                                                                                                      ? null
+                                                                                                      : {
+                                                                                                          entityKind: args.canon_anchor.entity_kind,
+                                                                                                          entityKey: args.canon_anchor.entity_key,
+                                                                                                        },
                                                                                                 })
-                                                                                              : name === "head_conformance_resolution_propose"
-                                                                                                ? await (
+                                                                                              : name === "head_conformance_read"
+                                                                                                ? (
                                                                                                     await import("./lib/conformance-reconciliation.mjs")
-                                                                                                  ).proposeConformanceResolution({
+                                                                                                  ).readConformanceFinding({
                                                                                                     root: args.project_root,
                                                                                                     findingId: args.finding_id,
-                                                                                                    baseline: conformanceBaselineFromMcp(args.baseline),
-                                                                                                    evidenceAnchors:
-                                                                                                      args.evidence_anchors.map(
-                                                                                                        conformanceEvidenceAnchorFromMcp,
-                                                                                                      ),
-                                                                                                    assessment: args.assessment,
-                                                                                                    rationale: args.rationale,
                                                                                                   })
-                                                                                                : name === "head_conformance_trigger_status"
-                                                                                                  ? conformanceTriggerRegistry
-                                                                                                    ? conformanceTriggerRegistry.inspect({
+                                                                                                : name === "head_conformance_disposition"
+                                                                                                  ? await (
+                                                                                                      await import("./lib/conformance-reconciliation.mjs")
+                                                                                                    ).recordConformanceDisposition({
+                                                                                                      root: args.project_root,
+                                                                                                      findingId: args.finding_id,
+                                                                                                      disposition: args.disposition,
+                                                                                                      rationale: args.rationale,
+                                                                                                      deferUntil: args.defer_until ?? null,
+                                                                                                      resolutionId: args.resolution_id ?? null,
+                                                                                                      confirmUserDisposition: args.confirm_user_disposition,
+                                                                                                      actor: args.actor ?? "user",
+                                                                                                    })
+                                                                                                  : name === "head_conformance_resolution_propose"
+                                                                                                    ? await (
+                                                                                                        await import("./lib/conformance-reconciliation.mjs")
+                                                                                                      ).proposeConformanceResolution({
                                                                                                         root: args.project_root,
-                                                                                                        sourceId: args.source_id,
+                                                                                                        findingId: args.finding_id,
+                                                                                                        baseline: conformanceBaselineFromMcp(args.baseline),
+                                                                                                        evidenceAnchors:
+                                                                                                          args.evidence_anchors.map(
+                                                                                                            conformanceEvidenceAnchorFromMcp,
+                                                                                                          ),
+                                                                                                        assessment: args.assessment,
+                                                                                                        rationale: args.rationale,
                                                                                                       })
-                                                                                                    : {
-                                                                                                        status: "optional-host-adapter-unavailable",
-                                                                                                        ordinaryWorkBlocked: false,
-                                                                                                        authority: "P5-capability-disclosure-only",
-                                                                                                      }
-                                                                                                  : name === "head_conformance_trigger_prepare"
-                                                                                                    ? conformanceTriggerRegistry
-                                                                                                      ? conformanceTriggerRegistry.prepare({
-                                                                                                          root: args.project_root,
-                                                                                                          sourceId: args.source_id,
-                                                                                                          limit: args.limit ?? 64,
-                                                                                                        })
-                                                                                                      : {
-                                                                                                          status: "optional-host-adapter-unavailable",
-                                                                                                          ordinaryWorkBlocked: false,
-                                                                                                          authority: "P5-capability-disclosure-only",
-                                                                                                        }
-                                                                                                    : name === "head_source_context"
-                                                                                                      ? await (
-                                                                                                          await import("./lib/source-context-workflow.mjs")
-                                                                                                        ).prepareSourceContext({
-                                                                                                          root: args.project_root,
-                                                                                                          task: args.task,
-                                                                                                          needs: args.needs ?? [],
-                                                                                                          retain: args.retain ?? false,
-                                                                                                          budget: args.budget,
-                                                                                                          timeoutMs: args.timeout_ms ?? 15_000,
-                                                                                                          signal,
-                                                                                                          onProcess,
-                                                                                                        })
-                                                                                                      : name === "head_source_observation_read"
-                                                                                                        ? (
-                                                                                                            await import("./lib/source-context-workflow.mjs")
-                                                                                                          ).inspectSourceObservation({
+                                                                                                    : name === "head_conformance_trigger_status"
+                                                                                                      ? conformanceTriggerRegistry
+                                                                                                        ? conformanceTriggerRegistry.inspect({
                                                                                                             root: args.project_root,
-                                                                                                            bundleKey: args.bundle_key,
-                                                                                                            failureKey: args.failure_key,
+                                                                                                            sourceId: args.source_id,
                                                                                                           })
-                                                                                                        : name === "head_context_prepare"
+                                                                                                        : {
+                                                                                                            status: "optional-host-adapter-unavailable",
+                                                                                                            ordinaryWorkBlocked: false,
+                                                                                                            authority: "P5-capability-disclosure-only",
+                                                                                                          }
+                                                                                                      : name === "head_conformance_trigger_prepare"
+                                                                                                        ? conformanceTriggerRegistry
+                                                                                                          ? conformanceTriggerRegistry.prepare({
+                                                                                                              root: args.project_root,
+                                                                                                              sourceId: args.source_id,
+                                                                                                              limit: args.limit ?? 64,
+                                                                                                            })
+                                                                                                          : {
+                                                                                                              status: "optional-host-adapter-unavailable",
+                                                                                                              ordinaryWorkBlocked: false,
+                                                                                                              authority: "P5-capability-disclosure-only",
+                                                                                                            }
+                                                                                                        : name === "head_source_context"
                                                                                                           ? await (
-                                                                                                              await import("./lib/context-workflow.mjs")
-                                                                                                            ).prepareContextWorkflow({
+                                                                                                              await import("./lib/source-context-workflow.mjs")
+                                                                                                            ).prepareSourceContext({
                                                                                                               root: args.project_root,
                                                                                                               task: args.task,
-                                                                                                              budget: args.budget ?? DEFAULT_CONTEXT_BUDGET,
+                                                                                                              needs: args.needs ?? [],
+                                                                                                              retain: args.retain ?? false,
+                                                                                                              budget: args.budget,
+                                                                                                              timeoutMs: args.timeout_ms ?? 15_000,
+                                                                                                              signal,
+                                                                                                              onProcess,
                                                                                                             })
-                                                                                                          : name === "head_context_preview"
-                                                                                                            ? await (
-                                                                                                                await import("./lib/context-workflow.mjs")
-                                                                                                              ).previewContextWorkflow({
+                                                                                                          : name === "head_source_observation_read"
+                                                                                                            ? (
+                                                                                                                await import("./lib/source-context-workflow.mjs")
+                                                                                                              ).inspectSourceObservation({
                                                                                                                 root: args.project_root,
-                                                                                                                task: args.task,
-                                                                                                                budget: args.budget ?? DEFAULT_CONTEXT_BUDGET,
-                                                                                                                evidenceNeeds: args.evidence_needs || [],
+                                                                                                                bundleKey: args.bundle_key,
+                                                                                                                failureKey: args.failure_key,
                                                                                                               })
-                                                                                                            : name === "head_context_capsule"
-                                                                                                              ? (
-                                                                                                                  await import("./lib/context-compiler.mjs")
-                                                                                                                ).readContextCapsule({
+                                                                                                            : name === "head_context_prepare"
+                                                                                                              ? await (
+                                                                                                                  await import("./lib/context-workflow.mjs")
+                                                                                                                ).prepareContextWorkflow({
                                                                                                                   root: args.project_root,
-                                                                                                                  capsuleId: args.capsule_id,
+                                                                                                                  task: args.task,
+                                                                                                                  budget: args.budget ?? DEFAULT_CONTEXT_BUDGET,
                                                                                                                 })
-                                                                                                              : name === "head_lineage_artifact"
-                                                                                                                ? (
-                                                                                                                    await import("./lib/execution-lineage.mjs")
-                                                                                                                  ).readLineageArtifact({
+                                                                                                              : name === "head_context_preview"
+                                                                                                                ? await (
+                                                                                                                    await import("./lib/context-workflow.mjs")
+                                                                                                                  ).previewContextWorkflow({
                                                                                                                     root: args.project_root,
-                                                                                                                    artifactId: args.artifact_id,
+                                                                                                                    task: args.task,
+                                                                                                                    budget:
+                                                                                                                      args.budget ?? DEFAULT_CONTEXT_BUDGET,
+                                                                                                                    evidenceNeeds: args.evidence_needs || [],
                                                                                                                   })
-                                                                                                                : name === "head_pending_review"
+                                                                                                                : name === "head_context_capsule"
                                                                                                                   ? (
-                                                                                                                      await import("./lib/run-lineage.mjs")
-                                                                                                                    ).getPendingReviewContext({
+                                                                                                                      await import("./lib/context-compiler.mjs")
+                                                                                                                    ).readContextCapsule({
                                                                                                                       root: args.project_root,
+                                                                                                                      capsuleId: args.capsule_id,
                                                                                                                     })
-                                                                                                                  : name === "head_checkpoint_basis"
+                                                                                                                  : name === "head_lineage_artifact"
                                                                                                                     ? (
-                                                                                                                        await import("./lib/compaction-recovery.mjs")
-                                                                                                                      ).inspectRecoveryCheckpointBasis({
+                                                                                                                        await import("./lib/execution-lineage.mjs")
+                                                                                                                      ).readLineageArtifact({
                                                                                                                         root: args.project_root,
+                                                                                                                        artifactId: args.artifact_id,
                                                                                                                       })
-                                                                                                                    : name === "head_checkpoint_diagnose"
+                                                                                                                    : name === "head_pending_review"
                                                                                                                       ? (
-                                                                                                                          await import("./lib/recovery-checkpoint-diagnosis.mjs")
-                                                                                                                        ).inspectRecoveryCheckpointDiagnosis({
+                                                                                                                          await import("./lib/run-lineage.mjs")
+                                                                                                                        ).getPendingReviewContext({
                                                                                                                           root: args.project_root,
                                                                                                                         })
-                                                                                                                      : name === "head_checkpoint_sync"
+                                                                                                                      : name === "head_checkpoint_basis"
                                                                                                                         ? (
                                                                                                                             await import("./lib/compaction-recovery.mjs")
-                                                                                                                          ).syncRecoveryCheckpoint({
+                                                                                                                          ).inspectRecoveryCheckpointBasis({
                                                                                                                             root: args.project_root,
-                                                                                                                            expectedRecoveryBasisId:
-                                                                                                                              args.expected_recovery_basis_id,
-                                                                                                                            purpose: args.purpose,
-                                                                                                                            approvedDecisions:
-                                                                                                                              args.approved_decisions,
-                                                                                                                            currentPosition:
-                                                                                                                              args.current_position,
-                                                                                                                            nextExpectedResult:
-                                                                                                                              args.next_expected_result,
-                                                                                                                            openReviewIds:
-                                                                                                                              args.open_review_ids || [],
-                                                                                                                            ...(args.work_evidence !== undefined
-                                                                                                                              ? {
-                                                                                                                                  workEvidence:
-                                                                                                                                    args.work_evidence,
-                                                                                                                                }
-                                                                                                                              : {}),
                                                                                                                           })
-                                                                                                                        : name === "head_session_work_record"
-                                                                                                                          ? await (
-                                                                                                                              await import("./lib/session-work-document-workflow.mjs")
-                                                                                                                            ).recordSessionWorkAndProjectDocuments(
+                                                                                                                        : name === "head_checkpoint_diagnose"
+                                                                                                                          ? (
+                                                                                                                              await import("./lib/recovery-checkpoint-diagnosis.mjs")
+                                                                                                                            ).inspectRecoveryCheckpointDiagnosis(
                                                                                                                               {
                                                                                                                                 root: args.project_root,
-                                                                                                                                input: args.evidence,
-                                                                                                                                documentSelection:
-                                                                                                                                  args.document_selection,
                                                                                                                               },
                                                                                                                             )
-                                                                                                                          : name.startsWith(
-                                                                                                                                "head_work_document_",
-                                                                                                                              ) ||
-                                                                                                                              name.startsWith(
-                                                                                                                                "head_project_document_",
-                                                                                                                              )
-                                                                                                                            ? await workDocumentFromMcp(
-                                                                                                                                name,
-                                                                                                                                args,
-                                                                                                                              )
-                                                                                                                            : name === "head_session_work_read"
-                                                                                                                              ? (
-                                                                                                                                  await import("./lib/session-work-context.mjs")
-                                                                                                                                ).readSessionWorkContext({
-                                                                                                                                  root: args.project_root,
-                                                                                                                                  evidenceIds:
-                                                                                                                                    args.evidence_ids ?? null,
-                                                                                                                                  afterEvidenceId:
-                                                                                                                                    args.after_evidence_id ??
-                                                                                                                                    null,
-                                                                                                                                  scanEvidence:
-                                                                                                                                    args.scan_evidence ?? false,
-                                                                                                                                  maxRecords:
-                                                                                                                                    args.max_records ?? 8,
-                                                                                                                                  maxCharacters:
-                                                                                                                                    args.max_characters ??
-                                                                                                                                    32768,
-                                                                                                                                  todoId: args.todo_id ?? null,
-                                                                                                                                  afterTodoId:
-                                                                                                                                    args.after_todo_id ?? null,
-                                                                                                                                  scanTodos:
-                                                                                                                                    args.scan_todos ?? false,
-                                                                                                                                })
-                                                                                                                              : name === "head_session_restore"
-                                                                                                                                ? (
-                                                                                                                                    await import("./lib/session-recovery.mjs")
-                                                                                                                                  ).restoreSessionFromArtifacts(
-                                                                                                                                    {
-                                                                                                                                      root: args.project_root,
-                                                                                                                                      checkpointId:
-                                                                                                                                        args.checkpoint_id ||
-                                                                                                                                        null,
-                                                                                                                                    },
+                                                                                                                          : name === "head_checkpoint_sync"
+                                                                                                                            ? (
+                                                                                                                                await import("./lib/compaction-recovery.mjs")
+                                                                                                                              ).syncRecoveryCheckpoint({
+                                                                                                                                root: args.project_root,
+                                                                                                                                expectedRecoveryBasisId:
+                                                                                                                                  args.expected_recovery_basis_id,
+                                                                                                                                purpose: args.purpose,
+                                                                                                                                approvedDecisions:
+                                                                                                                                  args.approved_decisions,
+                                                                                                                                currentPosition:
+                                                                                                                                  args.current_position,
+                                                                                                                                nextExpectedResult:
+                                                                                                                                  args.next_expected_result,
+                                                                                                                                openReviewIds:
+                                                                                                                                  args.open_review_ids || [],
+                                                                                                                                ...(args.work_evidence !==
+                                                                                                                                undefined
+                                                                                                                                  ? {
+                                                                                                                                      workEvidence:
+                                                                                                                                        args.work_evidence,
+                                                                                                                                    }
+                                                                                                                                  : {}),
+                                                                                                                              })
+                                                                                                                            : name ===
+                                                                                                                                "head_session_work_record"
+                                                                                                                              ? await (
+                                                                                                                                  await import("./lib/session-work-document-workflow.mjs")
+                                                                                                                                ).recordSessionWorkAndProjectDocuments(
+                                                                                                                                  {
+                                                                                                                                    root: args.project_root,
+                                                                                                                                    input: args.evidence,
+                                                                                                                                    documentSelection:
+                                                                                                                                      args.document_selection,
+                                                                                                                                  },
+                                                                                                                                )
+                                                                                                                              : name.startsWith(
+                                                                                                                                    "head_work_document_",
+                                                                                                                                  ) ||
+                                                                                                                                  name.startsWith(
+                                                                                                                                    "head_project_document_",
+                                                                                                                                  )
+                                                                                                                                ? await workDocumentFromMcp(
+                                                                                                                                    name,
+                                                                                                                                    args,
                                                                                                                                   )
                                                                                                                                 : name ===
-                                                                                                                                    "head_session_continue"
-                                                                                                                                  ? await continueSessionFromMcp(
-                                                                                                                                      args,
-                                                                                                                                      coordinationWorkspaceHost,
-                                                                                                                                    )
+                                                                                                                                    "head_session_work_read"
+                                                                                                                                  ? (
+                                                                                                                                      await import("./lib/session-work-context.mjs")
+                                                                                                                                    ).readSessionWorkContext({
+                                                                                                                                      root: args.project_root,
+                                                                                                                                      evidenceIds:
+                                                                                                                                        args.evidence_ids ??
+                                                                                                                                        null,
+                                                                                                                                      afterEvidenceId:
+                                                                                                                                        args.after_evidence_id ??
+                                                                                                                                        null,
+                                                                                                                                      scanEvidence:
+                                                                                                                                        args.scan_evidence ??
+                                                                                                                                        false,
+                                                                                                                                      maxRecords:
+                                                                                                                                        args.max_records ?? 8,
+                                                                                                                                      maxCharacters:
+                                                                                                                                        args.max_characters ??
+                                                                                                                                        32768,
+                                                                                                                                      todoId:
+                                                                                                                                        args.todo_id ?? null,
+                                                                                                                                      afterTodoId:
+                                                                                                                                        args.after_todo_id ??
+                                                                                                                                        null,
+                                                                                                                                      scanTodos:
+                                                                                                                                        args.scan_todos ??
+                                                                                                                                        false,
+                                                                                                                                    })
                                                                                                                                   : name ===
-                                                                                                                                      "head_worker_integration"
-                                                                                                                                    ? await workerIntegrationFromMcp(
-                                                                                                                                        args,
-                                                                                                                                        onProcess,
+                                                                                                                                      "head_session_restore"
+                                                                                                                                    ? (
+                                                                                                                                        await import("./lib/session-recovery.mjs")
+                                                                                                                                      ).restoreSessionFromArtifacts(
+                                                                                                                                        {
+                                                                                                                                          root: args.project_root,
+                                                                                                                                          checkpointId:
+                                                                                                                                            args.checkpoint_id ||
+                                                                                                                                            null,
+                                                                                                                                        },
                                                                                                                                       )
                                                                                                                                     : name ===
-                                                                                                                                        "head_worker_integration_status"
-                                                                                                                                      ? await workerIntegrationFromMcp(
+                                                                                                                                        "head_session_continue"
+                                                                                                                                      ? await continueSessionFromMcp(
                                                                                                                                           args,
-                                                                                                                                          onProcess,
-                                                                                                                                          true,
+                                                                                                                                          coordinationWorkspaceHost,
                                                                                                                                         )
                                                                                                                                       : name ===
-                                                                                                                                          "head_bounded_worker_prepare"
-                                                                                                                                        ? await (
-                                                                                                                                            await import("./lib/local-worker-host.mjs")
-                                                                                                                                          ).prepareLocalBoundedWorker(
-                                                                                                                                            localWorkerInput(
-                                                                                                                                              args,
-                                                                                                                                            ),
-                                                                                                                                            {
-                                                                                                                                              root: args.project_root,
-                                                                                                                                              supervisorSelection:
-                                                                                                                                                workerJobSupervisor,
-                                                                                                                                              protocolFixtureBackend:
-                                                                                                                                                workerPreparationBackend,
-                                                                                                                                              signal,
-                                                                                                                                              onProcess,
-                                                                                                                                            },
+                                                                                                                                          "head_worker_integration"
+                                                                                                                                        ? await workerIntegrationFromMcp(
+                                                                                                                                            args,
+                                                                                                                                            onProcess,
                                                                                                                                           )
                                                                                                                                         : name ===
-                                                                                                                                            "head_bounded_worker_start"
-                                                                                                                                          ? await (
-                                                                                                                                              await import("./lib/local-worker-host.mjs")
-                                                                                                                                            ).startLocalBoundedWorker(
-                                                                                                                                              {
-                                                                                                                                                root: args.project_root,
-                                                                                                                                                ...localWorkerInput(
-                                                                                                                                                  args,
-                                                                                                                                                  true,
-                                                                                                                                                ),
-                                                                                                                                              },
-                                                                                                                                              {
-                                                                                                                                                host: workerJobHost,
-                                                                                                                                                supervisorSelection:
-                                                                                                                                                  workerJobSupervisor,
-                                                                                                                                                onProcess,
-                                                                                                                                              },
+                                                                                                                                            "head_worker_integration_status"
+                                                                                                                                          ? await workerIntegrationFromMcp(
+                                                                                                                                              args,
+                                                                                                                                              onProcess,
+                                                                                                                                              true,
                                                                                                                                             )
                                                                                                                                           : name ===
-                                                                                                                                              "head_bounded_worker_job_status"
-                                                                                                                                            ? (
-                                                                                                                                                await import("./lib/bounded-worker-job.mjs")
-                                                                                                                                              ).readBoundedWorkerJob(
+                                                                                                                                              "head_bounded_worker_prepare"
+                                                                                                                                            ? await (
+                                                                                                                                                await import("./lib/local-worker-host.mjs")
+                                                                                                                                              ).prepareLocalBoundedWorker(
+                                                                                                                                                localWorkerInput(
+                                                                                                                                                  args,
+                                                                                                                                                ),
                                                                                                                                                 {
                                                                                                                                                   root: args.project_root,
-                                                                                                                                                  authorizationId:
-                                                                                                                                                    args.authorization_id,
-                                                                                                                                                },
-                                                                                                                                                {
-                                                                                                                                                  onProcess,
-                                                                                                                                                  inspectorSelection:
+                                                                                                                                                  supervisorSelection:
                                                                                                                                                     workerJobSupervisor,
+                                                                                                                                                  protocolFixtureBackend:
+                                                                                                                                                    workerPreparationBackend,
+                                                                                                                                                  signal,
+                                                                                                                                                  onProcess,
                                                                                                                                                 },
                                                                                                                                               )
                                                                                                                                             : name ===
-                                                                                                                                                "head_bounded_worker_job_patch"
-                                                                                                                                              ? (
-                                                                                                                                                  await import("./lib/bounded-worker-job.mjs")
-                                                                                                                                                ).readBoundedWorkerPatch(
+                                                                                                                                                "head_bounded_worker_start"
+                                                                                                                                              ? await (
+                                                                                                                                                  await import("./lib/local-worker-host.mjs")
+                                                                                                                                                ).startLocalBoundedWorker(
                                                                                                                                                   {
                                                                                                                                                     root: args.project_root,
-                                                                                                                                                    authorizationId:
-                                                                                                                                                      args.authorization_id,
+                                                                                                                                                    ...localWorkerInput(
+                                                                                                                                                      args,
+                                                                                                                                                      true,
+                                                                                                                                                    ),
                                                                                                                                                   },
                                                                                                                                                   {
-                                                                                                                                                    onProcess,
-                                                                                                                                                    inspectorSelection:
+                                                                                                                                                    host: workerJobHost,
+                                                                                                                                                    supervisorSelection:
                                                                                                                                                       workerJobSupervisor,
+                                                                                                                                                    onProcess,
                                                                                                                                                   },
                                                                                                                                                 )
                                                                                                                                               : name ===
-                                                                                                                                                  "head_bounded_worker_cancel"
-                                                                                                                                                ? (
-                                                                                                                                                    await import("./lib/bounded-worker-job.mjs")
-                                                                                                                                                  ).cancelBoundedWorkerJob(
-                                                                                                                                                    {
-                                                                                                                                                      root: args.project_root,
-                                                                                                                                                      authorizationId:
-                                                                                                                                                        args.authorization_id,
-                                                                                                                                                    },
-                                                                                                                                                    {
-                                                                                                                                                      onProcess,
-                                                                                                                                                      inspectorSelection:
-                                                                                                                                                        workerJobSupervisor,
-                                                                                                                                                    },
-                                                                                                                                                  )
-                                                                                                                                                : name ===
-                                                                                                                                                    "head_bounded_worker_job_reconcile"
-                                                                                                                                                  ? (
-                                                                                                                                                      await import("./lib/bounded-worker-job.mjs")
-                                                                                                                                                    ).reconcileBoundedWorkerJob(
+                                                                                                                                                  "head_bounded_worker_status"
+                                                                                                                                                ? await preparedRuntimeRead(
+                                                                                                                                                    args.project_root,
+                                                                                                                                                    (
+                                                                                                                                                      await import("./lib/bounded-worker-dispatch.mjs")
+                                                                                                                                                    ).readBoundedWorkerDispatch(
                                                                                                                                                       {
                                                                                                                                                         root: args.project_root,
                                                                                                                                                         authorizationId:
                                                                                                                                                           args.authorization_id,
                                                                                                                                                       },
+                                                                                                                                                    ),
+                                                                                                                                                  )
+                                                                                                                                                : name ===
+                                                                                                                                                    "head_run_integrate_checkpoint"
+                                                                                                                                                  ? (
+                                                                                                                                                      await import("./lib/session-recovery.mjs")
+                                                                                                                                                    ).integrateReviewedRunCheckpoint(
                                                                                                                                                       {
-                                                                                                                                                        onProcess,
-                                                                                                                                                        inspectorSelection:
-                                                                                                                                                          workerJobSupervisor,
+                                                                                                                                                        root: args.project_root,
+                                                                                                                                                        runId:
+                                                                                                                                                          args.run_id,
+                                                                                                                                                        reviewDecisionId:
+                                                                                                                                                          args.review_decision_id,
+                                                                                                                                                        purpose:
+                                                                                                                                                          args.purpose,
+                                                                                                                                                        approvedDecisions:
+                                                                                                                                                          args.approved_decisions,
+                                                                                                                                                        currentPosition:
+                                                                                                                                                          args.current_position,
+                                                                                                                                                        nextExpectedResult:
+                                                                                                                                                          args.next_expected_result,
+                                                                                                                                                        openReviewIds:
+                                                                                                                                                          args.open_review_ids ||
+                                                                                                                                                          [],
                                                                                                                                                       },
                                                                                                                                                     )
                                                                                                                                                   : name ===
-                                                                                                                                                      "head_bounded_worker_reconcile"
+                                                                                                                                                      "head_run_integration"
                                                                                                                                                     ? (
-                                                                                                                                                        await import("./lib/runtime-invocation-lifecycle.mjs")
-                                                                                                                                                      ).reconcileWorkerMember(
+                                                                                                                                                        await import("./lib/session-recovery.mjs")
+                                                                                                                                                      ).readRunResultIntegration(
                                                                                                                                                         {
                                                                                                                                                           root: args.project_root,
-                                                                                                                                                          taskKey:
-                                                                                                                                                            args.task_key,
+                                                                                                                                                          reviewDecisionId:
+                                                                                                                                                            args.review_decision_id,
                                                                                                                                                         },
                                                                                                                                                       )
                                                                                                                                                     : name ===
-                                                                                                                                                        "head_bounded_worker_dispatch"
-                                                                                                                                                      ? (
-                                                                                                                                                          await import("./lib/bounded-worker-dispatch.mjs")
-                                                                                                                                                        ).createBoundedWorkerDispatch(
+                                                                                                                                                        "head_world_model"
+                                                                                                                                                      ? await (
+                                                                                                                                                          await import("./lib/world-model.mjs")
+                                                                                                                                                        ).inspectWorldModelStatus(
                                                                                                                                                           {
                                                                                                                                                             root: args.project_root,
-                                                                                                                                                            authorizationId:
-                                                                                                                                                              args.authorization_id,
-                                                                                                                                                            role: args.role,
                                                                                                                                                           },
                                                                                                                                                         )
                                                                                                                                                       : name ===
-                                                                                                                                                          "head_bounded_worker_status"
-                                                                                                                                                        ? await preparedRuntimeRead(
-                                                                                                                                                            args.project_root,
-                                                                                                                                                            (
-                                                                                                                                                              await import("./lib/bounded-worker-dispatch.mjs")
-                                                                                                                                                            ).readBoundedWorkerDispatch(
-                                                                                                                                                              {
-                                                                                                                                                                root: args.project_root,
-                                                                                                                                                                authorizationId:
-                                                                                                                                                                  args.authorization_id,
-                                                                                                                                                              },
-                                                                                                                                                            ),
+                                                                                                                                                          "head_incremental_refresh_status"
+                                                                                                                                                        ? await (
+                                                                                                                                                            await import("./lib/incremental-refresh.mjs")
+                                                                                                                                                          ).inspectIncrementalRefresh(
+                                                                                                                                                            {
+                                                                                                                                                              root: args.project_root,
+                                                                                                                                                            },
                                                                                                                                                           )
                                                                                                                                                         : name ===
-                                                                                                                                                            "head_bounded_worker_wait"
+                                                                                                                                                            "head_incremental_refresh_receipt"
                                                                                                                                                           ? await (
-                                                                                                                                                              await import("./lib/bounded-worker-dispatch.mjs")
-                                                                                                                                                            ).waitForBoundedWorkerDispatch(
+                                                                                                                                                              await import("./lib/incremental-refresh.mjs")
+                                                                                                                                                            ).readIncrementalRefreshReceipt(
                                                                                                                                                               {
                                                                                                                                                                 root: args.project_root,
-                                                                                                                                                                authorizationId:
-                                                                                                                                                                  args.authorization_id,
-                                                                                                                                                                timeoutMs:
-                                                                                                                                                                  args.wait_timeout_ms ??
-                                                                                                                                                                  0,
+                                                                                                                                                                refreshReceiptId:
+                                                                                                                                                                  args.refresh_receipt_id,
                                                                                                                                                               },
                                                                                                                                                             )
                                                                                                                                                           : name ===
-                                                                                                                                                              "head_bounded_worker_apply_result"
-                                                                                                                                                            ? (
-                                                                                                                                                                await import("./lib/bounded-worker-dispatch.mjs")
-                                                                                                                                                              ).applyBoundedWorkerDispatchResult(
+                                                                                                                                                              "head_refresh_trigger_status"
+                                                                                                                                                            ? await (
+                                                                                                                                                                await import("./lib/refresh-trigger.mjs")
+                                                                                                                                                              ).inspectRefreshTriggers(
                                                                                                                                                                 {
                                                                                                                                                                   root: args.project_root,
-                                                                                                                                                                  authorizationId:
-                                                                                                                                                                    args.authorization_id,
                                                                                                                                                                 },
                                                                                                                                                               )
                                                                                                                                                             : name ===
-                                                                                                                                                                "head_bounded_worker_wave_create"
-                                                                                                                                                              ? (
-                                                                                                                                                                  await import("./lib/bounded-worker-wave.mjs")
-                                                                                                                                                                ).createBoundedWorkerWave(
+                                                                                                                                                                "head_refresh_trigger_delivery"
+                                                                                                                                                              ? await (
+                                                                                                                                                                  await import("./lib/refresh-trigger.mjs")
+                                                                                                                                                                ).readRefreshTriggerDelivery(
                                                                                                                                                                   {
                                                                                                                                                                     root: args.project_root,
-                                                                                                                                                                    authorizationIds:
-                                                                                                                                                                      args.authorization_ids,
+                                                                                                                                                                    triggerDeliveryId:
+                                                                                                                                                                      args.trigger_delivery_id,
                                                                                                                                                                   },
                                                                                                                                                                 )
                                                                                                                                                               : name ===
-                                                                                                                                                                  "head_bounded_worker_wave_read"
-                                                                                                                                                                ? (
-                                                                                                                                                                    await import("./lib/bounded-worker-wave.mjs")
-                                                                                                                                                                  ).readBoundedWorkerWave(
+                                                                                                                                                                  "head_graph_projection_status"
+                                                                                                                                                                ? await (
+                                                                                                                                                                    await import("./lib/world-model.mjs")
+                                                                                                                                                                  ).inspectWorldGraphProjection(
                                                                                                                                                                     {
                                                                                                                                                                       root: args.project_root,
-                                                                                                                                                                      waveId:
-                                                                                                                                                                        args.wave_id,
                                                                                                                                                                     },
                                                                                                                                                                   )
                                                                                                                                                                 : name ===
-                                                                                                                                                                    "head_bounded_worker_wave_seal"
-                                                                                                                                                                  ? (
-                                                                                                                                                                      await import("./lib/bounded-worker-wave.mjs")
-                                                                                                                                                                    ).sealBoundedWorkerWave(
+                                                                                                                                                                    "head_graphdb_projection_status"
+                                                                                                                                                                  ? await (
+                                                                                                                                                                      await import("./lib/graphdb-projection-activation.mjs")
+                                                                                                                                                                    ).inspectArcadeDbGraphProjectionStatus(
                                                                                                                                                                       {
                                                                                                                                                                         root: args.project_root,
-                                                                                                                                                                        waveId:
-                                                                                                                                                                          args.wave_id,
+                                                                                                                                                                        transport:
+                                                                                                                                                                          graphDbTransport,
                                                                                                                                                                       },
                                                                                                                                                                     )
                                                                                                                                                                   : name ===
-                                                                                                                                                                      "head_bounded_worker_wave_status"
+                                                                                                                                                                      "head_graphdb_database_status"
                                                                                                                                                                     ? (
-                                                                                                                                                                        await import("./lib/bounded-worker-wave.mjs")
-                                                                                                                                                                      ).readBoundedWorkerWaveStatus(
+                                                                                                                                                                        await import("./lib/arcadedb-database-lifecycle.mjs")
+                                                                                                                                                                      ).inspectArcadeDbDatabaseCompatibility(
                                                                                                                                                                         {
                                                                                                                                                                           root: args.project_root,
-                                                                                                                                                                          waveId:
-                                                                                                                                                                            args.wave_id,
+                                                                                                                                                                          transport:
+                                                                                                                                                                            graphDbTransport,
+                                                                                                                                                                          storage:
+                                                                                                                                                                            resolveProjectStorage(
+                                                                                                                                                                              args.project_root,
+                                                                                                                                                                            ),
                                                                                                                                                                         },
                                                                                                                                                                       )
                                                                                                                                                                     : name ===
-                                                                                                                                                                        "head_bounded_worker_wave_results"
+                                                                                                                                                                        "head_graphdb_connection_preflight"
                                                                                                                                                                       ? (
-                                                                                                                                                                          await import("./lib/bounded-worker-wave.mjs")
-                                                                                                                                                                        ).readBoundedWorkerWaveResults(
+                                                                                                                                                                          await import("./lib/graphdb-projection-activation.mjs")
+                                                                                                                                                                        ).inspectArcadeDbCredentialPreflight(
                                                                                                                                                                           {
                                                                                                                                                                             root: args.project_root,
-                                                                                                                                                                            waveId:
-                                                                                                                                                                              args.wave_id,
+                                                                                                                                                                            transport:
+                                                                                                                                                                              graphDbTransport,
+                                                                                                                                                                            storage:
+                                                                                                                                                                              resolveProjectStorage(
+                                                                                                                                                                                args.project_root,
+                                                                                                                                                                              ),
                                                                                                                                                                           },
                                                                                                                                                                         )
                                                                                                                                                                       : name ===
-                                                                                                                                                                          "head_bounded_worker_wave_wait"
-                                                                                                                                                                        ? await (
-                                                                                                                                                                            await import("./lib/bounded-worker-wave.mjs")
-                                                                                                                                                                          ).waitForBoundedWorkerWave(
-                                                                                                                                                                            {
-                                                                                                                                                                              root: args.project_root,
-                                                                                                                                                                              waveId:
-                                                                                                                                                                                args.wave_id,
-                                                                                                                                                                              timeoutMs:
-                                                                                                                                                                                args.wait_timeout_ms ??
-                                                                                                                                                                                0,
-                                                                                                                                                                            },
+                                                                                                                                                                          "head_graphdb_database_initialize"
+                                                                                                                                                                        ? await initializeGraphDbFromMcp(
+                                                                                                                                                                            args,
+                                                                                                                                                                            graphDbTransport,
                                                                                                                                                                           )
                                                                                                                                                                         : name ===
-                                                                                                                                                                            "head_bounded_worker_wave_abandon"
-                                                                                                                                                                          ? (
-                                                                                                                                                                              await import("./lib/bounded-worker-wave.mjs")
-                                                                                                                                                                            ).abandonBoundedWorkerWave(
-                                                                                                                                                                              {
-                                                                                                                                                                                root: args.project_root,
-                                                                                                                                                                                waveId:
-                                                                                                                                                                                  args.wave_id,
-                                                                                                                                                                                reasonCode:
-                                                                                                                                                                                  args.reason_code,
-                                                                                                                                                                                reasonSummary:
-                                                                                                                                                                                  args.reason_summary ||
-                                                                                                                                                                                  "",
-                                                                                                                                                                              },
+                                                                                                                                                                            "head_graphdb_projection_activate"
+                                                                                                                                                                          ? await activateGraphDbFromMcp(
+                                                                                                                                                                              args,
+                                                                                                                                                                              graphDbTransport,
                                                                                                                                                                             )
                                                                                                                                                                           : name ===
-                                                                                                                                                                              "head_run_integrate_checkpoint"
-                                                                                                                                                                            ? (
-                                                                                                                                                                                await import("./lib/session-recovery.mjs")
-                                                                                                                                                                              ).integrateReviewedRunCheckpoint(
+                                                                                                                                                                              "head_markdown_projection_status"
+                                                                                                                                                                            ? await (
+                                                                                                                                                                                await import("./lib/world-model.mjs")
+                                                                                                                                                                              ).inspectWorldMarkdownProjection(
                                                                                                                                                                                 {
                                                                                                                                                                                   root: args.project_root,
-                                                                                                                                                                                  runId:
-                                                                                                                                                                                    args.run_id,
-                                                                                                                                                                                  reviewDecisionId:
-                                                                                                                                                                                    args.review_decision_id,
-                                                                                                                                                                                  purpose:
-                                                                                                                                                                                    args.purpose,
-                                                                                                                                                                                  approvedDecisions:
-                                                                                                                                                                                    args.approved_decisions,
-                                                                                                                                                                                  currentPosition:
-                                                                                                                                                                                    args.current_position,
-                                                                                                                                                                                  nextExpectedResult:
-                                                                                                                                                                                    args.next_expected_result,
-                                                                                                                                                                                  openReviewIds:
-                                                                                                                                                                                    args.open_review_ids ||
-                                                                                                                                                                                    [],
                                                                                                                                                                                 },
                                                                                                                                                                               )
                                                                                                                                                                             : name ===
-                                                                                                                                                                                "head_run_integration"
-                                                                                                                                                                              ? (
-                                                                                                                                                                                  await import("./lib/session-recovery.mjs")
-                                                                                                                                                                                ).readRunResultIntegration(
+                                                                                                                                                                                "head_post_refresh_projection_status"
+                                                                                                                                                                              ? await (
+                                                                                                                                                                                  await import("./lib/incremental-refresh.mjs")
+                                                                                                                                                                                ).inspectPostRefreshProjectionStatus(
                                                                                                                                                                                   {
                                                                                                                                                                                     root: args.project_root,
-                                                                                                                                                                                    reviewDecisionId:
-                                                                                                                                                                                      args.review_decision_id,
                                                                                                                                                                                   },
                                                                                                                                                                                 )
                                                                                                                                                                               : name ===
-                                                                                                                                                                                  "head_world_model"
+                                                                                                                                                                                  "head_post_refresh_projection_receipt"
                                                                                                                                                                                 ? await (
-                                                                                                                                                                                    await import("./lib/world-model.mjs")
-                                                                                                                                                                                  ).inspectWorldModelStatus(
+                                                                                                                                                                                    await import("./lib/incremental-refresh.mjs")
+                                                                                                                                                                                  ).readPostRefreshProjectionReceipt(
                                                                                                                                                                                     {
                                                                                                                                                                                       root: args.project_root,
+                                                                                                                                                                                      postRefreshProjectionReceiptId:
+                                                                                                                                                                                        args.post_refresh_projection_receipt_id,
                                                                                                                                                                                     },
                                                                                                                                                                                   )
                                                                                                                                                                                 : name ===
-                                                                                                                                                                                    "head_incremental_refresh_status"
-                                                                                                                                                                                  ? await (
-                                                                                                                                                                                      await import("./lib/incremental-refresh.mjs")
-                                                                                                                                                                                    ).inspectIncrementalRefresh(
+                                                                                                                                                                                    "head_document_change_candidates"
+                                                                                                                                                                                  ? (
+                                                                                                                                                                                      await import("./lib/world-model.mjs")
+                                                                                                                                                                                    ).readWorldDocumentChangeCandidateSet(
                                                                                                                                                                                       {
                                                                                                                                                                                         root: args.project_root,
+                                                                                                                                                                                        candidateSetId:
+                                                                                                                                                                                          args.candidate_set_id,
                                                                                                                                                                                       },
                                                                                                                                                                                     )
                                                                                                                                                                                   : name ===
-                                                                                                                                                                                      "head_incremental_refresh_receipt"
+                                                                                                                                                                                      "head_document_change_review_status"
                                                                                                                                                                                     ? await (
-                                                                                                                                                                                        await import("./lib/incremental-refresh.mjs")
-                                                                                                                                                                                      ).readIncrementalRefreshReceipt(
+                                                                                                                                                                                        await import("./lib/document-change-review.mjs")
+                                                                                                                                                                                      ).inspectDocumentChangeReviewStatus(
                                                                                                                                                                                         {
                                                                                                                                                                                           root: args.project_root,
-                                                                                                                                                                                          refreshReceiptId:
-                                                                                                                                                                                            args.refresh_receipt_id,
+                                                                                                                                                                                          candidateSetId:
+                                                                                                                                                                                            args.candidate_set_id,
                                                                                                                                                                                         },
                                                                                                                                                                                       )
                                                                                                                                                                                     : name ===
-                                                                                                                                                                                        "head_refresh_trigger_status"
-                                                                                                                                                                                      ? await (
-                                                                                                                                                                                          await import("./lib/refresh-trigger.mjs")
-                                                                                                                                                                                        ).inspectRefreshTriggers(
+                                                                                                                                                                                        "head_document_change_review"
+                                                                                                                                                                                      ? (
+                                                                                                                                                                                          await import("./lib/document-change-review.mjs")
+                                                                                                                                                                                        ).readDocumentChangeReviewDecision(
                                                                                                                                                                                           {
                                                                                                                                                                                             root: args.project_root,
+                                                                                                                                                                                            reviewDecisionId:
+                                                                                                                                                                                              args.review_decision_id,
                                                                                                                                                                                           },
                                                                                                                                                                                         )
                                                                                                                                                                                       : name ===
-                                                                                                                                                                                          "head_refresh_trigger_delivery"
-                                                                                                                                                                                        ? await (
-                                                                                                                                                                                            await import("./lib/refresh-trigger.mjs")
-                                                                                                                                                                                          ).readRefreshTriggerDelivery(
+                                                                                                                                                                                          "head_document_change_application"
+                                                                                                                                                                                        ? (
+                                                                                                                                                                                            await import("./lib/document-change-review.mjs")
+                                                                                                                                                                                          ).readDocumentChangeApplicationReceipt(
                                                                                                                                                                                             {
                                                                                                                                                                                               root: args.project_root,
-                                                                                                                                                                                              triggerDeliveryId:
-                                                                                                                                                                                                args.trigger_delivery_id,
+                                                                                                                                                                                              applicationReceiptId:
+                                                                                                                                                                                                args.application_receipt_id,
                                                                                                                                                                                             },
                                                                                                                                                                                           )
                                                                                                                                                                                         : name ===
-                                                                                                                                                                                            "head_graph_projection_status"
+                                                                                                                                                                                            "head_world_query"
                                                                                                                                                                                           ? await (
                                                                                                                                                                                               await import("./lib/world-model.mjs")
-                                                                                                                                                                                            ).inspectWorldGraphProjection(
+                                                                                                                                                                                            ).queryWorldModel(
                                                                                                                                                                                               {
                                                                                                                                                                                                 root: args.project_root,
+                                                                                                                                                                                                query:
+                                                                                                                                                                                                  args.query,
+                                                                                                                                                                                                depth:
+                                                                                                                                                                                                  args.depth ??
+                                                                                                                                                                                                  1,
+                                                                                                                                                                                                maxResults:
+                                                                                                                                                                                                  args.limit ??
+                                                                                                                                                                                                  100,
                                                                                                                                                                                               },
                                                                                                                                                                                             )
                                                                                                                                                                                           : name ===
-                                                                                                                                                                                              "head_graphdb_projection_status"
+                                                                                                                                                                                              "head_git_history"
                                                                                                                                                                                             ? await (
-                                                                                                                                                                                                await import("./lib/graphdb-projection-activation.mjs")
-                                                                                                                                                                                              ).inspectArcadeDbGraphProjectionStatus(
+                                                                                                                                                                                                await import("./lib/world-model.mjs")
+                                                                                                                                                                                              ).queryWorldHistory(
                                                                                                                                                                                                 {
                                                                                                                                                                                                   root: args.project_root,
-                                                                                                                                                                                                  transport:
-                                                                                                                                                                                                    graphDbTransport,
+                                                                                                                                                                                                  query:
+                                                                                                                                                                                                    args.query ||
+                                                                                                                                                                                                    "",
+                                                                                                                                                                                                  limit:
+                                                                                                                                                                                                    args.limit ??
+                                                                                                                                                                                                    50,
                                                                                                                                                                                                 },
                                                                                                                                                                                               )
                                                                                                                                                                                             : name ===
-                                                                                                                                                                                                "head_graphdb_database_status"
-                                                                                                                                                                                              ? (
-                                                                                                                                                                                                  await import("./lib/arcadedb-database-lifecycle.mjs")
-                                                                                                                                                                                                ).inspectArcadeDbDatabaseCompatibility(
+                                                                                                                                                                                                "head_temporal_graph"
+                                                                                                                                                                                              ? await (
+                                                                                                                                                                                                  await import("./lib/world-model.mjs")
+                                                                                                                                                                                                ).queryWorldTemporalGraph(
                                                                                                                                                                                                   {
                                                                                                                                                                                                     root: args.project_root,
-                                                                                                                                                                                                    transport:
-                                                                                                                                                                                                      graphDbTransport,
-                                                                                                                                                                                                    storage:
-                                                                                                                                                                                                      resolveProjectStorage(
-                                                                                                                                                                                                        args.project_root,
-                                                                                                                                                                                                      ),
+                                                                                                                                                                                                    query:
+                                                                                                                                                                                                      args.query,
+                                                                                                                                                                                                    anchorIds:
+                                                                                                                                                                                                      args.exact_anchor_ids ||
+                                                                                                                                                                                                      null,
+                                                                                                                                                                                                    expectedGraphSnapshotId:
+                                                                                                                                                                                                      args.expected_graph_snapshot_id ||
+                                                                                                                                                                                                      null,
+                                                                                                                                                                                                    kinds:
+                                                                                                                                                                                                      args.kinds ||
+                                                                                                                                                                                                      null,
+                                                                                                                                                                                                    relations:
+                                                                                                                                                                                                      args.relation_types ||
+                                                                                                                                                                                                      null,
+                                                                                                                                                                                                    includeUnreviewedCandidates:
+                                                                                                                                                                                                      args.include_unreviewed_candidates ??
+                                                                                                                                                                                                      false,
+                                                                                                                                                                                                    minConfidence:
+                                                                                                                                                                                                      args.min_confidence ??
+                                                                                                                                                                                                      0,
+                                                                                                                                                                                                    depth:
+                                                                                                                                                                                                      args.depth ??
+                                                                                                                                                                                                      1,
+                                                                                                                                                                                                    maxNodes:
+                                                                                                                                                                                                      args.node_limit ??
+                                                                                                                                                                                                      100,
+                                                                                                                                                                                                    maxEdges:
+                                                                                                                                                                                                      args.edge_limit ??
+                                                                                                                                                                                                      200,
                                                                                                                                                                                                   },
                                                                                                                                                                                                 )
                                                                                                                                                                                               : name ===
-                                                                                                                                                                                                  "head_graphdb_connection_preflight"
-                                                                                                                                                                                                ? (
-                                                                                                                                                                                                    await import("./lib/graphdb-projection-activation.mjs")
-                                                                                                                                                                                                  ).inspectArcadeDbCredentialPreflight(
+                                                                                                                                                                                                  "head_graph_lineage_status"
+                                                                                                                                                                                                ? await (
+                                                                                                                                                                                                    await import("./lib/graph-lineage.mjs")
+                                                                                                                                                                                                  ).inspectGraphLineage(
                                                                                                                                                                                                     {
                                                                                                                                                                                                       root: args.project_root,
-                                                                                                                                                                                                      transport:
-                                                                                                                                                                                                        graphDbTransport,
-                                                                                                                                                                                                      storage:
-                                                                                                                                                                                                        resolveProjectStorage(
-                                                                                                                                                                                                          args.project_root,
-                                                                                                                                                                                                        ),
+                                                                                                                                                                                                      cursor:
+                                                                                                                                                                                                        args.cursor ||
+                                                                                                                                                                                                        "",
+                                                                                                                                                                                                      limit:
+                                                                                                                                                                                                        args.limit ??
+                                                                                                                                                                                                        25,
                                                                                                                                                                                                     },
                                                                                                                                                                                                   )
                                                                                                                                                                                                 : name ===
-                                                                                                                                                                                                    "head_graphdb_database_initialize"
-                                                                                                                                                                                                  ? await initializeGraphDbFromMcp(
-                                                                                                                                                                                                      args,
-                                                                                                                                                                                                      graphDbTransport,
+                                                                                                                                                                                                    "head_graph_lineage_trace"
+                                                                                                                                                                                                  ? await (
+                                                                                                                                                                                                      await import("./lib/graph-lineage.mjs")
+                                                                                                                                                                                                    ).traceGraphLineage(
+                                                                                                                                                                                                      {
+                                                                                                                                                                                                        root: args.project_root,
+                                                                                                                                                                                                        worldModelId:
+                                                                                                                                                                                                          args.world_model_id ||
+                                                                                                                                                                                                          "",
+                                                                                                                                                                                                        anchorId:
+                                                                                                                                                                                                          args.anchor_id ||
+                                                                                                                                                                                                          "",
+                                                                                                                                                                                                        query:
+                                                                                                                                                                                                          args.query ||
+                                                                                                                                                                                                          "",
+                                                                                                                                                                                                        depth:
+                                                                                                                                                                                                          args.depth ??
+                                                                                                                                                                                                          2,
+                                                                                                                                                                                                        maxNodes:
+                                                                                                                                                                                                          args.node_limit ??
+                                                                                                                                                                                                          100,
+                                                                                                                                                                                                        maxEdges:
+                                                                                                                                                                                                          args.edge_limit ??
+                                                                                                                                                                                                          200,
+                                                                                                                                                                                                        includeExecution:
+                                                                                                                                                                                                          args.include_execution ??
+                                                                                                                                                                                                          true,
+                                                                                                                                                                                                      },
                                                                                                                                                                                                     )
                                                                                                                                                                                                   : name ===
-                                                                                                                                                                                                      "head_graphdb_projection_activate"
-                                                                                                                                                                                                    ? await activateGraphDbFromMcp(
-                                                                                                                                                                                                        args,
-                                                                                                                                                                                                        graphDbTransport,
+                                                                                                                                                                                                      "head_graph_lineage_diff"
+                                                                                                                                                                                                    ? await (
+                                                                                                                                                                                                        await import("./lib/graph-lineage.mjs")
+                                                                                                                                                                                                      ).diffGraphLineage(
+                                                                                                                                                                                                        {
+                                                                                                                                                                                                          root: args.project_root,
+                                                                                                                                                                                                          fromWorldModelId:
+                                                                                                                                                                                                            args.from_world_model_id,
+                                                                                                                                                                                                          toWorldModelId:
+                                                                                                                                                                                                            args.to_world_model_id,
+                                                                                                                                                                                                          limit:
+                                                                                                                                                                                                            args.limit ??
+                                                                                                                                                                                                            100,
+                                                                                                                                                                                                          scopePaths:
+                                                                                                                                                                                                            args.scope_paths ??
+                                                                                                                                                                                                            null,
+                                                                                                                                                                                                          cursor:
+                                                                                                                                                                                                            args.cursor ||
+                                                                                                                                                                                                            "",
+                                                                                                                                                                                                        },
                                                                                                                                                                                                       )
                                                                                                                                                                                                     : name ===
-                                                                                                                                                                                                        "head_markdown_projection_status"
+                                                                                                                                                                                                        "head_runtime_state"
                                                                                                                                                                                                       ? await (
                                                                                                                                                                                                           await import("./lib/world-model.mjs")
-                                                                                                                                                                                                        ).inspectWorldMarkdownProjection(
+                                                                                                                                                                                                        ).queryWorldRuntimeState(
                                                                                                                                                                                                           {
                                                                                                                                                                                                             root: args.project_root,
+                                                                                                                                                                                                            query:
+                                                                                                                                                                                                              args.query ||
+                                                                                                                                                                                                              "",
+                                                                                                                                                                                                            runtime:
+                                                                                                                                                                                                              args.runtime ||
+                                                                                                                                                                                                              "",
+                                                                                                                                                                                                            state:
+                                                                                                                                                                                                              args.state ||
+                                                                                                                                                                                                              "",
+                                                                                                                                                                                                            kind:
+                                                                                                                                                                                                              args.kind ||
+                                                                                                                                                                                                              "",
+                                                                                                                                                                                                            limit:
+                                                                                                                                                                                                              args.limit ??
+                                                                                                                                                                                                              50,
                                                                                                                                                                                                           },
                                                                                                                                                                                                         )
                                                                                                                                                                                                       : name ===
-                                                                                                                                                                                                          "head_post_refresh_projection_status"
-                                                                                                                                                                                                        ? await (
-                                                                                                                                                                                                            await import("./lib/incremental-refresh.mjs")
-                                                                                                                                                                                                          ).inspectPostRefreshProjectionStatus(
+                                                                                                                                                                                                          "head_compact_prepare"
+                                                                                                                                                                                                        ? (
+                                                                                                                                                                                                            await import("./lib/compaction-recovery.mjs")
+                                                                                                                                                                                                          ).prepareCompaction(
                                                                                                                                                                                                             {
                                                                                                                                                                                                               root: args.project_root,
+                                                                                                                                                                                                              runtime:
+                                                                                                                                                                                                                args.runtime ||
+                                                                                                                                                                                                                "manual",
+                                                                                                                                                                                                              userTurnIdAtPrepare:
+                                                                                                                                                                                                                args.user_turn_id_at_prepare,
+                                                                                                                                                                                                              purpose:
+                                                                                                                                                                                                                args.purpose,
+                                                                                                                                                                                                              approvedDecisions:
+                                                                                                                                                                                                                args.approved_decisions,
+                                                                                                                                                                                                              currentPosition:
+                                                                                                                                                                                                                args.current_position,
+                                                                                                                                                                                                              nextExpectedResult:
+                                                                                                                                                                                                                args.next_expected_result,
+                                                                                                                                                                                                              openReviewIds:
+                                                                                                                                                                                                                args.open_review_ids ||
+                                                                                                                                                                                                                [],
                                                                                                                                                                                                             },
                                                                                                                                                                                                           )
                                                                                                                                                                                                         : name ===
-                                                                                                                                                                                                            "head_post_refresh_projection_receipt"
-                                                                                                                                                                                                          ? await (
-                                                                                                                                                                                                              await import("./lib/incremental-refresh.mjs")
-                                                                                                                                                                                                            ).readPostRefreshProjectionReceipt(
+                                                                                                                                                                                                            "head_compact_verify"
+                                                                                                                                                                                                          ? (
+                                                                                                                                                                                                              await import("./lib/compaction-recovery.mjs")
+                                                                                                                                                                                                            ).verifyCompaction(
                                                                                                                                                                                                               {
                                                                                                                                                                                                                 root: args.project_root,
-                                                                                                                                                                                                                postRefreshProjectionReceiptId:
-                                                                                                                                                                                                                  args.post_refresh_projection_receipt_id,
+                                                                                                                                                                                                                epochId:
+                                                                                                                                                                                                                  args.epoch_id,
+                                                                                                                                                                                                                checkpointDigest:
+                                                                                                                                                                                                                  args.checkpoint_digest,
+                                                                                                                                                                                                                currentUserTurnId:
+                                                                                                                                                                                                                  args.current_user_turn_id,
+                                                                                                                                                                                                                providerCompacted:
+                                                                                                                                                                                                                  args.provider_compacted,
+                                                                                                                                                                                                                recoverySource:
+                                                                                                                                                                                                                  args.recovery_source ||
+                                                                                                                                                                                                                  "canonical-checkpoint",
                                                                                                                                                                                                               },
                                                                                                                                                                                                             )
                                                                                                                                                                                                           : name ===
-                                                                                                                                                                                                              "head_document_change_candidates"
+                                                                                                                                                                                                              "head_compact_continue"
                                                                                                                                                                                                             ? (
-                                                                                                                                                                                                                await import("./lib/world-model.mjs")
-                                                                                                                                                                                                              ).readWorldDocumentChangeCandidateSet(
+                                                                                                                                                                                                                await import("./lib/compaction-recovery.mjs")
+                                                                                                                                                                                                              ).continueCompaction(
                                                                                                                                                                                                                 {
                                                                                                                                                                                                                   root: args.project_root,
-                                                                                                                                                                                                                  candidateSetId:
-                                                                                                                                                                                                                    args.candidate_set_id,
+                                                                                                                                                                                                                  epochId:
+                                                                                                                                                                                                                    args.epoch_id,
+                                                                                                                                                                                                                  continuationToken:
+                                                                                                                                                                                                                    args.continuation_token,
+                                                                                                                                                                                                                  currentUserTurnId:
+                                                                                                                                                                                                                    args.current_user_turn_id,
                                                                                                                                                                                                                 },
                                                                                                                                                                                                               )
                                                                                                                                                                                                             : name ===
-                                                                                                                                                                                                                "head_document_change_review_status"
-                                                                                                                                                                                                              ? await (
-                                                                                                                                                                                                                  await import("./lib/document-change-review.mjs")
-                                                                                                                                                                                                                ).inspectDocumentChangeReviewStatus(
+                                                                                                                                                                                                                "head_compact_status"
+                                                                                                                                                                                                              ? (
+                                                                                                                                                                                                                  await import("./lib/compaction-recovery.mjs")
+                                                                                                                                                                                                                ).inspectCompaction(
                                                                                                                                                                                                                   {
                                                                                                                                                                                                                     root: args.project_root,
-                                                                                                                                                                                                                    candidateSetId:
-                                                                                                                                                                                                                      args.candidate_set_id,
                                                                                                                                                                                                                   },
                                                                                                                                                                                                                 )
                                                                                                                                                                                                               : name ===
-                                                                                                                                                                                                                  "head_document_change_review"
+                                                                                                                                                                                                                  "head_compact_abort"
                                                                                                                                                                                                                 ? (
-                                                                                                                                                                                                                    await import("./lib/document-change-review.mjs")
-                                                                                                                                                                                                                  ).readDocumentChangeReviewDecision(
+                                                                                                                                                                                                                    await import("./lib/compaction-recovery.mjs")
+                                                                                                                                                                                                                  ).abortCompaction(
                                                                                                                                                                                                                     {
                                                                                                                                                                                                                       root: args.project_root,
-                                                                                                                                                                                                                      reviewDecisionId:
-                                                                                                                                                                                                                        args.review_decision_id,
+                                                                                                                                                                                                                      epochId:
+                                                                                                                                                                                                                        args.epoch_id,
+                                                                                                                                                                                                                      reason:
+                                                                                                                                                                                                                        args.reason,
                                                                                                                                                                                                                     },
                                                                                                                                                                                                                   )
                                                                                                                                                                                                                 : name ===
-                                                                                                                                                                                                                    "head_document_change_application"
-                                                                                                                                                                                                                  ? (
-                                                                                                                                                                                                                      await import("./lib/document-change-review.mjs")
-                                                                                                                                                                                                                    ).readDocumentChangeApplicationReceipt(
+                                                                                                                                                                                                                    "head_conversation_enter"
+                                                                                                                                                                                                                  ? await (
+                                                                                                                                                                                                                      await import("./lib/compaction-lifecycle.mjs")
+                                                                                                                                                                                                                    ).enterConversationRecovery(
                                                                                                                                                                                                                       {
                                                                                                                                                                                                                         root: args.project_root,
-                                                                                                                                                                                                                        applicationReceiptId:
-                                                                                                                                                                                                                          args.application_receipt_id,
+                                                                                                                                                                                                                        readRelatedNativeContext,
                                                                                                                                                                                                                       },
                                                                                                                                                                                                                     )
                                                                                                                                                                                                                   : name ===
-                                                                                                                                                                                                                      "head_world_query"
+                                                                                                                                                                                                                      "head_compaction_lifecycle_step"
                                                                                                                                                                                                                     ? await (
-                                                                                                                                                                                                                        await import("./lib/world-model.mjs")
-                                                                                                                                                                                                                      ).queryWorldModel(
+                                                                                                                                                                                                                        await import("./lib/compaction-lifecycle.mjs")
+                                                                                                                                                                                                                      ).processCompactionLifecycle(
                                                                                                                                                                                                                         {
                                                                                                                                                                                                                           root: args.project_root,
-                                                                                                                                                                                                                          query:
-                                                                                                                                                                                                                            args.query,
-                                                                                                                                                                                                                          depth:
-                                                                                                                                                                                                                            args.depth ??
-                                                                                                                                                                                                                            1,
-                                                                                                                                                                                                                          maxResults:
-                                                                                                                                                                                                                            args.limit ??
-                                                                                                                                                                                                                            100,
+                                                                                                                                                                                                                          hostAdapter:
+                                                                                                                                                                                                                            compactionLifecycleHost,
+                                                                                                                                                                                                                          direction:
+                                                                                                                                                                                                                            args.direction ==
+                                                                                                                                                                                                                            null
+                                                                                                                                                                                                                              ? null
+                                                                                                                                                                                                                              : {
+                                                                                                                                                                                                                                  purpose:
+                                                                                                                                                                                                                                    args
+                                                                                                                                                                                                                                      .direction
+                                                                                                                                                                                                                                      .purpose,
+                                                                                                                                                                                                                                  approvedDecisions:
+                                                                                                                                                                                                                                    args
+                                                                                                                                                                                                                                      .direction
+                                                                                                                                                                                                                                      .approved_decisions,
+                                                                                                                                                                                                                                  currentPosition:
+                                                                                                                                                                                                                                    args
+                                                                                                                                                                                                                                      .direction
+                                                                                                                                                                                                                                      .current_position,
+                                                                                                                                                                                                                                  nextExpectedResult:
+                                                                                                                                                                                                                                    args
+                                                                                                                                                                                                                                      .direction
+                                                                                                                                                                                                                                      .next_expected_result,
+                                                                                                                                                                                                                                  openReviewIds:
+                                                                                                                                                                                                                                    args
+                                                                                                                                                                                                                                      .direction
+                                                                                                                                                                                                                                      .open_review_ids,
+                                                                                                                                                                                                                                },
                                                                                                                                                                                                                         },
                                                                                                                                                                                                                       )
                                                                                                                                                                                                                     : name ===
-                                                                                                                                                                                                                        "head_git_history"
+                                                                                                                                                                                                                        "head_product_signal_record"
                                                                                                                                                                                                                       ? await (
-                                                                                                                                                                                                                          await import("./lib/world-model.mjs")
-                                                                                                                                                                                                                        ).queryWorldHistory(
+                                                                                                                                                                                                                          await import("./lib/product-operating-loop.mjs")
+                                                                                                                                                                                                                        ).recordProductSignal(
                                                                                                                                                                                                                           {
                                                                                                                                                                                                                             root: args.project_root,
-                                                                                                                                                                                                                            query:
-                                                                                                                                                                                                                              args.query ||
+                                                                                                                                                                                                                            statement:
+                                                                                                                                                                                                                              args.statement,
+                                                                                                                                                                                                                            observedAt:
+                                                                                                                                                                                                                              args.observed_at,
+                                                                                                                                                                                                                            source:
+                                                                                                                                                                                                                              args.source ||
                                                                                                                                                                                                                               "",
-                                                                                                                                                                                                                            limit:
-                                                                                                                                                                                                                              args.limit ??
-                                                                                                                                                                                                                              50,
+                                                                                                                                                                                                                            evidenceIds:
+                                                                                                                                                                                                                              args.evidence_ids ||
+                                                                                                                                                                                                                              [],
                                                                                                                                                                                                                           },
                                                                                                                                                                                                                         )
                                                                                                                                                                                                                       : name ===
-                                                                                                                                                                                                                          "head_temporal_graph"
+                                                                                                                                                                                                                          "head_product_hypothesis_record"
                                                                                                                                                                                                                         ? await (
-                                                                                                                                                                                                                            await import("./lib/world-model.mjs")
-                                                                                                                                                                                                                          ).queryWorldTemporalGraph(
+                                                                                                                                                                                                                            await import("./lib/product-operating-loop.mjs")
+                                                                                                                                                                                                                          ).recordProductHypothesis(
                                                                                                                                                                                                                             {
                                                                                                                                                                                                                               root: args.project_root,
-                                                                                                                                                                                                                              query:
-                                                                                                                                                                                                                                args.query,
-                                                                                                                                                                                                                              anchorIds:
-                                                                                                                                                                                                                                args.exact_anchor_ids ||
-                                                                                                                                                                                                                                null,
-                                                                                                                                                                                                                              expectedGraphSnapshotId:
-                                                                                                                                                                                                                                args.expected_graph_snapshot_id ||
-                                                                                                                                                                                                                                null,
-                                                                                                                                                                                                                              kinds:
-                                                                                                                                                                                                                                args.kinds ||
-                                                                                                                                                                                                                                null,
-                                                                                                                                                                                                                              relations:
-                                                                                                                                                                                                                                args.relation_types ||
-                                                                                                                                                                                                                                null,
-                                                                                                                                                                                                                              includeUnreviewedCandidates:
-                                                                                                                                                                                                                                args.include_unreviewed_candidates ??
-                                                                                                                                                                                                                                false,
-                                                                                                                                                                                                                              minConfidence:
-                                                                                                                                                                                                                                args.min_confidence ??
-                                                                                                                                                                                                                                0,
-                                                                                                                                                                                                                              depth:
-                                                                                                                                                                                                                                args.depth ??
-                                                                                                                                                                                                                                1,
-                                                                                                                                                                                                                              maxNodes:
-                                                                                                                                                                                                                                args.node_limit ??
-                                                                                                                                                                                                                                100,
-                                                                                                                                                                                                                              maxEdges:
-                                                                                                                                                                                                                                args.edge_limit ??
-                                                                                                                                                                                                                                200,
+                                                                                                                                                                                                                              statement:
+                                                                                                                                                                                                                                args.statement,
+                                                                                                                                                                                                                              rationale:
+                                                                                                                                                                                                                                args.rationale ||
+                                                                                                                                                                                                                                "",
+                                                                                                                                                                                                                              signalIds:
+                                                                                                                                                                                                                                args.signal_ids ||
+                                                                                                                                                                                                                                [],
+                                                                                                                                                                                                                              observationIds:
+                                                                                                                                                                                                                                args.observation_ids ||
+                                                                                                                                                                                                                                [],
                                                                                                                                                                                                                             },
                                                                                                                                                                                                                           )
                                                                                                                                                                                                                         : name ===
-                                                                                                                                                                                                                            "head_graph_lineage_status"
+                                                                                                                                                                                                                            "head_product_initiative_propose"
                                                                                                                                                                                                                           ? await (
-                                                                                                                                                                                                                              await import("./lib/graph-lineage.mjs")
-                                                                                                                                                                                                                            ).inspectGraphLineage(
+                                                                                                                                                                                                                              await import("./lib/product-operating-loop.mjs")
+                                                                                                                                                                                                                            ).proposeProductInitiative(
                                                                                                                                                                                                                               {
                                                                                                                                                                                                                                 root: args.project_root,
-                                                                                                                                                                                                                                cursor:
-                                                                                                                                                                                                                                  args.cursor ||
+                                                                                                                                                                                                                                title:
+                                                                                                                                                                                                                                  args.title,
+                                                                                                                                                                                                                                description:
+                                                                                                                                                                                                                                  args.description ||
                                                                                                                                                                                                                                   "",
-                                                                                                                                                                                                                                limit:
-                                                                                                                                                                                                                                  args.limit ??
-                                                                                                                                                                                                                                  25,
+                                                                                                                                                                                                                                reasoning:
+                                                                                                                                                                                                                                  args.reasoning ||
+                                                                                                                                                                                                                                  "",
+                                                                                                                                                                                                                                hypothesisIds:
+                                                                                                                                                                                                                                  args.hypothesis_ids ||
+                                                                                                                                                                                                                                  [],
+                                                                                                                                                                                                                                featureResolution:
+                                                                                                                                                                                                                                  args.feature_resolution ==
+                                                                                                                                                                                                                                  null
+                                                                                                                                                                                                                                    ? null
+                                                                                                                                                                                                                                    : productFeatureResolutionFromMcp(
+                                                                                                                                                                                                                                        args.feature_resolution,
+                                                                                                                                                                                                                                      ),
                                                                                                                                                                                                                               },
                                                                                                                                                                                                                             )
                                                                                                                                                                                                                           : name ===
-                                                                                                                                                                                                                              "head_graph_lineage_trace"
-                                                                                                                                                                                                                            ? await (
-                                                                                                                                                                                                                                await import("./lib/graph-lineage.mjs")
-                                                                                                                                                                                                                              ).traceGraphLineage(
+                                                                                                                                                                                                                              "head_product_initiative_review"
+                                                                                                                                                                                                                            ? (requireMcpConfirmation(
+                                                                                                                                                                                                                                args.confirm_user_review,
+                                                                                                                                                                                                                                "Product Initiative review requires explicit user confirmation.",
+                                                                                                                                                                                                                                "PRODUCT_INITIATIVE_REVIEW_CONFIRMATION_REQUIRED",
+                                                                                                                                                                                                                              ),
+                                                                                                                                                                                                                              await (
+                                                                                                                                                                                                                                await import("./lib/product-operating-loop.mjs")
+                                                                                                                                                                                                                              ).reviewProductInitiative(
                                                                                                                                                                                                                                 {
                                                                                                                                                                                                                                   root: args.project_root,
-                                                                                                                                                                                                                                  worldModelId:
-                                                                                                                                                                                                                                    args.world_model_id ||
-                                                                                                                                                                                                                                    "",
-                                                                                                                                                                                                                                  anchorId:
-                                                                                                                                                                                                                                    args.anchor_id ||
-                                                                                                                                                                                                                                    "",
-                                                                                                                                                                                                                                  query:
-                                                                                                                                                                                                                                    args.query ||
-                                                                                                                                                                                                                                    "",
-                                                                                                                                                                                                                                  depth:
-                                                                                                                                                                                                                                    args.depth ??
-                                                                                                                                                                                                                                    2,
-                                                                                                                                                                                                                                  maxNodes:
-                                                                                                                                                                                                                                    args.node_limit ??
-                                                                                                                                                                                                                                    100,
-                                                                                                                                                                                                                                  maxEdges:
-                                                                                                                                                                                                                                    args.edge_limit ??
-                                                                                                                                                                                                                                    200,
-                                                                                                                                                                                                                                  includeExecution:
-                                                                                                                                                                                                                                    args.include_execution ??
-                                                                                                                                                                                                                                    true,
+                                                                                                                                                                                                                                  initiativeCandidateId:
+                                                                                                                                                                                                                                    args.initiative_candidate_id,
+                                                                                                                                                                                                                                  disposition:
+                                                                                                                                                                                                                                    args.disposition,
+                                                                                                                                                                                                                                  rationale:
+                                                                                                                                                                                                                                    args.rationale,
+                                                                                                                                                                                                                                  featureResolution:
+                                                                                                                                                                                                                                    args.feature_resolution ==
+                                                                                                                                                                                                                                    null
+                                                                                                                                                                                                                                      ? null
+                                                                                                                                                                                                                                      : productFeatureResolutionFromMcp(
+                                                                                                                                                                                                                                          args.feature_resolution,
+                                                                                                                                                                                                                                        ),
                                                                                                                                                                                                                                 },
-                                                                                                                                                                                                                              )
+                                                                                                                                                                                                                              ))
                                                                                                                                                                                                                             : name ===
-                                                                                                                                                                                                                                "head_graph_lineage_diff"
+                                                                                                                                                                                                                                "head_product_outcome_observe"
                                                                                                                                                                                                                               ? await (
-                                                                                                                                                                                                                                  await import("./lib/graph-lineage.mjs")
-                                                                                                                                                                                                                                ).diffGraphLineage(
+                                                                                                                                                                                                                                  await import("./lib/product-operating-loop.mjs")
+                                                                                                                                                                                                                                ).observeProductOutcome(
                                                                                                                                                                                                                                   {
                                                                                                                                                                                                                                     root: args.project_root,
-                                                                                                                                                                                                                                    fromWorldModelId:
-                                                                                                                                                                                                                                      args.from_world_model_id,
-                                                                                                                                                                                                                                    toWorldModelId:
-                                                                                                                                                                                                                                      args.to_world_model_id,
-                                                                                                                                                                                                                                    limit:
-                                                                                                                                                                                                                                      args.limit ??
-                                                                                                                                                                                                                                      100,
-                                                                                                                                                                                                                                    scopePaths:
-                                                                                                                                                                                                                                      args.scope_paths ??
-                                                                                                                                                                                                                                      null,
-                                                                                                                                                                                                                                    cursor:
-                                                                                                                                                                                                                                      args.cursor ||
+                                                                                                                                                                                                                                    changeSetId:
+                                                                                                                                                                                                                                      args.change_set_id,
+                                                                                                                                                                                                                                    initiativeId:
+                                                                                                                                                                                                                                      args.initiative_id ||
                                                                                                                                                                                                                                       "",
+                                                                                                                                                                                                                                    statement:
+                                                                                                                                                                                                                                      args.statement,
+                                                                                                                                                                                                                                    epistemicClass:
+                                                                                                                                                                                                                                      args.epistemic_class ||
+                                                                                                                                                                                                                                      "observed-fact",
+                                                                                                                                                                                                                                    evidenceIds:
+                                                                                                                                                                                                                                      args.evidence_ids ||
+                                                                                                                                                                                                                                      [],
                                                                                                                                                                                                                                   },
                                                                                                                                                                                                                                 )
                                                                                                                                                                                                                               : name ===
-                                                                                                                                                                                                                                  "head_runtime_state"
-                                                                                                                                                                                                                                ? await (
-                                                                                                                                                                                                                                    await import("./lib/world-model.mjs")
-                                                                                                                                                                                                                                  ).queryWorldRuntimeState(
+                                                                                                                                                                                                                                  "head_product_operating_status"
+                                                                                                                                                                                                                                ? (
+                                                                                                                                                                                                                                    await import("./lib/product-operating-loop.mjs")
+                                                                                                                                                                                                                                  ).inspectProductOperatingLoop(
                                                                                                                                                                                                                                     {
                                                                                                                                                                                                                                       root: args.project_root,
-                                                                                                                                                                                                                                      query:
-                                                                                                                                                                                                                                        args.query ||
-                                                                                                                                                                                                                                        "",
-                                                                                                                                                                                                                                      runtime:
-                                                                                                                                                                                                                                        args.runtime ||
-                                                                                                                                                                                                                                        "",
-                                                                                                                                                                                                                                      state:
-                                                                                                                                                                                                                                        args.state ||
-                                                                                                                                                                                                                                        "",
-                                                                                                                                                                                                                                      kind:
-                                                                                                                                                                                                                                        args.kind ||
-                                                                                                                                                                                                                                        "",
-                                                                                                                                                                                                                                      limit:
-                                                                                                                                                                                                                                        args.limit ??
-                                                                                                                                                                                                                                        50,
+                                                                                                                                                                                                                                      fresh:
+                                                                                                                                                                                                                                        args.fresh ??
+                                                                                                                                                                                                                                        false,
                                                                                                                                                                                                                                     },
                                                                                                                                                                                                                                   )
                                                                                                                                                                                                                                 : name ===
-                                                                                                                                                                                                                                    "head_compact_prepare"
-                                                                                                                                                                                                                                  ? (
-                                                                                                                                                                                                                                      await import("./lib/compaction-recovery.mjs")
-                                                                                                                                                                                                                                    ).prepareCompaction(
+                                                                                                                                                                                                                                    "head_release_observe"
+                                                                                                                                                                                                                                  ? (requireMcpConfirmation(
+                                                                                                                                                                                                                                      args.confirm_host_observation,
+                                                                                                                                                                                                                                      "Release observation requires explicit confirmation that the payload came from a host deployment observer.",
+                                                                                                                                                                                                                                      "RELEASE_HOST_OBSERVATION_CONFIRMATION_REQUIRED",
+                                                                                                                                                                                                                                    ),
+                                                                                                                                                                                                                                    await (
+                                                                                                                                                                                                                                      await import("./lib/release-observation.mjs")
+                                                                                                                                                                                                                                    ).observeReleaseState(
                                                                                                                                                                                                                                       {
                                                                                                                                                                                                                                         root: args.project_root,
-                                                                                                                                                                                                                                        runtime:
-                                                                                                                                                                                                                                          args.runtime ||
-                                                                                                                                                                                                                                          "manual",
-                                                                                                                                                                                                                                        userTurnIdAtPrepare:
-                                                                                                                                                                                                                                          args.user_turn_id_at_prepare,
-                                                                                                                                                                                                                                        purpose:
-                                                                                                                                                                                                                                          args.purpose,
-                                                                                                                                                                                                                                        approvedDecisions:
-                                                                                                                                                                                                                                          args.approved_decisions,
-                                                                                                                                                                                                                                        currentPosition:
-                                                                                                                                                                                                                                          args.current_position,
-                                                                                                                                                                                                                                        nextExpectedResult:
-                                                                                                                                                                                                                                          args.next_expected_result,
-                                                                                                                                                                                                                                        openReviewIds:
-                                                                                                                                                                                                                                          args.open_review_ids ||
-                                                                                                                                                                                                                                          [],
+                                                                                                                                                                                                                                        input:
+                                                                                                                                                                                                                                          {
+                                                                                                                                                                                                                                            environmentKey:
+                                                                                                                                                                                                                                              args.environment_key,
+                                                                                                                                                                                                                                            status:
+                                                                                                                                                                                                                                              args.status,
+                                                                                                                                                                                                                                            commit:
+                                                                                                                                                                                                                                              args.commit,
+                                                                                                                                                                                                                                            observedAt:
+                                                                                                                                                                                                                                              args.observed_at,
+                                                                                                                                                                                                                                            sourceEventKeyDigest:
+                                                                                                                                                                                                                                              args.source_event_key_digest,
+                                                                                                                                                                                                                                            deploymentEvidenceDigest:
+                                                                                                                                                                                                                                              args.deployment_evidence_digest,
+                                                                                                                                                                                                                                            approved:
+                                                                                                                                                                                                                                              args.approved,
+                                                                                                                                                                                                                                            approvalEvidenceDigest:
+                                                                                                                                                                                                                                              args.approval_evidence_digest,
+                                                                                                                                                                                                                                            changeSetId:
+                                                                                                                                                                                                                                              args.change_set_id,
+                                                                                                                                                                                                                                            vcsEvidenceId:
+                                                                                                                                                                                                                                              args.vcs_evidence_id,
+                                                                                                                                                                                                                                          },
                                                                                                                                                                                                                                       },
-                                                                                                                                                                                                                                    )
+                                                                                                                                                                                                                                    ))
                                                                                                                                                                                                                                   : name ===
-                                                                                                                                                                                                                                      "head_compact_verify"
+                                                                                                                                                                                                                                      "head_release_status"
                                                                                                                                                                                                                                     ? (
-                                                                                                                                                                                                                                        await import("./lib/compaction-recovery.mjs")
-                                                                                                                                                                                                                                      ).verifyCompaction(
+                                                                                                                                                                                                                                        await import("./lib/release-observation.mjs")
+                                                                                                                                                                                                                                      ).inspectReleaseObservations(
                                                                                                                                                                                                                                         {
                                                                                                                                                                                                                                           root: args.project_root,
-                                                                                                                                                                                                                                          epochId:
-                                                                                                                                                                                                                                            args.epoch_id,
-                                                                                                                                                                                                                                          checkpointDigest:
-                                                                                                                                                                                                                                            args.checkpoint_digest,
-                                                                                                                                                                                                                                          currentUserTurnId:
-                                                                                                                                                                                                                                            args.current_user_turn_id,
-                                                                                                                                                                                                                                          providerCompacted:
-                                                                                                                                                                                                                                            args.provider_compacted,
-                                                                                                                                                                                                                                          recoverySource:
-                                                                                                                                                                                                                                            args.recovery_source ||
-                                                                                                                                                                                                                                            "canonical-checkpoint",
                                                                                                                                                                                                                                         },
                                                                                                                                                                                                                                       )
                                                                                                                                                                                                                                     : name ===
-                                                                                                                                                                                                                                        "head_compact_continue"
+                                                                                                                                                                                                                                        "head_observation_sources"
                                                                                                                                                                                                                                       ? (
-                                                                                                                                                                                                                                          await import("./lib/compaction-recovery.mjs")
-                                                                                                                                                                                                                                        ).continueCompaction(
+                                                                                                                                                                                                                                          await import("./lib/observation-adapter.mjs")
+                                                                                                                                                                                                                                        ).inspectObservationSources(
                                                                                                                                                                                                                                           {
                                                                                                                                                                                                                                             root: args.project_root,
-                                                                                                                                                                                                                                            epochId:
-                                                                                                                                                                                                                                              args.epoch_id,
-                                                                                                                                                                                                                                            continuationToken:
-                                                                                                                                                                                                                                              args.continuation_token,
-                                                                                                                                                                                                                                            currentUserTurnId:
-                                                                                                                                                                                                                                              args.current_user_turn_id,
+                                                                                                                                                                                                                                            registry:
+                                                                                                                                                                                                                                              observationRegistry,
+                                                                                                                                                                                                                                            typeKey:
+                                                                                                                                                                                                                                              args.type_key ||
+                                                                                                                                                                                                                                              "",
+                                                                                                                                                                                                                                            adapterKey:
+                                                                                                                                                                                                                                              args.adapter_key ||
+                                                                                                                                                                                                                                              "",
+                                                                                                                                                                                                                                            availabilityState:
+                                                                                                                                                                                                                                              args.availability ||
+                                                                                                                                                                                                                                              "",
+                                                                                                                                                                                                                                            limit:
+                                                                                                                                                                                                                                              args.limit ??
+                                                                                                                                                                                                                                              64,
+                                                                                                                                                                                                                                            projectionId:
+                                                                                                                                                                                                                                              args.projection_id ||
+                                                                                                                                                                                                                                              "",
+                                                                                                                                                                                                                                            cursor:
+                                                                                                                                                                                                                                              args.cursor ||
+                                                                                                                                                                                                                                              "",
                                                                                                                                                                                                                                           },
                                                                                                                                                                                                                                         )
                                                                                                                                                                                                                                       : name ===
-                                                                                                                                                                                                                                          "head_compact_status"
+                                                                                                                                                                                                                                          "head_observation_prepare"
                                                                                                                                                                                                                                         ? (
-                                                                                                                                                                                                                                            await import("./lib/compaction-recovery.mjs")
-                                                                                                                                                                                                                                          ).inspectCompaction(
+                                                                                                                                                                                                                                            await import("./lib/observation-workflow.mjs")
+                                                                                                                                                                                                                                          ).prepareObservationEvidence(
                                                                                                                                                                                                                                             {
                                                                                                                                                                                                                                               root: args.project_root,
+                                                                                                                                                                                                                                              registry:
+                                                                                                                                                                                                                                                observationRegistry,
+                                                                                                                                                                                                                                              typeKey:
+                                                                                                                                                                                                                                                args.type_key,
+                                                                                                                                                                                                                                              subjectType:
+                                                                                                                                                                                                                                                args.subject_type ||
+                                                                                                                                                                                                                                                "",
+                                                                                                                                                                                                                                              subjectKey:
+                                                                                                                                                                                                                                                args.subject_key ||
+                                                                                                                                                                                                                                                "",
+                                                                                                                                                                                                                                              adapterKey:
+                                                                                                                                                                                                                                                args.adapter_key ||
+                                                                                                                                                                                                                                                "",
+                                                                                                                                                                                                                                              observedAfter:
+                                                                                                                                                                                                                                                args.observed_after ||
+                                                                                                                                                                                                                                                "",
+                                                                                                                                                                                                                                              observedBefore:
+                                                                                                                                                                                                                                                args.observed_before ||
+                                                                                                                                                                                                                                                "",
+                                                                                                                                                                                                                                              existingLimit:
+                                                                                                                                                                                                                                                args.existing_limit ??
+                                                                                                                                                                                                                                                20,
+                                                                                                                                                                                                                                              sourceLimit:
+                                                                                                                                                                                                                                                args.source_limit ??
+                                                                                                                                                                                                                                                20,
+                                                                                                                                                                                                                                              sourceAvailability:
+                                                                                                                                                                                                                                                args.source_availability ||
+                                                                                                                                                                                                                                                "",
+                                                                                                                                                                                                                                              sourceProjectionId:
+                                                                                                                                                                                                                                                args.source_projection_id ||
+                                                                                                                                                                                                                                                "",
+                                                                                                                                                                                                                                              sourceCursor:
+                                                                                                                                                                                                                                                args.source_cursor ||
+                                                                                                                                                                                                                                                "",
                                                                                                                                                                                                                                             },
                                                                                                                                                                                                                                           )
                                                                                                                                                                                                                                         : name ===
-                                                                                                                                                                                                                                            "head_compact_abort"
-                                                                                                                                                                                                                                          ? (
-                                                                                                                                                                                                                                              await import("./lib/compaction-recovery.mjs")
-                                                                                                                                                                                                                                            ).abortCompaction(
+                                                                                                                                                                                                                                            "head_observation_collect_source"
+                                                                                                                                                                                                                                          ? await (
+                                                                                                                                                                                                                                              await import("./lib/observation-adapter.mjs")
+                                                                                                                                                                                                                                            ).collectRegisteredObservation(
                                                                                                                                                                                                                                               {
                                                                                                                                                                                                                                                 root: args.project_root,
-                                                                                                                                                                                                                                                epochId:
-                                                                                                                                                                                                                                                  args.epoch_id,
-                                                                                                                                                                                                                                                reason:
-                                                                                                                                                                                                                                                  args.reason,
+                                                                                                                                                                                                                                                registry:
+                                                                                                                                                                                                                                                  observationRegistry,
+                                                                                                                                                                                                                                                sourceId:
+                                                                                                                                                                                                                                                  args.source_id,
                                                                                                                                                                                                                                               },
                                                                                                                                                                                                                                             )
                                                                                                                                                                                                                                           : name ===
-                                                                                                                                                                                                                                              "head_conversation_enter"
-                                                                                                                                                                                                                                            ? await (
-                                                                                                                                                                                                                                                await import("./lib/compaction-lifecycle.mjs")
-                                                                                                                                                                                                                                              ).enterConversationRecovery(
+                                                                                                                                                                                                                                              "head_observation_ingest"
+                                                                                                                                                                                                                                            ? (requireMcpConfirmation(
+                                                                                                                                                                                                                                                args.confirm_host_observation,
+                                                                                                                                                                                                                                                "Observation collection requires explicit confirmation that the payload came from the exact Host source binding.",
+                                                                                                                                                                                                                                                "OBSERVATION_HOST_CONFIRMATION_REQUIRED",
+                                                                                                                                                                                                                                              ),
+                                                                                                                                                                                                                                              await (
+                                                                                                                                                                                                                                                await import("./lib/observation-adapter.mjs")
+                                                                                                                                                                                                                                              ).ingestStructuredObservation(
                                                                                                                                                                                                                                                 {
                                                                                                                                                                                                                                                   root: args.project_root,
-                                                                                                                                                                                                                                                  readRelatedNativeContext,
+                                                                                                                                                                                                                                                  binding:
+                                                                                                                                                                                                                                                    observationBindingFromMcp(
+                                                                                                                                                                                                                                                      args.binding,
+                                                                                                                                                                                                                                                    ),
+                                                                                                                                                                                                                                                  descriptor:
+                                                                                                                                                                                                                                                    observationDescriptorFromMcp(
+                                                                                                                                                                                                                                                      args.descriptor,
+                                                                                                                                                                                                                                                    ),
+                                                                                                                                                                                                                                                  input:
+                                                                                                                                                                                                                                                    observationInputFromMcp(
+                                                                                                                                                                                                                                                      args.observation,
+                                                                                                                                                                                                                                                    ),
                                                                                                                                                                                                                                                 },
-                                                                                                                                                                                                                                              )
+                                                                                                                                                                                                                                              ))
                                                                                                                                                                                                                                             : name ===
-                                                                                                                                                                                                                                                "head_compaction_lifecycle_step"
-                                                                                                                                                                                                                                              ? await (
-                                                                                                                                                                                                                                                  await import("./lib/compaction-lifecycle.mjs")
-                                                                                                                                                                                                                                                ).processCompactionLifecycle(
+                                                                                                                                                                                                                                                "head_observation_derive"
+                                                                                                                                                                                                                                              ? (requireMcpConfirmation(
+                                                                                                                                                                                                                                                  args.confirm_host_derivation,
+                                                                                                                                                                                                                                                  "Derived Observation recording requires explicit confirmation that the payload came from the named deterministic algorithm.",
+                                                                                                                                                                                                                                                  "OBSERVATION_DERIVATION_CONFIRMATION_REQUIRED",
+                                                                                                                                                                                                                                                ),
+                                                                                                                                                                                                                                                (
+                                                                                                                                                                                                                                                  await import("./lib/observation-store.mjs")
+                                                                                                                                                                                                                                                ).recordDerivedObservation(
                                                                                                                                                                                                                                                   {
                                                                                                                                                                                                                                                     root: args.project_root,
-                                                                                                                                                                                                                                                    hostAdapter:
-                                                                                                                                                                                                                                                      compactionLifecycleHost,
-                                                                                                                                                                                                                                                    direction:
-                                                                                                                                                                                                                                                      args.direction ==
-                                                                                                                                                                                                                                                      null
-                                                                                                                                                                                                                                                        ? null
-                                                                                                                                                                                                                                                        : {
-                                                                                                                                                                                                                                                            purpose:
+                                                                                                                                                                                                                                                    descriptor:
+                                                                                                                                                                                                                                                      observationDescriptorFromMcp(
+                                                                                                                                                                                                                                                        args.descriptor,
+                                                                                                                                                                                                                                                      ),
+                                                                                                                                                                                                                                                    input:
+                                                                                                                                                                                                                                                      {
+                                                                                                                                                                                                                                                        subject:
+                                                                                                                                                                                                                                                          args.subject,
+                                                                                                                                                                                                                                                        temporalScope:
+                                                                                                                                                                                                                                                          {
+                                                                                                                                                                                                                                                            observedAt:
                                                                                                                                                                                                                                                               args
-                                                                                                                                                                                                                                                                .direction
-                                                                                                                                                                                                                                                                .purpose,
-                                                                                                                                                                                                                                                            approvedDecisions:
+                                                                                                                                                                                                                                                                .temporal_scope
+                                                                                                                                                                                                                                                                .observed_at,
+                                                                                                                                                                                                                                                            start:
                                                                                                                                                                                                                                                               args
-                                                                                                                                                                                                                                                                .direction
-                                                                                                                                                                                                                                                                .approved_decisions,
-                                                                                                                                                                                                                                                            currentPosition:
-                                                                                                                                                                                                                                                              args
-                                                                                                                                                                                                                                                                .direction
-                                                                                                                                                                                                                                                                .current_position,
-                                                                                                                                                                                                                                                            nextExpectedResult:
-                                                                                                                                                                                                                                                              args
-                                                                                                                                                                                                                                                                .direction
-                                                                                                                                                                                                                                                                .next_expected_result,
-                                                                                                                                                                                                                                                            openReviewIds:
-                                                                                                                                                                                                                                                              args
-                                                                                                                                                                                                                                                                .direction
-                                                                                                                                                                                                                                                                .open_review_ids,
+                                                                                                                                                                                                                                                                .temporal_scope
+                                                                                                                                                                                                                                                                .start,
+                                                                                                                                                                                                                                                            end: args
+                                                                                                                                                                                                                                                              .temporal_scope
+                                                                                                                                                                                                                                                              .end,
                                                                                                                                                                                                                                                           },
+                                                                                                                                                                                                                                                        inputObservationIds:
+                                                                                                                                                                                                                                                          args.input_observation_ids,
+                                                                                                                                                                                                                                                        algorithm:
+                                                                                                                                                                                                                                                          args.algorithm,
+                                                                                                                                                                                                                                                        coverage:
+                                                                                                                                                                                                                                                          observationCoverageFromMcp(
+                                                                                                                                                                                                                                                            args.coverage,
+                                                                                                                                                                                                                                                          ),
+                                                                                                                                                                                                                                                        payload:
+                                                                                                                                                                                                                                                          args.payload,
+                                                                                                                                                                                                                                                      },
                                                                                                                                                                                                                                                   },
-                                                                                                                                                                                                                                                )
+                                                                                                                                                                                                                                                ))
                                                                                                                                                                                                                                               : name ===
-                                                                                                                                                                                                                                                  "head_product_signal_record"
-                                                                                                                                                                                                                                                ? await (
-                                                                                                                                                                                                                                                    await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                                                                                                                  ).recordProductSignal(
+                                                                                                                                                                                                                                                  "head_observation_read"
+                                                                                                                                                                                                                                                ? (
+                                                                                                                                                                                                                                                    await import("./lib/observation-store.mjs")
+                                                                                                                                                                                                                                                  ).readObservation(
                                                                                                                                                                                                                                                     {
                                                                                                                                                                                                                                                       root: args.project_root,
-                                                                                                                                                                                                                                                      statement:
-                                                                                                                                                                                                                                                        args.statement,
-                                                                                                                                                                                                                                                      observedAt:
-                                                                                                                                                                                                                                                        args.observed_at,
-                                                                                                                                                                                                                                                      source:
-                                                                                                                                                                                                                                                        args.source ||
-                                                                                                                                                                                                                                                        "",
-                                                                                                                                                                                                                                                      evidenceIds:
-                                                                                                                                                                                                                                                        args.evidence_ids ||
-                                                                                                                                                                                                                                                        [],
+                                                                                                                                                                                                                                                      observationId:
+                                                                                                                                                                                                                                                        args.observation_id,
                                                                                                                                                                                                                                                     },
                                                                                                                                                                                                                                                   )
                                                                                                                                                                                                                                                 : name ===
-                                                                                                                                                                                                                                                    "head_product_hypothesis_record"
-                                                                                                                                                                                                                                                  ? await (
-                                                                                                                                                                                                                                                      await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                                                                                                                    ).recordProductHypothesis(
+                                                                                                                                                                                                                                                    "head_observation_query"
+                                                                                                                                                                                                                                                  ? (
+                                                                                                                                                                                                                                                      await import("./lib/observation-projection.mjs")
+                                                                                                                                                                                                                                                    ).queryObservations(
                                                                                                                                                                                                                                                       {
                                                                                                                                                                                                                                                         root: args.project_root,
-                                                                                                                                                                                                                                                        statement:
-                                                                                                                                                                                                                                                          args.statement,
-                                                                                                                                                                                                                                                        rationale:
-                                                                                                                                                                                                                                                          args.rationale ||
+                                                                                                                                                                                                                                                        typeKey:
+                                                                                                                                                                                                                                                          args.type_key ||
                                                                                                                                                                                                                                                           "",
-                                                                                                                                                                                                                                                        signalIds:
-                                                                                                                                                                                                                                                          args.signal_ids ||
-                                                                                                                                                                                                                                                          [],
-                                                                                                                                                                                                                                                        observationIds:
-                                                                                                                                                                                                                                                          args.observation_ids ||
-                                                                                                                                                                                                                                                          [],
+                                                                                                                                                                                                                                                        subjectType:
+                                                                                                                                                                                                                                                          args.subject_type ||
+                                                                                                                                                                                                                                                          "",
+                                                                                                                                                                                                                                                        subjectKey:
+                                                                                                                                                                                                                                                          args.subject_key ||
+                                                                                                                                                                                                                                                          "",
+                                                                                                                                                                                                                                                        adapterKey:
+                                                                                                                                                                                                                                                          args.adapter_key ||
+                                                                                                                                                                                                                                                          "",
+                                                                                                                                                                                                                                                        observedAfter:
+                                                                                                                                                                                                                                                          args.observed_after ||
+                                                                                                                                                                                                                                                          "",
+                                                                                                                                                                                                                                                        observedBefore:
+                                                                                                                                                                                                                                                          args.observed_before ||
+                                                                                                                                                                                                                                                          "",
+                                                                                                                                                                                                                                                        recordKind:
+                                                                                                                                                                                                                                                          args.record_kind ||
+                                                                                                                                                                                                                                                          "all",
+                                                                                                                                                                                                                                                        limit:
+                                                                                                                                                                                                                                                          args.limit ??
+                                                                                                                                                                                                                                                          25,
+                                                                                                                                                                                                                                                        projectionId:
+                                                                                                                                                                                                                                                          args.projection_id ||
+                                                                                                                                                                                                                                                          "",
+                                                                                                                                                                                                                                                        cursor:
+                                                                                                                                                                                                                                                          args.cursor ||
+                                                                                                                                                                                                                                                          "",
                                                                                                                                                                                                                                                       },
                                                                                                                                                                                                                                                     )
                                                                                                                                                                                                                                                   : name ===
-                                                                                                                                                                                                                                                      "head_product_initiative_propose"
+                                                                                                                                                                                                                                                      "head_continuity_snapshot"
                                                                                                                                                                                                                                                     ? await (
                                                                                                                                                                                                                                                         await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                                                                                                                      ).proposeProductInitiative(
+                                                                                                                                                                                                                                                      ).buildHeadContinuitySnapshot(
                                                                                                                                                                                                                                                         {
                                                                                                                                                                                                                                                           root: args.project_root,
-                                                                                                                                                                                                                                                          title:
-                                                                                                                                                                                                                                                            args.title,
-                                                                                                                                                                                                                                                          description:
-                                                                                                                                                                                                                                                            args.description ||
-                                                                                                                                                                                                                                                            "",
-                                                                                                                                                                                                                                                          reasoning:
-                                                                                                                                                                                                                                                            args.reasoning ||
-                                                                                                                                                                                                                                                            "",
-                                                                                                                                                                                                                                                          hypothesisIds:
-                                                                                                                                                                                                                                                            args.hypothesis_ids ||
-                                                                                                                                                                                                                                                            [],
-                                                                                                                                                                                                                                                          featureResolution:
-                                                                                                                                                                                                                                                            args.feature_resolution ==
-                                                                                                                                                                                                                                                            null
-                                                                                                                                                                                                                                                              ? null
-                                                                                                                                                                                                                                                              : productFeatureResolutionFromMcp(
-                                                                                                                                                                                                                                                                  args.feature_resolution,
-                                                                                                                                                                                                                                                                ),
+                                                                                                                                                                                                                                                          fresh:
+                                                                                                                                                                                                                                                            args.fresh ??
+                                                                                                                                                                                                                                                            false,
                                                                                                                                                                                                                                                         },
                                                                                                                                                                                                                                                       )
                                                                                                                                                                                                                                                     : name ===
-                                                                                                                                                                                                                                                        "head_product_initiative_review"
-                                                                                                                                                                                                                                                      ? (requireMcpConfirmation(
-                                                                                                                                                                                                                                                          args.confirm_user_review,
-                                                                                                                                                                                                                                                          "Product Initiative review requires explicit user confirmation.",
-                                                                                                                                                                                                                                                          "PRODUCT_INITIATIVE_REVIEW_CONFIRMATION_REQUIRED",
-                                                                                                                                                                                                                                                        ),
-                                                                                                                                                                                                                                                        await (
-                                                                                                                                                                                                                                                          await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                                                                                                                        ).reviewProductInitiative(
+                                                                                                                                                                                                                                                        "head_conversation_list"
+                                                                                                                                                                                                                                                      ? await (
+                                                                                                                                                                                                                                                          await import("./lib/conversation-messaging.mjs")
+                                                                                                                                                                                                                                                        ).listProjectConversations(
                                                                                                                                                                                                                                                           {
                                                                                                                                                                                                                                                             root: args.project_root,
-                                                                                                                                                                                                                                                            initiativeCandidateId:
-                                                                                                                                                                                                                                                              args.initiative_candidate_id,
-                                                                                                                                                                                                                                                            disposition:
-                                                                                                                                                                                                                                                              args.disposition,
-                                                                                                                                                                                                                                                            rationale:
-                                                                                                                                                                                                                                                              args.rationale,
-                                                                                                                                                                                                                                                            featureResolution:
-                                                                                                                                                                                                                                                              args.feature_resolution ==
-                                                                                                                                                                                                                                                              null
-                                                                                                                                                                                                                                                                ? null
-                                                                                                                                                                                                                                                                : productFeatureResolutionFromMcp(
-                                                                                                                                                                                                                                                                    args.feature_resolution,
-                                                                                                                                                                                                                                                                  ),
+                                                                                                                                                                                                                                                            caller,
+                                                                                                                                                                                                                                                            environment:
+                                                                                                                                                                                                                                                              hostEnvironment,
+                                                                                                                                                                                                                                                            hostTicket:
+                                                                                                                                                                                                                                                              args.host_ticket ??
+                                                                                                                                                                                                                                                              null,
                                                                                                                                                                                                                                                           },
-                                                                                                                                                                                                                                                        ))
+                                                                                                                                                                                                                                                        )
                                                                                                                                                                                                                                                       : name ===
-                                                                                                                                                                                                                                                          "head_product_outcome_observe"
+                                                                                                                                                                                                                                                          "head_conversation_send"
                                                                                                                                                                                                                                                         ? await (
-                                                                                                                                                                                                                                                            await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                                                                                                                          ).observeProductOutcome(
+                                                                                                                                                                                                                                                            await import("./lib/conversation-messaging.mjs")
+                                                                                                                                                                                                                                                          ).sendProjectConversation(
                                                                                                                                                                                                                                                             {
                                                                                                                                                                                                                                                               root: args.project_root,
-                                                                                                                                                                                                                                                              changeSetId:
-                                                                                                                                                                                                                                                                args.change_set_id,
-                                                                                                                                                                                                                                                              initiativeId:
-                                                                                                                                                                                                                                                                args.initiative_id ||
-                                                                                                                                                                                                                                                                "",
-                                                                                                                                                                                                                                                              statement:
-                                                                                                                                                                                                                                                                args.statement,
-                                                                                                                                                                                                                                                              epistemicClass:
-                                                                                                                                                                                                                                                                args.epistemic_class ||
-                                                                                                                                                                                                                                                                "observed-fact",
-                                                                                                                                                                                                                                                              evidenceIds:
-                                                                                                                                                                                                                                                                args.evidence_ids ||
-                                                                                                                                                                                                                                                                [],
+                                                                                                                                                                                                                                                              caller,
+                                                                                                                                                                                                                                                              environment:
+                                                                                                                                                                                                                                                                hostEnvironment,
+                                                                                                                                                                                                                                                              to: args.to,
+                                                                                                                                                                                                                                                              body: args.body,
+                                                                                                                                                                                                                                                              replyTo:
+                                                                                                                                                                                                                                                                args.reply_to ??
+                                                                                                                                                                                                                                                                null,
+                                                                                                                                                                                                                                                              hostTicket:
+                                                                                                                                                                                                                                                                args.host_ticket ??
+                                                                                                                                                                                                                                                                null,
+                                                                                                                                                                                                                                                              waitMs:
+                                                                                                                                                                                                                                                                Number(
+                                                                                                                                                                                                                                                                  hostEnvironment?.LODE_CONVERSATION_DELIVERY_WAIT_MS ||
+                                                                                                                                                                                                                                                                    0,
+                                                                                                                                                                                                                                                                ),
+                                                                                                                                                                                                                                                              signal,
                                                                                                                                                                                                                                                             },
                                                                                                                                                                                                                                                           )
-                                                                                                                                                                                                                                                        : name ===
-                                                                                                                                                                                                                                                            "head_product_operating_status"
-                                                                                                                                                                                                                                                          ? (
-                                                                                                                                                                                                                                                              await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                                                                                                                            ).inspectProductOperatingLoop(
-                                                                                                                                                                                                                                                              {
-                                                                                                                                                                                                                                                                root: args.project_root,
-                                                                                                                                                                                                                                                                fresh:
-                                                                                                                                                                                                                                                                  args.fresh ??
-                                                                                                                                                                                                                                                                  false,
-                                                                                                                                                                                                                                                              },
-                                                                                                                                                                                                                                                            )
-                                                                                                                                                                                                                                                          : name ===
-                                                                                                                                                                                                                                                              "head_release_observe"
-                                                                                                                                                                                                                                                            ? (requireMcpConfirmation(
-                                                                                                                                                                                                                                                                args.confirm_host_observation,
-                                                                                                                                                                                                                                                                "Release observation requires explicit confirmation that the payload came from a host deployment observer.",
-                                                                                                                                                                                                                                                                "RELEASE_HOST_OBSERVATION_CONFIRMATION_REQUIRED",
-                                                                                                                                                                                                                                                              ),
-                                                                                                                                                                                                                                                              await (
-                                                                                                                                                                                                                                                                await import("./lib/release-observation.mjs")
-                                                                                                                                                                                                                                                              ).observeReleaseState(
-                                                                                                                                                                                                                                                                {
-                                                                                                                                                                                                                                                                  root: args.project_root,
-                                                                                                                                                                                                                                                                  input:
-                                                                                                                                                                                                                                                                    {
-                                                                                                                                                                                                                                                                      environmentKey:
-                                                                                                                                                                                                                                                                        args.environment_key,
-                                                                                                                                                                                                                                                                      status:
-                                                                                                                                                                                                                                                                        args.status,
-                                                                                                                                                                                                                                                                      commit:
-                                                                                                                                                                                                                                                                        args.commit,
-                                                                                                                                                                                                                                                                      observedAt:
-                                                                                                                                                                                                                                                                        args.observed_at,
-                                                                                                                                                                                                                                                                      sourceEventKeyDigest:
-                                                                                                                                                                                                                                                                        args.source_event_key_digest,
-                                                                                                                                                                                                                                                                      deploymentEvidenceDigest:
-                                                                                                                                                                                                                                                                        args.deployment_evidence_digest,
-                                                                                                                                                                                                                                                                      approved:
-                                                                                                                                                                                                                                                                        args.approved,
-                                                                                                                                                                                                                                                                      approvalEvidenceDigest:
-                                                                                                                                                                                                                                                                        args.approval_evidence_digest,
-                                                                                                                                                                                                                                                                      changeSetId:
-                                                                                                                                                                                                                                                                        args.change_set_id,
-                                                                                                                                                                                                                                                                      vcsEvidenceId:
-                                                                                                                                                                                                                                                                        args.vcs_evidence_id,
-                                                                                                                                                                                                                                                                    },
-                                                                                                                                                                                                                                                                },
-                                                                                                                                                                                                                                                              ))
-                                                                                                                                                                                                                                                            : name ===
-                                                                                                                                                                                                                                                                "head_release_status"
-                                                                                                                                                                                                                                                              ? (
-                                                                                                                                                                                                                                                                  await import("./lib/release-observation.mjs")
-                                                                                                                                                                                                                                                                ).inspectReleaseObservations(
-                                                                                                                                                                                                                                                                  {
-                                                                                                                                                                                                                                                                    root: args.project_root,
-                                                                                                                                                                                                                                                                  },
-                                                                                                                                                                                                                                                                )
-                                                                                                                                                                                                                                                              : name ===
-                                                                                                                                                                                                                                                                  "head_observation_sources"
-                                                                                                                                                                                                                                                                ? (
-                                                                                                                                                                                                                                                                    await import("./lib/observation-adapter.mjs")
-                                                                                                                                                                                                                                                                  ).inspectObservationSources(
-                                                                                                                                                                                                                                                                    {
-                                                                                                                                                                                                                                                                      root: args.project_root,
-                                                                                                                                                                                                                                                                      registry:
-                                                                                                                                                                                                                                                                        observationRegistry,
-                                                                                                                                                                                                                                                                      typeKey:
-                                                                                                                                                                                                                                                                        args.type_key ||
-                                                                                                                                                                                                                                                                        "",
-                                                                                                                                                                                                                                                                      adapterKey:
-                                                                                                                                                                                                                                                                        args.adapter_key ||
-                                                                                                                                                                                                                                                                        "",
-                                                                                                                                                                                                                                                                      availabilityState:
-                                                                                                                                                                                                                                                                        args.availability ||
-                                                                                                                                                                                                                                                                        "",
-                                                                                                                                                                                                                                                                      limit:
-                                                                                                                                                                                                                                                                        args.limit ??
-                                                                                                                                                                                                                                                                        64,
-                                                                                                                                                                                                                                                                      projectionId:
-                                                                                                                                                                                                                                                                        args.projection_id ||
-                                                                                                                                                                                                                                                                        "",
-                                                                                                                                                                                                                                                                      cursor:
-                                                                                                                                                                                                                                                                        args.cursor ||
-                                                                                                                                                                                                                                                                        "",
-                                                                                                                                                                                                                                                                    },
-                                                                                                                                                                                                                                                                  )
-                                                                                                                                                                                                                                                                : name ===
-                                                                                                                                                                                                                                                                    "head_observation_prepare"
-                                                                                                                                                                                                                                                                  ? (
-                                                                                                                                                                                                                                                                      await import("./lib/observation-workflow.mjs")
-                                                                                                                                                                                                                                                                    ).prepareObservationEvidence(
-                                                                                                                                                                                                                                                                      {
-                                                                                                                                                                                                                                                                        root: args.project_root,
-                                                                                                                                                                                                                                                                        registry:
-                                                                                                                                                                                                                                                                          observationRegistry,
-                                                                                                                                                                                                                                                                        typeKey:
-                                                                                                                                                                                                                                                                          args.type_key,
-                                                                                                                                                                                                                                                                        subjectType:
-                                                                                                                                                                                                                                                                          args.subject_type ||
-                                                                                                                                                                                                                                                                          "",
-                                                                                                                                                                                                                                                                        subjectKey:
-                                                                                                                                                                                                                                                                          args.subject_key ||
-                                                                                                                                                                                                                                                                          "",
-                                                                                                                                                                                                                                                                        adapterKey:
-                                                                                                                                                                                                                                                                          args.adapter_key ||
-                                                                                                                                                                                                                                                                          "",
-                                                                                                                                                                                                                                                                        observedAfter:
-                                                                                                                                                                                                                                                                          args.observed_after ||
-                                                                                                                                                                                                                                                                          "",
-                                                                                                                                                                                                                                                                        observedBefore:
-                                                                                                                                                                                                                                                                          args.observed_before ||
-                                                                                                                                                                                                                                                                          "",
-                                                                                                                                                                                                                                                                        existingLimit:
-                                                                                                                                                                                                                                                                          args.existing_limit ??
-                                                                                                                                                                                                                                                                          20,
-                                                                                                                                                                                                                                                                        sourceLimit:
-                                                                                                                                                                                                                                                                          args.source_limit ??
-                                                                                                                                                                                                                                                                          20,
-                                                                                                                                                                                                                                                                        sourceAvailability:
-                                                                                                                                                                                                                                                                          args.source_availability ||
-                                                                                                                                                                                                                                                                          "",
-                                                                                                                                                                                                                                                                        sourceProjectionId:
-                                                                                                                                                                                                                                                                          args.source_projection_id ||
-                                                                                                                                                                                                                                                                          "",
-                                                                                                                                                                                                                                                                        sourceCursor:
-                                                                                                                                                                                                                                                                          args.source_cursor ||
-                                                                                                                                                                                                                                                                          "",
-                                                                                                                                                                                                                                                                      },
-                                                                                                                                                                                                                                                                    )
-                                                                                                                                                                                                                                                                  : name ===
-                                                                                                                                                                                                                                                                      "head_observation_collect_source"
-                                                                                                                                                                                                                                                                    ? await (
-                                                                                                                                                                                                                                                                        await import("./lib/observation-adapter.mjs")
-                                                                                                                                                                                                                                                                      ).collectRegisteredObservation(
-                                                                                                                                                                                                                                                                        {
-                                                                                                                                                                                                                                                                          root: args.project_root,
-                                                                                                                                                                                                                                                                          registry:
-                                                                                                                                                                                                                                                                            observationRegistry,
-                                                                                                                                                                                                                                                                          sourceId:
-                                                                                                                                                                                                                                                                            args.source_id,
-                                                                                                                                                                                                                                                                        },
-                                                                                                                                                                                                                                                                      )
-                                                                                                                                                                                                                                                                    : name ===
-                                                                                                                                                                                                                                                                        "head_observation_ingest"
-                                                                                                                                                                                                                                                                      ? (requireMcpConfirmation(
-                                                                                                                                                                                                                                                                          args.confirm_host_observation,
-                                                                                                                                                                                                                                                                          "Observation collection requires explicit confirmation that the payload came from the exact Host source binding.",
-                                                                                                                                                                                                                                                                          "OBSERVATION_HOST_CONFIRMATION_REQUIRED",
-                                                                                                                                                                                                                                                                        ),
-                                                                                                                                                                                                                                                                        await (
-                                                                                                                                                                                                                                                                          await import("./lib/observation-adapter.mjs")
-                                                                                                                                                                                                                                                                        ).ingestStructuredObservation(
-                                                                                                                                                                                                                                                                          {
-                                                                                                                                                                                                                                                                            root: args.project_root,
-                                                                                                                                                                                                                                                                            binding:
-                                                                                                                                                                                                                                                                              observationBindingFromMcp(
-                                                                                                                                                                                                                                                                                args.binding,
-                                                                                                                                                                                                                                                                              ),
-                                                                                                                                                                                                                                                                            descriptor:
-                                                                                                                                                                                                                                                                              observationDescriptorFromMcp(
-                                                                                                                                                                                                                                                                                args.descriptor,
-                                                                                                                                                                                                                                                                              ),
-                                                                                                                                                                                                                                                                            input:
-                                                                                                                                                                                                                                                                              observationInputFromMcp(
-                                                                                                                                                                                                                                                                                args.observation,
-                                                                                                                                                                                                                                                                              ),
-                                                                                                                                                                                                                                                                          },
-                                                                                                                                                                                                                                                                        ))
-                                                                                                                                                                                                                                                                      : name ===
-                                                                                                                                                                                                                                                                          "head_observation_derive"
-                                                                                                                                                                                                                                                                        ? (requireMcpConfirmation(
-                                                                                                                                                                                                                                                                            args.confirm_host_derivation,
-                                                                                                                                                                                                                                                                            "Derived Observation recording requires explicit confirmation that the payload came from the named deterministic algorithm.",
-                                                                                                                                                                                                                                                                            "OBSERVATION_DERIVATION_CONFIRMATION_REQUIRED",
-                                                                                                                                                                                                                                                                          ),
-                                                                                                                                                                                                                                                                          (
-                                                                                                                                                                                                                                                                            await import("./lib/observation-store.mjs")
-                                                                                                                                                                                                                                                                          ).recordDerivedObservation(
-                                                                                                                                                                                                                                                                            {
-                                                                                                                                                                                                                                                                              root: args.project_root,
-                                                                                                                                                                                                                                                                              descriptor:
-                                                                                                                                                                                                                                                                                observationDescriptorFromMcp(
-                                                                                                                                                                                                                                                                                  args.descriptor,
-                                                                                                                                                                                                                                                                                ),
-                                                                                                                                                                                                                                                                              input:
-                                                                                                                                                                                                                                                                                {
-                                                                                                                                                                                                                                                                                  subject:
-                                                                                                                                                                                                                                                                                    args.subject,
-                                                                                                                                                                                                                                                                                  temporalScope:
-                                                                                                                                                                                                                                                                                    {
-                                                                                                                                                                                                                                                                                      observedAt:
-                                                                                                                                                                                                                                                                                        args
-                                                                                                                                                                                                                                                                                          .temporal_scope
-                                                                                                                                                                                                                                                                                          .observed_at,
-                                                                                                                                                                                                                                                                                      start:
-                                                                                                                                                                                                                                                                                        args
-                                                                                                                                                                                                                                                                                          .temporal_scope
-                                                                                                                                                                                                                                                                                          .start,
-                                                                                                                                                                                                                                                                                      end: args
-                                                                                                                                                                                                                                                                                        .temporal_scope
-                                                                                                                                                                                                                                                                                        .end,
-                                                                                                                                                                                                                                                                                    },
-                                                                                                                                                                                                                                                                                  inputObservationIds:
-                                                                                                                                                                                                                                                                                    args.input_observation_ids,
-                                                                                                                                                                                                                                                                                  algorithm:
-                                                                                                                                                                                                                                                                                    args.algorithm,
-                                                                                                                                                                                                                                                                                  coverage:
-                                                                                                                                                                                                                                                                                    observationCoverageFromMcp(
-                                                                                                                                                                                                                                                                                      args.coverage,
-                                                                                                                                                                                                                                                                                    ),
-                                                                                                                                                                                                                                                                                  payload:
-                                                                                                                                                                                                                                                                                    args.payload,
-                                                                                                                                                                                                                                                                                },
-                                                                                                                                                                                                                                                                            },
-                                                                                                                                                                                                                                                                          ))
-                                                                                                                                                                                                                                                                        : name ===
-                                                                                                                                                                                                                                                                            "head_observation_read"
-                                                                                                                                                                                                                                                                          ? (
-                                                                                                                                                                                                                                                                              await import("./lib/observation-store.mjs")
-                                                                                                                                                                                                                                                                            ).readObservation(
-                                                                                                                                                                                                                                                                              {
-                                                                                                                                                                                                                                                                                root: args.project_root,
-                                                                                                                                                                                                                                                                                observationId:
-                                                                                                                                                                                                                                                                                  args.observation_id,
-                                                                                                                                                                                                                                                                              },
-                                                                                                                                                                                                                                                                            )
-                                                                                                                                                                                                                                                                          : name ===
-                                                                                                                                                                                                                                                                              "head_observation_query"
-                                                                                                                                                                                                                                                                            ? (
-                                                                                                                                                                                                                                                                                await import("./lib/observation-projection.mjs")
-                                                                                                                                                                                                                                                                              ).queryObservations(
-                                                                                                                                                                                                                                                                                {
-                                                                                                                                                                                                                                                                                  root: args.project_root,
-                                                                                                                                                                                                                                                                                  typeKey:
-                                                                                                                                                                                                                                                                                    args.type_key ||
-                                                                                                                                                                                                                                                                                    "",
-                                                                                                                                                                                                                                                                                  subjectType:
-                                                                                                                                                                                                                                                                                    args.subject_type ||
-                                                                                                                                                                                                                                                                                    "",
-                                                                                                                                                                                                                                                                                  subjectKey:
-                                                                                                                                                                                                                                                                                    args.subject_key ||
-                                                                                                                                                                                                                                                                                    "",
-                                                                                                                                                                                                                                                                                  adapterKey:
-                                                                                                                                                                                                                                                                                    args.adapter_key ||
-                                                                                                                                                                                                                                                                                    "",
-                                                                                                                                                                                                                                                                                  observedAfter:
-                                                                                                                                                                                                                                                                                    args.observed_after ||
-                                                                                                                                                                                                                                                                                    "",
-                                                                                                                                                                                                                                                                                  observedBefore:
-                                                                                                                                                                                                                                                                                    args.observed_before ||
-                                                                                                                                                                                                                                                                                    "",
-                                                                                                                                                                                                                                                                                  recordKind:
-                                                                                                                                                                                                                                                                                    args.record_kind ||
-                                                                                                                                                                                                                                                                                    "all",
-                                                                                                                                                                                                                                                                                  limit:
-                                                                                                                                                                                                                                                                                    args.limit ??
-                                                                                                                                                                                                                                                                                    25,
-                                                                                                                                                                                                                                                                                  projectionId:
-                                                                                                                                                                                                                                                                                    args.projection_id ||
-                                                                                                                                                                                                                                                                                    "",
-                                                                                                                                                                                                                                                                                  cursor:
-                                                                                                                                                                                                                                                                                    args.cursor ||
-                                                                                                                                                                                                                                                                                    "",
-                                                                                                                                                                                                                                                                                },
-                                                                                                                                                                                                                                                                              )
-                                                                                                                                                                                                                                                                            : name ===
-                                                                                                                                                                                                                                                                                "head_continuity_snapshot"
-                                                                                                                                                                                                                                                                              ? await (
-                                                                                                                                                                                                                                                                                  await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                                                                                                                                                ).buildHeadContinuitySnapshot(
-                                                                                                                                                                                                                                                                                  {
-                                                                                                                                                                                                                                                                                    root: args.project_root,
-                                                                                                                                                                                                                                                                                    fresh:
-                                                                                                                                                                                                                                                                                      args.fresh ??
-                                                                                                                                                                                                                                                                                      false,
-                                                                                                                                                                                                                                                                                  },
-                                                                                                                                                                                                                                                                                )
-                                                                                                                                                                                                                                                                              : name ===
-                                                                                                                                                                                                                                                                                  "head_conversation_list"
-                                                                                                                                                                                                                                                                                ? await (
-                                                                                                                                                                                                                                                                                    await import("./lib/conversation-messaging.mjs")
-                                                                                                                                                                                                                                                                                  ).listProjectConversations(
-                                                                                                                                                                                                                                                                                    {
-                                                                                                                                                                                                                                                                                      root: args.project_root,
-                                                                                                                                                                                                                                                                                      caller,
-                                                                                                                                                                                                                                                                                      environment:
-                                                                                                                                                                                                                                                                                        hostEnvironment,
-                                                                                                                                                                                                                                                                                      hostTicket:
-                                                                                                                                                                                                                                                                                        args.host_ticket ??
-                                                                                                                                                                                                                                                                                        null,
-                                                                                                                                                                                                                                                                                    },
-                                                                                                                                                                                                                                                                                  )
-                                                                                                                                                                                                                                                                                : name ===
-                                                                                                                                                                                                                                                                                    "head_conversation_send"
-                                                                                                                                                                                                                                                                                  ? await (
-                                                                                                                                                                                                                                                                                      await import("./lib/conversation-messaging.mjs")
-                                                                                                                                                                                                                                                                                    ).sendProjectConversation(
-                                                                                                                                                                                                                                                                                      {
-                                                                                                                                                                                                                                                                                        root: args.project_root,
-                                                                                                                                                                                                                                                                                        caller,
-                                                                                                                                                                                                                                                                                        environment:
-                                                                                                                                                                                                                                                                                          hostEnvironment,
-                                                                                                                                                                                                                                                                                        to: args.to,
-                                                                                                                                                                                                                                                                                        body: args.body,
-                                                                                                                                                                                                                                                                                        replyTo:
-                                                                                                                                                                                                                                                                                          args.reply_to ??
-                                                                                                                                                                                                                                                                                          null,
-                                                                                                                                                                                                                                                                                        hostTicket:
-                                                                                                                                                                                                                                                                                          args.host_ticket ??
-                                                                                                                                                                                                                                                                                          null,
-                                                                                                                                                                                                                                                                                        waitMs:
-                                                                                                                                                                                                                                                                                          Number(
-                                                                                                                                                                                                                                                                                            hostEnvironment?.LODE_CONVERSATION_DELIVERY_WAIT_MS ||
-                                                                                                                                                                                                                                                                                              0,
-                                                                                                                                                                                                                                                                                          ),
-                                                                                                                                                                                                                                                                                        signal,
-                                                                                                                                                                                                                                                                                      },
-                                                                                                                                                                                                                                                                                    )
-                                                                                                                                                                                                                                                                                  : (() => {
-                                                                                                                                                                                                                                                                                      throw new Error(
-                                                                                                                                                                                                                                                                                        `Unknown tool: ${name}`,
-                                                                                                                                                                                                                                                                                      );
-                                                                                                                                                                                                                                                                                    })());
+                                                                                                                                                                                                                                                        : (() => {
+                                                                                                                                                                                                                                                            throw new Error(
+                                                                                                                                                                                                                                                              `Unknown tool: ${name}`,
+                                                                                                                                                                                                                                                            );
+                                                                                                                                                                                                                                                          })());
     // MCP structuredContent is an optional object, never null/array/scalar.
     // Keep absent originals as their original text value, not fabricated state.
     const response = success(id, {

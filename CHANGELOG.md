@@ -11,6 +11,20 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.92 — publication tracked separately
+
+- Add `scripts/lib/operation-registry.mjs`, one registry that the MCP server and
+  the CLI both dispatch through. The bounded-worker job, dispatch and wave
+  operations are the first fifteen to use it; every other operation keeps its
+  existing branch, and no call or tool definition changes.
+- Pin which library call every MCP tool and CLI command makes in
+  `test/fixtures/dispatch-recordings.json`, checked by
+  `test/dispatch-recordings.test.mjs`.
+- Add `scripts/verify-documented-flow.mjs`, which runs the README first-request
+  flow through the CLI and MCP on synthetic projects and requires the same
+  `status`, `reasonCode` and `nextAction` on both; the docs now name the flow's
+  result statuses. CI runs it.
+
 ## 0.3.0-beta.91 — publication tracked separately
 
 - Add shared `scripts/lib/core/` helpers for SHA-256 digests, canonical JSON,

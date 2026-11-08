@@ -76,6 +76,10 @@ then invokes the same Core through typed MCP operations:
 - `lode_onboarding_review` for an explicit evidence-linked candidate decision;
 - `lode_markdown_projection_build` for a derived, recoverable document view.
 
+With `profile: "core"`, `lode_project_initialize_or_resume` (CLI `init --profile core`)
+returns `status: "core_ready"` and `nextAction.id: "work_directly"`: continue
+the user's task.
+
 The Skill does not create a second onboarding protocol. The provider Lode may
 inspect current repository evidence and author a typed `semantic_proposal`, but
 the Core validates and gates that proposal and the user still owns the

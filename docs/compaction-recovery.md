@@ -71,6 +71,10 @@ idle -> prepared -> verified -> continued
                   \-> aborted
 ```
 
+Each step reports its transition in `status`: `compact-prepare` returns
+`compaction_prepared`, `compact-verify` returns `compaction_verified` and
+`compact-continue` returns `compaction_continuation_consumed`.
+
 `compact-prepare` creates a content-addressed `SessionRunCheckpoint` with:
 
 - `purpose`

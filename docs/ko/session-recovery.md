@@ -100,7 +100,8 @@ authorization을 만들지 않습니다. 온전한 과거 자료는 탐색할 �
 4. 현재 WholePlan과, 활성 상태인 경우 정확한 Run, ExecutionContract 및 ContextCapsule
    digest를 다시 검증합니다.
 5. ResultPacket 증거가 있으면 보류 중인 review 계보를 다시 검증합니다.
-6. 결정적이고 지속되지 않는 `SessionRestoreProjection`을 반환합니다.
+6. 결정적이고 지속되지 않는 `SessionRestoreProjection`을
+   `status: "session_restored_from_artifacts"`와 함께 반환합니다.
 
 읽기 전용 프로젝트 경험은 동일한 검증을 실행해 `no-current-checkpoint`,
 `verified-current-checkpoint` 또는 `attention-required`를 보고할 수 있습니다.
@@ -201,6 +202,11 @@ lock 안에서 이 basis를 다시 구축합니다. basis는 동시성 증거이
   먼저 처리해야 합니다. 독립적인 일반 작업은 계속할 수 있습니다.
 - `conflict`: 전달된 basis가 오래됐거나 기록된 Run 전이가 현재 Session state와
   충돌하므로 복구 byte를 쓰지 않았습니다.
+
+`lode_checkpoint_basis`는 `status: "recovery_checkpoint_basis_inspected"`를 반환하며,
+그 `basis.basisId`를 `expected_recovery_basis_id`로 넘깁니다. 동기화 결과의 `status`는
+결과 이름 앞에 `recovery_checkpoint_sync_`를 붙인 값입니다. 예:
+`recovery_checkpoint_sync_created`.
 
 변하지 않은 basis와 방향에 대한 checkpoint identity는 결정론적입니다. ledger 게시
 전, ledger 게시 후 Session pointer 게시 전, pointer 게시 후의 재시도는 두 번째 ledger

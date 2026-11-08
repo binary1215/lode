@@ -89,6 +89,10 @@ tool을 호출하고, 해결되지 않은 중요한 선택지만 질문한 다�
 - 명시적이며 evidence-linked candidate 결정을 위한 `lode_onboarding_review`
 - 파생되고 복구 가능한 문서 view를 위한 `lode_markdown_projection_build`
 
+`profile: "core"`로 호출한 `lode_project_initialize_or_resume`(CLI `init --profile core`)는
+`status: "core_ready"`와 `nextAction.id: "work_directly"`를 반환합니다. 사용자의
+작업을 그대로 계속합니다.
+
 Skill은 두 번째 온보딩 protocol을 만들지 않습니다. provider Lode는 현재 repository
 evidence를 검사하고 typed `semantic_proposal`을 작성할 수 있지만, Core가 이를 검증하고
 gate하며 사용자가 여전히 ReviewDecision을 소유합니다. Skill은 사용자 ReviewDecision을 추론하거나,

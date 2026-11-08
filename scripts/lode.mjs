@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
+import { callRegistered, registeredCommand } from "./lib/operation-registry.mjs";
 import { commandEntry, isManagedMutation, requireOperationSurface, requireSurface } from "./lib/managed-maintenance-surface.mjs";
 import { inspectProject, inspectRuntimeAdapters } from "./lib/lode-core.mjs";
 import {
@@ -629,6 +630,8 @@ async function runRoutedCommand(
   const { surface } = entry;
   const { command, root, options } = parse(entry.argv);
   requireOperationSurface(command, surface);
+  const registered = registeredCommand(command);
+  if (registered) return await callRegistered(registered, registered.cli.args({ root, options, inputJson, onProcess, workerJobSupervisor }));
   if (command === "help" || command === "--help" || command === "-h") return usage({ surface });
   if (command === "help-all") return usage({ all: true, surface });
   if (command === "--version" || command === "version") return { name: ARTIFACT_COMPOSITION.pluginName, version: packageMetadata.version };
@@ -771,7 +774,6 @@ async function runRoutedCommand(
   }
   if (command === "runtime-invocation-read")
     return await preparedRuntimeRead(root, readRuntimeInvocationAuthorization({ root, authorizationId: options.authorization }));
-  if (command === "worker-reconcile") return reconcileWorkerMember({ root, taskKey: options["task-key"] });
   if (command === "worker-prepare") {
     const allowed = new Set([
       "input",
@@ -818,14 +820,6 @@ async function runRoutedCommand(
       { host: workerJobHost, supervisorSelection: workerJobSupervisor, onProcess },
     );
   }
-  if (command === "worker-job-status")
-    return readBoundedWorkerJob({ root, authorizationId: options.authorization }, { onProcess, inspectorSelection: workerJobSupervisor });
-  if (command === "worker-job-patch")
-    return readBoundedWorkerPatch({ root, authorizationId: options.authorization }, { onProcess, inspectorSelection: workerJobSupervisor });
-  if (command === "worker-cancel")
-    return cancelBoundedWorkerJob({ root, authorizationId: options.authorization }, { onProcess, inspectorSelection: workerJobSupervisor });
-  if (command === "worker-job-reconcile")
-    return reconcileBoundedWorkerJob({ root, authorizationId: options.authorization }, { onProcess, inspectorSelection: workerJobSupervisor });
   if (command === "worker-integrate") {
     const input = validateWorkerIntegrationRequest(inputJson(options, "Worker integration"));
     return await operateWorkerIntegration(input, { root, onProcess, storage: resolveProjectStorage(root) });
@@ -867,14 +861,7 @@ async function runRoutedCommand(
     requireRuntimeSurface(command, surface, root, authorization);
     return applyRuntimeRunResult({ root, authorizationId: options.authorization, storage: resolveProjectStorage(root) });
   }
-  if (command === "worker-dispatch") return createBoundedWorkerDispatch({ root, authorizationId: options.authorization, role: options.role });
   if (command === "worker-read") return readBoundedWorkerDispatch({ root, authorizationId: options.authorization });
-  if (command === "worker-wait")
-    return await waitForBoundedWorkerDispatch({
-      root,
-      authorizationId: options.authorization,
-      timeoutMs: options["wait-timeout-ms"] == null ? 0 : Number(options["wait-timeout-ms"]),
-    });
   if (command === "worker-execute") {
     const input = options.input ? inputJson(options, "Bounded worker execution") : {};
     const unexpected = Object.keys(input).filter((key) => key !== "sessionRequest");
@@ -894,30 +881,6 @@ async function runRoutedCommand(
           },
         }),
     );
-  }
-  if (command === "worker-apply") return applyBoundedWorkerDispatchResult({ root, authorizationId: options.authorization });
-  if (command === "worker-wave-create") {
-    const input = inputJson(options, "Bounded worker wave");
-    const unexpected = Object.keys(input).filter((key) => key !== "authorizationIds");
-    if (unexpected.length) throw new Error(`Bounded worker wave contains unsupported fields: ${unexpected.sort().join(", ")}`);
-    return createBoundedWorkerWave({ root, authorizationIds: input.authorizationIds });
-  }
-  if (command === "worker-wave-read") return readBoundedWorkerWave({ root, waveId: options.wave });
-  if (command === "worker-wave-seal") return sealBoundedWorkerWave({ root, waveId: options.wave });
-  if (command === "worker-wave-status") return readBoundedWorkerWaveStatus({ root, waveId: options.wave });
-  if (command === "worker-wave-results") return readBoundedWorkerWaveResults({ root, waveId: options.wave });
-  if (command === "worker-wave-wait")
-    return await waitForBoundedWorkerWave({
-      root,
-      waveId: options.wave,
-      timeoutMs: options["wait-timeout-ms"] == null ? 0 : Number(options["wait-timeout-ms"]),
-    });
-  if (command === "worker-wave-abandon") {
-    const input = inputJson(options, "Bounded worker wave abandonment");
-    const allowed = new Set(["waveId", "reasonCode", "reasonSummary"]);
-    const unexpected = Object.keys(input).filter((key) => !allowed.has(key));
-    if (unexpected.length) throw new Error(`Bounded worker wave abandonment contains unsupported fields: ${unexpected.sort().join(", ")}`);
-    return abandonBoundedWorkerWave({ root, waveId: input.waveId, reasonCode: input.reasonCode, reasonSummary: input.reasonSummary || "" });
   }
   if (command === "onboarding-start") return await startOnboarding({ ...optionalInputJson(options, "Onboarding start"), root });
   if (command === "onboarding-semantic-refresh") {
