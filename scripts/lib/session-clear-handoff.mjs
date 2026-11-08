@@ -1,14 +1,14 @@
 // P5 carrier continuity only. No P2 direction, new logical Session, approval,
 // task replay or last/recent-caller search can be supplied by this cache.
 import fs from "node:fs";
-import crypto from "node:crypto";
 import path from "node:path";
 import { resolveProjectStorage, formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { resolveRuntimeOperationalStateRoot } from "./runtime-execution-lease.mjs";
 import { safeSessionPath } from "./session-paths.mjs";
 import { withLocalMutation, withProjectMutation } from "./project-mutation-lock.mjs";
-import { atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { createSessionHostAdapter } from "./session-host-adapter.mjs";
+import { sha256Hex } from "./core/digest.mjs";
 
 // Finite slots and the existing transient correlation window. Expiry never
 // supplies a continuity proof; a pending exact old clear is still required.
@@ -16,14 +16,10 @@ const SLOTS = 64,
   MAX_BYTES = 128 * 1024,
   MAX_HINT_BYTES = 8192,
   TTL_MS = 600_000;
-const sha = (value) =>
-  crypto
-    .createHash("sha256")
-    .update(typeof value === "string" ? value : JSON.stringify(value))
-    .digest("hex");
+const sha = (value) => sha256Hex(typeof value === "string" ? value : JSON.stringify(value));
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const id = (value) => typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\u0000-\u001f\u007f]/u.test(value);
-const digest = (value) => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+const isDigest = (value) => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 const fail = () => {
   throw Object.assign(new Error("Optional clear continuity is unavailable."), { code: "NATIVE_CLEAR_HANDOFF_UNAVAILABLE" });
 };
@@ -37,7 +33,7 @@ const instanceKey = (value) => [value.platform, value.environment, value.pid, va
 const validInstance = (value) =>
   value &&
   ["linux", "win32"].includes(value.platform) &&
-  digest(value.environment) &&
+  isDigest(value.environment) &&
   Number.isSafeInteger(value.pid) &&
   value.pid > 0 &&
   value.pid <= 0xffffffff &&
@@ -48,7 +44,7 @@ const mapping = (value) =>
   /^session-[a-f0-9-]{36}$/iu.test(value.sessionId || "") &&
   Number.isSafeInteger(value.revision) &&
   value.revision > 0 &&
-  digest(value.bindingDigest);
+  isDigest(value.bindingDigest);
 const mappingRef = (value) => ({ status: value.status, sessionId: value.sessionId, revision: value.revision, bindingDigest: value.bindingDigest });
 const result = (status) => ({
   status,
@@ -106,15 +102,15 @@ function validateHint(hint, loc) {
     !fields(hint.oldMapping, ["status", "sessionId", "revision", "bindingDigest"]) ||
     !mapping(hint.oldMapping) ||
     !fields(hint.endRow, ["key", "sequence", "observationDigest"]) ||
-    !digest(hint.endRow.key) ||
-    !digest(hint.endRow.observationDigest) ||
+    !isDigest(hint.endRow.key) ||
+    !isDigest(hint.endRow.observationDigest) ||
     !Number.isSafeInteger(hint.endRow.sequence) ||
     hint.endRow.sequence < 1 ||
     !Number.isSafeInteger(hint.createdAt) ||
     !Number.isSafeInteger(hint.expiresAt) ||
     hint.expiresAt !== hint.createdAt + TTL_MS ||
     !["pending", "consumed", "ambiguous"].includes(hint.state) ||
-    !digest(hintDigest) ||
+    !isDigest(hintDigest) ||
     sha(body) !== hintDigest
   )
     fail();
@@ -138,7 +134,7 @@ function readHints(loc) {
     !same(cache.owner, loc.owner) ||
     !Array.isArray(cache.rows) ||
     cache.rows.length > SLOTS ||
-    !digest(cacheDigest) ||
+    !isDigest(cacheDigest) ||
     sha(body) !== cacheDigest
   )
     fail();

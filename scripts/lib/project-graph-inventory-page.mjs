@@ -2,7 +2,6 @@
 // Explorer, authority store, or success cache. A cursor is only an untrusted seek.
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import {
   readGraphProject,
   safeGraphFile,
@@ -14,6 +13,7 @@ import {
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { publicToolName } from "./lode-artifact-composition.mjs";
 import { formatMcpToolContent } from "./cli-presentation.mjs";
+import { createHasher } from "./core/digest.mjs";
 
 // Existing inventory byte/record/depth bounds; a metadata page does not raise
 // them. 512 KiB bounds BOTH MCP text and structured JSON, not Capsule tokens.
@@ -350,7 +350,7 @@ export function readProjectGraphInventoryPage(options, normalized) {
       counters.attemptedBodies++;
       fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
       if (!same(witness(before), witness(fs.fstatSync(fd, { bigint: true })))) fail("PROJECT_GRAPH_INVENTORY_FILE_CHANGED");
-      const digest = crypto.createHash("sha256"),
+      const digest = createHasher("sha256"),
         buffer = Buffer.allocUnsafe(64 * 1024);
       while (bytes < size) {
         const length = Math.min(buffer.length, size - bytes);

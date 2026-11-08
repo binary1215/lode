@@ -2,7 +2,7 @@ import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-
 import { formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
 import { readChangeSet } from "./change-set.mjs";
 import { readLineageArtifact } from "./execution-lineage.mjs";

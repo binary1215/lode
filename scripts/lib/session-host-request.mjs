@@ -1,7 +1,7 @@
-import crypto from "node:crypto";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lode-artifact-composition.mjs";
 import { OPERATION_DESCRIPTORS, resolveOperation } from "./lode-operation-contract.mjs";
 import { sessionCallRequiresBinding } from "./session-routing.mjs";
+import { sha256Hex } from "./core/digest.mjs";
 
 export const SESSION_HOST_REQUEST_HELPER = publicToolName("head_session_host_request_prepare");
 const namespaces = () => [ARTIFACT_COMPOSITION.serverName, `plugin_${ARTIFACT_COMPOSITION.pluginName}_${ARTIFACT_COMPOSITION.serverName}`];
@@ -51,7 +51,7 @@ const canonical = (value) =>
           .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
           .join(",")}}`
       : JSON.stringify(value);
-export const hostRequestDigest = (value) => crypto.createHash("sha256").update(canonical(value)).digest("hex");
+export const hostRequestDigest = (value) => sha256Hex(canonical(value));
 const fail = (code) => {
   throw Object.assign(new Error("Native request correlation is unavailable."), { code });
 };

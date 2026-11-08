@@ -1,9 +1,11 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { resolveLocalGitRepository, LOCAL_GIT_DISCOVERY_ARGS, localGitReadEnvironment } from "./local-git-repository.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const GIT_HISTORY_ADAPTER_VERSION = "0.2.0";
 export const GIT_DECISION_HISTORY_VERSION = "0.2.0";
@@ -15,29 +17,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const REQUIRED_METHODS = ["describe", "readHistory"];
 const READABLE_GIT_HISTORY_ADAPTER_VERSIONS = new Set(["0.1.0", GIT_HISTORY_ADAPTER_VERSION]);
 
-const fail = (message, code = "GIT_HISTORY_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
+const fail = failWith("GIT_HISTORY_ERROR");
 
 function normalizedGitReference(value) {
   const ref = String(value || "")

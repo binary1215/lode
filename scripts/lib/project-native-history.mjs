@@ -15,10 +15,8 @@ import {
   projectNativeTransferSummary,
   assertProjectNativeTransferCurrent,
 } from "./project-native-transfer.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const unavailable = (offline) => ({
   status: "native-offline-window-unavailable",
   reason: offline.status,

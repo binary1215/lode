@@ -7,7 +7,7 @@ import { resolveProjectStorage, assertProjectStorageUnchanged, formatForVerified
 import { ARTIFACT_COMPOSITION } from "./lode-artifact-composition.mjs";
 import { portableMcpDocument } from "./portable-client-command.mjs";
 import { sessionStatePath, defaultSessionStatePath } from "./session-routing.mjs";
-import { atomicWriteArtifact, atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicWriteArtifact, atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
 import { pluginMcpServesProject } from "./plugin-mcp-composition.mjs";
 import { noteProjectGraphChange } from "./discovery-index.mjs";
@@ -19,16 +19,14 @@ import { buildRuntimeVersionEvidence } from "./runtime-machine-execution.mjs";
 import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "./runtime-protocol-evidence.mjs";
 
 import { SCHEMA_VERSION, SUPPORTED_RUNTIMES } from "./core-contract.mjs";
+import { sha256Hex as sha256 } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 export { SCHEMA_VERSION, SUPPORTED_RUNTIMES, coreContract } from "./core-contract.mjs";
 
-const fail = (message, code = "HEAD_CORE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("HEAD_CORE_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const now = () => new Date().toISOString();
 
 function canonicalDirectory(value) {
@@ -40,7 +38,7 @@ function canonicalDirectory(value) {
 
 function assertNoSymlinkAncestors(root, candidate) {
   const relative = path.relative(root, candidate);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+  if (escapesRoot(relative)) {
     fail(`Managed path escapes the project root: ${candidate}`, "PATH_ESCAPE");
   }
   let current = root;

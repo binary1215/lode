@@ -5,17 +5,16 @@ import path from "node:path";
 import os from "node:os";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
 
 export const REFRESH_WRITER_LEASE_VERSION = "0.1.0";
 
-const fail = (message, code = "REFRESH_WRITER_LEASE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("REFRESH_WRITER_LEASE_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-const HOST = crypto.createHash("sha256").update(os.hostname()).digest("hex").slice(0, 16);
+const HOST = sha256Hex(os.hostname()).slice(0, 16);
 const PUBLICATION_DELAYS_MS = [10, 20, 40, 80];
 const pause = new Int32Array(new SharedArrayBuffer(4));
 
@@ -109,7 +108,7 @@ function publishOwnedDirectory(staging, directory, expectedBytes) {
     verifyPublicationDirectory(staging, expectedBytes);
     if (statOrAbsent(directory)) throw Object.assign(new Error("Refresh writer lock exists."), { code: "EEXIST" });
     try {
-      fs.renameSync(staging, directory);
+      renamePath(staging, directory);
       return;
     } catch (error) {
       firstError ||= error;

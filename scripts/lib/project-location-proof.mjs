@@ -1,10 +1,9 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { PORTABLE_PROJECT_LOCATION_KIND, verifyPortableProjectLocation } from "./project-portable-proof.mjs";
 import { COPIED_PROJECT_LOCATION_KIND, verifyCopiedProjectLocation } from "./project-copy-proof.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
 
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const fail = () => {
   throw Object.assign(new Error("Project location history does not preserve its original identity."), { code: "PROJECT_LOCATION_IDENTITY_MISMATCH" });
 };

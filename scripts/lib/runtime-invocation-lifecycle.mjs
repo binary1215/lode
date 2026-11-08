@@ -1,4 +1,8 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
@@ -65,28 +69,10 @@ const DEFAULT_LIMITS = Object.freeze({
   maxEventBytes: 2 * 1024 * 1024,
 });
 
-const fail = (message, code = "RUNTIME_INVOCATION_LIFECYCLE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("RUNTIME_INVOCATION_LIFECYCLE_ERROR");
 
 const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
-function canonicalValue(value) {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort(compareText)
-        .map((key) => [key, canonicalValue(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonicalValue(value));
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 function identify(payload, prefix, idKey, hashKey) {
@@ -261,17 +247,6 @@ export function verifyRuntimeStructuredResult(document, { scopeKind = null, auth
 
 function realRoot(root) {
   return fs.realpathSync(path.resolve(root));
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
 }
 
 function readJson(file, label) {

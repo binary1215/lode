@@ -12,16 +12,15 @@ import {
   noteCopiedGitSnapshotRead,
 } from "./project-storage-format.mjs";
 import { safeSnapshotPath, decodeSnapshotBytes, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { withProjectMutationAsync } from "./project-mutation-lock.mjs";
 import { createSnapshotBatchDecoder } from "./git-snapshot-batch.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
 
 // Git uses NUL on Windows and /dev/null elsewhere.
 const gitNull = process.platform === "win32" ? "NUL" : "/dev/null";
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const fail = (code, message = code) => {
-  throw Object.assign(new Error(message), { code });
-};
 const ID = /^(world-model|graph-snapshot)-[a-f0-9]{24}$/;
 const OID = /^[a-f0-9]{64}$/;
 const MAX = SNAPSHOT_STORAGE_LIMITS.decodedBytes;
@@ -267,7 +266,7 @@ export class GitSnapshotStore {
         await this.invoke(["init", "--bare", "--object-format=sha256", "--template=", staging], context, { maxBytes: 8192 });
         this.ignorePolicy = ensureOwnedSnapshotStoreIgnore({ root: this.root, storage: this.storage, directory: staging });
         atomicCreateArtifact(path.join(staging, "lode-owner.json"), JSON.stringify(this.owner) + "\n");
-        fs.renameSync(staging, this.directory);
+        renamePath(staging, this.directory);
       } finally {
         if (fs.existsSync(staging)) {
           safeSnapshotPath(this.root, staging);

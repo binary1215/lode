@@ -1,6 +1,7 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { createHasher } from "./core/digest.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 const MAX_SOURCE_BYTES = 64 * 1024 * 1024;
 
@@ -8,7 +9,7 @@ function sourceFile(projectRoot, reference) {
   const root = fs.realpathSync(path.resolve(projectRoot));
   const file = path.resolve(root, ...reference.split("/"));
   const relative = path.relative(root, file);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return { state: "not-assessed", reason: "path-outside-project" };
+  if (escapesRoot(relative)) return { state: "not-assessed", reason: "path-outside-project" };
   let current = root;
   for (const segment of relative.split(path.sep).filter(Boolean)) {
     current = path.join(current, segment);
@@ -18,7 +19,7 @@ function sourceFile(projectRoot, reference) {
   const stat = fs.statSync(file);
   if (!stat.isFile()) return { state: "not-assessed", reason: "source-not-regular-file" };
   if (stat.size > MAX_SOURCE_BYTES) return { state: "not-assessed", reason: "source-exceeds-bounded-read-limit" };
-  const hash = crypto.createHash("sha256");
+  const hash = createHasher("sha256");
   const descriptor = fs.openSync(file, "r");
   const buffer = Buffer.allocUnsafe(64 * 1024);
   try {

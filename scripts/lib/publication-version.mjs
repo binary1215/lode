@@ -1,8 +1,8 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { verifyCodexMarketplaceSnapshot } from "./codex-marketplace.mjs";
 import { verifyClaudeMarketplaceSnapshot } from "./claude-marketplace.mjs";
+import { createHasher, sha256Hex as sha } from "./core/digest.mjs";
 
 export const BUILD_RECIPE = ".github/workflows/go-worker-build-release.yml";
 export const RELEASE_ASSETS = ["darwin-amd64", "darwin-arm64", "linux-amd64", "linux-arm64", "windows-amd64"]
@@ -11,9 +11,6 @@ export const RELEASE_ASSETS = ["darwin-amd64", "darwin-arm64", "linux-amd64", "l
   .sort();
 function fail(message) {
   throw new Error(`PUBLICATION_VERSION_CONFLICT: ${message}`);
-}
-function sha(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
 }
 export { comparePublicationVersions } from "./semantic-version.mjs";
 import { comparePublicationVersions, versionParts } from "./semantic-version.mjs";
@@ -142,8 +139,7 @@ export function publicationGithub({ repository, token = "", fetchImpl = fetch })
       const item = await get(`contents/${BUILD_RECIPE}?ref=${commit}`);
       if (!item || item.encoding !== "base64" || !item.content) fail("Publication equivalence unknown: build recipe unavailable.");
       const bytes = Buffer.from(item.content, "base64");
-      const blob = crypto
-        .createHash("sha1")
+      const blob = createHasher("sha1")
         .update(Buffer.concat([Buffer.from(`blob ${bytes.length}\0`), bytes]))
         .digest("hex");
       if (bytes.length !== item.size || blob !== item.sha) fail("Build recipe proof mismatch.");

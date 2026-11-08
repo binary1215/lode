@@ -1,12 +1,10 @@
 import path from "node:path";
-import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { iterateSqliteStorageRows } from "./native-sqlite-values.mjs";
 import { inspectCodexNativeDatabase, codexNativePortabilityProfile } from "./codex-native-portability.mjs";
+import { createHasher } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 const profile = codexNativePortabilityProfile().databases.find((db) => db.file === "thread_history_1.sqlite");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 export const nativeSqlitePath = (file) => (process.platform === "win32" ? path.toNamespacedPath(file) : file);
 
 // A streamed logical digest of the complete before-history DB. No row values
@@ -14,7 +12,7 @@ export const nativeSqlitePath = (file) => (process.platform === "win32" ? path.t
 // column identifiers are used; SQL/DDL from a payload is never executed.
 export function codexNativeHistoryDigest(database, basis, { signal } = {}) {
   inspectCodexNativeDatabase(database, { ...basis, file: "thread_history_1.sqlite" });
-  const digest = crypto.createHash("sha256").update("native-before-history-raw-cell-v1\n");
+  const digest = createHasher("sha256").update("native-before-history-raw-cell-v1\n");
   for (const table of profile.tables) {
     const columns = table.columns.map((column) => column.name),
       orderBy = table.columns

@@ -1,4 +1,5 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { fail } from "./core/errors.mjs";
 const lineageFormat = (record) => familyFormatForOriginal({ sessionIdentity: true }, record);
 import fs from "node:fs";
 import path from "node:path";
@@ -7,9 +8,6 @@ import { buildWorkspaceHostProbe, validateWorkspaceHostAdapter, verifiedWorkspac
 export const WORKSPACE_HOST_COORDINATION_VERSION = "0.2.0";
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const RUNTIMES = new Set(["claude", "codex", "opencode"]);
-const fail = (message, code) => {
-  throw Object.assign(new Error(message), { code });
-};
 const requiredId = (value) => {
   if (typeof value !== "string" || !ID.test(value)) fail("Host identity is invalid.", "INVALID_WORKSPACE_HOST_IDENTITY");
   return value;

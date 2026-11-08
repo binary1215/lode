@@ -1,14 +1,11 @@
 import { inspectProject } from "./head-core.mjs";
 import { inspectOptionalOnboarding } from "./onboarding.mjs";
 import { inspectWorldGraphProjection, inspectWorldMarkdownProjection } from "./world-model.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const ONBOARDING_CONVERSATION_PROTOCOL_VERSION = "0.1.0";
 
-const fail = (message, code = "ONBOARDING_CONVERSATION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("ONBOARDING_CONVERSATION_ERROR");
 
 function boundedLimit(value) {
   const limit = value == null ? 25 : Number(value);

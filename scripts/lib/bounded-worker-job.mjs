@@ -1,10 +1,11 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { withSessionRoute } from "./session-routing.mjs";
@@ -40,11 +41,8 @@ const ownerFile = path.join(pluginRoot, "scripts", "worker-job-owner.mjs");
 const codexRunnerFile = path.join(pluginRoot, "scripts", "lib", "runtime-codex-worker-runner.mjs");
 const codexProposalRunnerFile = path.join(pluginRoot, "scripts", "lib", "runtime-codex-proposal-runner.mjs");
 const hosts = new WeakMap();
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const encode = (value) => Buffer.from(JSON.stringify(value));
-const fail = (message, code = "WORKER_JOB_CONFLICT") => {
-  throw Object.assign(new Error(message), { code });
-};
+const fail = failWith("WORKER_JOB_CONFLICT");
 const nativeLaunchPath = (file) => (process.platform === "win32" ? path.toNamespacedPath(file) : file);
 const operationalEnvironmentNames = [RUNTIME_OPERATIONAL_STATE_CANONICAL_ENV, RUNTIME_OPERATIONAL_STATE_ENV];
 const operationalEnvironmentName = (key) => operationalEnvironmentNames.find((name) => name.toLowerCase() === key.toLowerCase());

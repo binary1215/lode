@@ -1,16 +1,15 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { createHasher, sha256Hex as digest } from "./core/digest.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 // Host-local bounded provider output. This is not a transcript in project Canon,
 // an authorization, a lease release, or proof that the owner has exited.
-const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const fail = (message) => {
   throw Object.assign(new Error(message), { code: "INVALID_RUNTIME_OUTPUT_SPOOL" });
 };
@@ -129,7 +128,7 @@ export function openRuntimeOutputSpool({ operationalRoot, authorization, callerF
   let closed = false;
   try {
     for (const name of ["stdout", "stderr"])
-      streams[name] = { fd: fs.openSync(path.join(directory, `${name}.bin`), "wx", 0o600), bytes: 0, hash: crypto.createHash("sha256"), truncated: false };
+      streams[name] = { fd: fs.openSync(path.join(directory, `${name}.bin`), "wx", 0o600), bytes: 0, hash: createHasher("sha256"), truncated: false };
   } catch (error) {
     for (const stream of Object.values(streams)) fs.closeSync(stream.fd);
     throw error;

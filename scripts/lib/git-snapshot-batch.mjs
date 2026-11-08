@@ -1,4 +1,4 @@
-import crypto from "node:crypto";
+import { createHasher } from "./core/digest.mjs";
 
 const fail = (code, extra = {}) => {
   throw Object.assign(new Error(code), { code, ...extra });
@@ -43,7 +43,7 @@ export function createSnapshotBatchDecoder(requests) {
         body = { size };
         remaining = size;
         chunks = [];
-        digest = crypto.createHash("sha256").update(Buffer.from(request.type + " " + size + "\0"));
+        digest = createHasher("sha256").update(Buffer.from(request.type + " " + size + "\0"));
       }
       if (remaining) {
         const count = Math.min(remaining, bytes.length - offset),

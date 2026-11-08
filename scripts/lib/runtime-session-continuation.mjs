@@ -1,36 +1,19 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import path from "node:path";
 import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import { restoreSessionFromArtifacts } from "./session-recovery.mjs";
 
 export const RUNTIME_SESSION_CONTINUATION_VERSION = "0.1.0";
 
-const fail = (message, code = "RUNTIME_SESSION_CONTINUATION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonical(value));
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
+const fail = failWith("RUNTIME_SESSION_CONTINUATION_ERROR");
 
 function runtimeName(value) {
   const runtime = String(value || "")

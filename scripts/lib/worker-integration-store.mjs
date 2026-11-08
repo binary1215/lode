@@ -2,22 +2,12 @@ import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-stora
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { sha256Hex as integrationDigest } from "./core/digest.mjs";
+import { canonicalJson as integrationJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
 
 const fail = (message) => {
   throw Object.assign(new Error(message), { code: "WORKER_INTEGRATION_STORAGE_CONFLICT" });
 };
-export const integrationDigest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const canonical = (value) =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((key) => [key, canonical(value[key])]),
-        )
-      : value;
-export const integrationJson = (value) => JSON.stringify(canonical(value));
 
 // No arbitrary caller path: integration evidence lives beneath the exact project.
 // These checks are tamper observations, not an OS security sandbox or atomic CAS.
@@ -150,3 +140,5 @@ export function publishIntegrationJson(file, value) {
   fs.unlinkSync(pending);
   return true;
 }
+
+export { integrationJson, integrationDigest };

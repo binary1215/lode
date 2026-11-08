@@ -29,6 +29,7 @@ import {
   verifyOwnershipBinding,
 } from "./lsp-host-protocol.mjs";
 import { spawnSupervisedProcess } from "./runtime-process-supervisor.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 const moduleFile = fileURLToPath(import.meta.url);
 const REAL_PACKAGE_TRUST = Object.freeze({
@@ -98,7 +99,7 @@ function safeOwnedRoot(qaRoot, ownedRoot) {
   const root = fs.realpathSync(path.resolve(qaRoot));
   const candidate = path.resolve(ownedRoot);
   const relative = path.relative(root, candidate);
-  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+  if (!relative || escapesRoot(relative)) {
     throw protocolError("invalid-input", "Owned LSP temporary root escaped or equaled its QA root.");
   }
   return { root, candidate };
@@ -641,7 +642,7 @@ function verifyRealPackage(packageProfile, expectedName) {
     seen.add(record.path);
     const file = path.resolve(root, ...record.path.split("/"));
     const relative = path.relative(root, file);
-    if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    if (!relative || escapesRoot(relative)) {
       throw protocolError("profile-drift", "Real package file escaped its root.");
     }
     verifiedRegularFile(file, record.sha256, record.size);
@@ -753,7 +754,7 @@ function createRealAdmission(snapshotRoot, descriptor) {
       const file = path.join(root, document.path);
       const parent = path.dirname(file);
       const parentRelative = path.relative(root, parent);
-      if (parentRelative === ".." || parentRelative.startsWith(`..${path.sep}`) || path.isAbsolute(parentRelative)) {
+      if (escapesRoot(parentRelative)) {
         throw protocolError("invalid-input", "Real snapshot document parent escaped its owned root.");
       }
       fs.mkdirSync(parent, { recursive: true });

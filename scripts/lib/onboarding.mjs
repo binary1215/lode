@@ -1,5 +1,4 @@
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact, projectBundleOmittedOriginal } from "./project-storage-format.mjs";
@@ -36,6 +35,10 @@ import { readRepositorySourceScope, writeRepositorySourceScope } from "./reposit
 import { withProjectMutation, withProjectMutationAsync } from "./project-mutation-lock.mjs";
 import { historicalEntryForPath, readCommittedHistoricalArtifactBoundary } from "./historical-artifact-boundary-store.mjs";
 import { publishHistoricalContinuityReceipt } from "./historical-continuity.mjs";
+import { sha256Hex } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 export const ONBOARDING_CANDIDATE_VERSION = "0.4.0";
 export const ONBOARDING_REVIEW_VERSION = "0.1.0";
@@ -55,11 +58,7 @@ const ARRAY_BY_KIND = Object.freeze({
   Decision: "decisions",
 });
 
-const fail = (message, code = "ONBOARDING_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("ONBOARDING_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const now = () => new Date().toISOString();
@@ -94,17 +93,6 @@ function assertRecordFields(record, allowed, label) {
   if (unexpected.length) fail(`${label} contains unsupported fields: ${unexpected.sort().join(", ")}`, "UNSUPPORTED_ONBOARDING_FIELD");
 }
 
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
-}
-
 function readJson(file, label, code = "INVALID_ONBOARDING_ARTIFACT") {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -125,7 +113,7 @@ function relativeFile(projectRoot, relative) {
   const root = path.resolve(projectRoot);
   const candidate = path.resolve(root, ...relative.split("/"));
   const fromRoot = path.relative(root, candidate);
-  if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot)) {
+  if (escapesRoot(fromRoot)) {
     fail(`Onboarding artifact path escapes the project root: ${relative}`, "ONBOARDING_PATH_ESCAPE");
   }
   let current = root;
@@ -443,7 +431,7 @@ function candidateBytes(projectRoot, id, storageOwner) {
   return fs.readFileSync(file);
 }
 
-const rawHash = (bytes) => (bytes === null ? null : crypto.createHash("sha256").update(bytes).digest("hex"));
+const rawHash = (bytes) => (bytes === null ? null : sha256Hex(bytes));
 
 function preserveCandidateBytes(projectRoot, id, bytes, storageOwner) {
   if (bytes === null) return null;

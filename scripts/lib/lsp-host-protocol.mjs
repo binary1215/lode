@@ -1,4 +1,5 @@
-import crypto from "node:crypto";
+import { sha256Hex as sha256 } from "./core/digest.mjs";
+import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
 
 export const LSP_HOST_PROTOCOL_VERSION = "0.1.0";
 export const LSP_HOST_NORMALIZER_VERSION = "0.1.0";
@@ -94,21 +95,6 @@ const stageSet = new Set(LSP_HOST_STAGES);
 const reasonSet = new Set(LSP_HOST_REASONS);
 const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const fatalUtf8 = new TextDecoder("utf-8", { fatal: true });
-export const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-export function canonicalValue(value) {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort(compareText)
-        .map((key) => [key, canonicalValue(value[key])]),
-    );
-  }
-  return value;
-}
-
-export const canonicalJson = (value) => JSON.stringify(canonicalValue(value));
 
 export function jsonDepth(value) {
   const stack = [{ value, depth: 1 }];
@@ -661,3 +647,5 @@ export function terminalResult({ status, reason, stage, failureStage = null, pro
     ...LSP_HOST_REAL_GATE,
   });
 }
+
+export { canonicalValue, canonicalJson, sha256 };

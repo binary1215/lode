@@ -2,7 +2,7 @@ import { formatForVerifiedOwner, resolveProjectStorage } from "./project-storage
 import { publicToolName } from "./lode-artifact-composition.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { artifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
 import { safeSessionPath, sessionStatePath, withSessionRoute, listLodeSessions } from "./session-routing.mjs";

@@ -1,6 +1,4 @@
-const fail = (code, message = code) => {
-  throw Object.assign(new Error(message), { code });
-};
+import { failCode as fail } from "./core/errors.mjs";
 const shape = (value, fields) =>
   value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join(",") === fields.slice().sort().join(",");
 const integer = (value) =>

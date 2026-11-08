@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
 import { captureProviderNativeHistory } from "./provider-native-history-payload.mjs";
 import { inspectOpenCodeHistoryOriginal, deriveOpenCodeHistoryImport } from "./provider-native-history-format.mjs";

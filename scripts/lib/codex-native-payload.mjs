@@ -1,16 +1,13 @@
 import { verifySelectedCodexStateEvidence } from "./codex-native-state-evidence.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { copiedProjectFile, inspectCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { readSnapshotFile, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 import { verifySelectedCodexHistory, codexNativePortabilityProfile } from "./codex-native-portability.mjs";
 import { inspectCodexRolloutOriginal } from "./codex-native-rollout.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const profile = codexNativePortabilityProfile();
 function read(root, relative) {
   const file = copiedProjectFile(root, relative),

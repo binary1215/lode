@@ -1,28 +1,14 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256CanonicalJson as hash } from "./core/digest.mjs";
+import { canonicalValue as canonical } from "./core/canonical-json.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-const canonical = (v) =>
-  Array.isArray(v)
-    ? v.map(canonical)
-    : v && typeof v === "object"
-      ? Object.fromEntries(
-          Object.keys(v)
-            .sort()
-            .map((key) => [key, canonical(v[key])]),
-        )
-      : v;
-const hash = (v) =>
-  crypto
-    .createHash("sha256")
-    .update(JSON.stringify(canonical(v)))
-    .digest("hex");
 const fail = (message) => {
   throw Object.assign(new Error(message), { code: "WORKER_MEMBER_AUTHORIZATION_CONFLICT" });
 };

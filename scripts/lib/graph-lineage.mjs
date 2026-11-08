@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { boundedPossibleMoves } from "./lineage-moves.mjs";
 import { inspectProject } from "./lode-core.mjs";
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
@@ -8,28 +7,15 @@ import { createWorldModelStoreAdapter } from "./world-model-store.mjs";
 import { inspectWorldModel, readWorldModel, readWorldModelSnapshot } from "./world-model.mjs";
 import { inspectProductPolicyEvidenceCurrentness } from "./product-policy-evidence.mjs";
 import { readProductPolicyCandidate } from "./product-policy.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const GRAPH_LINEAGE_VIEW_VERSION = "0.2.0";
 const PAGE_LIMIT_MAX = 100;
 const TRACE_ARTIFACT_LIMIT = 128;
 
-const fail = (message, code = "GRAPH_LINEAGE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-const canonicalJson = (value) => JSON.stringify(canonical(value));
+const fail = failWith("GRAPH_LINEAGE_ERROR");
 
 function authority() {
   return {

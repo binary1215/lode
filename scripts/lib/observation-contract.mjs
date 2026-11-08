@@ -1,6 +1,8 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
 import { SCHEMA_VERSION } from "./lode-core.mjs";
+import { sha256Hex } from "./core/digest.mjs";
+import { canonicalJson as observationCanonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const OBSERVATION_PROTOCOL_VERSION = "0.1.0";
 export const OBSERVATION_FORMS = Object.freeze(["event", "snapshot", "aggregate"]);
@@ -10,31 +12,10 @@ const FIELD_TYPES = new Set(["string", "stable-key", "timestamp", "sha256", "boo
 const ARRAY_ITEM_TYPES = new Set(["string", "stable-key", "timestamp", "sha256", "boolean", "integer", "nonnegative-integer", "bounded-number"]);
 const DEFAULT_STRING_MAX_BYTES = 8192;
 const MAX_PAYLOAD_BYTES = 256 * 1024;
-const fail = (message, code = "OBSERVATION_CONTRACT_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("OBSERVATION_CONTRACT_ERROR");
 
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-export function observationCanonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
 export function observationDigest(value) {
-  return crypto
-    .createHash("sha256")
-    .update(typeof value === "string" ? value : observationCanonicalJson(value))
-    .digest("hex");
+  return sha256Hex(typeof value === "string" ? value : observationCanonicalJson(value));
 }
 
 function exactFields(value, fields, label) {
@@ -558,3 +539,5 @@ export function verifyDerivedObservationRecord(document, descriptor, projectId =
     fail("DerivedObservationRecord input normalization is invalid.", "INVALID_DERIVED_OBSERVATION");
   return document;
 }
+
+export { observationCanonicalJson };

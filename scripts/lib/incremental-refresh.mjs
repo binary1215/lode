@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { readContextCapsule } from "./context-compiler.mjs";
@@ -14,6 +13,10 @@ import {
 } from "./post-refresh-projection.mjs";
 import { withRefreshWriterLease } from "./refresh-writer-lease.mjs";
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
 
 export const INCREMENTAL_REFRESH_VERSION = "0.2.0";
 const LEGACY_INCREMENTAL_REFRESH_VERSION = "0.1.0";
@@ -22,29 +25,9 @@ const RECEIPT_PATTERN = /^incremental-refresh-receipt-[a-f0-9]{24}$/;
 const SOURCE_SNAPSHOT_PATTERN = /^source-snapshot-[a-f0-9]{24}$/;
 const TRIGGER_KINDS = new Set(["manual", "filesystem", "ci", "change-set", "runtime-observation"]);
 
-const fail = (message, code = "INCREMENTAL_REFRESH_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("INCREMENTAL_REFRESH_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -60,17 +43,6 @@ function readyProject(root) {
   const inspected = inspectProject(root);
   if (inspected.status !== "ready") fail(`Project must be ready for observed-state refresh; current status: ${inspected.status}.`, "PROJECT_NOT_READY");
   return inspected;
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
 }
 
 function readJson(file, label) {

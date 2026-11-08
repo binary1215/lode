@@ -1,5 +1,8 @@
-import crypto from "node:crypto";
 import { verifyProductModelRevisionForProjection } from "./product-model-revision-verification.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 export { verifyProductModelRevisionForProjection };
 import fs from "node:fs";
 import path from "node:path";
@@ -41,29 +44,7 @@ const ARRAY_BY_KIND = Object.freeze({
   Decision: "decisions",
 });
 
-const fail = (message, code = "ONBOARDING_PROJECTION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
+const fail = failWith("ONBOARDING_PROJECTION_ERROR");
 
 function compareText(left, right) {
   const a = String(left);
@@ -357,7 +338,7 @@ function safeDirectory(projectRoot, relativeDirectory) {
   const root = path.resolve(projectRoot);
   const directory = path.resolve(root, ...relativeDirectory.split("/"));
   const relative = path.relative(root, directory);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+  if (escapesRoot(relative)) {
     fail(`Onboarding projection directory escapes the project root: ${relativeDirectory}`, "ONBOARDING_PROJECTION_PATH_ESCAPE");
   }
   let current = root;

@@ -1,5 +1,4 @@
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
-import crypto from "node:crypto";
 import { SOURCE_OBSERVATION_TYPE, DECLARATION_OBSERVATION_TYPE, sourceObservationNode, readSourceObservation } from "./source-observation.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -9,6 +8,10 @@ import { queryGraphProjection } from "./graph-projection-adapter.mjs";
 import { inspectWorldDomainFreshness, buildWorldTraversalEligibility } from "./world-model.mjs";
 import { loadObservationProjection } from "./observation-projection.mjs";
 import { readProjectDirection } from "./project-direction.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
 
 export const CONTEXT_COMPILER_VERSION = "0.23.0";
 import { CONTEXT_BUDGET_PROTOCOL_VERSION, DEFAULT_CONTEXT_BUDGET } from "./context-budget.mjs";
@@ -102,14 +105,9 @@ const KOREAN_PARTICLES = [
   "만",
 ];
 
-const fail = (message, code = "CONTEXT_COMPILER_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("CONTEXT_COMPILER_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const approxTokens = (value) => Math.ceil(String(value).length / 4);
 
 function normalizeContextBudget(value) {
@@ -122,38 +120,11 @@ function normalizeContextBudget(value) {
   };
 }
 
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-
 function readJson(file, label) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (error) {
     fail(`${label} is invalid JSON: ${error.message}`, "INVALID_CONTEXT_CANON");
-  }
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }
 }
 

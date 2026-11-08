@@ -1,14 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { prepareStructuralRelationObservationEnvelope } from "./structural-relation-observation-envelope.mjs";
+import { sha256Hex as sourceDigest, sha256Json as sourceObjectDigest } from "./core/digest.mjs";
 
 export const PYTHON_SOURCE_PROFILE = "python-ast-direct-name-1";
-export const sourceDigest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-export const sourceObjectDigest = (value) => sourceDigest(JSON.stringify(value));
 const workerPath = fileURLToPath(new URL("../python-source-worker.py", import.meta.url));
 const modulePath = fileURLToPath(import.meta.url);
 export const sourceError = (code) => Object.assign(new Error(code), { code });
@@ -454,3 +452,5 @@ export function preparePythonDeclarations({ query, sources, response, profile })
     evidenceHash: sourceObjectDigest(details),
   };
 }
+
+export { sourceDigest, sourceObjectDigest };

@@ -152,3 +152,4 @@ Thumbs.db
 !test/project-document-hierarchy.test.mjs
 !test/claude-hooks-generated.test.mjs
 !test/compare-test-baseline.test.mjs
+!test/lib-core-helpers.test.mjs

@@ -1,19 +1,16 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact, atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { copiedProjectFile, inspectCopiedProjectFiles, verifyCopiedProjectFile, validateCopiedManagedPaths } from "./project-copy-evidence.mjs";
 import { inspectProjectCopyOrigin, verifyProjectLocation, locationJournalRelative } from "./project-location-proof.mjs";
 import { inspectCopiedProjectCanon, verifyProjectMetadataOriginal } from "./project-copy-canon.mjs";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { COPIED_PROJECT_LOCATION_KIND } from "./project-copy-proof.mjs";
 import { withLocalMutation } from "./project-mutation-lock.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const read = (file) => fs.readFileSync(file);
 const decode = (bytes) => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 

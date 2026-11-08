@@ -1,9 +1,8 @@
 import { decodeSnapshotBytes } from "./snapshot-storage-codec.mjs";
-import crypto from "node:crypto";
 import { formatForVerifiedOwner, relativeProjectArtifact, resolveProjectStorage, projectLocationBasis } from "./project-storage-format.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import { atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import {
   sessionWorkPath,
@@ -15,6 +14,7 @@ import {
   MAX_REFERENCE_BYTES,
   sessionTodoDeclarations,
 } from "./session-work-evidence-original.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
 
 // A replaceable inventory of original records, not a second record store. No
 // bodies, decisions, credentials or provider handles are copied into the index.
@@ -59,7 +59,6 @@ const ONBOARDING_READER_DIRECTORIES = [
   ".head/onboarding/review-decisions",
   ".head/onboarding/product-model-revisions",
 ];
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 export function canonicalGraphJson(value) {
   const sort = (entry) =>
     Array.isArray(entry)

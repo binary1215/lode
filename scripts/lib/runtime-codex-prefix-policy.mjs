@@ -1,6 +1,6 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import fs from "node:fs";
 import {
   verifyCodexFreshProposalPolicyPlan,
@@ -13,7 +13,6 @@ import { prepareRuntimeInvocationExecution, verifyRuntimeInvocationAuthorization
 import { verifyWorkerWorkspace } from "./worker-workspace.mjs";
 
 export const CODEX_NATIVE_PREFIX_MODE = "native-prefix-patch-proposal";
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const json = (value) => JSON.stringify(value);
 const fail = () => {
   throw Object.assign(new Error("Native prefix proposal policy or controlled source changed"), { code: "CODEX_NATIVE_PREFIX_POLICY_CONFLICT" });

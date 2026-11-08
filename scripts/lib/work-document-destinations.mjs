@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { safeSessionPath } from "./session-paths.mjs";
-import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact, atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { workDocumentHash } from "./work-document-source.mjs";
 import { documentFailure } from "./work-document-store.mjs";
 

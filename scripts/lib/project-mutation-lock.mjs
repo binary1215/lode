@@ -6,6 +6,8 @@ import path from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 import { resolveProjectStorage, formatForVerifiedOwner, assertProjectStorageUnchanged } from "./project-storage-format.mjs";
+import { sha256Hex } from "./core/digest.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
 
 // Local P5 serialization only. These transient files never supply project
 // direction, survive as Canon, or lock ordinary read-only work.
@@ -14,7 +16,7 @@ const pause = new Int32Array(new SharedArrayBuffer(4));
 const WAIT_MS = 10_000;
 const READ_ATTEMPTS = 6;
 const READ_RETRY_MS = 10;
-const HOST = crypto.createHash("sha256").update(os.hostname()).digest("hex").slice(0, 16);
+const HOST = sha256Hex(os.hostname()).slice(0, 16);
 const OWNER = /^owner-([a-f0-9]{16})-([1-9][0-9]*)-([a-f0-9]{32})\.json$/;
 
 function fail(message, code = "PROJECT_MUTATION_BUSY") {
@@ -143,7 +145,7 @@ function attempt(directory) {
     // Publish a fully populated directory. The visible lock never has a gap
     // without owner identity, even when the publishing process exits abruptly.
     publishing = true;
-    fs.renameSync(staging, directory);
+    renamePath(staging, directory);
     return owner;
   } catch (error) {
     if (error.code === "ENOENT" || (publishing && new Set(["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"]).has(error.code)) || fs.existsSync(directory)) return null;

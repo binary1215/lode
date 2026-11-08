@@ -7,15 +7,12 @@ import { readIncrementalRefreshReceipt } from "./incremental-refresh.mjs";
 import { loadReleaseObservationProjection } from "./release-observation-projection.mjs";
 import { conformanceCanonicalJson, conformanceDigest } from "./conformance-contract.mjs";
 import { prepareConformanceAssessment } from "./conformance-reconciliation.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const CONFORMANCE_TRIGGER_ADAPTER_VERSION = "0.1.0";
 export const CONFORMANCE_TRIGGER_KINDS = Object.freeze(["change-set", "observation", "release-observation", "refresh-receipt"]);
 const MAX_TRIGGER_PAGE = 64;
-const fail = (message, code = "CONFORMANCE_TRIGGER_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("CONFORMANCE_TRIGGER_ERROR");
 
 function coalescedRefreshCount(items) {
   return items.reduce((count, item) => count + (item.kind === "refresh-receipt" ? item.coalescedRefreshCount || 0 : 0), 0);

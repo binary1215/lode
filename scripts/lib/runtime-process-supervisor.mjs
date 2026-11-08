@@ -3,6 +3,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
+import { sha256Hex as controlDigest, sha256Hex as digest } from "./core/digest.mjs";
+import {
+  canonicalJson as canonicalControlJson,
+  canonicalValue as canonicalControlValue,
+  runtimeCanonicalJson as canonicalJson,
+  runtimeCanonicalValue as canonicalValue,
+} from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const PROCESS_SUPERVISOR_PROTOCOL_VERSION = "0.1.0";
 export const PROCESS_SUPERVISOR_MANIFEST_VERSION = "0.3.0";
@@ -20,27 +28,7 @@ const TARGETS = Object.freeze({
   "win32-x64": Object.freeze({ platform: "win32", arch: "x64", directory: "windows-x64", executable: "head-agent-supervisor.exe" }),
 });
 
-const fail = (message, code = "PROCESS_SUPERVISOR_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-function canonicalValue(value) {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort(compareText)
-        .map((key) => [key, canonicalValue(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonicalValue(value));
+const fail = failWith("PROCESS_SUPERVISOR_ERROR");
 
 function targetFor(platform = process.platform, arch = process.arch, legacy = false) {
   const target = TARGETS[`${platform}-${arch}`];
@@ -647,21 +635,6 @@ export function verifyRuntimeProcessSupervisorHandle(
     terminationRequested: owner.terminationRequested(),
   });
 }
-
-function canonicalControlValue(value) {
-  if (Array.isArray(value)) return value.map(canonicalControlValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonicalControlValue(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalControlJson = (value) => JSON.stringify(canonicalControlValue(value));
-const controlDigest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
 export function spawnBoundedRuntimeOneShot(options = {}) {
   const runtime = String(options.runtime || "")

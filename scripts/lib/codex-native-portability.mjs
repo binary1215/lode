@@ -1,13 +1,10 @@
 import fs from "node:fs";
-import crypto from "node:crypto";
 import { readTypedSqliteRows, decodeSqliteCell } from "./native-sqlite-values.mjs";
+import { sha256Json as sha } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 const profile = JSON.parse(fs.readFileSync(new URL("./codex-native-portability-profile.json", import.meta.url), "utf8"));
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const sha = (value) => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const quote = (name) => {
   if (typeof name !== "string" || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) fail("NATIVE_SQLITE_IDENTIFIER_INVALID");
   return '"' + name + '"';

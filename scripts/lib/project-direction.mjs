@@ -1,31 +1,15 @@
 import { formatForVerifiedOwner, resolveProjectStorage } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { safeSessionPath } from "./session-paths.mjs";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
-import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact, atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import { noteProjectGraphChange } from "./discovery-index.mjs";
+import { sha256CanonicalJson as hash } from "./core/digest.mjs";
+import { canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { fail } from "./core/errors.mjs";
 
-const fail = (message, code) => {
-  throw Object.assign(new Error(message), { code });
-};
-const canonical = (value) =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((key) => [key, canonical(value[key])]),
-        )
-      : value;
-const hash = (value) =>
-  crypto
-    .createHash("sha256")
-    .update(JSON.stringify(canonical(value)))
-    .digest("hex");
 const read = (file) => {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));

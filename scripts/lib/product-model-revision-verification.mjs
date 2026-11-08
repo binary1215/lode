@@ -1,33 +1,15 @@
-import crypto from "node:crypto";
 import { familyFormatForOriginal } from "./project-storage-format.mjs";
 import { normalizeProductModelDocument } from "./product-model.mjs";
 import { verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson as documentChangeReviewCanonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { fail } from "./core/errors.mjs";
 
 // Pure typed verification only. Core evidence reads must not load optional
 // World, graph or document-projection implementations.
 export const DOCUMENT_CHANGE_REVIEW_VERSION = "0.1.0";
 const PRODUCT_MODEL_ID_PATTERN = /^product-model-[a-f0-9]{24}$/;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
-const fail = (message, code) => {
-  throw Object.assign(new Error(message), { code });
-};
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-export function documentChangeReviewCanonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
 
 export function verifyProductModelRevisionForProjection(document, storage = null) {
   if (!document || document.schemaVersion !== 1 || document.kind !== "ProductModelRevision" || document.authority !== "user-owned-project-canon-revision") {
@@ -78,3 +60,5 @@ export function verifyDocumentChangeProductModelRevision(document, projectId = "
   }
   return document;
 }
+
+export { documentChangeReviewCanonicalJson };

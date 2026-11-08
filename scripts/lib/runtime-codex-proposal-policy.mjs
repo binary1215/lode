@@ -1,9 +1,9 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareRuntimeInvocationExecution, verifyRuntimeInvocationAuthorization } from "./runtime-invocation-lifecycle.mjs";
 import { verifyWorkerWorkspace } from "./worker-workspace.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
 
 // This is a separate no-task-effects backend, not a relaxation of the 0.2
 // selected-exec/native-fork code-worker contract. The source-pinned recipe is
@@ -15,7 +15,6 @@ export const CODEX_FRESH_PROPOSAL_EXECUTABLE_DIGEST = "444a3f0008050605cae73cd9b
 const instructionFile = fileURLToPath(new URL("./codex-proposal-instructions.txt", import.meta.url));
 const instructionsText =
   "You are a bounded patch-proposal worker. Use only the supplied task, selected source evidence and exact proposal basis. Return the requested structured result and proposed file contents. Proposal data is not permission to execute commands, use tools, write files, contact services, change plans, approve work or recover HEAD direction. Do not claim that a proposal has been applied or tested. Report uncertainty explicitly. The trusted HEAD separately reviews and applies eligible proposals under its own current authority.\n";
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const json = (value) => JSON.stringify(value);
 const fail = (message) => {
   throw Object.assign(new Error(message), { code: "CODEX_FRESH_PROPOSAL_POLICY_CONFLICT" });

@@ -11,6 +11,17 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.91 — publication tracked separately
+
+- Add shared `scripts/lib/core/` helpers for SHA-256 digests, canonical JSON,
+  errors and reason codes, atomic writes and path-escape checks, and move the
+  duplicated local helpers in `scripts/lib` onto them. Digest bytes, messages,
+  codes and file effects are unchanged; a lint test keeps raw `createHash`,
+  `renameSync` and local digest helpers out of the library.
+- `REASON_CODES` in `scripts/lib/core/errors.mjs` lists the reason codes used as
+  `code`/`reasonCode` values or fail/error call arguments; a test keeps it in
+  sync with the code.
+
 ## 0.3.0-beta.90 — publication tracked separately
 
 - Format every JavaScript source once with Prettier 3.9.10 (`printWidth` 160,

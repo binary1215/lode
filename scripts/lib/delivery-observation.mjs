@@ -3,16 +3,13 @@ import { formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { createObservationTypeDescriptor, observationCanonicalJson, observationDigest, stableKey } from "./observation-contract.mjs";
 import { assertObservationProjectReady, loadObservationArtifacts, recordDeliveryCollectedObservation } from "./observation-store.mjs";
 import { buildWorldModel, readWorldModelSnapshot } from "./world-model.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const DELIVERY_OBSERVATION_VERSION = "0.1.0";
 export const DELIVERY_OBSERVATION_TYPE_KEY = "delivery.state";
 
 const OUTCOMES = new Set(["applied", "failed", "cancelled", "rolled-back"]);
-const fail = (message, code = "DELIVERY_OBSERVATION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("DELIVERY_OBSERVATION_ERROR");
 
 function requiredText(value, label, max = 512) {
   const normalized = String(value || "").trim();

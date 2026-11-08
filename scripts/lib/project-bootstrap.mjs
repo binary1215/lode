@@ -33,6 +33,7 @@ import {
 } from "./session-routing.mjs";
 import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
 import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
+import { fail } from "./core/errors.mjs";
 
 export const PROJECT_BOOTSTRAP_PROTOCOL_VERSION = "0.6.0";
 
@@ -43,19 +44,13 @@ const PROJECT_PROFILES = new Set(["core", "product"]);
 
 const ALLOWED_ONBOARDING_FIELDS = new Set(["mode", "storage", "brief", "semanticProposal", "sourceScope"]);
 
-function fail(code, message) {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-}
-
 function validateOnboardingInput(value) {
   const source = value == null ? {} : value;
   if (!source || typeof source !== "object" || Array.isArray(source)) {
-    fail("PROJECT_BOOTSTRAP_INPUT_INVALID", "Onboarding input must be an object.");
+    fail("Onboarding input must be an object.", "PROJECT_BOOTSTRAP_INPUT_INVALID");
   }
   const unexpected = Object.keys(source).filter((field) => !ALLOWED_ONBOARDING_FIELDS.has(field));
-  if (unexpected.length) fail("PROJECT_BOOTSTRAP_INPUT_INVALID", `Onboarding input contains unsupported fields: ${unexpected.sort().join(", ")}`);
+  if (unexpected.length) fail(`Onboarding input contains unsupported fields: ${unexpected.sort().join(", ")}`, "PROJECT_BOOTSTRAP_INPUT_INVALID");
   if (source.sourceScope != null) buildRepositorySourceScope(source.sourceScope);
   return source;
 }
@@ -63,7 +58,7 @@ function validateOnboardingInput(value) {
 function validateProfile(value) {
   const profile = value == null ? "core" : String(value).trim();
   if (!PROJECT_PROFILES.has(profile)) {
-    fail("PROJECT_BOOTSTRAP_PROFILE_INVALID", `Project profile must be one of: ${[...PROJECT_PROFILES].join(", ")}.`);
+    fail(`Project profile must be one of: ${[...PROJECT_PROFILES].join(", ")}.`, "PROJECT_BOOTSTRAP_PROFILE_INVALID");
   }
   return profile;
 }
@@ -919,11 +914,11 @@ export async function initializeOrResumeProject(options = {}) {
   if (profile === "core" && Object.keys(onboardingInput).length) {
     const fields = Object.keys(onboardingInput).sort().join(", ");
     fail(
-      "PROJECT_BOOTSTRAP_PROFILE_REQUIRED",
       `For Core initialization or resume, omit Product onboarding fields (${fields}). The mode existing/new choice belongs to Product onboarding. Use the explicit product profile when that is the requested outcome.`,
+      "PROJECT_BOOTSTRAP_PROFILE_REQUIRED",
     );
   }
-  if (copiedProject !== null && copiedProject !== "verified-copy") fail("PROJECT_COPY_CHOICE_INVALID", "copiedProject must be verified-copy.");
+  if (copiedProject !== null && copiedProject !== "verified-copy") fail("copiedProject must be verified-copy.", "PROJECT_COPY_CHOICE_INVALID");
   if (inspectPendingProjectImport({ root })) return inspectProjectLocationExperience({ root });
   const route = projectSessionRoute ? { sessionId: projectSessionRoute.sessionId, context: projectSessionRoute.context } : null;
   let contextResolved = false;
@@ -943,8 +938,8 @@ export async function initializeOrResumeProject(options = {}) {
   const locationPreview = resumeProjectLocation({ root, pluginRoot, runtimes, copiedProject, validateSelection, inspectOnly: true });
   if (locationPreview?.requiredChoice && copiedProject !== "verified-copy")
     fail(
-      "PROJECT_COPY_CHOICE_REQUIRED",
       "The initial origin cannot be proved. Choose copiedProject=verified-copy for this exact local copy; no file has been changed.",
+      "PROJECT_COPY_CHOICE_REQUIRED",
     );
   if (!locationPreview) {
     const failure = await resolveContext();
@@ -1128,7 +1123,7 @@ async function initializeOrResumeCurrentProject({
     "rejected",
   ]);
   if (!resumableWithoutMutation.has(current.status)) {
-    fail("PROJECT_BOOTSTRAP_STATE_UNSUPPORTED", `Unsupported onboarding resume status: ${current.status}`);
+    fail(`Unsupported onboarding resume status: ${current.status}`, "PROJECT_BOOTSTRAP_STATE_UNSUPPORTED");
   }
   return bootstrapResponse({
     root,

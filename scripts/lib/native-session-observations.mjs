@@ -1,4 +1,5 @@
 import { formatForVerifiedOwner, familyFormatForOriginal, resolveProjectStorage } from "./project-storage-format.mjs";
+import { sha256Hex as sha } from "./core/digest.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
@@ -8,7 +9,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { safeSessionPath } from "./session-paths.mjs";
 const require = createRequire(import.meta.url);
 
@@ -24,11 +25,10 @@ export const NATIVE_OBSERVATION_LIMITS = Object.freeze({
   responseBytes: 16 * 1024,
   displayed: 16,
 });
-const sha = (x) => crypto.createHash("sha256").update(x).digest("hex");
 const json = JSON.stringify;
 const object = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 export const nativeId = (x) => typeof x === "string" && x.length > 0 && x.length <= 512 && !/[\u0000-\u001f\u007f]/u.test(x);
-const digest = (x) => typeof x === "string" && /^[a-f0-9]{64}$/u.test(x);
+const isDigest = (x) => typeof x === "string" && /^[a-f0-9]{64}$/u.test(x);
 const nullableId = (x) => x === null || nativeId(x);
 const callerKey = (c) => [c.runtime, c.nativeSessionId, c.agentId || null];
 const callerDigest = (c) => sha(json(callerKey(c)));
@@ -118,13 +118,13 @@ function validObservation(x) {
       ["native-fork", "native-parent"].includes(e.relation) &&
       nativeId(e.sourceNativeId) &&
       e.contract === "codex-own-session-meta-v1" &&
-      digest(e.headerDigest) &&
+      isDigest(e.headerDigest) &&
       (m === null ||
         (keys(m, ["sessionId", "revision", "bindingDigest"]) &&
           /^session-[a-f0-9-]{36}$/iu.test(m.sessionId || "") &&
           Number.isSafeInteger(m.revision) &&
           m.revision > 0 &&
-          digest(m.bindingDigest)))
+          isDigest(m.bindingDigest)))
     );
   }
   return (
@@ -169,7 +169,7 @@ function readSnapshot(loc) {
     state.rows.length > NATIVE_OBSERVATION_LIMITS.slots ||
     !Array.isArray(state.replay) ||
     state.replay.length > NATIVE_OBSERVATION_LIMITS.replay ||
-    state.replay.some((r) => !keys(r, ["id", "digest"]) || !nativeId(r.id) || !digest(r.digest)) ||
+    state.replay.some((r) => !keys(r, ["id", "digest"]) || !nativeId(r.id) || !isDigest(r.digest)) ||
     state.rows.some(
       (r) =>
         !keys(r, ["key", "sequence", "receivedAt", "observation"]) ||

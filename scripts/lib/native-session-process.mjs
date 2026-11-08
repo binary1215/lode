@@ -1,14 +1,13 @@
 import { WINDOWS_EXACT_PROCESS_QUERY } from "./windows-exact-process-query.mjs";
 import { WINDOWS_PROCESS_QUERY_WIRE, decodeWindowsProcessQueryWire } from "./windows-process-query-wire.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { sha256Hex as hash } from "./core/digest.mjs";
 
 // Private same-local-environment witness, not a public PID input or process
 // controller. Never enumerate a process table or Claude sessions directory.
-const hash = (x) => crypto.createHash("sha256").update(x).digest("hex");
 const pidValue = (x) => Number.isSafeInteger(x) && x > 0 && x <= 0xffffffff;
 const birthCache = new Map();
 

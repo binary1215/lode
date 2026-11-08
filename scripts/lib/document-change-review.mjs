@@ -1,8 +1,7 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
-import { atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
 import {
   createDocumentProjectionAdapter,
@@ -31,6 +30,9 @@ import {
   documentChangeReviewCanonicalJson,
   verifyDocumentChangeProductModelRevision,
 } from "./product-model-revision-verification.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 export { DOCUMENT_CHANGE_REVIEW_VERSION, documentChangeReviewCanonicalJson, verifyDocumentChangeProductModelRevision };
 export const DOCUMENT_CHANGE_REVIEW_DIRECTORY = ".head/document-changes/review-decisions";
 export const DOCUMENT_CHANGE_PRODUCT_REVISION_DIRECTORY = ".head/document-changes/product-model-revisions";
@@ -43,15 +45,7 @@ const APPLICATION_ID_PATTERN = /^document-change-application-[a-f0-9]{24}$/;
 const PRODUCT_MODEL_ID_PATTERN = /^product-model-[a-f0-9]{24}$/;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 
-const fail = (message, code = "DOCUMENT_CHANGE_REVIEW_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function digest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
+const fail = failWith("DOCUMENT_CHANGE_REVIEW_ERROR");
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -92,7 +86,7 @@ function safeFile(projectRoot, relativeDirectory, id, pattern, code, storage) {
   const root = path.resolve(projectRoot);
   const file = path.resolve(root, ...relativeProjectArtifact(storage, ...relativeDirectory.split("/").slice(1)).split("/"), `${id}.json`);
   const relative = path.relative(root, file);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+  if (escapesRoot(relative)) {
     fail("Document-change artifact path escapes the project root.", "DOCUMENT_CHANGE_PATH_ESCAPE");
   }
   let current = root;

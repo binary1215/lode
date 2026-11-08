@@ -1,10 +1,12 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -27,25 +29,8 @@ import { runSupervisedRuntimeOneShot } from "./runtime-supervised-one-shot.mjs";
 export const CLAUDE_PRINT_PROVIDER_VERSION = "0.1.0";
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-const fail = (message, code = "CLAUDE_PRINT_PROVIDER_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("CLAUDE_PRINT_PROVIDER_ERROR");
 const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-function canonicalValue(value) {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort(compareText)
-        .map((key) => [key, canonicalValue(value[key])]),
-    );
-  }
-  return value;
-}
-const canonicalJson = (value) => JSON.stringify(canonicalValue(value));
 
 export const CLAUDE_PRINT_RESULT_SCHEMA = Object.freeze({
   type: "object",

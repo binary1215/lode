@@ -9,34 +9,20 @@ import {
 } from "./snapshot-domain-bundles.mjs";
 import { GitSnapshotStore } from "./git-snapshot-store.mjs";
 import { storedSnapshotLocation, readSnapshotFile, writeStoredSnapshot, listStoredSnapshotIds } from "./snapshot-storage-codec.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { formatForVerifiedOwner, projectOwnsRecordedRoot } from "./project-storage-format.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
 
 export const WORLD_MODEL_STORE_ADAPTER_VERSION = "0.1.0";
 export const WORLD_MODEL_STORAGE_CONTRACT = "replaceable-rebuildable-materialized-view";
 
 const REQUIRED_METHODS = ["describe", "readPointer", "readSnapshot", "writePointer", "writeSnapshot", "listSnapshotIds"];
 
-const fail = (message, code = "WORLD_MODEL_STORE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("WORLD_MODEL_STORE_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
-}
 
 function snapshotId(value) {
   if (typeof value !== "string" || !/^world-model-[a-f0-9]{24}$/.test(value)) {

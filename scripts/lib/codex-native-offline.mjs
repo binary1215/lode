@@ -2,18 +2,15 @@ import { BoundedVersionWorkspaceHostAdapter } from "./runtime-machine-execution.
 import { codexNativePortabilityProfile } from "./codex-native-portability.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
 import { WINDOWS_EXACT_PROCESS_QUERY } from "./windows-exact-process-query.mjs";
 import { WINDOWS_PROCESS_QUERY_WIRE, decodeWindowsCodexInventoryWire } from "./windows-process-query-wire.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 const witnesses = new WeakMap(),
   children = new Map();
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const identity = (stat) => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].map(String).join(":");
 export const codexNativeOfflineProcessStatus = () => [...children.values()].map((value) => ({ ...value }));
 

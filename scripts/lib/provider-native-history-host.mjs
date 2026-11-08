@@ -1,17 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { spawnSupervisedProcess, resolveVerifiedProcessSupervisor } from "./runtime-process-supervisor.mjs";
 import { copiedProjectFile, inspectCopiedProjectFile, readCopiedProjectExcerpt } from "./project-copy-evidence.mjs";
 import { SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
+import { sha256Hex as nativeHash } from "./core/digest.mjs";
+import { failCode as nativeFail } from "./core/errors.mjs";
 
-export const nativeFail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
-export const nativeHash = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 export const nativeJson = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 export function nativeCheck(signal, check = () => {}) {
   if (signal?.aborted) nativeFail("NATIVE_HISTORY_OPERATION_CANCELLED");
@@ -325,3 +322,5 @@ export function createProviderNativeHost({ provider, executable, pluginRoot, sig
     },
   };
 }
+
+export { nativeHash, nativeFail };

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { sessionStatePath, sessionStateForWrite, assertRunSession, safeSessionPath } from "./session-routing.mjs";
 import { readProjectDirection } from "./project-direction.mjs";
-import { atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { inspectProject, isProjectRecoveryReadable, SCHEMA_VERSION } from "./lode-core.mjs";
 import { readContextCapsule } from "./context-compiler.mjs";
 import { buildFreshLodeReview, readLineageArtifact } from "./execution-lineage.mjs";
@@ -13,6 +13,9 @@ import { operationPointerHash, sessionStateHash, inspectRunStorageTransition } f
 import { normalizeSessionWorkEvidence, recordSessionWorkEvidence } from "./session-work-context.mjs";
 
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const COMPACTION_RECOVERY_VERSION = "0.3.0";
 export const RECOVERY_CHECKPOINT_SYNC_VERSION = "0.1.0";
@@ -21,31 +24,10 @@ const OPEN_STATES = new Set(["preparing", "prepared", "provider_compacted", "ver
 const TERMINAL_STATES = new Set(["continued", "superseded", "aborted"]);
 const UNCERTAIN_CONTINUATION_REASON = "continuation-consumed-outcome-uncertain";
 
-const fail = (message, code = "COMPACTION_RECOVERY_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("COMPACTION_RECOVERY_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const now = () => new Date().toISOString();
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
 
 function requiredText(value, label) {
   if (typeof value !== "string" || !value.trim()) fail(`${label} is required.`, "INVALID_COMPACTION_INPUT");

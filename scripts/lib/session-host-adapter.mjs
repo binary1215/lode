@@ -1,13 +1,13 @@
 import { formatForVerifiedOwner, familyFormatForOriginal, resolveProjectStorage } from "./project-storage-format.mjs";
+import { sha256Hex as sha } from "./core/digest.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
 import { resolveRuntimeOperationalStateRoot } from "./runtime-execution-lease.mjs";
 import { createSessionCallContext, safeSessionPath, withSessionCallContext, sessionSelectionUnresolved } from "./session-routing.mjs";
@@ -15,7 +15,6 @@ import { defaultSessionStatePath } from "./session-paths.mjs";
 import { enterConversationRecovery } from "./compaction-lifecycle.mjs";
 
 export const SESSION_HOST_ADAPTER_VERSION = "0.1.0";
-const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const encode = (value) => JSON.stringify(value);
 function fail(message, code = "INVALID_SESSION_HOST_INPUT") {
   throw Object.assign(new Error(message), { code });

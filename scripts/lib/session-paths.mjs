@@ -1,17 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
-
-const fail = (message, code) => {
-  throw Object.assign(new Error(message), { code });
-};
+import { fail } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 // Effect-free path confinement shared by Session routing and common direction.
 export function safeSessionPath(root, ...parts) {
   const base = fs.realpathSync(path.resolve(root || "."));
   const file = path.resolve(base, ...parts);
   const relative = path.relative(base, file);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) fail("Session path escapes Project root.", "SESSION_PATH_ESCAPE");
+  if (escapesRoot(relative)) fail("Session path escapes Project root.", "SESSION_PATH_ESCAPE");
   let current = base;
   for (const part of relative.split(path.sep).filter(Boolean)) {
     current = path.join(current, part);

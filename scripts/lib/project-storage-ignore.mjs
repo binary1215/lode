@@ -5,9 +5,10 @@ import { absoluteSystemExecutable } from "./native-session-process.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { formatForVerifiedOwner, assertProjectStorageUnchanged } from "./project-storage-format.mjs";
-import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact, atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
+import { escapesRootByPrefix } from "./core/path-safety.mjs";
 
 // No canonical records or historical snapshots. These exact paths are either
 // regenerated inventory or host-local transient coordination, never authority.
@@ -141,7 +142,7 @@ export function ensureMessagingDirectoryIgnore({ root, directory, mailboxStorage
     const dirStat = io.lstatSync(messaging);
     if (!dirStat.isDirectory() || dirStat.isSymbolicLink()) return { status: "preserved", reasonCode: "MESSAGING_DIR_UNAVAILABLE" };
     const relative = path.relative(fs.realpathSync(root), fs.realpathSync(messaging));
-    if (relative.startsWith("..") || path.isAbsolute(relative)) return { status: "preserved", reasonCode: "CONVERSATION_PATH_ESCAPE" };
+    if (escapesRootByPrefix(relative)) return { status: "preserved", reasonCode: "CONVERSATION_PATH_ESCAPE" };
     const existing = io.lstatSync(file, { throwIfNoEntry: false });
     if (existing?.isSymbolicLink()) return { status: "preserved", reasonCode: "USER_IGNORE_UNAVAILABLE" };
     if (existing?.isFile()) {

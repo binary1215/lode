@@ -1,7 +1,10 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
+import { sha256Hex as changeSetDigest } from "./core/digest.mjs";
+import { canonicalJson as changeSetCanonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 // Auxiliary state, impact candidates and impact reviews retain their own contract.
 export const CHANGE_SET_VERSION = "0.2.0";
@@ -26,31 +29,7 @@ const LIMITS = Object.freeze({
   maxTotalBytes: 48 * 1024 * 1024,
 });
 
-const fail = (message, code = "CHANGE_SET_PROJECTION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-export function changeSetCanonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-
-export function changeSetDigest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
+const fail = failWith("CHANGE_SET_PROJECTION_ERROR");
 
 function verifyIdentity(document, { idField, hashField, prefix, label }) {
   if (!document || typeof document !== "object" || Array.isArray(document)) fail(`${label} is invalid.`, "INVALID_CHANGE_SET_ARTIFACT");
@@ -442,8 +421,7 @@ function safeDirectory(projectRoot, relative) {
   const root = path.resolve(projectRoot);
   const directory = path.resolve(root, ...relative.split("/"));
   const fromRoot = path.relative(root, directory);
-  if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot))
-    fail("ChangeSet projection path escapes the project root.", "CHANGE_SET_PATH_ESCAPE");
+  if (escapesRoot(fromRoot)) fail("ChangeSet projection path escapes the project root.", "CHANGE_SET_PATH_ESCAPE");
   let current = root;
   for (const segment of fromRoot.split(path.sep).filter(Boolean)) {
     current = path.join(current, segment);
@@ -614,3 +592,5 @@ export function loadChangeSetProjection({
   const hash = changeSetDigest(changeSetCanonicalJson(payload));
   return verifyChangeSetProjectionInput({ ...payload, projectionInputId: `change-set-projection-${hash.slice(0, 24)}`, projectionInputHash: hash }, storage);
 }
+
+export { changeSetCanonicalJson, changeSetDigest };

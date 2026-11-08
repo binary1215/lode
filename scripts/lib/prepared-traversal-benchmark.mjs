@@ -1,17 +1,13 @@
-import crypto from "node:crypto";
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
 import { buildPreparedTraversalRequest, graphProjectionCanonicalJson, verifyPreparedTraversalRequest } from "./graph-projection-adapter.mjs";
 import { queryTemporalProvenanceGraph, verifyTemporalProvenanceGraph } from "./temporal-provenance.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const PREPARED_TRAVERSAL_COST_VERSION = "0.1.0";
 
-const fail = (message, code = "PREPARED_TRAVERSAL_COST_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("PREPARED_TRAVERSAL_COST_ERROR");
 
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const bytes = (value) => Buffer.byteLength(graphProjectionCanonicalJson(value), "utf8");
 
 function assertFields(value, fields, label) {

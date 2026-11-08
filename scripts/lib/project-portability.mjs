@@ -5,7 +5,6 @@ import { buildProjectHandoff, readBundleHandoff, validateProjectHandoffDescripto
 import { verifyImportedDefaultRun } from "./session-imported-run-proof.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { buildCurrentInstallationProjections, inspectProject } from "./lode-core.mjs";
 import { resolveProjectStorage, projectBundleWasImported } from "./project-storage-format.mjs";
 import { withLocalMutation, withProjectMutation } from "./project-mutation-lock.mjs";
@@ -20,13 +19,11 @@ import { inspectCopiedProjectCanon, verifySelectedProjectOriginals, verifyProjec
 import { copyOriginal, copiedProjectFile, inspectCopiedProjectFile, verifyCopiedProjectFile, readCopiedProjectExcerpt } from "./project-copy-evidence.mjs";
 import { readProjectDirection } from "./project-direction.mjs";
 import { verifyProjectLocation, verifyProjectLocationOriginals } from "./project-location-proof.mjs";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { readBoundedSnapshotDescriptor, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
+import { sha256Hex as sha } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
-const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const json = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const check = (signal) => {
   if (signal?.aborted) fail("PROJECT_PORTABILITY_CANCELLED");

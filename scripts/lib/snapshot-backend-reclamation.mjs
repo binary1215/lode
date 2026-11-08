@@ -8,11 +8,10 @@ import { GitSnapshotStore } from "./git-snapshot-store.mjs";
 import { safeSnapshotPath, SNAPSHOT_STORAGE_LIMITS, readBoundedSnapshotDescriptor } from "./snapshot-storage-codec.mjs";
 import { hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
 import { withSnapshotCollectionUnlink, snapshotCollectionCancelled } from "./snapshot-reference-lifetime.mjs";
+import { createHasher, sha256Hex as sha } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
 
-const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const OID = /^[a-f0-9]{64}$/;
 const REF = /^refs\/lode-snapshots\/((?:world-model|graph-snapshot)-[a-f0-9]{24})$/;
 const identity = (s) => ({
@@ -26,7 +25,7 @@ const identity = (s) => ({
 const same = (a, b) => Object.keys(a).every((k) => a[k] === b[k]);
 const fileHash = (file) => {
   const fd = fs.openSync(file, "r"),
-    h = crypto.createHash("sha256"),
+    h = createHasher("sha256"),
     buffer = Buffer.alloc(64 * 1024);
   try {
     let n;
@@ -267,7 +266,7 @@ export class SnapshotBackendReclamation {
         idx = path.join(packDir, "new.idx"),
         out = fs.openSync(pack, "wx"),
         buffer = Buffer.alloc(64 * 1024),
-        digest = crypto.createHash("sha256");
+        digest = createHasher("sha256");
       try {
         let offset = 0;
         while (offset < row.bytes) {
@@ -942,7 +941,7 @@ export class SnapshotBackendReclamation {
             // Current closure and a fresh isolated producer proved this pair.
             // Reuse only the exact same pack; never publish a recovery index.
             const idxBytes = fs.statSync(idx).size;
-            fs.renameSync(idx, finalIdx);
+            renamePath(idx, finalIdx);
             result.publishedPackBytes += idxBytes;
             result.applyPerformed = true;
             result.publishedFiles ??= [];
@@ -962,11 +961,11 @@ export class SnapshotBackendReclamation {
           } else {
             const idxBytes = fs.statSync(idx).size;
             result.publishedFiles ??= [];
-            fs.renameSync(temporary, finalPack);
+            renamePath(temporary, finalPack);
             result.publishedPackBytes += written;
             result.applyPerformed = true;
             result.publishedFiles.push({ path: path.relative(this.root, finalPack).replaceAll("\\", "/"), bytes: written, sha256: packSha });
-            fs.renameSync(idx, finalIdx);
+            renamePath(idx, finalIdx);
             result.publishedPackBytes += idxBytes;
             result.publishedFiles.push({ path: path.relative(this.root, finalIdx).replaceAll("\\", "/"), bytes: idxBytes, sha256: idxSha });
           }

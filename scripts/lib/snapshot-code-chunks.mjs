@@ -1,5 +1,4 @@
-import crypto from "node:crypto";
-const hash = (text) => crypto.createHash("sha256").update(text).digest("hex");
+import { sha256Hex as hash } from "./core/digest.mjs";
 const fail = () => {
   throw Object.assign(new Error("Invalid chunked code bucket/index."), { code: "INVALID_SNAPSHOT_CODE_CHUNKS" });
 };

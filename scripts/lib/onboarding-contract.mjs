@@ -1,5 +1,7 @@
-import crypto from "node:crypto";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "./project-storage-format.mjs";
+import { sha256Hex as onboardingDigest } from "./core/digest.mjs";
+import { canonicalJson as onboardingCanonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const ONBOARDING_PROTOCOL_VERSION = "0.1.0";
 export const ONBOARDING_STATE_PROTOCOL_VERSION = "0.2.0";
@@ -12,31 +14,7 @@ export const SESSION_RECORD_DIRECTORY = ".head/sessions/records";
 
 const PHASES = new Set(["initialized", "awaiting-evidence", "awaiting-review", "revision-required", "rejected", "ready"]);
 
-const fail = (message, code = "ONBOARDING_CONTRACT_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-export function onboardingCanonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-
-export function onboardingDigest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
+const fail = failWith("ONBOARDING_CONTRACT_ERROR");
 
 function requiredText(value, label) {
   if (typeof value !== "string" || !value.trim()) fail(`${label} is required.`, "INVALID_ONBOARDING_INPUT");
@@ -396,3 +374,5 @@ export function initialOnboardingDocuments({ project, sessionState, productModel
   );
   return { sessionRecord, storageSelection, state };
 }
+
+export { onboardingCanonicalJson, onboardingDigest };

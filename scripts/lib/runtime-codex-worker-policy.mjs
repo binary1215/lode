@@ -1,14 +1,12 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { prepareRuntimeInvocationExecution, verifyRuntimeInvocationAuthorization } from "./runtime-invocation-lifecycle.mjs";
 import { verifyWorkerWorkspace } from "./worker-workspace.mjs";
+import { createHasher, sha256Hex as hash } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
 
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const json = (value) => JSON.stringify(value);
-const fail = (message, code = "WORKER_JOB_POLICY_UNAVAILABLE") => {
-  throw Object.assign(new Error(message), { code });
-};
+const fail = failWith("WORKER_JOB_POLICY_UNAVAILABLE");
 const hosts = new WeakMap();
 const capabilities = new WeakMap();
 const clone = (value) => JSON.parse(json(value));
@@ -174,7 +172,7 @@ function exactExecutable(policy, target) {
   try {
     const stat = fs.fstatSync(fd);
     if (stat.dev !== before.dev || stat.ino !== before.ino) fail("Codex worker executable changed during open.", "CODEX_WORKER_EXECUTABLE_DRIFT");
-    const digest = crypto.createHash("sha256");
+    const digest = createHasher("sha256");
     const bytes = Buffer.alloc(1024 * 1024);
     let count;
     while ((count = fs.readSync(fd, bytes, 0, bytes.length, null))) digest.update(bytes.subarray(0, count));

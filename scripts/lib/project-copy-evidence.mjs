@@ -1,11 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-
-const fail = (code, message = code) => {
-  throw Object.assign(new Error(message), { code });
-};
-const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+import { createHasher, sha256Hex as digest, sha256Json as copiedEvidenceDigest } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 // Data-file paths only. Historical absolute roots inside a record are never
 // resolved through this function. Reject Windows alternate streams on every
@@ -71,7 +68,7 @@ export function inspectCopiedProjectFile(root, relative, { signal, onChunk = nul
   const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
   try {
     if (!sameFile(before, fs.fstatSync(fd, { bigint: true }))) fail("PROJECT_COPY_SOURCE_CHANGED");
-    const hash = crypto.createHash("sha256"),
+    const hash = createHasher("sha256"),
       chunk = Buffer.alloc(64 * 1024);
     let bytes = 0;
     while (true) {
@@ -146,10 +143,6 @@ export function verifyCopiedProjectFile(root, entry, options = {}) {
   const current = inspectCopiedProjectFile(root, entry.path, options);
   if (current.bytes !== entry.bytes || current.sha256 !== entry.sha256) fail("PROJECT_COPY_SOURCE_CHANGED");
   return current;
-}
-
-export function copiedEvidenceDigest(inventory) {
-  return digest(JSON.stringify(inventory));
 }
 
 // Manifest syntax/physical aliases are rejected before any repair/publication.
@@ -239,7 +232,7 @@ export function copyOriginal(
   const tmpRelative = (stagingDirectory ?? path.posix.dirname(relative)) + "/." + entry.sha256 + "-" + crypto.randomUUID() + ".part",
     temporary = copiedProjectFile(bundleRoot, tmpRelative);
   const input = fs.openSync(source, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0)),
-    hash = crypto.createHash("sha256");
+    hash = createHasher("sha256");
   let bytes = 0,
     closed = false,
     output = null;
@@ -287,3 +280,5 @@ export function copyOriginal(
     if (!closed && output !== null) fs.closeSync(output);
   }
 }
+
+export { copiedEvidenceDigest };

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
 import { comparePublicationVersions } from "./semantic-version.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 const installedVersion = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
 export const STORAGE_READER_VERSION = Object.freeze({
@@ -33,9 +34,6 @@ export function snapshotReaderRequirements(entry) {
         }),
   };
 }
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 function readPointer(root, file) {
   safeSnapshotPath(root, file);
   const before = fs.lstatSync(file, { throwIfNoEntry: false });

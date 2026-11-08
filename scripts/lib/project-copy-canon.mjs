@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import { verifyImportedDefaultRun } from "./session-imported-run-proof.mjs";
 import { verifyRunTransitionOriginal } from "./run-source-verification.mjs";
-import crypto from "node:crypto";
 import path from "node:path";
 import { copiedProjectFile, inspectCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { inspectProjectDirectionOriginalFiles, verifyProjectDirectionOriginal } from "./project-direction.mjs";
@@ -9,10 +8,8 @@ import { validateKnowledge, verifyContextCapsuleOriginal } from "./context-compi
 import { normalizeProductModelDocument } from "./product-model.mjs";
 import { verifyRecoveryCheckpointOriginal } from "./compaction-recovery.mjs";
 import { lineageArtifactRelativePath, verifyLineageArtifactOriginal } from "./execution-lineage.mjs";
-
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
+import { sha256Hex } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 // Shared source-data verifier. It neither selects a Core owner nor resolves an
 // historical root on disk. read/has/list address an already chosen source.
@@ -174,7 +171,7 @@ export function inspectCopiedProjectCanon({ root, directory, project, selectedSe
   const read = (relative) => {
     const observed = inspectCopiedProjectFile(root, relative),
       bytes = fs.readFileSync(copiedProjectFile(root, relative));
-    if (crypto.createHash("sha256").update(bytes).digest("hex") !== observed.sha256) fail("PROJECT_COPY_SOURCE_CHANGED");
+    if (sha256Hex(bytes) !== observed.sha256) fail("PROJECT_COPY_SOURCE_CHANGED");
     const after = inspectCopiedProjectFile(root, relative);
     if (after.sha256 !== observed.sha256 || after.bytes !== bytes.length) fail("PROJECT_COPY_SOURCE_CHANGED");
     const document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
@@ -207,7 +204,7 @@ export function inspectCopiedProjectCanon({ root, directory, project, selectedSe
           originals.set(relative, {
             path: relative,
             bytes: bytes.length,
-            sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+            sha256: sha256Hex(bytes),
           });
           runOwnerOriginals.add(relative);
           if (

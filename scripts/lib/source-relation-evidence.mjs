@@ -1,35 +1,14 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const SOURCE_RELATION_EVIDENCE_VERSION = "1.0.0";
 
 const RELATION_TYPES = new Set(["IMPORTS", "CALLS"]);
 const ENDPOINT_KINDS = new Set(["file", "symbol", "external"]);
 
-const fail = (message, code = "SOURCE_RELATION_EVIDENCE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-
-function digest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
+const fail = failWith("SOURCE_RELATION_EVIDENCE_ERROR");
 
 function assertFields(value, allowed, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${label} must be an object.`, "INVALID_SOURCE_RELATION_EVIDENCE");

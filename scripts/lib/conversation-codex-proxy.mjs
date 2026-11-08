@@ -3,10 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { resolveVerifiedProcessSupervisor, spawnSupervisedProcess } from "./runtime-process-supervisor.mjs";
 import { assertConversationTarget } from "./conversation-mailbox-storage.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const same = (a, b) => a.dev === b.dev && a.ino === b.ino;
 async function bounded(promise, milliseconds) {
   let timer;

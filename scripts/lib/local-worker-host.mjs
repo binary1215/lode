@@ -1,11 +1,13 @@
 import { publicToolName } from "./lode-artifact-composition.mjs";
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256CanonicalJson as digest, sha256Hex as hash } from "./core/digest.mjs";
+import { canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -28,21 +30,7 @@ import { resolveVerifiedProcessSupervisor } from "./runtime-process-supervisor.m
 import { createBoundedWorkerJobHost, startBoundedWorkerJob } from "./bounded-worker-job.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "../..");
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
-const canonical = (value) =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((key) => [key, canonical(value[key])]),
-        )
-      : value;
-const digest = (value) => hash(JSON.stringify(canonical(value)));
-const fail = (message, code = "LOCAL_WORKER_PREPARATION_CONFLICT") => {
-  throw Object.assign(new Error(message), { code });
-};
+const fail = failWith("LOCAL_WORKER_PREPARATION_CONFLICT");
 const fixtureBackends = new WeakMap();
 
 function regular(file, limit = 8 * 1024 * 1024, links = [1]) {

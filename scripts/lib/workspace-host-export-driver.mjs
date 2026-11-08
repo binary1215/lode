@@ -3,29 +3,18 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { WORKSPACE_HOST_COORDINATION_VERSION } from "./workspace-host-coordination.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson as json, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { fail } from "./core/errors.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
 
 export const WORKSPACE_HOST_EXPORT_VERSION = "0.4.0";
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA = /^[a-f0-9]{64}$/u;
-const fail = (message, code) => {
-  throw Object.assign(new Error(message), { code });
-};
 const id = (value) => {
   if (typeof value !== "string" || !ID.test(value)) fail("Invalid Host identity.", "INVALID_WORKSPACE_HOST_EXPORT_IDENTITY");
   return value;
 };
-const canonical = (value) =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((key) => [key, canonical(value[key])]),
-        )
-      : value;
-const json = (value) => JSON.stringify(canonical(value));
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const within = (root, file) => {
   const relative = path.relative(root, file);
   return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
@@ -81,7 +70,7 @@ function write(root, file, value) {
   const temporary = `${file}.${crypto.randomUUID()}.tmp`;
   try {
     fs.writeFileSync(temporary, bytes, { flag: "wx", mode: 0o600 });
-    fs.renameSync(temporary, file);
+    renamePath(temporary, file);
   } finally {
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }

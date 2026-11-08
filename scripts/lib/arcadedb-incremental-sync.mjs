@@ -1,31 +1,15 @@
-import crypto from "node:crypto";
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
 import { verifyTemporalProvenanceGraph } from "./temporal-provenance.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson as incrementalSyncCanonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const ARCADEDB_INCREMENTAL_SYNC_VERSION = "0.1.0";
 export const ARCADEDB_INCREMENTAL_SYNC_DEFAULT_BATCH_SIZE = 50;
 export const ARCADEDB_INCREMENTAL_SYNC_MAX_BATCH_SIZE = 200;
 
-const fail = (message, code = "ARCADEDB_INCREMENTAL_SYNC_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("ARCADEDB_INCREMENTAL_SYNC_ERROR");
 
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-export const incrementalSyncCanonicalJson = (value) => JSON.stringify(canonical(value));
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 function contentIdentity(payload, prefix) {
@@ -730,3 +714,5 @@ export function verifyArcadeDbIncrementalSyncReceipt(document) {
   }
   return document;
 }
+
+export { incrementalSyncCanonicalJson };

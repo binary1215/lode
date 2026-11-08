@@ -7,6 +7,7 @@ import { verifyNativeBundleOverlay, verifyNativeOverlay } from "./native-artifac
 import { ARTIFACT_COMPOSITION, artifactCompositionForIdentity } from "./lode-artifact-composition.mjs";
 import { resolveOperation } from "./lode-operation-contract.mjs";
 import { historicalArtifactServerName } from "../../compat/head/artifact-composition.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
 
 const DISTRIBUTION_PROTOCOL = "0.1.0";
 const INCLUDE_ENTRIES = [
@@ -67,6 +68,7 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 
+// Serialized with toString() into the standalone launcher: keep it self-contained.
 function sha256(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
@@ -92,20 +94,20 @@ function atomicWriteFile(file, content, options = {}) {
   const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
   fs.writeFileSync(temporary, content, { flag: "wx", ...options });
   try {
-    fs.renameSync(temporary, file);
+    renamePath(temporary, file);
   } catch (error) {
     if (!fs.existsSync(file)) {
       fs.rmSync(temporary, { force: true });
       throw error;
     }
     const backup = `${file}.${process.pid}.${crypto.randomUUID()}.previous`;
-    fs.renameSync(file, backup);
+    renamePath(file, backup);
     try {
-      fs.renameSync(temporary, file);
+      renamePath(temporary, file);
       fs.rmSync(backup, { force: true });
     } catch (replacementError) {
       if (fs.existsSync(file)) fs.rmSync(file, { force: true });
-      fs.renameSync(backup, file);
+      renamePath(backup, file);
       fs.rmSync(temporary, { force: true });
       throw replacementError;
     }
@@ -254,7 +256,7 @@ function stageArtifactComposition(stageRoot, identity) {
     const from = path.join(stageRoot, "skills", source.skills[role]);
     const to = path.join(stageRoot, "skills", target.skills[role]);
     if (fs.existsSync(to)) fail("HEAD_DISTRIBUTION_SOURCE_INVALID", "Carrier staging cannot contain both Skill vocabularies.");
-    fs.renameSync(from, to);
+    renamePath(from, to);
   }
   for (const role of ["core", "onboarding", "conversation"]) {
     const directory = path.join("skills", target.skills[role]);
@@ -447,7 +449,7 @@ export function stageDistributionRelease({
     const manifest = buildManifest(temporary, { includeNativeDist: includeNativeDist || Boolean(nativeOverlayRoot) });
     atomicWriteJson(path.join(temporary, "distribution-manifest.json"), manifest);
     verifyRelease(temporary, manifest.releaseId);
-    fs.renameSync(temporary, destination);
+    renamePath(temporary, destination);
     return manifest;
   } catch (error) {
     fs.rmSync(temporary, { recursive: true, force: true });
@@ -738,7 +740,7 @@ export function installDistribution({
     atomicWriteJson(path.join(stage, "distribution-manifest.json"), manifest);
     verifyRelease(stage, manifest.releaseId);
     const destination = releaseRoot(locations.installRoot, manifest.releaseId);
-    if (!fs.existsSync(destination)) fs.renameSync(stage, destination);
+    if (!fs.existsSync(destination)) renamePath(stage, destination);
     else {
       verifyRelease(destination, manifest.releaseId);
       fs.rmSync(stage, { recursive: true, force: true });

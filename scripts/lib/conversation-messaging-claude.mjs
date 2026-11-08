@@ -1,8 +1,8 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { assertConversationTarget } from "./conversation-mailbox-storage.mjs";
+import { sha256Hex } from "./core/digest.mjs";
 
 // Claude Code documents the inbox socket (Unix) or named pipe (native Windows),
 // the CLAUDE_CODE_MESSAGING_SOCKET / CLAUDE_CODE_MESSAGING_TOKEN variables, and
@@ -30,7 +30,7 @@ export function normalizeClaudeSocketPath(socketPath) {
 export function claudeSocketDigest(socketPath) {
   const normalized = normalizeClaudeSocketPath(socketPath);
   if (!normalized) return null;
-  return crypto.createHash("sha256").update(Buffer.from(normalized, "utf8")).digest("hex");
+  return sha256Hex(Buffer.from(normalized, "utf8"));
 }
 
 export function claudeConfigDirectory(environment = process.env) {

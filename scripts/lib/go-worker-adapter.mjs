@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -11,6 +10,8 @@ import {
   validateComputeResponse,
   WORKER_PROTOCOL_VERSION,
 } from "./compute-adapter.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
 
 export const GO_WORKER_ADAPTER_VERSION = "0.1.0";
 export const GO_WORKER_MANIFEST_VERSION = "0.1.0";
@@ -54,25 +55,6 @@ const fail = (message, code = "GO_WORKER_ERROR", details = null) => {
   if (details) error.details = details;
   throw error;
 };
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-
-function digest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;

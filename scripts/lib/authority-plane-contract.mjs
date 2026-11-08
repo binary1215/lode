@@ -1,29 +1,11 @@
-import crypto from "node:crypto";
-
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const AUTHORITY_PLANE_CONTRACT_VERSION = "0.9.0";
 
-const fail = (message, code = "AUTHORITY_PLANE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonical(value));
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
+const fail = failWith("AUTHORITY_PLANE_ERROR");
 
 const PLANE_DEFINITIONS = Object.freeze({
   P1: Object.freeze({

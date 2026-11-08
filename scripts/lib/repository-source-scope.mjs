@@ -2,35 +2,16 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
 
 export const REPOSITORY_SOURCE_SCOPE_VERSION = "0.1.0";
 export const REPOSITORY_SOURCE_SCOPE_RELATIVE_PATH = ".head/context/repository-source-scope.json";
 const verifiedScopes = new WeakSet();
 
-const fail = (message, code = "REPOSITORY_SOURCE_SCOPE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-
-function digest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
+const fail = failWith("REPOSITORY_SOURCE_SCOPE_ERROR");
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -132,7 +113,7 @@ export function writeRepositorySourceScope({ projectRoot, selection = {}, storag
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
   try {
     fs.writeFileSync(temporary, `${JSON.stringify(sourceScope, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
+    renamePath(temporary, file);
   } finally {
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }
