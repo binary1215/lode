@@ -94,12 +94,15 @@ export function mcpInputs(tool) {
       properties: { ...schema.properties, ...alternative.properties },
       required: [...new Set([...(schema.required ?? []), ...(alternative.required ?? [])])],
     };
-    for (const variant of ["required", "full", "falsy"]) {
-      const input = sample(shape, tool.name, variant !== "required");
+    const requiredBooleans = shape.required.filter((key) => falsy(shape.properties[key]) === false);
+    for (const variant of ["required", "full", "falsy", ...(requiredBooleans.length ? ["required-false"] : [])]) {
+      const input = sample(shape, tool.name, variant !== "required" && variant !== "required-false");
       // Optional fields set to their type's falsy value tell `||` from `??` defaults.
       if (variant === "falsy") {
         for (const [key, child] of Object.entries(shape.properties)) if (!shape.required.includes(key)) input[key] = falsy(child);
       }
+      // Required booleans (explicit confirmations) set to false record each refusal.
+      if (variant === "required-false") for (const key of requiredBooleans) input[key] = false;
       delete input.session_id;
       if (shape.properties.project_root) input.project_root = FIXTURE_ROOT;
       if (!inputs.some((existing) => JSON.stringify(existing) === JSON.stringify(input))) inputs.push(input);

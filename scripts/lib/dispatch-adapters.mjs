@@ -1,7 +1,7 @@
 // Argument and result adapters used by the MCP server, the CLI and the operation
 // registry: MCP snake_case input to library shapes, explicit confirmations,
 // compact MCP results, and the optional prepared-input view. Moved verbatim from
-// scripts/mcp-server.mjs (preparedRuntimeRead was identical in scripts/lode.mjs).
+// scripts/mcp-server.mjs (scripts/lode.mjs had the same preparedRuntimeRead apart from comments).
 
 export function featureMappingProposalFromMcp(value) {
   return {
