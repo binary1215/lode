@@ -304,3 +304,18 @@ export const onboardingSemanticProposalSchema = {
   required: ["schemaVersion", "sourceSnapshotId", "candidates"],
   additionalProperties: false,
 };
+
+export const workerIntegrationIdSchema = { type: "string", pattern: "^worker-integration-[a-f0-9]{24}--[a-f0-9]{24}$" };
+export const workerIntegrationVerificationIdSchema = { type: "string", pattern: "^worker-integration-verification-[a-f0-9]{24}$" };
+export const workerIntegrationActionFields = {
+  prepare: ["authorization_ids", "max_bytes"],
+  apply: ["integration_id"],
+  reconcile: ["integration_id"],
+  "settle-incomplete": ["integration_id", "basis_digest", "reason"],
+  "prepare-result": ["integration_id", "basis_digest", "outcome", "evidence", "verification"],
+  "publish-result": ["integration_id", "verification_id"],
+};
+export const workerIntegrationOptionalFields = {
+  apply: ["basis_digest", "retry_known_no_write"],
+  "prepare-result": ["plan_delta", "impact_radius", "unknowns"],
+};

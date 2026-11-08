@@ -11,6 +11,17 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.97 — publication tracked separately
+
+- Dispatch every MCP tool through the operation registry, which is now also the
+  MCP tool list. The ternary dispatch chain in `mcp-server.mjs` is gone; the
+  last 32 MCP operations moved with their adapters, `project_status` and the
+  conformance trigger tools as explicit handlers, and the 4 MiB `world_model`
+  response cap as a registry field checked at the same point. No behavior change.
+- Generate the Claude hook matcher from the operation registry and read the
+  declared `project_root` schema from it. CLI command branches remain until the
+  next release.
+
 ## 0.3.0-beta.96 — publication tracked separately
 
 - Dispatch 44 more operations through the operation registry (111 of 144):
