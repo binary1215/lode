@@ -11,6 +11,18 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.90 — publication tracked separately
+
+- Format every JavaScript source once with Prettier 3.9.10 (`printWidth` 160,
+  otherwise defaults). JSON, Markdown, text and test fixtures keep their bytes.
+  `.prettierrc`, `.prettierignore` and `.editorconfig` record the style,
+  `npm run format` / `format:check` pin the version through npx without a
+  dependency, the JavaScript CI job checks formatting, and
+  `.git-blame-ignore-revs` hides the formatting commit from blame.
+- Add `scripts/compare-test-baseline.mjs`, which diffs the failing-test sets of
+  two TAP runs so a branch is judged by new failures against its base rather than
+  by the absolute count on machines where some suites always fail.
+
 ## 0.3.0-beta.89 — publication tracked separately
 
 - Turn the Lode Skills into an entry procedure. The core Skill opens with a

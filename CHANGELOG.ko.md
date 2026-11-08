@@ -9,6 +9,18 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.90 — 게시 결과는 별도 확인
+
+- 모든 JavaScript 소스를 Prettier 3.9.10(`printWidth` 160, 나머지 기본값)으로 한
+  번 포맷합니다. JSON·Markdown·텍스트·테스트 픽스처의 바이트는 그대로입니다.
+  `.prettierrc`, `.prettierignore`, `.editorconfig`가 스타일을 기록하고,
+  `npm run format` / `format:check`는 의존성 없이 npx로 버전을 고정하며,
+  JavaScript CI 잡이 포맷을 검사하고 `.git-blame-ignore-revs`가 포맷 커밋을
+  blame에서 숨깁니다.
+- 두 TAP 실행의 실패 테스트 집합 차이를 보여 주는
+  `scripts/compare-test-baseline.mjs`를 추가합니다. 일부 스위트가 항상 실패하는
+  머신에서도 절대 개수가 아니라 기준 대비 새 실패로 브랜치를 판정합니다.
+
 ## 0.3.0-beta.89 — 게시 결과는 별도 확인
 
 - Lode Skill을 진입 절차로 바꿉니다. core Skill은 진입 상태(`conversation_ready`,
