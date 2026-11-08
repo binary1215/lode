@@ -273,6 +273,18 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const text = `${JSON.stringify(value, null, 1)}\n`;
   const out = process.argv.indexOf("--out");
   if (out >= 0) fs.writeFileSync(process.argv[out + 1], text);
-  else process.stdout.write(text);
+  else {
+    // A piped stdout is asynchronous on POSIX: process.exit() would drop what is
+    // still buffered past the first 64 KiB. Write synchronously, looping over
+    // partial writes, before exiting.
+    const bytes = Buffer.from(text, "utf8");
+    for (let offset = 0; offset < bytes.length; ) {
+      try {
+        offset += fs.writeSync(process.stdout.fd, bytes, offset, bytes.length - offset);
+      } catch (error) {
+        if (error.code !== "EAGAIN") throw error;
+      }
+    }
+  }
   process.exit(0);
 }
