@@ -303,6 +303,9 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     commands: surface === "managed-maintenance"
       ? allCommands.map(line => line.replace(cliDisplay + " ", cliDisplay + " managed-maintenance "))
       : all ? allCommands.filter(line => !isManagedMutation(line.split(" ")[1])) : defaultCommands,
+    // Command lines name the installer-created launcher; every install also has
+    // the node entry point. Explain both spellings once.
+    launcherNote: `${cliDisplay} exists only when scripts/install.sh or scripts/install.ps1 created that launcher; otherwise run node <plugin-root>/scripts/${ARTIFACT_COMPOSITION.identity}.mjs with the same arguments.`,
     laneRecommendationRequired: false,
     executionMeans: {
       default: (ARTIFACT_COMPOSITION.identity === "head" ? "head-direct" : "lode-direct"),

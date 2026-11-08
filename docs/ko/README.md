@@ -95,10 +95,15 @@
 Host 연동에서 안내 대화 없이 같은 결정론적 Core 동작을 실행할 때 사용합니다.
 
 기본 경로는 공급자 중립 Lode 헌법과 고정 Project/Session 복구 앵커만
+CLI 진입점은 `node <plugin-root>/scripts/lode.mjs`이며 `<plugin-root>`는 설치된 플러그인
+폴더입니다. `scripts/install.sh` 또는 `scripts/install.ps1`이 `lode-agent` 런처를 만든 경우
+`lode-agent <command>`도 같은 프로그램을 실행합니다. 마켓플레이스 설치에는 런처가 없습니다.
+아래 예시는 모든 설치에 있는 진입점을 사용합니다.
+
 초기화합니다.
 
 ```powershell
-lode-agent init C:\path\to\project --runtime claude,codex,opencode
+node <plugin-root>/scripts/lode.mjs init C:\path\to\project --runtime claude,codex,opencode
 ```
 
 이 경로는 ID를 보존하고 가능한 기존 관측 자료의 경량 색인을 갱신하면서
@@ -107,7 +112,7 @@ lode-agent init C:\path\to\project --runtime claude,codex,opencode
 수 있습니다.
 
 ```powershell
-lode-agent status C:\path\to\project
+node <plugin-root>/scripts/lode.mjs status C:\path\to\project
 ```
 
 정상 상태는 한 줄로 보여줍니다. 예외가 있으면 담당 주체, 이유, 영향을 받는

@@ -44,6 +44,20 @@ tool calls remain available to hosts that expose them.
    Project-scoped review lineage remains intact across independently routed
    Sessions; a new Session does not require re-onboarding.
 5. Call `lode_onboarding_guide` again and follow its `nextAction`.
+   Its values (from the guide status) and what each asks for:
+   - `initialize_or_resume`: not initialized, review/promotion recovery pending,
+     or migration required; call `lode_project_initialize_or_resume` (step 4).
+   - `provide_product_evidence`: Core is initialized, or the Product state is
+     `awaiting_evidence`/`rejected`; supply a user brief or a fresh
+     `semantic_proposal` (see below). Repeating plain initialization loops.
+   - `refresh_or_reconcile_world`: World is not current or no longer matches the
+     candidate source; refresh it before review.
+   - `review_candidates`: `awaiting_review`/`revision_required`; present the batch
+     and collect one explicit disposition.
+   - `verify_graph_projection`: graph projection is not current.
+   - `build_document_projection`: generated documents are not current.
+   - `ready`: report readiness and Unknowns.
+   - `inspect_state`: none of the above applies; read `lode_onboarding_status`.
 
 Installation or initialization must not contact GraphDB. The optional remote
 projection has separate compatibility and activation operations.
@@ -172,7 +186,8 @@ artifacts.
 ## Recovery fallback
 
 If the MCP server is unavailable, explain the failure and use the plugin's
-public `lode-agent init`/`resume` with `--profile product` plus
-`onboarding-review` CLI as an equivalent
-recovery path. Do not construct a second onboarding implementation in prompts
+public CLI `node <plugin-root>/scripts/lode.mjs init`/`resume` with
+`--profile product` plus `onboarding-review` as an equivalent recovery path
+(`lode-agent <command>` is the same program when the installer created that
+launcher). Do not construct a second onboarding implementation in prompts
 or files. CLI and MCP must preserve the same Core identities.

@@ -97,10 +97,15 @@ surface when a script, CI job, offline recovery procedure, or host integration
 needs the same deterministic Core behavior without a guided conversation.
 
 The default path initializes only the provider-neutral Lode constitution and its
+The CLI entry point is `node <plugin-root>/scripts/lode.mjs`, where `<plugin-root>` is the
+installed plugin folder. When `scripts/install.sh` or `scripts/install.ps1` created the
+`lode-agent` launcher, `lode-agent <command>` runs the same program; marketplace installs
+have no launcher. Examples below use the entry point that every install has.
+
 fixed Project/Session recovery anchors:
 
 ```powershell
-lode-agent init C:\path\to\project --runtime claude,codex,opencode
+node <plugin-root>/scripts/lode.mjs init C:\path\to\project --runtime claude,codex,opencode
 ```
 
 It returns `core_ready`, preserving identities and updating the lightweight
@@ -109,7 +114,7 @@ construction and document governance remain optional. The same bounded status is
 at any time:
 
 ```powershell
-lode-agent status C:\path\to\project
+node <plugin-root>/scripts/lode.mjs status C:\path\to\project
 ```
 
 Successful human-readable status is intentionally one line. Exceptions name
