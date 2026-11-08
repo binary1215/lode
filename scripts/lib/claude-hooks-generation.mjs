@@ -25,10 +25,12 @@ export function renderClaudeHooks(currentText, catalog) {
 }
 
 export async function generateClaudeHooks({ root, check = false } = {}) {
-  const { catalogTools } = await import("../mcp-server.mjs");
+  // The operation registry is the tool list; the MCP-only host request helper is
+  // never matched (claudeNativeHookMatchers skips it).
+  const { registryCatalog } = await import("./operation-registry.mjs");
   const file = path.join(root, CLAUDE_HOOKS_FILE);
   const current = fs.readFileSync(file, "utf8");
-  const next = renderClaudeHooks(current, catalogTools);
+  const next = renderClaudeHooks(current, registryCatalog());
   if (current === next) return { status: "current", file: CLAUDE_HOOKS_FILE };
   if (check) return { status: "stale", file: CLAUDE_HOOKS_FILE };
   fs.writeFileSync(file, next);

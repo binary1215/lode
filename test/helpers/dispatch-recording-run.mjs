@@ -134,7 +134,7 @@ export function cliCommands() {
     for (const name of names) if (!commands.has(name)) commands.set(name, [...flags].sort());
   }
   // Commands moved to the operation registry declare the options they read.
-  for (const entry of OPERATIONS) if (!commands.has(entry.cli.command)) commands.set(entry.cli.command, [...entry.cli.flags].sort());
+  for (const entry of OPERATIONS) if (entry.cli && !commands.has(entry.cli.command)) commands.set(entry.cli.command, [...entry.cli.flags].sort());
   return commands;
 }
 
