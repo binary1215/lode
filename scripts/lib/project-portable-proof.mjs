@@ -1,11 +1,10 @@
 import { validatePortableManifestFormat } from "./portable-project-format.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
 
 export const PORTABLE_PROJECT_LOCATION_KIND = "portable-project-copy";
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const fail = () => {
   throw Object.assign(new Error("Portable Project location proof is invalid."), {
     code: "PROJECT_PORTABLE_ADMISSION_INVALID",

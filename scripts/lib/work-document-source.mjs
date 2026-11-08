@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { readSessionWorkContext, readSessionWorkEvidenceOwner } from "./session-work-context.mjs";
 import { withSessionRoute } from "./session-routing.mjs";
 import { readProjectDirection } from "./project-direction.mjs";
@@ -6,26 +5,13 @@ import { createContextSourceReader } from "./context-source-reader.mjs";
 import { compareExactSourceVersions } from "./context-source-delta.mjs";
 import { queryProjectGraph } from "./project-graph.mjs";
 import { readSessionWorkTodos } from "./session-work-todo.mjs";
+import { sha256Hex } from "./core/digest.mjs";
+import { canonicalValue as canonical } from "./core/canonical-json.mjs";
 
 // These are replaceable reading views, never a new authority or completion test.
 export const WORK_DOCUMENT_RENDERER = "3";
 const VIEW_LINKS = "[다른 읽기 뷰](lode-view:peer) · [시작 문서](lode-view:start)";
-export const workDocumentHash = (value) =>
-  crypto
-    .createHash("sha256")
-    .update(typeof value === "string" || Buffer.isBuffer(value) ? value : JSON.stringify(canonical(value)))
-    .digest("hex");
-function canonical(value) {
-  return Array.isArray(value)
-    ? value.map(canonical)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((key) => [key, canonical(value[key])]),
-        )
-      : value;
-}
+export const workDocumentHash = (value) => sha256Hex(typeof value === "string" || Buffer.isBuffer(value) ? value : JSON.stringify(canonical(value)));
 const fail = (message, code = "INVALID_WORK_DOCUMENT_SELECTION", details = {}) => {
   throw Object.assign(new Error(message), { code, ...details });
 };

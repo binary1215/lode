@@ -1,7 +1,6 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact, atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { withLocalMutation } from "./project-mutation-lock.mjs";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { safeLocationFile, verifyProjectLocation, locationJournalRelative } from "./project-location-proof.mjs";
@@ -10,12 +9,11 @@ import { adoptVerifiedProjectCopy, inspectProjectCopyInput } from "./project-cop
 import { validateCopiedManagedPaths } from "./project-copy-evidence.mjs";
 import { inspectProjectCopyOrigin } from "./project-location-proof.mjs";
 import { inspectManagedByteRepairs, repairManagedProjectBytes } from "./project-record-byte-repair.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
 
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-const fail = (message, code = "PROJECT_RELOCATION_CONFLICT") => {
-  throw Object.assign(new Error(message), { code });
-};
+const fail = failWith("PROJECT_RELOCATION_CONFLICT");
 const read = (file) => fs.readFileSync(file, "utf8");
 const nextLocation = (proof, previousProjectDigest) =>
   proof.copyAdmissionDigest

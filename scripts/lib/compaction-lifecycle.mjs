@@ -17,17 +17,14 @@ import { readSessionWorkContext } from "./session-work-context.mjs";
 
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { ARTIFACT_COMPOSITION } from "./lode-artifact-composition.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const COMPACTION_LIFECYCLE_VERSION = "0.1.0";
 const EVENT_KINDS = new Set(["conversation-entry", "provider-replaced", "before-compaction", "after-compaction"]);
 const OUTCOMES = new Set(["succeeded", "failed", "uncertain"]);
 const RUNTIMES = new Set(["claude", "codex", "opencode"]);
 
-const fail = (message, code = "COMPACTION_LIFECYCLE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("COMPACTION_LIFECYCLE_ERROR");
 
 function exactKeys(value, expected, label, code = "INVALID_COMPACTION_LIFECYCLE_INPUT") {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${label} must be an object.`, code);

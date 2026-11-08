@@ -1,9 +1,8 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { captureWorkerSourceBasis, verifyWorkerSourceBasis, workerSourcePathParts } from "./worker-source-basis.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
 
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const fail = (message) => {
   throw Object.assign(new Error(message), { code: "WORKER_PATCH_CONFLICT" });
 };

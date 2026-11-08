@@ -1,13 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { copiedProjectFile, inspectCopiedProjectFile, readCopiedProjectExcerpt } from "./project-copy-evidence.mjs";
 import { SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const object = (value) => value && typeof value === "object" && !Array.isArray(value);
 const quote = (value) =>
   String(value)

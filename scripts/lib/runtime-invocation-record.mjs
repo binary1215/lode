@@ -1,4 +1,8 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex } from "./core/digest.mjs";
+import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
@@ -16,27 +20,10 @@ import {
   verifyRuntimeResultPacketDraft,
 } from "./runtime-invocation-lifecycle.mjs";
 
-const fail = (message, code = "RUNTIME_INVOCATION_RECORD_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("RUNTIME_INVOCATION_RECORD_ERROR");
 
 const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
-function canonicalValue(value) {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort(compareText)
-        .map((key) => [key, canonicalValue(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonicalValue(value));
 const prettyJson = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 function isWithin(parent, child) {
@@ -84,7 +71,7 @@ function verifyRecordLineage({ authorization, receipt, draft, events }) {
     verifiedDraft.runId !== verifiedAuthorization.scope.runId ||
     verifiedDraft.executionContractId !== verifiedAuthorization.scope.executionContractId ||
     verifiedReceipt.providerBoundary.structuredResultObserved !== (result !== null) ||
-    verifiedReceipt.providerBoundary.structuredResultDigest !== (result === null ? "" : crypto.createHash("sha256").update(resultJson).digest("hex")) ||
+    verifiedReceipt.providerBoundary.structuredResultDigest !== (result === null ? "" : sha256Hex(resultJson)) ||
     verifiedReceipt.providerBoundary.structuredResultBytes !== Buffer.byteLength(resultJson) ||
     (verifiedAuthorization.protocolVersion === "0.7.0" && verifiedReceipt.status === "completed" && result === null) ||
     canonicalJson(eventIds) !== canonicalJson(verifiedReceipt.eventIds) ||
@@ -131,7 +118,7 @@ export function persistRuntimeInvocationRecord({ projectRoot, authorization, eve
     }
     writeRuntimeInvocationArtifactExclusive(path.join(temporary, "receipt.json"), prettyJson(verified.receipt));
     writeRuntimeInvocationArtifactExclusive(path.join(temporary, "draft.json"), prettyJson(verified.draft));
-    fs.renameSync(temporary, directory);
+    renamePath(temporary, directory);
   } finally {
     if (fs.existsSync(temporary)) fs.rmSync(temporary, { recursive: true, force: true });
   }

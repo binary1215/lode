@@ -10,7 +10,6 @@ import {
 } from "./snapshot-domain-bundles.mjs";
 import { GitSnapshotStore } from "./git-snapshot-store.mjs";
 import { storedSnapshotLocation, readSnapshotFile, writeStoredSnapshot, listStoredSnapshotIds } from "./snapshot-storage-codec.mjs";
-import crypto from "node:crypto";
 import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact, projectOwnsRecordedRoot } from "./project-storage-format.mjs";
 import { requiredIndexDdl, inspectRequiredIndex } from "./arcadedb-schema-contract.mjs";
 import childProcess from "node:child_process";
@@ -35,6 +34,9 @@ import {
   verifyArcadeDbIncrementalSyncReceipt,
   verifyArcadeDbIncrementalSyncManifest,
 } from "./arcadedb-incremental-sync.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
 
 export const GRAPH_PROJECTION_ADAPTER_VERSION = "0.1.0";
 export const GRAPH_PROJECTION_CONTRACT = "replaceable-rebuildable-derived-graph-projection";
@@ -173,11 +175,7 @@ const preparedPointerReads = new WeakMap();
 
 const REQUIRED_METHODS = ["describe", "readPointer", "readSnapshot", "writePointer", "writeSnapshot", "listSnapshotIds", "query"];
 
-const fail = (message, code = "GRAPH_PROJECTION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("GRAPH_PROJECTION_ERROR");
 
 function assertFields(value, fields, label, code) {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${label} is invalid.`, code);
@@ -219,7 +217,6 @@ export function graphProjectionCanonicalJson(value) {
   return JSON.stringify(canonical(value));
 }
 
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
@@ -237,17 +234,6 @@ function parseDocument(file, label) {
     // Corrupt encoding is a document error; operational failures keep their code.
     if (file.endsWith(".json.gz") && error.code && error.code !== "INVALID_SNAPSHOT_ENCODING") throw error;
     fail(`${label} is invalid JSON: ${error.message}`, "INVALID_GRAPH_PROJECTION_DOCUMENT");
-  }
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }
 }
 

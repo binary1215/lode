@@ -1,6 +1,5 @@
 import { snapshotReaderRequirements } from "./snapshot-storage-compatibility.mjs";
 import { stabilizeTemporalRelationIdentities } from "./temporal-relation-identity.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import { resolveLocalGitRepository } from "./local-git-repository.mjs";
 import path from "node:path";
@@ -90,6 +89,8 @@ import { SOURCE_ANALYSIS_VERSION } from "./source-analysis.mjs";
 import { withSessionRoute } from "./session-routing.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lode-artifact-composition.mjs";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact, projectOwnsRecordedSnapshot } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const WORLD_MODEL_VERSION = "0.19.0";
 export const WORLD_MODEL_STORE = WORLD_MODEL_STORAGE_CONTRACT;
@@ -100,13 +101,7 @@ const WORLD_MODEL_STATUS_SAMPLE_LIMIT = 20;
 const verifiedSnapshotByteLengths = new WeakMap();
 const OBSERVATION_WORLD_ERROR_PREFIXES = ["OBSERVATION_", "INVALID_OBSERVATION", "UNKNOWN_OBSERVATION"];
 
-const fail = (message, code = "WORLD_MODEL_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
+const fail = failWith("WORLD_MODEL_ERROR");
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);

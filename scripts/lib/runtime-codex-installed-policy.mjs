@@ -1,10 +1,9 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { CODEX_WORKER_REQUIRED_ENFORCEMENT } from "./runtime-codex-worker-policy.mjs";
 import { inspectCurrentCodexNativeForkCompatibility } from "./runtime-codex-fork-compatibility.mjs";
+import { createHasher, sha256Hex as hash } from "./core/digest.mjs";
 
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const freeze = (value) => {
   if (value && typeof value === "object") {
     Object.values(value).forEach(freeze);
@@ -137,7 +136,7 @@ function readBounded(file, maxBytes, collect = true) {
   try {
     const opened = fs.fstatSync(fd);
     if (opened.dev !== before.dev || opened.ino !== before.ino) fail("Snapshot input changed during open.");
-    const digest = crypto.createHash("sha256"),
+    const digest = createHasher("sha256"),
       chunks = [],
       buffer = Buffer.alloc(1024 * 1024);
     let count,

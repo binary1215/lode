@@ -2,19 +2,16 @@ import { nativeSqlitePath } from "./codex-native-backup.mjs";
 import { readSelectedCodexStateEvidence, verifySelectedCodexStateEvidence } from "./codex-native-state-evidence.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { assertCodexNativeOffline } from "./codex-native-offline.mjs";
 import { inspectCodexNativeDatabase, readSelectedCodexHistory, codexNativePortabilityProfile } from "./codex-native-portability.mjs";
 import { inspectCodexRolloutOriginal } from "./codex-native-rollout.mjs";
 import { copiedProjectFile, inspectCopiedProjectFile, verifyCopiedProjectFile, copyOriginal } from "./project-copy-evidence.mjs";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const json = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const idPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const profile = codexNativePortabilityProfile();
 const cancelled = (signal) => {

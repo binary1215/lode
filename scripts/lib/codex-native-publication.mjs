@@ -8,13 +8,11 @@ import { inspectCodexNativePayload } from "./codex-native-payload.mjs";
 import { inspectCodexNativeDatabase } from "./codex-native-portability.mjs";
 import { planCodexNativeRowMerge, applyCodexNativeRowMerge } from "./codex-native-row-merge.mjs";
 import { copiedProjectFile, verifyCopiedProjectFile, inspectCopiedProjectFile, copyOriginal } from "./project-copy-evidence.mjs";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const json = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const version = (db) => db.prepare("PRAGMA data_version").get().data_version;
 const physical = (stat) => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].map(String).join(":");
 const contained = (base, file) => {

@@ -11,17 +11,14 @@ import {
 } from "./observation-store.mjs";
 import { buildWorldModel, inspectWorldModel, queryWorldTemporalGraph } from "./world-model.mjs";
 import { recordProductHypothesis } from "./product-operating-loop.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const MEASUREMENT_WORKFLOW_VERSION = "0.1.0";
 const METRIC_PREFIX = "metric.";
 const DIRECTIONS = new Set(["increase", "decrease", "maintain"]);
 const ASSESSMENTS = new Set(["supports", "contradicts", "inconclusive"]);
 
-const fail = (message, code = "MEASUREMENT_WORKFLOW_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("MEASUREMENT_WORKFLOW_ERROR");
 
 function requiredText(value, label, max = 1000) {
   const normalized = String(value || "").trim();

@@ -1,12 +1,13 @@
 import { inspectProviderNativePayload, providerNativePayloadSummary } from "./provider-native-history-payload.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { inspectProjectBundle } from "./project-portability.mjs";
 import { inspectCodexNativePayload, codexNativePayloadSummary } from "./codex-native-payload.mjs";
 import { copiedProjectFile, inspectCopiedProjectFile, copyOriginal } from "./project-copy-evidence.mjs";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { readSnapshotFile } from "./snapshot-storage-codec.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 const providers = new Set(["codex", "claude", "opencode"]);
 const relativeFor = (provider) => (providers.has(provider) ? "native/" + provider + "/history" : null);
@@ -14,10 +15,6 @@ const inspectNative = (provider, options) =>
   provider === "codex" ? inspectCodexNativePayload(options) : inspectProviderNativePayload({ ...options, expectedProvider: provider });
 const linkPath = "native-history.json";
 const bytes = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const cancelled = (signal) => {
   if (signal?.aborted) fail("PROJECT_NATIVE_TRANSFER_CANCELLED");
 };

@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -8,8 +7,8 @@ import { relativeProjectArtifact } from "./project-storage-format.mjs";
 import { readPortableSourceHints } from "./portable-source-originals.mjs";
 import { readSourceObservationOriginal } from "./source-observation.mjs";
 import { resolveLocalGitRepository, LOCAL_GIT_DISCOVERY_ARGS, localGitReadEnvironment } from "./local-git-repository.mjs";
+import { createHasher, sha256Hex as sha } from "./core/digest.mjs";
 
-const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 // Preserve a valid BOM too: sha(UTF-8 text) must still identify the raw bytes.
 const decode = (bytes) => new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
 
@@ -352,7 +351,7 @@ export function createContextSourceReader(root, projectId, { storage = null, bun
       asset = version.asset;
     if (resolved && asset.rawDigestVerified && version.text !== undefined)
       asset.gitBlob = {
-        oid: crypto.createHash(objectFormat).update(`blob ${asset.rawByteLength}\0`).update(Buffer.from(version.text)).digest("hex"),
+        oid: createHasher(objectFormat).update(`blob ${asset.rawByteLength}\0`).update(Buffer.from(version.text)).digest("hex"),
         objectFormat,
         scope: "computed-for-pointer-bytes; object-presence-not-checked",
       };

@@ -1,14 +1,11 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 // Windows Git expands 8.3 ancestors while Node's JS realpath can retain them.
 // Compare the same native physical paths without relaxing metadata/link checks.
 const canonicalLocalGitPath = (file) => (process.platform === "win32" ? fs.realpathSync.native(file) : fs.realpathSync(file));
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 
 // Shared discovery for user-repository readers only, never the private SHA256
 // snapshot store. No commands, registry, binding, remote access or writes here.

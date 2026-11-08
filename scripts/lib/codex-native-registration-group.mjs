@@ -1,11 +1,10 @@
 import fs from "node:fs";
-import crypto from "node:crypto";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { readSnapshotFile, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
+import { sha256Hex as sha } from "./core/digest.mjs";
 const groups = new WeakMap();
 const bytes = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
-const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
 export const codexRegistrationMetadataDigest = (value) => (value === null ? null : sha(JSON.stringify(value)));
 const fail = (code) => {
   throw Object.assign(Error(code), { code });

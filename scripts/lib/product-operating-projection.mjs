@@ -1,9 +1,12 @@
 import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { SCHEMA_VERSION } from "./lode-core.mjs";
 import { loadObservationArtifacts } from "./observation-store.mjs";
+import { sha256Hex as productOperatingDigest } from "./core/digest.mjs";
+import { canonicalJson as productOperatingCanonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 // Read/projection responsibility shared by World, Temporal and the mutation facade.
 // This loader reads originals; it does not publish, repair or refresh them.
@@ -33,29 +36,7 @@ export const LIMITS = Object.freeze({ maxArtifacts: 512, maxArtifactBytes: 1024 
 const LEGACY_PROTOCOL_VERSIONS = new Set(["0.1.0", "0.2.0", "0.3.0"]);
 const OBSERVATION_REFERENCE_PROTOCOL_VERSIONS = new Set(["0.3.0", PRODUCT_OPERATING_LOOP_VERSION, PRODUCT_HYPOTHESIS_VERSION]);
 
-export const fail = (message, code = "PRODUCT_OPERATING_LOOP_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-export function productOperatingCanonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-export function productOperatingDigest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
+export const fail = failWith("PRODUCT_OPERATING_LOOP_ERROR");
 
 function supportedProtocolVersion(value) {
   return value === PRODUCT_OPERATING_LOOP_VERSION || LEGACY_PROTOCOL_VERSIONS.has(value);
@@ -76,8 +57,7 @@ export function safeDirectory(projectRoot, relative) {
   const root = path.resolve(projectRoot);
   const directory = path.resolve(root, ...relative.split("/"));
   const fromRoot = path.relative(root, directory);
-  if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot))
-    fail("Product operating path escapes project root.", "PRODUCT_OPERATING_PATH_ESCAPE");
+  if (escapesRoot(fromRoot)) fail("Product operating path escapes project root.", "PRODUCT_OPERATING_PATH_ESCAPE");
   let current = root;
   for (const segment of fromRoot.split(path.sep).filter(Boolean)) {
     current = path.join(current, segment);
@@ -495,3 +475,5 @@ export function buildReviewedInitiative(candidate, reviewDecision, storage = nul
     formatForVerifiedOwner(storage),
   );
 }
+
+export { productOperatingCanonicalJson, productOperatingDigest };

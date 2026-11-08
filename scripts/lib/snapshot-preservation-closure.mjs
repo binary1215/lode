@@ -1,7 +1,6 @@
 import { readSourceBundleOriginal } from "./source-observation.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { inspectProject } from "./head-core.mjs";
 import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
 import { createLocalReadOnlyWorldModelStoreAdapter } from "./world-model-store.mjs";
@@ -13,7 +12,7 @@ import { readLineageArtifact } from "./execution-lineage.mjs";
 import { readChangeSet } from "./change-set.mjs";
 import { CHANGE_SET_DIRECTORY } from "./change-set-projection.mjs";
 import { SNAPSHOT_GC_UNCOVERED_WRITERS } from "./snapshot-gc.mjs";
-const hash = (b) => crypto.createHash("sha256").update(b).digest("hex");
+import { sha256Hex as hash } from "./core/digest.mjs";
 // This projection proves only observed typed dependencies. It never authorizes
 // deletion, owns no lifetime lease, and never turns unknown input into absence.
 export async function inspectSnapshotPreservationClosure({ root = "." } = {}) {

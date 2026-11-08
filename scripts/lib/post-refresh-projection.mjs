@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "./project-storage-format.mjs";
@@ -11,6 +10,10 @@ import {
   readDocumentChangeCandidateSet,
   verifyDocumentProjection,
 } from "./document-projection-adapter.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
 
 export const POST_REFRESH_PROJECTION_VERSION = "0.1.0";
 export const DEFAULT_POST_REFRESH_PROJECTION_MODE = "manual";
@@ -25,29 +28,9 @@ const MODES = new Set(["manual", "automatic"]);
 const OUTCOMES = new Set(["manual-deferred", "projected", "unchanged", "blocked-edited-view", "blocked-stale-edited-view", "blocked-unmanaged-view", "failed"]);
 const BASE_STATUSES = new Set(["not-inspected-manual-policy", "not-materialized", "unmanaged", "current", "stale", "modified", "inspection-failed"]);
 
-const fail = (message, code = "POST_REFRESH_PROJECTION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("POST_REFRESH_PROJECTION_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
 
 function assertFields(record, allowed, label) {
   if (!record || typeof record !== "object" || Array.isArray(record)) fail(`${label} must be an object.`, "INVALID_POST_REFRESH_PROJECTION_SCHEMA");
@@ -59,17 +42,6 @@ function readyProject(root) {
   const inspected = inspectProject(root);
   if (inspected.status !== "ready") fail(`Project must be ready for document projection policy; current status: ${inspected.status}.`, "PROJECT_NOT_READY");
   return inspected;
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
 }
 
 function readJson(file, label) {

@@ -1,10 +1,12 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -20,28 +22,10 @@ const OUTPUT_LIMIT_BYTES = 64 * 1024;
 const TERMINATION_GRACE_MS = 500;
 const CONTROL_METHODS = Object.freeze(["start", "resume", "stream", "interrupt", "close"]);
 
-const fail = (message, code = "RUNTIME_PROTOCOL_EVIDENCE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("RUNTIME_PROTOCOL_EVIDENCE_ERROR");
 
 const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
-function canonicalValue(value) {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort(compareText)
-        .map((key) => [key, canonicalValue(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonicalValue(value));
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const EMPTY_OUTPUT_DIGEST = digest(Buffer.alloc(0));
 
 function identify(payload, prefix, idKey, hashKey) {

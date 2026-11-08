@@ -1,7 +1,5 @@
-import crypto from "node:crypto";
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
+import { sha256Hex } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 const object = (value) => value && typeof value === "object" && !Array.isArray(value);
 const id = (value) => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$/u.test(value);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
@@ -194,8 +192,8 @@ export function deriveOpenCodeHistoryImport(raw, { nativeId, targetActive = {} }
   const derived = Buffer.from(JSON.stringify(document, null, 2) + "\n");
   return {
     bytes: derived,
-    sourceSha256: crypto.createHash("sha256").update(raw).digest("hex"),
-    importSha256: crypto.createHash("sha256").update(derived).digest("hex"),
+    sourceSha256: sha256Hex(raw),
+    importSha256: sha256Hex(derived),
     changes,
     historicalMessagesChanged: false,
     sourceOriginalPreserved: true,

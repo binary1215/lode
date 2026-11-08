@@ -6,9 +6,10 @@ import { resolveProjectStorage, formatForVerifiedOwner } from "./project-storage
 import { resolveOperation } from "./lode-operation-contract.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { noteProjectGraphChange } from "./discovery-index.mjs";
 import { safeSessionPath, defaultSessionStatePath } from "./session-paths.mjs";
+import { sha256Hex } from "./core/digest.mjs";
 export { safeSessionPath, defaultSessionStatePath } from "./session-paths.mjs";
 import { readProjectDirectionView } from "./project-direction-view.mjs";
 import { verifyImportedDefaultSession } from "./session-import-proof.mjs";
@@ -467,7 +468,7 @@ export function listLodeSessions({ root = ".", maxSessions = 16, afterSessionId 
       purpose: state.purpose || "",
       default: key === "default",
       state,
-      source: { path: path.relative(base, file).replaceAll("\\", "/"), bytes: bytes.length, sha256: crypto.createHash("sha256").update(bytes).digest("hex") },
+      source: { path: path.relative(base, file).replaceAll("\\", "/"), bytes: bytes.length, sha256: sha256Hex(bytes) },
     };
   };
   let defaultRow = null,
@@ -548,7 +549,7 @@ export function listLodeSessions({ root = ".", maxSessions = 16, afterSessionId 
     projectId: project.projectId,
     defaultSessionId: defaultRow?.sessionId || null,
     sessions,
-    projectSource: { path: path.relative(base, projectFile).replaceAll("\\", "/"), sha256: crypto.createHash("sha256").update(projectBytes).digest("hex") },
+    projectSource: { path: path.relative(base, projectFile).replaceAll("\\", "/"), sha256: sha256Hex(projectBytes) },
     status: directoryError || defaultError || unavailable.length || remaining ? "partial" : "inspected-page",
     unavailable,
     ...(defaultError ? { defaultAvailability: defaultError } : {}),

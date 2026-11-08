@@ -1,11 +1,9 @@
 import { inspectCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { decodeSqliteCell } from "./native-sqlite-values.mjs";
 import { codexNativePortabilityProfile, verifySelectedCodexHistory } from "./codex-native-portability.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 const profile = codexNativePortabilityProfile();
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 // This is a bounded decoder limit, not a Context or P2 budget. Oversize input
 // remains preservable as raw evidence; this measured native profile cannot
 // certify it for publication without an expanded decoder.

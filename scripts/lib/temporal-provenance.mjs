@@ -1,5 +1,4 @@
 import { RELATION_IDENTITY_VERSION, temporalRelationIdentity } from "./temporal-relation-identity.mjs";
-import crypto from "node:crypto";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { onboardingCandidateProducerReviewDecisionId, verifyOnboardingGraphProjectionInput } from "./onboarding-projection.mjs";
 import { verifyFeatureMappingProjectionInput } from "./feature-mapping-projection.mjs";
@@ -11,6 +10,8 @@ import { verifyObservationProjection } from "./observation-projection.mjs";
 import { emptyProductModelDocument, normalizeProductModelDocument } from "./product-model.mjs";
 
 import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const TEMPORAL_PROVENANCE_VERSION = "0.15.0";
 export const TEMPORAL_TRAVERSAL_VERSION = "0.3.0";
@@ -210,13 +211,7 @@ const PRODUCT_DEFINITIONS = Object.freeze({
   Policy: { collection: "policies", prefix: "policy", revisionPrefix: "policy-revision" },
 });
 
-const fail = (message, code = "TEMPORAL_PROVENANCE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
+const fail = failWith("TEMPORAL_PROVENANCE_ERROR");
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;

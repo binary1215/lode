@@ -19,6 +19,9 @@ import {
   readProductPolicyCandidateRecord,
   readProductPolicyReviewDecisionRecord,
 } from "./product-policy-records.mjs";
+import { createHasher, sha256Hex as digest } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
 export {
   PRODUCT_POLICY_VERSION,
   PRODUCT_POLICY_CANDIDATE_DIRECTORY,
@@ -27,7 +30,6 @@ export {
   verifyProductPolicyCandidate,
   verifyProductPolicyReviewDecision,
 } from "./product-policy-records.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
@@ -44,30 +46,14 @@ const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 64 * 1024 * 1024;
 const MAX_REVIEWS = 1024;
 
-const fail = (message, code = "PRODUCT_POLICY_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("PRODUCT_POLICY_ERROR");
 
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 function readyProject(root, action) {
   const inspected = inspectProject(root);
   if (inspected.status !== "ready") fail(`Project must be ready for ${action}.`, "PROJECT_NOT_READY");
   return inspected;
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
 }
 
 function persistImmutable(file, document, verifier, label) {
@@ -89,7 +75,7 @@ function sourceEvidenceDigest(projectRoot, reference) {
   const stat = fs.statSync(file);
   if (!stat.isFile()) fail(`Policy source evidence is not a regular file: ${reference}`, "PRODUCT_POLICY_EVIDENCE_UNSAFE");
   if (stat.size > MAX_SOURCE_BYTES) fail(`Policy source evidence exceeds 64 MiB: ${reference}`, "PRODUCT_POLICY_EVIDENCE_TOO_LARGE");
-  const hash = crypto.createHash("sha256");
+  const hash = createHasher("sha256");
   const fd = fs.openSync(file, "r");
   const buffer = Buffer.allocUnsafe(64 * 1024);
   try {

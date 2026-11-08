@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { inspectProject, SCHEMA_VERSION } from "./head-core.mjs";
@@ -7,6 +6,10 @@ import { readIncrementalRefreshReceipt, readPostRefreshProjectionReceipt, refres
 import { inspectRefreshWriterLease, withRefreshWriterLease } from "./refresh-writer-lease.mjs";
 import { managedRootFilesForProject, REPOSITORY_SCAN_EXCLUDED_DIRECTORIES } from "./repository-scan.mjs";
 import { inspectWorldModel, readWorldModel, readWorldModelSnapshot } from "./world-model.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
 
 export const REFRESH_TRIGGER_VERSION = "0.2.0";
 const LEGACY_REFRESH_TRIGGER_VERSION = "0.1.0";
@@ -21,29 +24,9 @@ const EVENT_KINDS = new Set(["path-hint", "project-signal"]);
 const DISCARD_REASONS = new Set(["duplicate-event", "event-limit-exceeded", "excluded-or-managed-path"]);
 const EXCLUDED_DIRECTORIES = new Set(REPOSITORY_SCAN_EXCLUDED_DIRECTORIES);
 
-const fail = (message, code = "REFRESH_TRIGGER_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("REFRESH_TRIGGER_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -64,17 +47,6 @@ function readyProject(root) {
   const inspected = inspectProject(root);
   if (inspected.status !== "ready") fail(`Project must be ready for refresh trigger ingestion; current status: ${inspected.status}.`, "PROJECT_NOT_READY");
   return inspected;
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
 }
 
 function readJson(file, label) {

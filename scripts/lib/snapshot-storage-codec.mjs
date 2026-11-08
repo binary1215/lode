@@ -1,15 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
+import { failWith } from "./core/errors.mjs";
 
 // Physical snapshot encoding only. IDs and semantic hashes are still verified
 // by the existing World/Graph readers. These are storage bounds, not MCP output
 // or Context token budgets. Legacy JSON is never re-encoded in place.
 export const SNAPSHOT_STORAGE_LIMITS = Object.freeze({ compressedBytes: 256 * 1024 * 1024, decodedBytes: 512 * 1024 * 1024 });
-const fail = (message, code = "INVALID_SNAPSHOT_ENCODING") => {
-  throw Object.assign(new Error(message), { code });
-};
+const fail = failWith("INVALID_SNAPSHOT_ENCODING");
 export function safeSnapshotPath(root, file) {
   const canonical = fs.realpathSync(root),
     lexicalRoot = path.resolve(root),

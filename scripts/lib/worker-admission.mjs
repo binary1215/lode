@@ -1,4 +1,8 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
@@ -24,26 +28,10 @@ const TERMINAL_STATES = new Set(["cancelled", "expired", "released"]);
 const EVENT_TYPES = new Set(["queued", "resumed", "reserved", "start-committed", "cancelled", "expired", "released", "unknown-blocking"]);
 const hostState = new WeakMap();
 
-const fail = (message, code = "WORKER_ADMISSION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("WORKER_ADMISSION_ERROR");
 
 const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
-const canonical = (value) =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort(compareText)
-            .map((key) => [key, canonical(value[key])]),
-        )
-      : value;
-const canonicalJson = (value) => JSON.stringify(canonical(value));
 const pretty = (value) => `${JSON.stringify(value, null, 2)}\n`;
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const identity = (prefix, payload) => `${prefix}-${digest(canonicalJson(payload)).slice(0, 24)}`;
 
 function exactFields(value, fields, label, code = "INVALID_WORKER_ADMISSION_ARTIFACT") {
@@ -539,7 +527,7 @@ export function provisionWorkerAdmissionDomain({ operationalStateRoot, hostExpec
     writeExclusive(path.join(staging, "metadata.json"), metadata);
     writeExclusive(path.join(staging, "genesis.json"), genesis);
     fs.mkdirSync(path.join(staging, "events"));
-    fs.renameSync(staging, paths.domain);
+    renamePath(staging, paths.domain);
     staging = null;
     verifyStorageTopology({ operational, expectation, paths });
     writeExclusive(path.join(paths.expectation, "journal-head.json"), journalHeadDocument(metadata, 0, genesis.genesisHash));

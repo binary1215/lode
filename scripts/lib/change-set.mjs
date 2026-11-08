@@ -1,5 +1,4 @@
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
@@ -26,14 +25,12 @@ import {
   verifyChangeSet,
   verifyVcsEvidence,
 } from "./change-set-projection.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
 
 const STATE_RELATIVE_PATH = ".head/change-sets/current.json";
 
-const fail = (message, code = "CHANGE_SET_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("CHANGE_SET_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
@@ -62,17 +59,6 @@ function safeFile(projectRoot, relative, id, prefix, storage) {
 
 function stateFile(projectRoot, storage) {
   return path.join(projectRoot, ...relativeProjectArtifact(storage, ...STATE_RELATIVE_PATH.split("/").slice(1)).split("/"));
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
 }
 
 function persistImmutable(file, document, label) {

@@ -1,17 +1,15 @@
 import fs from "node:fs";
-import crypto from "node:crypto";
 import { copiedProjectFile, verifyCopiedProjectFile } from "./project-copy-evidence.mjs";
+import { sha256Hex } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 function original(root, admission, relative, maximum) {
   const entry = admission?.inventory.files.find((item) => item.path === relative);
   if (!entry) return null;
   if (entry.bytes > maximum) fail("SNAPSHOT_GIT_INVENTORY_LIMIT");
   verifyCopiedProjectFile(root, entry);
   const bytes = fs.readFileSync(copiedProjectFile(root, relative));
-  if (bytes.length !== entry.bytes || crypto.createHash("sha256").update(bytes).digest("hex") !== entry.sha256) fail("PROJECT_COPY_SOURCE_CHANGED");
+  if (bytes.length !== entry.bytes || sha256Hex(bytes) !== entry.sha256) fail("PROJECT_COPY_SOURCE_CHANGED");
   // The streamed verifier is repeated after this small bounded decode read.
   verifyCopiedProjectFile(root, entry);
   return bytes;

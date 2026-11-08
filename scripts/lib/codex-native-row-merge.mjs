@@ -1,12 +1,10 @@
-import crypto from "node:crypto";
 import { readSelectedCodexHistory, verifySelectedCodexHistory, codexNativePortabilityProfile } from "./codex-native-portability.mjs";
 import { decodeSqliteCell } from "./native-sqlite-values.mjs";
+import { sha256Hex } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 const plans = new WeakMap(),
   profile = codexNativePortabilityProfile();
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const quote = (name) => '"' + name + '"'; // Only pinned profile identifiers reach SQL.
 const cellKey = (cell) => {
   decodeSqliteCell(cell);
@@ -27,10 +25,7 @@ function primaryKey(table, row) {
   return rowKey(columns.map((column) => row[table.columns.indexOf(column.name)]));
 }
 function fingerprint(history) {
-  return crypto
-    .createHash("sha256")
-    .update(JSON.stringify(history.tables.map((table) => ({ name: table.name, rows: table.rows.map(rowKey).sort() }))))
-    .digest("hex");
+  return sha256Hex(JSON.stringify(history.tables.map((table) => ({ name: table.name, rows: table.rows.map(rowKey).sort() }))));
 }
 function compare(source, target) {
   const missing = [];

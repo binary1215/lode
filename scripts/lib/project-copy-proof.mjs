@@ -1,10 +1,9 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
 
 export const COPIED_PROJECT_LOCATION_KIND = "verified-project-copy";
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const fail = () => {
   throw Object.assign(new Error("The selected copied Project's exact admission or history is invalid."), { code: "PROJECT_COPY_ADMISSION_INVALID" });
 };

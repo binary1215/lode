@@ -1,10 +1,12 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { assertRunSession } from "./session-routing.mjs";
@@ -18,28 +20,10 @@ import { readRuntimeInvocationRecord, runtimeInvocationRecordDirectory, writeRun
 
 export const RUNTIME_RUN_RESULT_APPLICATION_VERSION = "0.1.0";
 
-const fail = (message, code = "RUNTIME_RUN_RESULT_APPLICATION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("RUNTIME_RUN_RESULT_APPLICATION_ERROR");
 
 const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
-function canonicalValue(value) {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort(compareText)
-        .map((key) => [key, canonicalValue(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonicalValue(value));
 const prettyJson = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 function assertExactFields(value, fields, label) {

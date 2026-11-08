@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { readProjectDirectionView, sameProjectDirectionView } from "./project-direction-view.mjs";
@@ -11,31 +10,15 @@ import { COMPACTION_RECOVERY_VERSION, createRecoveryCheckpoint, readRecoveryChec
 import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const SESSION_RECOVERY_VERSION = "0.2.0";
 // Frozen historical integration originals do not share the projection version.
 const HISTORICAL_INTEGRATION_VERSION = "0.1.0";
 
-const fail = (message, code = "SESSION_RECOVERY_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonical(value));
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
+const fail = failWith("SESSION_RECOVERY_ERROR");
 
 function requiredText(value, label) {
   if (typeof value !== "string" || !value.trim()) fail(`${label} is required.`, "INVALID_SESSION_RECOVERY_INPUT");

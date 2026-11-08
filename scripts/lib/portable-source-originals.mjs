@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { copiedProjectFile, inspectCopiedProjectFile, readCopiedProjectExcerpt } from "./project-copy-evidence.mjs";
 import { createSourceObservation, verifySourceObservation, sourceBundleKey, readSourceObservationOriginal } from "./source-observation.mjs";
 import { validateDeclarationSelection } from "./python-source-collector.mjs";
@@ -14,8 +13,9 @@ import {
   digestValid,
   PORTABLE_SOURCE_KINDS,
 } from "./portable-project-format.mjs";
+import { sha256Hex as sha } from "./core/digest.mjs";
+import { canonicalValue as canonical } from "./core/canonical-json.mjs";
 
-const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const json = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const decode = (bytes) => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 const closed = (value, fields) => {
@@ -25,16 +25,6 @@ const identifier = (value) =>
   typeof value === "string" &&
   value.length <= 512 &&
   (value === "" || /^[\p{ID_Start}_][\p{ID_Continue}_]*(?:\.[\p{ID_Start}_][\p{ID_Continue}_]*)*$/u.test(value));
-const canonical = (value) =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((key) => [key, canonical(value[key])]),
-        )
-      : value;
 const equal = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
 // JSON.parse accepts duplicate names, discarding earlier values. A parsed

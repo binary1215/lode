@@ -1,10 +1,11 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { verifyProjectLocation, safeLocationFile, locationJournalRelative } from "./project-location-proof.mjs";
 import { LEGACY_FORMAT, PROTOCOL_PAIRS, KIND_PAIRS, VALUE_PAIRS } from "../../compat/head/format.mjs";
 import { verifyCopiedGitOwner, verifyCopiedGitRef } from "./project-copy-git-proof.mjs";
 import { verifyCopiedProjectFile } from "./project-copy-evidence.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { fail } from "./core/errors.mjs";
 
 const lodeFormat = Object.freeze({
   dialect: "lode",
@@ -20,10 +21,6 @@ const markerBases = new WeakMap();
 const copiedSnapshotReads = new WeakMap();
 const copiedSnapshotEntries = new WeakMap();
 const copiedGitReads = new WeakMap();
-const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const fail = (message, code) => {
-  throw Object.assign(new Error(message), { code });
-};
 
 // Pure callers must carry the tuple from upper selection. A bare ID or a
 // historical Project object never selects a new dialect, even with a lode ID.

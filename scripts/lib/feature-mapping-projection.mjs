@@ -1,7 +1,10 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
+import { sha256Hex as featureMappingDigest } from "./core/digest.mjs";
+import { canonicalJson as featureMappingCanonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 export const FEATURE_MAPPING_VERSION = "0.2.0";
 export const FEATURE_MAPPING_STATE_RELATIVE_PATH = ".head/feature-mappings/current.json";
@@ -18,31 +21,7 @@ const LIMITS = Object.freeze({
   maxTotalBytes: 32 * 1024 * 1024,
 });
 
-const fail = (message, code = "FEATURE_MAPPING_PROJECTION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-export function featureMappingCanonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-
-export function featureMappingDigest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
+const fail = failWith("FEATURE_MAPPING_PROJECTION_ERROR");
 
 function verifyIdentity(document, { idField, hashField, prefix, label }) {
   if (!document || typeof document !== "object" || Array.isArray(document)) {
@@ -282,7 +261,7 @@ function safeDirectory(projectRoot, relative) {
   const root = path.resolve(projectRoot);
   const directory = path.resolve(root, ...relative.split("/"));
   const fromRoot = path.relative(root, directory);
-  if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot)) {
+  if (escapesRoot(fromRoot)) {
     fail("Feature mapping projection path escapes the project root.", "FEATURE_MAPPING_PATH_ESCAPE");
   }
   let current = root;
@@ -416,3 +395,5 @@ export function loadFeatureMappingProjection({
     storage,
   );
 }
+
+export { featureMappingCanonicalJson, featureMappingDigest };

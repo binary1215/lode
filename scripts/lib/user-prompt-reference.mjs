@@ -6,6 +6,8 @@ import { createRequire } from "node:module";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { resolveRuntimeOperationalStateRoot } from "./runtime-execution-lease.mjs";
 import { withLocalMutation } from "./project-mutation-lock.mjs";
+import { sha256Hex } from "./core/digest.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
 
 // Local P5 reference only. It is not Canon, a checkpoint, direction, or an
 // instruction. The checkpoint remains the recovery source.
@@ -64,10 +66,7 @@ function callerFile(root, runtime, nativeSessionId, agentId, environment, create
   const storage = resolveProjectStorage(projectRoot);
   if (!storage) return null;
   const operational = resolveRuntimeOperationalStateRoot({ projectRoot, storage, environment, create });
-  const digest = crypto
-    .createHash("sha256")
-    .update(JSON.stringify([storage.projectId, runtime, nativeSessionId, agentId || null]))
-    .digest("hex");
+  const digest = sha256Hex(JSON.stringify([storage.projectId, runtime, nativeSessionId, agentId || null]));
   const directory = path.join(operational, "user-prompt-reference");
   if (!fs.existsSync(directory)) {
     if (!create) return null;
@@ -401,8 +400,8 @@ function readState(file, permissions, { withDigest = false } = {}) {
       reinject: state.reinject === true,
       ...(typeof state.visibleAssistant === "string" ? { visibleAssistant: boundText(state.visibleAssistant) } : {}),
       ...(state.visibleAssistantFromPreviousConversation === true ? { visibleAssistantFromPreviousConversation: true } : {}),
-      ...(withDigest ? { byteDigest: crypto.createHash("sha256").update(buffer.subarray(0, used)).digest("hex"), entry: stat } : {}),
-      revision: typeof state.revision === "string" ? state.revision : crypto.createHash("sha256").update(buffer.subarray(0, used)).digest("hex"),
+      ...(withDigest ? { byteDigest: sha256Hex(buffer.subarray(0, used)), entry: stat } : {}),
+      revision: typeof state.revision === "string" ? state.revision : sha256Hex(buffer.subarray(0, used)),
     };
   } catch {
     return null;
@@ -467,7 +466,7 @@ function writePrivate(file, body, permissions, publication = null) {
     const delays = [5, 10, 20, 40];
     for (let attempt = 0; ; attempt += 1) {
       try {
-        fs.renameSync(temporary, file);
+        renamePath(temporary, file);
         break;
       } catch (error) {
         if (process.platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(error.code) || attempt >= delays.length) throw error;

@@ -3,12 +3,9 @@ import { inspectObservationSources, ObservationAdapterRegistry } from "./observa
 import { OBSERVATION_PROTOCOL_VERSION, observationDigest } from "./observation-contract.mjs";
 import { queryObservations } from "./observation-projection.mjs";
 import { SCHEMA_VERSION } from "./lode-core.mjs";
+import { failWith } from "./core/errors.mjs";
 
-const fail = (message, code = "OBSERVATION_PREPARATION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("OBSERVATION_PREPARATION_ERROR");
 
 export function prepareObservationEvidence({
   root = ".",

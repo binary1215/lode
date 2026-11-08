@@ -1,8 +1,10 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { verifyTemporalProvenanceGraph } from "./temporal-provenance.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
 
 export const DOCUMENT_PROJECTION_ADAPTER_VERSION = "0.1.0";
 export const MARKDOWN_PROJECTION_VERSION = "0.1.0";
@@ -23,11 +25,7 @@ const REQUIRED_METHODS = [
   "publishDocuments",
 ];
 
-const fail = (message, code = "DOCUMENT_PROJECTION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("DOCUMENT_PROJECTION_ERROR");
 
 function compare(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -49,7 +47,6 @@ export function documentProjectionCanonicalJson(value) {
   return JSON.stringify(canonical(value));
 }
 
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const byteLength = (value) => Buffer.byteLength(value, "utf8");
@@ -87,17 +84,6 @@ function parseDocument(file, label) {
     return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (error) {
     fail(`${label} is invalid JSON: ${error.message}`, "INVALID_DOCUMENT_PROJECTION_DOCUMENT");
-  }
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }
 }
 

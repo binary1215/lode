@@ -1,12 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { validatePortableManifestFormat } from "./portable-project-format.mjs";
-import crypto from "node:crypto";
 import { copiedProjectFile, verifyCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { readSnapshotFile, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 import { verifyProjectLocationOriginals } from "./project-location-proof.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
 
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const json = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const fail = () => {
   throw Object.assign(new Error("Imported default Session ownership proof is invalid."), {

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
 import { noteProjectGraphChange } from "./discovery-index.mjs";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import {
   OBSERVATION_PROTOCOL_VERSION,
   createDerivedObservationRecord,
@@ -16,6 +16,8 @@ import {
   verifyObservationRecord,
   verifyObservationTypeDescriptor,
 } from "./observation-contract.mjs";
+import { failWith } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 export const OBSERVATION_DESCRIPTOR_DIRECTORY = ".head/observations/descriptors";
 export const OBSERVATION_RECORD_DIRECTORY = ".head/observations/records/by-source-key";
@@ -23,19 +25,14 @@ export const DERIVED_OBSERVATION_DIRECTORY = ".head/observations/derived";
 export const OBSERVATION_RECEIPT_DIRECTORY = ".head/observations/receipts";
 
 const LIMITS = Object.freeze({ maxArtifacts: 4096, maxArtifactBytes: 1024 * 1024, maxTotalBytes: 64 * 1024 * 1024 });
-const fail = (message, code = "OBSERVATION_STORE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("OBSERVATION_STORE_ERROR");
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 function safeDirectory(projectRoot, relative) {
   const root = path.resolve(projectRoot);
   const directory = path.resolve(root, ...relative.split("/"));
   const fromRoot = path.relative(root, directory);
-  if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot))
-    fail("Observation path escapes project root.", "OBSERVATION_PATH_ESCAPE");
+  if (escapesRoot(fromRoot)) fail("Observation path escapes project root.", "OBSERVATION_PATH_ESCAPE");
   let current = root;
   for (const segment of fromRoot.split(path.sep).filter(Boolean)) {
     current = path.join(current, segment);

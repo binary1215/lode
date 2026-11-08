@@ -1,6 +1,7 @@
-import crypto from "node:crypto";
 import { constants as bufferConstants } from "node:buffer";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
 
 export const COMPUTE_ADAPTER_CONTRACT_VERSION = "0.3.0";
 export const WORKER_PROTOCOL_VERSION = "0.2.0";
@@ -33,26 +34,6 @@ const fail = (message, code = "COMPUTE_ADAPTER_ERROR", details = null) => {
   if (details) error.details = details;
   throw error;
 };
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-
-function digest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;

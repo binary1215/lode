@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,13 +7,11 @@ import { collectGraphExplorerInventory } from "./project-graph.mjs";
 import { LocalJsonWorldModelStoreAdapter, createLocalReadOnlyWorldModelStoreAdapter } from "./world-model-store.mjs";
 import { inspectGraphLineageComparison } from "./graph-lineage.mjs";
 import { renderGraphExplorer } from "./graph-explorer-html.mjs";
+import { sha256Hex as sha } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 const MAX_ORIGINAL = 64 * 1024,
   MAX_ORIGINAL_TOTAL = 256 * 1024;
-const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const reason = (error) => (/^[A-Z][A-Z0-9_]{0,95}$/.test(error?.code || "") ? error.code : "GRAPH_EXPLORER_UNAVAILABLE");
 export const explorerReferenceKey = (reference) => JSON.stringify([reference?.path || null, reference?.digest || null]);
 

@@ -1,10 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
 import { readSnapshotFile, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 import { verifyImportedDefaultSession } from "./session-import-proof.mjs";
-const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+import { sha256Hex as sha } from "./core/digest.mjs";
 const fail = () => {
   throw Object.assign(new Error("Imported Run ownership proof is invalid."), {
     code: "RUN_IMPORT_OWNER_INVALID",

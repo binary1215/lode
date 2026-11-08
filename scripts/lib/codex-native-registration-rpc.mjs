@@ -4,11 +4,9 @@ import crypto from "node:crypto";
 import { spawnSupervisedProcess, verifyRuntimeProcessSupervisorHandle } from "./runtime-process-supervisor.mjs";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
 import { codexNativeRegistrationScope, observeCodexNativeRegistrationWriters } from "./codex-native-offline.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const methods = new Set(["config/read", "thread/resume", "thread/read", "thread/turns/list", "thread/items/list", "thread/unsubscribe"]);
 const disabled = [
   "apps",

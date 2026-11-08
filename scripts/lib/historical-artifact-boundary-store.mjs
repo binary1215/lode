@@ -1,8 +1,10 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact } from "./project-storage-format.mjs";
+import { sha256Hex as historicalBoundaryDigest } from "./core/digest.mjs";
+import { canonicalJson as historicalBoundaryCanonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 export const HISTORICAL_BOUNDARY_PROTOCOL_VERSION = "0.1.0";
 export const HISTORICAL_BOUNDARY_ROOT = ".head/onboarding/historical-boundaries";
@@ -35,25 +37,6 @@ function fail(message, code = "HISTORICAL_BOUNDARY_ERROR") {
   throw Object.assign(new Error(message), { code });
 }
 
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-export function historicalBoundaryCanonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-
-export function historicalBoundaryDigest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
-
 function exactKeys(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${label} is invalid.`, "INVALID_HISTORICAL_BOUNDARY");
   const actual = Object.keys(value).sort();
@@ -74,8 +57,7 @@ function safeProjectFile(projectRoot, relative, { mustExist = true } = {}) {
   const normalized = normalizedRelative(relative);
   const candidate = path.resolve(root, ...normalized.split("/"));
   const rel = path.relative(root, candidate);
-  if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel))
-    fail("Historical inventory path escapes the project.", "HISTORICAL_BOUNDARY_PATH_ESCAPE");
+  if (escapesRoot(rel)) fail("Historical inventory path escapes the project.", "HISTORICAL_BOUNDARY_PATH_ESCAPE");
   let current = root;
   for (const segment of rel.split(path.sep).filter(Boolean)) {
     current = path.join(current, segment);
@@ -371,3 +353,5 @@ export function historicalBoundaryStorageFiles(projectRoot, boundaryId, storage 
     commit: path.join(directory, "commit.json"),
   };
 }
+
+export { historicalBoundaryCanonicalJson, historicalBoundaryDigest };

@@ -1,8 +1,6 @@
-import crypto from "node:crypto";
 import path from "node:path";
 import { analyzeSourceFile, languageForSource, SOURCE_ANALYSIS_VERSION } from "./source-analysis.mjs";
-
-const sha = (text) => crypto.createHash("sha256").update(text).digest("hex");
+import { sha256Hex as sha } from "./core/digest.mjs";
 
 function lineComparison(before, after) {
   const a = before.split("\n"),

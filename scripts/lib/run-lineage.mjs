@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { sessionStatePath, sessionStateForWrite, assertRunSession, withSessionRoute, defaultSessionStatePath } from "./session-routing.mjs";
 import { assertProjectActionsCurrent } from "./project-direction.mjs";
-import { atomicWriteArtifact, atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicWriteArtifact, atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
 import { readContextCapsule } from "./context-compiler.mjs";
 import { buildFreshLodeReview, createResultPacket, createReviewDecision, readLineageArtifact } from "./execution-lineage.mjs";
@@ -22,12 +22,9 @@ import { withProjectMutation } from "./project-mutation-lock.mjs";
 import { noteProjectGraphChange } from "./discovery-index.mjs";
 
 import { formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
+import { failWith } from "./core/errors.mjs";
 
-const fail = (message, code = "RUN_LINEAGE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("RUN_LINEAGE_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const now = () => new Date().toISOString();

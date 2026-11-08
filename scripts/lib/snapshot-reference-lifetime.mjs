@@ -7,11 +7,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { withLocalMutation } from "./project-mutation-lock.mjs";
 import { resolveProjectStorage, assertProjectStorageUnchanged } from "./project-storage-format.mjs";
 import { classifySnapshotFileSystem } from "./snapshot-filesystem.mjs";
+import { sha256Hex } from "./core/digest.mjs";
 
 // Transient cooperative local P5 only. No Session selection, direction or lease
 // authority. Admission protects registration/one unlink, never a whole scan.
 const context = new AsyncLocalStorage();
-const host = crypto.createHash("sha256").update(os.hostname()).digest("hex");
+const host = sha256Hex(os.hostname());
 // Stable for this Node process, including repeated module loads. This is the
 // runtime's origin, not an independently queried OS CreationDate or liveness
 // proof. Never reclaim another owner's state from PID/age guesses.

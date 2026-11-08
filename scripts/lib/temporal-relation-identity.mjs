@@ -1,4 +1,4 @@
-import crypto from "node:crypto";
+import { sha256Hex } from "./core/digest.mjs";
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (!value || typeof value !== "object") return value;
@@ -12,11 +12,7 @@ function canonical(value) {
   }
   return ordered;
 }
-const hash = (value) =>
-  crypto
-    .createHash("sha256")
-    .update(JSON.stringify(canonical(value)))
-    .digest("hex");
+const hash = (value) => sha256Hex(JSON.stringify(canonical(value)));
 export const RELATION_IDENTITY_VERSION = "0.16.0";
 // Logical relation identity includes endpoint continuity. Content revision keeps
 // evidence/authority/confidence/producer differences; global membership is an

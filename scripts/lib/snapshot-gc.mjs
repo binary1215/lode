@@ -1,7 +1,6 @@
 import { inspectPhysicalStorage, summarizeObservedStorageFiles, mergePhysicalStorageObservations } from "./snapshot-storage-accounting.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { readGraphProject, safeGraphFile } from "./discovery-index.mjs";
 import { readSnapshotFile } from "./snapshot-storage-codec.mjs";
 import {
@@ -12,12 +11,12 @@ import {
 } from "./snapshot-reference-lifetime.mjs";
 import { buildSnapshotDeletionClosure, snapshotFileIdentity, sameSnapshotFileIdentity } from "./snapshot-deletion-closure.mjs";
 import { qualifySnapshotFileSystem } from "./snapshot-filesystem.mjs";
+import { sha256Hex as sha } from "./core/digest.mjs";
 
 // Dry-run remains zero-write and observational. Explicit apply separately
 // verifies the supported typed closure under cooperative publisher lifetimes.
 export const SNAPSHOT_GC_UNCOVERED_WRITERS = Object.freeze([]);
 const ids = (text) => [...new Set(text.match(/\b(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}\b/g) || [])];
-const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const MAX_FILES = 50_000,
   MAX_SCAN_BYTES = 1024 * 1024 * 1024;
 const snapshotPath = (relative) =>

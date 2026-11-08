@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import path from "node:path";
 import { ChildProcess } from "node:child_process";
 import {
@@ -12,6 +11,9 @@ import { openRuntimeOutputSpool } from "./runtime-output-spool.mjs";
 import { verifyCodexWorkerPolicyPlan } from "./runtime-codex-worker-policy.mjs";
 import { verifyProcessSupervisorManifest, verifyRuntimeProcessSupervisorHandle } from "./runtime-process-supervisor.mjs";
 import { inspectCurrentCodexNativeForkCompatibility } from "./runtime-codex-fork-compatibility.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { canonicalJson as json, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 // Optional P5 adapter. No process, connection, authorization or lease is created
 // here. The fixed Codex runner owns the existing lease and result publication.
@@ -20,22 +22,7 @@ export const CODEX_NATIVE_FORK_VERSION = "0.1.0";
 export const CODEX_NATIVE_FORK_ACTUAL_UNAVAILABLE = "CODEX_NATIVE_FORK_INSTALLED_ENFORCEMENT_UNPROVEN";
 const hosts = new WeakMap();
 const ownedTransports = new WeakMap();
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
-const canonical = (value) =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((key) => [key, canonical(value[key])]),
-        )
-      : value;
-const json = (value) => JSON.stringify(canonical(value));
 const copy = (value) => structuredClone(value);
-const fail = (code, message = code) => {
-  throw Object.assign(new Error(message), { code });
-};
 const requireText = (value) => typeof value === "string" && value.length > 0 && value.length <= 4096;
 
 function prefix(read, threadId, lastTurnId) {

@@ -3,12 +3,11 @@ import path from "node:path";
 import { readSessionWorkContext, readSessionWorkEvidenceOwner } from "./session-work-context.mjs";
 import { safeSessionPath } from "./session-paths.mjs";
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
-import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact, atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { workDocumentHash } from "./work-document-source.mjs";
+import { failWith } from "./core/errors.mjs";
 
-export const documentFailure = (message, code = "WORK_DOCUMENT_UNVERIFIED") => {
-  throw Object.assign(new Error(message), { code });
-};
+export const documentFailure = failWith("WORK_DOCUMENT_UNVERIFIED");
 function documentOwner({ root, sessionId }) {
   sessionId ??= readSessionWorkContext({ root, evidenceIds: [], maxRecords: 1, maxCharacters: 2 }).sessionId;
   return readSessionWorkEvidenceOwner({ root, sessionId });

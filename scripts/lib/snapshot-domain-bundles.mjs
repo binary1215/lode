@@ -2,9 +2,8 @@ import { splitWorldCodeChunks, joinWorldCodeChunks, splitGraphCodeChunks, joinGr
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import zlib from "node:zlib";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import {
   formatForVerifiedOwner,
   assertProjectStorageUnchanged,
@@ -14,13 +13,14 @@ import {
   noteCopiedSnapshotRead,
 } from "./project-storage-format.mjs";
 import { safeSnapshotPath, SNAPSHOT_STORAGE_LIMITS, readBoundedSnapshotDescriptor } from "./snapshot-storage-codec.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 const producer = Object.freeze({ name: "lode-domain-bundle", version: "0.1.0" });
 export const DOMAIN_BUNDLE_LAYOUT = "domain-bundles-v1";
 const flatProducer = Object.freeze({ name: "lode-domain-bundle", version: "0.2.0" });
 export const SHARED_DOMAIN_LAYOUT = "shared-domains-v2";
 export const CHUNKED_CODE_LAYOUT = "chunked-code-v3";
 const chunkProducer = Object.freeze({ name: "lode-domain-bundle", version: "0.3.0" });
-const hash = (b) => crypto.createHash("sha256").update(b).digest("hex");
 const bytes = (value) => Buffer.from(JSON.stringify(value) + "\n");
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -35,9 +35,6 @@ function canonical(value) {
   }
   return value;
 }
-const fail = (code, message = code) => {
-  throw Object.assign(new Error(message), { code });
-};
 const codeKinds = new Set(["File", "FileRevision", "Symbol", "SymbolRevision", "Test", "TestRevision"]);
 const equal = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 function encode(raw, encoding) {

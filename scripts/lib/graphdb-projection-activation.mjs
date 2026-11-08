@@ -19,12 +19,9 @@ import {
 import { buildArcadeDbIncrementalSyncReceipt, incrementalSyncCanonicalJson } from "./arcadedb-incremental-sync.mjs";
 import { inspectArcadeDbDatabaseCompatibility } from "./arcadedb-database-lifecycle.mjs";
 import { inspectWorldGraphProjection, inspectWorldModel } from "./world-model.mjs";
+import { failWith } from "./core/errors.mjs";
 
-const fail = (message, code = "ARCADEDB_ACTIVATION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("ARCADEDB_ACTIVATION_ERROR");
 
 export function inspectArcadeDbCredentialPreflight({ root = ".", transport = null, storage = null } = {}) {
   const configured = inspectArcadeDbGraphProjectionActivation({ projectRoot: path.resolve(root), storage });

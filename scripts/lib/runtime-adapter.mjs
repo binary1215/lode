@@ -1,5 +1,7 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const RUNTIME_ADAPTER_CONTRACT_VERSION = "0.1.0";
 export const RUNTIME_ADAPTER_RUNTIMES = Object.freeze(["claude", "codex", "opencode"]);
@@ -13,28 +15,9 @@ const AGENT_METHODS = ["describe", "probe", "start", "resume", "stream", "interr
 const PLATFORM_METHODS = ["describe", "probe", "resolveExecutable", "spawnOwned", "inspectOwned", "terminateOwned"];
 const HOST_METHODS = ["describe", "probe", "attach", "send", "receive", "detach"];
 
-const fail = (message, code = "RUNTIME_ADAPTER_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("RUNTIME_ADAPTER_ERROR");
 
 const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
-
-function canonicalValue(value) {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort(compareText)
-        .map((key) => [key, canonicalValue(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonicalValue(value));
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
 function assertFields(value, fields, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${label} is invalid.`, "INVALID_RUNTIME_ADAPTER_CONTRACT");

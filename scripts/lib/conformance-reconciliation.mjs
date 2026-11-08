@@ -1,5 +1,4 @@
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
@@ -26,6 +25,10 @@ import {
   verifyConformanceFindingCandidate,
   verifyConformanceResolutionCandidate,
 } from "./conformance-contract.mjs";
+import { createHasher } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 const directories = (storage) => ({
   findings: relativeProjectArtifact(storage, "conformance", "findings"),
@@ -35,28 +38,13 @@ const directories = (storage) => ({
 const MAX_PAGE = 64;
 const MAX_SOURCE_FILE_BYTES = 64 * 1024 * 1024;
 const MAX_EXCERPT_BYTES = 512 * 1024;
-const fail = (message, code = "CONFORMANCE_RECONCILIATION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("CONFORMANCE_RECONCILIATION_ERROR");
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 function readyProject(root, action) {
   const inspected = inspectProject(root);
   if (inspected.status !== "ready") fail(`Project must be ready for ${action}; current status: ${inspected.status}.`, "PROJECT_NOT_READY");
   return inspected;
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
 }
 
 function persistImmutable(projectRoot, relativeDirectory, id, document, label) {
@@ -168,8 +156,7 @@ function normalizedRelativePath(projectRoot, value) {
     fail("Conformance source path escapes or ambiguously addresses the project.", "CONFORMANCE_SOURCE_PATH_INVALID");
   const target = path.resolve(projectRoot, ...normalized.split("/"));
   const relative = path.relative(projectRoot, target);
-  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
-    fail("Conformance source path escapes the project.", "CONFORMANCE_SOURCE_PATH_INVALID");
+  if (!relative || escapesRoot(relative)) fail("Conformance source path escapes the project.", "CONFORMANCE_SOURCE_PATH_INVALID");
   let current = projectRoot;
   for (const part of normalized.split("/")) {
     current = path.join(current, part);
@@ -189,7 +176,7 @@ function inspectSourceAnchor(projectRoot, anchor) {
       "Direct Conformance source hashing is bounded to 64 MiB; use an exact current World or ChangeSet anchor for larger files. Ordinary work remains available.",
       "CONFORMANCE_SOURCE_TOO_LARGE",
     );
-  const hash = crypto.createHash("sha256");
+  const hash = createHasher("sha256");
   const selected = [];
   let selectedBytes = 0;
   let line = 1;
@@ -859,7 +846,7 @@ export function conformanceSourceDigest(root, relativePath) {
       "Direct Conformance source hashing is bounded to 64 MiB; use an exact current World or ChangeSet anchor for larger files. Ordinary work remains available.",
       "CONFORMANCE_SOURCE_TOO_LARGE",
     );
-  const hash = crypto.createHash("sha256");
+  const hash = createHasher("sha256");
   const descriptor = fs.openSync(target, "r");
   const buffer = Buffer.allocUnsafe(64 * 1024);
   try {

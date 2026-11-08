@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { formatForVerifiedOwner, familyFormatForOriginal, resolveProjectStorage } from "./project-storage-format.mjs";
@@ -12,22 +11,11 @@ import {
   verifyRuntimeInvocationAuthorization,
   verifyRuntimeInvocationLifecycleReceipt,
 } from "./runtime-invocation-lifecycle.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const canonical = (value) =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((key) => [key, canonical(value[key])]),
-        )
-      : value;
 const code = (error) => (/^[A-Z][A-Z0-9_]{0,95}$/u.test(error?.code || "") ? error.code : "PREPARED_INPUT_ORIGINAL_UNAVAILABLE");
-const fail = (reason) => {
-  throw Object.assign(new Error(reason), { code: reason });
-};
 const sessionOf = (record) => record?.[familyFormatForOriginal({ sessionIdentity: true }, record)?.sessionIdField];
 const failureState = (reason) =>
   reason === "ENOENT" || /NOT_FOUND$/u.test(reason)

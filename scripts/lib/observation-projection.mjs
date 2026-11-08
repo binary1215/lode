@@ -2,12 +2,9 @@ import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-stora
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
 import { OBSERVATION_PROTOCOL_VERSION, observationCanonicalJson, observationDigest } from "./observation-contract.mjs";
 import { loadObservationArtifacts } from "./observation-store.mjs";
+import { failWith } from "./core/errors.mjs";
 
-const fail = (message, code = "OBSERVATION_PROJECTION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("OBSERVATION_PROJECTION_ERROR");
 const OBSERVATION_QUERY_LIMIT = 100;
 
 function edge(type, from, to, evidenceIds) {

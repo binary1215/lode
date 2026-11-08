@@ -9,12 +9,9 @@ import {
   verifyObservationTypeDescriptor,
 } from "./observation-contract.mjs";
 import { assertObservationProjectReady, recordCollectedObservation } from "./observation-store.mjs";
+import { failWith } from "./core/errors.mjs";
 
-const fail = (message, code = "OBSERVATION_ADAPTER_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("OBSERVATION_ADAPTER_ERROR");
 const JSON_EVENT_FILE_ADAPTER_KEY = "head.json-event-file-observation";
 const MAX_EVENT_FILE_BYTES = 512 * 1024;
 const MAX_INSPECTED_SOURCES = 64;

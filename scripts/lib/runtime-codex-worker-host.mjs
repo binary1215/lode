@@ -1,10 +1,10 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,6 @@ import { createCodexNativeForkHost, CODEX_NATIVE_FORK_ACTUAL_UNAVAILABLE } from 
 import { createCodexAppServerProtocolFixtureTransport } from "./runtime-codex-app-server-transport.mjs";
 import { inspectCurrentCodexNativeForkCompatibility } from "./runtime-codex-fork-compatibility.mjs";
 
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const json = (value) => JSON.stringify(value);
 const fail = (code = "CODEX_WORKER_HOST_CONNECTION_MISMATCH") => {
   throw Object.assign(new Error(code), { code });

@@ -1,8 +1,10 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import { formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const PRODUCT_MODEL_V1_VERSION = "0.1.0";
 export const PRODUCT_MODEL_V2_VERSION = "0.2.0";
@@ -11,31 +13,7 @@ export const PRODUCT_MODEL_RELATIVE_PATH = ".head/context/product-model.json";
 export const PRODUCT_ENTITY_KINDS_V1 = Object.freeze(["FeatureGroup", "Capability", "Feature", "Requirement", "Constraint", "Decision"]);
 export const PRODUCT_ENTITY_KINDS = Object.freeze([...PRODUCT_ENTITY_KINDS_V1, "Policy"]);
 
-const fail = (message, code = "PRODUCT_MODEL_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-
-function digest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
+const fail = failWith("PRODUCT_MODEL_ERROR");
 
 function requiredText(value, label) {
   if (typeof value !== "string" || !value.trim()) fail(`${label} is required.`, "INVALID_PRODUCT_MODEL");

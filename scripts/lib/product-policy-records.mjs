@@ -1,9 +1,12 @@
 import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeProductModelDocument, productModelDocument, upgradeProductModelDocument } from "./product-model.mjs";
 import { verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson as productPolicyCanonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 // Frozen record schema, not initialization or effect orchestration.
 const SCHEMA_VERSION = 1;
@@ -13,22 +16,7 @@ export const PRODUCT_POLICY_REVIEW_DIRECTORY = ".head/product-policy/review-deci
 const HASH = /^[a-f0-9]{64}$/;
 const CANDIDATE_ID = /^policy-candidate-[a-f0-9]{24}$/;
 const REVIEW_ID = /^review-decision-[a-f0-9]{24}$/;
-const fail = (message, code = "PRODUCT_POLICY_ERROR") => {
-  throw Object.assign(new Error(message), { code });
-};
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-export const productPolicyCanonicalJson = (value) => JSON.stringify(canonical(value));
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
+const fail = failWith("PRODUCT_POLICY_ERROR");
 
 export function requiredText(value, label, max = 4000) {
   if (typeof value !== "string" || !value.trim()) fail(`${label} is required.`, "INVALID_PRODUCT_POLICY_INPUT");
@@ -56,8 +44,7 @@ export function safeFile(projectRoot, relative) {
   const root = fs.realpathSync(path.resolve(projectRoot));
   const file = path.resolve(root, ...relative.split("/"));
   const fromRoot = path.relative(root, file);
-  if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot))
-    fail("Product Policy artifact path escapes the project root.", "PRODUCT_POLICY_PATH_ESCAPE");
+  if (escapesRoot(fromRoot)) fail("Product Policy artifact path escapes the project root.", "PRODUCT_POLICY_PATH_ESCAPE");
   let current = root;
   for (const segment of fromRoot.split(path.sep).filter(Boolean)) {
     current = path.join(current, segment);
@@ -374,3 +361,5 @@ export function readProductPolicyReviewDecisionRecord({ root = ".", reviewDecisi
     candidate,
   };
 }
+
+export { productPolicyCanonicalJson };

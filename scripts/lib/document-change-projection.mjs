@@ -1,8 +1,11 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
 import { normalizeProductModelDocument } from "./product-model.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 export const DOCUMENT_CHANGE_GRAPH_PROJECTION_VERSION = "0.1.0";
 
@@ -32,26 +35,7 @@ const HASH_FIELDS = Object.freeze({
   applicationReceipts: "applicationReceiptHash",
 });
 
-const fail = (message, code = "DOCUMENT_CHANGE_PROJECTION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonical(value));
+const fail = failWith("DOCUMENT_CHANGE_PROJECTION_ERROR");
 
 function safeRelativeMarkdownPath(value) {
   if (typeof value !== "string" || !value || path.isAbsolute(value) || value.includes("\\") || !value.endsWith(".md")) {
@@ -66,8 +50,7 @@ function safeDirectory(projectRoot, relativeDirectory) {
   const root = path.resolve(projectRoot);
   const directory = path.resolve(root, ...relativeDirectory.split("/"));
   const relative = path.relative(root, directory);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
-    fail("Document-change projection path escapes the project root.", "DOCUMENT_CHANGE_PROJECTION_PATH_ESCAPE");
+  if (escapesRoot(relative)) fail("Document-change projection path escapes the project root.", "DOCUMENT_CHANGE_PROJECTION_PATH_ESCAPE");
   let current = root;
   for (const segment of relative.split(path.sep).filter(Boolean)) {
     current = path.join(current, segment);

@@ -1,10 +1,11 @@
 import { familyFormatForOriginal } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import { safeSessionPath } from "./session-paths.mjs";
 import { verifyProductModelRevisionForProjection, verifyDocumentChangeProductModelRevision } from "./product-model-revision-verification.mjs";
+import { sha256Hex as sha } from "./core/digest.mjs";
+import { canonicalJson as encoded, canonicalValue as canonical } from "./core/canonical-json.mjs";
 
 // Shared exact original verifier. No Session selection, scan, index or writes.
 export const SESSION_WORK_CONTEXT_VERSION = "0.1.0";
@@ -12,18 +13,6 @@ export const PROTOCOL = { name: "head-agent-core-session-work-evidence", version
 export const MAX_RECORD_BYTES = 64 * 1024;
 export const MAX_REFERENCE_BYTES = 16 * 1024 * 1024;
 export const DEFAULT_SCAN = 512;
-export const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
-const canonical = (value) =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((key) => [key, canonical(value[key])]),
-        )
-      : value;
-export const encoded = (value) => JSON.stringify(canonical(value));
 export function fail(message, code = "INVALID_SESSION_WORK_EVIDENCE") {
   throw Object.assign(new Error(message), { code });
 }
@@ -347,3 +336,5 @@ export function inspectSessionWorkReference(owner, ref, { saving = false, excerp
     return { ...ref, status: "unavailable", reasonCode: error.code || "INVALID_REFERENCE", contentReconstructed: false };
   }
 }
+
+export { encoded, sha };

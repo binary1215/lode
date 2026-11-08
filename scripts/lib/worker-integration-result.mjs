@@ -1,4 +1,5 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { failWith } from "./core/errors.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
@@ -24,9 +25,7 @@ import {
   publishIntegrationJson,
 } from "./worker-integration-store.mjs";
 
-const fail = (message, code = "WORKER_INTEGRATION_RESULT_CONFLICT") => {
-  throw Object.assign(new Error(message), { code });
-};
+const fail = failWith("WORKER_INTEGRATION_RESULT_CONFLICT");
 const same = (left, right) => json(left) === json(right);
 const flags = { instructionAuthority: false, promotionAuthority: false, recoveryAuthority: false, reviewDecisionCreated: false, mutatesCanon: false };
 const packetFields = ["outcome", "evidence", "planDelta", "impactRadius", "verification", "unknowns", "knowledgeProposals"];

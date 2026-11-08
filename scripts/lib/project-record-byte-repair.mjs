@@ -1,13 +1,10 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
-import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact, atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import { copiedProjectFile, inspectCopiedProjectFile, validateCopiedManagedPaths } from "./project-copy-evidence.mjs";
 import { withLocalMutation } from "./project-mutation-lock.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 // Byte transformations only: no UTF-8 decoder, BOM removal, JSON serialization,

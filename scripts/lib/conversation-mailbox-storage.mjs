@@ -2,10 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { assertProjectStorageUnchanged } from "./project-storage-format.mjs";
+import { sha256Hex } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
 
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const same = (a, b) => a.dev === b.dev && a.ino === b.ino;
 
 export function assertConversationTarget(check) {
@@ -26,7 +26,7 @@ export function assertConversationTarget(check) {
 // atomicity guarantee against an arbitrary non-cooperating filesystem writer.
 export function conversationHostDirectory(environment, projectRoot) {
   if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) return null;
-  const digest = crypto.createHash("sha256").update(path.resolve(projectRoot)).digest("hex");
+  const digest = sha256Hex(path.resolve(projectRoot));
   const home = environment?.HOME || environment?.USERPROFILE;
   if (typeof home === "string" && path.isAbsolute(home)) return path.join(home, ".local", "state", "lode-agent-core", "conversation-tickets", digest);
   const operational = environment?.LODE_AGENT_OPERATIONAL_STATE_ROOT || environment?.HEAD_AGENT_OPERATIONAL_STATE_ROOT;
@@ -155,7 +155,7 @@ function confinedStorage(storage, root, base) {
         const fingerprint = (target) => {
           check(target);
           const stat = fs.lstatSync(target, { bigint: true, throwIfNoEntry: false });
-          return stat ? `${stat.dev}:${stat.ino}:${crypto.createHash("sha256").update(api.readFileSync(target)).digest("hex")}` : "missing";
+          return stat ? `${stat.dev}:${stat.ino}:${sha256Hex(api.readFileSync(target))}` : "missing";
         };
         const original = fingerprint(file),
           stage = fingerprint(temp),
@@ -166,7 +166,7 @@ function confinedStorage(storage, root, base) {
           check(file);
           check(temp);
           try {
-            fs.renameSync(temp, file);
+            renamePath(temp, file);
             break;
           } catch (error) {
             if (process.platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(error.code) || attempt >= delays.length) throw error;
@@ -262,7 +262,7 @@ function confinedStorage(storage, root, base) {
     renameSync(source, target) {
       check(source);
       check(target);
-      fs.renameSync(source, target);
+      renamePath(source, target);
       check(target);
     },
     rmSync(file) {

@@ -16,7 +16,6 @@ import {
 } from "./codex-native-target-choices.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { nativeSqlitePath } from "./codex-native-backup.mjs";
 import { codexNativeRegistrationScope, assertCodexNativeOffline } from "./codex-native-offline.mjs";
@@ -27,12 +26,9 @@ import { decodeSqliteCell, readTypedSqliteRows } from "./native-sqlite-values.mj
 import { codexNativeApiExpectation, readCodexNativeApiHistory } from "./codex-native-api-evidence.mjs";
 import { requestNativeRegistration, inspectNativeRegistration } from "./native-registration-journal.mjs";
 import { openCodexNativeRegistrationRpc } from "./codex-native-registration-rpc.mjs";
+import { createHasher, sha256Hex as hash, sha256Json as digest } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
-const digest = (value) => hash(JSON.stringify(value));
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const samePath = (left, right) => nativeSqlitePath(path.resolve(left)) === nativeSqlitePath(path.resolve(right));
 const canonical = (rows) => rows.map((row) => JSON.stringify(row)).sort();
 
@@ -41,7 +37,7 @@ const canonical = (rows) => rows.map((row) => JSON.stringify(row)).sort();
 // rows. A new user/model turn is divergence, not a retry of the import.
 function verifyPublishedOriginals(inspected, home, basis, signal) {
   for (const entry of inspected.payload.files) {
-    const sha = crypto.createHash("sha256");
+    const sha = createHasher("sha256");
     let remaining = entry.bytes;
     const observed = inspectCopiedProjectFile(home, entry.path, {
       signal,

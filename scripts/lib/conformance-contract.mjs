@@ -1,7 +1,9 @@
-import crypto from "node:crypto";
 import { SCHEMA_VERSION } from "./lode-core.mjs";
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
 import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
+import { sha256Hex as conformanceDigest } from "./core/digest.mjs";
+import { canonicalJson as conformanceCanonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const CONFORMANCE_PROTOCOL_VERSION = "0.1.0";
 export const CONFORMANCE_CLAIM_KINDS = Object.freeze(["potential-conflict", "possible-conformance-gap"]);
@@ -16,29 +18,7 @@ export const CONFORMANCE_DISCLOSURES = Object.freeze([
   "direct-source-anchor-used",
 ]);
 
-const fail = (message, code = "CONFORMANCE_CONTRACT_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-export function conformanceCanonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-export function conformanceDigest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
+const fail = failWith("CONFORMANCE_CONTRACT_ERROR");
 
 function exactFields(value, allowed, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${label} must be an object.`, "INVALID_CONFORMANCE_ARTIFACT");
@@ -59,7 +39,7 @@ function stableKey(value, label, max = 192) {
   return normalized;
 }
 
-function digest(value, label) {
+function requireDigest(value, label) {
   if (!/^[a-f0-9]{64}$/.test(value || "")) fail(`${label} must be a SHA-256 digest.`, "INVALID_CONFORMANCE_ARTIFACT");
   return value;
 }
@@ -100,7 +80,7 @@ function normalizeBaseline(value) {
     return item;
   };
   const worldModelId = nullableId(value.worldModelId, /^world-model-[a-f0-9]{24}$/, "Conformance worldModelId");
-  const worldModelHash = value.worldModelHash == null ? null : digest(value.worldModelHash, "Conformance worldModelHash");
+  const worldModelHash = value.worldModelHash == null ? null : requireDigest(value.worldModelHash, "Conformance worldModelHash");
   const sourceSnapshotId = nullableId(value.sourceSnapshotId, /^source-snapshot-[a-f0-9]{24}$/, "Conformance sourceSnapshotId");
   const graphSnapshotId = nullableId(value.graphSnapshotId, /^graph-snapshot-[a-f0-9]{24}$/, "Conformance graphSnapshotId");
   if (
@@ -110,7 +90,7 @@ function normalizeBaseline(value) {
     fail("Conformance World baseline must be complete or absent.", "INVALID_CONFORMANCE_BASELINE");
   return {
     productModelId: text(value.productModelId, "Conformance productModelId", 96),
-    productModelHash: digest(value.productModelHash, "Conformance productModelHash"),
+    productModelHash: requireDigest(value.productModelHash, "Conformance productModelHash"),
     worldModelId,
     worldModelHash,
     sourceSnapshotId,
@@ -162,10 +142,10 @@ export function normalizeConformanceEvidenceAnchor(value) {
     return {
       kind,
       path: text(value.path, "Conformance source path", 1024),
-      fileDigest: digest(value.fileDigest, "Conformance fileDigest"),
+      fileDigest: requireDigest(value.fileDigest, "Conformance fileDigest"),
       startLine,
       endLine,
-      excerptDigest: value.excerptDigest == null ? null : digest(value.excerptDigest, "Conformance excerptDigest"),
+      excerptDigest: value.excerptDigest == null ? null : requireDigest(value.excerptDigest, "Conformance excerptDigest"),
       revisionId: value.revisionId == null ? null : text(value.revisionId, "Conformance revisionId", 128),
       symbolId: value.symbolId == null ? null : text(value.symbolId, "Conformance symbolId", 128),
     };
@@ -174,14 +154,14 @@ export function normalizeConformanceEvidenceAnchor(value) {
     return {
       kind,
       changeSetId: text(value.changeSetId, "Conformance changeSetId", 96),
-      changeSetHash: digest(value.changeSetHash, "Conformance changeSetHash"),
+      changeSetHash: requireDigest(value.changeSetHash, "Conformance changeSetHash"),
       changeId: text(value.changeId, "Conformance changeId", 96),
     };
   if (kind === "observation")
     return {
       kind,
       observationId: text(value.observationId, "Conformance observationId", 96),
-      observationHash: digest(value.observationHash, "Conformance observationHash"),
+      observationHash: requireDigest(value.observationHash, "Conformance observationHash"),
     };
   if (kind === "graph")
     return {
@@ -545,3 +525,5 @@ export function verifyConformanceResolutionCandidate(document, finding, projectI
   verifyArtifactAuthorityBoundary("ConformanceResolutionCandidate", document.authorityBoundary);
   return document;
 }
+
+export { conformanceCanonicalJson, conformanceDigest };

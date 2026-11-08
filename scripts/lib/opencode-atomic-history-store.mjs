@@ -18,8 +18,8 @@ const canonical = (value) =>
             .map((key) => [key, canonical(value[key])]),
         )
     : value;
-const digest = (value) => nativeHash(nativeJson(canonical(value)));
-const equal = (a, b) => digest(a) === digest(b);
+const historyDigest = (value) => nativeHash(nativeJson(canonical(value)));
+const equal = (a, b) => historyDigest(a) === historyDigest(b);
 const quote = (value) => '"' + value.replaceAll('"', '""') + '"';
 const json = (value) => (value === undefined || value === null ? null : JSON.stringify(value));
 const parsed = (value) => (value === null ? undefined : JSON.parse(value));
@@ -30,7 +30,7 @@ export const openCodeAtomicProfileIdentity = Object.freeze({
   profileId: profile.profileId,
   clientVersion: profile.clientVersion,
   upstreamCommit: profile.upstreamCommit,
-  schemaDigest: digest(profile.database),
+  schemaDigest: historyDigest(profile.database),
 });
 export function isQualifiedOpenCodeExecutable({ platform, arch, bytes, sha256 }) {
   return profile.qualifiedExecutables.some((entry) => entry.platform === platform && entry.arch === arch && entry.bytes === bytes && entry.sha256 === sha256);
@@ -87,7 +87,7 @@ function pinFile(file) {
     )
       nativeFail("NATIVE_OPENCODE_DATABASE_IDENTITY_CHANGED");
   };
-  verify.identity = digest({ dev: original.dev, ino: original.ino, birthtimeMs: original.birthtimeMs });
+  verify.identity = historyDigest({ dev: original.dev, ino: original.ino, birthtimeMs: original.birthtimeMs });
   verify();
   return verify;
 }
@@ -300,7 +300,7 @@ function observe(db, plans) {
     }
   }
   if (present !== plans.length) return { state: present ? "partial" : "absent" };
-  return { state: "matches", evidenceDigest: digest(observed), documents: observed };
+  return { state: "matches", evidenceDigest: historyDigest(observed), documents: observed };
 }
 
 function verifyParentAncestry(db, plans, projectId, check) {

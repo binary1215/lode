@@ -1,5 +1,5 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
+import { sha256Hex as hash } from "./core/digest.mjs";
 
 export const STRUCTURAL_RELATION_OBSERVATION_ENVELOPE_VERSION = "0.1.0";
 
@@ -44,7 +44,6 @@ function canonicalJson(value) {
   }
   fail("Canonical value contains an unsupported type.", "INVALID_STRUCTURAL_RELATION_OBSERVATION_ENVELOPE");
 }
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const H = (value) => hash(canonicalJson(value));
 const id = (prefix, value) => `${prefix}-${H(value).slice(0, 24)}`;
 const object = (value, label) => {

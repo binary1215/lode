@@ -1,6 +1,6 @@
 import { readSnapshotFile } from "./snapshot-storage-codec.mjs";
 import path from "node:path";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { inspectCopiedProjectFile, verifyCopiedProjectFile } from "./project-copy-evidence.mjs";
 import fs from "node:fs";
 import crypto from "node:crypto";
@@ -10,6 +10,8 @@ import { nativeSqlitePath } from "./codex-native-backup.mjs";
 import { inspectCodexNativeDatabase } from "./codex-native-portability.mjs";
 import { iterateSqliteStorageRows } from "./native-sqlite-values.mjs";
 import { SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 export const CODEX_NATIVE_TARGET_CHOICE_COLUMNS = Object.freeze([
   "id",
@@ -31,10 +33,6 @@ export const CODEX_NATIVE_TARGET_CHOICE_COLUMNS = Object.freeze([
   "attached_thread_parent_id",
 ]);
 const snapshots = new WeakMap();
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const keyForId = (id) =>
   hash(
     JSON.stringify({

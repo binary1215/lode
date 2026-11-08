@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact, atomicWriteArtifact } from "./core/fs-atomic.mjs";
 import {
   conversationMailboxStorage,
   conversationPresenceStorage,
@@ -15,6 +15,9 @@ import { ensureMessagingDirectoryIgnore } from "./project-storage-ignore.mjs";
 import { processExists, processStartId } from "./process-exists.mjs";
 import { codexChannel, codexControlSocket, codexDeliver, codexLive, collectAncestors, windowsProcessQuery } from "./conversation-messaging-codex.mjs";
 import { deliverOpenCodePrompt, opencodeChannel, opencodeDeliver, opencodeLive, opencodePromptAvailable } from "./conversation-messaging-opencode.mjs";
+import { sha256Hex, sha256Hex as slot } from "./core/digest.mjs";
+import { renamePath } from "./core/fs-atomic.mjs";
+import { escapesRootByPrefix } from "./core/path-safety.mjs";
 
 const ADAPTERS = Object.freeze([
   Object.freeze({ runtime: "claude", live: claudeLive, deliver: claudeDeliver }),
@@ -104,7 +107,7 @@ export function hookConversationIdentity(runtime, event) {
 
 export function argumentDigest(args) {
   const body = { project_root: args?.project_root ?? null, to: args?.to ?? null, body: args?.body ?? null, reply_to: args?.reply_to ?? null };
-  return crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex");
+  return sha256Hex(JSON.stringify(body));
 }
 
 function validBody(body) {
@@ -117,13 +120,10 @@ function openProject(root) {
   const base = path.resolve(storage.projectRoot, storage.directory);
   const messaging = path.resolve(base, "messaging");
   const relative = path.relative(base, messaging);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) fail("CONVERSATION_PATH_ESCAPE");
+  if (escapesRootByPrefix(relative)) fail("CONVERSATION_PATH_ESCAPE");
   return { root: storage.projectRoot, projectId: storage.projectId, directory: storage.directory, messaging, storage, io: conversationMailboxStorage(storage) };
 }
 
-function slot(address) {
-  return crypto.createHash("sha256").update(address).digest("hex");
-}
 // Reuse the existing P5 nonce-owned local mutation for short, same-recipient
 // filesystem transitions only. No provider await or Host handoff holds this lock.
 function withMailboxSlot(project, slotName, operation) {
@@ -1111,7 +1111,7 @@ function archiveClaimFile(project, message, file) {
   const fs = project.io;
   const archive = messageFile(project, "archive", message.to.address, message.id);
   fs.mkdirSync(path.dirname(archive), { recursive: true });
-  fs.renameSync(file, archive);
+  renamePath(file, archive);
 }
 
 function applyClaimDisposition(project, message, file, now, expired) {
@@ -1166,7 +1166,7 @@ function recoverInflight(project, address, now = Date.now) {
       const action = disposeClaim(project, message, holding, now);
       if (action === "keep") continue;
       try {
-        fs.renameSync(holding, action === "archive" ? messageFile(project, "archive", message.to.address, message.id) : inflight);
+        renamePath(holding, action === "archive" ? messageFile(project, "archive", message.to.address, message.id) : inflight);
       } catch {
         continue;
       }
@@ -1198,7 +1198,7 @@ function takeInboxFile(project, source, destination, now = Date.now, address = n
   }
   try {
     fs.mkdirSync(path.dirname(destination), { recursive: true });
-    fs.renameSync(source, destination);
+    renamePath(source, destination);
   } catch {
     return null;
   }
@@ -1260,14 +1260,14 @@ function markHandedLocked(project, message, state, evidence, receipt = null) {
   const inflight = messageFile(project, "inflight", message.to.address, message.id);
   const holding = inflight + ".owned";
   try {
-    fs.renameSync(inflight, holding);
+    renamePath(inflight, holding);
   } catch {
     return null;
   }
   const current = readJson(project, holding);
   if (!ownsClaim(current, message)) {
     try {
-      fs.renameSync(holding, inflight);
+      renamePath(holding, inflight);
     } catch {
       /* The moved claim stays beside the inbox until the next pass. */
     }
@@ -1278,11 +1278,11 @@ function markHandedLocked(project, message, state, evidence, receipt = null) {
   try {
     writeJson(project, holding, next);
     fs.mkdirSync(path.dirname(archive), { recursive: true });
-    fs.renameSync(holding, archive);
+    renamePath(holding, archive);
     return next;
   } catch {
     try {
-      fs.renameSync(holding, inflight);
+      renamePath(holding, inflight);
     } catch {
       /* The exclusive rename already took the file. */
     }
@@ -1305,7 +1305,7 @@ function releaseClaimLocked(project, message) {
   try {
     writeJson(project, inflight, released);
     fs.mkdirSync(path.dirname(inbox), { recursive: true });
-    fs.renameSync(inflight, inbox);
+    renamePath(inflight, inbox);
     return true;
   } catch {
     return false; /* Already archived or released; never claim queue success. */

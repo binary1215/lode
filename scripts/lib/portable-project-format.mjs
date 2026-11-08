@@ -1,10 +1,8 @@
+import { failCode as portableFail } from "./core/errors.mjs";
 // Transport format only. Historical proofs reuse this validator without
 // recursively inspecting a Project or granting source/recovery authority.
 export const PORTABLE_SOURCE_CAPABILITY = "portable-selected-retained-sources-v1";
 export const PORTABLE_SOURCE_KINDS = Object.freeze(["source", "outgoing-calls", "declarations", "selected-source"]);
-export const portableFail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 export const digestValid = (value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 export const closedPortable = (value, fields) =>
   value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((key) => fields.includes(key));
@@ -145,3 +143,5 @@ export function verifyPortableSourceReferenceClosure(manifest, records) {
   const actual = manifest.sourceTransfer.references.map(({ path, digest, workEvidence }) => ({ path, digest, workEvidence }));
   if (JSON.stringify(expected) !== JSON.stringify(actual)) portableFail("PROJECT_BUNDLE_SOURCE_REFERENCE_MISMATCH");
 }
+
+export { portableFail };

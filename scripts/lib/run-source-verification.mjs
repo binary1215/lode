@@ -1,24 +1,8 @@
-import crypto from "node:crypto";
-const fail = (message, code) => {
-  throw Object.assign(new Error(message), { code });
-};
+import { sha256CanonicalJson as sessionStateHash } from "./core/digest.mjs";
+import { canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { fail } from "./core/errors.mjs";
 // Pure source-data validation shared by ordinary Run readers and portability.
 // It never selects a storage owner, writes P2, repairs transitions or replays work.
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-export const sessionStateHash = (state) =>
-  crypto
-    .createHash("sha256")
-    .update(JSON.stringify(canonical(state)))
-    .digest("hex");
 
 export function operationPointerHash(state) {
   return sessionStateHash(
@@ -201,3 +185,5 @@ export function verifyRunTransitionOriginal({ inspected, run, requireArtifact, r
     unknownEffect: kind !== "review",
   };
 }
+
+export { sessionStateHash };

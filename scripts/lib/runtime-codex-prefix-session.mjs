@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import {
   verifyCodexNativePrefixPolicyPlan,
   codexNativePrefixSeedThreadParams,
@@ -9,25 +8,13 @@ import {
 import { codexFreshProposalTurnParams, assertCodexFreshProposalInstructionSources } from "./runtime-codex-proposal-policy.mjs";
 import { assertCodexProposalCompletion } from "./runtime-codex-turn-evidence.mjs";
 import { assertCodexControlledLegacyPrefix } from "./runtime-codex-legacy-prefix.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson as json, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
-const canonical = (value) =>
-  Array.isArray(value)
-    ? value.map(canonical)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map((key) => [key, canonical(value[key])]),
-        )
-      : value;
-const json = (value) => JSON.stringify(canonical(value));
 const same = (a, b) => json(a) === json(b);
 const copy = (value) => structuredClone(value);
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const text = (value) => typeof value === "string" && value.length > 0;
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const allowedItems = new Set(["userMessage", "agentMessage", "reasoning"]);
 
 // Concrete P5 protocol state, not a source-provenance boolean from a caller.

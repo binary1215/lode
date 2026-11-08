@@ -1,10 +1,13 @@
 import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { SCHEMA_VERSION } from "./lode-core.mjs";
 import { verifyGitCommitObservation } from "./change-set-projection.mjs";
 import { OBSERVATION_PROTOCOL_VERSION } from "./observation-contract.mjs";
+import { sha256Hex as releaseObservationDigest } from "./core/digest.mjs";
+import { canonicalJson as releaseObservationCanonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 // Stored P3 originals and their derived input; no writer or current World lookup.
 export const RELEASE_OBSERVATION_VERSION = "0.1.0";
@@ -20,29 +23,7 @@ const DIRECTORIES = Object.freeze({
 const LIMITS = Object.freeze({ maxArtifacts: 1024, maxArtifactBytes: 1024 * 1024, maxTotalBytes: 32 * 1024 * 1024 });
 const DEPLOYMENT_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
 const REF_KINDS = new Set(["branch", "remote", "tag"]);
-const fail = (message, code = "RELEASE_OBSERVATION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-export function releaseObservationCanonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-export function releaseObservationDigest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
+const fail = failWith("RELEASE_OBSERVATION_ERROR");
 
 function requiredText(value, label, max = 512) {
   if (typeof value !== "string" || !value.trim() || Buffer.byteLength(value.trim(), "utf8") > max)
@@ -150,8 +131,7 @@ function safeDirectory(projectRoot, relative) {
   const root = path.resolve(projectRoot);
   const directory = path.resolve(root, ...relative.split("/"));
   const fromRoot = path.relative(root, directory);
-  if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot))
-    fail("Release observation path escapes project root.", "RELEASE_OBSERVATION_PATH_ESCAPE");
+  if (escapesRoot(fromRoot)) fail("Release observation path escapes project root.", "RELEASE_OBSERVATION_PATH_ESCAPE");
   let current = root;
   for (const segment of fromRoot.split(path.sep).filter(Boolean)) {
     current = path.join(current, segment);
@@ -290,3 +270,5 @@ export function loadReleaseObservationProjection({ projectRoot, projectId, stora
 }
 
 export { DIRECTORIES, DEPLOYMENT_STATUSES, REF_KINDS, fail, requiredText, stableKey, safeDirectory };
+
+export { releaseObservationCanonicalJson, releaseObservationDigest };

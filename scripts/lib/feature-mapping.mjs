@@ -1,5 +1,4 @@
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
@@ -18,17 +17,16 @@ import {
 import { buildWorldModel, inspectWorldModel } from "./world-model.mjs";
 import { refreshWorldModel } from "./incremental-refresh.mjs";
 import { withProjectMutationAsync } from "./project-mutation-lock.mjs";
+import { failWith } from "./core/errors.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 const MAX_CANDIDATES = 500;
 const MAX_EVIDENCE = 750;
 const MAX_UNKNOWNS = 100;
 const MAX_DIAGNOSTIC_PATHS = 200;
 
-const fail = (message, code = "FEATURE_MAPPING_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("FEATURE_MAPPING_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const now = () => new Date().toISOString();
@@ -57,7 +55,7 @@ function relativeFile(projectRoot, relative, storage) {
   const root = path.resolve(projectRoot);
   const candidate = path.resolve(root, ...relativeProjectArtifact(storage, ...relative.split("/").slice(1)).split("/"));
   const fromRoot = path.relative(root, candidate);
-  if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot)) {
+  if (escapesRoot(fromRoot)) {
     fail(`Feature mapping artifact path escapes the project root: ${relative}`, "FEATURE_MAPPING_PATH_ESCAPE");
   }
   let current = root;
@@ -68,17 +66,6 @@ function relativeFile(projectRoot, relative, storage) {
     }
   }
   return candidate;
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
 }
 
 function readJson(file, label) {

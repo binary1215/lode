@@ -5,7 +5,6 @@ import { verifyObservationTypeDescriptor, verifyObservationRecord, verifyDerived
 import { verifyObservationCollectionReceipt } from "./observation-store.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { inspectProject } from "./lode-core.mjs";
 import { safeSnapshotPath, readSnapshotFile } from "./snapshot-storage-codec.mjs";
 import { verifyWorldModelPointerOriginal, verifyWorldModelSnapshotOriginal } from "./world-model.mjs";
@@ -28,13 +27,11 @@ import { withSessionRoute } from "./session-routing.mjs";
 import { readSessionWorkEvidenceOwner } from "./session-work-context.mjs";
 import { sessionWorkPath, readSessionWorkEvidenceOriginalFile } from "./session-work-evidence-original.mjs";
 import { verifyRetainedRunOriginal } from "./run-lineage.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as failure } from "./core/errors.mjs";
 
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const ids = (encoded) => [...new Set(encoded.match(/\b(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}\b/g) || [])];
 const target = /^(world-model|graph-projection)\/snapshots\/((?:world-model|graph-snapshot)-[a-f0-9]{24})\.json(?:\.gz)?$/;
-const failure = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 // Encoded reference-summary bound, not total V8 RSS or a Context budget.
 export const SNAPSHOT_GC_SUMMARY_BYTES = 64 * 1024 * 1024;
 export const snapshotFileIdentity = (stat) => ({

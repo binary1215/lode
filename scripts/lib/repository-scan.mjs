@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -15,6 +14,9 @@ import { classifySourcePath, analyzeSourceFile, languageForSource, SOURCE_ANALYS
 import { GoWorkerComputeAdapter } from "./go-worker-adapter.mjs";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { buildRepositorySourceScope, pathWithinRepositorySourceScope, verifyRepositorySourceScope } from "./repository-source-scope.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 
 export const REPOSITORY_SCAN_VERSION = "0.5.1";
 export const REPOSITORY_SCAN_OPERATION = "repository.scan.v1";
@@ -132,30 +134,7 @@ const DEPENDENCY_KINDS = new Set(["dependencies", "devDependencies", "module", "
 const LEGACY_SKIPPED_FIELDS = Object.freeze(["excludedDirectory", "managedProjection", "unsupportedType", "tooLarge", "symlink"]);
 const SKIPPED_FIELDS = Object.freeze([...LEGACY_SKIPPED_FIELDS, "outsideSourceScope"]);
 
-const fail = (message, code = "REPOSITORY_SCAN_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
-
-function digest(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
+const fail = failWith("REPOSITORY_SCAN_ERROR");
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;

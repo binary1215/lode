@@ -1,10 +1,12 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
 const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { assertRunSession } from "./session-routing.mjs";
@@ -23,26 +25,8 @@ export const BOUNDED_WORKER_WAVE_VERSION = "0.1.0";
 const MAX_WAVE_MEMBERS = 64;
 const ABANDON_REASON_CODES = new Set(["partial-launch", "lineage-drift", "operator-stop", "unrecoverable-member", "other"]);
 
-const fail = (message, code = "BOUNDED_WORKER_WAVE_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
+const fail = failWith("BOUNDED_WORKER_WAVE_ERROR");
 
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonical(value));
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const pretty = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const compareText = (left, right) => left.localeCompare(right, "en");
 

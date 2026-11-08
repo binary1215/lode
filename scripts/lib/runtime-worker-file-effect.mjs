@@ -3,11 +3,12 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { resolveVerifiedProcessSupervisor } from "./runtime-process-supervisor.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue } from "./core/canonical-json.mjs";
 
 export const WORKER_FILE_EFFECT_PROTOCOL_VERSION = "0.1.0";
 export const WORKER_FILE_EFFECT_TRANSPORT_MAX_BYTES = 8 * 1024 * 1024;
 const defaultPluginRoot = fileURLToPath(new URL("../../", import.meta.url));
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const imageOperations = new Set(["image-preflight", "image-apply", "image-inspect", "image-retry"]);
 const operations = new Set(["probe", "inspect", "edit", "retry", ...imageOperations]);
 const validDigest = (value, empty = false) => typeof value === "string" && ((empty && value === "") || /^[a-f0-9]{64}$/.test(value));
@@ -41,17 +42,6 @@ const supervisorTargets = new Map([
   ["linux-arm64", "linux-arm64"],
   ["linux-x64", "linux-x64"],
 ]);
-const canonicalJson = (value) => JSON.stringify(canonicalValue(value));
-function canonicalValue(value) {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonicalValue(value[key])]),
-    );
-  return value;
-}
 function freeze(value) {
   if (value && typeof value === "object") {
     Object.values(value).forEach(freeze);

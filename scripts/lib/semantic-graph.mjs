@@ -1,28 +1,11 @@
-import crypto from "node:crypto";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "./project-storage-format.mjs";
 import path from "node:path";
 import { extractSemanticSourceFacts, SOURCE_ANALYSIS_VERSION } from "./source-analysis.mjs";
 import { verifySourceRelationEvidenceSet } from "./source-relation-evidence.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
 
 export const SEMANTIC_GRAPH_VERSION = "0.4.0";
-
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonical(value));
-}
 
 function identity(prefix, value) {
   return `${prefix}-${digest(canonicalJson(value)).slice(0, 24)}`;

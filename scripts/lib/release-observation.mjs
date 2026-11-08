@@ -1,5 +1,4 @@
 import { formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
@@ -21,6 +20,7 @@ import {
   stableKey,
   safeDirectory,
 } from "./release-observation-projection.mjs";
+import { atomicWriteText as atomicWrite } from "./core/fs-atomic.mjs";
 
 export {
   RELEASE_OBSERVATION_VERSION,
@@ -62,17 +62,6 @@ function commitId(value) {
 function identity(payload, prefix, idField, hashField) {
   const hash = releaseObservationDigest(releaseObservationCanonicalJson(payload));
   return { ...payload, [idField]: `${prefix}-${hash.slice(0, 24)}`, [hashField]: hash };
-}
-
-function atomicWrite(file, content) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  try {
-    fs.writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
 }
 
 function persistImmutable(projectRoot, relative, id, document) {

@@ -1,17 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { copiedProjectFile, inspectCopiedProjectFile, readCopiedProjectExcerpt, copyOriginal, verifyCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { readSnapshotFile, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
 import { inspectProviderHistoryOriginal } from "./provider-native-history-format.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 const providers = new Set(["claude", "opencode"]);
-const hash = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 const bytes = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const inside = (root, file) => {
   const rel = path.relative(root, file);
   return !rel || (rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel));

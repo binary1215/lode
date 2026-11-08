@@ -1,10 +1,9 @@
-import crypto from "node:crypto";
 import { buildWorkerPatchCandidate, verifyWorkerWriteBasis } from "./worker-patch-basis.mjs";
 import { verifyWorkerExecutionBoundary, verifyWorkerWorkspace } from "./worker-workspace.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
 
 export const WORKER_PATCH_PROPOSAL_MODE = "fresh-selected-patch-proposal";
 export const isWorkerPatchProposalMode = (mode) => [WORKER_PATCH_PROPOSAL_MODE, "native-prefix-patch-proposal"].includes(mode);
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const fail = (message) => {
   const error = new Error(message);
   error.code = "INVALID_WORKER_PATCH_PROPOSAL";

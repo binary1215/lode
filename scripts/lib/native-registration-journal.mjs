@@ -1,14 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { types } from "node:util";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
 import { readSnapshotFile } from "./snapshot-storage-codec.mjs";
-import { atomicCreateArtifact } from "./artifact-storage.mjs";
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
-const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 const json = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const fields = [
   "provider",

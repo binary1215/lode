@@ -3,23 +3,10 @@ import path from "node:path";
 import { buildRuntimeInvocationLifecycleReceipt, normalizeRuntimeEvent } from "./runtime-invocation-lifecycle.mjs";
 import { spawnSupervisedProcess } from "./runtime-process-supervisor.mjs";
 import { openRuntimeOutputSpool } from "./runtime-output-spool.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
 
 const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
-
-function canonicalValue(value) {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort(compareText)
-        .map((key) => [key, canonicalValue(value[key])]),
-    );
-  }
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonicalValue(value));
 
 function structuredResultExposesRoot(result, roots) {
   if (!result) return false;

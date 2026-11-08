@@ -21,16 +21,14 @@ import {
   codexFreshProposalEnvironment,
   assertCodexFreshProposalInstructionSources,
 } from "./runtime-codex-proposal-policy.mjs";
+import { createHasher, sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 
 // Concrete P5 stdio only. This implements transport, not effective sandbox,
 // inherited-instruction, tool or goal enforcement. The actual constructor has
 // no public start method: only the native adapter's consumed, guarded lease can
 // invoke its private synchronous spawn factory. Missing Host proof stays closed.
 export const CODEX_APP_SERVER_TRANSPORT_VERSION = "0.1.0";
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const error = (code) => Object.assign(new Error(code), { code });
 const text = (value) => typeof value === "string" && value.length > 0 && value.length <= 4096;
 const idKey = (id) => (typeof id === "string" && text(id) ? `s:${id}` : Number.isSafeInteger(id) ? `n:${id}` : fail("CODEX_RPC_INVALID_ID"));
@@ -208,7 +206,7 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
   let buffered = Buffer.alloc(0);
   let stdoutBytes = 0;
   let stderrBytes = 0;
-  const stderrHash = crypto.createHash("sha256");
+  const stderrHash = createHasher("sha256");
   let forced = false;
   let verifiedCleanup = null;
   const record = (event) => {

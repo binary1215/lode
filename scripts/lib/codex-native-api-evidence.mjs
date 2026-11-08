@@ -1,13 +1,12 @@
-import crypto from "node:crypto";
 import { decodeSqliteCell } from "./native-sqlite-values.mjs";
 import { verifySelectedCodexHistory } from "./codex-native-portability.mjs";
+import { sha256Json as digest } from "./core/digest.mjs";
 
 const fail = () => {
   throw Object.assign(new Error("Native SDK view does not preserve the selected source history."), {
     code: "NATIVE_CODEX_API_HISTORY_MISMATCH",
   });
 };
-const digest = (value) => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 // The versioned SDK adds null/default presentation fields. Every original JSON
 // field must remain equal; an added presentation field is not a source rewrite.

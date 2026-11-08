@@ -1,12 +1,10 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { failWith } from "./core/errors.mjs";
 
-const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const fail = (message, code = "INVALID_WORKER_SOURCE_BASIS") => {
-  throw Object.assign(new Error(message), { code });
-};
+const fail = failWith("INVALID_WORKER_SOURCE_BASIS");
 
 export function workerSourcePathParts(value, storage = undefined) {
   if (typeof value !== "string" || !value || value.includes("\\") || value.includes(":")) fail("Worker source path must be repository relative.");

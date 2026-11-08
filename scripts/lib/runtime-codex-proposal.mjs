@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -39,12 +38,10 @@ import {
   inspectCodexFreshProposalFixtureCapability,
   startCodexFreshProposalTransport,
 } from "./runtime-codex-app-server-transport.mjs";
+import { sha256Hex as hash } from "./core/digest.mjs";
+import { failCode as fail } from "./core/errors.mjs";
 export { assertCodexFreshProposalFeatureList } from "./runtime-codex-app-server-transport.mjs";
 
-const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
-const fail = (code) => {
-  throw Object.assign(new Error(code), { code });
-};
 const json = (value) => JSON.stringify(value);
 const freeze = (value) => {
   if (value && typeof value === "object") {

@@ -1,5 +1,4 @@
 import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact } from "./project-storage-format.mjs";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -9,38 +8,23 @@ import {
   verifyProductPolicyReviewDecision,
 } from "./product-policy-records.mjs";
 import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
+import { sha256Hex as digest } from "./core/digest.mjs";
+import { canonicalJson, canonicalValue as canonical } from "./core/canonical-json.mjs";
+import { failWith } from "./core/errors.mjs";
+import { escapesRoot } from "./core/path-safety.mjs";
 
 export const PRODUCT_POLICY_GRAPH_PROJECTION_VERSION = "0.1.0";
 const MAX_ARTIFACTS = 1024;
 const CANDIDATE_ID = /^policy-candidate-[a-f0-9]{24}$/;
 const REVIEW_ID = /^review-decision-[a-f0-9]{24}$/;
 
-const fail = (message, code = "PRODUCT_POLICY_PROJECTION_ERROR") => {
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-};
-
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
-}
-
-const canonicalJson = (value) => JSON.stringify(canonical(value));
-const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
+const fail = failWith("PRODUCT_POLICY_PROJECTION_ERROR");
 
 function directoryIds(projectRoot, relativeDirectory, pattern, label) {
   const root = fs.realpathSync(path.resolve(projectRoot));
   const directory = path.resolve(root, ...relativeDirectory.split("/"));
   const relative = path.relative(root, directory);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
-    fail(`${label} path escapes the project.`, "PRODUCT_POLICY_PROJECTION_PATH_ESCAPE");
+  if (escapesRoot(relative)) fail(`${label} path escapes the project.`, "PRODUCT_POLICY_PROJECTION_PATH_ESCAPE");
   if (!fs.existsSync(directory)) return [];
   const stat = fs.lstatSync(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink()) fail(`${label} path is unsafe.`, "PRODUCT_POLICY_PROJECTION_PATH_UNSAFE");
