@@ -95,6 +95,7 @@ export function formatHelp(value) {
   }
   if (value.surface === "managed-maintenance") lines.push("Managed execution: use it when durable ownership, recovery or effect settlement is needed. Original authorization and effect checks apply.");
   if (value.contextGuidance) lines.push(value.contextGuidance);
+  if (value.launcherNote) lines.push(value.launcherNote);
   lines.push("");
   for (const [name, commands] of Object.entries(groups)) {
     if (!commands.length) continue;

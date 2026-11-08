@@ -42,6 +42,43 @@ second direction store, history document, global memory database or daemon.
 - `lode_session_work_read` expands known exact originals or an explicitly anchored
   ID inspection page. Use it when needed, not as a compulsory tool chain.
 
+For automation, CLI `session-work-record <project> --input <file.json>` takes the
+same keys as `lode_session_work_record` `evidence`: at least one of `summary`,
+`judgments`, `observedWork`, `pending`, `unknowns`, `suggestedFollowUp`,
+`references`, `todos`, plus optional `workTopics`, `workLink`,
+`executionObservation` and `occurrenceKey`. Unknown keys are refused with
+`INVALID_SESSION_WORK_EVIDENCE` and the error names them. A Todo needs `todoId`
+(`todo-<lowercase words>`), `task`, `status` and `origin`; unresolved ones also
+need `nextAction`.
+
+```json
+{
+  "summary": "Fixed the login timeout by retrying the token refresh once",
+  "judgments": [
+    { "assessment": "Retry once, not indefinitely", "reason": "The provider limits refresh calls", "alternatives": ["Longer timeout"] }
+  ],
+  "pending": ["Add a regression test for the expired-token path"],
+  "todos": [
+    { "todoId": "todo-login-regression-test", "task": "Add the regression test", "status": "pending", "origin": "user-directed", "nextAction": "Write the failing test first" }
+  ]
+}
+```
+
+CLI `checkpoint-sync <project> --input <file.json>` takes
+`expectedRecoveryBasisId` (from `checkpoint-basis`), `purpose`,
+`currentPosition` and `nextExpectedResult`, with optional `approvedDecisions`,
+`openReviewIds` and `workEvidence` (the object above).
+
+```json
+{
+  "expectedRecoveryBasisId": "recovery-basis-0123456789abcdef01234567",
+  "purpose": "Fix the login timeout",
+  "currentPosition": "Retry implemented; regression test pending",
+  "nextExpectedResult": "Regression test passes",
+  "approvedDecisions": ["Retry the token refresh once"]
+}
+```
+
 Already saved work also appears in existing `lode_project_graph` discovery.
 Questions, paths, anchors and neighbors can return actual reasons, alternatives,
 observed work, pending work and uncertainty across their verified owner Sessions.

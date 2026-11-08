@@ -5,34 +5,44 @@ description: Initialize, recover, or operate a provider-neutral Lode Project wit
 
 # Lode Agent Core
 
-Lode keeps the user's objective, constraints and acceptance criteria connected
-to execution and completion. Continuity belongs to canonical project records,
-rather than a model, provider conversation, host, database or transcript.
-Understand the request, find needed context, work directly or delegate useful
-outcomes, integrate results, and preserve important changes.
+## Entry procedure
 
-## Constitution
+Read the state you were given (Hook `additionalContext` or the result of
+`lode_conversation_enter`) and follow its row. Branch on `status` and
+`reasonCode` values, never on message text.
 
-1. Keep one canonical Project with common user direction and independently
-   routed logical Lode Sessions. Each owns its purpose, progress and recovery.
-2. Apply current common constraints across Sessions. Restoring an earlier
-   Session cannot undo a later common deployment cancellation.
-3. Find new project information through bounded graph discovery first, or reuse
-   sufficient same-basis results. Continue from original records when needed.
-4. Treat results, observations, messages and external reviews as evidence.
-   Historical approval does not grant current effect authorization.
-5. Keep graphs, indexes, Markdown and continuity views replaceable. Important
-   decisions and recovery direction remain in their original records.
-6. Change Product Canon through the explicit user ReviewDecision for its exact
-   current candidate. Ordinary authorized fixes need no extra review ceremony.
-7. Keep provider capability behind adapters with the same authority semantics.
-   Fork, availability and operational success create no authority.
+| Incoming state | Call | Use of the result |
+| --- | --- | --- |
+| `conversation_ready` | none | Work from `workContext` records and `workContext.todoContext` directly. |
+| `conversation_direction_restored` (and its `_without_transport_continuation` / `_after_uncertain_continuation` variants) | none | Compare `currentProjectDirection` goal, constraints and cancellations with the current request; the current request wins. |
+| `session_selection_unresolved` | `sessionDiscovery.call` as returned (= `lode_session_list`, in the default list) | Show candidates and leave the choice to the user; independent work continues. |
+| `conversation_recovery_unavailable` or Hook `host_context_unavailable` + `reasonCode: NOT_INITIALIZED` | `lode_project_initialize_or_resume {project_root, profile: "core"}` only when the user wants Lode here | Never create root instruction files without `write_root_instruction_files`. |
+| same + `PROJECT_RELOCATION_AVAILABLE` / `PROJECT_RELOCATION_PENDING` | `nextAction.entrypoint` as returned (resume, `profile: "core"`) | Never initialize a new Project over a moved one. |
+| same + `PROJECT_NOT_READY` | `lode_project_status {project_root}` | Report the drift it names; ordinary work is not blocked (`ordinaryWorkBlocked: false`). |
+| `CONVERSATION_ENTRY_BASIS_CHANGED` attention | `lode_conversation_enter` once more | Only dependent context needs the reread. |
+| MCP error with `error.data.reasonCode` | `INVALID_TOOL_ARGUMENTS` → fix the arguments; `PROJECT_NOT_READY` → `lode_project_status`; `NO_PENDING_REVIEW` → normal, nothing awaits review | Do not match message strings. |
+| Tool not in the default list | `lode_tools_read {name, arguments}` (read-only) / `lode_tools_call {name, arguments}` (effects) | The router checks read-only status first; `lode_tools_discover {name \| prefix}` returns exact schemas. |
 
-P1-P5 is internal enforcement, not a user form. Before changing authority or
-recovery, read [the constitution](../../docs/lode-constitution.md) and
-[authority planes](../../docs/authority-plane-contract.md).
+Entry rules that apply to every row:
 
-## Enter and keep working
+- Reuse sufficient verified entry context already supplied for this exact Project
+  and selected Session; call `lode_conversation_enter` (read-only) once only when
+  needed context is missing. Do not repeat init/status/list/graph to confirm it.
+- `lode_project_initialize_or_resume` is for first adoption, explicit Session
+  selection/resume or managed-installation convergence. A Skill match or new turn
+  is not a setup trigger. Do not initialize an unrelated repository.
+- No checkpoint means ordinary work continues. Selection loss pauses only
+  dependent work. Do not enumerate Sessions on every turn or guess owners from titles.
+- `lode_project_direction_read` returning `null` means no common direction is
+  recorded; it is not approved emptiness.
+- Startup lookup is read-only. Use a verified Host selection or an exact explicit
+  route (`session_id` on typed calls, `--session` on CLI); never guess identities
+  and never ask for bind/save/ID rituals. Host limits are in the
+  [work context and Host limits](../../docs/session-work-context.md) reference.
+- Continue the original task in the same turn; no repeat request, profile choice,
+  user JSON or recovery ritual.
+
+## Install and adopt
 
 For an authorized installation/update request, perform the selected client's
 available official procedure and verify its result; see
@@ -40,372 +50,115 @@ available official procedure and verify its result; see
 Users without the plugin start at [Install](../../README.md#install), without an
 installed-Skill prerequisite. Preserve valid installations and runtime/link choices.
 Installed files do not prove Host loading; unavailable loading never blocks
-independent authorized work. This is not another setup or approval checklist.
-For retained storage formats see [recovery](references/recovery-workflow.md#retained-project-storage).
+independent authorized work. Retained storage formats:
+[recovery](references/recovery-workflow.md#retained-project-storage).
 
-For first Lode adoption or missing Project initialization, an explicit Session
-selection/resume, or required managed-installation convergence, use
-`lode_project_initialize_or_resume` with the exact root and default
-`profile: "core"`. Otherwise reuse sufficient verified current entry context
-already supplied for that exact Project and selected logical Session. If needed
-current context is missing, obtain it once through read-only
-`lode_conversation_enter`. A Skill match, existing Project or new turn alone is
-not another setup or binding trigger. Continue the original task in the same
-turn; do not ask for a repeat request, profile choice, JSON or recovery ritual.
+- Default `profile: "core"`. Use `profile: "product"` and the sibling
+  `lode-agent-onboarding` Skill only for an actual Product/World outcome.
+- Initialization preserves root instructions. Reuse an already-given choice with
+  `instruction_integration: "link"` (CLI `--instruction-integration link`);
+  `preserve` makes no edits. Do not re-offer a declined connection.
+- Pick `--runtime claude|codex|opencode` for the selected client only.
 
-Core preserves identities and indexes eligible existing observations where
-available, without inferring Product meaning. Use `profile: "product"` and the
-sibling onboarding Skill for an actual Product/World governance outcome.
-Do not initialize an unrelated repository merely because a coding request
-matched this Skill.
+## Work from context
 
-Entry includes current direction, useful work context, recovery, status and
-Attention. Read and reuse sufficient supplied content quietly, including after
-compaction/provider replacement, unless its relevant basis changes or needed
-content is missing. Matching identity, digest or time alone does not prove current
-intent. Expand only the missing dependent originals; do not repeat
-init/status/list/graph merely to confirm complete unchanged material. Ordinary
-entry leaves detailed World inspection explicitly unchecked, not current, stale
-or absent; use full status/doctor diagnostics when needed, not as a follow-up
-ritual. No checkpoint means ordinary work continues. Automatically obtain missing
-selected Session direction with current common constraints; never invent it from
-a transcript. Missing direction is not approved emptiness.
-Selection loss pauses only dependent work; reuse verified same-Project candidates
-already supplied, or follow the returned `sessionDiscovery.call` only when that
-missing context matters. This existing read-only list previews evidence without
-selecting a Session. Do not enumerate Sessions on startup/failure/every turn or
-guess ownership from titles/recency. Continue independent work; partial entry is
-not recovery success. No repeated question, automatic selection or user ID form.
-
-Use supplied `workContext` bodies and `recordExcerpts` to connect recorded reasons,
-alternatives and remaining work to the current request and cancellations. Full
-`records[].content` stays original; an excerpt identifies its exact owner, field,
-index and partial range. Keep a judgment or task's related fields together and
-notice omitted conditions before relying on it. Excerpts alone are neither an
-empty history nor complete recovery. Default order is not semantic importance.
-Use `lode_session_work_read` for missing originals only when the next action needs
-them; reuse sufficient supplied evidence without another read or save ritual.
-Historical suggestions, saved completion and approvals are not current effect
-permission. Do the useful bounded work and verify its actual result.
-
-For multi-step work that must survive interruption, use the existing optional
-work-evidence `todos` at meaningful task/status/priority changes. Supply stable
-IDs, task, next action, explicit status, attribution and actual progress/exact
-references; cite an exact prior revision on update. Do not ask the user for JSON,
-save approval or a Todo ritual, and do not create a record each turn. Read
-`workContext.todoContext` independently of recent notes on entry/resume. Partial
-and waiting remain open; ended/idle/elapsed time never completes a task.
-Conflicting branches require explicit reconciliation, not a clock winner.
-Missing index coverage is unknown; expand only useful exact items or bounded
-original pages through `lode_session_work_read`, without a Run or World refresh.
-Current user direction/cancellations and P2 take precedence over every Todo.
-
-Optional Host prompt/final-response references are quoted P5 context only.
-Human origin and next-turn adjacency may be unverified; do not turn a short
-reply beside a historical proposal into approval. Use current explicit direction
-and exact original context; missing proposal fields are not permission to crawl
-transcripts. Keep the provider's normal compaction summary enabled.
-
-Returned links can connect recent work to the cited judgment or declared root.
-A saved close qualifies its exact earlier note, not a resumed sibling, another
-Session, pending review or remaining unknowns. Keep those owners and scopes
-separate; do not add start/end saves, IDs or questions to make the links usable.
-
-Optional native observations describe the caller, not logical Session execution.
-Related ancestry context contains verified historical P3, never inherited P2
-direction. Use current Host activity only when it answers a material uncertainty;
-see [runtime composition](references/runtime-composition.md#native-observations-and-current-host-activity).
-Missing observations never require a bind/save, ID question or extra lookup chain.
-
-Use optional `session_id` on typed calls or `--session` on CLI for request-local
-routing. On `lode_session_list` these identify a read-only preview, preserving
-native, shared caller and outer request selections. Page only when useful; inspect
-partial/error coverage and existing Todo rather than inferring no unfinished work.
-See [existing work](references/project-discovery.md#existing-work-and-recorded-conclusions).
-Logical Session identities are not provider conversations or assigned owners.
-Read shared goal/constraints/decisions/cancelled actions through
-`lode_project_direction_read`; publish current user direction through
-`lode_project_direction_update` with its exact basis. Reconcile competing
-updates rather than last-writer overwrite. A Session's local investigation
-change does not automatically change another Session's goal.
+- `workContext.records[].content` is original; `recordExcerpts` name exact owner,
+  field and range. Read missing originals with `lode_session_work_read` only when
+  the next action needs them. Excerpts alone are neither empty history nor recovery.
+- Todos: write optional work-evidence `todos` (stable ID, task, next action,
+  explicit status, exact prior revision on update) at meaningful changes only.
+  Partial and waiting remain open; elapsed time never completes a task.
+  Current user direction/cancellations and P2 take precedence over every Todo.
+- Common direction: read `lode_project_direction_read`; publish user direction
+  with `lode_project_direction_update` and its exact basis (`expected_direction_id`).
+- `lode_session_list` previews Sessions read-only; inspect partial/error coverage
+  before concluding there is no unfinished work. See
+  [existing work](references/project-discovery.md#existing-work-and-recorded-conclusions).
+- Prompt/final-response references and native observations are quoted context, not
+  approval; see [runtime composition](references/runtime-composition.md#native-observations-and-current-host-activity).
 
 ## Find context through the graph
 
-When the user wants work documentation, use the optional
-[work document projection](../../docs/work-document-projection.md). Explain the
-useful result, reasons, relevant conditions, actual changes and remaining unknowns
-using the conversation Skill; do not replace explanation with IDs or JSON. Lode
-selects exact originals and supplies typed work-document arguments. Existing work
-needs no Todo, Run, Product, World rebuild or export to be documented. Connect
-only user-chosen destinations/content and automatic task scope. Configuring a
-connection is not publication permission outside that scope. Never inspect
-ambient credentials. An explicitly configured task's meaningful result saved
-through async `session-work-record` can update related documents; reopening,
-partial work and cancellation also matter. Native termination or checkpoint save
-is not completion. A document failure never replays the original work or fails a
-successful original save. Use returned publication identity to continue only its
-bounded pending/reconciliation step; do not create duplicates or add per-turn
-save/report rituals. Local receipt status is not live remote freshness. No
-separate model service is needed for the two reading views.
-
-For Project documentation use lode_project_document_prepare/publish/status
-(CLI project-document-*): the same actual Product → FeatureGroup → Feature DAG
-for both readers, shared originals and unclassified work. HEAD authors exact
-work-to-feature reading links and source-linked explanations, never canonical
-membership from names. Reuse saved task reading selections for actual
-code/diff/graph detail. Keep historical/cancelled/unknown evidence distinct.
-Project publication needs explicitly selected projectDocuments connection scope;
-an existing task-only connection does not acquire it on update. With automatic
-Project scope, meaningful saved work may update documents without a Todo.
-Continue bounded continuation-required calls in the same authorized task,
-without another save, user JSON or approval ritual. Shared destination journals
-retain other Sessions' contributions; missing reads are not deletions. Source
-drift needs fresh preparation, unknown effects only exact reconciliation, and
-an adapter-verified refusal only the explicit same-request retry below.
-Existing documents/notes remain in place. Publication is a last observed reading
-scope, not Product approval, P2 direction, work completion or remote CAS.
-
-For an adapter-verified rejected write, explain its retained cause, including a
-possible workspace limit. Cause repair alone does not retry. Within the current
-user-authorized destination/content scope, explicitly pass the returned exact
-attempt reference in `retry_rejected_writes` (CLI `retryRejectedWrites`) for one
-same-request successor. HEAD fills the arguments; no user JSON ritual. Never
-retry from an automatic save hook or bypass a Host denial, switch credentials,
-or change target/content under that reference. A new refusal gets a new reference.
-Response loss, 5xx, malformed errors, async failure or rejection-save failure stay
-unknown and permit readback reconciliation only, not another write.
-
-On an exact saved-result retry, preserve the verified document selection; do not
-replace history, diffs, quotations or graph anchors with just the recent record.
-For a new revision, optionally supply HEAD-authored `document_selection` alongside
-`session-work-record` (CLI `--document-selection`). The request-local `recorded`
-alias refers only to the resulting exact P3 original, not a new authority. Select
-exact related evidence and before/after refs rather than assuming old after bytes
-are the new change. If `head-selection-required` is returned, keep the successful
-work save and the disclosed remote-not-updated state, then use its bounded prior
-selection and recorded result to finish explicit prepare and publish in the same
-turn. Do not ask the user to fill fields, repeat the P3 save or approve a routine
-reading selection. Unresolved evidence limits document publication only; explain
-that limit if it cannot be resolved. Surface a recorded reopen/cancellation even
-while the old remote document remains unchanged.
-
-An analysis result may be entirely in the valid P3 explanation; do not require an
-artificial file, test log or Todo removal to publish it. Bare task/status without
-result content remains unconfirmed. Treat prose as an authored report, not proof
-of execution, semantic sufficiency or user approval. Keep missing/denied sources
-and their precise codes visible; never bypass a denied read or silently discard
-selected evidence. Before an authorized publication, keep secrets, whole
-transcripts and unnecessary absolute machine paths out of the authored content
-and selected excerpts; preserve originals rather than silently rewriting them.
-
-For new project information, call `lode_project_graph` with task/query and only
-useful anchors/filters, or reuse sufficient same-basis results. Read nearby
-relations first and widen when needed. Avoid whole-graph prompt injection and
-per-turn full rescans. Lode interprets relevance; lexical overlap is a hint.
-
-Natural questions search bounded display/domain evidence, not metadata keys.
-Exact names, paths or anchors help narrow a partial result; Lode supplies them
-without asking the user to rewrite the task. Common direction excerpts include
-constraints, decisions and cancellations with current/historical revision labels.
-Read the original direction when the excerpt is partial or before relying on it
-for a current effect; its graph copy grants no permission.
-
-For code impact, use existing `lode_world_query` / CLI `world-query` for bounded
-`IMPORTS`/`CALLS` neighbors, not general `CONTAINS`/`HAS_REVISION`/`DECLARES`
-expansion. With absent or stale World evidence, inspect affected current source
-imports/calls directly. Do not require a whole World refresh, new Run or approval
-just to investigate; retained links are hints to verify, not current impact proof.
-
-Read basis/revision, integrity, freshness, coverage, original state and provenance
-together. Work and Product are linked logical views of common original records.
-Different revisions of the same path remain distinct. Intact historical evidence
-stays readable and labelled, including unapproved/rejected state through relation
-expansion. Reference or sequence does not prove cause.
-
-Empty/partial coverage does not prove absence. Use disclosed original-source
-fallback on absence or failure. Reuse known same-basis adapter failures without
-repeated requests; retry when that basis changes. Exclude the damaged or
-cross-Project layer while using remaining valid evidence. Full World currentness,
-Product approval, Run, Capsule, indexing completion and ArcadeDB connectivity
-are not general exploration gates. Before changes, recheck affected current
-sources and effect authority.
-Read [project discovery](references/project-discovery.md) for implementation.
-
-For an explicitly requested visual graph, use the existing CLI:
-`node <plugin-root>/scripts/lode.mjs graph-explorer "<target-project-root>"`.
-Resolve the executable from this installation, but always pass the user's target
-Project root explicitly, even when the working directory is the plugin folder.
-The graph describes that Project, not Lode itself. Missing Project/World/source
-evidence stays unavailable; never substitute the plugin repository or a demo.
-Return the new offline HTML path. No new MCP tool, database setup or Session
-binding is needed. For sharing use `--share` only as generated-metadata omission,
-not anonymization of originals. To follow one Feature, select its exact model-bound
-record and use Structure / Recorded work / Changes & related impact. Keep source
-citation, implementation mapping, historical rationale and exact before/after
-comparison distinct; shared files and whole-model citations do not prove cause
-or fulfillment. Missing detail uses existing exact reader / focused regeneration,
-never an inferred pair or a new setup gate. See [Graph Explorer](../../docs/graph-explorer.md).
+- New project information: `lode_project_graph {project_root, query}` with
+  only useful anchors/filters, or reuse same-basis results. Widen from nearby
+  relations; no whole-graph prompt injection or per-turn rescans.
+- Code impact: `lode_world_query` (CLI `world-query`) for bounded `IMPORTS`/`CALLS`
+  neighbors. With absent or stale World evidence, read current source imports directly.
+- Read basis, freshness, coverage and provenance together. Empty or partial
+  coverage does not prove absence; fall back to original sources on failure.
+  World currentness, Product approval, Run, Capsule and ArcadeDB are not
+  exploration gates. Recheck affected sources before changes.
+- Visual graph on request:
+  `node <plugin-root>/scripts/lode.mjs graph-explorer "<target-project-root>"`
+  (always the user's Project root; `--share` omits generated metadata only). See
+  [Graph Explorer](../../docs/graph-explorer.md) and [project discovery](references/project-discovery.md).
 
 ## Agree the work, not the paperwork
 
-Reuse concrete user agreement that remains valid for the current request,
-constraints and cancellations. Agree unresolved material user-visible behavior,
-scope, conditions and important user-owned architecture choices. Re-agree only
-the material delta, impact and options, not routine internal choices. Small exact
-fixes proceed directly; analysis/proposal-only stays read-only. Preparation stays
-within current authority; reversibility grants none. Only choice-dependent
-implementation waits while approved independent work continues.
-
-For nontrivial implementation, clarify purpose, agreed behavior, scope,
-acceptance, component responsibilities/connections and important uncertainty in
-useful existing work context. No fixed questions, new plan file, save-success
-gate or prerequisite reference/tool chain is required. Lode owns routine internal
-design, verification and error handling. Verify the agreed behavior and report
-meaningful deviations and unknowns without mandatory report sections.
-
-Summaries, reviewer assent and model inference create no user authority. A short
-reply must clearly answer a concrete proposal and scope. Reconcile recovered
-agreements with current requests and cancellations; ordinary agreement reuse
-cannot replace the current user decision for a new or changed protected target.
+- Reuse still-valid user agreement. Agree only unresolved material behavior,
+  scope, conditions or user-owned architecture; re-agree only the delta.
+- Small exact fixes proceed directly; analysis/proposal-only stays read-only.
+  Only choice-dependent implementation waits.
+- Summaries, reviewer assent and model inference create no user authority. A short
+  reply must clearly answer a concrete proposal.
 
 ## Choose execution and preserve judgment
 
-Work directly for small tasks. Delegate independently reviewable outcomes when
-parallel work helps or long sequential execution/review could crowd out the
-context needed to judge the whole objective. Brief each worker with outcome,
-allowed context, file ownership, constraints and useful completion evidence.
-Reconcile overlapping writes and preserve other workers' and user changes.
-For continuing work, use related evidence and actual responsibility, then verify
-an available Host target and current messaging authority. A matching title/path
-or recent activity does not assign ownership. With no target or permission,
-continue authorized work here; see [existing conversations](references/runtime-composition.md#continuing-in-an-existing-conversation).
+Work directly for small tasks. Delegate an independently reviewable outcome with
+outcome, allowed context, file ownership and completion evidence; reconcile
+overlapping writes. Ordinary Host delegation is enough unless durable ownership,
+interruption recovery or uncertain effects need tracking: then use
+`lode_tools_call` with `execution_mode: "managed"`. Fork/fresh context grants no
+approval or isolation. Continuing in another chat needs a verified target and
+messaging authority; see
+[existing conversations](references/runtime-composition.md#continuing-in-an-existing-conversation),
+[follow-up handoffs](references/runtime-composition.md#follow-up-handoffs) and
+[runtime composition](references/runtime-composition.md).
 
-Use ordinary Host delegation when sufficient. Use managed execution when durable
-ownership, interruption recovery, uncertain effects or duplicate integration
-prevention need tracking. File edits, worker count and ordinary failure alone
-do not force managed execution. A new managed wave may serve a useful durable
-outcome; existing managed work and unknown effects retain their contracts.
-Read [runtime composition](references/runtime-composition.md) for exact entries.
+- After a stage, integrate actual results, changed assumptions and remaining work
+  before planning the next one; preserve completed contributions.
+- A cancel request does not prove exit. Never replay uncertain external effects.
+  Wave or Run success is operational evidence, not approval or P2 direction.
 
-Fork/fresh is a separate context choice: supported in-scope fork can preserve
-prior design reasons; selected fresh context can support narrow work or independent
-review. Neither grants approval, Canon/P2 authority, file isolation, cache reuse
-or lower cost. Preserve semantically sufficient context.
+## Finish and preserve
 
-For substantial staged work, keep the accepted goal, conditions, reasons and
-completion criteria available before detailed work. Keep a completed plan source
-idle or obtain a supported preservation fork before advancing its original. Start
-only useful implementation, inspection and integration contributions from that
-basis. A detailed reviewer is not automatically the next planning context.
-Integration may inspect material originals and contradictions directly.
+- After meaningful code changes, check whether the graph needs an update; reuse
+  hook updates, run the existing index/World refresh when needed and report what
+  stays unverified. Test presence is not an executed PASS. See
+  [after integrated changes](references/project-discovery.md#after-integrated-changes).
+- Preserve otherwise-unrepresented reasons, alternatives and unknowns only at a
+  meaningful handoff: `work_evidence` on `lode_checkpoint_sync`, or
+  `lode_session_work_record` for Run-free work. Optional `workLink`,
+  `executionObservation` and `workTopics` reuse returned exact selectors.
+  No per-turn save, save approval or user JSON.
+- Work documents: `lode_work_document_prepare/publish/status`; Project documents:
+  `lode_project_document_prepare/publish/status`. Retry a verified rejected write
+  only through `retry_rejected_writes` with the returned attempt reference; unknown
+  outcomes allow readback only. See [work documents](../../docs/work-document-projection.md).
+- A `lode_session_work_record` result with document status `head-selection-required`
+  (`headActionRequired: true`, `userActionRequired: false`) keeps the successful save;
+  finish prepare and publish in the same turn from its returned prior selection and
+  `recorded` evidence (or pass `document_selection`), without asking the user.
+- Saving is not execution permission: after a save, effects still need current
+  user authority. A permission denial is not capability absence; do not switch
+  tools or write files directly to get the refused effect.
+- Lead with the outcome and uncertainty; use the
+  [Lode conversation](../lode-conversation/SKILL.md) Skill when explaining.
 
-After a meaningful stage, integrate the actual result, new facts, changed
-assumptions, reasons, remaining dependencies and next action under current user
-conditions. Form the next plan from that updated understanding, rather than
-resetting each stage to the initial plan. Preserve completed contributions.
-Use the existing [preserved-plan flow](references/runtime-composition.md#preserved-plan-sources-and-next-stages)
-when useful; small direct work needs no fork, new record or additional approval.
+Why these rules hold (authority planes, evidence vs. permission, P1–P5):
+[constitution](../../docs/lode-constitution.md) and
+[authority planes](../../docs/authority-plane-contract.md). Detail is optional,
+not a prerequisite reference/tool chain: [context workflow](references/context-workflow.md),
+[compiler](references/context-compiler.md), [recovery workflow](references/recovery-workflow.md),
+[Session recovery](../../docs/session-recovery.md),
+[authority and roles](references/authority-and-roles.md),
+[conversation UX](references/conversation-ux.md).
 
-Lode checks objective achievement, new facts, uncertainty and supporting evidence.
-Keep completed contributions and continue independent unfinished work. Before
-replacing unknown work, inspect its exact effects. A cancel request does not
-prove exit. Wait for/cancel owned work and verify cleanup. Do not replay uncertain
-external effects blindly. For durable Runs, retain accepted lineage, ResultPacket,
-Fresh Lode review, explicit ReviewDecision and checkpoint integration.
-Wave success is operational evidence, not approval or P2 direction.
+## CLI
 
-## Finish changes with usable graph evidence
-
-After a meaningful code-change or feature-addition work segment, Lode checks
-whether the integrated result needs a graph update. Connect affected code and
-the purpose, decisions and verification needed by later work to their originals;
-reuse updates already made by persistence hooks. Use the existing index or World
-refresh when needed, then check supported affected relations and disclose what
-remains unverified or unprojected. Test presence is not an executed PASS.
-Workers return changes, evidence and unknowns; Lode owns the integrated update.
-Do not require every worker or turn to refresh globally, activate World/DB,
-create a Run/Capsule, install a watcher or ask for routine approval. On update
-failure, retain the affected gap and continue source fallback and independent work.
-Read [project discovery](references/project-discovery.md#after-integrated-changes)
-for the distinct existing update paths and their limits.
-
-## Preserve useful work
-
-Lead with the outcome and actual uncertainty. Successful entry, reuse and sync
-are quiet; meaningful exceptions retain their affected operation, owner and
-next action. Bind protected decisions to the unique unchanged current target.
-Technical IDs and schemas are diagnostic detail, not user prerequisites.
-
-Reuse existing checkpoint/result/review/source originals. Preserve only useful,
-otherwise-unrepresented reasons, alternatives, observations and uncertainty at a
-meaningful handoff: optional `work_evidence` with an already useful checkpoint
-sync, or `lode_session_work_record` for Run-free work. No per-turn record,
-transcript copy, save approval, user JSON, compulsory budget tier or Run/Capsule.
-Session-local purpose/constraints/cancellation stay in explicit P2 direction;
-P3 evidence cannot supply them or change shared ProjectDirection.
-
-A management-record failure limits only dependent management work. Host/tool
-permission or approval denial is not capability absence: do not obtain the refused
-effect by switching tools, using CLI/direct file writes or changing policy.
-Report what was not preserved and its recovery limits; continue independently
-authorized work and permitted source fallback for unavailable capabilities.
-Preserve primary identity/digest/permission/partial-write failures and required
-ReviewDecision. Saving grants no execution permission; repair missing persistence
-only within current authority, never replay completed or uncertain effects.
-
-At those same useful preservation boundaries, reuse returned exact evidence
-selectors for optional `workLink` root/predecessor and exact-target historical
-`executionObservation`. Use existing artifact references for an earlier judgment
-whose actual reasons matter. Default entry can include that cited body and the
-declared anchor alongside recent results/pending work. Coexisting saved states
-are not live execution or an inferred conflict. Unsaved conversation can still
-be lost on abrupt exit.
-
-At meaningful completion, handoff or changed conditions, connect the whole user
-outcome to actual consumer results, reasons and remaining work; reuse originals
-instead of saving each turn. Optional `workTopics` labels help find that work
-without Product onboarding or a user taxonomy. Session/root groups organize
-returned bodies only: identical labels do not merge work, create a Feature or
-prove completion. Native automatic end, ancestry and live activity are not
-implemented by these saved observations.
-
-Native init/resume can retain verified selection; startup only reads that linkage.
-Its loss does not erase Core success or permit replay. Other reads, work recording
-and checkpoint sync do not select the chat.
-Use a verified explicit route on unsupported Hosts, without bind/save questions
-or identity guesses. Host-only helpers are not model tools or permission bypasses.
-For relevant routing, bounds or recovery details see
-[work context and Host limits](../../docs/session-work-context.md); this is not a
-required extra read before ordinary work.
-
-## Progressive references and tools
-
-Load only what the current outcome needs:
-
-- Graph discovery, logical Sessions and common direction:
-  [project discovery](references/project-discovery.md).
-- Reproducible Context: [context workflow](references/context-workflow.md) and
-  [compiler](references/context-compiler.md).
-- Checkpoint sync and compaction: [recovery workflow](references/recovery-workflow.md)
-  and [Session recovery](../../docs/session-recovery.md).
-- Delegation and fork/fresh: [runtime composition](references/runtime-composition.md)
-  and [follow-up handoffs](references/runtime-composition.md#follow-up-handoffs).
-- Roles and authority: [authority and roles](references/authority-and-roles.md).
-- Decisions, waiting, results and optional Product evidence:
-  [conversation UX](references/conversation-ux.md).
-- When useful for explaining Lode work to the user:
-  [Lode conversation](../lode-conversation/SKILL.md), an optional communication aid.
-- Product governance: sibling `lode-agent-onboarding`, then its subsystem docs.
-
-Default MCP includes graph discovery and ordinary Core entry/recovery. Use an
-already-provided typed tool directly for normal first use. For optional tools,
-use `lode_tools_discover` by name/prefix and its compatible `invokeWith` router
-with `{name, arguments}` and the unchanged inner schema. A known optional contract
-can use its existing router without prior discovery. Lode supplies arguments
-without user unlock/forms. For useful managed execution,
-`lode_tools_call` accepts `execution_mode: "managed"`; routing preserves original
-authority/lease/effect checks. Read/status/wait and exact owned cancellation remain
-ordinary diagnostics.
+The CLI is `node <plugin-root>/scripts/lode.mjs <command>`; when the installer
+(`scripts/install.sh` / `scripts/install.ps1`) created the launcher, `lode-agent <command>`
+is the same program. Marketplace installs have no launcher.
 
 ```text
 node <plugin-root>/scripts/lode.mjs init <project> --runtime codex
@@ -415,15 +168,3 @@ node <plugin-root>/scripts/lode.mjs session-list <project>
 node <plugin-root>/scripts/lode.mjs managed <command> <project> <arguments>
 node <plugin-root>/scripts/lode.mjs help-all
 ```
-
-Initialization preserves existing root instructions by default. During an
-explicit setup/connect request, reuse the user's already-given choice through
-the existing init/resume `instruction_integration: "link"` option (CLI
-`--instruction-integration link`); `preserve` makes no instruction edits. Do not
-ask again, repeatedly offer a declined connection or make setup a prerequisite
-for an ordinary task. Linking appends one bounded block using the verified
-actual `.head/` or `.lode/` sources. Claude uses native `@` imports; Codex receives
-an explicit instruction to read those files, not an assumed `@` import. Synthetic
-link verification does not establish that an actual Host consumed the files.
-Use `claude` or `opencode` instead of the example's `codex` for that selected
-client; combine runtimes only when the user wants those integrations.

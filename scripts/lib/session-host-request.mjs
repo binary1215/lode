@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lode-artifact-composition.mjs";
-import { resolveOperation } from "./lode-operation-contract.mjs";
+import { OPERATION_DESCRIPTORS, resolveOperation } from "./lode-operation-contract.mjs";
 import { sessionCallRequiresBinding } from "./session-routing.mjs";
 
 export const SESSION_HOST_REQUEST_HELPER = publicToolName("head_session_host_request_prepare");
@@ -9,9 +9,12 @@ const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Build/verification consumes the actual catalog annotations, including finite
 // supported aliases. Do not maintain a second list of protected tool names.
+// Routers are not catalog entries, yet they relay Session-bound and effectful
+// inner calls, so their own descriptors always join the matcher.
 export function claudeNativeHookMatchers(catalog) {
   const names = new Set();
-  for (const tool of catalog) {
+  const routers = OPERATION_DESCRIPTORS.filter(operation => operation.router).map(operation => ({ name: operation.canonicalName }));
+  for (const tool of [...catalog, ...routers]) {
     const operation = resolveOperation(tool.name);
     if (!operation || operation.semanticName === "head_session_host_request_prepare") continue;
     if (operation.router || sessionCallRequiresBinding(tool.name) || tool.annotations?.readOnlyHint !== true

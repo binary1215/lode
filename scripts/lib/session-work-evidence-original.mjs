@@ -17,9 +17,15 @@ const canonical = (value) => Array.isArray(value) ? value.map(canonical)
   : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
 export const encoded = (value) => JSON.stringify(canonical(value));
 export function fail(message, code = "INVALID_SESSION_WORK_EVIDENCE") { throw Object.assign(new Error(message), { code }); }
+// Name the problem (shape or the unsupported keys) so automation can fix its
+// input; the reason code stays INVALID_SESSION_WORK_EVIDENCE.
 function object(value, allowed, label) {
-  if (!value || typeof value !== "object" || Array.isArray(value)
-    || Object.keys(value).some((key) => !allowed.includes(key))) fail(`Invalid ${label} fields.`);
+  if (!value || typeof value !== "object" || Array.isArray(value)) fail(`Invalid ${label} fields: expected a JSON object with keys from ${allowed.join(", ")}.`);
+  const unsupported = Object.keys(value).filter((key) => !allowed.includes(key));
+  if (unsupported.length) {
+    const named = unsupported.slice(0, 8).map((key) => JSON.stringify(key.slice(0, 64))).join(", ");
+    fail(`Invalid ${label} fields: unsupported ${named}${unsupported.length > 8 ? ", …" : ""}; allowed keys are ${allowed.join(", ")}.`);
+  }
 }
 function text(value, label) {
   if (typeof value !== "string" || !value.trim()) fail(`${label} must be non-empty text.`);

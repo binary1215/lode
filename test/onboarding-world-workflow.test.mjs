@@ -151,10 +151,10 @@ test("missing World guidance executes a rebuild and converges without reapproval
     assert.equal(status.readiness.core.state, "ready");
     assert.equal(status.readiness.context.worldModelId, null);
     assert.equal(status.nextAction.entrypoint.worldOperation, "rebuild");
-    assert.equal(status.nextAction.entrypoint.cli, "lode-agent world-index <project>");
+    assert.equal(status.nextAction.entrypoint.cli, "node <plugin-root>/scripts/lode.mjs world-index <project>");
     assert.equal((await inspectConversationalOnboarding({ root })).nextAction, "refresh_or_reconcile_world");
     assert.deepEqual(bytes(root), beforeRead);
-    const command = status.nextAction.entrypoint.cli.split(" ")[1];
+    const command = status.nextAction.entrypoint.cli.split(" ")[2];
     await runCommand([command, root]);
     assert.equal((await statusParity(root)).status, "product_ready");
     assert.equal((await initializeOrResumeProject({ root, pluginRoot, profile: "product" })).status, "product_ready");

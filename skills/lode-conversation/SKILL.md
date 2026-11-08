@@ -5,45 +5,44 @@ description: Explain Lode work using available context, including material choic
 
 # Lode conversation
 
-Help the user understand what matters in the current work. Answer the question
-or give the useful outcome first, then connect the relevant reason, change,
-impact and uncertainty at the depth that helps them act or decide. Use the
-context already available rather than making the user repeat it.
+Answer the question or give the useful outcome first, then the reason, change,
+impact and uncertainty at the depth the user needs. Write in the conversation's
+language and tone; no fixed persona, headings or report format. This Skill
+explains results; it does not authorize execution, select a Session or supply
+recovery direction.
 
-Write naturally in the conversation's language. Choose vocabulary, sentence
-endings, transitions and length for the user's tone and question, including
-precise technical detail when requested. Keep an already clear expression;
-do not rewrite it just to sound different. No fixed persona, formality level,
-number of sentences, headings or recurring report is needed.
+## Which result field becomes which sentence
 
-When a material choice remains, explain the real alternatives and consequences
-so the user can decide. Keep a still-valid agreement and a clear small request
-moving; do not turn explaining the work into another approval or questionnaire.
-This Skill explains the existing choice, not whether approval or execution is
-authorized. It does not select a Session, supply recovery direction or change
-the work's current scope.
+| Result field | Say | Do not say |
+| --- | --- | --- |
+| `presentation.mode: "quiet"` / successful entry, reuse or sync | Nothing about Lode; continue with the user's task. | "Lode restored your session successfully." |
+| `presentation.mode: "notice"` + `attention.items` | The optional items only when they matter to the current request. | A to-do list the user must clear first. |
+| `presentation.mode: "exception"` + `presentation.summary` | The summary in your own words, tied to the affected work. | The raw status code alone. |
+| `ordinaryWorkBlocked: false` | Independent work continues; name only what waits. | "Work is blocked." |
+| `recoveryDependentWorkBlocked: true` | Which recovery-dependent step waits and on what. | That the whole task stopped. |
+| `userDecisionRequired: true` / `presentation.userActionRequired: true` | The concrete choice, its real alternatives and consequences. | An extra approval or questionnaire when it is `false`. |
+| `nextHeadAction` / `nextAction` | What Lode does next, or the user's next step only when it is theirs. | Invented automatic resumption. |
+| `currentProjectDirection` (goal, constraints, cancellations) | The current purpose and conditions; a later cancellation overrides an earlier approval. | A historical suggestion as the current request. |
+| `workContext.records` / `recordExcerpts` | Saved reasons, alternatives, changes and results relevant to the question. | An excerpt as the full record or an empty history. |
+| `workContext.todoContext` | Open, partial and waiting tasks as still open. | A task as done because time passed or the Host ended. |
+| `coverage`, `omissions`, `partial` | That the view is partial and what was not covered. | "There is no other work." |
+| `persisted: false` | That nothing was saved by this step. | That a read saved or recorded anything. |
+| `authorityChanged: false` | Nothing, unless the user asks whether something was approved. | That a save, review or result granted permission. |
+| `reasonCode` on a failure | The affected operation, the cause in plain words, and the next actor. | The code as the explanation. |
+| `lode_conversation_send` `state` (`delivered`, `sent`, `queued`, `unknown`, `refused`, `unreachable`) | Exactly that state; `unknown` stays unknown. | "Delivered" for `sent` or `queued`. |
 
-Keep facts, judgments and unknowns distinct. An earlier approval or suggested
-next step does not undo a current cancellation. For a progress or resumption
-question, connect the supplied current purpose and conditions with the relevant
-saved reasons or alternatives, actual changes and results, and remaining work
-or uncertainty. Lode setup readiness is not task completion; historical work
-and an observed native activity state are not current execution or approval.
-Natural wording must preserve negation, conditions and uncertainty, who owns a
-result, and whether it is local, published or installed, partial or complete.
-A completed review is not an accepted implementation, and a retrieved
-explanation is not a verified effect.
+## Distinctions to keep in the wording
 
-When the distinction matters, identify what the user requested, what the agent
-suggested and what actually changed outside the agreed scope. Do not present an
-agent suggestion as a user request or hide an out-of-scope change in a progress
-summary. This needs no fixed reporting format or extra approval step.
-
-Keep routine internal success quiet. Explain a meaningful change, failure or
-wait in terms of the affected work and the actual next actor or action; do not
-invent progress, automatic resumption or certainty. Link an existing useful
-deliverable or precise evidence when it helps. Do not create reports, saves or
-extra lookups merely to fill a conversational format.
-
-Compose the response as part of the work. This guidance requires no separate
-rewriting pass, tool, service or reference chain.
+- Facts, judgments and unknowns stay separate; keep negation, conditions and who
+  owns a result. Local, published and installed are different; so are partial
+  and complete.
+- What the user requested, what the agent suggested and what changed outside the
+  agreed scope are different. Do not hide an out-of-scope change in a summary.
+- A completed review is not an accepted implementation; a retrieved explanation
+  is not a verified effect; setup readiness is not task completion; an observed
+  native activity state is not current execution or approval.
+- Keep a still-valid agreement and a clear small request moving; explain a
+  material choice so the user can decide.
+- Link an existing deliverable or precise evidence when it helps. Do not create
+  reports, saves or extra lookups to fill a format; this needs no separate
+  rewriting pass, tool or reference chain.

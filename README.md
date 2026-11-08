@@ -6,9 +6,7 @@
 
 [English](README.md) | [한국어](README.ko.md) | [Documentation](docs/README.md) | [한국어 문서](docs/ko/README.md)
 
-Keep the project's direction and the reasons behind changes across AI conversations.
-
-Lode works with Codex, Claude Code and OpenCode. It restores saved work after compaction and prepares context for the task at hand.
+Lode keeps a project's agreed direction, the reasons behind changes and the remaining work in project records, so a later AI conversation continues from them instead of from an old chat's memory. It works with Codex, Claude Code and OpenCode, restores saved work after compaction and finds the context a task needs through a bounded project graph. Use it when a project lasts longer than one conversation.
 
 [![Build](https://github.com/binary1215/lode/actions/workflows/go-worker-build-release.yml/badge.svg)](https://github.com/binary1215/lode/actions/workflows/go-worker-build-release.yml)
 ![Status](https://img.shields.io/badge/status-beta-blue)
@@ -19,6 +17,31 @@ Beta. See the [changelog](CHANGELOG.md) and [installation guide](#install).
 Local `.lode` records stay outside plugin packages.
 
 [First request](#first-request) · [Install](#install) · [Daily use](#how-to-use-it) · [Recovery](#recovery)
+
+## Quick start
+
+Codex:
+
+```powershell
+codex plugin marketplace add binary1215/lode --ref lode-codex-marketplace
+codex plugin add lode-agent-core@lode-agent-plugin
+```
+
+Claude Code:
+
+```powershell
+claude plugin marketplace add binary1215/lode@lode-claude-marketplace
+claude plugin install lode-agent-core@lode-agent-plugin
+```
+
+Restart the client, open your project and put your real task in the first request:
+
+```text
+Use Lode Agent Core for this project. Resume its existing state if one exists;
+otherwise initialize the Core. Then find the cause of this login failure and fix it.
+```
+
+Terms such as Project, Session, Checkpoint and Canon are defined in the [glossary](docs/glossary.md). OpenCode, the optional CLI and existing HEAD installations are covered under [Install](#install).
 
 <details>
 <summary>All sections</summary>

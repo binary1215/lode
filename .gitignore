@@ -150,3 +150,4 @@ Thumbs.db
 # Local project records stay outside source and distribution.
 .lode/
 !test/project-document-hierarchy.test.mjs
+!test/claude-hooks-generated.test.mjs

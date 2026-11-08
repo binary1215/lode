@@ -424,7 +424,7 @@ test("defaults to the constitutional core without activating Product or Graph go
       repositoryEvidence: "requires-explicit-product-world",
       worldModelId: null,
       entrypoint: {
-        cli: `${ARTIFACT_COMPOSITION.identity}-agent context-prepare <project> --task <exact-task>`,
+        cli: `node <plugin-root>/scripts/${ARTIFACT_COMPOSITION.identity}.mjs context-prepare <project> --task <exact-task>`,
         mcpTool: publicToolName("head_context_prepare"),
       },
     },

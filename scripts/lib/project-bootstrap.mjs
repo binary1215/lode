@@ -168,9 +168,13 @@ function productReadiness(status) {
   };
 }
 
+// Machine-emitted CLI hints use the entry point every install has; the
+// `<identity>-agent` launcher exists only after scripts/install.sh|ps1.
+const CLI_DISPLAY = `node <plugin-root>/scripts/${ARTIFACT_COMPOSITION.identity}.mjs`;
+
 function contextReadiness({ coreState, productState, onboardingInspection = null }) {
   const entrypoint = {
-    cli: `${ARTIFACT_COMPOSITION.identity}-agent context-prepare <project> --task <exact-task>`,
+    cli: `${CLI_DISPLAY} context-prepare <project> --task <exact-task>`,
     mcpTool: publicToolName("head_context_prepare"),
   };
   if (coreState !== "ready") return {
@@ -335,12 +339,12 @@ function entrypoint(action, onboardingInspection = null) {
   const worldAbsent = onboardingInspection?.worldModel?.status === "unavailable";
   const entries = {
     initialize_core: {
-      cli: `${ARTIFACT_COMPOSITION.identity}-agent init <project> --runtime <runtimes>`,
+      cli: `${CLI_DISPLAY} init <project> --runtime <runtimes>`,
       mcpTool: publicToolName("head_project_initialize_or_resume"),
       mcpArguments: { profile: "core" },
     },
     review_managed_projection_drift: {
-      cli: `${ARTIFACT_COMPOSITION.identity}-agent doctor <project>`,
+      cli: `${CLI_DISPLAY} doctor <project>`,
       mcpTool: publicToolName("head_project_status"),
       note: "Review each reported managed-file drift before choosing an explicit repair.",
     },
@@ -350,21 +354,21 @@ function entrypoint(action, onboardingInspection = null) {
       note: "Continue the current authorized task using supplied context. Inspect status only for a relevant change or diagnosis.",
     },
     provide_product_evidence: {
-      cli: `${ARTIFACT_COMPOSITION.identity}-agent resume <project> --profile product --input <onboarding.json>`,
+      cli: `${CLI_DISPLAY} resume <project> --profile product --input <onboarding.json>`,
       mcpTool: publicToolName("head_project_initialize_or_resume"),
       mcpArguments: { profile: "product" },
     },
     review_product_candidates: {
-      cli: `${ARTIFACT_COMPOSITION.identity}-agent onboarding-status <project>`,
+      cli: `${CLI_DISPLAY} onboarding-status <project>`,
       mcpTool: publicToolName("head_onboarding_guide"),
     },
     resume_product_governance: {
-      cli: `${ARTIFACT_COMPOSITION.identity}-agent resume <project> --profile product`,
+      cli: `${CLI_DISPLAY} resume <project> --profile product`,
       mcpTool: publicToolName("head_project_initialize_or_resume"),
       mcpArguments: { profile: "product" },
     },
     refresh_product_world: {
-      cli: worldAbsent ? `${ARTIFACT_COMPOSITION.identity}-agent world-index <project>` : `${ARTIFACT_COMPOSITION.identity}-agent world-refresh <project>`,
+      cli: worldAbsent ? `${CLI_DISPLAY} world-index <project>` : `${CLI_DISPLAY} world-refresh <project>`,
       worldOperation: worldAbsent ? "rebuild" : "incremental-refresh",
       mcpTool: null,
       note: worldAbsent ? "The derived World is absent. Explicitly rebuild from retained Canon and evidence; no Product reapproval is needed."
@@ -377,7 +381,7 @@ function entrypoint(action, onboardingInspection = null) {
       optionalContextTool: publicToolName("head_context_prepare"),
     },
     inspect_product_governance: {
-      cli: `${ARTIFACT_COMPOSITION.identity}-agent onboarding-status <project>`,
+      cli: `${CLI_DISPLAY} onboarding-status <project>`,
       mcpTool: publicToolName("head_onboarding_guide"),
     },
   };
