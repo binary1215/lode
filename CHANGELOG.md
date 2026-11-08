@@ -13,6 +13,28 @@ Host/MCP reload.
 
 ## 0.3.0-beta.87 — publication tracked separately
 
+- Enforce the declared `project_root` argument of every MCP tool before dispatch.
+  A missing, empty or non-string root is refused as `INVALID_TOOL_ARGUMENTS`
+  instead of silently meaning the server's current directory or surfacing a Node
+  `TypeError`; routed calls are checked after the router's own shape and
+  read-only checks. Every other argument rule keeps the operation's own refusal,
+  identical on the CLI and MCP paths.
+- Keep library reason codes on MCP errors as `error.data.reasonCode`, so an
+  agent can branch on the documented code rather than on message text.
+- Report a folder holding a Lode Project recorded for another root as an
+  existing Project in conversation entry and the SessionStart Hook
+  (`PROJECT_RELOCATION_AVAILABLE`/`PROJECT_RELOCATION_PENDING` with the explicit
+  resume as next action), matching `status`. Implicit readers still adopt
+  nothing. Session work reads on an uninitialized folder fail as
+  `NOT_INITIALIZED` rather than a raw legacy-path `ENOENT`.
+- Make `lode_session_list` directly callable from the default catalog (23
+  tools), since unresolved entry names it as the discovery call. The onboarding
+  guide answers `provide_product_evidence` on an initialized Core project
+  instead of repeating `initialize_or_resume`. Withheld root-instruction notices
+  no longer print `undefined`.
+- Document that instruction linking creates a missing CLAUDE.md/AGENTS.md with
+  only the link block, and that a copy whose records prove their origin is
+  adopted as a relocation on explicit resume.
 - Apply the existing controlled cleanup clock to the two remaining semantic
   clean-close fixture tests. Preserve the real native EOF/exit/tree/PID proof,
   production grace policy and forced/uncertain/nonzero negative tests.

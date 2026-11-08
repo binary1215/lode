@@ -11,7 +11,7 @@ import {
   settleCompactionContinuation,
   verifyCompaction,
 } from "./compaction-recovery.mjs";
-import { inspectConversationProjectExperience, recoveryReadiness } from "./project-bootstrap.mjs";
+import { inspectConversationProjectExperience, recoveryReadiness, inspectProjectLocationExperience } from "./project-bootstrap.mjs";
 import { actionability } from "./experience-projection.mjs";
 import { readSessionWorkContext } from "./session-work-context.mjs";
 
@@ -151,6 +151,20 @@ async function conversationProjection(root, recovery) {
   };
 }
 
+// Read-only P4 location facts for an unowned root; never adopts or selects.
+export function projectRelocationHint(root) {
+  try {
+    const location = inspectProjectLocationExperience({ root });
+    if (!location || !["relocation_available", "relocation_pending"].includes(location.status)) return null;
+    return {
+      reasonCode: location.status === "relocation_pending" ? "PROJECT_RELOCATION_PENDING" : "PROJECT_RELOCATION_AVAILABLE",
+      projectLocation: { status: location.status, projectId: location.retainedProject?.projectId ?? null,
+        previousRoot: location.retainedProject?.previousRoot ?? null, adopted: false },
+      nextAction: location.nextAction,
+    };
+  } catch { return null; }
+}
+
 export async function enterConversationRecovery({ root = ".", readRelatedNativeContext = null } = {}) {
   const inspected = inspectProject(root);
   const readable = isProjectRecoveryReadable(inspected);
@@ -192,9 +206,14 @@ export async function enterConversationRecovery({ root = ".", readRelatedNativeC
       presentation: { mode: "exception", summary: "Selected context changed during entry; only dependent context needs another read.", userActionRequired: false } };
   };
   if (!readable) {
+    // A folder holding a Lode Project recorded for another root stays unavailable
+    // to this implicit reader (nothing is adopted), but it is an existing Project:
+    // name the relocation and its explicit resume instead of "not initialized".
+    const relocation = inspected.status === "not_initialized" ? projectRelocationHint(root) : null;
     return {
       status: "conversation_recovery_unavailable",
-      reasonCode: inspected.status === "not_initialized" ? "NOT_INITIALIZED" : "PROJECT_NOT_READY",
+      reasonCode: relocation ? relocation.reasonCode : inspected.status === "not_initialized" ? "NOT_INITIALIZED" : "PROJECT_NOT_READY",
+      ...(relocation ? { projectLocation: relocation.projectLocation, nextAction: relocation.nextAction } : {}),
       recoveryDependentWorkBlocked: recovery.recoveryDependentWorkBlocked,
       ordinaryWorkBlocked: false,
       userDecisionRequired: false,

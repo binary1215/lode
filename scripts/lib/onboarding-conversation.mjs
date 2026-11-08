@@ -69,7 +69,11 @@ function compactCandidateSet(candidateSet, limit) {
 
 function actionFor({ status, world, graph, documents }) {
   if (["not_initialized", "promotion_recovery_pending", "review_recovery_pending"].includes(status)) return "initialize_or_resume";
-  if (new Set(["migration_required", "initialized", "awaiting_evidence", "rejected"]).has(status)) return "initialize_or_resume";
+  if (status === "migration_required") return "initialize_or_resume";
+  // Core is already initialized here: repeating initialize_or_resume would loop.
+  // Product governance now needs a user brief or a fresh semantic proposal
+  // (profile "product"), the same action the project status names.
+  if (new Set(["initialized", "awaiting_evidence", "rejected"]).has(status)) return "provide_product_evidence";
   if (status === "ready_world_changed" || world?.status !== "current"
     || (new Set(["awaiting_review", "revision_required"]).has(status) && world.matchesCandidateSource === false)) return "refresh_or_reconcile_world";
   if (new Set(["awaiting_review", "revision_required"]).has(status)) return "review_candidates";

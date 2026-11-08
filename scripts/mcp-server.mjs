@@ -2,6 +2,7 @@
 import readline from "node:readline";
 import { workDocumentTools, workDocumentFromMcp, workDocumentCompositionSchema } from "./lib/work-document-surface.mjs";
 import { resolveOperation } from "./lib/lode-operation-contract.mjs";
+import { assertProjectRootArgument } from "./lib/mcp-argument-validation.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
 import { DISCOVERY_PREFIX_PAIRS } from "../compat/head/public-names.mjs";
 const semanticToolName = name => resolveOperation(name)?.semanticName ?? name;
@@ -85,7 +86,7 @@ function workerIntegrationInput(args) {
   const request = {};
   for (const [key, value] of Object.entries(args)) {
     if (key === "project_root") continue;
-    if (!Object.hasOwn(workerIntegrationFieldNames, key)) throw new Error(`Unsupported worker integration fields: ${key}.`);
+    if (!Object.hasOwn(workerIntegrationFieldNames, key)) throw Object.assign(new Error(`Unsupported worker integration fields: ${key}.`), { code: "WORKER_INTEGRATION_INPUT_INVALID" });
     request[workerIntegrationFieldNames[key]] = value;
   }
   return request;
@@ -391,7 +392,7 @@ const allTools = [
         profile: { type: "string", enum: ["core", "product"], default: "core" },
         copied_project: { type: "string", enum: ["verified-copy"], description: "Explicitly adopt this local copied Project when the initial origin cannot be proved. Retains exact originals and an origin-unverified label; does not transfer native bindings or execution permission. Not needed for ordinary proved relocation." },
         instruction_integration: { type: "string", enum: ["link", "preserve"], description: "Optional existing setup choice. Link a bounded host-specific instruction block only when the user chose it; preserve makes no instruction edits. Never a prerequisite for ordinary work." },
-        write_root_instruction_files: { type: "boolean", default: false, description: "Create missing root CLAUDE.md, AGENTS.md, or opencode.json. Omitted or false leaves those files untouched, including in a non-interactive run." },
+        write_root_instruction_files: { type: "boolean", default: false, description: "Create missing root CLAUDE.md, AGENTS.md, or opencode.json. Omitted or false leaves those files untouched, including in a non-interactive run, except that instruction_integration \"link\" creates a missing CLAUDE.md or AGENTS.md containing only the link block." },
         runtimes: {
           type: "array", minItems: 1, maxItems: 3, uniqueItems: true,
           items: { type: "string", enum: ["claude", "codex", "opencode"] },
@@ -2058,7 +2059,9 @@ allTools.push({
 const defaultToolNames = new Set([
   SESSION_HOST_REQUEST_HELPER,
   "head_core_contract", "head_project_initialize_or_resume", "head_conversation_enter", "head_conversation_list", "head_conversation_send", "head_project_graph",
-  "head_session_create", "head_project_direction_update",
+  // The unresolved-Session entry names head_session_list as its discovery call, so
+  // it must be directly callable from the default surface, not only via routing.
+  "head_session_create", "head_session_list", "head_project_direction_update",
   "head_project_status", "head_checkpoint_diagnose", "head_checkpoint_basis",
   "head_checkpoint_sync", "head_session_restore", "head_pending_review",
   "head_runtime_invocation_lease_status", "head_bounded_worker_job_status",
@@ -2162,7 +2165,10 @@ async function subagentStateWriteRejection(name, args, caller, environment) {
 }
 
 const success = (id, result) => ({ jsonrpc: "2.0", id, result });
-const failure = (id, message) => ({ jsonrpc: "2.0", id, error: { code: -32000, message } });
+// Library errors carry a stable reason code (error.code). Keep it on the wire in
+// error.data.reasonCode so agents can branch on the documented code, not the text.
+const failure = (id, message, reasonCode) => ({ jsonrpc: "2.0", id, error: { code: -32000, message,
+  ...(typeof reasonCode === "string" && reasonCode ? { data: { reasonCode } } : {}) } });
 export const WORLD_MODEL_STATUS_MCP_MAX_BYTES = 4 * 1024 * 1024;
 
 function onboardingInputFromMcp(args) {
@@ -2419,7 +2425,7 @@ async function unresolvedSessionResponse(id, name, root, reasonCode) {
     // Keep the existing exceptional JSON-text + structuredContent contract.
     // Normal dispatch still uses each tool's own human/JSON presentation.
     return success(id, { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
-  } catch (error) { return failure(id, error.message); }
+  } catch (error) { return failure(id, error.message, error?.code); }
 }
 
 async function preparedRuntimeRead(root, value) {
@@ -2450,6 +2456,12 @@ async function dispatchSessionRequest(request, options = {}) {
   if (request.method === "tools/call") {
     const rejection = await subagentStateWriteRejection(requestedName, args, options.caller, options.hostEnvironment ?? process.env);
     if (rejection) return failure(request.id ?? null, rejection);
+    // The Session/location steps below read project_root before dispatch, so a
+    // wrong type is refused here; the required/empty checks follow the surface,
+    // router and read-only checks inside the routed dispatcher.
+    if (args && typeof args === "object" && !Array.isArray(args) && args.project_root !== undefined && typeof args.project_root !== "string") {
+      return failure(request.id ?? null, `Invalid arguments for ${publicToolName(requestedName)}: arguments.project_root must be string, got ${args.project_root === null ? "null" : typeof args.project_root}.`, "INVALID_TOOL_ARGUMENTS");
+    }
   }
   // Only views/effects that actually consume the selected Session need its
   // binding. Project-scoped Product/Observation/source work is independent.
@@ -2462,7 +2474,7 @@ async function dispatchSessionRequest(request, options = {}) {
       const projectLocationProjection = inspectProjectLocationExperience({ root: args.project_root,
         sessionId: hasSelection ? args.session_id : undefined });
       if (projectLocationProjection) return (await dispatchRouted(request, { ...options, projectLocationProjection }));
-    } catch (error) { return failure(request.id ?? null, error.message); }
+    } catch (error) { return failure(request.id ?? null, error.message, error?.code); }
   }
   // Explicit resume validates/adopts the local Project location before an
   // optional native Host adapter can read its binding at that current root.
@@ -2482,7 +2494,7 @@ async function dispatchSessionRequest(request, options = {}) {
       if (bindingFailure && hasSelection && response?.result) response.result._meta = { ...response.result._meta,
         headSessionBinding: { status: "unavailable", reasonCode: bindingFailure, scope: "current-explicit-request-only", retainedForSubsequentCalls: false, persisted: false } };
       return response;
-    } catch (error) { return failure(request.id ?? null, error.message); }
+    } catch (error) { return failure(request.id ?? null, error.message, error?.code); }
   }
   // Discovery's existing session_id is an exact preview target, never a request
   // to update native persistence, a shared caller context, or the outer route.
@@ -2517,7 +2529,7 @@ async function dispatchSessionRequest(request, options = {}) {
       if (error.code === "HEAD_SESSION_SELECTION_LOST") {
         return (await unresolvedSessionResponse(request.id ?? null, requestedName, args.project_root, error.code));
       }
-      return failure(request.id ?? null, error.message);
+      return failure(request.id ?? null, error.message, error?.code);
     }
   }
   return (await dispatchRouted(request, options));
@@ -2551,6 +2563,12 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
       args = args.arguments;
     }
     requireOperationSurface(name, surface);
+    // A declared, required project_root is the contract: refuse its absence or a
+    // wrong type after the surface, router and read-only checks and before any
+    // handler reads it (otherwise a missing root meant the server's cwd). Other
+    // argument rules stay with the operation's own, CLI-identical refusal.
+    const declaredSchema = allTools.find(tool => semanticToolName(tool.name) === name)?.inputSchema;
+    if (declaredSchema) assertProjectRootArgument(publicToolName(name), declaredSchema, args);
     const value = await (name === "head_run_start"
       ? (await import("./lib/run-lineage.mjs")).startRun({ root: args.project_root, executionContractId: args.execution_contract_id, startRequestId: args.start_request_id })
       : name === "head_core_contract"
@@ -2994,7 +3012,7 @@ async function dispatchRouted(request, { surface = "ordinary", graphDbTransport 
     }
     return response;
   } catch (error) {
-    return failure(id, error.message);
+    return failure(id, error.message, error?.code);
   }
 }
 

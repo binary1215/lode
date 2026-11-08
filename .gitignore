@@ -38,6 +38,7 @@ test/*
 !test/skill-reference-links.test.mjs
 !test/managed-maintenance-surface.test.mjs
 !test/mcp-progressive-discovery.test.mjs
+!test/mcp-contract-enforcement.test.mjs
 !test/complexity-reduction-surface.test.mjs
 !test/project-graph.test.mjs
 !test/project-graph-presentation.test.mjs

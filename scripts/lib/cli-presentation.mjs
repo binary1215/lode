@@ -47,8 +47,11 @@ function integrationNotices(value) {
   const lines = [], integrations = value.project?.integrations || value.integrations || value.hostIntegration || {};
   const display = text => compactText(inertTerminalText(text), 240);
   const withheld = Object.entries(integrations).flatMap(([client, item]) => {
-    const parts = [item, item?.instruction, item?.mcp].filter(part => part?.status === "withheld");
-    return parts.map(part => `${client} ${part.path}`);
+    // A withheld integration may carry the file path itself (codex) or only on its
+    // instruction/mcp parts (claude); never print an undefined path.
+    const parts = [item, item?.instruction, item?.mcp].filter(part => part?.status === "withheld" && typeof part.path === "string");
+    if (parts.length) return [...new Set(parts.map(part => `${client} ${part.path}`))];
+    return item?.status === "withheld" ? [client] : [];
   });
   if (withheld.length) lines.push(`Root instruction files were not created or modified (${withheld.join(", ")}). Pass --write-root-instructions, or write_root_instruction_files for MCP, before Lode writes them. Non-interactive init leaves them absent. Ordinary work continues.`);
   const manual = Object.entries(integrations).filter(([client, item]) => item?.status === "manual" && !(client === "opencode" && value.opencodeConnection));

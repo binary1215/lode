@@ -203,7 +203,8 @@ does not transfer a native Host binding or replay execution. See
 loading separately.
 
 If you choose instruction linking during setup, Lode can append a small block
-to an existing instruction file once, preserving its original content. Claude
+to an existing instruction file once, preserving its original content; when the
+file does not exist yet, linking creates it with only that block. Claude
 Code uses its instruction-file imports; Codex receives a directive to read the
 project instructions. Declining leaves the file unchanged and does not block
 your task or trigger another setup offer. See the installation guidance for
