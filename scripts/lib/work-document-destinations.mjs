@@ -6,7 +6,27 @@ import { workDocumentHash } from "./work-document-source.mjs";
 import { documentFailure } from "./work-document-store.mjs";
 
 const normalize = text => text.replaceAll("\r\n", "\n").trimEnd();
-export const sameDocumentText = (a, b) => typeof a === "string" && typeof b === "string" && normalize(a) === normalize(b);
+// `form` is a destination's own comparison form; the default keeps exact text.
+export const sameDocumentText = (a, b, form = normalize) => typeof a === "string" && typeof b === "string" && form(a) === form(b);
+
+// Notion markdown v2 does not keep a page body byte for byte: a leading H1 is
+// held as the page title property, backslash escapes are dropped and child
+// pages are listed as <page> lines. Only these observed rendering differences
+// are ignored; any other remote edit still differs and stays remote drift.
+const LEADING_TITLE = /^# ([^\n]*)(?:\n+|$)/;
+const NOTION_CHILD_PAGE = /^<page\b[^>]*>.*<\/page>$/;
+const unescapeMarkdown = text => text.replace(/\\([!-/:-@[-`{-~])/g, "$1");
+export function notionDocumentForm(text) {
+  return unescapeMarkdown(text.replaceAll("\r\n", "\n").replace(LEADING_TITLE, "")).split("\n")
+    .filter(line => !NOTION_CHILD_PAGE.test(line.trim())).map(line => line.trimEnd())
+    .join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+// The managed body excludes trailing child page lines owned by other pages.
+function notionManagedRegion(markdown) {
+  const lines = markdown.replaceAll("\r\n", "\n").split("\n");
+  while (lines.length && (!lines.at(-1).trim() || NOTION_CHILD_PAGE.test(lines.at(-1).trim()))) lines.pop();
+  return lines.join("\n");
+}
 const safeId = value => typeof value === "string" && /^[a-zA-Z0-9_-]{1,180}$/.test(value);
 const pageId = value => typeof value === "string" && /^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(value);
 const notionPublicationBudgets = new WeakSet();
@@ -107,10 +127,28 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
   const rejections = new WeakMap();
   const intent = (method, endpoint, body) => ({ protocol: "notion-markdown-v2", method, endpoint,
     parentPageId: compact(parentPageId), bodyDigest: workDocumentHash(body) });
+  // The title is sent as the page property; Notion would absorb a leading H1
+  // into it and drop it from the stored body, so the body omits that line.
   const createBody = ({ title, markdown }) => ({ parent: { type: "page_id", page_id: parentPageId },
-    properties: { title: { type: "title", title: [{ type: "text", text: { content: title } }] } }, markdown, markdown_version: "v2" });
+    properties: { title: { type: "title", title: [{ type: "text", text: { content: title } }] } },
+    markdown: markdown.replace(LEADING_TITLE, ""), markdown_version: "v2" });
+  // Logical replacement intent. The request body binds old_str to the exact
+  // stored Notion text that corresponds to oldText (see remoteUpdate).
   const replaceBody = ({ oldText, newText }) => ({ type: "update_content", markdown_version: "v2", allow_async: true,
     update_content: { content_updates: [{ old_str: oldText, new_str: newText }] } });
+  const remoteUpdate = (observed, { oldText, newText }) => {
+    if (observed.markdown.split(oldText).length === 2) return { oldText, newText };
+    const region = notionManagedRegion(observed.markdown), heading = LEADING_TITLE.exec(newText);
+    if (!region.trim() || notionDocumentForm(region) !== notionDocumentForm(oldText)) documentFailure("Managed text changed or is ambiguous.", "WORK_DOCUMENT_REMOTE_DRIFT");
+    // A whole-body replacement keeps a new distinct leading heading (such as an
+    // in-progress notice) as body text, but does not reintroduce the page title
+    // or the same leading heading that the stored body did not keep.
+    const text = value => unescapeMarkdown(value).trim(), previous = LEADING_TITLE.exec(oldText);
+    const omitted = heading && (observed.title !== null && text(heading[1]) === observed.title.trim()
+      || previous && text(previous[1]) === text(heading[1]) && !LEADING_TITLE.test(region));
+    const body = omitted ? newText.replace(LEADING_TITLE, "") : newText;
+    return { oldText: region, newText: body.trimEnd() };
+  };
   const isWriteEndpoint = (method, endpoint) => method === "POST" && endpoint === "/pages"
     || method === "PATCH" && /^\/pages\/[a-f0-9-]+\/markdown$/i.test(endpoint) && pageId(endpoint.split("/")[2]);
   // This narrow error contract is a rejected request, not an uncertain timeout.
@@ -119,7 +157,7 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
     && value.code === "restricted_resource" && typeof value.message === "string"
     && value.message.length > 0 && value.message.length <= 4096
     && (value.request_id === undefined || typeof value.request_id === "string" && value.request_id.length <= 180);
-  const call = async (method, endpoint, body) => {
+  const call = async (method, endpoint, body, intentBody = body) => {
     if (budget.used >= requestBudget || now() >= budget.deadline) documentFailure("Publication/recovery transport budget exhausted.", "WORK_DOCUMENT_TRANSPORT_BUDGET");
     budget.used++;
     const remaining = Math.max(1, budget.deadline - now());
@@ -137,7 +175,7 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
         ...(Number.isInteger(status)?{httpStatus:status}:{}) });
       if (status === 403 && isWriteEndpoint(method, endpoint) && validRejection(result.body)) {
         const { object, status: responseStatus, code, message, request_id } = result.body;
-        rejections.set(error, { kind: "VerifiedRejectedNotionWrite", intent: intent(method, endpoint, body),
+        rejections.set(error, { kind: "VerifiedRejectedNotionWrite", intent: intent(method, endpoint, intentBody),
           response: { object, status: responseStatus, code, message, ...(request_id ? { request_id } : {}) } });
       }
       throw error;
@@ -156,11 +194,13 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
       || page.archived || page.in_trash) documentFailure("Page parent or identity differs.", "WORK_DOCUMENT_REMOTE_DRIFT");
     const value = await call("GET", `/pages/${id}/markdown?markdown_version=v2`);
     if (compact(value?.id || "") !== compact(id) || typeof value.markdown !== "string" || Buffer.byteLength(value.markdown) > 2 * 1024 * 1024) documentFailure("Page body is unavailable.");
-    return { id, markdown: value.markdown,
+    const titleProperty = Object.values(page.properties || {}).find(property => property?.type === "title");
+    const title = Array.isArray(titleProperty?.title) ? titleProperty.title.map(part => part?.plain_text ?? part?.text?.content ?? "").join("") : null;
+    return { id, markdown: value.markdown, title,
       complete: value.object === "page_markdown" && value.truncated === false && Array.isArray(value.unknown_block_ids)
         && value.unknown_block_ids.length === 0 && !/<unknown\b/.test(value.markdown), warnings: value.warnings || [] };
   };
-  return { kind: "notion", identity: workDocumentHash(["notion", compact(parentPageId)]),
+  return { kind: "notion", identity: workDocumentHash(["notion", compact(parentPageId)]), textForm: notionDocumentForm,
   scoped(parentId) {
     // Core must first verify the exact owned container through its journal and
     // readback. Every child still enforces one exact parent; no subtree ownership
@@ -203,7 +243,7 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
         if (child.type!=="child_page") continue;
         if (inspected++>=12) return {complete:false,matches,cursor:{pageCursor,offset:index,listingDigest:digest}};
         const value=await read(child.id);
-        if (value.complete && !value.warnings.length && sameDocumentText(value.markdown,markdown)) matches.push({id:value.id});
+        if (value.complete && !value.warnings.length && sameDocumentText(value.markdown,markdown,notionDocumentForm)) matches.push({id:value.id});
       }
       if (children.has_more===false) return {complete:true,matches};
       if (typeof children.next_cursor!=="string"||!children.next_cursor||children.next_cursor.length>500) return {complete:false,matches};
@@ -222,7 +262,9 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
   },
   async replace({ id, oldText, newText }) {
     if (!pageId(id)) documentFailure("Invalid exact page identity.");
-    const result = await call("PATCH", `/pages/${id}/markdown`, replaceBody({ oldText, newText }));
+    const observed = await read(id);
+    if (!observed.complete || observed.warnings.length) documentFailure("Managed text cannot be read completely.", "WORK_DOCUMENT_REMOTE_DRIFT");
+    const result = await call("PATCH", `/pages/${id}/markdown`, replaceBody(remoteUpdate(observed, { oldText, newText })), replaceBody({ oldText, newText }));
     return result.pendingTask ? result : { id, warnings: result.warnings || [] };
   },
   async poll(taskId) {

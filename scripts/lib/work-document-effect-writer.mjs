@@ -15,6 +15,9 @@ export function createDocumentEffectWriter({ store, adapter, key, target, config
       || attempt.scope.adapterIdentity !== adapter.identity
       || !adapter.validateStoredWriteRejection?.(outcome?.rejectedWrite, attempt.scope.intent)) documentFailure("Explicit retry does not match the current rejected request.", "WORK_DOCUMENT_RETRY_SCOPE_CHANGED");
   }
+  // A destination may define its own comparison form; otherwise text is exact.
+  const form = adapter.textForm || (text => text), same = (a, b) => sameDocumentText(a, b, adapter.textForm);
+  const has = (text, part) => form(text).includes(form(part)), count = (text, part) => form(text).split(form(part)).length - 1;
   const reject = (attemptId, proof) => { throw Object.assign(new Error("The exact write was rejected; explicit retry is available after its cause is repaired."), {
     code: "WORK_DOCUMENT_REQUEST_REJECTED", attemptId, rejectedWrite: proof.response }); };
   const operation = (baseKey, kind, input) => {
@@ -78,7 +81,7 @@ export function createDocumentEffectWriter({ store, adapter, key, target, config
   };
   const verify = async (id, expected) => {
     const observed = await readBound(id);
-    if (!observed.complete || observed.warnings?.length || !sameDocumentText(observed.markdown, expected)) documentFailure("Document readback differs or is incomplete.", "WORK_DOCUMENT_REMOTE_DRIFT");
+    if (!observed.complete || observed.warnings?.length || !same(observed.markdown, expected)) documentFailure("Document readback differs or is incomplete.", "WORK_DOCUMENT_REMOTE_DRIFT");
     return { id, ...(observed.objectIdentity ? { objectIdentity: observed.objectIdentity } : {}),
       payloadDigest: workDocumentHash(expected), readbackDigest: workDocumentHash(observed.markdown), complete: true };
   };
@@ -131,7 +134,7 @@ export function createDocumentEffectWriter({ store, adapter, key, target, config
           try {
             const read=await adapter.read(candidate.id);
             observations.set(candidate.id,{id:candidate.id,observedAt:new Date().toISOString(),status:!read.complete||read.warnings?.length
-              ?"incomplete-at-last-read":sameDocumentText(read.markdown,markdown)?"exact-body-at-last-read":"body-changed-at-last-read"});
+              ?"incomplete-at-last-read":same(read.markdown,markdown)?"exact-body-at-last-read":"body-changed-at-last-read"});
           } catch(error) {
             observations.set(candidate.id,{id:candidate.id,observedAt:new Date().toISOString(),status:error.httpStatus===404?"not-found-at-last-read":"read-unconfirmed",
               reasonCode:error.code||"WORK_DOCUMENT_TRANSPORT_UNKNOWN",...(error.httpStatus?{httpStatus:error.httpStatus}:{})});
@@ -183,7 +186,7 @@ export function createDocumentEffectWriter({ store, adapter, key, target, config
     catch (error) {
       if (!error.rejectedWrite) throw error;
       const observed = await readBound(id);
-      if (!observed.complete || observed.warnings?.length || observed.markdown.split(oldText).length !== 2) documentFailure("Managed text changed before retry.", "WORK_DOCUMENT_REMOTE_DRIFT");
+      if (!observed.complete || observed.warnings?.length || count(observed.markdown, oldText) !== 1) documentFailure("Managed text changed before retry.", "WORK_DOCUMENT_REMOTE_DRIFT");
       throw error;
     }
     const operationKey = op.attemptId, savedResponse = op.response;
@@ -192,13 +195,13 @@ export function createDocumentEffectWriter({ store, adapter, key, target, config
     // update; a same-title/content copy cannot supply that exact object identity.
     if (savedResponse?.objectIdentity) {
       const observed = await adapter.read(id);
-      if (observed.objectIdentity !== savedResponse.objectIdentity || !observed.markdown.includes(newText)) documentFailure("Published resource was replaced or edited.", "WORK_DOCUMENT_RESOURCE_REPLACED");
+      if (observed.objectIdentity !== savedResponse.objectIdentity || !has(observed.markdown, newText)) documentFailure("Published resource was replaced or edited.", "WORK_DOCUMENT_RESOURCE_REPLACED");
       store.write(bindingParts(id), { objectIdentity: savedResponse.objectIdentity }, true);
     }
     const read = await readBound(id);
     if (!read.complete || read.warnings?.length) documentFailure("Managed text cannot be read completely.");
-    if (read.markdown.includes(newText) && !read.markdown.includes(oldText) || oldText === newText && read.markdown.includes(newText)) return;
-    if (read.markdown.indexOf(oldText) < 0 || read.markdown.indexOf(oldText) !== read.markdown.lastIndexOf(oldText)) documentFailure("Managed text changed or matches ambiguously.", "WORK_DOCUMENT_REMOTE_DRIFT");
+    if (has(read.markdown, newText) && !has(read.markdown, oldText) || oldText === newText && has(read.markdown, newText)) return;
+    if (count(read.markdown, oldText) !== 1) documentFailure("Managed text changed or matches ambiguously.", "WORK_DOCUMENT_REMOTE_DRIFT");
     if (op.existing) {
       documentFailure("An earlier change remains unverified; it was not replayed.", "WORK_DOCUMENT_UPDATE_UNKNOWN");
     }
@@ -207,7 +210,7 @@ export function createDocumentEffectWriter({ store, adapter, key, target, config
     if (response.warnings?.length || response.pendingTask) documentFailure("Change awaits terminal result and readback.", "WORK_DOCUMENT_ASYNC_PENDING");
     if (response.objectIdentity) {
       const observed = await adapter.read(id);
-      if (observed.objectIdentity !== response.objectIdentity || !observed.markdown.includes(newText)) documentFailure("Local replacement readback differs.");
+      if (observed.objectIdentity !== response.objectIdentity || !has(observed.markdown, newText)) documentFailure("Local replacement readback differs.");
       store.write(bindingParts(id), { objectIdentity: response.objectIdentity }, true);
     }
   };
@@ -221,7 +224,7 @@ export function createDocumentEffectWriter({ store, adapter, key, target, config
         || attempt.scope.inputDigest!==workDocumentHash(input) || attempt.id!==id) documentFailure("Change reconciliation differs.","WORK_DOCUMENT_RECORD_TAMPER");
       if (outcome?.objectIdentity) {
         const observed=await adapter.read(id);
-        if (observed.objectIdentity!==outcome.objectIdentity || !observed.markdown.includes(newText)) documentFailure("Known replacement was edited or replaced.","WORK_DOCUMENT_RESOURCE_REPLACED");
+        if (observed.objectIdentity!==outcome.objectIdentity || !has(observed.markdown, newText)) documentFailure("Known replacement was edited or replaced.","WORK_DOCUMENT_RESOURCE_REPLACED");
         store.write(bindingParts(id),{objectIdentity:outcome.objectIdentity},true);return;
       }
       if (!outcome?.rejectedWrite) return;

@@ -203,7 +203,8 @@ async function publishPair({ root, store, prepared, adapter, key, target, config
   const oldText = previous?.currentText || initial;
   await change(startId, oldText, currentText);
   const start = await readBound(startId);
-  if (!start.complete || start.warnings?.length || start.markdown.split(currentText).length !== 2) documentFailure("Current links are not uniquely readback-verified.");
+  const form = adapter.textForm || (text => text);
+  if (!start.complete || start.warnings?.length || form(start.markdown).split(form(currentText)).length !== 2) documentFailure("Current links are not uniquely readback-verified.");
   await adapter.read(notesId); // Existence/parent only: personal notes may change.
   // A user edit to either view between link updates is not silently accepted.
   for (let index = 0; index < pages.length; index++) await verify(pages[index].id,

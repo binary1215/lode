@@ -201,8 +201,8 @@ export async function publishProjectDocuments({root,sessionId,projectionId,targe
           }
           const observed=await item.writer.readBound(item.entry.id), expected=item.entry.markdown||item.entry.initial;
           if (!observed.complete||observed.warnings?.length) fail("Page read is incomplete.","WORK_DOCUMENT_REMOTE_DRIFT");
-          if (!sameDocumentText(observed.markdown,expected)) {
-            if (!pending||!sameDocumentText(observed.markdown,pending.desired)) fail("Page was edited or replaced.","WORK_DOCUMENT_REMOTE_DRIFT");
+          if (!sameDocumentText(observed.markdown,expected,item.raw.textForm)) {
+            if (!pending||!sameDocumentText(observed.markdown,pending.desired,item.raw.textForm)) fail("Page was edited or replaced.","WORK_DOCUMENT_REMOTE_DRIFT");
             // Existing bound resource + exact pre-write input, not title/marker.
             item.entry={...item.entry,markdown:pending.desired,viewId:pending.viewId||null};store.write(entryParts(item.entry.logical),item.entry,true);
           }
