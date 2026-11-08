@@ -11,7 +11,52 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
-## 0.3.0-beta.87 — publication tracked separately
+## 0.3.0-beta.91 — publication tracked separately
+
+- Add shared `scripts/lib/core/` helpers for SHA-256 digests, canonical JSON,
+  errors and reason codes, atomic writes and path-escape checks, and move the
+  duplicated local helpers in `scripts/lib` onto them. Digest bytes, messages,
+  codes and file effects are unchanged; a lint test keeps raw `createHash`,
+  `renameSync` and local digest helpers out of the library.
+- `REASON_CODES` in `scripts/lib/core/errors.mjs` lists the reason codes used as
+  `code`/`reasonCode` values or fail/error call arguments; a test keeps it in
+  sync with the code.
+
+## 0.3.0-beta.90 — publication tracked separately
+
+- Format every JavaScript source once with Prettier 3.9.10 (`printWidth` 160,
+  otherwise defaults). JSON, Markdown, text and test fixtures keep their bytes.
+  `.prettierrc`, `.prettierignore` and `.editorconfig` record the style,
+  `npm run format` / `format:check` pin the version through npx without a
+  dependency, the JavaScript CI job checks formatting, and
+  `.git-blame-ignore-revs` hides the formatting commit from blame.
+- Add `scripts/compare-test-baseline.mjs`, which diffs the failing-test sets of
+  two TAP runs so a branch is judged by new failures against its base rather than
+  by the absolute count on machines where some suites always fail.
+
+## 0.3.0-beta.89 — publication tracked separately
+
+- Turn the Lode Skills into an entry procedure. The core Skill opens with a
+  table from the entry state (`conversation_ready`, `session_selection_unresolved`,
+  `conversation_recovery_unavailable` with `NOT_INITIALIZED` or
+  `PROJECT_RELOCATION_*`, MCP `error.data.reasonCode`) to the call to make and
+  how to use its result; authority doctrine becomes one-line rules that link
+  `docs/lode-constitution.md`. The conversation Skill maps result fields to the
+  sentences they produce, and the onboarding Skill lists every `nextAction` value.
+- Emit `node <plugin-root>/scripts/lode.mjs …`, the entry point every install
+  has, as `nextAction.entrypoint.cli` and in readiness hints; CLI help explains
+  the optional `lode-agent` launcher spelling.
+- Generate the PreToolUse matchers in `hooks/claude.json` from the tool catalog
+  (`scripts/generate-claude-hooks.mjs`, `--check`), verified byte-for-byte by a
+  test. The matcher is built from the full catalog, so the Hook now also runs on
+  `lode_tools_read` / `lode_tools_call` and the other router and discovery tools.
+- Add `docs/glossary.md` (and Korean), open the README with what/why, the two
+  installs, the first request and the glossary, and document the required keys
+  and formats for `session-create --new-session`, `checkpoint-sync` and
+  `session-work-record --input`. Their validation errors name the offending key
+  or expected format; reason codes are unchanged.
+
+## 0.3.0-beta.88 — publication tracked separately
 
 - Enforce the declared `project_root` argument of every MCP tool before dispatch.
   A missing, empty or non-string root is refused as `INVALID_TOOL_ARGUMENTS`
@@ -35,6 +80,8 @@ Host/MCP reload.
 - Document that instruction linking creates a missing CLAUDE.md/AGENTS.md with
   only the link block, and that a copy whose records prove their origin is
   adopted as a relocation on explicit resume.
+## 0.3.0-beta.87 — publication tracked separately
+
 - Apply the existing controlled cleanup clock to the two remaining semantic
   clean-close fixture tests. Preserve the real native EOF/exit/tree/PID proof,
   production grace policy and forced/uncertain/nonzero negative tests.
