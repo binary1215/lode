@@ -37,7 +37,11 @@ function setup(t) {
   const prepare = evidence => prepareWorkDocuments({ root, sessionId, todoId: "todo-expiry", evidenceIds: [evidence.evidenceId], title: "Expiry wording" });
   return { root, vault, sessionId, save, prepare };
 }
-function fakeNotion() {
+// Synthetic Notion markdown v2 storage: the leading H1 becomes the title
+// property and backslash escapes are dropped on read. This models observed
+// Notion behavior; it is not a live provider test.
+const notionStored = (markdown, create) => (create ? markdown.replace(/^# [^\n]*(?:\n+|$)/, "") : markdown).replace(/\\([!-/:-@[-`{-~])/g, "$1");
+function fakeNotion({ notionStorage = false } = {}) {
   const parent = "10000000-0000-4000-8000-000000000001", pages = new Map(), calls = [];
   const fault = { lostCreate: false, denied: false, missingBody: false, asyncPatch: false, taskStatus: "succeeded", taskMissing: false };
   let sequence = 10;
@@ -51,7 +55,8 @@ function fakeNotion() {
       ...(fault.taskStatus === "succeeded" ? { result: { object: "page_markdown", id: fault.taskPageId } } : {}) } };
     if (call.method === "POST") {
       const id = `10000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}`;
-      pages.set(id, { id, parent: { page_id: parent }, markdown: call.body.markdown });
+      pages.set(id, { id, parent: { page_id: parent }, title: call.body.properties.title.title[0].text.content,
+        markdown: notionStorage ? notionStored(call.body.markdown, true) : call.body.markdown });
       if (fault.lostCreate) { fault.lostCreate = false; throw Object.assign(new Error("Synthetic lost response"), { code: "ECONNRESET" }); }
       return { status: 200, body: { object: "page", id, parent: { page_id: parent } } };
     }
@@ -62,13 +67,14 @@ function fakeNotion() {
       assert.equal(call.body.type, "update_content");
       const { old_str: oldText, new_str: newText } = call.body.update_content.content_updates[0];
       if (page.markdown.split(oldText).length !== 2) return { status: 400, body: { object: "error" } };
-      page.markdown = page.markdown.replace(oldText, newText);
+      page.markdown = page.markdown.replace(oldText, notionStorage ? notionStored(newText, false) : newText);
       if (fault.lostPatch) { fault.lostPatch = false; throw Object.assign(new Error("Synthetic lost patch response"), { code: "ECONNRESET" }); }
       if (fault.asyncPatch) { fault.asyncPatch = false; fault.taskPageId = page.id; return { status: 202, body: { object: "async_task", id: "task_synthetic", status: "queued", poll_after_seconds: 1 } }; }
       return { status: 200, body: { object: "page_markdown", id: page.id, markdown: page.markdown, truncated: false, unknown_block_ids: [] } };
     }
     return { status: 200, body: match[2] ? { object: "page_markdown", id: page.id, markdown: fault.missingBody ? page.markdown.slice(0, 50) : page.markdown,
-      truncated: false, unknown_block_ids: [] } : { object: "page", id: page.id, parent: page.parent } };
+      truncated: false, unknown_block_ids: [] } : { object: "page", id: page.id, parent: page.parent,
+      ...(notionStorage ? { properties: { title: { type: "title", title: [{ plain_text: page.title }] } } } : {}) } };
   };
   return { parent, pages, calls, fault, request, adapter: createNotionWorkDocumentAdapter({ parentPageId: parent, request }) };
 }
@@ -104,6 +110,31 @@ test("four real read paths, stable current links, zero duplicate replay; preserv
     for (const ref of [...page.markdown.matchAll(/https:\/\/www.notion.so\/([a-f0-9]{32})/g)]) assert.ok([...fake.pages.keys()].some(id => id.replaceAll("-", "") === ref[1]));
   }
   assert.equal(workDocumentStatus({ root, sessionId, logicalKey: projection.basis.logicalKey }).destinations.length, 2);
+});
+
+test("Notion stored markdown form (title property, dropped escapes) verifies publication; a real remote edit still drifts", async t => {
+  const { root, sessionId, save } = setup(t), fake = fakeNotion({ notionStorage: true });
+  configureWorkDocuments({ root, sessionId, targets: [{ id: "notion", kind: "notion", parentPageId: fake.parent,
+    tokenEnvironment: "LODE_SYNTHETIC_NOT_USED", automatic: false, todoIds: [] }] });
+  const projection = await prepareWorkDocuments({ root, sessionId, todoId: "todo-expiry", evidenceIds: [save().evidenceId], title: "Expiry #1 [draft] *wording*" });
+  assert.ok(projection.views.every(view => view.markdown.startsWith("# ") && /\\[#*_[\]|!`]/.test(view.markdown)), "the source view has escapes to lose");
+  const options = { root, sessionId, projectionId: projection.projectionId, targetIds: ["notion"], adapters: { notion: fake.adapter } };
+  const first = await publishWorkDocuments(options);
+  assert.equal(first.status, "published", JSON.stringify(first));
+  for (const page of fake.pages.values()) {
+    assert.ok(!page.markdown.startsWith("# "), "the title is held by the page property, not repeated in the body");
+    assert.ok(!page.markdown.includes("lode-view:") && !page.markdown.includes("읽기 뷰 연결 준비 중입니다."), "view links are resolved");
+  }
+  const views = [...fake.pages.values()].filter(page => /Source basis:/.test(page.markdown));
+  assert.equal(views.length, 2);
+  for (const page of views) for (const ref of page.markdown.matchAll(/https:\/\/www\.notion\.so\/([a-f0-9]{32})/g)) assert.ok([...fake.pages.keys()].some(id => id.replaceAll("-", "") === ref[1]));
+  const posts = fake.calls.filter(call => call.method === "POST").length;
+  assert.equal((await publishWorkDocuments(options)).status, "published");
+  assert.equal(fake.calls.filter(call => call.method === "POST").length, posts, "same-basis replay creates nothing");
+  views[0].markdown += "\nA user edit outside Lode.";
+  const edited = await publishWorkDocuments(options);
+  assert.equal(edited.destinations[0].status, "publication-unconfirmed");
+  assert.equal(edited.destinations[0].reasonCode, "WORK_DOCUMENT_REMOTE_DRIFT");
 });
 
 test("POST/PATCH rejected writes require explicit exact retry; repeated denial preserves attempts and concurrent clicks cannot duplicate", async t => {

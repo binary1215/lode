@@ -308,13 +308,17 @@ test("damaged optional publication configuration cannot hide or fail an already 
   assert.deepEqual(fs.readdirSync(f.vault),[]);
 });
 
-function notionFixture() {
+// Synthetic Notion markdown v2 storage (leading H1 held as the title property,
+// backslash escapes dropped). This models observed behavior, not a live test.
+const notionStored=(markdown,create)=>(create?markdown.replace(/^# [^\n]*(?:\n+|$)/,""):markdown).replace(/\\([!-/:-@[-`{-~])/g,"$1");
+function notionFixture({notionStorage=false}={}) {
   const parent="10000000-0000-4000-8000-000000000001",pages=new Map(),calls=[],fault={};let sequence=10;
   const request=async call=>{
     const url=new URL(call.url);calls.push({method:call.method,url:call.url,body:call.body});
     if (call.method==="POST") {
       if (fault.reject) return {status:403,body:{object:"error",status:403,code:"restricted_resource",message:"Synthetic bounded refusal"}};
-      const id="10000000-0000-4000-8000-"+String(sequence++).padStart(12,"0"), page={id,parent:{page_id:call.body.parent.page_id},markdown:call.body.markdown};
+      const id="10000000-0000-4000-8000-"+String(sequence++).padStart(12,"0"), page={id,parent:{page_id:call.body.parent.page_id},title:call.body.properties.title.title[0].text.content,
+        markdown:notionStorage?notionStored(call.body.markdown,true):call.body.markdown};
       pages.set(id,page);
       if (fault.lose) {fault.lose=false;throw Object.assign(new Error("Synthetic response loss"),{code:"ECONNRESET"});}
       return {status:200,body:page};
@@ -331,14 +335,35 @@ function notionFixture() {
     if (call.method==="PATCH") {
       if (fault.rejectPatch) return {status:403,body:{object:"error",status:403,code:"restricted_resource",message:"Synthetic progress marker refusal"}};
       const {old_str,new_str}=call.body.update_content.content_updates[0];
-      assert.equal(page.markdown.split(old_str).length,2);page.markdown=page.markdown.replace(old_str,new_str);
+      assert.equal(page.markdown.split(old_str).length,2);page.markdown=page.markdown.replace(old_str,notionStorage?notionStored(new_str,false):new_str);
       if (fault.losePatch || fault.losePatchId===page.id) {fault.losePatch=false;fault.losePatchId=null;throw Object.assign(new Error("Lost update"),{code:"ECONNRESET"});}
       if (fault.asyncPatch) {fault.asyncPatch=false;fault.taskPageId=page.id;return {status:202,body:{id:"task_fixture",status:"queued",poll_after_seconds:1}};}
     }
-    return {status:200,body:match[2]?{object:"page_markdown",id:page.id,markdown:page.markdown,truncated:false,unknown_block_ids:[]}:page};
+    // Notion lists child pages inside the parent body as <page> lines.
+    const children=notionStorage?[...pages.values()].filter(child=>child.parent.page_id===page.id)
+      .map(child=>"\n<page url=\"https://www.notion.so/"+child.id.replaceAll("-","")+"\">"+child.title+"</page>").join(""):"";
+    return {status:200,body:match[2]?{object:"page_markdown",id:page.id,markdown:page.markdown+children,truncated:false,unknown_block_ids:[]}
+      :{...page,...(notionStorage?{properties:{title:{type:"title",title:[{plain_text:page.title}]}}}:{})}};
   };
   return {parent,pages,calls,fault,adapter:createNotionWorkDocumentAdapter({parentPageId:parent,request}),request};
 }
+test("Notion stored markdown form with child page lines verifies paged publication and successor update; a real edit drifts",async t=>{
+  const f=fixture(t),fake=notionFixture({notionStorage:true});
+  configureWorkDocuments({root:f.root,sessionId:f.a,targets:[{id:"notion",kind:"notion",parentPageId:fake.parent,tokenEnvironment:"LODE_SYNTHETIC_UNUSED",automatic:false,todoIds:[],projectDocuments:true}]});
+  const first=await prepareProjectDocuments({root:f.root,sessionId:f.a,projectTitle:"Docs #1 [beta]"});
+  await finish(f,first,f.a,"notion",{adapters:{notion:fake.adapter}});
+  const home=[...fake.pages.values()].find(page=>page.parent.page_id===fake.parent);
+  assert.ok(home.markdown.startsWith("Lode project links begin"),home.markdown);
+  assert.ok([...fake.pages.values()].some(page=>page.parent.page_id===home.id),"child pages appear in the parent readback");
+  const next=await prepareProjectDocuments({root:f.root,sessionId:f.a,projectTitle:"Docs #2 [beta]"});
+  await finish(f,next,f.a,"notion",{adapters:{notion:fake.adapter}});
+  assert.ok(!home.markdown.includes("문서 갱신 중")&&home.markdown.includes("Lode project links end"),home.markdown);
+  assert.equal([...fake.pages.values()].filter(page=>page.parent.page_id===fake.parent).length,1);
+  home.markdown+="\nA user edit outside Lode.";
+  const later=await prepareProjectDocuments({root:f.root,sessionId:f.a,projectTitle:"Docs #3 [beta]"});
+  const drift=await publishProjectDocuments({root:f.root,sessionId:f.a,projectionId:later.projectionId,targetIds:["notion"],adapters:{notion:fake.adapter}});
+  assert.equal(drift.destinations[0].reasonCode,"WORK_DOCUMENT_REMOTE_DRIFT",JSON.stringify(drift));
+});
 test("actual Notion parent scopes, lost root create after rename, exact refusal retry and no foreign retry effects",async t=>{
   const f=fixture(t),fake=notionFixture();
   configureWorkDocuments({root:f.root,sessionId:f.a,targets:[{id:"notion",kind:"notion",parentPageId:fake.parent,tokenEnvironment:"LODE_SYNTHETIC_UNUSED",automatic:false,todoIds:[],projectDocuments:true}]});
