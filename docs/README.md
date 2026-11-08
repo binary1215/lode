@@ -18,6 +18,7 @@ work logs are intentionally excluded from the distribution and are not runtime a
 
 ## Architecture and Product reference
 
+- [Glossary](glossary.md)
 - [Architecture decision](architecture.md)
 - [Provider-neutral Lode constitution](lode-constitution.md)
 - [Authority planes and the Graph/record boundary](authority-plane-contract.md)
@@ -96,12 +97,12 @@ The normal path starts with [your task in the README](../README.md#first-request
 surface when a script, CI job, offline recovery procedure, or host integration
 needs the same deterministic Core behavior without a guided conversation.
 
-The default path initializes only the provider-neutral Lode constitution and its
 The CLI entry point is `node <plugin-root>/scripts/lode.mjs`, where `<plugin-root>` is the
 installed plugin folder. When `scripts/install.sh` or `scripts/install.ps1` created the
 `lode-agent` launcher, `lode-agent <command>` runs the same program; marketplace installs
 have no launcher. Examples below use the entry point that every install has.
 
+The default path initializes only the provider-neutral Lode constitution and its
 fixed Project/Session recovery anchors:
 
 ```powershell

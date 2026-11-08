@@ -169,6 +169,14 @@ lode-agent session-create <project> --purpose "<independent work>"
 lode-agent graph-query <project> --session <logical-session> --query "<task>"
 ```
 
+자동화에서 `--new-session`은 호출자가 정한 논리 Session id를
+`session-<36 hex digits and hyphens>` 형식(정규식 `^session-[a-fA-F0-9-]{36}$`)으로 받습니다.
+생략하면 Lode가 생성합니다. 다른 형식은 `INVALID_HEAD_SESSION_INPUT`으로 거절됩니다.
+
+```text
+lode-agent session-create <project> --new-session session-12345678-1234-1234-1234-123456789abc --purpose "<independent work>"
+```
+
 `lode_project_graph_index` / `graph-index`는 교체 가능한 기존 관측 색인을
 명시적으로 갱신합니다. Core 초기화·재개와 원본·관측 저장 경로도 필요한 범위에서
 갱신합니다. 입력이 같으면 재사용하며 조회마다 receipt, 후보, 승인이나 checkpoint를

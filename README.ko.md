@@ -6,9 +6,7 @@
 
 [English](README.md) | **한국어** | [Documentation](docs/README.md) | [한국어 문서](docs/ko/README.md)
 
-AI 대화가 바뀌어도 프로젝트의 방향과 변경 이유를 이어갑니다.
-
-Codex, Claude Code, OpenCode에서 사용할 수 있습니다. 대화 압축 뒤에 저장된 작업을 복구하고, 지금 할 일에 필요한 맥락을 준비합니다.
+Lode는 프로젝트에서 합의한 방향, 변경의 이유, 남은 작업을 프로젝트 기록에 남겨 다음 AI 대화가 이전 채팅의 기억이 아니라 그 기록에서 이어가게 합니다. Codex, Claude Code, OpenCode에서 동작하며, 대화 압축 뒤 저장된 작업을 복구하고 범위가 제한된 프로젝트 그래프로 작업에 필요한 맥락을 찾습니다. 프로젝트가 한 번의 대화보다 길게 이어질 때 사용하세요.
 
 [![Build](https://github.com/binary1215/lode/actions/workflows/go-worker-build-release.yml/badge.svg)](https://github.com/binary1215/lode/actions/workflows/go-worker-build-release.yml)
 ![Status](https://img.shields.io/badge/status-beta-blue)
@@ -19,6 +17,31 @@ Codex, Claude Code, OpenCode에서 사용할 수 있습니다. 대화 압축 뒤
 로컬 `.lode` 기록은 플러그인 패키지에 포함하지 않습니다.
 
 [첫 요청](#first-request) · [설치](#설치) · [일상적인 사용](#일반-사용자는-어떻게-사용하나요) · [복구](#recovery)
+
+## 빠른 시작
+
+Codex:
+
+```powershell
+codex plugin marketplace add binary1215/lode --ref lode-codex-marketplace
+codex plugin add lode-agent-core@lode-agent-plugin
+```
+
+Claude Code:
+
+```powershell
+claude plugin marketplace add binary1215/lode@lode-claude-marketplace
+claude plugin install lode-agent-core@lode-agent-plugin
+```
+
+클라이언트를 다시 시작하고 프로젝트를 연 뒤 첫 요청에 실제 작업을 함께 말하세요.
+
+```text
+이 프로젝트에 Lode Agent Core를 사용해줘. 기존 상태가 있으면 이어서 재개하고,
+없으면 Core를 초기화한 뒤 이 로그인 오류의 원인을 찾아서 수정해줘.
+```
+
+Project, Session, Checkpoint, Canon 같은 용어는 [용어집](docs/ko/glossary.md)에 정의되어 있습니다. OpenCode, 선택적 CLI, 기존 HEAD 설치는 [설치](#설치)에서 다룹니다.
 
 <details>
 <summary>전체 목차</summary>

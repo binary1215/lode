@@ -18,6 +18,7 @@
 
 ## 아키텍처와 Product 참조
 
+- [용어집](glossary.md)
 - [아키텍처 결정](architecture.md)
 - [공급자 중립 Lode 헌법](lode-constitution.md)
 - [권한 평면과 Graph/기록 경계](authority-plane-contract.md)
@@ -94,12 +95,12 @@
 일반 사용자는 [README의 첫 요청](../../README.ko.md#first-request)처럼 자기 작업을 말하면 됩니다. CLI는 스크립트, CI, 오프라인 복구나
 Host 연동에서 안내 대화 없이 같은 결정론적 Core 동작을 실행할 때 사용합니다.
 
-기본 경로는 공급자 중립 Lode 헌법과 고정 Project/Session 복구 앵커만
 CLI 진입점은 `node <plugin-root>/scripts/lode.mjs`이며 `<plugin-root>`는 설치된 플러그인
 폴더입니다. `scripts/install.sh` 또는 `scripts/install.ps1`이 `lode-agent` 런처를 만든 경우
 `lode-agent <command>`도 같은 프로그램을 실행합니다. 마켓플레이스 설치에는 런처가 없습니다.
 아래 예시는 모든 설치에 있는 진입점을 사용합니다.
 
+기본 경로는 공급자 중립 Lode 헌법과 고정 Project/Session 복구 앵커만
 초기화합니다.
 
 ```powershell

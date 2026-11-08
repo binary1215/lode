@@ -232,7 +232,8 @@ export function withSessionRoute(root, sessionId, operation) {
 }
 
 export function createLodeSession({ root = ".", sessionId = `session-${crypto.randomUUID()}`, purpose = "" } = {}) {
-  if (!validId(sessionId) || typeof purpose !== "string") fail("Invalid logical Session input.", "INVALID_HEAD_SESSION_INPUT");
+  if (!validId(sessionId)) fail("Invalid logical Session input: the new Session id must match session-<36 hex digits and hyphens>, for example session-12345678-1234-1234-1234-123456789abc.", "INVALID_HEAD_SESSION_INPUT");
+  if (typeof purpose !== "string") fail("Invalid logical Session input: purpose must be a string.", "INVALID_HEAD_SESSION_INPUT");
   const base = canonicalRoot(root);
   const storage = resolveProjectStorage(base);
   const directory = formatForVerifiedOwner(storage).directory;

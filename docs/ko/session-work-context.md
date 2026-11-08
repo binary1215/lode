@@ -72,6 +72,43 @@ startup은 실제로 출력에 담은 record의 index로 group을 만들고 Host
 - `lode_session_work_read`로 알고 있는 정확한 원본이나 명시적 ID anchor의 조회
   페이지를 펼칩니다. 필요에 따른 확대이지 의무적인 도구 호출 순서는 아닙니다.
 
+자동화에서 CLI `session-work-record <project> --input <file.json>`는
+`lode_session_work_record` `evidence`와 같은 키를 받습니다. `summary`,
+`judgments`, `observedWork`, `pending`, `unknowns`, `suggestedFollowUp`,
+`references`, `todos` 중 하나 이상이 필요하고 `workTopics`, `workLink`,
+`executionObservation`, `occurrenceKey`는 선택입니다. 알 수 없는 키는
+`INVALID_SESSION_WORK_EVIDENCE`로 거절되며 오류가 그 키를 이름합니다. Todo에는 `todoId`
+(`todo-<lowercase words>`), `task`, `status`, `origin`이 필요하고 미해결 항목은
+`nextAction`도 필요합니다.
+
+```json
+{
+  "summary": "Fixed the login timeout by retrying the token refresh once",
+  "judgments": [
+    { "assessment": "Retry once, not indefinitely", "reason": "The provider limits refresh calls", "alternatives": ["Longer timeout"] }
+  ],
+  "pending": ["Add a regression test for the expired-token path"],
+  "todos": [
+    { "todoId": "todo-login-regression-test", "task": "Add the regression test", "status": "pending", "origin": "user-directed", "nextAction": "Write the failing test first" }
+  ]
+}
+```
+
+CLI `checkpoint-sync <project> --input <file.json>`는
+`expectedRecoveryBasisId`(`checkpoint-basis`에서 얻음), `purpose`,
+`currentPosition`, `nextExpectedResult`를 받고 `approvedDecisions`,
+`openReviewIds`, `workEvidence`(위 객체)는 선택입니다.
+
+```json
+{
+  "expectedRecoveryBasisId": "recovery-basis-0123456789abcdef01234567",
+  "purpose": "Fix the login timeout",
+  "currentPosition": "Retry implemented; regression test pending",
+  "nextExpectedResult": "Regression test passes",
+  "approvedDecisions": ["Retry the token refresh once"]
+}
+```
+
 이미 저장한 작업도 기존 `lode_project_graph` 탐색에 나타납니다. 질문·경로·anchor·
 이웃 조회에서 검증된 실제 소유 Session별 이유·대안·관측한 작업·남은 일·불확실성을
 읽을 수 있습니다. 그래프 탐색은 Project 범위이며 native 연결이나 Session 전환이
