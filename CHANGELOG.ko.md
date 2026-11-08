@@ -9,6 +9,24 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.94 — 게시 결과는 별도 확인
+
+- measurement, delivery, release 상태, refresh 영수증·상태, observation
+  읽기·질의·출처 작업을 operation registry로 디스패치합니다(144개 중 50개). 두 표면
+  모두 동작 변경은 없습니다.
+- 디스패치 녹화에 숫자 edge 한도와 `--include-execution false` 경우를 기록하고,
+  문서 흐름 검사가 진입 상태를 core Skill 진입 표의 온전한 토큰으로 대조합니다.
+
+## 0.3.0-beta.93 — 게시 결과는 별도 확인
+
+- checkpoint, compaction, graph-lineage, change-set, lineage 읽기 작업을 operation
+  registry로 디스패치합니다(144개 중 32개). 두 표면 모두 동작 변경은 없습니다.
+- MCP 서버와 레지스트리가 함께 쓰는 Session 작업 증거 스키마 조각을
+  `scripts/lib/tool-schemas.mjs`에 둡니다.
+- 디스패치 녹화에 숫자 대기 시간과 지원하지 않는 JSON 입력 필드를 기록하고,
+  레지스트리로 쓰이지 않게 된 CLI import를 제거하며, 문서 흐름 검사가 진입 상태를
+  core Skill의 진입 표와 대조합니다.
+
 ## 0.3.0-beta.92 — 게시 결과는 별도 확인
 
 - MCP 서버와 CLI가 함께 거치는 단일 레지스트리 `scripts/lib/operation-registry.mjs`를
