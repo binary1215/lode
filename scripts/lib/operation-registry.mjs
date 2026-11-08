@@ -2,15 +2,42 @@
 // (scripts/lode.mjs). Each entry is one operation:
 //   name   the internal operation name (resolveOperation(name).semanticName);
 //   tool   the MCP tool definition, listed by allTools at its original position;
-//   mcp    args(arguments, context) -> the implementation's argument list;
-//   cli    command, the option names it reads, and args(context) -> argument list;
+//   mcp    args(arguments, context) -> the implementation's argument list, with
+//          optional before/after adapters (see callRegistered);
+//   cli    command, the option names it reads, args(context) -> argument list,
+//          and optional before/after adapters;
 //   impl   lazy loader of the scripts/lib implementation.
 // Both surfaces call impl()(...args). Surface-specific defaults stay explicit in
 // each args function (for example CLI numbers arrive as text). Operations not yet
 // listed here keep their original MCP/CLI dispatch branches.
 // test/dispatch-recordings.test.mjs pins the call each surface makes.
 import { resolveOperation } from "./lode-operation-contract.mjs";
-import { sessionWorkEvidenceSchema } from "./tool-schemas.mjs";
+import {
+  conformanceBaselineSchema,
+  conformanceEvidenceAnchorSchema,
+  conformanceFindingInputSchema,
+  observationBindingSchema,
+  observationCoverageSchema,
+  observationDescriptorSchema,
+  observationInputSchema,
+  sessionWorkEvidenceSchema,
+} from "./tool-schemas.mjs";
+import {
+  compactMarkdownBuild,
+  compactReviewResult,
+  conformanceBaselineFromMcp,
+  conformanceEvidenceAnchorFromMcp,
+  conformanceFindingFromMcp,
+  featureMappingProposalFromMcp,
+  localWorkerInput,
+  observationBindingFromMcp,
+  observationCoverageFromMcp,
+  observationDescriptorFromMcp,
+  observationInputFromMcp,
+  preparedRuntimeRead,
+  productFeatureResolutionFromMcp,
+  requireMcpConfirmation,
+} from "./dispatch-adapters.mjs";
 
 const waitTimeout = (options) => (options["wait-timeout-ms"] == null ? 0 : Number(options["wait-timeout-ms"]));
 
@@ -1546,6 +1573,867 @@ export const OPERATIONS = Object.freeze([
     },
     impl: () => import("./observation-adapter.mjs").then((module) => module.inspectObservationSources),
   },
+  {
+    name: "head_run_start",
+    tool: {
+      name: "head_run_start",
+      description:
+        "Start the existing contract-bound Run transaction. An optional Core request key makes exact retries converge; historical acknowledgments never authorize provider/worker replay. HEAD supplies the key without another prepare call or user form.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          execution_contract_id: { type: "string", pattern: "^execution-contract-[a-f0-9]{24}$" },
+          start_request_id: { type: "string", minLength: 1, maxLength: 256 },
+        },
+        required: ["project_root", "execution_contract_id"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, executionContractId: args.execution_contract_id, startRequestId: args.start_request_id }] },
+    cli: {
+      command: "run-start",
+      flags: ["contract", "start-request"],
+      args: ({ root, options }) => [{ root, executionContractId: options.contract, startRequestId: options["start-request"] }],
+    },
+    impl: () => import("./run-lineage.mjs").then((module) => module.startRun),
+  },
+  {
+    name: "head_release_observe",
+    tool: {
+      name: "head_release_observe",
+      description:
+        "Record a host-supplied deployment result and current product Git refs as immutable P3 evidence. A ReleaseObservation is created only for an approved successful result whose exact commit is reachable and present on a current product ref; this never approves deployment or changes Product Canon.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          environment_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+          status: { type: "string", enum: ["succeeded", "failed", "cancelled"] },
+          commit: { type: "string", pattern: "^[a-fA-F0-9]{40,64}$" },
+          observed_at: { type: "string", format: "date-time" },
+          source_event_key_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          deployment_evidence_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          approved: { type: "boolean" },
+          approval_evidence_digest: { anyOf: [{ type: "string", pattern: "^[a-f0-9]{64}$" }, { type: "null" }] },
+          change_set_id: { anyOf: [{ type: "string", pattern: "^change-set-[a-f0-9]{24}$" }, { type: "null" }] },
+          vcs_evidence_id: { anyOf: [{ type: "string", pattern: "^vcs-evidence-[a-f0-9]{24}$" }, { type: "null" }] },
+          confirm_host_observation: { type: "boolean" },
+        },
+        required: [
+          "project_root",
+          "environment_key",
+          "status",
+          "commit",
+          "observed_at",
+          "source_event_key_digest",
+          "deployment_evidence_digest",
+          "approved",
+          "approval_evidence_digest",
+          "change_set_id",
+          "vcs_evidence_id",
+          "confirm_host_observation",
+        ],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    mcp: {
+      before: (args) =>
+        requireMcpConfirmation(
+          args.confirm_host_observation,
+          "Release observation requires explicit confirmation that the payload came from a host deployment observer.",
+          "RELEASE_HOST_OBSERVATION_CONFIRMATION_REQUIRED",
+        ),
+      args: (args) => [
+        {
+          root: args.project_root,
+          input: {
+            environmentKey: args.environment_key,
+            status: args.status,
+            commit: args.commit,
+            observedAt: args.observed_at,
+            sourceEventKeyDigest: args.source_event_key_digest,
+            deploymentEvidenceDigest: args.deployment_evidence_digest,
+            approved: args.approved,
+            approvalEvidenceDigest: args.approval_evidence_digest,
+            changeSetId: args.change_set_id,
+            vcsEvidenceId: args.vcs_evidence_id,
+          },
+        },
+      ],
+    },
+    cli: {
+      command: "release-observe",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => [{ root, input: inputJson(options, "DeploymentResultObservation") }],
+    },
+    impl: () => import("./release-observation.mjs").then((module) => module.observeReleaseState),
+  },
+  {
+    name: "head_feature_mapping_propose",
+    tool: {
+      name: "head_feature_mapping_propose",
+      description:
+        "Normalize one fresh HEAD semantic proposal for exact Product-to-code or Product-to-test mapping candidates. Core verifies current graph endpoints and records only P3 candidates; it does not infer mappings from lexical overlap or create reviewed relationships.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          expected_candidate_set_id: {
+            type: "string",
+            pattern: "^feature-mapping-candidates-[a-f0-9]{24}$",
+            description: "Explicitly replace this exact pending unreviewed batch with fresh evidence; never replaces a durable user decision.",
+          },
+          semantic_proposal: {
+            type: "object",
+            properties: {
+              schema_version: { const: 1 },
+              source_snapshot_id: { type: "string", pattern: "^source-snapshot-[a-f0-9]{24}$" },
+              product_model_id: { type: "string", pattern: "^product-model-[a-f0-9]{24}$" },
+              candidates: {
+                type: "array",
+                minItems: 1,
+                maxItems: 500,
+                items: {
+                  type: "object",
+                  properties: {
+                    relationship_type: { type: "string", enum: ["IMPLEMENTS", "VERIFIED_BY"] },
+                    source_node_id: { type: "string", minLength: 1 },
+                    product_node_id: { type: "string", minLength: 1 },
+                    explanation: { type: "string", minLength: 1, maxLength: 2000 },
+                    confidence: { type: "number", minimum: 0, maximum: 1 },
+                  },
+                  required: ["relationship_type", "source_node_id", "product_node_id", "explanation", "confidence"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["schema_version", "source_snapshot_id", "product_model_id", "candidates"],
+            additionalProperties: false,
+          },
+        },
+        required: ["project_root", "semantic_proposal"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      args: (args) => [
+        {
+          root: args.project_root,
+          semanticProposal: featureMappingProposalFromMcp(args.semantic_proposal),
+          expectedCandidateSetId: args.expected_candidate_set_id ?? null,
+        },
+      ],
+    },
+    cli: {
+      command: "feature-mapping-start",
+      flags: ["expected-candidate-set", "input"],
+      args: ({ root, options, inputJson }) => [
+        {
+          root,
+          semanticProposal: options.input ? inputJson(options, "Feature mapping semantic proposal") : null,
+          expectedCandidateSetId: options["expected-candidate-set"] ?? null,
+        },
+      ],
+    },
+    impl: () => import("./feature-mapping.mjs").then((module) => module.startFeatureMapping),
+  },
+  {
+    name: "head_feature_mapping_review",
+    tool: {
+      name: "head_feature_mapping_review",
+      description:
+        "Record one explicit user-authored ReviewDecision for the exact current Feature mapping candidate set. This requires explicit confirmation; only accepted candidates create separate reviewed relationships, and Product Canon remains unchanged.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          candidate_set_id: { type: "string", pattern: "^feature-mapping-candidates-[a-f0-9]{24}$" },
+          disposition: { type: "string", enum: ["accept-all", "accept-selection", "reject"] },
+          accepted_candidate_ids: {
+            type: "array",
+            uniqueItems: true,
+            items: { type: "string", pattern: "^feature-mapping-candidate-[a-f0-9]{24}$" },
+            default: [],
+          },
+          rationale: { type: "string", minLength: 1 },
+          confirm_user_review: { type: "boolean" },
+        },
+        required: ["project_root", "candidate_set_id", "disposition", "rationale", "confirm_user_review"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      before: (args) =>
+        requireMcpConfirmation(
+          args.confirm_user_review,
+          "Feature mapping review requires explicit user confirmation.",
+          "FEATURE_MAPPING_REVIEW_CONFIRMATION_REQUIRED",
+        ),
+      args: (args) => [
+        {
+          root: args.project_root,
+          candidateSetId: args.candidate_set_id,
+          disposition: args.disposition,
+          acceptedCandidateIds: args.accepted_candidate_ids || [],
+          rationale: args.rationale,
+        },
+      ],
+    },
+    cli: {
+      command: "feature-mapping-review",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Feature mapping ReviewDecision"), root }],
+    },
+    impl: () => import("./feature-mapping.mjs").then((module) => module.reviewFeatureMapping),
+  },
+  {
+    name: "head_feature_mapping_status",
+    tool: {
+      name: "head_feature_mapping_status",
+      description:
+        "Read and digest-verify the current Feature mapping candidate batch or explicit reviewed relationship decision without creating or promoting mappings.",
+      inputSchema: {
+        type: "object",
+        properties: { project_root: { type: "string", minLength: 1 } },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root }] },
+    cli: { command: "feature-mapping-status", flags: [], args: ({ root }) => [{ root }] },
+    impl: () => import("./feature-mapping.mjs").then((module) => module.inspectFeatureMapping),
+  },
+  {
+    name: "head_onboarding_review",
+    tool: {
+      name: "head_onboarding_review",
+      description:
+        "Apply one explicit user-authored ReviewDecision to the exact current onboarding candidate set. Accept dispositions may change Product Canon; revise and reject preserve candidate or canon boundaries enforced by Core.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          candidate_set_id: { type: "string", pattern: "^onboarding-candidates-[a-f0-9]{24}$" },
+          disposition: { type: "string", enum: ["accept-all", "accept-selection", "revise", "reject"] },
+          accepted_candidate_ids: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^onboarding-candidate-[a-f0-9]{24}$" } },
+          removed_candidate_ids: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^onboarding-candidate-[a-f0-9]{24}$" } },
+          user_edits: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                candidate_id: { type: "string", pattern: "^onboarding-candidate-[a-f0-9]{24}$" },
+                entity: { type: "object" },
+              },
+              required: ["candidate_id", "entity"],
+              additionalProperties: false,
+            },
+          },
+          added_entities: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                kind: { type: "string", enum: ["FeatureGroup", "Capability", "Feature", "Requirement", "Constraint", "Decision"] },
+                entity: { type: "object" },
+              },
+              required: ["kind", "entity"],
+              additionalProperties: false,
+            },
+          },
+          rationale: { type: "string", minLength: 1 },
+        },
+        required: ["project_root", "candidate_set_id", "disposition", "rationale"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    },
+    mcp: {
+      args: (args) => [
+        {
+          root: args.project_root,
+          candidateSetId: args.candidate_set_id,
+          disposition: args.disposition,
+          acceptedCandidateIds: args.accepted_candidate_ids || [],
+          removedCandidateIds: args.removed_candidate_ids || [],
+          userEdits: (args.user_edits || []).map((edit) => ({ candidateId: edit.candidate_id, entity: edit.entity })),
+          addedEntities: args.added_entities || [],
+          rationale: args.rationale,
+        },
+      ],
+      after: (value) => compactReviewResult(value),
+    },
+    cli: {
+      command: "onboarding-review",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Onboarding ReviewDecision"), root }],
+    },
+    impl: () => import("./onboarding.mjs").then((module) => module.reviewOnboarding),
+  },
+  {
+    name: "head_markdown_projection_build",
+    tool: {
+      name: "head_markdown_projection_build",
+      description:
+        "Build or verify the deterministic local Markdown projection from the current verified GraphSnapshot. The generated view is rebuildable, non-authoritative, and never changes Product Canon.",
+      inputSchema: {
+        type: "object",
+        properties: { project_root: { type: "string", minLength: 1 } },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: { args: (args) => [{ root: args.project_root }], after: (value) => compactMarkdownBuild(value) },
+    cli: { command: "world-docs-build", flags: [], args: ({ root }) => [{ root }] },
+    impl: () => import("./world-model.mjs").then((module) => module.materializeWorldMarkdownProjection),
+  },
+  {
+    name: "head_bounded_worker_status",
+    tool: {
+      name: "head_bounded_worker_status",
+      description:
+        "Read and verify one P3 bounded worker dispatch without consuming its authorization. The optional historical prepared-input view keeps original references, runtime observations and model-use uncertainty separate; it does not change current execution or recovery authority.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          authorization_id: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
+        },
+        required: ["project_root", "authorization_id"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: {
+      args: (args) => [{ root: args.project_root, authorizationId: args.authorization_id }],
+      after: (value, args) => preparedRuntimeRead(args.project_root, value),
+    },
+    cli: { command: "worker-read", flags: ["authorization"], args: ({ root, options }) => [{ root, authorizationId: options.authorization }] },
+    impl: () => import("./bounded-worker-dispatch.mjs").then((module) => module.readBoundedWorkerDispatch),
+  },
+  {
+    name: "head_runtime_invocation_authorization",
+    tool: {
+      name: "head_runtime_invocation_authorization",
+      description:
+        "Read and digest-verify one Session- or Run-scoped ExecutionAuthorization. A read-only historical view checks retained original input references and canonical bytes/digest where available; preparation does not prove delivery or model use. No provider invocation or current execution permission.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          authorization_id: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
+        },
+        required: ["project_root", "authorization_id"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      args: (args) => [{ root: args.project_root, authorizationId: args.authorization_id }],
+      after: (value, args) => preparedRuntimeRead(args.project_root, value),
+    },
+    cli: {
+      command: "runtime-invocation-read",
+      flags: ["authorization"],
+      args: ({ root, options }) => [{ root, authorizationId: options.authorization }],
+      after: (value, { root }) => preparedRuntimeRead(root, value),
+    },
+    impl: () => import("./runtime-invocation-lifecycle.mjs").then((module) => module.readRuntimeInvocationAuthorization),
+  },
+  {
+    name: "head_bounded_worker_prepare",
+    tool: {
+      name: "head_bounded_worker_prepare",
+      description:
+        "Optional managed path only, not a prerequisite for ordinary Host delegation. Prepare a bounded read-only patch-proposal worker through the built-in local Host without calling a model. HEAD supplies task, exact model, selected context and source/proposal paths from the conversation; never ask the user to write a module, JSON or IDs. Reuses current Session or active Run authority and an identical preparation. Does not apply patches, create a Run, approve results, inspect an account or start a worker. Host-global instruction selection is explicit input scope, not an enforcement assertion; selected-only is the default.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          task: { type: "string", minLength: 1 },
+          model: { type: "string", minLength: 1 },
+          task_key: { type: "string", pattern: "^[a-z][a-z0-9-]{0,95}$" },
+          role: { type: "string", enum: ["developer", "coder", "reviewer"] },
+          outcome: { type: "string", minLength: 1 },
+          selected_context: { type: "string" },
+          source_paths: { type: "array", items: { type: "string", minLength: 1 }, uniqueItems: true },
+          proposal_paths: { type: "array", items: { type: "string", minLength: 1 }, uniqueItems: true },
+          runtime: { type: "string", enum: ["codex", "claude", "opencode"] },
+          timeout_ms: { type: "integer", minimum: 1000, maximum: 3600000 },
+          instruction_scope: { type: "string", enum: ["selected-only", "host-global"] },
+          context_mode: {
+            type: "string",
+            enum: ["fresh", "native-prefix"],
+            description:
+              "Default fresh uses one model turn. Explicit native-prefix uses selected_context in a new durable controlled seed and then a fork child (two turns total); not a fork of the current conversation or a stronger code-worker sandbox. HEAD must keep both calls and seed persistence within the existing authorized scope.",
+          },
+        },
+        required: ["project_root", "task", "model"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: {
+      args: (args, { workerJobSupervisor, workerPreparationBackend, signal, onProcess }) => [
+        localWorkerInput(args),
+        { root: args.project_root, supervisorSelection: workerJobSupervisor, protocolFixtureBackend: workerPreparationBackend, signal, onProcess },
+      ],
+    },
+    cli: {
+      command: "worker-prepare",
+      flags: [
+        "context",
+        "context-mode",
+        "input",
+        "instruction-scope",
+        "model",
+        "outcome",
+        "propose",
+        "role",
+        "runtime",
+        "source",
+        "task",
+        "task-key",
+        "timeout-ms",
+      ],
+      args: ({ root, options, inputJson, workerJobSupervisor, workerPreparationBackend, signal, onProcess }) => {
+        const allowed = new Set([
+          "input",
+          "task",
+          "task-key",
+          "role",
+          "outcome",
+          "context",
+          "source",
+          "propose",
+          "model",
+          "runtime",
+          "timeout-ms",
+          "instruction-scope",
+          "context-mode",
+        ]);
+        if (Object.keys(options).some((key) => !allowed.has(key)) || (options.input && Object.keys(options).length > 1))
+          throw new Error("Worker preparation accepts one bounded task description, not Host configuration.");
+        return [
+          options.input
+            ? inputJson(options, "Worker preparation")
+            : {
+                task: options.task,
+                taskKey: options["task-key"],
+                role: options.role,
+                outcome: options.outcome,
+                selectedContext: options.context,
+                contextMode: options["context-mode"],
+                sourcePaths: options.source ? options.source.split(",") : [],
+                proposalPaths: options.propose ? options.propose.split(",") : [],
+                model: options.model,
+                runtime: options.runtime,
+                timeoutMs: options["timeout-ms"] == null ? undefined : Number(options["timeout-ms"]),
+                instructionScope: options["instruction-scope"],
+              },
+          { root, supervisorSelection: workerJobSupervisor, protocolFixtureBackend: workerPreparationBackend, signal, onProcess },
+        ];
+      },
+    },
+    impl: () => import("./local-worker-host.mjs").then((module) => module.prepareLocalBoundedWorker),
+  },
+  {
+    name: "head_bounded_worker_start",
+    tool: {
+      name: "head_bounded_worker_start",
+      description:
+        "Start an optional managed worker, not a general Host spawn. Start a prepared worker by its task key or exact authorization using the built-in local Host and bounded native owner. Embedding Hosts remain supported. Repeated start never relaunches an uncertain job; no runner, environment or enforcement assertion is accepted.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          authorization_id: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
+          task_key: { type: "string", pattern: "^[a-z][a-z0-9-]{0,95}$" },
+          role: { type: "string", enum: ["developer", "coder", "reviewer"] },
+        },
+        required: ["project_root"],
+        oneOf: [
+          { required: ["authorization_id"], not: { required: ["task_key"] } },
+          { required: ["task_key"], not: { required: ["authorization_id"] } },
+        ],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    mcp: {
+      args: (args, { workerJobHost, workerJobSupervisor, onProcess }) => [
+        { root: args.project_root, ...localWorkerInput(args, true) },
+        { host: workerJobHost, supervisorSelection: workerJobSupervisor, onProcess },
+      ],
+    },
+    cli: {
+      command: "worker-start",
+      flags: ["authorization", "role", "task-key"],
+      args: ({ root, options, workerJobHost, workerJobSupervisor, onProcess }) => {
+        if (Object.keys(options).some((key) => !["task-key", "authorization", "role"].includes(key)))
+          throw new Error("Worker start does not accept Host configuration.");
+        return [
+          { root, authorizationId: options.authorization, taskKey: options["task-key"], role: options.role },
+          { host: workerJobHost, supervisorSelection: workerJobSupervisor, onProcess },
+        ];
+      },
+    },
+    impl: () => import("./local-worker-host.mjs").then((module) => module.startLocalBoundedWorker),
+  },
+  {
+    name: "head_product_initiative_propose",
+    tool: {
+      name: "head_product_initiative_propose",
+      description:
+        "Propose a Product Initiative from persisted hypotheses or inline reasoning. Feature resolution may be deferred to explicit review; proposal never approves the initiative or mutates Product Canon.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          title: { type: "string", minLength: 1 },
+          description: { type: "string" },
+          reasoning: { type: "string" },
+          hypothesis_ids: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^product-hypothesis-[a-f0-9]{24}$" } },
+          feature_resolution: {
+            oneOf: [
+              {
+                type: "object",
+                properties: { kind: { const: "existing-feature" }, feature_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" } },
+                required: ["kind", "feature_key"],
+                additionalProperties: false,
+              },
+              {
+                type: "object",
+                properties: {
+                  kind: { const: "candidate" },
+                  feature: {
+                    type: "object",
+                    properties: {
+                      key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+                      name: { type: "string", minLength: 1 },
+                      description: { type: "string" },
+                      capability_keys: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" } },
+                    },
+                    required: ["key", "name"],
+                    additionalProperties: false,
+                  },
+                },
+                required: ["kind", "feature"],
+                additionalProperties: false,
+              },
+              {
+                type: "object",
+                properties: { kind: { const: "gap" }, reason: { type: "string", minLength: 1 } },
+                required: ["kind", "reason"],
+                additionalProperties: false,
+              },
+            ],
+          },
+        },
+        required: ["project_root", "title"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      args: (args) => [
+        {
+          root: args.project_root,
+          title: args.title,
+          description: args.description || "",
+          reasoning: args.reasoning || "",
+          hypothesisIds: args.hypothesis_ids || [],
+          featureResolution: args.feature_resolution == null ? null : productFeatureResolutionFromMcp(args.feature_resolution),
+        },
+      ],
+    },
+    cli: {
+      command: "product-initiative-propose",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => [{ ...inputJson(options, "ProductInitiativeCandidate"), root }],
+    },
+    impl: () => import("./product-operating-loop.mjs").then((module) => module.proposeProductInitiative),
+  },
+  {
+    name: "head_product_initiative_review",
+    tool: {
+      name: "head_product_initiative_review",
+      description:
+        "Record the user's explicit accept/reject ReviewDecision for one Product Initiative candidate. Acceptance resolves any deferred Feature mapping, creates a separate reviewed Initiative, and never mutates Product Canon.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          initiative_candidate_id: { type: "string", pattern: "^product-initiative-candidate-[a-f0-9]{24}$" },
+          disposition: { type: "string", enum: ["accept", "reject"] },
+          rationale: { type: "string", minLength: 1 },
+          confirm_user_review: { type: "boolean" },
+          feature_resolution: {
+            oneOf: [
+              {
+                type: "object",
+                properties: { kind: { const: "existing-feature" }, feature_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" } },
+                required: ["kind", "feature_key"],
+                additionalProperties: false,
+              },
+              {
+                type: "object",
+                properties: {
+                  kind: { const: "candidate" },
+                  feature: {
+                    type: "object",
+                    properties: {
+                      key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+                      name: { type: "string", minLength: 1 },
+                      description: { type: "string" },
+                      capability_keys: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" } },
+                    },
+                    required: ["key", "name"],
+                    additionalProperties: false,
+                  },
+                },
+                required: ["kind", "feature"],
+                additionalProperties: false,
+              },
+              {
+                type: "object",
+                properties: { kind: { const: "gap" }, reason: { type: "string", minLength: 1 } },
+                required: ["kind", "reason"],
+                additionalProperties: false,
+              },
+            ],
+          },
+        },
+        required: ["project_root", "initiative_candidate_id", "disposition", "rationale", "confirm_user_review"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      before: (args) =>
+        requireMcpConfirmation(
+          args.confirm_user_review,
+          "Product Initiative review requires explicit user confirmation.",
+          "PRODUCT_INITIATIVE_REVIEW_CONFIRMATION_REQUIRED",
+        ),
+      args: (args) => [
+        {
+          root: args.project_root,
+          initiativeCandidateId: args.initiative_candidate_id,
+          disposition: args.disposition,
+          rationale: args.rationale,
+          featureResolution: args.feature_resolution == null ? null : productFeatureResolutionFromMcp(args.feature_resolution),
+        },
+      ],
+    },
+    cli: {
+      command: "product-initiative-review",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Product Initiative ReviewDecision"), root }],
+    },
+    impl: () => import("./product-operating-loop.mjs").then((module) => module.reviewProductInitiative),
+  },
+  {
+    name: "head_observation_ingest",
+    tool: {
+      name: "head_observation_ingest",
+      description:
+        "Ingest one already constructed bounded CI or Host Observation. The Host adapter owns source access, binding, digests, coverage, and provenance confirmation; this tool does not ask the user to attest to machine evidence.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          binding: observationBindingSchema,
+          descriptor: observationDescriptorSchema,
+          observation: observationInputSchema,
+          confirm_host_observation: { type: "boolean" },
+        },
+        required: ["project_root", "binding", "descriptor", "observation", "confirm_host_observation"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    mcp: {
+      before: (args) =>
+        requireMcpConfirmation(
+          args.confirm_host_observation,
+          "Observation collection requires explicit confirmation that the payload came from the exact Host source binding.",
+          "OBSERVATION_HOST_CONFIRMATION_REQUIRED",
+        ),
+      args: (args) => [
+        {
+          root: args.project_root,
+          binding: observationBindingFromMcp(args.binding),
+          descriptor: observationDescriptorFromMcp(args.descriptor),
+          input: observationInputFromMcp(args.observation),
+        },
+      ],
+    },
+    cli: {
+      command: "observation-ingest",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => {
+        const value = inputJson(options, "Observation collection");
+        return [{ root, binding: value.binding, descriptor: value.descriptor, input: value.input }];
+      },
+    },
+    impl: () => import("./observation-adapter.mjs").then((module) => module.ingestStructuredObservation),
+  },
+  {
+    name: "head_observation_derive",
+    tool: {
+      name: "head_observation_derive",
+      description:
+        "Record a deterministic P3 derived Observation from exact existing Observation IDs and an algorithm digest. It cannot assert causality or Product success.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          descriptor: observationDescriptorSchema,
+          subject: {
+            type: "object",
+            properties: { type: { type: "string", minLength: 1 }, key: { type: "string", minLength: 1 } },
+            required: ["type", "key"],
+            additionalProperties: false,
+          },
+          temporal_scope: observationInputSchema.properties.temporal_scope,
+          input_observation_ids: {
+            type: "array",
+            minItems: 1,
+            maxItems: 64,
+            uniqueItems: true,
+            items: { type: "string", pattern: "^observation-[a-f0-9]{24}$" },
+          },
+          algorithm: {
+            type: "object",
+            properties: {
+              key: { type: "string", minLength: 1 },
+              version: { type: "string", minLength: 1 },
+              digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+            },
+            required: ["key", "version", "digest"],
+            additionalProperties: false,
+          },
+          coverage: observationCoverageSchema,
+          payload: { type: "object" },
+          confirm_host_derivation: { type: "boolean" },
+        },
+        required: [
+          "project_root",
+          "descriptor",
+          "subject",
+          "temporal_scope",
+          "input_observation_ids",
+          "algorithm",
+          "coverage",
+          "payload",
+          "confirm_host_derivation",
+        ],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: {
+      before: (args) =>
+        requireMcpConfirmation(
+          args.confirm_host_derivation,
+          "Derived Observation recording requires explicit confirmation that the payload came from the named deterministic algorithm.",
+          "OBSERVATION_DERIVATION_CONFIRMATION_REQUIRED",
+        ),
+      args: (args) => [
+        {
+          root: args.project_root,
+          descriptor: observationDescriptorFromMcp(args.descriptor),
+          input: {
+            subject: args.subject,
+            temporalScope: { observedAt: args.temporal_scope.observed_at, start: args.temporal_scope.start, end: args.temporal_scope.end },
+            inputObservationIds: args.input_observation_ids,
+            algorithm: args.algorithm,
+            coverage: observationCoverageFromMcp(args.coverage),
+            payload: args.payload,
+          },
+        },
+      ],
+    },
+    cli: {
+      command: "observation-derive",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => {
+        const value = inputJson(options, "Derived Observation");
+        return [{ root, descriptor: value.descriptor, input: value.input }];
+      },
+    },
+    impl: () => import("./observation-store.mjs").then((module) => module.recordDerivedObservation),
+  },
+  {
+    name: "head_conformance_propose",
+    tool: {
+      name: "head_conformance_propose",
+      description:
+        "Record one or more provider-HEAD semantic Conformance candidates only after Core verifies exact current Canon and evidence anchors. Candidates are P3 evidence, never violations, decisions, execution authority, recovery direction, or ordinary-work gates.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          baseline: conformanceBaselineSchema,
+          findings: { type: "array", minItems: 1, maxItems: 64, items: conformanceFindingInputSchema },
+        },
+        required: ["project_root", "baseline", "findings"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      args: (args) => [
+        { root: args.project_root, baseline: conformanceBaselineFromMcp(args.baseline), findings: args.findings.map(conformanceFindingFromMcp) },
+      ],
+    },
+    cli: {
+      command: "conformance-propose",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Conformance provider-Lode proposal"), root }],
+    },
+    impl: () => import("./conformance-reconciliation.mjs").then((module) => module.proposeConformanceFindings),
+  },
+  {
+    name: "head_conformance_resolution_propose",
+    tool: {
+      name: "head_conformance_resolution_propose",
+      description:
+        "Record a provider-HEAD resolution candidate against a fresh exact baseline. It does not close the Finding; only a later explicit exact-finding disposition can do so.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          finding_id: { type: "string", pattern: "^conformance-finding-[a-f0-9]{24}$" },
+          baseline: conformanceBaselineSchema,
+          evidence_anchors: { type: "array", minItems: 1, maxItems: 64, items: conformanceEvidenceAnchorSchema },
+          assessment: { type: "string", enum: ["appears-resolved", "still-present", "uncertain"] },
+          rationale: { type: "string", minLength: 1 },
+        },
+        required: ["project_root", "finding_id", "baseline", "evidence_anchors", "assessment", "rationale"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      args: (args) => [
+        {
+          root: args.project_root,
+          findingId: args.finding_id,
+          baseline: conformanceBaselineFromMcp(args.baseline),
+          evidenceAnchors: args.evidence_anchors.map(conformanceEvidenceAnchorFromMcp),
+          assessment: args.assessment,
+          rationale: args.rationale,
+        },
+      ],
+    },
+    cli: {
+      command: "conformance-resolution-propose",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Conformance provider-Lode resolution"), root }],
+    },
+    impl: () => import("./conformance-reconciliation.mjs").then((module) => module.proposeConformanceResolution),
+  },
 ]);
 
 const byName = new Map(OPERATIONS.map((entry) => [entry.name, entry]));
@@ -1568,7 +2456,15 @@ export function registeredTools(names) {
   });
 }
 
-export async function callRegistered(entry, callArguments) {
+// Runs one registered operation for one surface ("mcp" or "cli"):
+// before(input, context) -> args(input, context) -> impl()(...args) -> after(value, input, context).
+// before and after are optional surface adapters (an explicit confirmation, a
+// compact MCP result, an added optional view); they never run for the other surface.
+export async function callRegistered(entry, surface, input, context = input) {
+  const side = entry[surface];
+  side.before?.(input, context);
+  const callArguments = side.args(input, context);
   const implementation = await entry.impl();
-  return await implementation(...callArguments);
+  const value = await implementation(...callArguments);
+  return side.after ? await side.after(value, input, context) : value;
 }

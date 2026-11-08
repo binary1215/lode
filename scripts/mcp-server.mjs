@@ -2,7 +2,8 @@
 import readline from "node:readline";
 import { workDocumentTools, workDocumentFromMcp, workDocumentCompositionSchema } from "./lib/work-document-surface.mjs";
 import { resolveOperation } from "./lib/lode-operation-contract.mjs";
-import { sessionWorkEvidenceSchema, workEvidenceText } from "./lib/tool-schemas.mjs";
+import { requireMcpConfirmation } from "./lib/dispatch-adapters.mjs";
+import { conformanceFindingInputSchema, sessionWorkEvidenceSchema, workEvidenceText } from "./lib/tool-schemas.mjs";
 import { callRegistered, registeredOperation, registeredTools } from "./lib/operation-registry.mjs";
 import { assertProjectRootArgument } from "./lib/mcp-argument-validation.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
@@ -130,95 +131,6 @@ async function initializeProjectFromMcp(args, { projectSessionRoute, onValidated
     releasePluginInitializationContext(installationContext);
   }
 }
-const observationFieldSchema = {
-  type: "object",
-  properties: {
-    key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$" },
-    type: {
-      type: "string",
-      enum: ["string", "stable-key", "timestamp", "sha256", "boolean", "integer", "nonnegative-integer", "bounded-number", "enum", "array"],
-    },
-    required: { type: "boolean" },
-    min: { type: "number" },
-    max: { type: "number" },
-    enum: { type: "array", maxItems: 64 },
-    items_type: { type: "string", enum: ["string", "stable-key", "timestamp", "sha256", "boolean", "integer", "nonnegative-integer", "bounded-number"] },
-    max_items: { type: "integer", minimum: 0, maximum: 1024 },
-  },
-  required: ["key", "type", "required"],
-  additionalProperties: false,
-};
-const observationDescriptorSchema = {
-  type: "object",
-  properties: {
-    type_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
-    type_version: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$" },
-    forms: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", enum: ["event", "snapshot", "aggregate"] } },
-    payload_schema: {
-      type: "object",
-      properties: { fields: { type: "array", maxItems: 128, items: observationFieldSchema }, additional_fields: { const: false } },
-      required: ["fields", "additional_fields"],
-      additionalProperties: false,
-    },
-  },
-  required: ["type_key", "type_version", "forms", "payload_schema"],
-  additionalProperties: false,
-};
-const observationCoverageSchema = {
-  type: "object",
-  properties: {
-    state: { type: "string", enum: ["complete", "sampled", "partial", "unknown"] },
-    basis: { type: "string", minLength: 1 },
-    query_digest: { anyOf: [{ type: "string", pattern: "^[a-f0-9]{64}$" }, { type: "null" }] },
-    examined_count: { type: "integer", minimum: 0 },
-    source_reported_total: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
-    omitted_count: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
-    cursor_start_digest: { anyOf: [{ type: "string", pattern: "^[a-f0-9]{64}$" }, { type: "null" }] },
-    cursor_end_digest: { anyOf: [{ type: "string", pattern: "^[a-f0-9]{64}$" }, { type: "null" }] },
-  },
-  required: ["state", "basis", "query_digest", "examined_count", "source_reported_total", "omitted_count", "cursor_start_digest", "cursor_end_digest"],
-  additionalProperties: false,
-};
-const observationBindingSchema = {
-  type: "object",
-  properties: {
-    adapter_key: { const: "head.structured-host-observation" },
-    adapter_version: { const: "0.1.0" },
-    source_scope_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
-    credential_reference_names: { type: "array", maxItems: 16, uniqueItems: true, items: { type: "string", pattern: "^[A-Z][A-Z0-9_]{2,127}$" } },
-  },
-  required: ["adapter_key", "adapter_version", "source_scope_digest", "credential_reference_names"],
-  additionalProperties: false,
-};
-const observationInputSchema = {
-  type: "object",
-  properties: {
-    subject: {
-      type: "object",
-      properties: { type: { type: "string", minLength: 1 }, key: { type: "string", minLength: 1 } },
-      required: ["type", "key"],
-      additionalProperties: false,
-    },
-    form: { type: "string", enum: ["event", "snapshot", "aggregate"] },
-    temporal_scope: {
-      type: "object",
-      properties: {
-        observed_at: { type: "string", format: "date-time" },
-        start: { anyOf: [{ type: "string", format: "date-time" }, { type: "null" }] },
-        end: { anyOf: [{ type: "string", format: "date-time" }, { type: "null" }] },
-      },
-      required: ["observed_at", "start", "end"],
-      additionalProperties: false,
-    },
-    source_event_key_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
-    source_evidence_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
-    coverage: observationCoverageSchema,
-    payload: { type: "object" },
-  },
-  required: ["subject", "form", "temporal_scope", "source_event_key_digest", "source_evidence_digest", "coverage", "payload"],
-  additionalProperties: false,
-};
-const nullableIdentity = (pattern) => ({ anyOf: [{ type: "string", pattern }, { type: "null" }] });
 const onboardingSemanticProposalSchema = {
   type: "object",
   description:
@@ -269,69 +181,6 @@ const onboardingSemanticProposalSchema = {
     },
   },
   required: ["schemaVersion", "sourceSnapshotId", "candidates"],
-  additionalProperties: false,
-};
-const conformanceBaselineSchema = {
-  type: "object",
-  properties: {
-    product_model_id: { type: "string", pattern: "^product-model-[a-f0-9]{24}$" },
-    product_model_hash: { type: "string", pattern: "^[a-f0-9]{64}$" },
-    world_model_id: nullableIdentity("^world-model-[a-f0-9]{24}$"),
-    world_model_hash: nullableIdentity("^[a-f0-9]{64}$"),
-    source_snapshot_id: nullableIdentity("^source-snapshot-[a-f0-9]{24}$"),
-    graph_snapshot_id: nullableIdentity("^graph-snapshot-[a-f0-9]{24}$"),
-  },
-  required: ["product_model_id", "product_model_hash", "world_model_id", "world_model_hash", "source_snapshot_id", "graph_snapshot_id"],
-  additionalProperties: false,
-};
-const conformanceEvidenceAnchorSchema = {
-  type: "object",
-  properties: {
-    kind: { type: "string", enum: ["source", "change", "observation", "graph"] },
-    path: { type: "string", minLength: 1 },
-    file_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
-    start_line: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
-    end_line: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
-    excerpt_digest: nullableIdentity("^[a-f0-9]{64}$"),
-    revision_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
-    symbol_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
-    change_set_id: { type: "string", pattern: "^change-set-[a-f0-9]{24}$" },
-    change_set_hash: { type: "string", pattern: "^[a-f0-9]{64}$" },
-    change_id: { type: "string", pattern: "^change-record-[a-f0-9]{24}$" },
-    observation_id: { type: "string", pattern: "^(?:observation|derived-observation)-[a-f0-9]{24}$" },
-    observation_hash: { type: "string", pattern: "^[a-f0-9]{64}$" },
-    graph_snapshot_id: { type: "string", pattern: "^graph-snapshot-[a-f0-9]{24}$" },
-    node_id: { type: "string", minLength: 1 },
-  },
-  required: ["kind"],
-  additionalProperties: false,
-};
-const conformanceFindingInputSchema = {
-  type: "object",
-  properties: {
-    canon_anchor: {
-      type: "object",
-      properties: {
-        entity_kind: { type: "string", enum: ["FeatureGroup", "Capability", "Feature", "Requirement", "Constraint", "Decision", "Policy"] },
-        entity_key: { type: "string", minLength: 1 },
-      },
-      required: ["entity_kind", "entity_key"],
-      additionalProperties: false,
-    },
-    evidence_anchors: { type: "array", minItems: 1, maxItems: 64, items: conformanceEvidenceAnchorSchema },
-    claim: {
-      type: "object",
-      properties: {
-        kind: { type: "string", enum: ["potential-conflict", "possible-conformance-gap"] },
-        summary: { type: "string", minLength: 1 },
-        rationale: { type: "string", minLength: 1 },
-        risk_hint: { type: "string", enum: ["unknown", "low", "medium", "high"] },
-      },
-      required: ["kind", "summary", "rationale", "risk_hint"],
-      additionalProperties: false,
-    },
-  },
-  required: ["canon_anchor", "evidence_anchors", "claim"],
   additionalProperties: false,
 };
 // Host presentation hints describe the implemented effect; they do not grant
@@ -720,49 +569,7 @@ const allTools = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
-  {
-    name: "head_onboarding_review",
-    description:
-      "Apply one explicit user-authored ReviewDecision to the exact current onboarding candidate set. Accept dispositions may change Product Canon; revise and reject preserve candidate or canon boundaries enforced by Core.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        candidate_set_id: { type: "string", pattern: "^onboarding-candidates-[a-f0-9]{24}$" },
-        disposition: { type: "string", enum: ["accept-all", "accept-selection", "revise", "reject"] },
-        accepted_candidate_ids: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^onboarding-candidate-[a-f0-9]{24}$" } },
-        removed_candidate_ids: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^onboarding-candidate-[a-f0-9]{24}$" } },
-        user_edits: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              candidate_id: { type: "string", pattern: "^onboarding-candidate-[a-f0-9]{24}$" },
-              entity: { type: "object" },
-            },
-            required: ["candidate_id", "entity"],
-            additionalProperties: false,
-          },
-        },
-        added_entities: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              kind: { type: "string", enum: ["FeatureGroup", "Capability", "Feature", "Requirement", "Constraint", "Decision"] },
-              entity: { type: "object" },
-            },
-            required: ["kind", "entity"],
-            additionalProperties: false,
-          },
-        },
-        rationale: { type: "string", minLength: 1 },
-      },
-      required: ["project_root", "candidate_set_id", "disposition", "rationale"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-  },
+  ...registeredTools(["head_onboarding_review"]),
   {
     name: "head_product_policy_propose",
     description:
@@ -887,18 +694,7 @@ const allTools = [
     "head_delivery_observe",
     "head_delivery_status",
   ]),
-  {
-    name: "head_markdown_projection_build",
-    description:
-      "Build or verify the deterministic local Markdown projection from the current verified GraphSnapshot. The generated view is rebuildable, non-authoritative, and never changes Product Canon.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 } },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools(["head_markdown_projection_build"]),
   {
     name: "head_runtime_adapters",
     description:
@@ -910,20 +706,7 @@ const allTools = [
       additionalProperties: false,
     },
   },
-  {
-    name: "head_runtime_invocation_authorization",
-    description:
-      "Read and digest-verify one Session- or Run-scoped ExecutionAuthorization. A read-only historical view checks retained original input references and canonical bytes/digest where available; preparation does not prove delivery or model use. No provider invocation or current execution permission.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        authorization_id: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "authorization_id"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_runtime_invocation_authorization"]),
   {
     name: "head_runtime_invocation_lease_status",
     description:
@@ -963,85 +746,7 @@ const allTools = [
       additionalProperties: false,
     },
   },
-  {
-    name: "head_feature_mapping_propose",
-    description:
-      "Normalize one fresh HEAD semantic proposal for exact Product-to-code or Product-to-test mapping candidates. Core verifies current graph endpoints and records only P3 candidates; it does not infer mappings from lexical overlap or create reviewed relationships.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        expected_candidate_set_id: {
-          type: "string",
-          pattern: "^feature-mapping-candidates-[a-f0-9]{24}$",
-          description: "Explicitly replace this exact pending unreviewed batch with fresh evidence; never replaces a durable user decision.",
-        },
-        semantic_proposal: {
-          type: "object",
-          properties: {
-            schema_version: { const: 1 },
-            source_snapshot_id: { type: "string", pattern: "^source-snapshot-[a-f0-9]{24}$" },
-            product_model_id: { type: "string", pattern: "^product-model-[a-f0-9]{24}$" },
-            candidates: {
-              type: "array",
-              minItems: 1,
-              maxItems: 500,
-              items: {
-                type: "object",
-                properties: {
-                  relationship_type: { type: "string", enum: ["IMPLEMENTS", "VERIFIED_BY"] },
-                  source_node_id: { type: "string", minLength: 1 },
-                  product_node_id: { type: "string", minLength: 1 },
-                  explanation: { type: "string", minLength: 1, maxLength: 2000 },
-                  confidence: { type: "number", minimum: 0, maximum: 1 },
-                },
-                required: ["relationship_type", "source_node_id", "product_node_id", "explanation", "confidence"],
-                additionalProperties: false,
-              },
-            },
-          },
-          required: ["schema_version", "source_snapshot_id", "product_model_id", "candidates"],
-          additionalProperties: false,
-        },
-      },
-      required: ["project_root", "semantic_proposal"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_feature_mapping_status",
-    description:
-      "Read and digest-verify the current Feature mapping candidate batch or explicit reviewed relationship decision without creating or promoting mappings.",
-    inputSchema: {
-      type: "object",
-      properties: { project_root: { type: "string", minLength: 1 } },
-      required: ["project_root"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_feature_mapping_review",
-    description:
-      "Record one explicit user-authored ReviewDecision for the exact current Feature mapping candidate set. This requires explicit confirmation; only accepted candidates create separate reviewed relationships, and Product Canon remains unchanged.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        candidate_set_id: { type: "string", pattern: "^feature-mapping-candidates-[a-f0-9]{24}$" },
-        disposition: { type: "string", enum: ["accept-all", "accept-selection", "reject"] },
-        accepted_candidate_ids: {
-          type: "array",
-          uniqueItems: true,
-          items: { type: "string", pattern: "^feature-mapping-candidate-[a-f0-9]{24}$" },
-          default: [],
-        },
-        rationale: { type: "string", minLength: 1 },
-        confirm_user_review: { type: "boolean" },
-      },
-      required: ["project_root", "candidate_set_id", "disposition", "rationale", "confirm_user_review"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_feature_mapping_propose", "head_feature_mapping_status", "head_feature_mapping_review"]),
   ...registeredTools(["head_change_set_status", "head_vcs_evidence"]),
   {
     name: "head_conformance_prepare",
@@ -1060,21 +765,7 @@ const allTools = [
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
-  {
-    name: "head_conformance_propose",
-    description:
-      "Record one or more provider-HEAD semantic Conformance candidates only after Core verifies exact current Canon and evidence anchors. Candidates are P3 evidence, never violations, decisions, execution authority, recovery direction, or ordinary-work gates.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        baseline: conformanceBaselineSchema,
-        findings: { type: "array", minItems: 1, maxItems: 64, items: conformanceFindingInputSchema },
-      },
-      required: ["project_root", "baseline", "findings"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_conformance_propose"]),
   {
     name: "head_conformance_queue",
     description:
@@ -1130,24 +821,7 @@ const allTools = [
       additionalProperties: false,
     },
   },
-  {
-    name: "head_conformance_resolution_propose",
-    description:
-      "Record a provider-HEAD resolution candidate against a fresh exact baseline. It does not close the Finding; only a later explicit exact-finding disposition can do so.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        finding_id: { type: "string", pattern: "^conformance-finding-[a-f0-9]{24}$" },
-        baseline: conformanceBaselineSchema,
-        evidence_anchors: { type: "array", minItems: 1, maxItems: 64, items: conformanceEvidenceAnchorSchema },
-        assessment: { type: "string", enum: ["appears-resolved", "still-present", "uncertain"] },
-        rationale: { type: "string", minLength: 1 },
-      },
-      required: ["project_root", "finding_id", "baseline", "evidence_anchors", "assessment", "rationale"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_conformance_resolution_propose"]),
   {
     name: "head_conformance_trigger_status",
     description:
@@ -1534,58 +1208,7 @@ const allTools = [
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
-  {
-    name: "head_bounded_worker_prepare",
-    description:
-      "Optional managed path only, not a prerequisite for ordinary Host delegation. Prepare a bounded read-only patch-proposal worker through the built-in local Host without calling a model. HEAD supplies task, exact model, selected context and source/proposal paths from the conversation; never ask the user to write a module, JSON or IDs. Reuses current Session or active Run authority and an identical preparation. Does not apply patches, create a Run, approve results, inspect an account or start a worker. Host-global instruction selection is explicit input scope, not an enforcement assertion; selected-only is the default.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        task: { type: "string", minLength: 1 },
-        model: { type: "string", minLength: 1 },
-        task_key: { type: "string", pattern: "^[a-z][a-z0-9-]{0,95}$" },
-        role: { type: "string", enum: ["developer", "coder", "reviewer"] },
-        outcome: { type: "string", minLength: 1 },
-        selected_context: { type: "string" },
-        source_paths: { type: "array", items: { type: "string", minLength: 1 }, uniqueItems: true },
-        proposal_paths: { type: "array", items: { type: "string", minLength: 1 }, uniqueItems: true },
-        runtime: { type: "string", enum: ["codex", "claude", "opencode"] },
-        timeout_ms: { type: "integer", minimum: 1000, maximum: 3600000 },
-        instruction_scope: { type: "string", enum: ["selected-only", "host-global"] },
-        context_mode: {
-          type: "string",
-          enum: ["fresh", "native-prefix"],
-          description:
-            "Default fresh uses one model turn. Explicit native-prefix uses selected_context in a new durable controlled seed and then a fork child (two turns total); not a fork of the current conversation or a stronger code-worker sandbox. HEAD must keep both calls and seed persistence within the existing authorized scope.",
-        },
-      },
-      required: ["project_root", "task", "model"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
-    name: "head_bounded_worker_start",
-    description:
-      "Start an optional managed worker, not a general Host spawn. Start a prepared worker by its task key or exact authorization using the built-in local Host and bounded native owner. Embedding Hosts remain supported. Repeated start never relaunches an uncertain job; no runner, environment or enforcement assertion is accepted.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        authorization_id: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
-        task_key: { type: "string", pattern: "^[a-z][a-z0-9-]{0,95}$" },
-        role: { type: "string", enum: ["developer", "coder", "reviewer"] },
-      },
-      required: ["project_root"],
-      oneOf: [
-        { required: ["authorization_id"], not: { required: ["task_key"] } },
-        { required: ["task_key"], not: { required: ["authorization_id"] } },
-      ],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  },
+  ...registeredTools(["head_bounded_worker_prepare", "head_bounded_worker_start"]),
   ...registeredTools([
     "head_bounded_worker_job_status",
     "head_bounded_worker_job_reconcile",
@@ -1594,21 +1217,7 @@ const allTools = [
     "head_bounded_worker_reconcile",
     "head_bounded_worker_dispatch",
   ]),
-  {
-    name: "head_bounded_worker_status",
-    description:
-      "Read and verify one P3 bounded worker dispatch without consuming its authorization. The optional historical prepared-input view keeps original references, runtime observations and model-use uncertainty separate; it does not change current execution or recovery authority.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        authorization_id: { type: "string", pattern: "^execution-authorization-[a-f0-9]{24}$" },
-      },
-      required: ["project_root", "authorization_id"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools(["head_bounded_worker_status"]),
   ...registeredTools([
     "head_bounded_worker_wait",
     "head_bounded_worker_apply_result",
@@ -1905,110 +1514,7 @@ const allTools = [
       additionalProperties: false,
     },
   },
-  {
-    name: "head_product_initiative_propose",
-    description:
-      "Propose a Product Initiative from persisted hypotheses or inline reasoning. Feature resolution may be deferred to explicit review; proposal never approves the initiative or mutates Product Canon.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        title: { type: "string", minLength: 1 },
-        description: { type: "string" },
-        reasoning: { type: "string" },
-        hypothesis_ids: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^product-hypothesis-[a-f0-9]{24}$" } },
-        feature_resolution: {
-          oneOf: [
-            {
-              type: "object",
-              properties: { kind: { const: "existing-feature" }, feature_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" } },
-              required: ["kind", "feature_key"],
-              additionalProperties: false,
-            },
-            {
-              type: "object",
-              properties: {
-                kind: { const: "candidate" },
-                feature: {
-                  type: "object",
-                  properties: {
-                    key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
-                    name: { type: "string", minLength: 1 },
-                    description: { type: "string" },
-                    capability_keys: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" } },
-                  },
-                  required: ["key", "name"],
-                  additionalProperties: false,
-                },
-              },
-              required: ["kind", "feature"],
-              additionalProperties: false,
-            },
-            {
-              type: "object",
-              properties: { kind: { const: "gap" }, reason: { type: "string", minLength: 1 } },
-              required: ["kind", "reason"],
-              additionalProperties: false,
-            },
-          ],
-        },
-      },
-      required: ["project_root", "title"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "head_product_initiative_review",
-    description:
-      "Record the user's explicit accept/reject ReviewDecision for one Product Initiative candidate. Acceptance resolves any deferred Feature mapping, creates a separate reviewed Initiative, and never mutates Product Canon.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        initiative_candidate_id: { type: "string", pattern: "^product-initiative-candidate-[a-f0-9]{24}$" },
-        disposition: { type: "string", enum: ["accept", "reject"] },
-        rationale: { type: "string", minLength: 1 },
-        confirm_user_review: { type: "boolean" },
-        feature_resolution: {
-          oneOf: [
-            {
-              type: "object",
-              properties: { kind: { const: "existing-feature" }, feature_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" } },
-              required: ["kind", "feature_key"],
-              additionalProperties: false,
-            },
-            {
-              type: "object",
-              properties: {
-                kind: { const: "candidate" },
-                feature: {
-                  type: "object",
-                  properties: {
-                    key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
-                    name: { type: "string", minLength: 1 },
-                    description: { type: "string" },
-                    capability_keys: { type: "array", uniqueItems: true, items: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" } },
-                  },
-                  required: ["key", "name"],
-                  additionalProperties: false,
-                },
-              },
-              required: ["kind", "feature"],
-              additionalProperties: false,
-            },
-            {
-              type: "object",
-              properties: { kind: { const: "gap" }, reason: { type: "string", minLength: 1 } },
-              required: ["kind", "reason"],
-              additionalProperties: false,
-            },
-          ],
-        },
-      },
-      required: ["project_root", "initiative_candidate_id", "disposition", "rationale", "confirm_user_review"],
-      additionalProperties: false,
-    },
-  },
+  ...registeredTools(["head_product_initiative_propose", "head_product_initiative_review"]),
   {
     name: "head_product_outcome_observe",
     description:
@@ -2038,44 +1544,7 @@ const allTools = [
       additionalProperties: false,
     },
   },
-  {
-    name: "head_release_observe",
-    description:
-      "Record a host-supplied deployment result and current product Git refs as immutable P3 evidence. A ReleaseObservation is created only for an approved successful result whose exact commit is reachable and present on a current product ref; this never approves deployment or changes Product Canon.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        environment_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
-        status: { type: "string", enum: ["succeeded", "failed", "cancelled"] },
-        commit: { type: "string", pattern: "^[a-fA-F0-9]{40,64}$" },
-        observed_at: { type: "string", format: "date-time" },
-        source_event_key_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
-        deployment_evidence_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
-        approved: { type: "boolean" },
-        approval_evidence_digest: { anyOf: [{ type: "string", pattern: "^[a-f0-9]{64}$" }, { type: "null" }] },
-        change_set_id: { anyOf: [{ type: "string", pattern: "^change-set-[a-f0-9]{24}$" }, { type: "null" }] },
-        vcs_evidence_id: { anyOf: [{ type: "string", pattern: "^vcs-evidence-[a-f0-9]{24}$" }, { type: "null" }] },
-        confirm_host_observation: { type: "boolean" },
-      },
-      required: [
-        "project_root",
-        "environment_key",
-        "status",
-        "commit",
-        "observed_at",
-        "source_event_key_digest",
-        "deployment_evidence_digest",
-        "approved",
-        "approval_evidence_digest",
-        "change_set_id",
-        "vcs_evidence_id",
-        "confirm_host_observation",
-      ],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  },
+  ...registeredTools(["head_release_observe"]),
   ...registeredTools(["head_release_status", "head_observation_sources"]),
   {
     name: "head_observation_prepare",
@@ -2114,76 +1583,7 @@ const allTools = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
-  {
-    name: "head_observation_ingest",
-    description:
-      "Ingest one already constructed bounded CI or Host Observation. The Host adapter owns source access, binding, digests, coverage, and provenance confirmation; this tool does not ask the user to attest to machine evidence.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        binding: observationBindingSchema,
-        descriptor: observationDescriptorSchema,
-        observation: observationInputSchema,
-        confirm_host_observation: { type: "boolean" },
-      },
-      required: ["project_root", "binding", "descriptor", "observation", "confirm_host_observation"],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  },
-  {
-    name: "head_observation_derive",
-    description:
-      "Record a deterministic P3 derived Observation from exact existing Observation IDs and an algorithm digest. It cannot assert causality or Product success.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project_root: { type: "string", minLength: 1 },
-        descriptor: observationDescriptorSchema,
-        subject: {
-          type: "object",
-          properties: { type: { type: "string", minLength: 1 }, key: { type: "string", minLength: 1 } },
-          required: ["type", "key"],
-          additionalProperties: false,
-        },
-        temporal_scope: observationInputSchema.properties.temporal_scope,
-        input_observation_ids: {
-          type: "array",
-          minItems: 1,
-          maxItems: 64,
-          uniqueItems: true,
-          items: { type: "string", pattern: "^observation-[a-f0-9]{24}$" },
-        },
-        algorithm: {
-          type: "object",
-          properties: {
-            key: { type: "string", minLength: 1 },
-            version: { type: "string", minLength: 1 },
-            digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
-          },
-          required: ["key", "version", "digest"],
-          additionalProperties: false,
-        },
-        coverage: observationCoverageSchema,
-        payload: { type: "object" },
-        confirm_host_derivation: { type: "boolean" },
-      },
-      required: [
-        "project_root",
-        "descriptor",
-        "subject",
-        "temporal_scope",
-        "input_observation_ids",
-        "algorithm",
-        "coverage",
-        "payload",
-        "confirm_host_derivation",
-      ],
-      additionalProperties: false,
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
+  ...registeredTools(["head_observation_ingest", "head_observation_derive"]),
   {
     name: "head_conversation_enter",
     description:
@@ -2391,22 +1791,7 @@ allTools.push(
   },
 );
 
-allTools.push({
-  name: "head_run_start",
-  description:
-    "Start the existing contract-bound Run transaction. An optional Core request key makes exact retries converge; historical acknowledgments never authorize provider/worker replay. HEAD supplies the key without another prepare call or user form.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      project_root: { type: "string", minLength: 1 },
-      execution_contract_id: { type: "string", pattern: "^execution-contract-[a-f0-9]{24}$" },
-      start_request_id: { type: "string", minLength: 1, maxLength: 256 },
-    },
-    required: ["project_root", "execution_contract_id"],
-    additionalProperties: false,
-  },
-  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-});
+allTools.push(...registeredTools(["head_run_start"]));
 
 for (const tool of allTools) {
   if (tool.inputSchema?.properties?.project_root) {
@@ -2637,180 +2022,6 @@ function onboardingInputFromMcp(args) {
   return onboarding;
 }
 
-function featureMappingProposalFromMcp(value) {
-  return {
-    schemaVersion: value.schema_version,
-    sourceSnapshotId: value.source_snapshot_id,
-    productModelId: value.product_model_id,
-    candidates: value.candidates.map((candidate) => ({
-      relationshipType: candidate.relationship_type,
-      sourceNodeId: candidate.source_node_id,
-      productNodeId: candidate.product_node_id,
-      explanation: candidate.explanation,
-      confidence: candidate.confidence,
-    })),
-  };
-}
-
-function productFeatureResolutionFromMcp(value) {
-  if (value?.kind === "existing-feature") return { kind: value.kind, featureKey: value.feature_key };
-  if (value?.kind === "candidate")
-    return {
-      kind: value.kind,
-      feature: {
-        key: value.feature?.key,
-        name: value.feature?.name,
-        description: value.feature?.description || "",
-        capabilityKeys: value.feature?.capability_keys || [],
-      },
-    };
-  return { kind: "gap", reason: value?.reason };
-}
-
-function observationDescriptorFromMcp(value) {
-  return {
-    typeKey: value.type_key,
-    typeVersion: value.type_version,
-    forms: value.forms,
-    payloadSchema: {
-      additionalFields: value.payload_schema.additional_fields,
-      fields: value.payload_schema.fields.map((field) => ({
-        key: field.key,
-        type: field.type,
-        required: field.required,
-        ...(field.min == null ? {} : { min: field.min }),
-        ...(field.max == null ? {} : { max: field.max }),
-        ...(field.enum == null ? {} : { enum: field.enum }),
-        ...(field.items_type == null ? {} : { itemsType: field.items_type }),
-        ...(field.max_items == null ? {} : { maxItems: field.max_items }),
-      })),
-    },
-  };
-}
-
-function observationCoverageFromMcp(value) {
-  return {
-    state: value.state,
-    basis: value.basis,
-    queryDigest: value.query_digest,
-    examinedCount: value.examined_count,
-    sourceReportedTotal: value.source_reported_total,
-    omittedCount: value.omitted_count,
-    cursorStartDigest: value.cursor_start_digest,
-    cursorEndDigest: value.cursor_end_digest,
-  };
-}
-
-function observationBindingFromMcp(value) {
-  return {
-    adapterKey: value.adapter_key,
-    adapterVersion: value.adapter_version,
-    sourceScopeDigest: value.source_scope_digest,
-    credentialReferenceNames: value.credential_reference_names || [],
-  };
-}
-
-function observationInputFromMcp(value) {
-  return {
-    subject: value.subject,
-    form: value.form,
-    temporalScope: { observedAt: value.temporal_scope.observed_at, start: value.temporal_scope.start, end: value.temporal_scope.end },
-    sourceEventKeyDigest: value.source_event_key_digest,
-    sourceEvidenceDigest: value.source_evidence_digest,
-    coverage: observationCoverageFromMcp(value.coverage),
-    payload: value.payload,
-  };
-}
-
-function conformanceBaselineFromMcp(value) {
-  return {
-    productModelId: value.product_model_id,
-    productModelHash: value.product_model_hash,
-    worldModelId: value.world_model_id,
-    worldModelHash: value.world_model_hash,
-    sourceSnapshotId: value.source_snapshot_id,
-    graphSnapshotId: value.graph_snapshot_id,
-  };
-}
-
-function conformanceEvidenceAnchorFromMcp(value) {
-  if (value.kind === "source")
-    return {
-      kind: value.kind,
-      path: value.path,
-      fileDigest: value.file_digest,
-      startLine: value.start_line ?? null,
-      endLine: value.end_line ?? null,
-      excerptDigest: value.excerpt_digest ?? null,
-      revisionId: value.revision_id ?? null,
-      symbolId: value.symbol_id ?? null,
-    };
-  if (value.kind === "change") return { kind: value.kind, changeSetId: value.change_set_id, changeSetHash: value.change_set_hash, changeId: value.change_id };
-  if (value.kind === "observation") return { kind: value.kind, observationId: value.observation_id, observationHash: value.observation_hash };
-  return { kind: value.kind, graphSnapshotId: value.graph_snapshot_id, nodeId: value.node_id };
-}
-
-function conformanceFindingFromMcp(value) {
-  return {
-    canonAnchor: { entityKind: value.canon_anchor.entity_kind, entityKey: value.canon_anchor.entity_key },
-    evidenceAnchors: value.evidence_anchors.map(conformanceEvidenceAnchorFromMcp),
-    claim: { kind: value.claim.kind, summary: value.claim.summary, rationale: value.claim.rationale, riskHint: value.claim.risk_hint },
-  };
-}
-
-function compactReviewResult(result) {
-  const latestReviewDecisionId = result.state.latestReviewDecisionId ?? result.state.reviewDecisionId ?? null;
-  return {
-    status: result.status,
-    state: {
-      phase: result.state.phase,
-      stateRevision: result.state.stateRevision,
-      candidateSetId: result.state.candidateSetId,
-      latestReviewDecisionId,
-      reviewDecisionId: latestReviewDecisionId,
-      productModelId: result.state.productModelId,
-      worldModelId: result.state.worldModelId,
-      sourceSnapshotId: result.state.sourceSnapshotId,
-    },
-    reviewDecision: result.reviewDecision
-      ? {
-          reviewDecisionId: result.reviewDecision.reviewDecisionId,
-          disposition: result.reviewDecision.disposition,
-          promotionAuthority: result.reviewDecision.promotionAuthority,
-          resultingProductModelId: result.reviewDecision.resultingProductModelId || null,
-        }
-      : null,
-    successorCandidateSet: result.candidateSet
-      ? {
-          candidateSetId: result.candidateSet.candidateSetId,
-          candidateCount: result.candidateSet.candidates.length,
-        }
-      : null,
-    productModelId: result.productModel?.productModelId || null,
-    worldModel: result.worldModel,
-    authorityEffect: result.reviewDecision?.promotionAuthority ? "explicit-product-canon-transition" : "none",
-  };
-}
-
-function compactMarkdownBuild(result) {
-  return {
-    status: result.status,
-    worldModelStatus: result.worldModelStatus,
-    worldModelId: result.worldModelId,
-    graphSnapshotId: result.graphSnapshotId,
-    documentProjectionId: result.documentProjectionId,
-    publishedPageCount: result.projection?.projection?.documents?.length || 0,
-    authority: result.authority,
-  };
-}
-
-function requireMcpConfirmation(value, message, code) {
-  if (value === true) return;
-  const error = new Error(message);
-  error.code = code;
-  throw error;
-}
-
 async function initializeGraphDbFromMcp(args, transport) {
   requireMcpConfirmation(
     args.confirm_initialize,
@@ -2884,33 +2095,6 @@ async function continueSessionFromMcp(args, coordinationWorkspaceHost) {
   });
 }
 
-function localWorkerInput(args, start = false) {
-  if (typeof args.project_root !== "string" || !args.project_root.trim()) throw new Error("An exact project_root is required.");
-  const fields = start
-    ? { authorization_id: "authorizationId", task_key: "taskKey", role: "role" }
-    : {
-        task: "task",
-        task_key: "taskKey",
-        role: "role",
-        outcome: "outcome",
-        selected_context: "selectedContext",
-        source_paths: "sourcePaths",
-        proposal_paths: "proposalPaths",
-        model: "model",
-        runtime: "runtime",
-        timeout_ms: "timeoutMs",
-        instruction_scope: "instructionScope",
-        context_mode: "contextMode",
-      };
-  if (Object.keys(args).some((key) => key !== "project_root" && !Object.hasOwn(fields, key)))
-    throw new Error("Worker surface does not accept Host configuration.");
-  return Object.fromEntries(
-    Object.entries(args)
-      .filter(([key]) => key !== "project_root")
-      .map(([key, value]) => [fields[key], value]),
-  );
-}
-
 async function unresolvedSessionResponse(id, name, root, reasonCode) {
   try {
     const routing = await import("./lib/session-routing.mjs");
@@ -2923,29 +2107,6 @@ async function unresolvedSessionResponse(id, name, root, reasonCode) {
     return success(id, { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
   } catch (error) {
     return failure(id, error.message, error?.code);
-  }
-}
-
-async function preparedRuntimeRead(root, value) {
-  // Primary selection/owner/hash errors have already escaped. Optional view
-  // loading or historical-original failures cannot become execution gates.
-  try {
-    return (await import("./lib/runtime-prepared-input-view.mjs")).withPreparedRuntimeInputView({ root, value });
-  } catch {
-    return {
-      ...value,
-      preparedInput: {
-        kind: "PreparedRuntimeInputProjection",
-        authorityPlane: "P4",
-        status: "unavailable",
-        reasonCode: "PREPARED_INPUT_VIEW_UNAVAILABLE",
-        persisted: false,
-        instructionAuthority: false,
-        recoveryAuthority: false,
-        executionAuthorization: false,
-        modelUse: "unknown",
-      },
-    };
   }
 }
 
@@ -3171,1046 +2332,645 @@ async function dispatchRouted(
     if (declaredSchema) assertProjectRootArgument(publicToolName(name), declaredSchema, args);
     const registered = registeredOperation(name);
     const value = registered
-      ? await callRegistered(registered, registered.mcp.args(args, { onProcess, workerJobSupervisor, observationRegistry }))
-      : await (name === "head_run_start"
-          ? (await import("./lib/run-lineage.mjs")).startRun({
-              root: args.project_root,
-              executionContractId: args.execution_contract_id,
-              startRequestId: args.start_request_id,
-            })
-          : name === "head_core_contract"
-            ? {
-                ...coreContract(),
-                runtime: {
-                  activePackageVersion: packageVersion,
-                  reloadPolicy: "restart-host-after-install-or-upgrade",
-                  providerSessionIdentityPersisted: false,
-                  compactionLifecycle: {
-                    conversationEntryRecovery: "active",
-                    injectedHostContract: "active",
-                    packagedProviderEventAdapters: { claude: "not-bound", codex: "not-bound", opencode: "not-bound" },
-                    unavailableBehavior: "non-blocking-p2-artifact-entry-recovery",
-                  },
+      ? await callRegistered(registered, "mcp", args, {
+          onProcess,
+          signal,
+          workerJobHost,
+          workerJobSupervisor,
+          workerPreparationBackend,
+          observationRegistry,
+        })
+      : await (name === "head_core_contract"
+          ? {
+              ...coreContract(),
+              runtime: {
+                activePackageVersion: packageVersion,
+                reloadPolicy: "restart-host-after-install-or-upgrade",
+                providerSessionIdentityPersisted: false,
+                compactionLifecycle: {
+                  conversationEntryRecovery: "active",
+                  injectedHostContract: "active",
+                  packagedProviderEventAdapters: { claude: "not-bound", codex: "not-bound", opencode: "not-bound" },
+                  unavailableBehavior: "non-blocking-p2-artifact-entry-recovery",
                 },
-              }
-            : name === "head_project_status"
-              ? (projectLocationProjection ?? (await (await import("./lib/project-bootstrap.mjs")).inspectProjectExperience({ root: args.project_root })))
-              : name === "head_project_graph"
-                ? await (
-                    await import("./lib/project-graph.mjs")
-                  ).queryProjectGraph({
-                    root: args.project_root,
-                    query: args.query ?? "",
-                    view: args.view ?? "all",
-                    anchorIds: args.anchor_ids ?? [],
-                    paths: args.paths ?? [],
-                    depth: args.depth,
-                    details: args.details ?? false,
-                    maxNodes: args.max_nodes,
-                    maxEdges: args.max_edges,
-                    worldModelId: args.world_model_id ?? "",
-                    includeCandidates: args.include_candidates ?? true,
-                    previousResult: args.previous_result ?? null,
-                    inventoryPage: args.inventory_page === true,
-                    inventoryPaths: args.inventory_paths,
-                    inventoryCursor: args.inventory_cursor,
-                  })
-                : name === "head_project_graph_index"
-                  ? (await import("./lib/project-graph.mjs")).indexProjectGraph({ root: args.project_root })
-                  : name === "head_project_native_history"
-                    ? await projectNativeHistoryFromMcp(args, signal, nativeHistoryHost, onProcess)
-                    : name === "head_project_bundle_export" || name === "head_project_bundle_read" || name === "head_project_bundle_import"
-                      ? await projectBundleFromMcp(name, args, signal, onExportScope)
-                      : name === "head_session_create"
-                        ? (await import("./lib/session-routing.mjs")).createHeadSession({
+              },
+            }
+          : name === "head_project_status"
+            ? (projectLocationProjection ?? (await (await import("./lib/project-bootstrap.mjs")).inspectProjectExperience({ root: args.project_root })))
+            : name === "head_project_graph"
+              ? await (
+                  await import("./lib/project-graph.mjs")
+                ).queryProjectGraph({
+                  root: args.project_root,
+                  query: args.query ?? "",
+                  view: args.view ?? "all",
+                  anchorIds: args.anchor_ids ?? [],
+                  paths: args.paths ?? [],
+                  depth: args.depth,
+                  details: args.details ?? false,
+                  maxNodes: args.max_nodes,
+                  maxEdges: args.max_edges,
+                  worldModelId: args.world_model_id ?? "",
+                  includeCandidates: args.include_candidates ?? true,
+                  previousResult: args.previous_result ?? null,
+                  inventoryPage: args.inventory_page === true,
+                  inventoryPaths: args.inventory_paths,
+                  inventoryCursor: args.inventory_cursor,
+                })
+              : name === "head_project_graph_index"
+                ? (await import("./lib/project-graph.mjs")).indexProjectGraph({ root: args.project_root })
+                : name === "head_project_native_history"
+                  ? await projectNativeHistoryFromMcp(args, signal, nativeHistoryHost, onProcess)
+                  : name === "head_project_bundle_export" || name === "head_project_bundle_read" || name === "head_project_bundle_import"
+                    ? await projectBundleFromMcp(name, args, signal, onExportScope)
+                    : name === "head_session_create"
+                      ? (await import("./lib/session-routing.mjs")).createHeadSession({
+                          root: args.project_root,
+                          sessionId: args.new_session_id,
+                          purpose: args.purpose,
+                        })
+                      : name === "head_session_list"
+                        ? await (
+                            await import("./lib/session-work-context.mjs")
+                          ).readSessionWorkList({
                             root: args.project_root,
-                            sessionId: args.new_session_id,
-                            purpose: args.purpose,
+                            sessionId: args.session_id ?? null,
+                            maxSessions: args.max_sessions ?? 16,
+                            afterSessionId: args.after_session_id ?? null,
+                            conversationCandidates: args.conversation_candidates,
+                            conversationEnvironment: hostEnvironment,
                           })
-                        : name === "head_session_list"
-                          ? await (
-                              await import("./lib/session-work-context.mjs")
-                            ).readSessionWorkList({
-                              root: args.project_root,
-                              sessionId: args.session_id ?? null,
-                              maxSessions: args.max_sessions ?? 16,
-                              afterSessionId: args.after_session_id ?? null,
-                              conversationCandidates: args.conversation_candidates,
-                              conversationEnvironment: hostEnvironment,
-                            })
-                          : name === "head_project_direction_read"
-                            ? (await import("./lib/session-routing.mjs")).readProjectDirection({ root: args.project_root })
-                            : name === "head_project_direction_update"
-                              ? (await import("./lib/session-routing.mjs")).updateProjectDirection({
-                                  root: args.project_root,
-                                  expectedDirectionId: args.expected_direction_id,
-                                  input: args.direction,
-                                })
-                              : name === "head_onboarding_guide"
-                                ? await (
-                                    await import("./lib/onboarding-conversation.mjs")
-                                  ).inspectConversationalOnboarding({ root: args.project_root, candidateLimit: args.candidate_limit ?? 25 })
-                                : name === "head_project_initialize_or_resume"
-                                  ? await initializeProjectFromMcp(args, {
-                                      projectSessionRoute,
-                                      onValidatedSessionSelection,
-                                      pluginLaunch,
-                                      servingModuleUrl,
-                                      installationCaller,
+                        : name === "head_project_direction_read"
+                          ? (await import("./lib/session-routing.mjs")).readProjectDirection({ root: args.project_root })
+                          : name === "head_project_direction_update"
+                            ? (await import("./lib/session-routing.mjs")).updateProjectDirection({
+                                root: args.project_root,
+                                expectedDirectionId: args.expected_direction_id,
+                                input: args.direction,
+                              })
+                            : name === "head_onboarding_guide"
+                              ? await (
+                                  await import("./lib/onboarding-conversation.mjs")
+                                ).inspectConversationalOnboarding({ root: args.project_root, candidateLimit: args.candidate_limit ?? 25 })
+                              : name === "head_project_initialize_or_resume"
+                                ? await initializeProjectFromMcp(args, {
+                                    projectSessionRoute,
+                                    onValidatedSessionSelection,
+                                    pluginLaunch,
+                                    servingModuleUrl,
+                                    installationCaller,
+                                  })
+                                : name === "head_onboarding_semantic_refresh"
+                                  ? await (
+                                      await import("./lib/onboarding.mjs")
+                                    ).proposeOnboardingSemanticRefresh({
+                                      root: args.project_root,
+                                      semanticProposal: args.semantic_proposal,
+                                      recoveryBasis: args.recovery_basis || null,
                                     })
-                                  : name === "head_onboarding_semantic_refresh"
-                                    ? await (
-                                        await import("./lib/onboarding.mjs")
-                                      ).proposeOnboardingSemanticRefresh({
+                                  : name === "head_onboarding_candidate_restore"
+                                    ? (await import("./lib/onboarding.mjs")).restoreOnboardingCandidate({
                                         root: args.project_root,
-                                        semanticProposal: args.semantic_proposal,
-                                        recoveryBasis: args.recovery_basis || null,
+                                        candidateSetId: args.candidate_set_id,
+                                        sourceContent: args.source_content,
+                                        expectedRawHash: args.expected_raw_hash,
                                       })
-                                    : name === "head_onboarding_candidate_restore"
-                                      ? (await import("./lib/onboarding.mjs")).restoreOnboardingCandidate({
+                                    : name === "head_product_policy_propose"
+                                      ? await (
+                                          await import("./lib/product-policy.mjs")
+                                        ).proposeProductPolicy({
                                           root: args.project_root,
-                                          candidateSetId: args.candidate_set_id,
-                                          sourceContent: args.source_content,
-                                          expectedRawHash: args.expected_raw_hash,
+                                          operation: args.operation,
+                                          key: args.key,
+                                          name: args.name,
+                                          description: args.description,
+                                          statement: args.statement,
+                                          appliesTo: args.applies_to,
+                                          governedBy: args.governed_by,
+                                          evidenceAnchors: args.evidence_anchors || [],
+                                          explanation: args.explanation || "",
                                         })
-                                      : name === "head_onboarding_review"
-                                        ? compactReviewResult(
-                                            await (
-                                              await import("./lib/onboarding.mjs")
-                                            ).reviewOnboarding({
+                                      : name === "head_product_policy_review"
+                                        ? await (
+                                            await import("./lib/product-policy.mjs")
+                                          ).reviewProductPolicy({
+                                            root: args.project_root,
+                                            candidateId: args.candidate_id,
+                                            disposition: args.disposition,
+                                            rationale: args.rationale,
+                                          })
+                                        : name === "head_product_policy_status"
+                                          ? (await import("./lib/product-policy.mjs")).inspectProductPolicyStatus({
                                               root: args.project_root,
-                                              candidateSetId: args.candidate_set_id,
-                                              disposition: args.disposition,
-                                              acceptedCandidateIds: args.accepted_candidate_ids || [],
-                                              removedCandidateIds: args.removed_candidate_ids || [],
-                                              userEdits: (args.user_edits || []).map((edit) => ({ candidateId: edit.candidate_id, entity: edit.entity })),
-                                              addedEntities: args.added_entities || [],
-                                              rationale: args.rationale,
-                                            }),
-                                          )
-                                        : name === "head_product_policy_propose"
-                                          ? await (
-                                              await import("./lib/product-policy.mjs")
-                                            ).proposeProductPolicy({
-                                              root: args.project_root,
-                                              operation: args.operation,
-                                              key: args.key,
-                                              name: args.name,
-                                              description: args.description,
-                                              statement: args.statement,
-                                              appliesTo: args.applies_to,
-                                              governedBy: args.governed_by,
-                                              evidenceAnchors: args.evidence_anchors || [],
-                                              explanation: args.explanation || "",
+                                              candidateId: args.candidate_id,
                                             })
-                                          : name === "head_product_policy_review"
-                                            ? await (
-                                                await import("./lib/product-policy.mjs")
-                                              ).reviewProductPolicy({
+                                          : name === "head_product_policy_candidate"
+                                            ? (await import("./lib/product-policy.mjs")).readProductPolicyCandidate({
                                                 root: args.project_root,
                                                 candidateId: args.candidate_id,
-                                                disposition: args.disposition,
-                                                rationale: args.rationale,
                                               })
-                                            : name === "head_product_policy_status"
-                                              ? (await import("./lib/product-policy.mjs")).inspectProductPolicyStatus({
+                                            : name === "head_product_policy_review_decision"
+                                              ? (await import("./lib/product-policy.mjs")).readProductPolicyReviewDecision({
                                                   root: args.project_root,
-                                                  candidateId: args.candidate_id,
+                                                  reviewDecisionId: args.review_decision_id,
                                                 })
-                                              : name === "head_product_policy_candidate"
-                                                ? (await import("./lib/product-policy.mjs")).readProductPolicyCandidate({
-                                                    root: args.project_root,
-                                                    candidateId: args.candidate_id,
-                                                  })
-                                                : name === "head_product_policy_review_decision"
-                                                  ? (await import("./lib/product-policy.mjs")).readProductPolicyReviewDecision({
+                                              : name === "head_runtime_adapters"
+                                                ? await (await import("./lib/lode-core.mjs")).inspectRuntimeAdapters(args.project_root)
+                                                : name === "head_runtime_invocation_lease_status"
+                                                  ? (await import("./lib/runtime-invocation-lifecycle.mjs")).inspectRuntimeInvocationExecutionLease({
                                                       root: args.project_root,
-                                                      reviewDecisionId: args.review_decision_id,
+                                                      authorizationId: args.authorization_id,
                                                     })
-                                                  : name === "head_feature_mapping_propose"
-                                                    ? await (
-                                                        await import("./lib/feature-mapping.mjs")
-                                                      ).startFeatureMapping({
-                                                        root: args.project_root,
-                                                        semanticProposal: featureMappingProposalFromMcp(args.semantic_proposal),
-                                                        expectedCandidateSetId: args.expected_candidate_set_id ?? null,
-                                                      })
-                                                    : name === "head_feature_mapping_review"
-                                                      ? (requireMcpConfirmation(
-                                                          args.confirm_user_review,
-                                                          "Feature mapping review requires explicit user confirmation.",
-                                                          "FEATURE_MAPPING_REVIEW_CONFIRMATION_REQUIRED",
-                                                        ),
-                                                        await (
-                                                          await import("./lib/feature-mapping.mjs")
-                                                        ).reviewFeatureMapping({
-                                                          root: args.project_root,
-                                                          candidateSetId: args.candidate_set_id,
-                                                          disposition: args.disposition,
-                                                          acceptedCandidateIds: args.accepted_candidate_ids || [],
-                                                          rationale: args.rationale,
-                                                        }))
-                                                      : name === "head_markdown_projection_build"
-                                                        ? compactMarkdownBuild(
-                                                            await (
-                                                              await import("./lib/world-model.mjs")
-                                                            ).materializeWorldMarkdownProjection({ root: args.project_root }),
-                                                          )
-                                                        : name === "head_runtime_adapters"
-                                                          ? await (await import("./lib/lode-core.mjs")).inspectRuntimeAdapters(args.project_root)
-                                                          : name === "head_runtime_invocation_authorization"
-                                                            ? await preparedRuntimeRead(
-                                                                args.project_root,
-                                                                (await import("./lib/runtime-invocation-lifecycle.mjs")).readRuntimeInvocationAuthorization({
+                                                  : name === "head_runtime_invocation_result"
+                                                    ? await runtimeResultFromMcp(args)
+                                                    : name === "head_onboarding_status"
+                                                      ? await (await import("./lib/onboarding.mjs")).inspectOnboarding({ root: args.project_root })
+                                                      : name === "head_conformance_prepare"
+                                                        ? await (
+                                                            await import("./lib/conformance-reconciliation.mjs")
+                                                          ).prepareConformanceAssessment({
+                                                            root: args.project_root,
+                                                            limit: args.limit ?? 32,
+                                                            projectionId: args.projection_id || "",
+                                                            cursor: args.cursor || "",
+                                                          })
+                                                        : name === "head_conformance_queue"
+                                                          ? await (
+                                                              await import("./lib/conformance-reconciliation.mjs")
+                                                            ).inspectConformanceQueue({
+                                                              root: args.project_root,
+                                                              status: args.status || "all",
+                                                              riskHint: args.risk_hint || "",
+                                                              limit: args.limit ?? 25,
+                                                              projectionId: args.projection_id || "",
+                                                              cursor: args.cursor || "",
+                                                              canonAnchor:
+                                                                args.canon_anchor == null
+                                                                  ? null
+                                                                  : {
+                                                                      entityKind: args.canon_anchor.entity_kind,
+                                                                      entityKey: args.canon_anchor.entity_key,
+                                                                    },
+                                                            })
+                                                          : name === "head_conformance_read"
+                                                            ? (await import("./lib/conformance-reconciliation.mjs")).readConformanceFinding({
+                                                                root: args.project_root,
+                                                                findingId: args.finding_id,
+                                                              })
+                                                            : name === "head_conformance_disposition"
+                                                              ? await (
+                                                                  await import("./lib/conformance-reconciliation.mjs")
+                                                                ).recordConformanceDisposition({
                                                                   root: args.project_root,
-                                                                  authorizationId: args.authorization_id,
-                                                                }),
-                                                              )
-                                                            : name === "head_runtime_invocation_lease_status"
-                                                              ? (await import("./lib/runtime-invocation-lifecycle.mjs")).inspectRuntimeInvocationExecutionLease(
-                                                                  {
-                                                                    root: args.project_root,
-                                                                    authorizationId: args.authorization_id,
-                                                                  },
-                                                                )
-                                                              : name === "head_runtime_invocation_result"
-                                                                ? await runtimeResultFromMcp(args)
-                                                                : name === "head_onboarding_status"
-                                                                  ? await (await import("./lib/onboarding.mjs")).inspectOnboarding({ root: args.project_root })
-                                                                  : name === "head_feature_mapping_status"
+                                                                  findingId: args.finding_id,
+                                                                  disposition: args.disposition,
+                                                                  rationale: args.rationale,
+                                                                  deferUntil: args.defer_until ?? null,
+                                                                  resolutionId: args.resolution_id ?? null,
+                                                                  confirmUserDisposition: args.confirm_user_disposition,
+                                                                  actor: args.actor ?? "user",
+                                                                })
+                                                              : name === "head_conformance_trigger_status"
+                                                                ? conformanceTriggerRegistry
+                                                                  ? conformanceTriggerRegistry.inspect({
+                                                                      root: args.project_root,
+                                                                      sourceId: args.source_id,
+                                                                    })
+                                                                  : {
+                                                                      status: "optional-host-adapter-unavailable",
+                                                                      ordinaryWorkBlocked: false,
+                                                                      authority: "P5-capability-disclosure-only",
+                                                                    }
+                                                                : name === "head_conformance_trigger_prepare"
+                                                                  ? conformanceTriggerRegistry
+                                                                    ? conformanceTriggerRegistry.prepare({
+                                                                        root: args.project_root,
+                                                                        sourceId: args.source_id,
+                                                                        limit: args.limit ?? 64,
+                                                                      })
+                                                                    : {
+                                                                        status: "optional-host-adapter-unavailable",
+                                                                        ordinaryWorkBlocked: false,
+                                                                        authority: "P5-capability-disclosure-only",
+                                                                      }
+                                                                  : name === "head_source_context"
                                                                     ? await (
-                                                                        await import("./lib/feature-mapping.mjs")
-                                                                      ).inspectFeatureMapping({ root: args.project_root })
-                                                                    : name === "head_conformance_prepare"
-                                                                      ? await (
-                                                                          await import("./lib/conformance-reconciliation.mjs")
-                                                                        ).prepareConformanceAssessment({
+                                                                        await import("./lib/source-context-workflow.mjs")
+                                                                      ).prepareSourceContext({
+                                                                        root: args.project_root,
+                                                                        task: args.task,
+                                                                        needs: args.needs ?? [],
+                                                                        retain: args.retain ?? false,
+                                                                        budget: args.budget,
+                                                                        timeoutMs: args.timeout_ms ?? 15_000,
+                                                                        signal,
+                                                                        onProcess,
+                                                                      })
+                                                                    : name === "head_source_observation_read"
+                                                                      ? (await import("./lib/source-context-workflow.mjs")).inspectSourceObservation({
                                                                           root: args.project_root,
-                                                                          limit: args.limit ?? 32,
-                                                                          projectionId: args.projection_id || "",
-                                                                          cursor: args.cursor || "",
+                                                                          bundleKey: args.bundle_key,
+                                                                          failureKey: args.failure_key,
                                                                         })
-                                                                      : name === "head_conformance_propose"
+                                                                      : name === "head_context_prepare"
                                                                         ? await (
-                                                                            await import("./lib/conformance-reconciliation.mjs")
-                                                                          ).proposeConformanceFindings({
+                                                                            await import("./lib/context-workflow.mjs")
+                                                                          ).prepareContextWorkflow({
                                                                             root: args.project_root,
-                                                                            baseline: conformanceBaselineFromMcp(args.baseline),
-                                                                            findings: args.findings.map(conformanceFindingFromMcp),
+                                                                            task: args.task,
+                                                                            budget: args.budget ?? DEFAULT_CONTEXT_BUDGET,
                                                                           })
-                                                                        : name === "head_conformance_queue"
+                                                                        : name === "head_context_preview"
                                                                           ? await (
-                                                                              await import("./lib/conformance-reconciliation.mjs")
-                                                                            ).inspectConformanceQueue({
+                                                                              await import("./lib/context-workflow.mjs")
+                                                                            ).previewContextWorkflow({
                                                                               root: args.project_root,
-                                                                              status: args.status || "all",
-                                                                              riskHint: args.risk_hint || "",
-                                                                              limit: args.limit ?? 25,
-                                                                              projectionId: args.projection_id || "",
-                                                                              cursor: args.cursor || "",
-                                                                              canonAnchor:
-                                                                                args.canon_anchor == null
-                                                                                  ? null
-                                                                                  : {
-                                                                                      entityKind: args.canon_anchor.entity_kind,
-                                                                                      entityKey: args.canon_anchor.entity_key,
-                                                                                    },
+                                                                              task: args.task,
+                                                                              budget: args.budget ?? DEFAULT_CONTEXT_BUDGET,
+                                                                              evidenceNeeds: args.evidence_needs || [],
                                                                             })
-                                                                          : name === "head_conformance_read"
-                                                                            ? (await import("./lib/conformance-reconciliation.mjs")).readConformanceFinding({
+                                                                          : name === "head_session_work_record"
+                                                                            ? await (
+                                                                                await import("./lib/session-work-document-workflow.mjs")
+                                                                              ).recordSessionWorkAndProjectDocuments({
                                                                                 root: args.project_root,
-                                                                                findingId: args.finding_id,
+                                                                                input: args.evidence,
+                                                                                documentSelection: args.document_selection,
                                                                               })
-                                                                            : name === "head_conformance_disposition"
-                                                                              ? await (
-                                                                                  await import("./lib/conformance-reconciliation.mjs")
-                                                                                ).recordConformanceDisposition({
-                                                                                  root: args.project_root,
-                                                                                  findingId: args.finding_id,
-                                                                                  disposition: args.disposition,
-                                                                                  rationale: args.rationale,
-                                                                                  deferUntil: args.defer_until ?? null,
-                                                                                  resolutionId: args.resolution_id ?? null,
-                                                                                  confirmUserDisposition: args.confirm_user_disposition,
-                                                                                  actor: args.actor ?? "user",
-                                                                                })
-                                                                              : name === "head_conformance_resolution_propose"
-                                                                                ? await (
-                                                                                    await import("./lib/conformance-reconciliation.mjs")
-                                                                                  ).proposeConformanceResolution({
+                                                                            : name.startsWith("head_work_document_") ||
+                                                                                name.startsWith("head_project_document_")
+                                                                              ? await workDocumentFromMcp(name, args)
+                                                                              : name === "head_session_work_read"
+                                                                                ? (await import("./lib/session-work-context.mjs")).readSessionWorkContext({
                                                                                     root: args.project_root,
-                                                                                    findingId: args.finding_id,
-                                                                                    baseline: conformanceBaselineFromMcp(args.baseline),
-                                                                                    evidenceAnchors:
-                                                                                      args.evidence_anchors.map(conformanceEvidenceAnchorFromMcp),
-                                                                                    assessment: args.assessment,
-                                                                                    rationale: args.rationale,
+                                                                                    evidenceIds: args.evidence_ids ?? null,
+                                                                                    afterEvidenceId: args.after_evidence_id ?? null,
+                                                                                    scanEvidence: args.scan_evidence ?? false,
+                                                                                    maxRecords: args.max_records ?? 8,
+                                                                                    maxCharacters: args.max_characters ?? 32768,
+                                                                                    todoId: args.todo_id ?? null,
+                                                                                    afterTodoId: args.after_todo_id ?? null,
+                                                                                    scanTodos: args.scan_todos ?? false,
                                                                                   })
-                                                                                : name === "head_conformance_trigger_status"
-                                                                                  ? conformanceTriggerRegistry
-                                                                                    ? conformanceTriggerRegistry.inspect({
-                                                                                        root: args.project_root,
-                                                                                        sourceId: args.source_id,
-                                                                                      })
-                                                                                    : {
-                                                                                        status: "optional-host-adapter-unavailable",
-                                                                                        ordinaryWorkBlocked: false,
-                                                                                        authority: "P5-capability-disclosure-only",
-                                                                                      }
-                                                                                  : name === "head_conformance_trigger_prepare"
-                                                                                    ? conformanceTriggerRegistry
-                                                                                      ? conformanceTriggerRegistry.prepare({
-                                                                                          root: args.project_root,
-                                                                                          sourceId: args.source_id,
-                                                                                          limit: args.limit ?? 64,
-                                                                                        })
-                                                                                      : {
-                                                                                          status: "optional-host-adapter-unavailable",
-                                                                                          ordinaryWorkBlocked: false,
-                                                                                          authority: "P5-capability-disclosure-only",
-                                                                                        }
-                                                                                    : name === "head_source_context"
-                                                                                      ? await (
-                                                                                          await import("./lib/source-context-workflow.mjs")
-                                                                                        ).prepareSourceContext({
-                                                                                          root: args.project_root,
-                                                                                          task: args.task,
-                                                                                          needs: args.needs ?? [],
-                                                                                          retain: args.retain ?? false,
-                                                                                          budget: args.budget,
-                                                                                          timeoutMs: args.timeout_ms ?? 15_000,
-                                                                                          signal,
-                                                                                          onProcess,
-                                                                                        })
-                                                                                      : name === "head_source_observation_read"
-                                                                                        ? (
-                                                                                            await import("./lib/source-context-workflow.mjs")
-                                                                                          ).inspectSourceObservation({
-                                                                                            root: args.project_root,
-                                                                                            bundleKey: args.bundle_key,
-                                                                                            failureKey: args.failure_key,
-                                                                                          })
-                                                                                        : name === "head_context_prepare"
-                                                                                          ? await (
-                                                                                              await import("./lib/context-workflow.mjs")
-                                                                                            ).prepareContextWorkflow({
+                                                                                : name === "head_session_restore"
+                                                                                  ? (await import("./lib/session-recovery.mjs")).restoreSessionFromArtifacts({
+                                                                                      root: args.project_root,
+                                                                                      checkpointId: args.checkpoint_id || null,
+                                                                                    })
+                                                                                  : name === "head_session_continue"
+                                                                                    ? await continueSessionFromMcp(args, coordinationWorkspaceHost)
+                                                                                    : name === "head_worker_integration"
+                                                                                      ? await workerIntegrationFromMcp(args, onProcess)
+                                                                                      : name === "head_worker_integration_status"
+                                                                                        ? await workerIntegrationFromMcp(args, onProcess, true)
+                                                                                        : name === "head_run_integrate_checkpoint"
+                                                                                          ? (
+                                                                                              await import("./lib/session-recovery.mjs")
+                                                                                            ).integrateReviewedRunCheckpoint({
                                                                                               root: args.project_root,
-                                                                                              task: args.task,
-                                                                                              budget: args.budget ?? DEFAULT_CONTEXT_BUDGET,
+                                                                                              runId: args.run_id,
+                                                                                              reviewDecisionId: args.review_decision_id,
+                                                                                              purpose: args.purpose,
+                                                                                              approvedDecisions: args.approved_decisions,
+                                                                                              currentPosition: args.current_position,
+                                                                                              nextExpectedResult: args.next_expected_result,
+                                                                                              openReviewIds: args.open_review_ids || [],
                                                                                             })
-                                                                                          : name === "head_context_preview"
+                                                                                          : name === "head_world_model"
                                                                                             ? await (
-                                                                                                await import("./lib/context-workflow.mjs")
-                                                                                              ).previewContextWorkflow({
+                                                                                                await import("./lib/world-model.mjs")
+                                                                                              ).inspectWorldModelStatus({
                                                                                                 root: args.project_root,
-                                                                                                task: args.task,
-                                                                                                budget: args.budget ?? DEFAULT_CONTEXT_BUDGET,
-                                                                                                evidenceNeeds: args.evidence_needs || [],
                                                                                               })
-                                                                                            : name === "head_session_work_record"
+                                                                                            : name === "head_graph_projection_status"
                                                                                               ? await (
-                                                                                                  await import("./lib/session-work-document-workflow.mjs")
-                                                                                                ).recordSessionWorkAndProjectDocuments({
+                                                                                                  await import("./lib/world-model.mjs")
+                                                                                                ).inspectWorldGraphProjection({
                                                                                                   root: args.project_root,
-                                                                                                  input: args.evidence,
-                                                                                                  documentSelection: args.document_selection,
                                                                                                 })
-                                                                                              : name.startsWith("head_work_document_") ||
-                                                                                                  name.startsWith("head_project_document_")
-                                                                                                ? await workDocumentFromMcp(name, args)
-                                                                                                : name === "head_session_work_read"
+                                                                                              : name === "head_graphdb_projection_status"
+                                                                                                ? await (
+                                                                                                    await import("./lib/graphdb-projection-activation.mjs")
+                                                                                                  ).inspectArcadeDbGraphProjectionStatus({
+                                                                                                    root: args.project_root,
+                                                                                                    transport: graphDbTransport,
+                                                                                                  })
+                                                                                                : name === "head_graphdb_database_status"
                                                                                                   ? (
-                                                                                                      await import("./lib/session-work-context.mjs")
-                                                                                                    ).readSessionWorkContext({
+                                                                                                      await import("./lib/arcadedb-database-lifecycle.mjs")
+                                                                                                    ).inspectArcadeDbDatabaseCompatibility({
                                                                                                       root: args.project_root,
-                                                                                                      evidenceIds: args.evidence_ids ?? null,
-                                                                                                      afterEvidenceId: args.after_evidence_id ?? null,
-                                                                                                      scanEvidence: args.scan_evidence ?? false,
-                                                                                                      maxRecords: args.max_records ?? 8,
-                                                                                                      maxCharacters: args.max_characters ?? 32768,
-                                                                                                      todoId: args.todo_id ?? null,
-                                                                                                      afterTodoId: args.after_todo_id ?? null,
-                                                                                                      scanTodos: args.scan_todos ?? false,
+                                                                                                      transport: graphDbTransport,
+                                                                                                      storage: resolveProjectStorage(args.project_root),
                                                                                                     })
-                                                                                                  : name === "head_session_restore"
+                                                                                                  : name === "head_graphdb_connection_preflight"
                                                                                                     ? (
-                                                                                                        await import("./lib/session-recovery.mjs")
-                                                                                                      ).restoreSessionFromArtifacts({
+                                                                                                        await import("./lib/graphdb-projection-activation.mjs")
+                                                                                                      ).inspectArcadeDbCredentialPreflight({
                                                                                                         root: args.project_root,
-                                                                                                        checkpointId: args.checkpoint_id || null,
+                                                                                                        transport: graphDbTransport,
+                                                                                                        storage: resolveProjectStorage(args.project_root),
                                                                                                       })
-                                                                                                    : name === "head_session_continue"
-                                                                                                      ? await continueSessionFromMcp(
-                                                                                                          args,
-                                                                                                          coordinationWorkspaceHost,
-                                                                                                        )
-                                                                                                      : name === "head_worker_integration"
-                                                                                                        ? await workerIntegrationFromMcp(args, onProcess)
-                                                                                                        : name === "head_worker_integration_status"
-                                                                                                          ? await workerIntegrationFromMcp(
-                                                                                                              args,
-                                                                                                              onProcess,
-                                                                                                              true,
-                                                                                                            )
-                                                                                                          : name === "head_bounded_worker_prepare"
-                                                                                                            ? await (
-                                                                                                                await import("./lib/local-worker-host.mjs")
-                                                                                                              ).prepareLocalBoundedWorker(
-                                                                                                                localWorkerInput(args),
-                                                                                                                {
-                                                                                                                  root: args.project_root,
-                                                                                                                  supervisorSelection: workerJobSupervisor,
-                                                                                                                  protocolFixtureBackend:
-                                                                                                                    workerPreparationBackend,
-                                                                                                                  signal,
-                                                                                                                  onProcess,
-                                                                                                                },
-                                                                                                              )
-                                                                                                            : name === "head_bounded_worker_start"
+                                                                                                    : name === "head_graphdb_database_initialize"
+                                                                                                      ? await initializeGraphDbFromMcp(args, graphDbTransport)
+                                                                                                      : name === "head_graphdb_projection_activate"
+                                                                                                        ? await activateGraphDbFromMcp(args, graphDbTransport)
+                                                                                                        : name === "head_markdown_projection_status"
+                                                                                                          ? await (
+                                                                                                              await import("./lib/world-model.mjs")
+                                                                                                            ).inspectWorldMarkdownProjection({
+                                                                                                              root: args.project_root,
+                                                                                                            })
+                                                                                                          : name === "head_document_change_candidates"
+                                                                                                            ? (
+                                                                                                                await import("./lib/world-model.mjs")
+                                                                                                              ).readWorldDocumentChangeCandidateSet({
+                                                                                                                root: args.project_root,
+                                                                                                                candidateSetId: args.candidate_set_id,
+                                                                                                              })
+                                                                                                            : name === "head_document_change_review_status"
                                                                                                               ? await (
-                                                                                                                  await import("./lib/local-worker-host.mjs")
-                                                                                                                ).startLocalBoundedWorker(
-                                                                                                                  {
+                                                                                                                  await import("./lib/document-change-review.mjs")
+                                                                                                                ).inspectDocumentChangeReviewStatus({
+                                                                                                                  root: args.project_root,
+                                                                                                                  candidateSetId: args.candidate_set_id,
+                                                                                                                })
+                                                                                                              : name === "head_document_change_review"
+                                                                                                                ? (
+                                                                                                                    await import("./lib/document-change-review.mjs")
+                                                                                                                  ).readDocumentChangeReviewDecision({
                                                                                                                     root: args.project_root,
-                                                                                                                    ...localWorkerInput(args, true),
-                                                                                                                  },
-                                                                                                                  {
-                                                                                                                    host: workerJobHost,
-                                                                                                                    supervisorSelection: workerJobSupervisor,
-                                                                                                                    onProcess,
-                                                                                                                  },
-                                                                                                                )
-                                                                                                              : name === "head_bounded_worker_status"
-                                                                                                                ? await preparedRuntimeRead(
-                                                                                                                    args.project_root,
-                                                                                                                    (
-                                                                                                                      await import("./lib/bounded-worker-dispatch.mjs")
-                                                                                                                    ).readBoundedWorkerDispatch({
-                                                                                                                      root: args.project_root,
-                                                                                                                      authorizationId: args.authorization_id,
-                                                                                                                    }),
-                                                                                                                  )
-                                                                                                                : name === "head_run_integrate_checkpoint"
+                                                                                                                    reviewDecisionId: args.review_decision_id,
+                                                                                                                  })
+                                                                                                                : name === "head_document_change_application"
                                                                                                                   ? (
-                                                                                                                      await import("./lib/session-recovery.mjs")
-                                                                                                                    ).integrateReviewedRunCheckpoint({
+                                                                                                                      await import("./lib/document-change-review.mjs")
+                                                                                                                    ).readDocumentChangeApplicationReceipt({
                                                                                                                       root: args.project_root,
-                                                                                                                      runId: args.run_id,
-                                                                                                                      reviewDecisionId: args.review_decision_id,
-                                                                                                                      purpose: args.purpose,
-                                                                                                                      approvedDecisions:
-                                                                                                                        args.approved_decisions,
-                                                                                                                      currentPosition: args.current_position,
-                                                                                                                      nextExpectedResult:
-                                                                                                                        args.next_expected_result,
-                                                                                                                      openReviewIds: args.open_review_ids || [],
+                                                                                                                      applicationReceiptId:
+                                                                                                                        args.application_receipt_id,
                                                                                                                     })
-                                                                                                                  : name === "head_world_model"
+                                                                                                                  : name === "head_world_query"
                                                                                                                     ? await (
                                                                                                                         await import("./lib/world-model.mjs")
-                                                                                                                      ).inspectWorldModelStatus({
+                                                                                                                      ).queryWorldModel({
                                                                                                                         root: args.project_root,
+                                                                                                                        query: args.query,
+                                                                                                                        depth: args.depth ?? 1,
+                                                                                                                        maxResults: args.limit ?? 100,
                                                                                                                       })
-                                                                                                                    : name === "head_graph_projection_status"
+                                                                                                                    : name === "head_git_history"
                                                                                                                       ? await (
                                                                                                                           await import("./lib/world-model.mjs")
-                                                                                                                        ).inspectWorldGraphProjection({
+                                                                                                                        ).queryWorldHistory({
                                                                                                                           root: args.project_root,
+                                                                                                                          query: args.query || "",
+                                                                                                                          limit: args.limit ?? 50,
                                                                                                                         })
-                                                                                                                      : name ===
-                                                                                                                          "head_graphdb_projection_status"
+                                                                                                                      : name === "head_temporal_graph"
                                                                                                                         ? await (
-                                                                                                                            await import("./lib/graphdb-projection-activation.mjs")
-                                                                                                                          ).inspectArcadeDbGraphProjectionStatus(
-                                                                                                                            {
+                                                                                                                            await import("./lib/world-model.mjs")
+                                                                                                                          ).queryWorldTemporalGraph({
+                                                                                                                            root: args.project_root,
+                                                                                                                            query: args.query,
+                                                                                                                            anchorIds:
+                                                                                                                              args.exact_anchor_ids || null,
+                                                                                                                            expectedGraphSnapshotId:
+                                                                                                                              args.expected_graph_snapshot_id ||
+                                                                                                                              null,
+                                                                                                                            kinds: args.kinds || null,
+                                                                                                                            relations:
+                                                                                                                              args.relation_types || null,
+                                                                                                                            includeUnreviewedCandidates:
+                                                                                                                              args.include_unreviewed_candidates ??
+                                                                                                                              false,
+                                                                                                                            minConfidence:
+                                                                                                                              args.min_confidence ?? 0,
+                                                                                                                            depth: args.depth ?? 1,
+                                                                                                                            maxNodes: args.node_limit ?? 100,
+                                                                                                                            maxEdges: args.edge_limit ?? 200,
+                                                                                                                          })
+                                                                                                                        : name === "head_runtime_state"
+                                                                                                                          ? await (
+                                                                                                                              await import("./lib/world-model.mjs")
+                                                                                                                            ).queryWorldRuntimeState({
                                                                                                                               root: args.project_root,
-                                                                                                                              transport: graphDbTransport,
-                                                                                                                            },
-                                                                                                                          )
-                                                                                                                        : name ===
-                                                                                                                            "head_graphdb_database_status"
-                                                                                                                          ? (
-                                                                                                                              await import("./lib/arcadedb-database-lifecycle.mjs")
-                                                                                                                            ).inspectArcadeDbDatabaseCompatibility(
-                                                                                                                              {
+                                                                                                                              query: args.query || "",
+                                                                                                                              runtime: args.runtime || "",
+                                                                                                                              state: args.state || "",
+                                                                                                                              kind: args.kind || "",
+                                                                                                                              limit: args.limit ?? 50,
+                                                                                                                            })
+                                                                                                                          : name === "head_conversation_enter"
+                                                                                                                            ? await (
+                                                                                                                                await import("./lib/compaction-lifecycle.mjs")
+                                                                                                                              ).enterConversationRecovery({
                                                                                                                                 root: args.project_root,
-                                                                                                                                transport: graphDbTransport,
-                                                                                                                                storage: resolveProjectStorage(
-                                                                                                                                  args.project_root,
-                                                                                                                                ),
-                                                                                                                              },
-                                                                                                                            )
-                                                                                                                          : name ===
-                                                                                                                              "head_graphdb_connection_preflight"
-                                                                                                                            ? (
-                                                                                                                                await import("./lib/graphdb-projection-activation.mjs")
-                                                                                                                              ).inspectArcadeDbCredentialPreflight(
-                                                                                                                                {
-                                                                                                                                  root: args.project_root,
-                                                                                                                                  transport: graphDbTransport,
-                                                                                                                                  storage:
-                                                                                                                                    resolveProjectStorage(
-                                                                                                                                      args.project_root,
-                                                                                                                                    ),
-                                                                                                                                },
-                                                                                                                              )
+                                                                                                                                readRelatedNativeContext,
+                                                                                                                              })
                                                                                                                             : name ===
-                                                                                                                                "head_graphdb_database_initialize"
-                                                                                                                              ? await initializeGraphDbFromMcp(
-                                                                                                                                  args,
-                                                                                                                                  graphDbTransport,
-                                                                                                                                )
-                                                                                                                              : name ===
-                                                                                                                                  "head_graphdb_projection_activate"
-                                                                                                                                ? await activateGraphDbFromMcp(
-                                                                                                                                    args,
-                                                                                                                                    graphDbTransport,
-                                                                                                                                  )
-                                                                                                                                : name ===
-                                                                                                                                    "head_markdown_projection_status"
-                                                                                                                                  ? await (
-                                                                                                                                      await import("./lib/world-model.mjs")
-                                                                                                                                    ).inspectWorldMarkdownProjection(
-                                                                                                                                      {
-                                                                                                                                        root: args.project_root,
-                                                                                                                                      },
-                                                                                                                                    )
-                                                                                                                                  : name ===
-                                                                                                                                      "head_document_change_candidates"
-                                                                                                                                    ? (
-                                                                                                                                        await import("./lib/world-model.mjs")
-                                                                                                                                      ).readWorldDocumentChangeCandidateSet(
-                                                                                                                                        {
-                                                                                                                                          root: args.project_root,
-                                                                                                                                          candidateSetId:
-                                                                                                                                            args.candidate_set_id,
+                                                                                                                                "head_compaction_lifecycle_step"
+                                                                                                                              ? await (
+                                                                                                                                  await import("./lib/compaction-lifecycle.mjs")
+                                                                                                                                ).processCompactionLifecycle({
+                                                                                                                                  root: args.project_root,
+                                                                                                                                  hostAdapter:
+                                                                                                                                    compactionLifecycleHost,
+                                                                                                                                  direction:
+                                                                                                                                    args.direction == null
+                                                                                                                                      ? null
+                                                                                                                                      : {
+                                                                                                                                          purpose:
+                                                                                                                                            args.direction
+                                                                                                                                              .purpose,
+                                                                                                                                          approvedDecisions:
+                                                                                                                                            args.direction
+                                                                                                                                              .approved_decisions,
+                                                                                                                                          currentPosition:
+                                                                                                                                            args.direction
+                                                                                                                                              .current_position,
+                                                                                                                                          nextExpectedResult:
+                                                                                                                                            args.direction
+                                                                                                                                              .next_expected_result,
+                                                                                                                                          openReviewIds:
+                                                                                                                                            args.direction
+                                                                                                                                              .open_review_ids,
                                                                                                                                         },
-                                                                                                                                      )
+                                                                                                                                })
+                                                                                                                              : name ===
+                                                                                                                                  "head_product_signal_record"
+                                                                                                                                ? await (
+                                                                                                                                    await import("./lib/product-operating-loop.mjs")
+                                                                                                                                  ).recordProductSignal({
+                                                                                                                                    root: args.project_root,
+                                                                                                                                    statement: args.statement,
+                                                                                                                                    observedAt:
+                                                                                                                                      args.observed_at,
+                                                                                                                                    source: args.source || "",
+                                                                                                                                    evidenceIds:
+                                                                                                                                      args.evidence_ids || [],
+                                                                                                                                  })
+                                                                                                                                : name ===
+                                                                                                                                    "head_product_hypothesis_record"
+                                                                                                                                  ? await (
+                                                                                                                                      await import("./lib/product-operating-loop.mjs")
+                                                                                                                                    ).recordProductHypothesis({
+                                                                                                                                      root: args.project_root,
+                                                                                                                                      statement: args.statement,
+                                                                                                                                      rationale:
+                                                                                                                                        args.rationale || "",
+                                                                                                                                      signalIds:
+                                                                                                                                        args.signal_ids || [],
+                                                                                                                                      observationIds:
+                                                                                                                                        args.observation_ids ||
+                                                                                                                                        [],
+                                                                                                                                    })
+                                                                                                                                  : name ===
+                                                                                                                                      "head_product_outcome_observe"
+                                                                                                                                    ? await (
+                                                                                                                                        await import("./lib/product-operating-loop.mjs")
+                                                                                                                                      ).observeProductOutcome({
+                                                                                                                                        root: args.project_root,
+                                                                                                                                        changeSetId:
+                                                                                                                                          args.change_set_id,
+                                                                                                                                        initiativeId:
+                                                                                                                                          args.initiative_id ||
+                                                                                                                                          "",
+                                                                                                                                        statement:
+                                                                                                                                          args.statement,
+                                                                                                                                        epistemicClass:
+                                                                                                                                          args.epistemic_class ||
+                                                                                                                                          "observed-fact",
+                                                                                                                                        evidenceIds:
+                                                                                                                                          args.evidence_ids ||
+                                                                                                                                          [],
+                                                                                                                                      })
                                                                                                                                     : name ===
-                                                                                                                                        "head_document_change_review_status"
-                                                                                                                                      ? await (
-                                                                                                                                          await import("./lib/document-change-review.mjs")
-                                                                                                                                        ).inspectDocumentChangeReviewStatus(
+                                                                                                                                        "head_product_operating_status"
+                                                                                                                                      ? (
+                                                                                                                                          await import("./lib/product-operating-loop.mjs")
+                                                                                                                                        ).inspectProductOperatingLoop(
                                                                                                                                           {
                                                                                                                                             root: args.project_root,
-                                                                                                                                            candidateSetId:
-                                                                                                                                              args.candidate_set_id,
+                                                                                                                                            fresh:
+                                                                                                                                              args.fresh ??
+                                                                                                                                              false,
                                                                                                                                           },
                                                                                                                                         )
                                                                                                                                       : name ===
-                                                                                                                                          "head_document_change_review"
+                                                                                                                                          "head_observation_prepare"
                                                                                                                                         ? (
-                                                                                                                                            await import("./lib/document-change-review.mjs")
-                                                                                                                                          ).readDocumentChangeReviewDecision(
+                                                                                                                                            await import("./lib/observation-workflow.mjs")
+                                                                                                                                          ).prepareObservationEvidence(
                                                                                                                                             {
                                                                                                                                               root: args.project_root,
-                                                                                                                                              reviewDecisionId:
-                                                                                                                                                args.review_decision_id,
+                                                                                                                                              registry:
+                                                                                                                                                observationRegistry,
+                                                                                                                                              typeKey:
+                                                                                                                                                args.type_key,
+                                                                                                                                              subjectType:
+                                                                                                                                                args.subject_type ||
+                                                                                                                                                "",
+                                                                                                                                              subjectKey:
+                                                                                                                                                args.subject_key ||
+                                                                                                                                                "",
+                                                                                                                                              adapterKey:
+                                                                                                                                                args.adapter_key ||
+                                                                                                                                                "",
+                                                                                                                                              observedAfter:
+                                                                                                                                                args.observed_after ||
+                                                                                                                                                "",
+                                                                                                                                              observedBefore:
+                                                                                                                                                args.observed_before ||
+                                                                                                                                                "",
+                                                                                                                                              existingLimit:
+                                                                                                                                                args.existing_limit ??
+                                                                                                                                                20,
+                                                                                                                                              sourceLimit:
+                                                                                                                                                args.source_limit ??
+                                                                                                                                                20,
+                                                                                                                                              sourceAvailability:
+                                                                                                                                                args.source_availability ||
+                                                                                                                                                "",
+                                                                                                                                              sourceProjectionId:
+                                                                                                                                                args.source_projection_id ||
+                                                                                                                                                "",
+                                                                                                                                              sourceCursor:
+                                                                                                                                                args.source_cursor ||
+                                                                                                                                                "",
                                                                                                                                             },
                                                                                                                                           )
                                                                                                                                         : name ===
-                                                                                                                                            "head_document_change_application"
-                                                                                                                                          ? (
-                                                                                                                                              await import("./lib/document-change-review.mjs")
-                                                                                                                                            ).readDocumentChangeApplicationReceipt(
+                                                                                                                                            "head_observation_collect_source"
+                                                                                                                                          ? await (
+                                                                                                                                              await import("./lib/observation-adapter.mjs")
+                                                                                                                                            ).collectRegisteredObservation(
                                                                                                                                               {
                                                                                                                                                 root: args.project_root,
-                                                                                                                                                applicationReceiptId:
-                                                                                                                                                  args.application_receipt_id,
+                                                                                                                                                registry:
+                                                                                                                                                  observationRegistry,
+                                                                                                                                                sourceId:
+                                                                                                                                                  args.source_id,
                                                                                                                                               },
                                                                                                                                             )
                                                                                                                                           : name ===
-                                                                                                                                              "head_world_query"
+                                                                                                                                              "head_continuity_snapshot"
                                                                                                                                             ? await (
-                                                                                                                                                await import("./lib/world-model.mjs")
-                                                                                                                                              ).queryWorldModel(
+                                                                                                                                                await import("./lib/product-operating-loop.mjs")
+                                                                                                                                              ).buildHeadContinuitySnapshot(
                                                                                                                                                 {
                                                                                                                                                   root: args.project_root,
-                                                                                                                                                  query:
-                                                                                                                                                    args.query,
-                                                                                                                                                  depth:
-                                                                                                                                                    args.depth ??
-                                                                                                                                                    1,
-                                                                                                                                                  maxResults:
-                                                                                                                                                    args.limit ??
-                                                                                                                                                    100,
+                                                                                                                                                  fresh:
+                                                                                                                                                    args.fresh ??
+                                                                                                                                                    false,
                                                                                                                                                 },
                                                                                                                                               )
                                                                                                                                             : name ===
-                                                                                                                                                "head_git_history"
+                                                                                                                                                "head_conversation_list"
                                                                                                                                               ? await (
-                                                                                                                                                  await import("./lib/world-model.mjs")
-                                                                                                                                                ).queryWorldHistory(
+                                                                                                                                                  await import("./lib/conversation-messaging.mjs")
+                                                                                                                                                ).listProjectConversations(
                                                                                                                                                   {
                                                                                                                                                     root: args.project_root,
-                                                                                                                                                    query:
-                                                                                                                                                      args.query ||
-                                                                                                                                                      "",
-                                                                                                                                                    limit:
-                                                                                                                                                      args.limit ??
-                                                                                                                                                      50,
+                                                                                                                                                    caller,
+                                                                                                                                                    environment:
+                                                                                                                                                      hostEnvironment,
+                                                                                                                                                    hostTicket:
+                                                                                                                                                      args.host_ticket ??
+                                                                                                                                                      null,
                                                                                                                                                   },
                                                                                                                                                 )
                                                                                                                                               : name ===
-                                                                                                                                                  "head_temporal_graph"
+                                                                                                                                                  "head_conversation_send"
                                                                                                                                                 ? await (
-                                                                                                                                                    await import("./lib/world-model.mjs")
-                                                                                                                                                  ).queryWorldTemporalGraph(
+                                                                                                                                                    await import("./lib/conversation-messaging.mjs")
+                                                                                                                                                  ).sendProjectConversation(
                                                                                                                                                     {
                                                                                                                                                       root: args.project_root,
-                                                                                                                                                      query:
-                                                                                                                                                        args.query,
-                                                                                                                                                      anchorIds:
-                                                                                                                                                        args.exact_anchor_ids ||
+                                                                                                                                                      caller,
+                                                                                                                                                      environment:
+                                                                                                                                                        hostEnvironment,
+                                                                                                                                                      to: args.to,
+                                                                                                                                                      body: args.body,
+                                                                                                                                                      replyTo:
+                                                                                                                                                        args.reply_to ??
                                                                                                                                                         null,
-                                                                                                                                                      expectedGraphSnapshotId:
-                                                                                                                                                        args.expected_graph_snapshot_id ||
+                                                                                                                                                      hostTicket:
+                                                                                                                                                        args.host_ticket ??
                                                                                                                                                         null,
-                                                                                                                                                      kinds:
-                                                                                                                                                        args.kinds ||
-                                                                                                                                                        null,
-                                                                                                                                                      relations:
-                                                                                                                                                        args.relation_types ||
-                                                                                                                                                        null,
-                                                                                                                                                      includeUnreviewedCandidates:
-                                                                                                                                                        args.include_unreviewed_candidates ??
-                                                                                                                                                        false,
-                                                                                                                                                      minConfidence:
-                                                                                                                                                        args.min_confidence ??
-                                                                                                                                                        0,
-                                                                                                                                                      depth:
-                                                                                                                                                        args.depth ??
-                                                                                                                                                        1,
-                                                                                                                                                      maxNodes:
-                                                                                                                                                        args.node_limit ??
-                                                                                                                                                        100,
-                                                                                                                                                      maxEdges:
-                                                                                                                                                        args.edge_limit ??
-                                                                                                                                                        200,
+                                                                                                                                                      waitMs:
+                                                                                                                                                        Number(
+                                                                                                                                                          hostEnvironment?.LODE_CONVERSATION_DELIVERY_WAIT_MS ||
+                                                                                                                                                            0,
+                                                                                                                                                        ),
+                                                                                                                                                      signal,
                                                                                                                                                     },
                                                                                                                                                   )
-                                                                                                                                                : name ===
-                                                                                                                                                    "head_runtime_state"
-                                                                                                                                                  ? await (
-                                                                                                                                                      await import("./lib/world-model.mjs")
-                                                                                                                                                    ).queryWorldRuntimeState(
-                                                                                                                                                      {
-                                                                                                                                                        root: args.project_root,
-                                                                                                                                                        query:
-                                                                                                                                                          args.query ||
-                                                                                                                                                          "",
-                                                                                                                                                        runtime:
-                                                                                                                                                          args.runtime ||
-                                                                                                                                                          "",
-                                                                                                                                                        state:
-                                                                                                                                                          args.state ||
-                                                                                                                                                          "",
-                                                                                                                                                        kind:
-                                                                                                                                                          args.kind ||
-                                                                                                                                                          "",
-                                                                                                                                                        limit:
-                                                                                                                                                          args.limit ??
-                                                                                                                                                          50,
-                                                                                                                                                      },
-                                                                                                                                                    )
-                                                                                                                                                  : name ===
-                                                                                                                                                      "head_conversation_enter"
-                                                                                                                                                    ? await (
-                                                                                                                                                        await import("./lib/compaction-lifecycle.mjs")
-                                                                                                                                                      ).enterConversationRecovery(
-                                                                                                                                                        {
-                                                                                                                                                          root: args.project_root,
-                                                                                                                                                          readRelatedNativeContext,
-                                                                                                                                                        },
-                                                                                                                                                      )
-                                                                                                                                                    : name ===
-                                                                                                                                                        "head_compaction_lifecycle_step"
-                                                                                                                                                      ? await (
-                                                                                                                                                          await import("./lib/compaction-lifecycle.mjs")
-                                                                                                                                                        ).processCompactionLifecycle(
-                                                                                                                                                          {
-                                                                                                                                                            root: args.project_root,
-                                                                                                                                                            hostAdapter:
-                                                                                                                                                              compactionLifecycleHost,
-                                                                                                                                                            direction:
-                                                                                                                                                              args.direction ==
-                                                                                                                                                              null
-                                                                                                                                                                ? null
-                                                                                                                                                                : {
-                                                                                                                                                                    purpose:
-                                                                                                                                                                      args
-                                                                                                                                                                        .direction
-                                                                                                                                                                        .purpose,
-                                                                                                                                                                    approvedDecisions:
-                                                                                                                                                                      args
-                                                                                                                                                                        .direction
-                                                                                                                                                                        .approved_decisions,
-                                                                                                                                                                    currentPosition:
-                                                                                                                                                                      args
-                                                                                                                                                                        .direction
-                                                                                                                                                                        .current_position,
-                                                                                                                                                                    nextExpectedResult:
-                                                                                                                                                                      args
-                                                                                                                                                                        .direction
-                                                                                                                                                                        .next_expected_result,
-                                                                                                                                                                    openReviewIds:
-                                                                                                                                                                      args
-                                                                                                                                                                        .direction
-                                                                                                                                                                        .open_review_ids,
-                                                                                                                                                                  },
-                                                                                                                                                          },
-                                                                                                                                                        )
-                                                                                                                                                      : name ===
-                                                                                                                                                          "head_product_signal_record"
-                                                                                                                                                        ? await (
-                                                                                                                                                            await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                          ).recordProductSignal(
-                                                                                                                                                            {
-                                                                                                                                                              root: args.project_root,
-                                                                                                                                                              statement:
-                                                                                                                                                                args.statement,
-                                                                                                                                                              observedAt:
-                                                                                                                                                                args.observed_at,
-                                                                                                                                                              source:
-                                                                                                                                                                args.source ||
-                                                                                                                                                                "",
-                                                                                                                                                              evidenceIds:
-                                                                                                                                                                args.evidence_ids ||
-                                                                                                                                                                [],
-                                                                                                                                                            },
-                                                                                                                                                          )
-                                                                                                                                                        : name ===
-                                                                                                                                                            "head_product_hypothesis_record"
-                                                                                                                                                          ? await (
-                                                                                                                                                              await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                            ).recordProductHypothesis(
-                                                                                                                                                              {
-                                                                                                                                                                root: args.project_root,
-                                                                                                                                                                statement:
-                                                                                                                                                                  args.statement,
-                                                                                                                                                                rationale:
-                                                                                                                                                                  args.rationale ||
-                                                                                                                                                                  "",
-                                                                                                                                                                signalIds:
-                                                                                                                                                                  args.signal_ids ||
-                                                                                                                                                                  [],
-                                                                                                                                                                observationIds:
-                                                                                                                                                                  args.observation_ids ||
-                                                                                                                                                                  [],
-                                                                                                                                                              },
-                                                                                                                                                            )
-                                                                                                                                                          : name ===
-                                                                                                                                                              "head_product_initiative_propose"
-                                                                                                                                                            ? await (
-                                                                                                                                                                await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                              ).proposeProductInitiative(
-                                                                                                                                                                {
-                                                                                                                                                                  root: args.project_root,
-                                                                                                                                                                  title:
-                                                                                                                                                                    args.title,
-                                                                                                                                                                  description:
-                                                                                                                                                                    args.description ||
-                                                                                                                                                                    "",
-                                                                                                                                                                  reasoning:
-                                                                                                                                                                    args.reasoning ||
-                                                                                                                                                                    "",
-                                                                                                                                                                  hypothesisIds:
-                                                                                                                                                                    args.hypothesis_ids ||
-                                                                                                                                                                    [],
-                                                                                                                                                                  featureResolution:
-                                                                                                                                                                    args.feature_resolution ==
-                                                                                                                                                                    null
-                                                                                                                                                                      ? null
-                                                                                                                                                                      : productFeatureResolutionFromMcp(
-                                                                                                                                                                          args.feature_resolution,
-                                                                                                                                                                        ),
-                                                                                                                                                                },
-                                                                                                                                                              )
-                                                                                                                                                            : name ===
-                                                                                                                                                                "head_product_initiative_review"
-                                                                                                                                                              ? (requireMcpConfirmation(
-                                                                                                                                                                  args.confirm_user_review,
-                                                                                                                                                                  "Product Initiative review requires explicit user confirmation.",
-                                                                                                                                                                  "PRODUCT_INITIATIVE_REVIEW_CONFIRMATION_REQUIRED",
-                                                                                                                                                                ),
-                                                                                                                                                                await (
-                                                                                                                                                                  await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                                ).reviewProductInitiative(
-                                                                                                                                                                  {
-                                                                                                                                                                    root: args.project_root,
-                                                                                                                                                                    initiativeCandidateId:
-                                                                                                                                                                      args.initiative_candidate_id,
-                                                                                                                                                                    disposition:
-                                                                                                                                                                      args.disposition,
-                                                                                                                                                                    rationale:
-                                                                                                                                                                      args.rationale,
-                                                                                                                                                                    featureResolution:
-                                                                                                                                                                      args.feature_resolution ==
-                                                                                                                                                                      null
-                                                                                                                                                                        ? null
-                                                                                                                                                                        : productFeatureResolutionFromMcp(
-                                                                                                                                                                            args.feature_resolution,
-                                                                                                                                                                          ),
-                                                                                                                                                                  },
-                                                                                                                                                                ))
-                                                                                                                                                              : name ===
-                                                                                                                                                                  "head_product_outcome_observe"
-                                                                                                                                                                ? await (
-                                                                                                                                                                    await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                                  ).observeProductOutcome(
-                                                                                                                                                                    {
-                                                                                                                                                                      root: args.project_root,
-                                                                                                                                                                      changeSetId:
-                                                                                                                                                                        args.change_set_id,
-                                                                                                                                                                      initiativeId:
-                                                                                                                                                                        args.initiative_id ||
-                                                                                                                                                                        "",
-                                                                                                                                                                      statement:
-                                                                                                                                                                        args.statement,
-                                                                                                                                                                      epistemicClass:
-                                                                                                                                                                        args.epistemic_class ||
-                                                                                                                                                                        "observed-fact",
-                                                                                                                                                                      evidenceIds:
-                                                                                                                                                                        args.evidence_ids ||
-                                                                                                                                                                        [],
-                                                                                                                                                                    },
-                                                                                                                                                                  )
-                                                                                                                                                                : name ===
-                                                                                                                                                                    "head_product_operating_status"
-                                                                                                                                                                  ? (
-                                                                                                                                                                      await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                                    ).inspectProductOperatingLoop(
-                                                                                                                                                                      {
-                                                                                                                                                                        root: args.project_root,
-                                                                                                                                                                        fresh:
-                                                                                                                                                                          args.fresh ??
-                                                                                                                                                                          false,
-                                                                                                                                                                      },
-                                                                                                                                                                    )
-                                                                                                                                                                  : name ===
-                                                                                                                                                                      "head_release_observe"
-                                                                                                                                                                    ? (requireMcpConfirmation(
-                                                                                                                                                                        args.confirm_host_observation,
-                                                                                                                                                                        "Release observation requires explicit confirmation that the payload came from a host deployment observer.",
-                                                                                                                                                                        "RELEASE_HOST_OBSERVATION_CONFIRMATION_REQUIRED",
-                                                                                                                                                                      ),
-                                                                                                                                                                      await (
-                                                                                                                                                                        await import("./lib/release-observation.mjs")
-                                                                                                                                                                      ).observeReleaseState(
-                                                                                                                                                                        {
-                                                                                                                                                                          root: args.project_root,
-                                                                                                                                                                          input:
-                                                                                                                                                                            {
-                                                                                                                                                                              environmentKey:
-                                                                                                                                                                                args.environment_key,
-                                                                                                                                                                              status:
-                                                                                                                                                                                args.status,
-                                                                                                                                                                              commit:
-                                                                                                                                                                                args.commit,
-                                                                                                                                                                              observedAt:
-                                                                                                                                                                                args.observed_at,
-                                                                                                                                                                              sourceEventKeyDigest:
-                                                                                                                                                                                args.source_event_key_digest,
-                                                                                                                                                                              deploymentEvidenceDigest:
-                                                                                                                                                                                args.deployment_evidence_digest,
-                                                                                                                                                                              approved:
-                                                                                                                                                                                args.approved,
-                                                                                                                                                                              approvalEvidenceDigest:
-                                                                                                                                                                                args.approval_evidence_digest,
-                                                                                                                                                                              changeSetId:
-                                                                                                                                                                                args.change_set_id,
-                                                                                                                                                                              vcsEvidenceId:
-                                                                                                                                                                                args.vcs_evidence_id,
-                                                                                                                                                                            },
-                                                                                                                                                                        },
-                                                                                                                                                                      ))
-                                                                                                                                                                    : name ===
-                                                                                                                                                                        "head_observation_prepare"
-                                                                                                                                                                      ? (
-                                                                                                                                                                          await import("./lib/observation-workflow.mjs")
-                                                                                                                                                                        ).prepareObservationEvidence(
-                                                                                                                                                                          {
-                                                                                                                                                                            root: args.project_root,
-                                                                                                                                                                            registry:
-                                                                                                                                                                              observationRegistry,
-                                                                                                                                                                            typeKey:
-                                                                                                                                                                              args.type_key,
-                                                                                                                                                                            subjectType:
-                                                                                                                                                                              args.subject_type ||
-                                                                                                                                                                              "",
-                                                                                                                                                                            subjectKey:
-                                                                                                                                                                              args.subject_key ||
-                                                                                                                                                                              "",
-                                                                                                                                                                            adapterKey:
-                                                                                                                                                                              args.adapter_key ||
-                                                                                                                                                                              "",
-                                                                                                                                                                            observedAfter:
-                                                                                                                                                                              args.observed_after ||
-                                                                                                                                                                              "",
-                                                                                                                                                                            observedBefore:
-                                                                                                                                                                              args.observed_before ||
-                                                                                                                                                                              "",
-                                                                                                                                                                            existingLimit:
-                                                                                                                                                                              args.existing_limit ??
-                                                                                                                                                                              20,
-                                                                                                                                                                            sourceLimit:
-                                                                                                                                                                              args.source_limit ??
-                                                                                                                                                                              20,
-                                                                                                                                                                            sourceAvailability:
-                                                                                                                                                                              args.source_availability ||
-                                                                                                                                                                              "",
-                                                                                                                                                                            sourceProjectionId:
-                                                                                                                                                                              args.source_projection_id ||
-                                                                                                                                                                              "",
-                                                                                                                                                                            sourceCursor:
-                                                                                                                                                                              args.source_cursor ||
-                                                                                                                                                                              "",
-                                                                                                                                                                          },
-                                                                                                                                                                        )
-                                                                                                                                                                      : name ===
-                                                                                                                                                                          "head_observation_collect_source"
-                                                                                                                                                                        ? await (
-                                                                                                                                                                            await import("./lib/observation-adapter.mjs")
-                                                                                                                                                                          ).collectRegisteredObservation(
-                                                                                                                                                                            {
-                                                                                                                                                                              root: args.project_root,
-                                                                                                                                                                              registry:
-                                                                                                                                                                                observationRegistry,
-                                                                                                                                                                              sourceId:
-                                                                                                                                                                                args.source_id,
-                                                                                                                                                                            },
-                                                                                                                                                                          )
-                                                                                                                                                                        : name ===
-                                                                                                                                                                            "head_observation_ingest"
-                                                                                                                                                                          ? (requireMcpConfirmation(
-                                                                                                                                                                              args.confirm_host_observation,
-                                                                                                                                                                              "Observation collection requires explicit confirmation that the payload came from the exact Host source binding.",
-                                                                                                                                                                              "OBSERVATION_HOST_CONFIRMATION_REQUIRED",
-                                                                                                                                                                            ),
-                                                                                                                                                                            await (
-                                                                                                                                                                              await import("./lib/observation-adapter.mjs")
-                                                                                                                                                                            ).ingestStructuredObservation(
-                                                                                                                                                                              {
-                                                                                                                                                                                root: args.project_root,
-                                                                                                                                                                                binding:
-                                                                                                                                                                                  observationBindingFromMcp(
-                                                                                                                                                                                    args.binding,
-                                                                                                                                                                                  ),
-                                                                                                                                                                                descriptor:
-                                                                                                                                                                                  observationDescriptorFromMcp(
-                                                                                                                                                                                    args.descriptor,
-                                                                                                                                                                                  ),
-                                                                                                                                                                                input:
-                                                                                                                                                                                  observationInputFromMcp(
-                                                                                                                                                                                    args.observation,
-                                                                                                                                                                                  ),
-                                                                                                                                                                              },
-                                                                                                                                                                            ))
-                                                                                                                                                                          : name ===
-                                                                                                                                                                              "head_observation_derive"
-                                                                                                                                                                            ? (requireMcpConfirmation(
-                                                                                                                                                                                args.confirm_host_derivation,
-                                                                                                                                                                                "Derived Observation recording requires explicit confirmation that the payload came from the named deterministic algorithm.",
-                                                                                                                                                                                "OBSERVATION_DERIVATION_CONFIRMATION_REQUIRED",
-                                                                                                                                                                              ),
-                                                                                                                                                                              (
-                                                                                                                                                                                await import("./lib/observation-store.mjs")
-                                                                                                                                                                              ).recordDerivedObservation(
-                                                                                                                                                                                {
-                                                                                                                                                                                  root: args.project_root,
-                                                                                                                                                                                  descriptor:
-                                                                                                                                                                                    observationDescriptorFromMcp(
-                                                                                                                                                                                      args.descriptor,
-                                                                                                                                                                                    ),
-                                                                                                                                                                                  input:
-                                                                                                                                                                                    {
-                                                                                                                                                                                      subject:
-                                                                                                                                                                                        args.subject,
-                                                                                                                                                                                      temporalScope:
-                                                                                                                                                                                        {
-                                                                                                                                                                                          observedAt:
-                                                                                                                                                                                            args
-                                                                                                                                                                                              .temporal_scope
-                                                                                                                                                                                              .observed_at,
-                                                                                                                                                                                          start:
-                                                                                                                                                                                            args
-                                                                                                                                                                                              .temporal_scope
-                                                                                                                                                                                              .start,
-                                                                                                                                                                                          end: args
-                                                                                                                                                                                            .temporal_scope
-                                                                                                                                                                                            .end,
-                                                                                                                                                                                        },
-                                                                                                                                                                                      inputObservationIds:
-                                                                                                                                                                                        args.input_observation_ids,
-                                                                                                                                                                                      algorithm:
-                                                                                                                                                                                        args.algorithm,
-                                                                                                                                                                                      coverage:
-                                                                                                                                                                                        observationCoverageFromMcp(
-                                                                                                                                                                                          args.coverage,
-                                                                                                                                                                                        ),
-                                                                                                                                                                                      payload:
-                                                                                                                                                                                        args.payload,
-                                                                                                                                                                                    },
-                                                                                                                                                                                },
-                                                                                                                                                                              ))
-                                                                                                                                                                            : name ===
-                                                                                                                                                                                "head_continuity_snapshot"
-                                                                                                                                                                              ? await (
-                                                                                                                                                                                  await import("./lib/product-operating-loop.mjs")
-                                                                                                                                                                                ).buildHeadContinuitySnapshot(
-                                                                                                                                                                                  {
-                                                                                                                                                                                    root: args.project_root,
-                                                                                                                                                                                    fresh:
-                                                                                                                                                                                      args.fresh ??
-                                                                                                                                                                                      false,
-                                                                                                                                                                                  },
-                                                                                                                                                                                )
-                                                                                                                                                                              : name ===
-                                                                                                                                                                                  "head_conversation_list"
-                                                                                                                                                                                ? await (
-                                                                                                                                                                                    await import("./lib/conversation-messaging.mjs")
-                                                                                                                                                                                  ).listProjectConversations(
-                                                                                                                                                                                    {
-                                                                                                                                                                                      root: args.project_root,
-                                                                                                                                                                                      caller,
-                                                                                                                                                                                      environment:
-                                                                                                                                                                                        hostEnvironment,
-                                                                                                                                                                                      hostTicket:
-                                                                                                                                                                                        args.host_ticket ??
-                                                                                                                                                                                        null,
-                                                                                                                                                                                    },
-                                                                                                                                                                                  )
-                                                                                                                                                                                : name ===
-                                                                                                                                                                                    "head_conversation_send"
-                                                                                                                                                                                  ? await (
-                                                                                                                                                                                      await import("./lib/conversation-messaging.mjs")
-                                                                                                                                                                                    ).sendProjectConversation(
-                                                                                                                                                                                      {
-                                                                                                                                                                                        root: args.project_root,
-                                                                                                                                                                                        caller,
-                                                                                                                                                                                        environment:
-                                                                                                                                                                                          hostEnvironment,
-                                                                                                                                                                                        to: args.to,
-                                                                                                                                                                                        body: args.body,
-                                                                                                                                                                                        replyTo:
-                                                                                                                                                                                          args.reply_to ??
-                                                                                                                                                                                          null,
-                                                                                                                                                                                        hostTicket:
-                                                                                                                                                                                          args.host_ticket ??
-                                                                                                                                                                                          null,
-                                                                                                                                                                                        waitMs:
-                                                                                                                                                                                          Number(
-                                                                                                                                                                                            hostEnvironment?.LODE_CONVERSATION_DELIVERY_WAIT_MS ||
-                                                                                                                                                                                              0,
-                                                                                                                                                                                          ),
-                                                                                                                                                                                        signal,
-                                                                                                                                                                                      },
-                                                                                                                                                                                    )
-                                                                                                                                                                                  : (() => {
-                                                                                                                                                                                      throw new Error(
-                                                                                                                                                                                        `Unknown tool: ${name}`,
-                                                                                                                                                                                      );
-                                                                                                                                                                                    })());
+                                                                                                                                                : (() => {
+                                                                                                                                                    throw new Error(
+                                                                                                                                                      `Unknown tool: ${name}`,
+                                                                                                                                                    );
+                                                                                                                                                  })());
     // MCP structuredContent is an optional object, never null/array/scalar.
     // Keep absent originals as their original text value, not fabricated state.
     const response = success(id, {
