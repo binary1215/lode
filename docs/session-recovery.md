@@ -106,7 +106,8 @@ same-Project discovery hint.
 4. re-verifies the current WholePlan and, when active, exact Run,
    ExecutionContract, and ContextCapsule digest;
 5. re-verifies pending review lineage when ResultPacket evidence is present;
-6. returns a deterministic, non-persisted `SessionRestoreProjection`.
+6. returns a deterministic, non-persisted `SessionRestoreProjection` with
+   `status: "session_restored_from_artifacts"`.
 
 The read-only project experience may run this exact verification to report
 `no-current-checkpoint`, `verified-current-checkpoint`, or
@@ -221,6 +222,11 @@ Synchronization has four explicit outcomes:
   available;
 - `conflict`: the supplied basis is stale or the recorded Run transition conflicts
   with current Session state, so no recovery bytes are written.
+
+`lode_checkpoint_basis` returns `status: "recovery_checkpoint_basis_inspected"`;
+pass its `basis.basisId` as `expected_recovery_basis_id`. The sync result's
+`status` is the outcome with a `recovery_checkpoint_sync_` prefix, for example
+`recovery_checkpoint_sync_created`.
 
 The checkpoint identity for one unchanged basis and direction is deterministic.
 Retries before ledger publication, after ledger publication but before Session

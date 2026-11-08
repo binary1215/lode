@@ -95,6 +95,9 @@ test/*
 !test/worker-integration-surface.test.mjs
 !test/helpers/
 test/helpers/*
+!test/fixtures/
+test/fixtures/*
+!test/fixtures/dispatch-recordings.json
 !test/helpers/session-work-linkage-fixture.mjs
 !test/helpers/session-work-reentry-flow.mjs
 !test/helpers/worker-integration-fixture.mjs
@@ -153,3 +156,7 @@ Thumbs.db
 !test/claude-hooks-generated.test.mjs
 !test/compare-test-baseline.test.mjs
 !test/lib-core-helpers.test.mjs
+!test/dispatch-recordings.test.mjs
+!test/helpers/dispatch-recording-hooks.mjs
+!test/helpers/dispatch-recording-register.mjs
+!test/helpers/dispatch-recording-run.mjs

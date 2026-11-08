@@ -34,6 +34,10 @@ provenance와 coverage를 보존하면서 반복되는 큰 payload를 생략합�
 상세 기본값은 node 60개·edge 120개이며 명시적 한도로 양쪽 뷰를 확대할 수 있습니다.
 짧은 응답은 task의 충분성을 증명하지 않습니다.
 
+그래프 레코드가 있는 결과는 `status: "available"`입니다. 레코드가 하나도 없는 결과(예:
+Project 그래프를 색인하기 전)는 node 없이 `status: "source-fallback"`을 반환하며, 이때는
+소스 파일을 직접 읽습니다.
+
 ### 저장된 작업 이유와 남은 일
 
 이미 보존한 `SessionWorkEvidence`는 기존 `lode_project_graph`와

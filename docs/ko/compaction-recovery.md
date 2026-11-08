@@ -62,6 +62,10 @@ idle -> prepared -> verified -> continued
                   \-> aborted
 ```
 
+각 단계는 전이를 `status`로 알립니다. `compact-prepare`는 `compaction_prepared`,
+`compact-verify`는 `compaction_verified`, `compact-continue`는
+`compaction_continuation_consumed`를 반환합니다.
+
 `compact-prepare`는 다음 내용을 갖는 content-addressed `SessionRunCheckpoint`를 만듭니다.
 
 - `purpose`

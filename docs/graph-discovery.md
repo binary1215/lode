@@ -32,6 +32,10 @@ Use `details: true` with returned anchors for original bounded detail and
 relations; detailed defaults are 60 nodes and 120 edges. Explicit bounds can
 expand either view. A short result never proves task sufficiency.
 
+A result with graph records has `status: "available"`. A result without any
+(for example before the Project graph is indexed) has `status: "source-fallback"`
+and no nodes; read the source files directly.
+
 ### Saved work reasons and remaining work
 
 Already retained `SessionWorkEvidence` is discoverable through the existing

@@ -134,6 +134,9 @@ jobs:
       - name: Check JavaScript formatting
         run: npx --yes prettier@3.9.10 --check .
 
+      - name: Verify the documented first-request flow on CLI and MCP
+        run: node scripts/verify-documented-flow.mjs
+
       - name: Set up Go from the worker module
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
