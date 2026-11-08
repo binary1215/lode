@@ -11,6 +11,16 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.98 — publication tracked separately
+
+- Dispatch every CLI command through the operation registry. `scripts/lode.mjs`
+  no longer has per-command branches; CLI-only commands are registry entries
+  without an MCP tool, and multi-name commands use registry aliases. Help,
+  version and error output are unchanged, and no call changes.
+- Record the `caller` stand-in and the document prepare/publish commands in the
+  dispatch recordings; refuse an implementation call on a handle-only entry
+  explicitly.
+
 ## 0.3.0-beta.97 — publication tracked separately
 
 - Dispatch every MCP tool through the operation registry, which is now also the
