@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Runs the README first-request flow on two synthetic Git projects, once through
 // the CLI and once through MCP, and checks that both surfaces return the same
-// status, reasonCode and nextAction.id at every step, that the entry states named in
-// the core Skill's entry table hold, and that every value seen is documented.
+// status, reasonCode and nextAction.id at every step, that the two conversation
+// entry states listed below hold (and still appear as rows of the core Skill's
+// entry table), and that every value seen is documented.
 //
 //   node scripts/verify-documented-flow.mjs
 //
@@ -109,11 +110,14 @@ const STEPS = [
   { id: "session-restore", cli: () => ["session-restore"], mcp: () => ["lode_session_restore", {}] },
 ];
 
-// Entry states the core Skill's entry table names for this flow.
+// Expected conversation entry states for this flow, written out here; each must
+// also appear in a row of the entry table in skills/lode-agent-core/SKILL.md.
 const DOCUMENTED_ENTRY = {
   "conversation-enter-before-init": { status: "conversation_recovery_unavailable", reasonCode: "NOT_INITIALIZED" },
   "conversation-enter": { status: "conversation_ready" },
 };
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const summary = (value) => ({ status: value?.status ?? null, reasonCode: value?.reasonCode ?? null, nextAction: value?.nextAction?.id ?? null });
 
@@ -173,9 +177,22 @@ export async function verifyDocumentedFlow() {
       const actual = steps.find((step) => step.id === id).cli;
       for (const [field, value] of Object.entries(expected)) assert.equal(actual[field], value, `${id}.${field}`);
     }
+    const entryRows = fs
+      .readFileSync(path.join(pluginRoot, "skills/lode-agent-core/SKILL.md"), "utf8")
+      .split("\n")
+      .filter((line) => line.startsWith("| "));
+    for (const [id, expected] of Object.entries(DOCUMENTED_ENTRY)) {
+      const values = Object.values(expected);
+      assert.ok(
+        entryRows.some((row) => values.every((value) => row.includes(value))),
+        `${id}: no core Skill entry-table row names ${values.join(" + ")}`,
+      );
+    }
     const docs = documentationText();
     const undocumented = [
-      ...new Set(steps.flatMap((step) => Object.values(step.cli)).filter((value) => typeof value === "string" && !new RegExp(`\\b${value}\\b`).test(docs))),
+      ...new Set(
+        steps.flatMap((step) => Object.values(step.cli)).filter((value) => typeof value === "string" && !new RegExp(`\\b${escapeRegExp(value)}\\b`).test(docs)),
+      ),
     ];
     assert.deepEqual(
       undocumented,

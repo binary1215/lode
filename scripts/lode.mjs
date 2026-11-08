@@ -9,23 +9,13 @@ import { callRegistered, registeredCommand } from "./lib/operation-registry.mjs"
 import { commandEntry, isManagedMutation, requireOperationSurface, requireSurface } from "./lib/managed-maintenance-surface.mjs";
 import { inspectProject, inspectRuntimeAdapters } from "./lib/lode-core.mjs";
 import {
-  withSessionRoute,
   withSessionCallContext,
   sessionCallRequiresBinding,
   sessionSelectionUnresolved,
   createLodeSession,
   readProjectDirection,
   updateProjectDirection,
-  validateRelocationSessionSelection,
 } from "./lib/session-routing.mjs";
-import { resumeProjectLocation } from "./lib/project-relocation.mjs";
-import {
-  startBoundedWorkerJob,
-  readBoundedWorkerJob,
-  cancelBoundedWorkerJob,
-  reconcileBoundedWorkerJob,
-  readBoundedWorkerPatch,
-} from "./lib/bounded-worker-job.mjs";
 import {
   operateWorkerIntegration,
   inspectWorkerIntegration,
@@ -103,7 +93,6 @@ import {
   buildRuntimeInvocationAuthorization,
   inspectRuntimeInvocationExecutionLease,
   readRuntimeInvocationAuthorization,
-  reconcileWorkerMember,
 } from "./lib/runtime-invocation-lifecycle.mjs";
 import { executeRuntimeInvocation } from "./lib/runtime-one-shot-exec.mjs";
 import { applyRuntimeRunResult, readRuntimeInvocationResult } from "./lib/runtime-run-result-application.mjs";
@@ -165,26 +154,11 @@ import {
   verifyCompaction,
 } from "./lib/compaction-recovery.mjs";
 import { enterConversationRecovery, processCompactionLifecycle } from "./lib/compaction-lifecycle.mjs";
-import { recordSessionWorkEvidence, readSessionWorkContext, readSessionWorkList } from "./lib/session-work-context.mjs";
+import { readSessionWorkContext, readSessionWorkList } from "./lib/session-work-context.mjs";
 import { integrateReviewedRunCheckpoint, readRunResultIntegration, restoreSessionFromArtifacts } from "./lib/session-recovery.mjs";
 import { inspectRecoveryCheckpointDiagnosis } from "./lib/recovery-checkpoint-diagnosis.mjs";
 import { continueSessionFromArtifacts } from "./lib/runtime-session-continuation.mjs";
-import {
-  applyBoundedWorkerDispatchResult,
-  createBoundedWorkerDispatch,
-  executeBoundedWorkerDispatch,
-  readBoundedWorkerDispatch,
-  waitForBoundedWorkerDispatch,
-} from "./lib/bounded-worker-dispatch.mjs";
-import {
-  abandonBoundedWorkerWave,
-  createBoundedWorkerWave,
-  readBoundedWorkerWave,
-  readBoundedWorkerWaveResults,
-  readBoundedWorkerWaveStatus,
-  sealBoundedWorkerWave,
-  waitForBoundedWorkerWave,
-} from "./lib/bounded-worker-wave.mjs";
+import { executeBoundedWorkerDispatch, readBoundedWorkerDispatch } from "./lib/bounded-worker-dispatch.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(pluginRoot, "package.json"), "utf8"));
