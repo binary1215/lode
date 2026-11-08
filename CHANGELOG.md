@@ -11,6 +11,17 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.96 — publication tracked separately
+
+- Dispatch 44 more operations through the operation registry (111 of 144):
+  project direction, onboarding, product policy and operating loop, conformance
+  reads, source and context, session recovery reads, world and GraphDB status,
+  document change reads, conversation entry, the compaction lifecycle step and
+  observation prepare/collect. Host values reach them through the call context
+  on the same surface as before; no behavior change.
+- Record the host values, the `=== "true"` option branches and the option-built
+  CLI inputs in the dispatch recordings with identifiable stand-ins.
+
 ## 0.3.0-beta.95 — publication tracked separately
 
 - Let operation registry entries declare per-surface `before`/`after` adapters.

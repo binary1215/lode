@@ -9,6 +9,16 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.96 — 게시 결과는 별도 확인
+
+- 44개 작업을 추가로 operation registry로 디스패치합니다(144개 중 111개): project
+  direction, onboarding, product policy·operating loop, conformance 읽기, source와
+  context, Session 복구 읽기, World·GraphDB 상태, 문서 변경 읽기, 대화 진입, compaction
+  lifecycle 단계, observation prepare/collect. 호스트 값은 이전과 같은 표면에서 호출
+  컨텍스트로 전달되며 동작 변경은 없습니다.
+- 디스패치 녹화에 호스트 값, `=== "true"` 옵션 분기, 옵션으로 조립한 CLI 입력을
+  식별 가능한 stand-in으로 기록합니다.
+
 ## 0.3.0-beta.95 — 게시 결과는 별도 확인
 
 - operation registry 항목이 표면별 `before`/`after` 어댑터를 선언할 수 있습니다.
