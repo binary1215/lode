@@ -9,6 +9,18 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.92 — 게시 결과는 별도 확인
+
+- MCP 서버와 CLI가 함께 거치는 단일 레지스트리 `scripts/lib/operation-registry.mjs`를
+  추가합니다. bounded-worker의 job·dispatch·wave 작업 15개가 먼저 사용하고, 나머지
+  작업은 기존 분기를 유지하며 호출과 도구 정의는 바뀌지 않습니다.
+- 모든 MCP 도구와 CLI 명령이 어떤 라이브러리 호출을 하는지
+  `test/fixtures/dispatch-recordings.json`에 고정하고
+  `test/dispatch-recordings.test.mjs`가 검사합니다.
+- README의 첫 요청 흐름을 합성 프로젝트에서 CLI와 MCP로 실행해 양쪽의 `status`,
+  `reasonCode`, `nextAction`이 같은지 확인하는 `scripts/verify-documented-flow.mjs`를
+  추가하고, 문서가 그 흐름의 결과 상태 이름을 적습니다. CI가 실행합니다.
+
 ## 0.3.0-beta.91 — 게시 결과는 별도 확인
 
 - SHA-256 다이제스트, 정규화 JSON, 오류와 이유 코드, 원자적 쓰기, 경로 탈출
