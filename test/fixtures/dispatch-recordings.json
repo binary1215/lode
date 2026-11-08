@@ -11265,6 +11265,30 @@
   },
   {
    "surface": "cli",
+   "command": "change-impact-review",
+   "argv": [
+    "change-impact-review",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "change-set#reviewChangeImpact",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "change-impact-review-read",
    "argv": [
     "change-impact-review-read",
@@ -11393,6 +11417,30 @@
   },
   {
    "surface": "cli",
+   "command": "change-set-record",
+   "argv": [
+    "change-set-record",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "change-set#recordChangeSet",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "change-set-status",
    "argv": [
     "change-set-status",
@@ -11439,6 +11487,30 @@
      "fn": "change-set#attachVcsEvidence",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "change-set-vcs-attach",
+   "argv": [
+    "change-set-vcs-attach",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "change-set#attachVcsEvidence",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -11630,6 +11702,30 @@
   },
   {
    "surface": "cli",
+   "command": "checkpoint-sync",
+   "argv": [
+    "checkpoint-sync",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "compaction-recovery#syncRecoveryCheckpoint",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "compact-abort",
    "argv": [
     "compact-abort",
@@ -11655,6 +11751,30 @@
      "fn": "compaction-recovery#abortCompaction",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "compact-abort",
+   "argv": [
+    "compact-abort",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "compaction-recovery#abortCompaction",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -11702,6 +11822,30 @@
   },
   {
    "surface": "cli",
+   "command": "compact-continue",
+   "argv": [
+    "compact-continue",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "compaction-recovery#continueCompaction",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "compact-prepare",
    "argv": [
     "compact-prepare",
@@ -11727,6 +11871,30 @@
      "fn": "compaction-recovery#prepareCompaction",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "compact-prepare",
+   "argv": [
+    "compact-prepare",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "compaction-recovery#prepareCompaction",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -11795,6 +11963,30 @@
   },
   {
    "surface": "cli",
+   "command": "compact-verify",
+   "argv": [
+    "compact-verify",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "compaction-recovery#verifyCompaction",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "compaction-lifecycle-step",
    "argv": [
     "compaction-lifecycle-step",
@@ -11843,6 +12035,33 @@
   },
   {
    "surface": "cli",
+   "command": "compaction-lifecycle-step",
+   "argv": [
+    "compaction-lifecycle-step",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "compaction-lifecycle#processCompactionLifecycle",
+     "args": [
+      {
+       "root": "<root>",
+       "hostAdapter": null,
+       "direction": {
+        "lodeRecordingUnsupportedField": true
+       }
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "conformance-disposition",
    "argv": [
     "conformance-disposition",
@@ -11868,6 +12087,30 @@
      "fn": "conformance-reconciliation#recordConformanceDisposition",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "conformance-disposition",
+   "argv": [
+    "conformance-disposition",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "conformance-reconciliation#recordConformanceDisposition",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -11958,6 +12201,30 @@
      "fn": "conformance-reconciliation#proposeConformanceFindings",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "conformance-propose",
+   "argv": [
+    "conformance-propose",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "conformance-reconciliation#proposeConformanceFindings",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -12122,6 +12389,30 @@
   },
   {
    "surface": "cli",
+   "command": "conformance-resolution-propose",
+   "argv": [
+    "conformance-resolution-propose",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "conformance-reconciliation#proposeConformanceResolution",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "context-compile",
    "argv": [
     "context-compile",
@@ -12167,6 +12458,39 @@
        "task": "sample-task",
        "budget": 3,
        "evidenceNeeds": {},
+       "persist": true
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "context-compile",
+   "argv": [
+    "context-compile",
+    "<root>",
+    "--budget",
+    "3",
+    "--evidence-needs",
+    "<cwd>/input-extra-field.json",
+    "--task",
+    "sample-task"
+   ],
+   "calls": [
+    {
+     "fn": "context-compiler#compileContext",
+     "args": [
+      {
+       "root": "<root>",
+       "task": "sample-task",
+       "budget": 3,
+       "evidenceNeeds": {
+        "lodeRecordingUnsupportedField": true
+       },
        "persist": true
       }
      ]
@@ -12282,6 +12606,38 @@
   },
   {
    "surface": "cli",
+   "command": "context-preview",
+   "argv": [
+    "context-preview",
+    "<root>",
+    "--budget",
+    "3",
+    "--evidence-needs",
+    "<cwd>/input-extra-field.json",
+    "--task",
+    "sample-task"
+   ],
+   "calls": [
+    {
+     "fn": "context-workflow#previewContextWorkflow",
+     "args": [
+      {
+       "root": "<root>",
+       "task": "sample-task",
+       "budget": 3,
+       "evidenceNeeds": {
+        "lodeRecordingUnsupportedField": true
+       }
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "context-read",
    "argv": [
     "context-read",
@@ -12374,6 +12730,30 @@
      "fn": "delivery-observation#recordDeliveryObservation",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "delivery-observe",
+   "argv": [
+    "delivery-observe",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "delivery-observation#recordDeliveryObservation",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -12551,6 +12931,30 @@
   },
   {
    "surface": "cli",
+   "command": "feature-mapping-review",
+   "argv": [
+    "feature-mapping-review",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "feature-mapping#reviewFeatureMapping",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "feature-mapping-review-read",
    "argv": [
     "feature-mapping-review-read",
@@ -12636,6 +13040,35 @@
       {
        "root": "<root>",
        "semanticProposal": {},
+       "expectedCandidateSetId": "sample-expected-candidate-set"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "feature-mapping-start",
+   "argv": [
+    "feature-mapping-start",
+    "<root>",
+    "--expected-candidate-set",
+    "sample-expected-candidate-set",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "feature-mapping#startFeatureMapping",
+     "args": [
+      {
+       "root": "<root>",
+       "semanticProposal": {
+        "lodeRecordingUnsupportedField": true
+       },
        "expectedCandidateSetId": "sample-expected-candidate-set"
       }
      ]
@@ -13181,6 +13614,50 @@
   },
   {
    "surface": "cli",
+   "command": "init",
+   "argv": [
+    "init",
+    "<root>",
+    "--copied-project",
+    "sample-copied-project",
+    "--input",
+    "<cwd>/input-extra-field.json",
+    "--instruction-integration",
+    "sample-instruction-integration",
+    "--profile",
+    "sample-profile",
+    "--runtime",
+    "sample-runtime",
+    "--write-root-instructions"
+   ],
+   "calls": [
+    {
+     "fn": "project-bootstrap#initializeOrResumeProject",
+     "args": [
+      {
+       "root": "<root>",
+       "projectSessionRoute": null,
+       "pluginRoot": "<plugin>",
+       "runtimes": [
+        "sample-runtime"
+       ],
+       "profile": "sample-profile",
+       "copiedProject": "sample-copied-project",
+       "instructionIntegration": "sample-instruction-integration",
+       "writeRootInstructionFiles": true,
+       "onboarding": {
+        "lodeRecordingUnsupportedField": true
+       }
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "lineage-contract",
    "argv": [
     "lineage-contract",
@@ -13206,6 +13683,31 @@
      "fn": "execution-lineage#createExecutionContract",
      "args": [
       {
+       "root": "<root>",
+       "persist": true
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "lineage-contract",
+   "argv": [
+    "lineage-contract",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "execution-lineage#createExecutionContract",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>",
        "persist": true
       }
@@ -13255,6 +13757,31 @@
   },
   {
    "surface": "cli",
+   "command": "lineage-next-plan",
+   "argv": [
+    "lineage-next-plan",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "execution-lineage#createNextWholePlanSnapshot",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>",
+       "persist": true
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "lineage-plan",
    "argv": [
     "lineage-plan",
@@ -13280,6 +13807,31 @@
      "fn": "execution-lineage#createWholePlanSnapshot",
      "args": [
       {
+       "root": "<root>",
+       "persist": true
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "lineage-plan",
+   "argv": [
+    "lineage-plan",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "execution-lineage#createWholePlanSnapshot",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>",
        "persist": true
       }
@@ -13374,6 +13926,30 @@
   },
   {
    "surface": "cli",
+   "command": "metric-assess",
+   "argv": [
+    "metric-assess",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "measurement-workflow#assessMetricComparison",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "metric-compare",
    "argv": [
     "metric-compare",
@@ -13399,6 +13975,30 @@
      "fn": "measurement-workflow#compareMetricObservations",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "metric-compare",
+   "argv": [
+    "metric-compare",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "measurement-workflow#compareMetricObservations",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -13446,6 +14046,30 @@
   },
   {
    "surface": "cli",
+   "command": "metric-define",
+   "argv": [
+    "metric-define",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "measurement-workflow#defineMetric",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "metric-observe",
    "argv": [
     "metric-observe",
@@ -13471,6 +14095,30 @@
      "fn": "measurement-workflow#recordMetricObservation",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "metric-observe",
+   "argv": [
+    "metric-observe",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "measurement-workflow#recordMetricObservation",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -13599,6 +14247,31 @@
   },
   {
    "surface": "cli",
+   "command": "observation-derive",
+   "argv": [
+    "observation-derive",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "observation-store#recordDerivedObservation",
+     "args": [
+      {
+       "root": "<root>",
+       "descriptor": "$undefined",
+       "input": "$undefined"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "observation-file-ingest",
    "argv": [
     "observation-file-ingest",
@@ -13640,6 +14313,34 @@
   },
   {
    "surface": "cli",
+   "command": "observation-file-ingest",
+   "argv": [
+    "observation-file-ingest",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "observation-adapter#ingestJsonObservationEventFile",
+     "args": [
+      {
+       "root": "<root>",
+       "sourceKey": "$undefined",
+       "binding": "$undefined",
+       "descriptor": "$undefined",
+       "eventFile": "$undefined",
+       "maxBytes": "$undefined"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "observation-ingest",
    "argv": [
     "observation-ingest",
@@ -13659,6 +14360,32 @@
     "<root>",
     "--input",
     "<cwd>/input.json"
+   ],
+   "calls": [
+    {
+     "fn": "observation-adapter#ingestStructuredObservation",
+     "args": [
+      {
+       "root": "<root>",
+       "binding": "$undefined",
+       "descriptor": "$undefined",
+       "input": "$undefined"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "observation-ingest",
+   "argv": [
+    "observation-ingest",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
    ],
    "calls": [
     {
@@ -14047,6 +14774,30 @@
   },
   {
    "surface": "cli",
+   "command": "onboarding-candidate-restore",
+   "argv": [
+    "onboarding-candidate-restore",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "onboarding#restoreOnboardingCandidate",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "onboarding-candidates",
    "argv": [
     "onboarding-candidates",
@@ -14118,6 +14869,30 @@
      "fn": "onboarding#reviewOnboarding",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "onboarding-review",
+   "argv": [
+    "onboarding-review",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "onboarding#reviewOnboarding",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -14213,6 +14988,33 @@
   },
   {
    "surface": "cli",
+   "command": "onboarding-semantic-refresh",
+   "argv": [
+    "onboarding-semantic-refresh",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "onboarding#proposeOnboardingSemanticRefresh",
+     "args": [
+      {
+       "root": "<root>",
+       "semanticProposal": {
+        "lodeRecordingUnsupportedField": true
+       },
+       "recoveryBasis": null
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "onboarding-start",
    "argv": [
     "onboarding-start",
@@ -14246,6 +15048,30 @@
      "fn": "onboarding#startOnboarding",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "onboarding-start",
+   "argv": [
+    "onboarding-start",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "onboarding#startOnboarding",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -14314,6 +15140,30 @@
   },
   {
    "surface": "cli",
+   "command": "product-hypothesis-record",
+   "argv": [
+    "product-hypothesis-record",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "product-operating-loop#recordProductHypothesis",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "product-initiative-propose",
    "argv": [
     "product-initiative-propose",
@@ -14350,6 +15200,30 @@
   },
   {
    "surface": "cli",
+   "command": "product-initiative-propose",
+   "argv": [
+    "product-initiative-propose",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "product-operating-loop#proposeProductInitiative",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "product-initiative-review",
    "argv": [
     "product-initiative-review",
@@ -14375,6 +15249,30 @@
      "fn": "product-operating-loop#reviewProductInitiative",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-initiative-review",
+   "argv": [
+    "product-initiative-review",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "product-operating-loop#reviewProductInitiative",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -14456,6 +15354,30 @@
      "fn": "product-operating-loop#observeProductOutcome",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-outcome-observe",
+   "argv": [
+    "product-outcome-observe",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "product-operating-loop#observeProductOutcome",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -14549,6 +15471,30 @@
   },
   {
    "surface": "cli",
+   "command": "product-policy-propose",
+   "argv": [
+    "product-policy-propose",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "product-policy#proposeProductPolicy",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "product-policy-review",
    "argv": [
     "product-policy-review",
@@ -14574,6 +15520,30 @@
      "fn": "product-policy#reviewProductPolicy",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-policy-review",
+   "argv": [
+    "product-policy-review",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "product-policy#reviewProductPolicy",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -14713,6 +15683,30 @@
   },
   {
    "surface": "cli",
+   "command": "product-signal-record",
+   "argv": [
+    "product-signal-record",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "product-operating-loop#recordProductSignal",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "project-bundle-inspect",
    "argv": [
     "project-bundle-inspect",
@@ -14796,6 +15790,35 @@
        "root": "<root>",
        "expectedDirectionId": "sample-expected-direction",
        "input": {}
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "project-direction-update",
+   "argv": [
+    "project-direction-update",
+    "<root>",
+    "--expected-direction",
+    "sample-expected-direction",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "session-routing#updateProjectDirection",
+     "args": [
+      {
+       "root": "<root>",
+       "expectedDirectionId": "sample-expected-direction",
+       "input": {
+        "lodeRecordingUnsupportedField": true
+       }
       }
      ]
     }
@@ -15064,6 +16087,32 @@
   },
   {
    "surface": "cli",
+   "command": "release-observe",
+   "argv": [
+    "release-observe",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "release-observation#observeReleaseState",
+     "args": [
+      {
+       "root": "<root>",
+       "input": {
+        "lodeRecordingUnsupportedField": true
+       }
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "release-status",
    "argv": [
     "release-status",
@@ -15156,6 +16205,50 @@
   },
   {
    "surface": "cli",
+   "command": "resume",
+   "argv": [
+    "resume",
+    "<root>",
+    "--copied-project",
+    "sample-copied-project",
+    "--input",
+    "<cwd>/input-extra-field.json",
+    "--instruction-integration",
+    "sample-instruction-integration",
+    "--profile",
+    "sample-profile",
+    "--runtime",
+    "sample-runtime",
+    "--write-root-instructions"
+   ],
+   "calls": [
+    {
+     "fn": "project-bootstrap#initializeOrResumeProject",
+     "args": [
+      {
+       "root": "<root>",
+       "projectSessionRoute": null,
+       "pluginRoot": "<plugin>",
+       "runtimes": [
+        "sample-runtime"
+       ],
+       "profile": "sample-profile",
+       "copiedProject": "sample-copied-project",
+       "instructionIntegration": "sample-instruction-integration",
+       "writeRootInstructionFiles": true,
+       "onboarding": {
+        "lodeRecordingUnsupportedField": true
+       }
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "run-finish",
    "argv": [
     "run-finish",
@@ -15192,6 +16285,30 @@
   },
   {
    "surface": "cli",
+   "command": "run-finish",
+   "argv": [
+    "run-finish",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "run-lineage#finishRun",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "run-integrate-checkpoint",
    "argv": [
     "run-integrate-checkpoint",
@@ -15217,6 +16334,30 @@
      "fn": "session-recovery#integrateReviewedRunCheckpoint",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "run-integrate-checkpoint",
+   "argv": [
+    "run-integrate-checkpoint",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "session-recovery#integrateReviewedRunCheckpoint",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -15299,6 +16440,30 @@
      "fn": "run-lineage#reviewRun",
      "args": [
       {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "run-review",
+   "argv": [
+    "run-review",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "run-lineage#reviewRun",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
        "root": "<root>"
       }
      ]
@@ -15483,6 +16648,21 @@
   },
   {
    "surface": "cli",
+   "command": "runtime-invocation-authorize",
+   "argv": [
+    "runtime-invocation-authorize",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Runtime invocation authorization contains unsupported fields: lodeRecordingUnsupportedField"
+   }
+  },
+  {
+   "surface": "cli",
    "command": "runtime-invocation-execute",
    "argv": [
     "runtime-invocation-execute",
@@ -15514,6 +16694,33 @@
     "sample-authorization",
     "--input",
     "<cwd>/input.json"
+   ],
+   "calls": [
+    {
+     "fn": "runtime-invocation-lifecycle#readRuntimeInvocationAuthorization",
+     "args": [
+      {
+       "root": "<root>",
+       "authorizationId": "sample-authorization"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "error": "TypeError",
+    "message": "Cannot read properties of undefined (reading 'authorization')"
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "runtime-invocation-execute",
+   "argv": [
+    "runtime-invocation-execute",
+    "<root>",
+    "--authorization",
+    "sample-authorization",
+    "--input",
+    "<cwd>/input-extra-field.json"
    ],
    "calls": [
     {
@@ -15936,6 +17143,36 @@
   },
   {
    "surface": "cli",
+   "command": "session-work-read",
+   "argv": [
+    "session-work-read",
+    "<root>",
+    "--after-evidence-id",
+    "sample-after-evidence-id",
+    "--input",
+    "<cwd>/input-extra-field.json",
+    "--scan-evidence",
+    "true"
+   ],
+   "calls": [
+    {
+     "fn": "session-work-context#readSessionWorkContext",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true,
+       "scanEvidence": true,
+       "afterEvidenceId": "sample-after-evidence-id",
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "session-work-record",
    "argv": [
     "session-work-record",
@@ -15965,6 +17202,36 @@
       {
        "root": "<root>",
        "input": {},
+       "documentSelection": "$undefined",
+       "documentSelectionError": "ENOENT"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "session-work-record",
+   "argv": [
+    "session-work-record",
+    "<root>",
+    "--document-selection",
+    "sample-document-selection",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "session-work-document-workflow#recordSessionWorkAndProjectDocuments",
+     "args": [
+      {
+       "root": "<root>",
+       "input": {
+        "lodeRecordingUnsupportedField": true
+       },
        "documentSelection": "$undefined",
        "documentSelectionError": "ENOENT"
       }
@@ -16013,6 +17280,52 @@
     "3",
     "--input",
     "<cwd>/input.json",
+    "--kind",
+    "sample-kind",
+    "--required",
+    "sample-required",
+    "--retain",
+    "sample-retain",
+    "--source",
+    "sample-source",
+    "--symbol",
+    "sample-symbol",
+    "--task",
+    "sample-task",
+    "--timeout",
+    "3"
+   ],
+   "calls": [
+    {
+     "fn": "source-context-workflow#prepareSourceContext",
+     "args": [
+      {
+       "root": "<root>",
+       "task": "sample-task",
+       "needs": "$undefined",
+       "retain": false,
+       "budget": 3,
+       "signal": "$undefined",
+       "onProcess": "$undefined",
+       "timeoutMs": 3
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "source-context",
+   "argv": [
+    "source-context",
+    "<root>",
+    "--budget",
+    "3",
+    "--input",
+    "<cwd>/input-extra-field.json",
     "--kind",
     "sample-kind",
     "--required",
@@ -16127,6 +17440,28 @@
     "<root>",
     "--input",
     "<cwd>/input.json"
+   ],
+   "calls": [
+    {
+     "fn": "lode-core#inspectProject",
+     "args": [
+      "<root>"
+     ]
+    }
+   ],
+   "outcome": {
+    "error": "TypeError",
+    "message": "Cannot read properties of undefined (reading 'status')"
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "source-scope-set",
+   "argv": [
+    "source-scope-set",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
    ],
    "calls": [
     {
@@ -16507,6 +17842,26 @@
   },
   {
    "surface": "cli",
+   "command": "worker-execute",
+   "argv": [
+    "managed-maintenance",
+    "worker-execute",
+    "<root>",
+    "--authorization",
+    "sample-authorization",
+    "--input",
+    "<cwd>/input-extra-field.json",
+    "--role",
+    "sample-role"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Bounded worker execution contains unsupported fields: lodeRecordingUnsupportedField"
+   }
+  },
+  {
+   "surface": "cli",
    "command": "worker-integrate",
    "argv": [
     "managed-maintenance",
@@ -16534,6 +17889,47 @@
      "fn": "worker-integration-workflow#validateWorkerIntegrationRequest",
      "args": [
       {}
+     ]
+    },
+    {
+     "fn": "project-storage-format#resolveProjectStorage",
+     "args": [
+      "<root>"
+     ]
+    },
+    {
+     "fn": "worker-integration-workflow#operateWorkerIntegration",
+     "args": [
+      "$undefined",
+      {
+       "root": "<root>",
+       "onProcess": "$undefined",
+       "storage": "$undefined"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "worker-integrate",
+   "argv": [
+    "managed-maintenance",
+    "worker-integrate",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [
+    {
+     "fn": "worker-integration-workflow#validateWorkerIntegrationRequest",
+     "args": [
+      {
+       "lodeRecordingUnsupportedField": true
+      }
      ]
     },
     {
@@ -16883,6 +18279,46 @@
   },
   {
    "surface": "cli",
+   "command": "worker-prepare",
+   "argv": [
+    "managed-maintenance",
+    "worker-prepare",
+    "<root>",
+    "--context",
+    "sample-context",
+    "--context-mode",
+    "sample-context-mode",
+    "--input",
+    "<cwd>/input-extra-field.json",
+    "--instruction-scope",
+    "sample-instruction-scope",
+    "--model",
+    "sample-model",
+    "--outcome",
+    "sample-outcome",
+    "--propose",
+    "sample-propose",
+    "--role",
+    "sample-role",
+    "--runtime",
+    "sample-runtime",
+    "--source",
+    "sample-source",
+    "--task",
+    "sample-task",
+    "--task-key",
+    "sample-task-key",
+    "--timeout-ms",
+    "sample-timeout-ms"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Worker preparation accepts one bounded task description, not Host configuration."
+   }
+  },
+  {
+   "surface": "cli",
    "command": "worker-read",
    "argv": [
     "worker-read",
@@ -17073,7 +18509,7 @@
     "--authorization",
     "sample-authorization",
     "--wait-timeout-ms",
-    "sample-wait-timeout-ms"
+    "3"
    ],
    "calls": [
     {
@@ -17082,7 +18518,7 @@
       {
        "root": "<root>",
        "authorizationId": "sample-authorization",
-       "timeoutMs": null
+       "timeoutMs": 3
       }
      ]
     }
@@ -17134,6 +18570,22 @@
   },
   {
    "surface": "cli",
+   "command": "worker-wave-abandon",
+   "argv": [
+    "managed-maintenance",
+    "worker-wave-abandon",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Bounded worker wave abandonment contains unsupported fields: lodeRecordingUnsupportedField"
+   }
+  },
+  {
+   "surface": "cli",
    "command": "worker-wave-create",
    "argv": [
     "managed-maintenance",
@@ -17169,6 +18621,22 @@
    ],
    "outcome": {
     "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "worker-wave-create",
+   "argv": [
+    "managed-maintenance",
+    "worker-wave-create",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Bounded worker wave contains unsupported fields: lodeRecordingUnsupportedField"
    }
   },
   {
@@ -17387,7 +18855,7 @@
     "worker-wave-wait",
     "<root>",
     "--wait-timeout-ms",
-    "sample-wait-timeout-ms",
+    "3",
     "--wave",
     "sample-wave"
    ],
@@ -17398,7 +18866,7 @@
       {
        "root": "<root>",
        "waveId": "sample-wave",
-       "timeoutMs": null
+       "timeoutMs": 3
       }
      ]
     }
@@ -17627,6 +19095,21 @@
   },
   {
    "surface": "cli",
+   "command": "world-docs-policy-set",
+   "argv": [
+    "world-docs-policy-set",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Post-refresh document projection policy contains unsupported fields: lodeRecordingUnsupportedField"
+   }
+  },
+  {
+   "surface": "cli",
    "command": "world-docs-policy-status",
    "argv": [
     "world-docs-policy-status",
@@ -17747,6 +19230,21 @@
    ],
    "outcome": {
     "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "world-docs-review",
+   "argv": [
+    "world-docs-review",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Document-change ReviewDecision contains unsupported fields: lodeRecordingUnsupportedField"
    }
   },
   {
@@ -18256,6 +19754,21 @@
    "outcome": {
     "error": "Error",
     "message": "world-refresh-events accepts only sourceKind ci; use world-refresh-watch for filesystem events."
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "world-refresh-events",
+   "argv": [
+    "world-refresh-events",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Refresh trigger event ingestion contains unsupported fields: lodeRecordingUnsupportedField"
    }
   },
   {
