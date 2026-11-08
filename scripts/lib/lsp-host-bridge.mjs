@@ -54,13 +54,44 @@ const REAL_PACKAGE_TRUST = Object.freeze({
   }),
 });
 const ALLOWED_SCENARIOS = new Set([
-  "barrel", "direct", "false-positive", "wrong-position", "prepare-null", "prepare-empty",
-  "hierarchy-null", "hierarchy-empty", "notifications", "notification-flood", "frame-oversize",
-  "server-requests", "unknown-server-request", "unknown-notification", "fragmented", "bad-header",
-  "invalid-json", "unknown-id", "duplicate-id", "late-response", "timeout", "cancel", "crash",
-  "ambiguous", "external-uri", "invalid-range", "grandchild", "reordered", "emoji-crlf",
-  "slow-work", "slow-shutdown", "stderr-limit", "external-abort", "grandchild-cancel",
-  "grandchild-flood", "delete-self", "wrong-caller-document", "invalid-show-message",
+  "barrel",
+  "direct",
+  "false-positive",
+  "wrong-position",
+  "prepare-null",
+  "prepare-empty",
+  "hierarchy-null",
+  "hierarchy-empty",
+  "notifications",
+  "notification-flood",
+  "frame-oversize",
+  "server-requests",
+  "unknown-server-request",
+  "unknown-notification",
+  "fragmented",
+  "bad-header",
+  "invalid-json",
+  "unknown-id",
+  "duplicate-id",
+  "late-response",
+  "timeout",
+  "cancel",
+  "crash",
+  "ambiguous",
+  "external-uri",
+  "invalid-range",
+  "grandchild",
+  "reordered",
+  "emoji-crlf",
+  "slow-work",
+  "slow-shutdown",
+  "stderr-limit",
+  "external-abort",
+  "grandchild-cancel",
+  "grandchild-flood",
+  "delete-self",
+  "wrong-caller-document",
+  "invalid-show-message",
 ]);
 
 function safeOwnedRoot(qaRoot, ownedRoot) {
@@ -80,8 +111,12 @@ function removeOwnedRoot(qaRoot, ownedRoot) {
 
 function profileProvenance(profile) {
   if (!profile) return null;
-  if (profile.kind !== "head-lsp-fake-v1" || !ALLOWED_SCENARIOS.has(profile.scenario || "barrel")
-    || !path.isAbsolute(profile.serverFile || "") || !/^[a-f0-9]{64}$/.test(profile.serverDigest || "")) {
+  if (
+    profile.kind !== "head-lsp-fake-v1" ||
+    !ALLOWED_SCENARIOS.has(profile.scenario || "barrel") ||
+    !path.isAbsolute(profile.serverFile || "") ||
+    !/^[a-f0-9]{64}$/.test(profile.serverDigest || "")
+  ) {
     throw protocolError("unsupported-profile", "Only a reviewed, exact fake LSP profile is supported by E1A-P.");
   }
   const stat = fs.lstatSync(profile.serverFile, { throwIfNoEntry: false });
@@ -98,12 +133,14 @@ function profileProvenance(profile) {
     nodeFile,
     nodeVersion: process.version,
     nodeDigest: sha256(nodeBytes),
-    producerDigest: sha256(canonicalJson({
-      kind: profile.kind,
-      serverDigest: profile.serverDigest,
-      nodeDigest: sha256(nodeBytes),
-      nodeVersion: process.version,
-    })),
+    producerDigest: sha256(
+      canonicalJson({
+        kind: profile.kind,
+        serverDigest: profile.serverDigest,
+        nodeDigest: sha256(nodeBytes),
+        nodeVersion: process.version,
+      }),
+    ),
   };
 }
 
@@ -119,18 +156,56 @@ function baseProvenance(collectionId, descriptor, producerDigest = null) {
 
 function terminalFromError(error, provenance, cleanup, fallbackStage = "launch") {
   const contaminated = new Set([
-    "mapping-mismatch", "project-mismatch", "generation-mismatch", "manifest-mismatch", "producer-mismatch",
-    "uri-outside-snapshot", "invalid-range", "source-drift", "config-drift", "profile-drift",
+    "mapping-mismatch",
+    "project-mismatch",
+    "generation-mismatch",
+    "manifest-mismatch",
+    "producer-mismatch",
+    "uri-outside-snapshot",
+    "invalid-range",
+    "source-drift",
+    "config-drift",
+    "profile-drift",
   ]);
-  const reason = error?.code && [
-    "invalid-input", "launch-failed", "request-timeout", "cancelled", "frame-oversize", "stdout-limit",
-    "stderr-limit", "frame-limit", "notification-limit", "invalid-framing", "invalid-json", "invalid-message",
-    "unsupported-server-request", "unsupported-server-notification", "unknown-response-id", "duplicate-response-id",
-    "late-response", "ambiguous-prepared-item", "invalid-prepare-result", "invalid-hierarchy-result",
-    "process-crash", "cleanup-failed", "limit-exceeded", "mapping-mismatch", "project-mismatch",
-    "generation-mismatch", "manifest-mismatch", "producer-mismatch", "uri-outside-snapshot", "invalid-range",
-    "source-drift", "config-drift", "profile-drift",
-  ].includes(error.code) ? error.code : "launch-failed";
+  const reason =
+    error?.code &&
+    [
+      "invalid-input",
+      "launch-failed",
+      "request-timeout",
+      "cancelled",
+      "frame-oversize",
+      "stdout-limit",
+      "stderr-limit",
+      "frame-limit",
+      "notification-limit",
+      "invalid-framing",
+      "invalid-json",
+      "invalid-message",
+      "unsupported-server-request",
+      "unsupported-server-notification",
+      "unknown-response-id",
+      "duplicate-response-id",
+      "late-response",
+      "ambiguous-prepared-item",
+      "invalid-prepare-result",
+      "invalid-hierarchy-result",
+      "process-crash",
+      "cleanup-failed",
+      "limit-exceeded",
+      "mapping-mismatch",
+      "project-mismatch",
+      "generation-mismatch",
+      "manifest-mismatch",
+      "producer-mismatch",
+      "uri-outside-snapshot",
+      "invalid-range",
+      "source-drift",
+      "config-drift",
+      "profile-drift",
+    ].includes(error.code)
+      ? error.code
+      : "launch-failed";
   const failureStage = error?.details?.stage || fallbackStage;
   return terminalResult({
     status: contaminated.has(reason) ? "contaminated" : "failed",
@@ -148,7 +223,9 @@ function writeImmutableSnapshot(root, descriptor, collectionId) {
     const file = path.join(root, ...document.path.split("/"));
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, document.text, { encoding: "utf8", flag: "wx" });
-    try { fs.chmodSync(file, 0o444); } catch {}
+    try {
+      fs.chmodSync(file, 0o444);
+    } catch {}
     manifest.push({ ...document, uri: snapshotUri(collectionId, document.path), file });
   }
   return manifest;
@@ -157,12 +234,17 @@ function writeImmutableSnapshot(root, descriptor, collectionId) {
 function assertSnapshotUnchanged(documents) {
   for (const document of documents) {
     let bytes;
-    try { bytes = fs.readFileSync(document.file); }
-    catch {
-      throw protocolError(document.path === "tsconfig.json" ? "config-drift" : "source-drift", "Owned LSP snapshot disappeared during collection.", { stage: "closing" });
+    try {
+      bytes = fs.readFileSync(document.file);
+    } catch {
+      throw protocolError(document.path === "tsconfig.json" ? "config-drift" : "source-drift", "Owned LSP snapshot disappeared during collection.", {
+        stage: "closing",
+      });
     }
     if (bytes.length !== document.bytes || sha256(bytes) !== document.digest) {
-      throw protocolError(document.path === "tsconfig.json" ? "config-drift" : "source-drift", "Owned LSP snapshot changed during collection.", { stage: "closing" });
+      throw protocolError(document.path === "tsconfig.json" ? "config-drift" : "source-drift", "Owned LSP snapshot changed during collection.", {
+        stage: "closing",
+      });
     }
   }
 }
@@ -184,7 +266,9 @@ async function waitForChildCleanup(childExit, child, timeoutMs = LSP_HOST_LIMITS
       resolve(value);
     };
     const timer = setTimeout(() => {
-      try { child.kill("SIGTERM"); } catch {}
+      try {
+        child.kill("SIGTERM");
+      } catch {}
       finish({ code: null, signal: "SIGTERM" });
     }, timeoutMs);
     childExit.then(finish);
@@ -211,7 +295,13 @@ export async function collectOutgoingCallEvidence({
     producer = profileProvenance(profile);
   } catch (error) {
     const status = error.code === "unsupported-profile" ? "unsupported" : error.code === "profile-drift" ? "contaminated" : "failed";
-    return terminalResult({ status, reason: error.code || "invalid-input", stage: "discovery", failureStage: "discovery", provenance: baseProvenance(collectionId, descriptor, producer?.producerDigest) });
+    return terminalResult({
+      status,
+      reason: error.code || "invalid-input",
+      stage: "discovery",
+      failureStage: "discovery",
+      provenance: baseProvenance(collectionId, descriptor, producer?.producerDigest),
+    });
   }
   const provenance = baseProvenance(collectionId, descriptor, producer.producerDigest);
   if (!supervisorSelection) return terminalResult({ status: "unsupported", reason: "unsupported-profile", stage: "discovery", provenance });
@@ -252,7 +342,14 @@ export async function collectOutgoingCallEvidence({
         totalEpochMs: collectionStartedAt + LSP_HOST_LIMITS.totalTimeoutMs,
       },
       cancelFile,
-      documents: snapshotDocuments.map(({ path: relativePath, languageId, text, bytes, digest, uri }) => ({ relativePath, languageId, text, bytes, digest, uri })),
+      documents: snapshotDocuments.map(({ path: relativePath, languageId, text, bytes, digest, uri }) => ({
+        relativePath,
+        languageId,
+        text,
+        bytes,
+        digest,
+        uri,
+      })),
     };
     supervised = spawnSupervisedProcess({
       selection: supervisorSelection,
@@ -267,14 +364,32 @@ export async function collectOutgoingCallEvidence({
       controlFile,
       terminationGraceMs: LSP_HOST_LIMITS.gracefulCleanupMs,
       onControlEvent: (event) => {
-        if (event.type === "provider.started") onProcessEvent({ type: "spawn", pid: event.providerPid, parentPid: supervised?.child.pid || process.pid, command: "node lsp-host-bridge --bridge", cwd: path.dirname(moduleFile), ports: "none" });
-        if (event.type === "provider.exited") onProcessEvent({ type: "exit", pid: event.providerPid, parentPid: supervised?.child.pid || process.pid, exitCode: event.exitCode, signal: "none" });
+        if (event.type === "provider.started")
+          onProcessEvent({
+            type: "spawn",
+            pid: event.providerPid,
+            parentPid: supervised?.child.pid || process.pid,
+            command: "node lsp-host-bridge --bridge",
+            cwd: path.dirname(moduleFile),
+            ports: "none",
+          });
+        if (event.type === "provider.exited")
+          onProcessEvent({ type: "exit", pid: event.providerPid, parentPid: supervised?.child.pid || process.pid, exitCode: event.exitCode, signal: "none" });
       },
     });
-    onProcessEvent({ type: "spawn", pid: supervised.child.pid, parentPid: process.pid, command: path.basename(supervisorSelection.binaryPath), cwd: path.dirname(supervisorSelection.binaryPath), ports: "none" });
+    onProcessEvent({
+      type: "spawn",
+      pid: supervised.child.pid,
+      parentPid: process.pid,
+      command: path.basename(supervisorSelection.binaryPath),
+      cwd: path.dirname(supervisorSelection.binaryPath),
+      ports: "none",
+    });
     const requestCancel = () => {
       if (!fs.existsSync(cancelFile)) {
-        try { fs.writeFileSync(cancelFile, canonicalJson({ collectionId, requestedAt: Date.now() }), { encoding: "utf8", flag: "wx" }); } catch {}
+        try {
+          fs.writeFileSync(cancelFile, canonicalJson({ collectionId, requestedAt: Date.now() }), { encoding: "utf8", flag: "wx" });
+        } catch {}
       }
     };
     const stop = (reason, force = false) => {
@@ -288,16 +403,25 @@ export async function collectOutgoingCallEvidence({
     forceTimer.unref?.();
     if (signal) {
       if (signal.aborted) requestCancel();
-      else { abortHandler = requestCancel; signal.addEventListener("abort", abortHandler, { once: true }); }
+      else {
+        abortHandler = requestCancel;
+        signal.addEventListener("abort", abortHandler, { once: true });
+      }
     }
     supervised.child.stdout.on("data", (chunk) => {
       if (outerFailure) return;
-      if (stdout.length + chunk.length > LSP_HOST_LIMITS.maxStdoutBytes) { stop("stdout-limit", false); return; }
+      if (stdout.length + chunk.length > LSP_HOST_LIMITS.maxStdoutBytes) {
+        stop("stdout-limit", false);
+        return;
+      }
       stdout = Buffer.concat([stdout, chunk]);
     });
     supervised.child.stderr.on("data", (chunk) => {
       if (outerFailure) return;
-      if (stderr.length + chunk.length > LSP_HOST_LIMITS.maxStderrBytes) { stop("stderr-limit", false); return; }
+      if (stderr.length + chunk.length > LSP_HOST_LIMITS.maxStderrBytes) {
+        stop("stderr-limit", false);
+        return;
+      }
       stderr = Buffer.concat([stderr, chunk]);
     });
     const closed = await waitForClose(supervised.child);
@@ -309,34 +433,73 @@ export async function collectOutgoingCallEvidence({
     cleanup = { attempted: true, verified: supervision.treeCleanupVerified, forced };
     assertSnapshotUnchanged(snapshotDocuments);
     let finalProducer;
-    try { finalProducer = profileProvenance(profile); }
-    catch { throw protocolError("producer-mismatch", "Fake LSP producer disappeared or changed before result publication.", { stage: "closing" }); }
-    if (finalProducer.producerDigest !== producer.producerDigest) throw protocolError("producer-mismatch", "Fake LSP producer changed before result publication.", { stage: "closing" });
+    try {
+      finalProducer = profileProvenance(profile);
+    } catch {
+      throw protocolError("producer-mismatch", "Fake LSP producer disappeared or changed before result publication.", { stage: "closing" });
+    }
+    if (finalProducer.producerDigest !== producer.producerDigest)
+      throw protocolError("producer-mismatch", "Fake LSP producer changed before result publication.", { stage: "closing" });
     if (outerFailure) result = terminalFromError(outerFailure, provenance, cleanup);
-    else if (!supervision.ownershipEstablished || !supervision.treeCleanupVerified) result = terminalFromError(protocolError("cleanup-failed", "Owned LSP process tree cleanup was not verified.", { stage: "closing" }), provenance, cleanup);
-    else if (closed.code !== 0) result = terminalFromError(protocolError("process-crash", `LSP bridge exited ${closed.code}: ${stderr.toString("utf8").slice(0, 512)}`, { stage: "launch" }), provenance, cleanup);
+    else if (!supervision.ownershipEstablished || !supervision.treeCleanupVerified)
+      result = terminalFromError(
+        protocolError("cleanup-failed", "Owned LSP process tree cleanup was not verified.", { stage: "closing" }),
+        provenance,
+        cleanup,
+      );
+    else if (closed.code !== 0)
+      result = terminalFromError(
+        protocolError("process-crash", `LSP bridge exited ${closed.code}: ${stderr.toString("utf8").slice(0, 512)}`, { stage: "launch" }),
+        provenance,
+        cleanup,
+      );
     const lines = stdout.toString("utf8").split(/\r?\n/).filter(Boolean);
     if (!result) {
-      if (lines.length !== 1) result = terminalFromError(protocolError("invalid-message", "LSP bridge did not emit exactly one result envelope.", { stage: "closing" }), provenance, cleanup);
+      if (lines.length !== 1)
+        result = terminalFromError(
+          protocolError("invalid-message", "LSP bridge did not emit exactly one result envelope.", { stage: "closing" }),
+          provenance,
+          cleanup,
+        );
       else {
-        try { result = JSON.parse(lines[0]); }
-        catch { result = terminalFromError(protocolError("invalid-json", "LSP bridge result is invalid JSON.", { stage: "closing" }), provenance, cleanup); }
+        try {
+          result = JSON.parse(lines[0]);
+        } catch {
+          result = terminalFromError(protocolError("invalid-json", "LSP bridge result is invalid JSON.", { stage: "closing" }), provenance, cleanup);
+        }
       }
     }
     if (result.provenance) {
       const expectedResultProvenance = { ...provenance, publishedCandidateCount: result.provenance.publishedCandidateCount ?? 0 };
-      if (canonicalJson(result.provenance) !== canonicalJson(expectedResultProvenance)) result = terminalFromError(protocolError("mapping-mismatch", "LSP bridge result mapping does not match its Host-owned collection.", { stage: "closing" }), provenance, cleanup);
+      if (canonicalJson(result.provenance) !== canonicalJson(expectedResultProvenance))
+        result = terminalFromError(
+          protocolError("mapping-mismatch", "LSP bridge result mapping does not match its Host-owned collection.", { stage: "closing" }),
+          provenance,
+          cleanup,
+        );
     }
-    result = Object.freeze({ ...result, cleanup, transport: { supervisorManifestDigest: supervision.supervisorManifestDigest, ownershipEstablished: supervision.ownershipEstablished, treeCleanupVerified: supervision.treeCleanupVerified } });
+    result = Object.freeze({
+      ...result,
+      cleanup,
+      transport: {
+        supervisorManifestDigest: supervision.supervisorManifestDigest,
+        ownershipEstablished: supervision.ownershipEstablished,
+        treeCleanupVerified: supervision.treeCleanupVerified,
+      },
+    });
   } catch (error) {
     let catchForced = false;
     if (supervised?.child && supervised.child.exitCode === null && supervised.child.signalCode === null) {
       supervised.terminate(true);
       catchForced = true;
-      try { await waitForClose(supervised.child); } catch {}
+      try {
+        await waitForClose(supervised.child);
+      } catch {}
     }
     if (supervised && !supervision) {
-      try { supervision = supervised.finalize({ exactSupervisorExitObserved: true, terminationRequested: catchForced || Boolean(outerFailure) }); } catch {}
+      try {
+        supervision = supervised.finalize({ exactSupervisorExitObserved: true, terminationRequested: catchForced || Boolean(outerFailure) });
+      } catch {}
     }
     cleanup = {
       attempted: Boolean(supervised),
@@ -349,12 +512,27 @@ export async function collectOutgoingCallEvidence({
     clearTimeout(forceTimer);
     if (signal && abortHandler) signal.removeEventListener("abort", abortHandler);
     if (ownedRoot) {
-      try { removeOwnedRoot(qaRoot, ownedRoot); }
-      catch (error) { result = terminalFromError(protocolError("cleanup-failed", `Owned LSP temporary root cleanup failed: ${error.message}`, { stage: "closing" }), provenance, { attempted: true, verified: false, forced }, "closing"); }
+      try {
+        removeOwnedRoot(qaRoot, ownedRoot);
+      } catch (error) {
+        result = terminalFromError(
+          protocolError("cleanup-failed", `Owned LSP temporary root cleanup failed: ${error.message}`, { stage: "closing" }),
+          provenance,
+          { attempted: true, verified: false, forced },
+          "closing",
+        );
+      }
     }
   }
   if (supervision && !result.transport) {
-    result = Object.freeze({ ...result, transport: { supervisorManifestDigest: supervision.supervisorManifestDigest, ownershipEstablished: supervision.ownershipEstablished, treeCleanupVerified: supervision.treeCleanupVerified } });
+    result = Object.freeze({
+      ...result,
+      transport: {
+        supervisorManifestDigest: supervision.supervisorManifestDigest,
+        ownershipEstablished: supervision.ownershipEstablished,
+        treeCleanupVerified: supervision.treeCleanupVerified,
+      },
+    });
   }
   return result;
 }
@@ -384,8 +562,13 @@ function realResult({ fixtureId, status, stage, reason, cleanup = {}, observatio
 function verifiedRegularFile(file, expectedDigest, expectedSize = null) {
   if (!path.isAbsolute(file)) throw protocolError("unsupported-profile", "Real profile file path must be absolute.");
   const stat = fs.lstatSync(file, { throwIfNoEntry: false });
-  if (!stat?.isFile() || stat.isSymbolicLink() || expectedSize !== null && stat.size !== expectedSize
-    || !/^[a-f0-9]{64}$/.test(expectedDigest || "") || sha256(fs.readFileSync(file)) !== expectedDigest) {
+  if (
+    !stat?.isFile() ||
+    stat.isSymbolicLink() ||
+    (expectedSize !== null && stat.size !== expectedSize) ||
+    !/^[a-f0-9]{64}$/.test(expectedDigest || "") ||
+    sha256(fs.readFileSync(file)) !== expectedDigest
+  ) {
     throw protocolError("profile-drift", "Real profile file bytes or identity changed.");
   }
   return fs.realpathSync.native(file);
@@ -420,11 +603,21 @@ function verifyNoUnlistedPackageEntries(root, filePaths) {
 
 function verifyRealPackage(packageProfile, expectedName) {
   const trust = REAL_PACKAGE_TRUST[expectedName];
-  if (!trust || !packageProfile || packageProfile.name !== expectedName || packageProfile.version !== trust.version
-    || packageProfile.url !== trust.url || packageProfile.sri !== trust.sri || packageProfile.archiveSha256 !== trust.archiveSha256
-    || packageProfile.treeDigest !== trust.treeDigest || packageProfile.regularFileCount !== trust.regularFileCount
-    || packageProfile.unpackedSize !== trust.unpackedSize || !Array.isArray(packageProfile.files)
-    || packageProfile.files.length !== trust.regularFileCount || !path.isAbsolute(packageProfile.root || "")) {
+  if (
+    !trust ||
+    !packageProfile ||
+    packageProfile.name !== expectedName ||
+    packageProfile.version !== trust.version ||
+    packageProfile.url !== trust.url ||
+    packageProfile.sri !== trust.sri ||
+    packageProfile.archiveSha256 !== trust.archiveSha256 ||
+    packageProfile.treeDigest !== trust.treeDigest ||
+    packageProfile.regularFileCount !== trust.regularFileCount ||
+    packageProfile.unpackedSize !== trust.unpackedSize ||
+    !Array.isArray(packageProfile.files) ||
+    packageProfile.files.length !== trust.regularFileCount ||
+    !path.isAbsolute(packageProfile.root || "")
+  ) {
     throw protocolError("unsupported-profile", "Real package profile does not match the pinned identity.");
   }
   const rootStat = fs.lstatSync(packageProfile.root, { throwIfNoEntry: false });
@@ -433,9 +626,16 @@ function verifyRealPackage(packageProfile, expectedName) {
   const seen = new Set();
   let total = 0;
   for (const record of packageProfile.files) {
-    if (!record || typeof record.path !== "string" || record.path.includes("\\") || record.path.startsWith("/")
-      || record.path.split("/").some((segment) => !segment || segment === "." || segment === "..")
-      || seen.has(record.path) || !Number.isSafeInteger(record.size) || record.size < 0) {
+    if (
+      !record ||
+      typeof record.path !== "string" ||
+      record.path.includes("\\") ||
+      record.path.startsWith("/") ||
+      record.path.split("/").some((segment) => !segment || segment === "." || segment === "..") ||
+      seen.has(record.path) ||
+      !Number.isSafeInteger(record.size) ||
+      record.size < 0
+    ) {
       throw protocolError("unsupported-profile", "Real package manifest contains an invalid file record.");
     }
     seen.add(record.path);
@@ -447,7 +647,10 @@ function verifyRealPackage(packageProfile, expectedName) {
     verifiedRegularFile(file, record.sha256, record.size);
     total += record.size;
   }
-  verifyNoUnlistedPackageEntries(root, packageProfile.files.map((record) => record.path));
+  verifyNoUnlistedPackageEntries(
+    root,
+    packageProfile.files.map((record) => record.path),
+  );
   if (total !== trust.unpackedSize || sha256(JSON.stringify(packageProfile.files)) !== trust.treeDigest) {
     throw protocolError("profile-drift", "Real package tree digest changed.");
   }
@@ -465,15 +668,24 @@ function verifyRealProfileManifest(manifestFile) {
   const manifestBytes = fs.readFileSync(manifestFile);
   const manifestPath = verifiedRegularFile(manifestFile, sha256(manifestBytes), manifestStat.size);
   let profile;
-  try { profile = JSON.parse(manifestBytes.toString("utf8")); }
-  catch { throw protocolError("unsupported-profile", "Real profile manifest is not valid JSON."); }
-  const rqIdentity = profile.kind === LSP_HOST_REAL_PROFILE_KIND && profile.normalizerVersion === LSP_HOST_REAL_NORMALIZER_VERSION
-    && profile.profileVersion === undefined && profile.direction === undefined;
+  try {
+    profile = JSON.parse(manifestBytes.toString("utf8"));
+  } catch {
+    throw protocolError("unsupported-profile", "Real profile manifest is not valid JSON.");
+  }
+  const rqIdentity =
+    profile.kind === LSP_HOST_REAL_PROFILE_KIND &&
+    profile.normalizerVersion === LSP_HOST_REAL_NORMALIZER_VERSION &&
+    profile.profileVersion === undefined &&
+    profile.direction === undefined;
   if (profile.schemaVersion !== 1 || !rqIdentity) {
     throw protocolError("unsupported-profile", "Real profile manifest does not match the pinned contract.");
   }
-  if (profile.node?.version !== "v24.18.0" || profile.node?.sha256 !== "9a4eb5f1c29c6a2e93852ead46b999e284a6a5ca8bab4d4e241d587d025a52de"
-    || profile.node?.size !== 92534088) {
+  if (
+    profile.node?.version !== "v24.18.0" ||
+    profile.node?.sha256 !== "9a4eb5f1c29c6a2e93852ead46b999e284a6a5ca8bab4d4e241d587d025a52de" ||
+    profile.node?.size !== 92534088
+  ) {
     throw protocolError("unsupported-profile", "Real profile manifest does not match the pinned toolchain contract.");
   }
   const nodePath = verifiedRegularFile(profile.node.path, profile.node.sha256, profile.node.size);
@@ -481,10 +693,12 @@ function verifyRealProfileManifest(manifestFile) {
   const typescript = verifyRealPackage(profile.packages?.typescript, "typescript");
   const tlsCli = verifiedRegularFile(profile.entrypoints?.tlsCli?.path, profile.entrypoints?.tlsCli?.sha256);
   const tsserver = verifiedRegularFile(profile.entrypoints?.tsserver?.path, profile.entrypoints?.tsserver?.sha256);
-  if (tlsCli !== fs.realpathSync.native(path.join(tls.root, "lib", "cli.mjs"))
-    || tsserver !== fs.realpathSync.native(path.join(typescript.root, "lib", "tsserver.js"))
-    || profile.entrypoints?.tlsCli?.sha256 !== REAL_PACKAGE_TRUST["typescript-language-server"].entrypoint.sha256
-    || profile.entrypoints?.tsserver?.sha256 !== REAL_PACKAGE_TRUST.typescript.entrypoint.sha256) {
+  if (
+    tlsCli !== fs.realpathSync.native(path.join(tls.root, "lib", "cli.mjs")) ||
+    tsserver !== fs.realpathSync.native(path.join(typescript.root, "lib", "tsserver.js")) ||
+    profile.entrypoints?.tlsCli?.sha256 !== REAL_PACKAGE_TRUST["typescript-language-server"].entrypoint.sha256 ||
+    profile.entrypoints?.tsserver?.sha256 !== REAL_PACKAGE_TRUST.typescript.entrypoint.sha256
+  ) {
     throw protocolError("profile-drift", "Real profile entrypoint escaped its pinned package root.");
   }
   const tlsPackageJson = JSON.parse(fs.readFileSync(path.join(tls.root, "package.json"), "utf8"));
@@ -552,7 +766,9 @@ function createRealAdmission(snapshotRoot, descriptor) {
       try {
         fs.writeFileSync(write, document.text, "utf8");
         fs.fsyncSync(write);
-      } finally { fs.closeSync(write); }
+      } finally {
+        fs.closeSync(write);
+      }
       const lstat = fs.lstatSync(file);
       if (!lstat.isFile() || lstat.isSymbolicLink()) throw protocolError("unsupported-profile", "Real snapshot file is not regular and non-reparse.");
       const nativeRealPath = fs.realpathSync.native(file);
@@ -563,8 +779,14 @@ function createRealAdmission(snapshotRoot, descriptor) {
       try {
         const handleStat = fs.fstatSync(handle, { bigint: true });
         const pathStat = fs.statSync(nativeRealPath, { bigint: true });
-        if (handleStat.dev === 0n || handleStat.ino === 0n || handleStat.dev !== pathStat.dev || handleStat.ino !== pathStat.ino
-          || handleStat.size !== pathStat.size || handleStat.size !== BigInt(document.bytes)) {
+        if (
+          handleStat.dev === 0n ||
+          handleStat.ino === 0n ||
+          handleStat.dev !== pathStat.dev ||
+          handleStat.ino !== pathStat.ino ||
+          handleStat.size !== pathStat.size ||
+          handleStat.size !== BigInt(document.bytes)
+        ) {
           throw protocolError("unsupported-profile", "Real snapshot file identity is unavailable or inconsistent.");
         }
         const handleDigest = sha256(readDescriptorBytes(handle, document.bytes));
@@ -588,14 +810,30 @@ function createRealAdmission(snapshotRoot, descriptor) {
         });
         owned = false;
       } finally {
-        if (owned) { try { fs.closeSync(handle); } catch {} }
+        if (owned) {
+          try {
+            fs.closeSync(handle);
+          } catch {}
+        }
       }
     }
   } catch (error) {
-    for (const document of documents) { try { fs.closeSync(document.handle); } catch {} }
+    for (const document of documents) {
+      try {
+        fs.closeSync(document.handle);
+      } catch {}
+    }
     throw error;
   }
-  const admissionPayload = documents.map(({ relativePath, languageId, digest, bytes, nativeRealPathDigest, observedFileIdentity, allowedUris }) => ({ relativePath, languageId, digest, bytes, nativeRealPathDigest, observedFileIdentity, allowedUris }));
+  const admissionPayload = documents.map(({ relativePath, languageId, digest, bytes, nativeRealPathDigest, observedFileIdentity, allowedUris }) => ({
+    relativePath,
+    languageId,
+    digest,
+    bytes,
+    nativeRealPathDigest,
+    observedFileIdentity,
+    allowedUris,
+  }));
   return { root, documents, admissionManifestDigest: sha256(canonicalJson(admissionPayload)) };
 }
 
@@ -612,22 +850,41 @@ function verifyRealAdmission(admission, stage = "closing") {
       throw protocolError(document.relativePath === "tsconfig.json" ? "config-drift" : "source-drift", "Real snapshot binding disappeared.", { stage });
     }
     const expected = document.observedFileIdentity;
-    if (handleStat.dev.toString() !== expected.dev || handleStat.ino.toString() !== expected.ino || handleStat.size.toString() !== expected.size
-      || pathStat.dev.toString() !== expected.dev || pathStat.ino.toString() !== expected.ino || pathStat.size.toString() !== expected.size
-      || nativeRealPath !== document.file || sha256(readDescriptorBytes(document.handle, document.bytes)) !== document.digest
-      || sha256(fs.readFileSync(document.file)) !== document.digest) {
+    if (
+      handleStat.dev.toString() !== expected.dev ||
+      handleStat.ino.toString() !== expected.ino ||
+      handleStat.size.toString() !== expected.size ||
+      pathStat.dev.toString() !== expected.dev ||
+      pathStat.ino.toString() !== expected.ino ||
+      pathStat.size.toString() !== expected.size ||
+      nativeRealPath !== document.file ||
+      sha256(readDescriptorBytes(document.handle, document.bytes)) !== document.digest ||
+      sha256(fs.readFileSync(document.file)) !== document.digest
+    ) {
       throw protocolError(document.relativePath === "tsconfig.json" ? "config-drift" : "source-drift", "Real snapshot binding changed.", { stage });
     }
   }
 }
 
 function closeRealAdmission(admission) {
-  for (const document of admission?.documents || []) { try { fs.closeSync(document.handle); } catch {} }
+  for (const document of admission?.documents || []) {
+    try {
+      fs.closeSync(document.handle);
+    } catch {}
+  }
 }
 
 function validateRealItem(item, documents) {
-  if (!item || typeof item !== "object" || typeof item.name !== "string" || item.name.length < 1 || item.name.length > 1024
-    || !Number.isSafeInteger(item.kind) || item.kind < 1 || item.kind > 26) {
+  if (
+    !item ||
+    typeof item !== "object" ||
+    typeof item.name !== "string" ||
+    item.name.length < 1 ||
+    item.name.length > 1024 ||
+    !Number.isSafeInteger(item.kind) ||
+    item.kind < 1 ||
+    item.kind > 26
+  ) {
     throw protocolError("invalid-hierarchy-result", "Real call hierarchy item is invalid.");
   }
   const document = admittedRealDocumentFromUri(item.uri, documents);
@@ -644,15 +901,23 @@ function normalizeRealOutgoing(preparedItem, outgoing, documents) {
   let rawFromRangeCount = 0;
   let uniqueFromRangeCount = 0;
   for (const relation of outgoing) {
-    if (!relation || typeof relation !== "object" || !Array.isArray(relation.fromRanges) || relation.fromRanges.length < 1 || relation.fromRanges.length > 256) {
+    if (
+      !relation ||
+      typeof relation !== "object" ||
+      !Array.isArray(relation.fromRanges) ||
+      relation.fromRanges.length < 1 ||
+      relation.fromRanges.length > 256
+    ) {
       throw protocolError("invalid-hierarchy-result", "Real outgoing relation is invalid.");
     }
     const target = validateRealItem(relation.to, documents);
     rawFromRangeCount += relation.fromRanges.length;
-    const validatedRanges = relation.fromRanges.map((range) => {
-      validateRange(caller.document.text, range);
-      return range;
-    }).sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right), "en"));
+    const validatedRanges = relation.fromRanges
+      .map((range) => {
+        validateRange(caller.document.text, range);
+        return range;
+      })
+      .sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right), "en"));
     const seenRanges = new Set();
     const fromRanges = validatedRanges.filter((range) => {
       const key = `${range.start.line}:${range.start.character}:${range.end.line}:${range.end.character}`;
@@ -662,13 +927,21 @@ function normalizeRealOutgoing(preparedItem, outgoing, documents) {
     });
     uniqueFromRangeCount += fromRanges.length;
     normalized.push({
-      from: { path: caller.relativePath, name: preparedItem.name, kind: preparedItem.kind, range: preparedItem.range, selectionRange: preparedItem.selectionRange },
+      from: {
+        path: caller.relativePath,
+        name: preparedItem.name,
+        kind: preparedItem.kind,
+        range: preparedItem.range,
+        selectionRange: preparedItem.selectionRange,
+      },
       to: { path: target.relativePath, name: relation.to.name, kind: relation.to.kind, range: relation.to.range, selectionRange: relation.to.selectionRange },
       fromRanges,
     });
   }
   return {
-    normalizedRelations: normalized.sort((left, right) => canonicalJson(left) < canonicalJson(right) ? -1 : canonicalJson(left) > canonicalJson(right) ? 1 : 0),
+    normalizedRelations: normalized.sort((left, right) =>
+      canonicalJson(left) < canonicalJson(right) ? -1 : canonicalJson(left) > canonicalJson(right) ? 1 : 0,
+    ),
     rangeCounts: {
       rawFromRangeCount,
       uniqueFromRangeCount,
@@ -681,24 +954,39 @@ function verifyBridgeRealDocuments(documents, stage) {
   for (const document of documents) {
     let stat;
     let real;
-    try { stat = fs.statSync(document.file, { bigint: true }); real = fs.realpathSync.native(document.file); }
-    catch { throw protocolError(document.relativePath === "tsconfig.json" ? "config-drift" : "source-drift", "Real bridge snapshot disappeared.", { stage }); }
-    if (stat.dev.toString() !== document.observedFileIdentity.dev || stat.ino.toString() !== document.observedFileIdentity.ino
-      || stat.size.toString() !== document.observedFileIdentity.size || real !== document.file
-      || sha256(fs.readFileSync(document.file)) !== document.digest) {
+    try {
+      stat = fs.statSync(document.file, { bigint: true });
+      real = fs.realpathSync.native(document.file);
+    } catch {
+      throw protocolError(document.relativePath === "tsconfig.json" ? "config-drift" : "source-drift", "Real bridge snapshot disappeared.", { stage });
+    }
+    if (
+      stat.dev.toString() !== document.observedFileIdentity.dev ||
+      stat.ino.toString() !== document.observedFileIdentity.ino ||
+      stat.size.toString() !== document.observedFileIdentity.size ||
+      real !== document.file ||
+      sha256(fs.readFileSync(document.file)) !== document.digest
+    ) {
       throw protocolError(document.relativePath === "tsconfig.json" ? "config-drift" : "source-drift", "Real bridge snapshot changed.", { stage });
     }
   }
 }
 
 function realServerRequestReply(message) {
-  if (message?.method === "workspace/configuration" && Array.isArray(message.params?.items)
-    && message.params.items.length <= LSP_HOST_REAL_LIMITS.maxConfigurationItems) {
+  if (
+    message?.method === "workspace/configuration" &&
+    Array.isArray(message.params?.items) &&
+    message.params.items.length <= LSP_HOST_REAL_LIMITS.maxConfigurationItems
+  ) {
     const result = message.params.items.map(() => null);
     return { response: { jsonrpc: "2.0", id: message.id, result }, unsupported: false, sideEffect: "none" };
   }
   if (message?.method === "workspace/applyEdit") {
-    return { response: { jsonrpc: "2.0", id: message.id, result: { applied: false, failureReason: "HEAD real LSP fixture is read-only" } }, unsupported: false, sideEffect: "denied" };
+    return {
+      response: { jsonrpc: "2.0", id: message.id, result: { applied: false, failureReason: "HEAD real LSP fixture is read-only" } },
+      unsupported: false,
+      sideEffect: "denied",
+    };
   }
   if (message?.method === "window/workDoneProgress/create") {
     return { response: { jsonrpc: "2.0", id: message.id, result: null }, unsupported: false, sideEffect: "none" };
@@ -710,15 +998,27 @@ function verifyExternalCancellationControl(request) {
   const enabled = request?.fault?.type === "cancel-during-prepare";
   const control = request?.externalCancellation;
   if (!enabled) {
-    if (control !== null && control !== undefined) throw protocolError("mapping-mismatch", "Unexpected external cancellation control was supplied.", { stage: "launch" });
+    if (control !== null && control !== undefined)
+      throw protocolError("mapping-mismatch", "Unexpected external cancellation control was supplied.", { stage: "launch" });
     return null;
   }
   const runtimeRoot = path.resolve(request.runtimeRoot || "");
-  if (!control || !path.isAbsolute(control.readyFile || "") || !path.isAbsolute(control.signalFile || "")
-    || path.dirname(path.resolve(control.readyFile)) !== runtimeRoot || path.dirname(path.resolve(control.signalFile)) !== runtimeRoot
-    || path.basename(control.readyFile) !== "prepare-ready.json" || path.basename(control.signalFile) !== "external-cancel.json"
-    || control.readyFile === control.signalFile || !Number.isSafeInteger(control.signalBytes) || control.signalBytes < 1 || control.signalBytes > 4096
-    || !/^[a-f0-9]{64}$/.test(control.signalDigest || "") || fs.existsSync(control.readyFile) || fs.existsSync(control.signalFile)) {
+  if (
+    !control ||
+    !path.isAbsolute(control.readyFile || "") ||
+    !path.isAbsolute(control.signalFile || "") ||
+    path.dirname(path.resolve(control.readyFile)) !== runtimeRoot ||
+    path.dirname(path.resolve(control.signalFile)) !== runtimeRoot ||
+    path.basename(control.readyFile) !== "prepare-ready.json" ||
+    path.basename(control.signalFile) !== "external-cancel.json" ||
+    control.readyFile === control.signalFile ||
+    !Number.isSafeInteger(control.signalBytes) ||
+    control.signalBytes < 1 ||
+    control.signalBytes > 4096 ||
+    !/^[a-f0-9]{64}$/.test(control.signalDigest || "") ||
+    fs.existsSync(control.readyFile) ||
+    fs.existsSync(control.signalFile)
+  ) {
     throw protocolError("mapping-mismatch", "External cancellation control is not an empty bounded runtime channel.", { stage: "launch" });
   }
   return control;
@@ -726,11 +1026,18 @@ function verifyExternalCancellationControl(request) {
 
 async function runRealBridge(request) {
   const profile = verifyRealProfileManifest(request?.profileManifestFile);
-  if (request?.profileKind !== profile.kind) throw protocolError("mapping-mismatch", "Real profile kind changed across the Host boundary.", { stage: "launch" });
+  if (request?.profileKind !== profile.kind)
+    throw protocolError("mapping-mismatch", "Real profile kind changed across the Host boundary.", { stage: "launch" });
   const documents = request?.documents;
   const expectedDocumentCount = 4;
-  if (!Array.isArray(documents) || documents.length !== expectedDocumentCount || !request?.prepare || !request?.deadlines
-    || request.profileManifestDigest !== profile.manifestDigest || request.semanticProfileDigest !== profile.semanticProfileDigest) {
+  if (
+    !Array.isArray(documents) ||
+    documents.length !== expectedDocumentCount ||
+    !request?.prepare ||
+    !request?.deadlines ||
+    request.profileManifestDigest !== profile.manifestDigest ||
+    request.semanticProfileDigest !== profile.semanticProfileDigest
+  ) {
     throw protocolError("mapping-mismatch", "Real bridge input does not match its verified profile and admission.", { stage: "launch" });
   }
   verifyRealAdmissionRequestShape(documents, request.admissionManifestDigest);
@@ -744,15 +1051,30 @@ async function runRealBridge(request) {
     WINDIR: systemRoot,
     ComSpec: path.join(systemRoot, "System32", "cmd.exe"),
     PATH: `${path.dirname(profile.node.path)};${path.join(systemRoot, "System32")}`,
-    TEMP: path.join(runtimeRoot, "temp"), TMP: path.join(runtimeRoot, "tmp"), HOME: path.join(runtimeRoot, "home"),
-    USERPROFILE: path.join(runtimeRoot, "user"), APPDATA: path.join(runtimeRoot, "appdata"), LOCALAPPDATA: path.join(runtimeRoot, "localappdata"),
+    TEMP: path.join(runtimeRoot, "temp"),
+    TMP: path.join(runtimeRoot, "tmp"),
+    HOME: path.join(runtimeRoot, "home"),
+    USERPROFILE: path.join(runtimeRoot, "user"),
+    APPDATA: path.join(runtimeRoot, "appdata"),
+    LOCALAPPDATA: path.join(runtimeRoot, "localappdata"),
   };
-  for (const directory of Object.values(environment).filter((value) => value.startsWith(`${runtimeRoot}${path.sep}`))) fs.mkdirSync(directory, { recursive: false });
+  for (const directory of Object.values(environment).filter((value) => value.startsWith(`${runtimeRoot}${path.sep}`)))
+    fs.mkdirSync(directory, { recursive: false });
   const argv = [profile.tlsCli, "--stdio", "--log-level", "3"];
-  const child = spawn(profile.node.path, argv, { cwd: request.snapshotRoot, env: environment, shell: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(profile.node.path, argv, {
+    cwd: request.snapshotRoot,
+    env: environment,
+    shell: false,
+    windowsHide: true,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
   const parser = new LspFrameParser(LSP_HOST_REAL_LIMITS);
   const serverParser = new LspFrameParser(LSP_HOST_REAL_LIMITS);
-  const pending = createPendingTable({ collectionId: request.collectionId, admissionManifestDigest: request.admissionManifestDigest, profileManifestDigest: profile.manifestDigest });
+  const pending = createPendingTable({
+    collectionId: request.collectionId,
+    admissionManifestDigest: request.admissionManifestDigest,
+    profileManifestDigest: profile.manifestDigest,
+  });
   const waiters = new Map();
   const transcript = [];
   let outboundWire = Buffer.alloc(0);
@@ -770,20 +1092,23 @@ async function runRealBridge(request) {
     if (proxyEvents.length >= LSP_HOST_REAL_LIMITS.maxFrames) throw protocolError("frame-limit", "Real LSP proxy evidence exceeded its bound.", { stage });
     proxyEvents.push({ type, observedAtEpochMs: Date.now(), ...fields });
   };
-  const childExit = new Promise((resolve) => child.once("close", (code, signal) => {
-    childClosed = true;
-    if (waiters.size > 0) {
-      firstFailure ||= protocolError("process-crash", "Pinned real LSP exited with requests outstanding.", { stage });
-      for (const waiter of waiters.values()) waiter.reject(firstFailure);
-      waiters.clear();
-    }
-    resolve({ code, signal });
-  }));
+  const childExit = new Promise((resolve) =>
+    child.once("close", (code, signal) => {
+      childClosed = true;
+      if (waiters.size > 0) {
+        firstFailure ||= protocolError("process-crash", "Pinned real LSP exited with requests outstanding.", { stage });
+        for (const waiter of waiters.values()) waiter.reject(firstFailure);
+        waiters.clear();
+      }
+      resolve({ code, signal });
+    }),
+  );
   const send = (message) => {
     if (childClosed || child.stdin.destroyed) throw protocolError("process-crash", "Real LSP transport is closed.", { stage });
     transcript.push({ direction: "out", message });
     const frame = encodeLspMessage(message, LSP_HOST_REAL_LIMITS);
-    if (outboundWire.length + frame.length > LSP_HOST_REAL_LIMITS.maxRawEvidenceWireBytes) throw protocolError("limit-exceeded", "Real LSP outbound raw evidence exceeded its bound.", { stage });
+    if (outboundWire.length + frame.length > LSP_HOST_REAL_LIMITS.maxRawEvidenceWireBytes)
+      throw protocolError("limit-exceeded", "Real LSP outbound raw evidence exceeded its bound.", { stage });
     outboundWire = Buffer.concat([outboundWire, frame]);
     child.stdin.write(frame);
   };
@@ -793,9 +1118,27 @@ async function runRealBridge(request) {
     const id = pending.issue(method);
     send({ jsonrpc: "2.0", id, method, params });
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { waiters.delete(id); reject(protocolError("request-timeout", `Real LSP ${requestStage} timed out.`, { stage: requestStage })); }, remaining);
-      waiters.set(id, { method, resolve: (value) => { clearTimeout(timer); resolve(value); }, reject: (error) => { clearTimeout(timer); reject(error); } });
-      if (request.fault?.type === "kill-during-prepare" && requestStage === "prepare") setTimeout(() => { try { child.kill("SIGTERM"); } catch {} }, 10).unref?.();
+      const timer = setTimeout(() => {
+        waiters.delete(id);
+        reject(protocolError("request-timeout", `Real LSP ${requestStage} timed out.`, { stage: requestStage }));
+      }, remaining);
+      waiters.set(id, {
+        method,
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
+      if (request.fault?.type === "kill-during-prepare" && requestStage === "prepare")
+        setTimeout(() => {
+          try {
+            child.kill("SIGTERM");
+          } catch {}
+        }, 10).unref?.();
       if (request.fault?.type === "cancel-during-prepare" && requestStage === "prepare") {
         const control = request.externalCancellation;
         const readyBytes = Buffer.from(canonicalJson({ collectionId: request.collectionId, id, method }), "utf8");
@@ -836,20 +1179,33 @@ async function runRealBridge(request) {
     send(reply.response);
     if (reply.unsupported) throw protocolError("unsupported-server-request", "Real LSP requested an unsupported Host operation.", { stage });
   };
-  const allowedNotifications = new Set(["window/logMessage", "window/showMessage", "$/progress", "$/typescriptVersion", "textDocument/publishDiagnostics", "telemetry/event"]);
+  const allowedNotifications = new Set([
+    "window/logMessage",
+    "window/showMessage",
+    "$/progress",
+    "$/typescriptVersion",
+    "textDocument/publishDiagnostics",
+    "telemetry/event",
+  ]);
   const handle = (message) => {
     validateMessageBase(message);
     transcript.push({ direction: "in", message });
     if ("method" in message && "id" in message) return replyToServerRequest(message);
     if ("method" in message) {
-      if (++notificationCount > LSP_HOST_REAL_LIMITS.maxNotifications) throw protocolError("notification-limit", "Real LSP notification count exceeded its bound.", { stage });
-      if (!allowedNotifications.has(message.method)) throw protocolError("unsupported-server-notification", "Real LSP emitted an unsupported notification.", { stage });
+      if (++notificationCount > LSP_HOST_REAL_LIMITS.maxNotifications)
+        throw protocolError("notification-limit", "Real LSP notification count exceeded its bound.", { stage });
+      if (!allowedNotifications.has(message.method))
+        throw protocolError("unsupported-server-notification", "Real LSP emitted an unsupported notification.", { stage });
       return;
     }
     const waiter = waiters.get(message.id);
     if (waiter?.method === "textDocument/prepareCallHierarchy" && prepareResponseBody === null) prepareResponseBody = structuredClone(message);
     if (waiter?.method === "callHierarchy/outgoingCalls" && outgoingResponseBody === null) outgoingResponseBody = structuredClone(message);
-    const entry = pending.consume(message, { collectionId: request.collectionId, admissionManifestDigest: request.admissionManifestDigest, profileManifestDigest: profile.manifestDigest });
+    const entry = pending.consume(message, {
+      collectionId: request.collectionId,
+      admissionManifestDigest: request.admissionManifestDigest,
+      profileManifestDigest: profile.manifestDigest,
+    });
     if (!waiter || waiter.method !== entry.method) throw protocolError("late-response", "Real LSP response has no active waiter.", { stage });
     waiters.delete(message.id);
     if ("error" in message) waiter.reject(protocolError("invalid-message", `Real LSP request ${entry.method} failed.`, { stage }));
@@ -857,7 +1213,8 @@ async function runRealBridge(request) {
   };
   const deliverProxyMessage = (message) => {
     const frame = encodeLspMessage(message, LSP_HOST_REAL_LIMITS);
-    if (inboundWire.length + frame.length > LSP_HOST_REAL_LIMITS.maxRawEvidenceWireBytes) throw protocolError("limit-exceeded", "Real LSP proxied inbound evidence exceeded its bound.", { stage });
+    if (inboundWire.length + frame.length > LSP_HOST_REAL_LIMITS.maxRawEvidenceWireBytes)
+      throw protocolError("limit-exceeded", "Real LSP proxied inbound evidence exceeded its bound.", { stage });
     inboundWire = Buffer.concat([inboundWire, frame]);
     proxyEvent("bridge-received", { requestId: Object.hasOwn(message, "id") ? message.id : null, method: message.method || null, bytes: frame.length });
     for (const delivered of parser.feed(frame)) handle(delivered);
@@ -868,8 +1225,8 @@ async function runRealBridge(request) {
     const waiter = !Object.hasOwn(message, "method") ? waiters.get(message.id) : null;
     if (waiter?.method === "textDocument/prepareCallHierarchy" && prepareResponseBody === null) prepareResponseBody = structuredClone(message);
     if (waiter?.method === "callHierarchy/outgoingCalls" && outgoingResponseBody === null) outgoingResponseBody = structuredClone(message);
-    const holdPrepare = ["cancel-during-prepare", "delay-prepare-response"].includes(request.fault?.type)
-      && waiter?.method === "textDocument/prepareCallHierarchy";
+    const holdPrepare =
+      ["cancel-during-prepare", "delay-prepare-response"].includes(request.fault?.type) && waiter?.method === "textDocument/prepareCallHierarchy";
     if (holdPrepare) {
       heldProxyMessages.push({ message: structuredClone(message), frame });
       proxyEvent("proxy-held", { requestId: message.id, method: waiter.method, bytes: frame.length, reason: request.fault.type });
@@ -877,13 +1234,33 @@ async function runRealBridge(request) {
     }
     deliverProxyMessage(message);
   };
-  child.stdout.on("data", (chunk) => { if (!firstFailure) { try {
-    if (serverWire.length + chunk.length > LSP_HOST_REAL_LIMITS.maxRawEvidenceWireBytes) throw protocolError("limit-exceeded", "Real LSP original server evidence exceeded its bound.", { stage });
-    serverWire = Buffer.concat([serverWire, chunk]);
-    for (const message of serverParser.feed(chunk)) routeServerMessage(message);
-  } catch (error) { firstFailure ||= error; for (const waiter of waiters.values()) waiter.reject(error); waiters.clear(); } } });
-  child.stderr.on("data", (chunk) => { if (!firstFailure) { stderr = Buffer.concat([stderr, chunk]); if (stderr.length > LSP_HOST_REAL_LIMITS.maxStderrBytes) { firstFailure = protocolError("stderr-limit", "Real LSP stderr exceeded its bound.", { stage }); for (const waiter of waiters.values()) waiter.reject(firstFailure); waiters.clear(); } } });
-  child.stdin.on("error", (error) => { firstFailure ||= protocolError("process-crash", `Real LSP stdin failed: ${error.message}`, { stage }); });
+  child.stdout.on("data", (chunk) => {
+    if (!firstFailure) {
+      try {
+        if (serverWire.length + chunk.length > LSP_HOST_REAL_LIMITS.maxRawEvidenceWireBytes)
+          throw protocolError("limit-exceeded", "Real LSP original server evidence exceeded its bound.", { stage });
+        serverWire = Buffer.concat([serverWire, chunk]);
+        for (const message of serverParser.feed(chunk)) routeServerMessage(message);
+      } catch (error) {
+        firstFailure ||= error;
+        for (const waiter of waiters.values()) waiter.reject(error);
+        waiters.clear();
+      }
+    }
+  });
+  child.stderr.on("data", (chunk) => {
+    if (!firstFailure) {
+      stderr = Buffer.concat([stderr, chunk]);
+      if (stderr.length > LSP_HOST_REAL_LIMITS.maxStderrBytes) {
+        firstFailure = protocolError("stderr-limit", "Real LSP stderr exceeded its bound.", { stage });
+        for (const waiter of waiters.values()) waiter.reject(firstFailure);
+        waiters.clear();
+      }
+    }
+  });
+  child.stdin.on("error", (error) => {
+    firstFailure ||= protocolError("process-crash", `Real LSP stdin failed: ${error.message}`, { stage });
+  });
   let preparedItem = null;
   let rawOutgoing = [];
   let rawOutgoingOriginal = null;
@@ -894,33 +1271,54 @@ async function runRealBridge(request) {
   let failure = null;
   try {
     const rootUri = request.rootUris.nodeClientUri;
-    const initialized = await requestWithDeadline("initialize", {
-      processId: process.pid,
-      clientInfo: { name: "head-agent-core-lsp-rq-fixture", version: "0.1.0" },
-      locale: "en",
-      rootUri,
-      workspaceFolders: [{ uri: rootUri, name: "head-lsp-rq-fixture" }],
-      capabilities: {
-        workspace: { applyEdit: false, configuration: true, workspaceFolders: true },
-        textDocument: { synchronization: { dynamicRegistration: false, didSave: false, willSave: false, willSaveWaitUntil: false }, callHierarchy: { dynamicRegistration: false } },
-        general: { positionEncodings: ["utf-16"] },
+    const initialized = await requestWithDeadline(
+      "initialize",
+      {
+        processId: process.pid,
+        clientInfo: { name: "head-agent-core-lsp-rq-fixture", version: "0.1.0" },
+        locale: "en",
+        rootUri,
+        workspaceFolders: [{ uri: rootUri, name: "head-lsp-rq-fixture" }],
+        capabilities: {
+          workspace: { applyEdit: false, configuration: true, workspaceFolders: true },
+          textDocument: {
+            synchronization: { dynamicRegistration: false, didSave: false, willSave: false, willSaveWaitUntil: false },
+            callHierarchy: { dynamicRegistration: false },
+          },
+          general: { positionEncodings: ["utf-16"] },
+        },
+        initializationOptions: {
+          disableAutomaticTypingAcquisition: true,
+          plugins: [],
+          maxTsServerMemory: 512,
+          locale: "en",
+          tsserver: { path: profile.tsserver, useSyntaxServer: "never", logVerbosity: "off", trace: "off" },
+        },
       },
-      initializationOptions: {
-        disableAutomaticTypingAcquisition: true, plugins: [], maxTsServerMemory: 512, locale: "en",
-        tsserver: { path: profile.tsserver, useSyntaxServer: "never", logVerbosity: "off", trace: "off" },
-      },
-    }, "initialize");
-    if (initialized?.capabilities?.callHierarchyProvider !== true) throw protocolError("unsupported-profile", "Pinned real server did not advertise call hierarchy support.", { stage });
+      "initialize",
+    );
+    if (initialized?.capabilities?.callHierarchyProvider !== true)
+      throw protocolError("unsupported-profile", "Pinned real server did not advertise call hierarchy support.", { stage });
     send({ jsonrpc: "2.0", method: "initialized", params: {} });
     stage = "open";
     for (const document of documents.filter((item) => item.languageId === "typescript")) {
-      send({ jsonrpc: "2.0", method: "textDocument/didOpen", params: { textDocument: { uri: document.nodeClientUri, languageId: document.languageId, version: 1, text: document.text } } });
+      send({
+        jsonrpc: "2.0",
+        method: "textDocument/didOpen",
+        params: { textDocument: { uri: document.nodeClientUri, languageId: document.languageId, version: 1, text: document.text } },
+      });
     }
     const prepareDocument = documents.find((item) => item.relativePath === request.prepare.path);
-    if (!prepareDocument || prepareDocument.languageId !== "typescript") throw protocolError("mapping-mismatch", "Real prepare path is not an admitted source.", { stage: "prepare" });
+    if (!prepareDocument || prepareDocument.languageId !== "typescript")
+      throw protocolError("mapping-mismatch", "Real prepare path is not an admitted source.", { stage: "prepare" });
     stage = "prepare";
-    const prepared = await requestWithDeadline("textDocument/prepareCallHierarchy", { textDocument: { uri: prepareDocument.nodeClientUri }, position: request.prepare.position }, "prepare");
-    if (!Array.isArray(prepared) || prepared.length !== 1) throw protocolError("invalid-prepare-result", "Real prepare result is not one exact item.", { stage });
+    const prepared = await requestWithDeadline(
+      "textDocument/prepareCallHierarchy",
+      { textDocument: { uri: prepareDocument.nodeClientUri }, position: request.prepare.position },
+      "prepare",
+    );
+    if (!Array.isArray(prepared) || prepared.length !== 1)
+      throw protocolError("invalid-prepare-result", "Real prepare result is not one exact item.", { stage });
     preparedItem = prepared[0];
     validateRealItem(preparedItem, documents);
     if (request.fault?.type === "delete-before-outgoing") {
@@ -933,28 +1331,63 @@ async function runRealBridge(request) {
     rawOutgoingOriginal = structuredClone(outgoing);
     rawOutgoing = outgoing === null ? [] : outgoing;
     if (!Array.isArray(rawOutgoing)) throw protocolError("invalid-hierarchy-result", "Real outgoing result is not an array or null.", { stage });
-    if (request.replayTransform === "add-admitted-self" && rawOutgoing.length > 0) rawOutgoing = [...rawOutgoing, { to: preparedItem, fromRanges: [preparedItem.selectionRange] }];
+    if (request.replayTransform === "add-admitted-self" && rawOutgoing.length > 0)
+      rawOutgoing = [...rawOutgoing, { to: preparedItem, fromRanges: [preparedItem.selectionRange] }];
     ({ normalizedRelations, rangeCounts } = normalizeRealOutgoing(preparedItem, rawOutgoing, documents));
-  } catch (error) { failure = firstFailure || error; }
+  } catch (error) {
+    failure = firstFailure || error;
+  }
   stage = "closing";
   if (heldProxyMessages.length > 0) {
-    for (const held of heldProxyMessages) proxyEvent("proxy-dropped", { requestId: held.message.id, bytes: held.frame.length, reason: failure?.code || firstFailure?.code || "closing" });
+    for (const held of heldProxyMessages)
+      proxyEvent("proxy-dropped", { requestId: held.message.id, bytes: held.frame.length, reason: failure?.code || firstFailure?.code || "closing" });
     heldProxyMessages.length = 0;
   }
   clearInterval(cancelPoll);
   cancelPoll = null;
-  for (const id of pending.outstanding()) { try { send({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id } }); } catch {} }
-  for (const document of documents.filter((item) => item.languageId === "typescript")) { try { send({ jsonrpc: "2.0", method: "textDocument/didClose", params: { textDocument: { uri: document.nodeClientUri } } }); } catch {} }
+  for (const id of pending.outstanding()) {
+    try {
+      send({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id } });
+    } catch {}
+  }
+  for (const document of documents.filter((item) => item.languageId === "typescript")) {
+    try {
+      send({ jsonrpc: "2.0", method: "textDocument/didClose", params: { textDocument: { uri: document.nodeClientUri } } });
+    } catch {}
+  }
   if (!childClosed && !firstFailure) {
-    try { await requestWithDeadline("shutdown", null, "closing"); } catch (error) { failure ||= error; }
-    try { send({ jsonrpc: "2.0", method: "exit", params: null }); child.stdin.end(); } catch {}
-  } else if (!childClosed) { try { child.stdin.end(); child.kill("SIGTERM"); } catch {} }
+    try {
+      await requestWithDeadline("shutdown", null, "closing");
+    } catch (error) {
+      failure ||= error;
+    }
+    try {
+      send({ jsonrpc: "2.0", method: "exit", params: null });
+      child.stdin.end();
+    } catch {}
+  } else if (!childClosed) {
+    try {
+      child.stdin.end();
+      child.kill("SIGTERM");
+    } catch {}
+  }
   const closed = await waitForChildCleanup(childExit, child, LSP_HOST_REAL_LIMITS.gracefulCleanupMs);
-  try { parser.end(); } catch (error) { failure ||= error; }
-  try { serverParser.end(); } catch (error) { failure ||= error; }
+  try {
+    parser.end();
+  } catch (error) {
+    failure ||= error;
+  }
+  try {
+    serverParser.end();
+  } catch (error) {
+    failure ||= error;
+  }
   failure ||= firstFailure;
-  try { verifyBridgeRealDocuments(documents, "closing"); }
-  catch (error) { failure ||= error; }
+  try {
+    verifyBridgeRealDocuments(documents, "closing");
+  } catch (error) {
+    failure ||= error;
+  }
   const rawTranscriptDigest = sha256(canonicalJson(transcript));
   const rawOutgoingDigest = sha256(canonicalJson(rawOutgoingOriginal));
   const transformedOutgoingDigest = sha256(canonicalJson(rawOutgoing));
@@ -976,8 +1409,14 @@ async function runRealBridge(request) {
     },
     rawWireDigest,
     transcript: { representation: "decoded-json-messages", sha256: rawTranscriptDigest, body: transcript },
-    prepareResponse: prepareResponseBody === null ? null : { representation: "decoded-json-message", sha256: sha256(canonicalJson(prepareResponseBody)), body: prepareResponseBody },
-    outgoingOriginalResponse: outgoingResponseBody === null ? null : { representation: "decoded-json-message", sha256: sha256(canonicalJson(outgoingResponseBody)), body: outgoingResponseBody },
+    prepareResponse:
+      prepareResponseBody === null
+        ? null
+        : { representation: "decoded-json-message", sha256: sha256(canonicalJson(prepareResponseBody)), body: prepareResponseBody },
+    outgoingOriginalResponse:
+      outgoingResponseBody === null
+        ? null
+        : { representation: "decoded-json-message", sha256: sha256(canonicalJson(outgoingResponseBody)), body: outgoingResponseBody },
     outgoingOriginalResult: { representation: "decoded-json-result", sha256: rawOutgoingDigest, body: rawOutgoingOriginal },
     outgoingTransformedResult: {
       representation: "decoded-json-result",
@@ -988,11 +1427,20 @@ async function runRealBridge(request) {
     },
   };
   const rawEvidenceDigest = sha256(canonicalJson(rawEvidence));
-  const snapshotObservationDigest = sha256(canonicalJson({
-    sources: documents.filter((item) => item.languageId === "typescript").map((item) => ({ path: item.relativePath, digest: item.digest })),
-    configDigest: documents.find((item) => item.relativePath === "tsconfig.json")?.digest,
-  }));
-  const normalizedObservationDigest = sha256(canonicalJson({ snapshotObservationDigest, semanticProfileDigest: profile.semanticProfileDigest, normalizerVersion: profile.normalizerVersion, normalizedRelations }));
+  const snapshotObservationDigest = sha256(
+    canonicalJson({
+      sources: documents.filter((item) => item.languageId === "typescript").map((item) => ({ path: item.relativePath, digest: item.digest })),
+      configDigest: documents.find((item) => item.relativePath === "tsconfig.json")?.digest,
+    }),
+  );
+  const normalizedObservationDigest = sha256(
+    canonicalJson({
+      snapshotObservationDigest,
+      semanticProfileDigest: profile.semanticProfileDigest,
+      normalizerVersion: profile.normalizerVersion,
+      normalizedRelations,
+    }),
+  );
   const execution = {
     adapterDigest: sha256(fs.readFileSync(moduleFile)),
     profileManifestDigest: profile.manifestDigest,
@@ -1016,7 +1464,16 @@ async function runRealBridge(request) {
   };
   if (failure || closed.code !== 0) {
     const error = failure || protocolError("process-crash", "Pinned real LSP exited unexpectedly.", { stage });
-    return realResult({ fixtureId: request.fixtureId, profileKind: profile.kind, status: ["source-drift", "config-drift", "profile-drift", "uri-outside-snapshot", "mapping-mismatch"].includes(error.code) ? "contaminated" : "failed", stage: "closed", reason: error.code || "launch-failed", cleanup: { attempted: true, verified: childClosed || closed.signal === "SIGTERM", forced: closed.signal === "SIGTERM" }, observation: { rawTranscriptDigest, rawOutgoingDigest, rawWireDigest, rawEvidence, rawEvidenceDigest, rangeCounts }, execution });
+    return realResult({
+      fixtureId: request.fixtureId,
+      profileKind: profile.kind,
+      status: ["source-drift", "config-drift", "profile-drift", "uri-outside-snapshot", "mapping-mismatch"].includes(error.code) ? "contaminated" : "failed",
+      stage: "closed",
+      reason: error.code || "launch-failed",
+      cleanup: { attempted: true, verified: childClosed || closed.signal === "SIGTERM", forced: closed.signal === "SIGTERM" },
+      observation: { rawTranscriptDigest, rawOutgoingDigest, rawWireDigest, rawEvidence, rawEvidenceDigest, rangeCounts },
+      execution,
+    });
   }
   return realResult({
     fixtureId: request.fixtureId,
@@ -1025,18 +1482,50 @@ async function runRealBridge(request) {
     stage: "closed",
     reason: normalizedRelations.length > 0 ? "observed" : "empty",
     cleanup: { attempted: true, verified: true, forced: false },
-    observation: { snapshotObservationDigest, rawTranscriptDigest, rawOutgoingDigest, transformedOutgoingDigest, rawWireDigest, rawEvidence, rawEvidenceDigest, rawOutgoingCount: Array.isArray(rawOutgoingOriginal) ? rawOutgoingOriginal.length : null, transformedOutgoingCount: rawOutgoing.length, rangeCounts, normalizedRelations, normalizedObservationDigest, semanticProfileDigest: profile.semanticProfileDigest },
+    observation: {
+      snapshotObservationDigest,
+      rawTranscriptDigest,
+      rawOutgoingDigest,
+      transformedOutgoingDigest,
+      rawWireDigest,
+      rawEvidence,
+      rawEvidenceDigest,
+      rawOutgoingCount: Array.isArray(rawOutgoingOriginal) ? rawOutgoingOriginal.length : null,
+      transformedOutgoingCount: rawOutgoing.length,
+      rangeCounts,
+      normalizedRelations,
+      normalizedObservationDigest,
+      semanticProfileDigest: profile.semanticProfileDigest,
+    },
     execution,
   });
 }
 
 function verifyRealAdmissionRequestShape(documents, admissionManifestDigest) {
-  if (!/^[a-f0-9]{64}$/.test(admissionManifestDigest || "") || documents.some((document) => !document || typeof document.relativePath !== "string"
-    || !Array.isArray(document.allowedUris) || document.allowedUris.length !== 2 || !document.allowedUris.includes(document.pinnedServerUri)
-    || !document.allowedUris.includes(document.nodeClientUri) || !document.observedFileIdentity)) {
+  if (
+    !/^[a-f0-9]{64}$/.test(admissionManifestDigest || "") ||
+    documents.some(
+      (document) =>
+        !document ||
+        typeof document.relativePath !== "string" ||
+        !Array.isArray(document.allowedUris) ||
+        document.allowedUris.length !== 2 ||
+        !document.allowedUris.includes(document.pinnedServerUri) ||
+        !document.allowedUris.includes(document.nodeClientUri) ||
+        !document.observedFileIdentity,
+    )
+  ) {
     throw protocolError("mapping-mismatch", "Real admission manifest shape is invalid.");
   }
-  const payload = documents.map(({ relativePath, languageId, digest, bytes, nativeRealPathDigest, observedFileIdentity, allowedUris }) => ({ relativePath, languageId, digest, bytes, nativeRealPathDigest, observedFileIdentity, allowedUris }));
+  const payload = documents.map(({ relativePath, languageId, digest, bytes, nativeRealPathDigest, observedFileIdentity, allowedUris }) => ({
+    relativePath,
+    languageId,
+    digest,
+    bytes,
+    nativeRealPathDigest,
+    observedFileIdentity,
+    allowedUris,
+  }));
   if (sha256(canonicalJson(payload)) !== admissionManifestDigest) throw protocolError("mapping-mismatch", "Real admission manifest digest changed.");
 }
 
@@ -1061,11 +1550,14 @@ async function collectRealOutgoingCallObservation({
   let profile;
   try {
     profile = verifyRealProfileManifest(profileManifestFile);
-    if (typeof fixtureId !== "string" || !/^U0[1-7]$/.test(fixtureId)) throw protocolError("invalid-input", "Real fixture ID is invalid for the selected profile kind.");
+    if (typeof fixtureId !== "string" || !/^U0[1-7]$/.test(fixtureId))
+      throw protocolError("invalid-input", "Real fixture ID is invalid for the selected profile kind.");
     descriptor = createSnapshotDescriptor({ projectId, generationDigest, sources, tsconfigText });
     const expectedPaths = ["target.ts", "barrel.ts", "caller.ts", "tsconfig.json"];
-    if (canonicalJson(descriptor.documents.map((item) => item.path)) !== canonicalJson(expectedPaths)) throw protocolError("invalid-input", "Real fixture source paths are not exact for the selected profile kind.");
-    if (!supervisorSelection || typeof qaRoot !== "string" || !path.isAbsolute(qaRoot) || !fs.existsSync(qaRoot)) throw protocolError("unsupported-profile", "Real fixture requires a verified supervisor and existing QA root.");
+    if (canonicalJson(descriptor.documents.map((item) => item.path)) !== canonicalJson(expectedPaths))
+      throw protocolError("invalid-input", "Real fixture source paths are not exact for the selected profile kind.");
+    if (!supervisorSelection || typeof qaRoot !== "string" || !path.isAbsolute(qaRoot) || !fs.existsSync(qaRoot))
+      throw protocolError("unsupported-profile", "Real fixture requires a verified supervisor and existing QA root.");
   } catch (error) {
     return realResult({
       fixtureId,
@@ -1101,16 +1593,19 @@ async function collectRealOutgoingCallObservation({
     const rootNative = fs.realpathSync.native(snapshotRoot);
     const rootUris = { pinnedServerUri: serializePinnedTlsWindowsFixtureUri(rootNative), nodeClientUri: pathToFileURL(rootNative).href };
     const documents = admission.documents.map(({ handle, ...document }) => document);
-    const externalCancellation = fault?.type === "cancel-during-prepare" ? (() => {
-      const signalBytes = Buffer.from(canonicalJson({ collectionId, action: "cancel-prepare" }), "utf8");
-      return {
-        readyFile: path.join(runtimeRoot, "prepare-ready.json"),
-        signalFile: path.join(runtimeRoot, "external-cancel.json"),
-        signalBytes: signalBytes.length,
-        signalDigest: sha256(signalBytes),
-        signalBodyBase64: signalBytes.toString("base64"),
-      };
-    })() : null;
+    const externalCancellation =
+      fault?.type === "cancel-during-prepare"
+        ? (() => {
+            const signalBytes = Buffer.from(canonicalJson({ collectionId, action: "cancel-prepare" }), "utf8");
+            return {
+              readyFile: path.join(runtimeRoot, "prepare-ready.json"),
+              signalFile: path.join(runtimeRoot, "external-cancel.json"),
+              signalBytes: signalBytes.length,
+              signalDigest: sha256(signalBytes),
+              signalBodyBase64: signalBytes.toString("base64"),
+            };
+          })()
+        : null;
     const request = {
       schemaVersion: 1,
       fixtureId,
@@ -1129,7 +1624,11 @@ async function collectRealOutgoingCallObservation({
       fault,
       externalCancellation,
       replayTransform,
-      deadlines: { workEpochMs: startedAt + LSP_HOST_REAL_LIMITS.workBudgetMs, closingEpochMs: startedAt + LSP_HOST_REAL_LIMITS.workBudgetMs + LSP_HOST_REAL_LIMITS.gracefulCleanupMs, totalEpochMs: startedAt + LSP_HOST_REAL_LIMITS.totalTimeoutMs },
+      deadlines: {
+        workEpochMs: startedAt + LSP_HOST_REAL_LIMITS.workBudgetMs,
+        closingEpochMs: startedAt + LSP_HOST_REAL_LIMITS.workBudgetMs + LSP_HOST_REAL_LIMITS.gracefulCleanupMs,
+        totalEpochMs: startedAt + LSP_HOST_REAL_LIMITS.totalTimeoutMs,
+      },
     };
     const controlFile = path.join(ownedRoot, "supervisor-control.jsonl");
     supervised = spawnSupervisedProcess({
@@ -1142,11 +1641,27 @@ async function collectRealOutgoingCallObservation({
       controlFile,
       terminationGraceMs: LSP_HOST_REAL_LIMITS.gracefulCleanupMs,
       onControlEvent: (event) => {
-        if (event.type === "provider.started") onProcessEvent({ type: "spawn", pid: event.providerPid, parentPid: supervised?.child.pid || process.pid, command: "node lsp-host-bridge --real-bridge", cwd: path.dirname(moduleFile), ports: "none" });
-        if (event.type === "provider.exited") onProcessEvent({ type: "exit", pid: event.providerPid, parentPid: supervised?.child.pid || process.pid, exitCode: event.exitCode, signal: "none" });
+        if (event.type === "provider.started")
+          onProcessEvent({
+            type: "spawn",
+            pid: event.providerPid,
+            parentPid: supervised?.child.pid || process.pid,
+            command: "node lsp-host-bridge --real-bridge",
+            cwd: path.dirname(moduleFile),
+            ports: "none",
+          });
+        if (event.type === "provider.exited")
+          onProcessEvent({ type: "exit", pid: event.providerPid, parentPid: supervised?.child.pid || process.pid, exitCode: event.exitCode, signal: "none" });
       },
     });
-    onProcessEvent({ type: "spawn", pid: supervised.child.pid, parentPid: process.pid, command: path.basename(supervisorSelection.binaryPath), cwd: path.dirname(supervisorSelection.binaryPath), ports: "none" });
+    onProcessEvent({
+      type: "spawn",
+      pid: supervised.child.pid,
+      parentPid: process.pid,
+      command: path.basename(supervisorSelection.binaryPath),
+      cwd: path.dirname(supervisorSelection.binaryPath),
+      ports: "none",
+    });
     if (externalCancellation) {
       externalCancelTimer = setInterval(() => {
         if (!fs.existsSync(externalCancellation.readyFile) || fs.existsSync(externalCancellation.signalFile)) return;
@@ -1172,32 +1687,65 @@ async function collectRealOutgoingCallObservation({
       }, 5);
       externalCancelTimer.unref?.();
     }
-    const stop = (reason, force = false) => { outerFailure ||= protocolError(reason, `Real LSP Host ${reason}.`, { stage: "closing" }); forced ||= force; supervised.terminate(force); };
+    const stop = (reason, force = false) => {
+      outerFailure ||= protocolError(reason, `Real LSP Host ${reason}.`, { stage: "closing" });
+      forced ||= force;
+      supervised.terminate(force);
+    };
     softTimer = setTimeout(() => stop("request-timeout", false), Math.max(1, request.deadlines.closingEpochMs - Date.now()));
     forceTimer = setTimeout(() => stop("request-timeout", true), Math.max(1, request.deadlines.totalEpochMs - Date.now()));
-    supervised.child.stdout.on("data", (chunk) => { if (!outerFailure) { if (stdout.length + chunk.length > LSP_HOST_REAL_LIMITS.maxStdoutBytes) stop("stdout-limit"); else stdout = Buffer.concat([stdout, chunk]); } });
-    supervised.child.stderr.on("data", (chunk) => { if (!outerFailure) { if (stderr.length + chunk.length > LSP_HOST_REAL_LIMITS.maxStderrBytes) stop("stderr-limit"); else stderr = Buffer.concat([stderr, chunk]); } });
+    supervised.child.stdout.on("data", (chunk) => {
+      if (!outerFailure) {
+        if (stdout.length + chunk.length > LSP_HOST_REAL_LIMITS.maxStdoutBytes) stop("stdout-limit");
+        else stdout = Buffer.concat([stdout, chunk]);
+      }
+    });
+    supervised.child.stderr.on("data", (chunk) => {
+      if (!outerFailure) {
+        if (stderr.length + chunk.length > LSP_HOST_REAL_LIMITS.maxStderrBytes) stop("stderr-limit");
+        else stderr = Buffer.concat([stderr, chunk]);
+      }
+    });
     const closed = await waitForClose(supervised.child);
     onProcessEvent({ type: "exit", pid: supervised.child.pid, parentPid: process.pid, exitCode: closed.code, signal: closed.signal || "none" });
-    clearTimeout(softTimer); clearTimeout(forceTimer);
+    clearTimeout(softTimer);
+    clearTimeout(forceTimer);
     supervision = supervised.finalize({ exactSupervisorExitObserved: true, terminationRequested: Boolean(outerFailure) });
     const lines = stdout.toString("utf8").split(/\r?\n/).filter(Boolean);
     if (lines.length !== 1) throw protocolError("invalid-message", "Real bridge did not emit exactly one result envelope.", { stage: "closing" });
     result = JSON.parse(lines[0]);
     verifyRealAdmission(admission, "closing");
     const finalProfile = verifyRealProfileManifest(profileManifestFile);
-    if (finalProfile.manifestDigest !== profile.manifestDigest || finalProfile.semanticProfileDigest !== profile.semanticProfileDigest) throw protocolError("profile-drift", "Real profile changed before publication.", { stage: "closing" });
+    if (finalProfile.manifestDigest !== profile.manifestDigest || finalProfile.semanticProfileDigest !== profile.semanticProfileDigest)
+      throw protocolError("profile-drift", "Real profile changed before publication.", { stage: "closing" });
     if (outerFailure) throw outerFailure;
-    if (!supervision.ownershipEstablished || !supervision.treeCleanupVerified) throw protocolError("cleanup-failed", "Real LSP process tree cleanup was not verified.", { stage: "closing" });
-    if (closed.code !== 0) throw protocolError("process-crash", `Real bridge exited ${closed.code}: ${stderr.toString("utf8").slice(0, 512)}`, { stage: "launch" });
+    if (!supervision.ownershipEstablished || !supervision.treeCleanupVerified)
+      throw protocolError("cleanup-failed", "Real LSP process tree cleanup was not verified.", { stage: "closing" });
+    if (closed.code !== 0)
+      throw protocolError("process-crash", `Real bridge exited ${closed.code}: ${stderr.toString("utf8").slice(0, 512)}`, { stage: "launch" });
     result = Object.freeze({
       ...result,
       cleanup: { attempted: true, verified: true, forced },
-      transport: { supervisorManifestDigest: supervision.supervisorManifestDigest, ownershipEstablished: supervision.ownershipEstablished, treeCleanupVerified: supervision.treeCleanupVerified, externalCancellationHostEvidence },
+      transport: {
+        supervisorManifestDigest: supervision.supervisorManifestDigest,
+        ownershipEstablished: supervision.ownershipEstablished,
+        treeCleanupVerified: supervision.treeCleanupVerified,
+        externalCancellationHostEvidence,
+      },
     });
   } catch (error) {
-    if (supervised?.child && supervised.child.exitCode === null && supervised.child.signalCode === null) { catchForced = true; supervised.terminate(true); try { await waitForClose(supervised.child); } catch {} }
-    if (supervised && !supervision) { try { supervision = supervised.finalize({ exactSupervisorExitObserved: true, terminationRequested: true }); } catch {} }
+    if (supervised?.child && supervised.child.exitCode === null && supervised.child.signalCode === null) {
+      catchForced = true;
+      supervised.terminate(true);
+      try {
+        await waitForClose(supervised.child);
+      } catch {}
+    }
+    if (supervised && !supervision) {
+      try {
+        supervision = supervised.finalize({ exactSupervisorExitObserved: true, terminationRequested: true });
+      } catch {}
+    }
     const failureFields = {
       status: ["source-drift", "config-drift", "profile-drift", "mapping-mismatch"].includes(error.code) ? "contaminated" : "failed",
       stage: "closed",
@@ -1207,15 +1755,37 @@ async function collectRealOutgoingCallObservation({
       ...REAL_RESULT_GATE,
     };
     const expectedEvidenceKind = "lsp-real-rq-observation";
-    result = result?.evidenceKind === expectedEvidenceKind
-      ? Object.freeze({ ...result, ...failureFields, transport: { supervisorManifestDigest: supervision?.supervisorManifestDigest || null, ownershipEstablished: supervision?.ownershipEstablished === true, treeCleanupVerified: supervision?.treeCleanupVerified === true, externalCancellationHostEvidence } })
-      : realResult({ fixtureId, profileKind: profile?.kind, ...failureFields });
+    result =
+      result?.evidenceKind === expectedEvidenceKind
+        ? Object.freeze({
+            ...result,
+            ...failureFields,
+            transport: {
+              supervisorManifestDigest: supervision?.supervisorManifestDigest || null,
+              ownershipEstablished: supervision?.ownershipEstablished === true,
+              treeCleanupVerified: supervision?.treeCleanupVerified === true,
+              externalCancellationHostEvidence,
+            },
+          })
+        : realResult({ fixtureId, profileKind: profile?.kind, ...failureFields });
   } finally {
-    clearTimeout(softTimer); clearTimeout(forceTimer); clearInterval(externalCancelTimer);
+    clearTimeout(softTimer);
+    clearTimeout(forceTimer);
+    clearInterval(externalCancelTimer);
     closeRealAdmission(admission);
-    if (ownedRoot) { try { removeOwnedRoot(qaRoot, ownedRoot); } catch {
-      result = realResult({ fixtureId, status: "failed", stage: "closed", reason: "cleanup-failed", cleanup: { attempted: true, verified: false, forced: true } });
-    } }
+    if (ownedRoot) {
+      try {
+        removeOwnedRoot(qaRoot, ownedRoot);
+      } catch {
+        result = realResult({
+          fixtureId,
+          status: "failed",
+          stage: "closed",
+          reason: "cleanup-failed",
+          cleanup: { attempted: true, verified: false, forced: true },
+        });
+      }
+    }
   }
   return result;
 }
@@ -1233,17 +1803,24 @@ function validateMessageBase(message) {
 }
 
 function validateItem(item, documents, collectionId, expected = null) {
-  if (!item || typeof item !== "object" || typeof item.name !== "string" || typeof item.kind !== "number") throw protocolError("invalid-hierarchy-result", "Call hierarchy item is invalid.");
+  if (!item || typeof item !== "object" || typeof item.name !== "string" || typeof item.kind !== "number")
+    throw protocolError("invalid-hierarchy-result", "Call hierarchy item is invalid.");
   const allowed = new Set(documents.map((document) => document.relativePath));
   const relativePath = relativePathFromUri(item.uri, collectionId, allowed);
   const document = documents.find((candidate) => candidate.relativePath === relativePath);
   const itemRange = validateRange(document.text, item.range);
   const selectionRange = validateRange(document.text, item.selectionRange);
-  if (selectionRange.start < itemRange.start || selectionRange.end > itemRange.end) throw protocolError("invalid-range", "Call hierarchy selectionRange escaped its symbol range.");
-  if (expected && (item.name !== expected.name || item.kind !== 12 || item.uri !== document.uri
-    || expected.uri && item.uri !== expected.uri
-    || canonicalJson(item.range) !== canonicalJson(expected.range)
-    || canonicalJson(item.selectionRange) !== canonicalJson(expected.selectionRange))) {
+  if (selectionRange.start < itemRange.start || selectionRange.end > itemRange.end)
+    throw protocolError("invalid-range", "Call hierarchy selectionRange escaped its symbol range.");
+  if (
+    expected &&
+    (item.name !== expected.name ||
+      item.kind !== 12 ||
+      item.uri !== document.uri ||
+      (expected.uri && item.uri !== expected.uri) ||
+      canonicalJson(item.range) !== canonicalJson(expected.range) ||
+      canonicalJson(item.selectionRange) !== canonicalJson(expected.selectionRange))
+  ) {
     throw protocolError("mapping-mismatch", "Call hierarchy item does not match the requested fixture declaration.");
   }
   return { relativePath, document };
@@ -1254,14 +1831,24 @@ async function runBridge(request) {
   const documents = request?.documents;
   verifyOwnershipBinding(request?.expectedBinding, binding);
   const cancelArg = process.argv.indexOf("--cancel-file");
-  if (!Array.isArray(documents) || documents.length !== 4 || !path.isAbsolute(request?.cancelFile || "")
-    || cancelArg < 0 || process.argv[cancelArg + 1] !== request.cancelFile
-    || !request.deadlines || ![request.deadlines.workEpochMs, request.deadlines.closingEpochMs, request.deadlines.totalEpochMs].every(Number.isSafeInteger)
-    || request.deadlines.workEpochMs > request.deadlines.closingEpochMs || request.deadlines.closingEpochMs > request.deadlines.totalEpochMs
-    || canonicalJson(request.profile?.producerDigest) !== canonicalJson(binding.producerDigest)) {
+  if (
+    !Array.isArray(documents) ||
+    documents.length !== 4 ||
+    !path.isAbsolute(request?.cancelFile || "") ||
+    cancelArg < 0 ||
+    process.argv[cancelArg + 1] !== request.cancelFile ||
+    !request.deadlines ||
+    ![request.deadlines.workEpochMs, request.deadlines.closingEpochMs, request.deadlines.totalEpochMs].every(Number.isSafeInteger) ||
+    request.deadlines.workEpochMs > request.deadlines.closingEpochMs ||
+    request.deadlines.closingEpochMs > request.deadlines.totalEpochMs ||
+    canonicalJson(request.profile?.producerDigest) !== canonicalJson(binding.producerDigest)
+  ) {
     throw protocolError("mapping-mismatch", "Bridge input ownership or deadline mapping is invalid.", { stage: "launch" });
   }
-  if (request.profile.serverDigest !== sha256(fs.readFileSync(request.profile.serverFile)) || request.profile.nodeDigest !== sha256(fs.readFileSync(process.execPath))) {
+  if (
+    request.profile.serverDigest !== sha256(fs.readFileSync(request.profile.serverFile)) ||
+    request.profile.nodeDigest !== sha256(fs.readFileSync(process.execPath))
+  ) {
     throw protocolError("producer-mismatch", "Bridge producer changed after Host admission.", { stage: "launch" });
   }
   for (const document of documents) {
@@ -1281,7 +1868,16 @@ async function runBridge(request) {
   const waiters = new Map();
   const opened = [];
   const transcript = [];
-  const fixtureOwnedProcesses = [{ pid: child.pid, parentPid: process.pid, observedAt: new Date().toISOString(), command: "node lsp-host-fake-server", cwd: path.dirname(request.profile.serverFile), ports: "none" }];
+  const fixtureOwnedProcesses = [
+    {
+      pid: child.pid,
+      parentPid: process.pid,
+      observedAt: new Date().toISOString(),
+      command: "node lsp-host-fake-server",
+      cwd: path.dirname(request.profile.serverFile),
+      ports: "none",
+    },
+  ];
   let stage = "initialize";
   let notificationCount = 0;
   let stderrBytes = 0;
@@ -1313,29 +1909,45 @@ async function runBridge(request) {
       }, remaining);
       waiters.set(id, {
         method,
-        resolve: (value) => { clearTimeout(timer); resolve(value); },
-        reject: (error) => { clearTimeout(timer); reject(error); },
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
       });
     });
   };
   const serverRequestResponse = (message) => {
     const id = message.id;
     if (message.method === "workspace/configuration") {
-      if (!Array.isArray(message.params?.items) || message.params.items.length > LSP_HOST_LIMITS.maxConfigurationItems) throw protocolError("limit-exceeded", "workspace/configuration exceeded its item bound.", { stage });
+      if (!Array.isArray(message.params?.items) || message.params.items.length > LSP_HOST_LIMITS.maxConfigurationItems)
+        throw protocolError("limit-exceeded", "workspace/configuration exceeded its item bound.", { stage });
       send({ jsonrpc: "2.0", id, result: message.params.items.map(() => null) });
     } else if (message.method === "workspace/applyEdit") {
       send({ jsonrpc: "2.0", id, result: { applied: false, failureReason: "HEAD LSP Host profile is read-only" } });
     } else if (message.method === "window/workDoneProgress/create") {
       const token = message.params?.token;
-      if (!(typeof token === "string" || typeof token === "number") || String(token).length > 256) throw protocolError("invalid-message", "Progress token is invalid.", { stage });
+      if (!(typeof token === "string" || typeof token === "number") || String(token).length > 256)
+        throw protocolError("invalid-message", "Progress token is invalid.", { stage });
       send({ jsonrpc: "2.0", id, result: null });
     } else if (message.method === "window/showMessageRequest") {
       const params = message.params;
       const actions = params?.actions;
-      if (!params || !Number.isSafeInteger(params.type) || params.type < 1 || params.type > 4
-        || typeof params.message !== "string" || params.message.length > 4096
-        || actions !== undefined && (!Array.isArray(actions) || actions.length > 16
-          || actions.some((item) => !item || typeof item !== "object" || typeof item.title !== "string" || item.title.length < 1 || item.title.length > 256))) {
+      if (
+        !params ||
+        !Number.isSafeInteger(params.type) ||
+        params.type < 1 ||
+        params.type > 4 ||
+        typeof params.message !== "string" ||
+        params.message.length > 4096 ||
+        (actions !== undefined &&
+          (!Array.isArray(actions) ||
+            actions.length > 16 ||
+            actions.some((item) => !item || typeof item !== "object" || typeof item.title !== "string" || item.title.length < 1 || item.title.length > 256)))
+      ) {
         throw protocolError("invalid-message", "showMessageRequest is invalid.", { stage });
       }
       send({ jsonrpc: "2.0", id, result: null });
@@ -1344,21 +1956,41 @@ async function runBridge(request) {
       throw protocolError("unsupported-server-request", "LSP server requested an unsupported Host operation.", { stage });
     }
   };
-  const allowedNotifications = new Set(["window/logMessage", "window/showMessage", "$/progress", "textDocument/publishDiagnostics", "_typescript.version", "telemetry/event"]);
-  const requestFailureStage = (method) => method === "textDocument/prepareCallHierarchy" ? "prepare"
-    : method === "callHierarchy/outgoingCalls" ? "hierarchy"
-      : method === "initialize" ? "initialize"
-        : null;
+  const allowedNotifications = new Set([
+    "window/logMessage",
+    "window/showMessage",
+    "$/progress",
+    "textDocument/publishDiagnostics",
+    "_typescript.version",
+    "telemetry/event",
+  ]);
+  const requestFailureStage = (method) =>
+    method === "textDocument/prepareCallHierarchy"
+      ? "prepare"
+      : method === "callHierarchy/outgoingCalls"
+        ? "hierarchy"
+        : method === "initialize"
+          ? "initialize"
+          : null;
   const handle = (message) => {
     validateMessageBase(message);
     transcript.push({ direction: "in", method: message.method || null, id: message.id ?? null });
     if ("method" in message && "id" in message) return serverRequestResponse(message);
     if ("method" in message) {
       notificationCount += 1;
-      if (notificationCount > LSP_HOST_LIMITS.maxNotifications) throw protocolError("notification-limit", "LSP notification count exceeded its bound.", { stage });
-      if (!allowedNotifications.has(message.method)) throw protocolError("unsupported-server-notification", "LSP server emitted an unsupported notification.", { stage });
+      if (notificationCount > LSP_HOST_LIMITS.maxNotifications)
+        throw protocolError("notification-limit", "LSP notification count exceeded its bound.", { stage });
+      if (!allowedNotifications.has(message.method))
+        throw protocolError("unsupported-server-notification", "LSP server emitted an unsupported notification.", { stage });
       if (message.method === "telemetry/event" && Number.isSafeInteger(message.params?.headTestDescendantPid) && message.params.headTestDescendantPid > 0) {
-        fixtureOwnedProcesses.push({ pid: message.params.headTestDescendantPid, parentPid: child.pid, observedAt: new Date().toISOString(), command: "node lsp-host-child", cwd: path.dirname(request.profile.serverFile), ports: "none" });
+        fixtureOwnedProcesses.push({
+          pid: message.params.headTestDescendantPid,
+          parentPid: child.pid,
+          observedAt: new Date().toISOString(),
+          command: "node lsp-host-child",
+          cwd: path.dirname(request.profile.serverFile),
+          ports: "none",
+        });
       }
       return;
     }
@@ -1372,8 +2004,15 @@ async function runBridge(request) {
   };
   child.stdout.on("data", (chunk) => {
     if (fatalTransport) return;
-    try { for (const message of parser.feed(chunk)) handle(message); }
-    catch (error) { settleOutstanding(Object.assign(error, { details: { ...error.details, stage: error.details?.stage || requestFailureStage(error.details?.method) || stage } }), true); child.stdout.pause(); }
+    try {
+      for (const message of parser.feed(chunk)) handle(message);
+    } catch (error) {
+      settleOutstanding(
+        Object.assign(error, { details: { ...error.details, stage: error.details?.stage || requestFailureStage(error.details?.method) || stage } }),
+        true,
+      );
+      child.stdout.pause();
+    }
   });
   child.stderr.on("data", (chunk) => {
     if (fatalTransport) return;
@@ -1384,13 +2023,16 @@ async function runBridge(request) {
     }
   });
   child.stdin.on("error", (error) => settleOutstanding(protocolError("process-crash", `LSP stdin failed: ${error.message}`, { stage }), true));
-  const childExit = new Promise((resolve) => child.once("close", (code, signal) => {
-    childClosed = true;
-    if (waiters.size > 0) settleOutstanding(protocolError("process-crash", "Fake LSP server exited with outstanding requests.", { stage }), true);
-    resolve({ code, signal });
-  }));
+  const childExit = new Promise((resolve) =>
+    child.once("close", (code, signal) => {
+      childClosed = true;
+      if (waiters.size > 0) settleOutstanding(protocolError("process-crash", "Fake LSP server exited with outstanding requests.", { stage }), true);
+      resolve({ code, signal });
+    }),
+  );
   const cancelPoll = setInterval(() => {
-    if (!firstAsyncFailure && fs.existsSync(request.cancelFile)) settleOutstanding(protocolError("cancelled", "LSP collection was cancelled by its Host owner.", { stage }), false);
+    if (!firstAsyncFailure && fs.existsSync(request.cancelFile))
+      settleOutstanding(protocolError("cancelled", "LSP collection was cancelled by its Host owner.", { stage }), false);
   }, 10);
   cancelPoll.unref?.();
 
@@ -1403,54 +2045,89 @@ async function runBridge(request) {
   const callerIdentity = caller ? boundedFixtureFunctionIdentity(caller.text, "caller") : null;
   const targetIdentity = targetDocument ? boundedFixtureFunctionIdentity(targetDocument.text, "target") : null;
   try {
-    const initialized = await requestWithDeadline("initialize", { processId: process.pid, rootUri: null, capabilities: {} }, "initialize", request.deadlines.workEpochMs);
+    const initialized = await requestWithDeadline(
+      "initialize",
+      { processId: process.pid, rootUri: null, capabilities: {} },
+      "initialize",
+      request.deadlines.workEpochMs,
+    );
     if (!initialized || typeof initialized !== "object") throw protocolError("invalid-message", "LSP initialize result is invalid.", { stage });
     send({ jsonrpc: "2.0", method: "initialized", params: {} });
     stage = "open";
     for (const document of documents.filter((item) => item.languageId === "typescript")) {
-      send({ jsonrpc: "2.0", method: "textDocument/didOpen", params: { textDocument: { uri: document.uri, languageId: document.languageId, version: 1, text: document.text } } });
+      send({
+        jsonrpc: "2.0",
+        method: "textDocument/didOpen",
+        params: { textDocument: { uri: document.uri, languageId: document.languageId, version: 1, text: document.text } },
+      });
       opened.push(document);
     }
-    if (!caller || !callerIdentity) { reason = "no-prepared-item"; }
-    else {
+    if (!caller || !callerIdentity) {
+      reason = "no-prepared-item";
+    } else {
       stage = "prepare";
-      const prepared = await requestWithDeadline("textDocument/prepareCallHierarchy", { textDocument: { uri: caller.uri }, position: callerIdentity.selectionRange.start }, "prepare", request.deadlines.workEpochMs);
-      if (prepared === null || Array.isArray(prepared) && prepared.length === 0) reason = "no-prepared-item";
+      const prepared = await requestWithDeadline(
+        "textDocument/prepareCallHierarchy",
+        { textDocument: { uri: caller.uri }, position: callerIdentity.selectionRange.start },
+        "prepare",
+        request.deadlines.workEpochMs,
+      );
+      if (prepared === null || (Array.isArray(prepared) && prepared.length === 0)) reason = "no-prepared-item";
       else {
         if (!Array.isArray(prepared)) throw protocolError("invalid-prepare-result", "prepareCallHierarchy did not return an array or null.", { stage });
         if (prepared.length !== 1) throw protocolError("ambiguous-prepared-item", "prepareCallHierarchy returned more than one item.", { stage });
         const preparedCaller = validateItem(prepared[0], documents, binding.collectionId, { ...callerIdentity, uri: caller.uri });
-        if (preparedCaller.relativePath !== "caller.ts") throw protocolError("mapping-mismatch", "Prepared item changed the fixture caller document.", { stage });
+        if (preparedCaller.relativePath !== "caller.ts")
+          throw protocolError("mapping-mismatch", "Prepared item changed the fixture caller document.", { stage });
         stage = "hierarchy";
         const outgoing = await requestWithDeadline("callHierarchy/outgoingCalls", { item: prepared[0] }, "hierarchy", request.deadlines.workEpochMs);
-        if (outgoing === null || Array.isArray(outgoing) && outgoing.length === 0) reason = "empty";
+        if (outgoing === null || (Array.isArray(outgoing) && outgoing.length === 0)) reason = "empty";
         else {
-          if (!Array.isArray(outgoing) || outgoing.length > 256) throw protocolError("invalid-hierarchy-result", "outgoingCalls did not return a bounded array or null.", { stage });
+          if (!Array.isArray(outgoing) || outgoing.length > 256)
+            throw protocolError("invalid-hierarchy-result", "outgoingCalls did not return a bounded array or null.", { stage });
           if (!targetIdentity) throw protocolError("mapping-mismatch", "Outgoing target fixture declaration is missing.", { stage });
           const route = boundedFixtureModuleRoute(caller.text, barrelDocument?.text || "");
           const allowedRanges = route ? boundedFixtureCallRanges(caller.text, callerIdentity, "target") : [];
           const allowedKeys = new Set(allowedRanges.map(canonicalJson));
           const observedKeys = new Set();
           for (const relation of outgoing) {
-            if (!relation || !Array.isArray(relation.fromRanges) || relation.fromRanges.length < 1 || relation.fromRanges.length > 256) throw protocolError("invalid-hierarchy-result", "Outgoing call relation is invalid.", { stage });
+            if (!relation || !Array.isArray(relation.fromRanges) || relation.fromRanges.length < 1 || relation.fromRanges.length > 256)
+              throw protocolError("invalid-hierarchy-result", "Outgoing call relation is invalid.", { stage });
             const target = validateItem(relation.to, documents, binding.collectionId, targetIdentity);
-            if (target.relativePath !== "target.ts") throw protocolError("mapping-mismatch", "Outgoing relation changed the fixture target document.", { stage });
+            if (target.relativePath !== "target.ts")
+              throw protocolError("mapping-mismatch", "Outgoing relation changed the fixture target document.", { stage });
             for (const fromRange of relation.fromRanges) {
               validateRange(caller.text, fromRange);
               const key = canonicalJson(fromRange);
-              if (!allowedKeys.has(key)) throw protocolError("mapping-mismatch", "Outgoing callsite does not match an actual fixture call expression.", { stage });
+              if (!allowedKeys.has(key))
+                throw protocolError("mapping-mismatch", "Outgoing callsite does not match an actual fixture call expression.", { stage });
               observedKeys.add(key);
-              const candidate = { direction: "outgoing", caller: { path: "caller.ts", range: fromRange }, target: { path: "target.ts", range: relation.to.selectionRange, name: relation.to.name } };
-              candidates.push({ ...candidate, semanticDigest: relationSemanticDigest({
-                projectId: binding.projectId, generationDigest: binding.generationDigest, snapshotManifestDigest: binding.snapshotManifestDigest,
-                producerDigest: binding.producerDigest, direction: candidate.direction, callerPath: candidate.caller.path,
-                callerRange: candidate.caller.range, targetPath: candidate.target.path, targetRange: candidate.target.range,
-              }) });
+              const candidate = {
+                direction: "outgoing",
+                caller: { path: "caller.ts", range: fromRange },
+                target: { path: "target.ts", range: relation.to.selectionRange, name: relation.to.name },
+              };
+              candidates.push({
+                ...candidate,
+                semanticDigest: relationSemanticDigest({
+                  projectId: binding.projectId,
+                  generationDigest: binding.generationDigest,
+                  snapshotManifestDigest: binding.snapshotManifestDigest,
+                  producerDigest: binding.producerDigest,
+                  direction: candidate.direction,
+                  callerPath: candidate.caller.path,
+                  callerRange: candidate.caller.range,
+                  targetPath: candidate.target.path,
+                  targetRange: candidate.target.range,
+                }),
+              });
             }
           }
-          if (observedKeys.size !== allowedKeys.size || [...allowedKeys].some((key) => !observedKeys.has(key))) throw protocolError("invalid-hierarchy-result", "Outgoing result omitted an admitted fixture callsite.", { stage });
-          candidates = [...new Map(candidates.map((candidate) => [candidate.semanticDigest, candidate])).values()]
-            .sort((left, right) => left.semanticDigest < right.semanticDigest ? -1 : left.semanticDigest > right.semanticDigest ? 1 : 0);
+          if (observedKeys.size !== allowedKeys.size || [...allowedKeys].some((key) => !observedKeys.has(key)))
+            throw protocolError("invalid-hierarchy-result", "Outgoing result omitted an admitted fixture callsite.", { stage });
+          candidates = [...new Map(candidates.map((candidate) => [candidate.semanticDigest, candidate])).values()].sort((left, right) =>
+            left.semanticDigest < right.semanticDigest ? -1 : left.semanticDigest > right.semanticDigest ? 1 : 0,
+          );
           reason = candidates.length > 0 ? "candidates" : "empty";
         }
       }
@@ -1462,28 +2139,66 @@ async function runBridge(request) {
   const originalFailure = failure || firstAsyncFailure;
   stage = "closing";
   if (originalFailure) {
-    for (const id of pending.outstanding()) { try { send({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id } }); } catch {} }
+    for (const id of pending.outstanding()) {
+      try {
+        send({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id } });
+      } catch {}
+    }
   }
-  for (const document of opened) { try { send({ jsonrpc: "2.0", method: "textDocument/didClose", params: { textDocument: { uri: document.uri } } }); } catch {} }
+  for (const document of opened) {
+    try {
+      send({ jsonrpc: "2.0", method: "textDocument/didClose", params: { textDocument: { uri: document.uri } } });
+    } catch {}
+  }
   if (fatalTransport && !childClosed) {
-    try { child.stdin.end(); child.kill("SIGTERM"); } catch {}
+    try {
+      child.stdin.end();
+      child.kill("SIGTERM");
+    } catch {}
   } else if (!childClosed) {
     const closingDeadline = Math.min(request.deadlines.closingEpochMs, Date.now() + LSP_HOST_LIMITS.gracefulCleanupMs);
-    try { await requestWithDeadline("shutdown", null, "closing", closingDeadline); }
-    catch (error) { failure ||= originalFailure || firstAsyncFailure || error; }
-    try { send({ jsonrpc: "2.0", method: "exit", params: null }); child.stdin.end(); } catch {}
+    try {
+      await requestWithDeadline("shutdown", null, "closing", closingDeadline);
+    } catch (error) {
+      failure ||= originalFailure || firstAsyncFailure || error;
+    }
+    try {
+      send({ jsonrpc: "2.0", method: "exit", params: null });
+      child.stdin.end();
+    } catch {}
   }
-  const closed = await waitForChildCleanup(childExit, child, Math.max(1, Math.min(LSP_HOST_LIMITS.gracefulCleanupMs, request.deadlines.totalEpochMs - Date.now())));
+  const closed = await waitForChildCleanup(
+    childExit,
+    child,
+    Math.max(1, Math.min(LSP_HOST_LIMITS.gracefulCleanupMs, request.deadlines.totalEpochMs - Date.now())),
+  );
   clearInterval(cancelPoll);
-  try { parser.end(); } catch (error) { failure ||= originalFailure || firstAsyncFailure || Object.assign(error, { details: { ...error.details, stage: error.details?.stage || stage } }); }
+  try {
+    parser.end();
+  } catch (error) {
+    failure ||= originalFailure || firstAsyncFailure || Object.assign(error, { details: { ...error.details, stage: error.details?.stage || stage } });
+  }
   failure ||= originalFailure || firstAsyncFailure;
   if (closed.code !== 0 && !failure) failure = protocolError("process-crash", "Fake LSP server exited unexpectedly.", { stage });
-  if (failure) return Object.freeze({
-    ...terminalFromError(failure, binding, { attempted: true, verified: childClosed || closed.signal === "SIGTERM", forced: closed.signal === "SIGTERM" }, failure.details?.stage || stage),
-    fixtureTransport: { ownedPids: fixtureOwnedProcesses.map((item) => item.pid), ownedProcesses: fixtureOwnedProcesses, transcript },
-  });
+  if (failure)
+    return Object.freeze({
+      ...terminalFromError(
+        failure,
+        binding,
+        { attempted: true, verified: childClosed || closed.signal === "SIGTERM", forced: closed.signal === "SIGTERM" },
+        failure.details?.stage || stage,
+      ),
+      fixtureTransport: { ownedPids: fixtureOwnedProcesses.map((item) => item.pid), ownedProcesses: fixtureOwnedProcesses, transcript },
+    });
   return Object.freeze({
-    ...terminalResult({ status: "completed", reason, stage: "closed", provenance: binding, candidates, cleanup: { attempted: true, verified: true, forced: false } }),
+    ...terminalResult({
+      status: "completed",
+      reason,
+      stage: "closed",
+      provenance: binding,
+      candidates,
+      cleanup: { attempted: true, verified: true, forced: false },
+    }),
     fixtureTransport: { ownedPids: fixtureOwnedProcesses.map((item) => item.pid), ownedProcesses: fixtureOwnedProcesses, transcript },
   });
 }

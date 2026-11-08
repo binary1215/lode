@@ -24,8 +24,11 @@ async function readInput() {
     if (length > MAXIMUM_WIRE_BYTES) fail("ArcadeDB bridge input exceeds its bounded wire limit.", "ARCADEDB_BRIDGE_INVALID_INPUT");
     chunks.push(chunk);
   }
-  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
-  catch { fail("ArcadeDB bridge input is invalid JSON.", "ARCADEDB_BRIDGE_INVALID_INPUT"); }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    fail("ArcadeDB bridge input is invalid JSON.", "ARCADEDB_BRIDGE_INVALID_INPUT");
+  }
 }
 
 function requiredText(value, label) {
@@ -74,13 +77,14 @@ if (operation === "query-batch" && (!familyFormatForOriginal("head-agent-core-ar
   fail("ArcadeDB query batch protocol is incompatible.", "ARCADEDB_BRIDGE_INVALID_INPUT");
 }
 
-const path = operation === "ready"
-  ? "/api/v1/ready"
-  : operation === "exists"
-    ? `/api/v1/exists/${encodeURIComponent(database)}`
-    : operation === "create-database" || operation === "drop-database"
-      ? "/api/v1/server"
-      : `/api/v1/${operation}/${encodeURIComponent(database)}`;
+const path =
+  operation === "ready"
+    ? "/api/v1/ready"
+    : operation === "exists"
+      ? `/api/v1/exists/${encodeURIComponent(database)}`
+      : operation === "create-database" || operation === "drop-database"
+        ? "/api/v1/server"
+        : `/api/v1/${operation}/${encodeURIComponent(database)}`;
 const headers = {
   Accept: "application/json",
   Authorization: `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`,
@@ -90,17 +94,28 @@ const operationSignal = AbortSignal.timeout(timeoutMs);
 const operationClass = ["command", "create-database", "drop-database"].includes(operation) ? "write" : "read";
 const effectState = operationClass === "write" ? "maybe-applied" : "not-applicable";
 function transportFailure(error) {
-  return ["TimeoutError", "AbortError"].includes(error?.name)
-    || ["ECONNRESET", "ECONNREFUSED", "EPIPE", "ETIMEDOUT", "ENOTFOUND", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT"].includes(error?.code)
-    || (error?.cause && transportFailure(error.cause));
+  return (
+    ["TimeoutError", "AbortError"].includes(error?.name) ||
+    ["ECONNRESET", "ECONNREFUSED", "EPIPE", "ETIMEDOUT", "ENOTFOUND", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT"].includes(error?.code) ||
+    (error?.cause && transportFailure(error.cause))
+  );
 }
 function requestFailure(error, phase, status = 0) {
   const auth = status === 401 || status === 403;
   const unavailable = !auth && transportFailure(error);
-  const code = auth ? "ARCADEDB_AUTHENTICATION_FAILED" : operationClass === "write" ? "ARCADEDB_WRITE_OUTCOME_UNKNOWN"
-    : unavailable ? "ARCADEDB_TRANSPORT_UNAVAILABLE" : "ARCADEDB_REQUEST_FAILED";
-  fail(auth ? "ArcadeDB authentication failed." : "ArcadeDB response was not completed.", code, unavailable && operationClass === "read" ? 2 : 1,
-    { phase, operationClass, effectState, ...(status ? { httpStatus: status } : {}) });
+  const code = auth
+    ? "ARCADEDB_AUTHENTICATION_FAILED"
+    : operationClass === "write"
+      ? "ARCADEDB_WRITE_OUTCOME_UNKNOWN"
+      : unavailable
+        ? "ARCADEDB_TRANSPORT_UNAVAILABLE"
+        : "ARCADEDB_REQUEST_FAILED";
+  fail(auth ? "ArcadeDB authentication failed." : "ArcadeDB response was not completed.", code, unavailable && operationClass === "read" ? 2 : 1, {
+    phase,
+    operationClass,
+    effectState,
+    ...(status ? { httpStatus: status } : {}),
+  });
 }
 let responseWireBytes = 0;
 async function readBoundedResponseText(response) {
@@ -123,20 +138,25 @@ async function performRequest({ requestPath, requestBody = null, method = "POST"
     request.body = JSON.stringify(requestBody);
   }
   let response;
-  try { response = await fetch(`${endpoint}${requestPath}`, request); }
-  catch (error) {
+  try {
+    response = await fetch(`${endpoint}${requestPath}`, request);
+  } catch (error) {
     requestFailure(error, "headers");
   }
   let responseText;
-  try { responseText = await readBoundedResponseText(response); }
-  catch (error) { requestFailure(error, "body", response.status); }
+  try {
+    responseText = await readBoundedResponseText(response);
+  } catch (error) {
+    requestFailure(error, "body", response.status);
+  }
   let body = null;
   if (!responseText && response.ok && ["query", "query-batch"].includes(operation)) {
     fail("ArcadeDB query response is empty.", "ARCADEDB_REMOTE_RESPONSE_INVALID", 1, { phase: "decode", operationClass, effectState });
   }
   if (responseText) {
-    try { body = JSON.parse(responseText); }
-    catch {
+    try {
+      body = JSON.parse(responseText);
+    } catch {
       if (response.ok) fail("ArcadeDB response is not valid JSON.", "ARCADEDB_REMOTE_RESPONSE_INVALID", 1, { phase: "decode", operationClass, effectState });
       body = null;
     }
@@ -153,8 +173,14 @@ if (operation === "query-batch") {
     }
     const language = requiredText(query.language ?? "sql", `ArcadeDB query batch entry ${index} language`);
     const command = requiredText(query.command, `ArcadeDB query batch entry ${index} command`);
-    if (language.toLowerCase() !== "sql" || !/^select(?:\s|$)/iu.test(command)
-      || command.includes(";") || command.includes("--") || command.includes("/*") || command.includes("*/")) {
+    if (
+      language.toLowerCase() !== "sql" ||
+      !/^select(?:\s|$)/iu.test(command) ||
+      command.includes(";") ||
+      command.includes("--") ||
+      command.includes("/*") ||
+      command.includes("*/")
+    ) {
       fail(`ArcadeDB query batch entry ${index} is not a bounded read-only SQL query.`, "ARCADEDB_BRIDGE_INVALID_INPUT");
     }
     const params = query.params && typeof query.params === "object" && !Array.isArray(query.params) ? query.params : {};
@@ -176,11 +202,11 @@ if (operation === "query-batch") {
     : operation === "create-database" || operation === "drop-database"
       ? { command: `${operation === "create-database" ? "create" : "drop"} database ${database}` }
       : {
-        language: requiredText(input.language, "ArcadeDB language"),
-        command: requiredText(input.command, "ArcadeDB command"),
-        params: input.params && typeof input.params === "object" && !Array.isArray(input.params) ? input.params : {},
-        ...(operation === "command" ? { autoCommit: true } : {}),
-      };
+          language: requiredText(input.language, "ArcadeDB language"),
+          command: requiredText(input.command, "ArcadeDB command"),
+          params: input.params && typeof input.params === "object" && !Array.isArray(input.params) ? input.params : {},
+          ...(operation === "command" ? { autoCommit: true } : {}),
+        };
   const response = await performRequest({ requestPath: path, requestBody, method: readOnlyGet ? "GET" : "POST" });
   writeOutput(response);
   process.exitCode = response.ok ? 0 : 3;

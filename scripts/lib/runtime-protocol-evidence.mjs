@@ -1,17 +1,14 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
-const sessionIdOf = record => {
+const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
-const originalFormat = record => familyFormatForOriginal({ kind: record?.kind }, record);
+const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import {
-  RUNTIME_ADAPTER_PLATFORMS,
-  RUNTIME_ADAPTER_RUNTIMES,
-} from "./runtime-adapter.mjs";
+import { RUNTIME_ADAPTER_PLATFORMS, RUNTIME_ADAPTER_RUNTIMES } from "./runtime-adapter.mjs";
 import { resolveReadOnlyRuntimeExecutableTarget } from "./runtime-machine-discovery.mjs";
 import { verifyRuntimeVersionEvidence } from "./runtime-machine-execution.mjs";
 
@@ -29,12 +26,16 @@ const fail = (message, code = "RUNTIME_PROTOCOL_EVIDENCE_ERROR") => {
   throw error;
 };
 
-const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compareText).map((key) => [key, canonicalValue(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort(compareText)
+        .map((key) => [key, canonicalValue(value[key])]),
+    );
   }
   return value;
 }
@@ -69,7 +70,9 @@ function assertFields(value, fields, label) {
 }
 
 function normalizeRuntime(value) {
-  const runtime = String(value || "").trim().toLowerCase();
+  const runtime = String(value || "")
+    .trim()
+    .toLowerCase();
   if (!RUNTIME_ADAPTER_RUNTIMES.includes(runtime)) {
     fail(`Unsupported runtime protocol probe: ${runtime || "(empty)"}.`, "UNSUPPORTED_RUNTIME_PROTOCOL_PROBE");
   }
@@ -77,7 +80,9 @@ function normalizeRuntime(value) {
 }
 
 function normalizePlatform(value) {
-  const platform = String(value || "").trim().toLowerCase();
+  const platform = String(value || "")
+    .trim()
+    .toLowerCase();
   if (!RUNTIME_ADAPTER_PLATFORMS.includes(platform)) {
     fail(`Unsupported runtime protocol platform: ${platform || "(empty)"}.`, "UNSUPPORTED_RUNTIME_PROTOCOL_PLATFORM");
   }
@@ -134,9 +139,26 @@ const RUNTIME_PROFILES = Object.freeze({
       }),
     ]),
     capabilities: Object.freeze([
-      Object.freeze({ name: "non-interactive-execution", requirements: Object.freeze(["execution:non-interactive", "events:format-option", "events:stream-json", "output:schema", "session:ephemeral"]) }),
+      Object.freeze({
+        name: "non-interactive-execution",
+        requirements: Object.freeze(["execution:non-interactive", "events:format-option", "events:stream-json", "output:schema", "session:ephemeral"]),
+      }),
       Object.freeze({ name: "structured-event-stream", requirements: Object.freeze(["events:format-option", "events:stream-json"]) }),
-      Object.freeze({ name: "one-shot-invocation-surface", requirements: Object.freeze(["execution:non-interactive", "events:stream-json", "output:schema", "session:ephemeral", "execution:permission-mode", "execution:tools-option", "execution:disable-skills", "execution:setting-sources", "execution:strict-mcp", "execution:mcp-config"]) }),
+      Object.freeze({
+        name: "one-shot-invocation-surface",
+        requirements: Object.freeze([
+          "execution:non-interactive",
+          "events:stream-json",
+          "output:schema",
+          "session:ephemeral",
+          "execution:permission-mode",
+          "execution:tools-option",
+          "execution:disable-skills",
+          "execution:setting-sources",
+          "execution:strict-mcp",
+          "execution:mcp-config",
+        ]),
+      }),
       Object.freeze({ name: "provider-session-resume-surface", requirements: Object.freeze(["session:resume", "session:continue"]) }),
     ]),
     requiredForNegotiation: Object.freeze(["non-interactive-execution", "structured-event-stream"]),
@@ -178,11 +200,28 @@ const RUNTIME_PROFILES = Object.freeze({
       }),
     ]),
     capabilities: Object.freeze([
-      Object.freeze({ name: "non-interactive-execution", requirements: Object.freeze(["execution:non-interactive", "events:json", "output:schema", "session:ephemeral"]) }),
+      Object.freeze({
+        name: "non-interactive-execution",
+        requirements: Object.freeze(["execution:non-interactive", "events:json", "output:schema", "session:ephemeral"]),
+      }),
       Object.freeze({ name: "structured-event-stream", requirements: Object.freeze(["events:json"]) }),
-      Object.freeze({ name: "one-shot-invocation-surface", requirements: Object.freeze(["events:json", "output:schema", "output:color", "execution:sandbox-option", "execution:skip-git-check", "binding:cwd-option", "session:ephemeral"]) }),
+      Object.freeze({
+        name: "one-shot-invocation-surface",
+        requirements: Object.freeze([
+          "events:json",
+          "output:schema",
+          "output:color",
+          "execution:sandbox-option",
+          "execution:skip-git-check",
+          "binding:cwd-option",
+          "session:ephemeral",
+        ]),
+      }),
       Object.freeze({ name: "provider-session-resume-surface", requirements: Object.freeze(["session:resume"]) }),
-      Object.freeze({ name: "stdio-app-server-protocol", requirements: Object.freeze(["transport:stdio", "protocol:schema-generation", "transport:listen-option"]) }),
+      Object.freeze({
+        name: "stdio-app-server-protocol",
+        requirements: Object.freeze(["transport:stdio", "protocol:schema-generation", "transport:listen-option"]),
+      }),
       Object.freeze({ name: "stdio-mcp-server-command", requirements: Object.freeze(["command:mcp-server"]) }),
     ]),
     requiredForNegotiation: Object.freeze(["non-interactive-execution", "structured-event-stream", "stdio-app-server-protocol"]),
@@ -226,7 +265,10 @@ const RUNTIME_PROFILES = Object.freeze({
     capabilities: Object.freeze([
       Object.freeze({ name: "non-interactive-execution", requirements: Object.freeze(["execution:non-interactive", "events:format-option", "events:json"]) }),
       Object.freeze({ name: "structured-event-stream", requirements: Object.freeze(["events:format-option", "events:json"]) }),
-      Object.freeze({ name: "one-shot-invocation-surface", requirements: Object.freeze(["execution:non-interactive", "events:json", "execution:pure", "binding:dir-option", "session:title-option"]) }),
+      Object.freeze({
+        name: "one-shot-invocation-surface",
+        requirements: Object.freeze(["execution:non-interactive", "events:json", "execution:pure", "binding:dir-option", "session:title-option"]),
+      }),
       Object.freeze({ name: "provider-session-resume-surface", requirements: Object.freeze(["session:resume", "session:continue"]) }),
       Object.freeze({ name: "agent-client-protocol-server", requirements: Object.freeze(["protocol:agent-client", "binding:cwd-option"]) }),
       Object.freeze({ name: "headless-server-command", requirements: Object.freeze(["command:serve"]) }),
@@ -293,10 +335,14 @@ function runExactHelpChild({ executablePath, arguments: args, cwd, environment, 
     const requestTermination = () => {
       if (!child?.pid || child.exitCode !== null || child.signalCode !== null || terminationRequested) return;
       terminationRequested = true;
-      try { child.kill("SIGTERM"); } catch {}
+      try {
+        child.kill("SIGTERM");
+      } catch {}
       forceHandle = setTimeout(() => {
         if (child.exitCode === null && child.signalCode === null) {
-          try { child.kill("SIGKILL"); } catch {}
+          try {
+            child.kill("SIGKILL");
+          } catch {}
         }
       }, TERMINATION_GRACE_MS);
       forceHandle.unref?.();
@@ -310,11 +356,17 @@ function runExactHelpChild({ executablePath, arguments: args, cwd, environment, 
       const stdoutBuffer = Buffer.concat(stdout);
       const stderrBuffer = Buffer.concat(stderr);
       const output = Buffer.concat([stdoutBuffer, Buffer.from([0]), stderrBuffer]);
-      const status = spawnError ? "spawn-failed"
-        : timedOut ? "timed-out"
-          : outputLimited ? "output-limit"
-            : exitCode !== 0 ? "nonzero-exit"
-              : stdoutBytes + stderrBytes === 0 ? "empty-output" : "verified";
+      const status = spawnError
+        ? "spawn-failed"
+        : timedOut
+          ? "timed-out"
+          : outputLimited
+            ? "output-limit"
+            : exitCode !== 0
+              ? "nonzero-exit"
+              : stdoutBytes + stderrBytes === 0
+                ? "empty-output"
+                : "verified";
       resolve({
         outcome: {
           status,
@@ -381,49 +433,89 @@ function runExactHelpChild({ executablePath, arguments: args, cwd, environment, 
 }
 
 function validateExecutableObservation(document, runtime) {
-  assertFields(document, [
-    "runtime", "availability", "launcherKind", "directSpawnSafe", "pathDigest", "canonicalPathDigest",
-    "byteLength", "symbolicLink",
-  ], "Runtime protocol executable observation");
-  if (document.runtime !== runtime
-    || !["candidate-found", "not-found"].includes(document.availability)
-    || !["native-executable", "command-shim", "extensionless-candidate", "none"].includes(document.launcherKind)
-    || typeof document.directSpawnSafe !== "boolean" || typeof document.symbolicLink !== "boolean"
-    || !Number.isSafeInteger(document.byteLength) || document.byteLength < 0
-    || (document.availability === "candidate-found" && (!/^[a-f0-9]{64}$/.test(document.pathDigest)
-      || !/^[a-f0-9]{64}$/.test(document.canonicalPathDigest) || document.byteLength < 1))
-    || (document.availability === "not-found" && (document.pathDigest !== "" || document.canonicalPathDigest !== ""
-      || document.byteLength !== 0 || document.launcherKind !== "none" || document.directSpawnSafe))) {
+  assertFields(
+    document,
+    ["runtime", "availability", "launcherKind", "directSpawnSafe", "pathDigest", "canonicalPathDigest", "byteLength", "symbolicLink"],
+    "Runtime protocol executable observation",
+  );
+  if (
+    document.runtime !== runtime ||
+    !["candidate-found", "not-found"].includes(document.availability) ||
+    !["native-executable", "command-shim", "extensionless-candidate", "none"].includes(document.launcherKind) ||
+    typeof document.directSpawnSafe !== "boolean" ||
+    typeof document.symbolicLink !== "boolean" ||
+    !Number.isSafeInteger(document.byteLength) ||
+    document.byteLength < 0 ||
+    (document.availability === "candidate-found" &&
+      (!/^[a-f0-9]{64}$/.test(document.pathDigest) || !/^[a-f0-9]{64}$/.test(document.canonicalPathDigest) || document.byteLength < 1)) ||
+    (document.availability === "not-found" &&
+      (document.pathDigest !== "" ||
+        document.canonicalPathDigest !== "" ||
+        document.byteLength !== 0 ||
+        document.launcherKind !== "none" ||
+        document.directSpawnSafe))
+  ) {
     fail("Runtime protocol executable observation is invalid.", "INVALID_RUNTIME_PROTOCOL_EXECUTABLE_OBSERVATION");
   }
 }
 
 function validateProbeOutcome(document, runtime, probe) {
-  assertFields(document, [
-    "name", "argumentProfile", "argumentDigest", "knownSignals", "status", "exitCode", "signal", "timedOut",
-    "outputLimited", "stdoutBytes", "stderrBytes", "outputDigest", "childStarted", "childExitObserved",
-    "terminationRequested", "exactChildOwnership", "observedSignals", "missingSignals",
-  ], "Runtime protocol probe outcome");
+  assertFields(
+    document,
+    [
+      "name",
+      "argumentProfile",
+      "argumentDigest",
+      "knownSignals",
+      "status",
+      "exitCode",
+      "signal",
+      "timedOut",
+      "outputLimited",
+      "stdoutBytes",
+      "stderrBytes",
+      "outputDigest",
+      "childStarted",
+      "childExitObserved",
+      "terminationRequested",
+      "exactChildOwnership",
+      "observedSignals",
+      "missingSignals",
+    ],
+    "Runtime protocol probe outcome",
+  );
   const expected = publicProbeProfile(runtime, probe);
   const statuses = ["not-found", "unsafe-launcher", "spawn-failed", "timed-out", "output-limit", "nonzero-exit", "empty-output", "verified"];
   const observed = [...new Set(document.observedSignals)].sort(compareText);
   const missing = [...new Set(document.missingSignals)].sort(compareText);
-  if (document.name !== expected.name || document.argumentProfile !== expected.argumentProfile
-    || document.argumentDigest !== expected.argumentDigest || canonicalJson(document.knownSignals) !== canonicalJson(expected.knownSignals)
-    || !statuses.includes(document.status) || (document.exitCode !== null && !Number.isInteger(document.exitCode))
-    || typeof document.signal !== "string" || document.signal.length > 32
-    || typeof document.timedOut !== "boolean" || typeof document.outputLimited !== "boolean"
-    || !Number.isSafeInteger(document.stdoutBytes) || document.stdoutBytes < 0
-    || !Number.isSafeInteger(document.stderrBytes) || document.stderrBytes < 0
-    || !/^[a-f0-9]{64}$/.test(document.outputDigest)
-    || typeof document.childStarted !== "boolean" || typeof document.childExitObserved !== "boolean"
-    || typeof document.terminationRequested !== "boolean" || typeof document.exactChildOwnership !== "boolean"
-    || document.childStarted !== document.childExitObserved || document.childStarted !== document.exactChildOwnership
-    || canonicalJson(observed) !== canonicalJson(document.observedSignals)
-    || canonicalJson(missing) !== canonicalJson(document.missingSignals)
-    || canonicalJson([...observed, ...missing].sort(compareText)) !== canonicalJson(expected.knownSignals)
-    || observed.some((item) => missing.includes(item))
-    || (document.status !== "verified" && observed.length > 0)) {
+  if (
+    document.name !== expected.name ||
+    document.argumentProfile !== expected.argumentProfile ||
+    document.argumentDigest !== expected.argumentDigest ||
+    canonicalJson(document.knownSignals) !== canonicalJson(expected.knownSignals) ||
+    !statuses.includes(document.status) ||
+    (document.exitCode !== null && !Number.isInteger(document.exitCode)) ||
+    typeof document.signal !== "string" ||
+    document.signal.length > 32 ||
+    typeof document.timedOut !== "boolean" ||
+    typeof document.outputLimited !== "boolean" ||
+    !Number.isSafeInteger(document.stdoutBytes) ||
+    document.stdoutBytes < 0 ||
+    !Number.isSafeInteger(document.stderrBytes) ||
+    document.stderrBytes < 0 ||
+    !/^[a-f0-9]{64}$/.test(document.outputDigest) ||
+    typeof document.childStarted !== "boolean" ||
+    typeof document.childExitObserved !== "boolean" ||
+    typeof document.terminationRequested !== "boolean" ||
+    typeof document.exactChildOwnership !== "boolean" ||
+    document.childStarted !== document.childExitObserved ||
+    document.childStarted !== document.exactChildOwnership ||
+    canonicalJson(observed) !== canonicalJson(document.observedSignals) ||
+    canonicalJson(missing) !== canonicalJson(document.missingSignals) ||
+    canonicalJson([...observed, ...missing].sort(compareText)) !== canonicalJson(expected.knownSignals) ||
+    observed.some((item) => missing.includes(item)) ||
+    (document.status !== "verified" && observed.length > 0)
+  ) {
     fail("Runtime protocol probe outcome is invalid.", "INVALID_RUNTIME_PROTOCOL_PROBE_OUTCOME");
   }
 }
@@ -444,7 +536,9 @@ function protocolNegotiationObserved(runtime, capabilities) {
 }
 
 export class BoundedProtocolWorkspaceHostAdapter {
-  constructor({ spawnImplementation = spawn } = {}) { this.spawnImplementation = spawnImplementation; }
+  constructor({ spawnImplementation = spawn } = {}) {
+    this.spawnImplementation = spawnImplementation;
+  }
   describe() {
     return {
       adapterKind: "native-process-bounded-protocol-observation",
@@ -458,10 +552,18 @@ export class BoundedProtocolWorkspaceHostAdapter {
   executeHelpProbe({ executablePath, arguments: args, cwd, environment }) {
     return runExactHelpChild({ executablePath, arguments: args, cwd, environment, spawnImplementation: this.spawnImplementation });
   }
-  attach() { return disabledOperation("WorkspaceHostAdapter", "attach"); }
-  send() { return disabledOperation("WorkspaceHostAdapter", "send"); }
-  receive() { return disabledOperation("WorkspaceHostAdapter", "receive"); }
-  detach() { return disabledOperation("WorkspaceHostAdapter", "detach"); }
+  attach() {
+    return disabledOperation("WorkspaceHostAdapter", "attach");
+  }
+  send() {
+    return disabledOperation("WorkspaceHostAdapter", "send");
+  }
+  receive() {
+    return disabledOperation("WorkspaceHostAdapter", "receive");
+  }
+  detach() {
+    return disabledOperation("WorkspaceHostAdapter", "detach");
+  }
 }
 
 export class BoundedProtocolPlatformAdapter {
@@ -496,9 +598,15 @@ export class BoundedProtocolPlatformAdapter {
   invokeHelp({ executablePath, arguments: args, cwd }) {
     return this.workspaceHostAdapter.executeHelpProbe({ executablePath, arguments: args, cwd, environment: this.environment });
   }
-  spawnOwned() { return disabledOperation("PlatformAdapter", "spawn-owned-control"); }
-  inspectOwned() { return disabledOperation("PlatformAdapter", "inspect-owned-control"); }
-  terminateOwned() { return disabledOperation("PlatformAdapter", "terminate-owned-control"); }
+  spawnOwned() {
+    return disabledOperation("PlatformAdapter", "spawn-owned-control");
+  }
+  inspectOwned() {
+    return disabledOperation("PlatformAdapter", "inspect-owned-control");
+  }
+  terminateOwned() {
+    return disabledOperation("PlatformAdapter", "terminate-owned-control");
+  }
 }
 
 export class BoundedProtocolAgentRuntimeAdapter {
@@ -541,9 +649,13 @@ export class BoundedProtocolAgentRuntimeAdapter {
         cwd: neutralCwd,
       });
       const knownSignals = probe.signals.map((item) => item.name).sort(compareText);
-      const observedSignals = execution.outcome.status === "verified"
-        ? probe.signals.filter((item) => item.pattern.test(execution.text)).map((item) => item.name).sort(compareText)
-        : [];
+      const observedSignals =
+        execution.outcome.status === "verified"
+          ? probe.signals
+              .filter((item) => item.pattern.test(execution.text))
+              .map((item) => item.name)
+              .sort(compareText)
+          : [];
       const observedSet = new Set(observedSignals);
       outcomes.push({
         ...publicProbeProfile(this.runtime, probe),
@@ -575,47 +687,85 @@ export class BoundedProtocolAgentRuntimeAdapter {
       controlAuthority: false,
       mutatesCanon: false,
     };
-    return verifyRuntimeProtocolCapabilityObservation(identify(
-      payload,
-      "runtime-protocol-observation",
-      "observationId",
-      "observationHash",
-    ));
+    return verifyRuntimeProtocolCapabilityObservation(identify(payload, "runtime-protocol-observation", "observationId", "observationHash"));
   }
-  start() { return disabledOperation("AgentRuntimeAdapter", "start"); }
-  resume() { return disabledOperation("AgentRuntimeAdapter", "resume"); }
-  stream() { return disabledOperation("AgentRuntimeAdapter", "stream"); }
-  interrupt() { return disabledOperation("AgentRuntimeAdapter", "interrupt"); }
-  close() { return disabledOperation("AgentRuntimeAdapter", "close"); }
+  start() {
+    return disabledOperation("AgentRuntimeAdapter", "start");
+  }
+  resume() {
+    return disabledOperation("AgentRuntimeAdapter", "resume");
+  }
+  stream() {
+    return disabledOperation("AgentRuntimeAdapter", "stream");
+  }
+  interrupt() {
+    return disabledOperation("AgentRuntimeAdapter", "interrupt");
+  }
+  close() {
+    return disabledOperation("AgentRuntimeAdapter", "close");
+  }
 }
 
 export function verifyRuntimeProtocolCapabilityObservation(document) {
-  assertFields(document, [
-    "schemaVersion", "kind", "protocolVersion", "runtime", "platform", "versionObservationId", "executable",
-    "profile", "probeOutcomes", "capabilities", "protocolNegotiationObserved", "providerSessionCreated",
-    "projectContentPassed", "shellInterpretation", "tuiScraping", "authority", "instructionAuthority",
-    "promotionAuthority", "controlAuthority", "mutatesCanon", "observationId", "observationHash",
-  ], "Runtime protocol capability observation");
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocolVersion",
+      "runtime",
+      "platform",
+      "versionObservationId",
+      "executable",
+      "profile",
+      "probeOutcomes",
+      "capabilities",
+      "protocolNegotiationObserved",
+      "providerSessionCreated",
+      "projectContentPassed",
+      "shellInterpretation",
+      "tuiScraping",
+      "authority",
+      "instructionAuthority",
+      "promotionAuthority",
+      "controlAuthority",
+      "mutatesCanon",
+      "observationId",
+      "observationHash",
+    ],
+    "Runtime protocol capability observation",
+  );
   const runtime = normalizeRuntime(document.runtime);
   const platform = normalizePlatform(document.platform);
   validateExecutableObservation(document.executable, runtime);
-  if (canonicalJson(document.profile) !== canonicalJson(publicRuntimeProfile(runtime))
-    || !Array.isArray(document.probeOutcomes) || document.probeOutcomes.length !== RUNTIME_PROFILES[runtime].probes.length
-    || !/^runtime-version-observation-[a-f0-9]{24}$/.test(document.versionObservationId || "")) {
+  if (
+    canonicalJson(document.profile) !== canonicalJson(publicRuntimeProfile(runtime)) ||
+    !Array.isArray(document.probeOutcomes) ||
+    document.probeOutcomes.length !== RUNTIME_PROFILES[runtime].probes.length ||
+    !/^runtime-version-observation-[a-f0-9]{24}$/.test(document.versionObservationId || "")
+  ) {
     fail("Runtime protocol capability observation profile is invalid.", "INVALID_RUNTIME_PROTOCOL_OBSERVATION");
   }
   document.probeOutcomes.forEach((outcome, index) => validateProbeOutcome(outcome, runtime, RUNTIME_PROFILES[runtime].probes[index]));
   const expectedCapabilities = capabilitiesFromOutcomes(runtime, document.probeOutcomes);
   const expectedNegotiation = protocolNegotiationObserved(runtime, expectedCapabilities);
-  if (document.schemaVersion !== 1 || document.kind !== "RuntimeProtocolCapabilityObservation"
-    || document.protocolVersion !== RUNTIME_PROTOCOL_EVIDENCE_VERSION || document.platform !== platform
-    || canonicalJson(document.capabilities) !== canonicalJson(expectedCapabilities)
-    || document.protocolNegotiationObserved !== expectedNegotiation
-    || document.providerSessionCreated !== false || document.projectContentPassed !== false
-    || document.shellInterpretation !== false || document.tuiScraping !== false
-    || document.authority !== "operational-observation-only"
-    || document.instructionAuthority !== false || document.promotionAuthority !== false
-    || document.controlAuthority !== false || document.mutatesCanon !== false) {
+  if (
+    document.schemaVersion !== 1 ||
+    document.kind !== "RuntimeProtocolCapabilityObservation" ||
+    document.protocolVersion !== RUNTIME_PROTOCOL_EVIDENCE_VERSION ||
+    document.platform !== platform ||
+    canonicalJson(document.capabilities) !== canonicalJson(expectedCapabilities) ||
+    document.protocolNegotiationObserved !== expectedNegotiation ||
+    document.providerSessionCreated !== false ||
+    document.projectContentPassed !== false ||
+    document.shellInterpretation !== false ||
+    document.tuiScraping !== false ||
+    document.authority !== "operational-observation-only" ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false ||
+    document.controlAuthority !== false ||
+    document.mutatesCanon !== false
+  ) {
     fail("Runtime protocol capability observation is invalid.", "INVALID_RUNTIME_PROTOCOL_OBSERVATION");
   }
   verifyIdentity(document, {
@@ -637,8 +787,7 @@ export async function buildRuntimeProtocolEvidence({
 } = {}) {
   const verifiedVersion = verifyRuntimeVersionEvidence(versionEvidence);
   const selectedRuntimes = normalizedRuntimes(runtimes ?? verifiedVersion.selectedRuntimes);
-  if (canonicalJson(selectedRuntimes) !== canonicalJson(verifiedVersion.selectedRuntimes)
-    || normalizePlatform(platform) !== verifiedVersion.platform) {
+  if (canonicalJson(selectedRuntimes) !== canonicalJson(verifiedVersion.selectedRuntimes) || normalizePlatform(platform) !== verifiedVersion.platform) {
     fail("Runtime protocol evidence does not match version evidence.", "RUNTIME_PROTOCOL_VERSION_EVIDENCE_MISMATCH");
   }
   const workspaceHostAdapter = new BoundedProtocolWorkspaceHostAdapter({ spawnImplementation });
@@ -690,20 +839,50 @@ export async function buildRuntimeProtocolEvidence({
 }
 
 export function verifyRuntimeProtocolEvidence(document) {
-  assertFields(document, [
-    "schemaVersion", "kind", "protocolVersion", "versionEvidenceId", "selectedRuntimes", "platform",
-    "platformBoundary", "workspaceHostBoundary", "observations", "summary", "activationBoundary", "authority",
-    "instructionAuthority", "promotionAuthority", "controlAuthority", "mutatesCanon", "evidenceId", "evidenceHash",
-  ], "Runtime protocol capability evidence");
-  assertFields(document.summary, [
-    "negotiatedRuntimes", "partialRuntimes", "allRequestedProtocolsObserved", "rawPathsExposed", "rawOutputExposed",
-    "rawCommandsExposed",
-  ], "Runtime protocol evidence summary");
-  assertFields(document.activationBoundary, [
-    "phase", "actualProviderProtocolObservationValidated", "actualProviderSessionControlValidated",
-    "runtimeControlEnabled", "capabilityDoesNotGrantAuthorization", "executionContractRequiredForControl",
-    "providerSessionCreated", "projectBindingRequiredForControl", "tuiScrapingAllowed",
-  ], "Runtime protocol activation boundary");
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocolVersion",
+      "versionEvidenceId",
+      "selectedRuntimes",
+      "platform",
+      "platformBoundary",
+      "workspaceHostBoundary",
+      "observations",
+      "summary",
+      "activationBoundary",
+      "authority",
+      "instructionAuthority",
+      "promotionAuthority",
+      "controlAuthority",
+      "mutatesCanon",
+      "evidenceId",
+      "evidenceHash",
+    ],
+    "Runtime protocol capability evidence",
+  );
+  assertFields(
+    document.summary,
+    ["negotiatedRuntimes", "partialRuntimes", "allRequestedProtocolsObserved", "rawPathsExposed", "rawOutputExposed", "rawCommandsExposed"],
+    "Runtime protocol evidence summary",
+  );
+  assertFields(
+    document.activationBoundary,
+    [
+      "phase",
+      "actualProviderProtocolObservationValidated",
+      "actualProviderSessionControlValidated",
+      "runtimeControlEnabled",
+      "capabilityDoesNotGrantAuthorization",
+      "executionContractRequiredForControl",
+      "providerSessionCreated",
+      "projectBindingRequiredForControl",
+      "tuiScrapingAllowed",
+    ],
+    "Runtime protocol activation boundary",
+  );
   const runtimes = normalizedRuntimes(document.selectedRuntimes);
   const platform = normalizePlatform(document.platform);
   const observations = document.observations.map(verifyRuntimeProtocolCapabilityObservation);
@@ -729,18 +908,23 @@ export function verifyRuntimeProtocolEvidence(document) {
     projectBindingRequiredForControl: true,
     tuiScrapingAllowed: false,
   };
-  if (document.schemaVersion !== 1 || document.kind !== "RuntimeProtocolCapabilityEvidence"
-    || document.protocolVersion !== RUNTIME_PROTOCOL_EVIDENCE_VERSION
-    || !/^runtime-version-evidence-[a-f0-9]{24}$/.test(document.versionEvidenceId || "")
-    || canonicalJson(document.observations.map((item) => item.runtime)) !== canonicalJson(runtimes)
-    || document.platform !== platform
-    || canonicalJson(document.platformBoundary) !== canonicalJson(new BoundedProtocolPlatformAdapter({ platform }).describe())
-    || canonicalJson(document.workspaceHostBoundary) !== canonicalJson(new BoundedProtocolWorkspaceHostAdapter().describe())
-    || canonicalJson(document.summary) !== canonicalJson(expectedSummary)
-    || canonicalJson(document.activationBoundary) !== canonicalJson(expectedActivation)
-    || document.authority !== "operational-observation-only"
-    || document.instructionAuthority !== false || document.promotionAuthority !== false
-    || document.controlAuthority !== false || document.mutatesCanon !== false) {
+  if (
+    document.schemaVersion !== 1 ||
+    document.kind !== "RuntimeProtocolCapabilityEvidence" ||
+    document.protocolVersion !== RUNTIME_PROTOCOL_EVIDENCE_VERSION ||
+    !/^runtime-version-evidence-[a-f0-9]{24}$/.test(document.versionEvidenceId || "") ||
+    canonicalJson(document.observations.map((item) => item.runtime)) !== canonicalJson(runtimes) ||
+    document.platform !== platform ||
+    canonicalJson(document.platformBoundary) !== canonicalJson(new BoundedProtocolPlatformAdapter({ platform }).describe()) ||
+    canonicalJson(document.workspaceHostBoundary) !== canonicalJson(new BoundedProtocolWorkspaceHostAdapter().describe()) ||
+    canonicalJson(document.summary) !== canonicalJson(expectedSummary) ||
+    canonicalJson(document.activationBoundary) !== canonicalJson(expectedActivation) ||
+    document.authority !== "operational-observation-only" ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false ||
+    document.controlAuthority !== false ||
+    document.mutatesCanon !== false
+  ) {
     fail("Runtime protocol capability evidence is invalid.", "INVALID_RUNTIME_PROTOCOL_EVIDENCE");
   }
   verifyIdentity(document, {
@@ -752,20 +936,11 @@ export function verifyRuntimeProtocolEvidence(document) {
   return document;
 }
 
-export function buildRuntimeProjectBinding({
-  projectId,
-  headSessionId,
-  projectRoot,
-  projectStatus,
-  versionEvidence,
-  protocolEvidence,
-  storage,
-} = {}) {
+export function buildRuntimeProjectBinding({ projectId, headSessionId, projectRoot, projectStatus, versionEvidence, protocolEvidence, storage } = {}) {
   const format = formatForVerifiedOwner(storage);
   const version = verifyRuntimeVersionEvidence(versionEvidence);
   const protocol = verifyRuntimeProtocolEvidence(protocolEvidence);
-  if (protocol.versionEvidenceId !== version.evidenceId
-    || canonicalJson(protocol.selectedRuntimes) !== canonicalJson(version.selectedRuntimes)) {
+  if (protocol.versionEvidenceId !== version.evidenceId || canonicalJson(protocol.selectedRuntimes) !== canonicalJson(version.selectedRuntimes)) {
     fail("Runtime project binding evidence does not compose.", "RUNTIME_PROJECT_BINDING_EVIDENCE_MISMATCH");
   }
   const bindings = protocol.observations.map((observation) => {
@@ -792,7 +967,9 @@ export function buildRuntimeProjectBinding({
     versionEvidenceId: version.evidenceId,
     protocolEvidenceId: protocol.evidenceId,
     bindings,
-    status: bindingVerified ? (format?.value("verified-head-project-session-capability-binding") || "verified-head-project-session-capability-binding") : (format?.value("partial-head-project-session-capability-binding") || "partial-head-project-session-capability-binding"),
+    status: bindingVerified
+      ? format?.value("verified-head-project-session-capability-binding") || "verified-head-project-session-capability-binding"
+      : format?.value("partial-head-project-session-capability-binding") || "partial-head-project-session-capability-binding",
     bindingBoundary: {
       [format?.value("headProjectIdentityCanonical") || "headProjectIdentityCanonical"]: true,
       [format?.value("headSessionIdentityCanonical") || "headSessionIdentityCanonical"]: true,
@@ -804,7 +981,8 @@ export function buildRuntimeProjectBinding({
       executionContractRequiredForControl: true,
       callerAndChildOwnershipRequiredForControl: true,
     },
-    authority: (format?.value("canonical-head-reference-with-operational-capability-evidence") || "canonical-head-reference-with-operational-capability-evidence"),
+    authority:
+      format?.value("canonical-head-reference-with-operational-capability-evidence") || "canonical-head-reference-with-operational-capability-evidence",
     instructionAuthority: false,
     promotionAuthority: false,
     controlAuthority: false,
@@ -815,30 +993,65 @@ export function buildRuntimeProjectBinding({
 
 export function verifyRuntimeProjectBinding(document) {
   const format = originalFormat(document);
-  assertFields(document, [
-    "schemaVersion", "kind", "protocolVersion", "projectId", (format?.sessionIdField || "headSessionId"), "projectRootDigest", "projectStatus",
-    "selectedRuntimes", "versionEvidenceId", "protocolEvidenceId", "bindings", "status", "bindingBoundary", "authority",
-    "instructionAuthority", "promotionAuthority", "controlAuthority", "mutatesCanon", "bindingId", "bindingHash",
-  ], "Runtime project binding");
-  assertFields(document.bindingBoundary, [
-    (format?.value("headProjectIdentityCanonical") || "headProjectIdentityCanonical"), (format?.value("headSessionIdentityCanonical") || "headSessionIdentityCanonical"), "providerSessionIdentityCanonical",
-    "providerSessionCreated", "projectContentPassed", "actualProviderSessionBindingValidated", "runtimeControlEnabled",
-    "executionContractRequiredForControl", "callerAndChildOwnershipRequiredForControl",
-  ], "Runtime project binding boundary");
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocolVersion",
+      "projectId",
+      format?.sessionIdField || "headSessionId",
+      "projectRootDigest",
+      "projectStatus",
+      "selectedRuntimes",
+      "versionEvidenceId",
+      "protocolEvidenceId",
+      "bindings",
+      "status",
+      "bindingBoundary",
+      "authority",
+      "instructionAuthority",
+      "promotionAuthority",
+      "controlAuthority",
+      "mutatesCanon",
+      "bindingId",
+      "bindingHash",
+    ],
+    "Runtime project binding",
+  );
+  assertFields(
+    document.bindingBoundary,
+    [
+      format?.value("headProjectIdentityCanonical") || "headProjectIdentityCanonical",
+      format?.value("headSessionIdentityCanonical") || "headSessionIdentityCanonical",
+      "providerSessionIdentityCanonical",
+      "providerSessionCreated",
+      "projectContentPassed",
+      "actualProviderSessionBindingValidated",
+      "runtimeControlEnabled",
+      "executionContractRequiredForControl",
+      "callerAndChildOwnershipRequiredForControl",
+    ],
+    "Runtime project binding boundary",
+  );
   const runtimes = normalizedRuntimes(document.selectedRuntimes);
   if (!Array.isArray(document.bindings) || document.bindings.length !== runtimes.length) {
     fail("Runtime project binding runtime set is invalid.", "INVALID_RUNTIME_PROJECT_BINDING");
   }
   for (const [index, binding] of document.bindings.entries()) {
-    assertFields(binding, [
-      "runtime", "versionObservationId", "protocolObservationId", "capabilityStatus", "providerSessionCreated",
-      "runtimeControlEnabled",
-    ], `Runtime project binding[${index}]`);
-    if (binding.runtime !== runtimes[index]
-      || !/^runtime-version-observation-[a-f0-9]{24}$/.test(binding.versionObservationId || "")
-      || !/^runtime-protocol-observation-[a-f0-9]{24}$/.test(binding.protocolObservationId || "")
-      || !["observed", "partial"].includes(binding.capabilityStatus)
-      || binding.providerSessionCreated !== false || binding.runtimeControlEnabled !== false) {
+    assertFields(
+      binding,
+      ["runtime", "versionObservationId", "protocolObservationId", "capabilityStatus", "providerSessionCreated", "runtimeControlEnabled"],
+      `Runtime project binding[${index}]`,
+    );
+    if (
+      binding.runtime !== runtimes[index] ||
+      !/^runtime-version-observation-[a-f0-9]{24}$/.test(binding.versionObservationId || "") ||
+      !/^runtime-protocol-observation-[a-f0-9]{24}$/.test(binding.protocolObservationId || "") ||
+      !["observed", "partial"].includes(binding.capabilityStatus) ||
+      binding.providerSessionCreated !== false ||
+      binding.runtimeControlEnabled !== false
+    ) {
       fail("Runtime project binding entry is invalid.", "INVALID_RUNTIME_PROJECT_BINDING");
     }
   }
@@ -854,19 +1067,29 @@ export function verifyRuntimeProjectBinding(document) {
     executionContractRequiredForControl: true,
     callerAndChildOwnershipRequiredForControl: true,
   };
-  if (document.schemaVersion !== 1 || document.kind !== "RuntimeProjectBinding"
-    || document.protocolVersion !== RUNTIME_PROJECT_BINDING_VERSION
-    || (!format || !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || ""))
-    || !/^session-[A-Fa-f0-9-]{36}$/.test(sessionIdOf(document) || "")
-    || !/^[a-f0-9]{64}$/.test(document.projectRootDigest || "")
-    || !["ready", "drifted"].includes(document.projectStatus)
-    || !/^runtime-version-evidence-[a-f0-9]{24}$/.test(document.versionEvidenceId || "")
-    || !/^runtime-protocol-evidence-[a-f0-9]{24}$/.test(document.protocolEvidenceId || "")
-    || document.status !== (fullyObserved ? (format?.value("verified-head-project-session-capability-binding") || "verified-head-project-session-capability-binding") : (format?.value("partial-head-project-session-capability-binding") || "partial-head-project-session-capability-binding"))
-    || canonicalJson(document.bindingBoundary) !== canonicalJson(expectedBoundary)
-    || document.authority !== (format?.value("canonical-head-reference-with-operational-capability-evidence") || "canonical-head-reference-with-operational-capability-evidence")
-    || document.instructionAuthority !== false || document.promotionAuthority !== false
-    || document.controlAuthority !== false || document.mutatesCanon !== false) {
+  if (
+    document.schemaVersion !== 1 ||
+    document.kind !== "RuntimeProjectBinding" ||
+    document.protocolVersion !== RUNTIME_PROJECT_BINDING_VERSION ||
+    !format ||
+    !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || "") ||
+    !/^session-[A-Fa-f0-9-]{36}$/.test(sessionIdOf(document) || "") ||
+    !/^[a-f0-9]{64}$/.test(document.projectRootDigest || "") ||
+    !["ready", "drifted"].includes(document.projectStatus) ||
+    !/^runtime-version-evidence-[a-f0-9]{24}$/.test(document.versionEvidenceId || "") ||
+    !/^runtime-protocol-evidence-[a-f0-9]{24}$/.test(document.protocolEvidenceId || "") ||
+    document.status !==
+      (fullyObserved
+        ? format?.value("verified-head-project-session-capability-binding") || "verified-head-project-session-capability-binding"
+        : format?.value("partial-head-project-session-capability-binding") || "partial-head-project-session-capability-binding") ||
+    canonicalJson(document.bindingBoundary) !== canonicalJson(expectedBoundary) ||
+    document.authority !==
+      (format?.value("canonical-head-reference-with-operational-capability-evidence") || "canonical-head-reference-with-operational-capability-evidence") ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false ||
+    document.controlAuthority !== false ||
+    document.mutatesCanon !== false
+  ) {
     fail("Runtime project binding is invalid.", "INVALID_RUNTIME_PROJECT_BINDING");
   }
   verifyIdentity(document, {

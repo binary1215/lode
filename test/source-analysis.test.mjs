@@ -52,19 +52,32 @@ test("work evidence is excluded without hiding sources or changing their freshne
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   return value;
 }
 
 function reidentifyScan(payload) {
-  const scanHash = crypto.createHash("sha256").update(JSON.stringify(canonical(payload))).digest("hex");
+  const scanHash = crypto
+    .createHash("sha256")
+    .update(JSON.stringify(canonical(payload)))
+    .digest("hex");
   return { ...payload, scanId: `repository-scan-${scanHash.slice(0, 24)}`, scanHash };
 }
 
 function emptyProductModel() {
   return normalizeProductModelDocument({
     schemaVersion: 1,
-    featureGroups: [], capabilities: [], features: [], requirements: [], constraints: [], decisions: [],
+    featureGroups: [],
+    capabilities: [],
+    features: [],
+    requirements: [],
+    constraints: [],
+    decisions: [],
   });
 }
 
@@ -84,19 +97,38 @@ def helper():
     return True
 `;
   const symbols = extractSourceSymbols(source, "python");
-  assert.deepEqual(symbols.filter((symbol) => symbol.name === "read").map((symbol) => symbol.qualifiedName), ["A.read", "B.read"]);
+  assert.deepEqual(
+    symbols.filter((symbol) => symbol.name === "read").map((symbol) => symbol.qualifiedName),
+    ["A.read", "B.read"],
+  );
   assert.match(symbols.find((symbol) => symbol.qualifiedName === "A.read").signature, /-> bool:/u);
   assert.match(symbols.find((symbol) => symbol.qualifiedName === "B.read").signature, /value: str/u);
   const facts = extractSemanticSourceFacts(source, "python");
-  assert.deepEqual(facts.calls.filter((call) => call.callee === "helper").map((call) => call.callerQualifiedName), ["A.read", "B.read"]);
+  assert.deepEqual(
+    facts.calls.filter((call) => call.callee === "helper").map((call) => call.callerQualifiedName),
+    ["A.read", "B.read"],
+  );
 
   const file = {
-    path: "src/readers.py", digest: crypto.createHash("sha256").update(source).digest("hex"), freshness: "active",
-    bytes: Buffer.byteLength(source), classification: "source", language: "python", symbols, dependencies: [], semanticFacts: facts,
+    path: "src/readers.py",
+    digest: crypto.createHash("sha256").update(source).digest("hex"),
+    freshness: "active",
+    bytes: Buffer.byteLength(source),
+    classification: "source",
+    language: "python",
+    symbols,
+    dependencies: [],
+    semanticFacts: facts,
   };
   const semantic = buildSemanticGraph({ files: [file] });
   const nodes = new Map(semantic.nodes.map((node) => [node.id, node]));
-  assert.deepEqual(semantic.edges.filter((edge) => edge.type === "CALLS").map((edge) => nodes.get(edge.from).qualifiedName).sort(), ["A.read", "B.read"]);
+  assert.deepEqual(
+    semantic.edges
+      .filter((edge) => edge.type === "CALLS")
+      .map((edge) => nodes.get(edge.from).qualifiedName)
+      .sort(),
+    ["A.read", "B.read"],
+  );
   const temporal = buildTemporalProvenanceGraph({ projectId: "project-source-analysis", files: [file], productModel: emptyProductModel() });
   const reads = temporal.nodes.filter((node) => node.kind === "Symbol" && node.name === "read");
   assert.equal(new Set(reads.map((node) => node.nodeId)).size, 2);
@@ -113,11 +145,14 @@ export function second() {
 export function third() { return 3; }
 `;
   const symbols = extractSourceSymbols(source, "javascript");
-  assert.deepEqual(symbols.map(({ qualifiedName, line, endLine }) => ({ qualifiedName, line, endLine })), [
-    { qualifiedName: "first", line: 2, endLine: 2 },
-    { qualifiedName: "second", line: 3, endLine: 6 },
-    { qualifiedName: "third", line: 7, endLine: 7 },
-  ]);
+  assert.deepEqual(
+    symbols.map(({ qualifiedName, line, endLine }) => ({ qualifiedName, line, endLine })),
+    [
+      { qualifiedName: "first", line: 2, endLine: 2 },
+      { qualifiedName: "second", line: 3, endLine: 6 },
+      { qualifiedName: "third", line: 7, endLine: 7 },
+    ],
+  );
   const calls = extractSemanticSourceFacts(source, "javascript").calls.filter((call) => call.callee === "third");
   assert.deepEqual(calls, [{ callee: "third", line: 5, callerQualifiedName: "second", callerIdentityAmbiguous: false }]);
 });

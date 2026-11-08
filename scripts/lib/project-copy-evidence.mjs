@@ -62,17 +62,12 @@ function checkCopyAuthority(check) {
 
 // Streaming raw-byte observation. No decoder, canonicalization, alias or
 // Project selection is involved, including for unknown optional record types.
-export function inspectCopiedProjectFile(
-  root,
-  relative,
-  { signal, onChunk = null, assertCurrentAuthority = null } = {},
-) {
+export function inspectCopiedProjectFile(root, relative, { signal, onChunk = null, assertCurrentAuthority = null } = {}) {
   if (signal?.aborted) fail("PROJECT_COPY_CANCELLED");
   checkCopyAuthority(assertCurrentAuthority);
   const file = copiedProjectFile(root, relative);
   const before = fs.lstatSync(file, { bigint: true });
-  if (!before.isFile() || before.nlink !== 1n || before.size > BigInt(Number.MAX_SAFE_INTEGER))
-    fail("PROJECT_COPY_UNSAFE_FILE");
+  if (!before.isFile() || before.nlink !== 1n || before.size > BigInt(Number.MAX_SAFE_INTEGER)) fail("PROJECT_COPY_UNSAFE_FILE");
   const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
   try {
     if (!sameFile(before, fs.fstatSync(fd, { bigint: true }))) fail("PROJECT_COPY_SOURCE_CHANGED");
@@ -89,11 +84,7 @@ export function inspectCopiedProjectFile(
       hash.update(chunk.subarray(0, count));
       onChunk?.(chunk.subarray(0, count), bytes - count);
     }
-    if (
-      BigInt(bytes) !== before.size ||
-      !sameFile(before, fs.fstatSync(fd, { bigint: true })) ||
-      !sameFile(before, fs.lstatSync(file, { bigint: true }))
-    )
+    if (BigInt(bytes) !== before.size || !sameFile(before, fs.fstatSync(fd, { bigint: true })) || !sameFile(before, fs.lstatSync(file, { bigint: true })))
       fail("PROJECT_COPY_SOURCE_CHANGED");
     checkCopyAuthority(assertCurrentAuthority);
     return { path: relative, bytes, sha256: hash.digest("hex") };
@@ -126,7 +117,7 @@ export function inspectCopiedProjectFiles({ root, directory, signal } = {}) {
     if (stat.isDirectory()) {
       const entries = fs.opendirSync(file);
       try {
-        for (let entry; (entry = entries.readSync()); ) visit(`${relative}/${entry.name}`);
+        for (let entry; (entry = entries.readSync());) visit(`${relative}/${entry.name}`);
       } finally {
         entries.closeSync();
       }
@@ -153,8 +144,7 @@ export function verifyCopiedProjectFile(root, entry, options = {}) {
   )
     fail("PROJECT_COPY_INVENTORY_INVALID");
   const current = inspectCopiedProjectFile(root, entry.path, options);
-  if (current.bytes !== entry.bytes || current.sha256 !== entry.sha256)
-    fail("PROJECT_COPY_SOURCE_CHANGED");
+  if (current.bytes !== entry.bytes || current.sha256 !== entry.sha256) fail("PROJECT_COPY_SOURCE_CHANGED");
   return current;
 }
 
@@ -166,12 +156,7 @@ export function copiedEvidenceDigest(inventory) {
 // This observes paths only; it does not reinterpret missing generated files as
 // missing Canon or grant permission to overwrite a user-owned integration.
 export function validateCopiedManagedPaths({ root, directory, manifest } = {}) {
-  if (
-    ![".lode", ".head"].includes(directory) ||
-    manifest?.schemaVersion !== 1 ||
-    !Array.isArray(manifest.managed)
-  )
-    fail("PROJECT_REPAIR_MANIFEST_INVALID");
+  if (![".lode", ".head"].includes(directory) || manifest?.schemaVersion !== 1 || !Array.isArray(manifest.managed)) fail("PROJECT_REPAIR_MANIFEST_INVALID");
   const names = new Set(),
     physical = new Set();
   for (const entry of manifest.managed) {
@@ -180,8 +165,7 @@ export function validateCopiedManagedPaths({ root, directory, manifest } = {}) {
       typeof entry.path !== "string" ||
       typeof entry.sha256 !== "string" ||
       !/^[a-f0-9]{64}$/.test(entry.sha256) ||
-      (!entry.path.startsWith(directory + "/") &&
-        !["AGENTS.md", "CLAUDE.md", ".mcp.json", "opencode.json"].includes(entry.path))
+      (!entry.path.startsWith(directory + "/") && !["AGENTS.md", "CLAUDE.md", ".mcp.json", "opencode.json"].includes(entry.path))
     )
       fail("PROJECT_REPAIR_MANIFEST_INVALID");
     const file = copiedProjectFile(root, entry.path),
@@ -199,27 +183,20 @@ export function validateCopiedManagedPaths({ root, directory, manifest } = {}) {
 }
 
 export function readCopiedProjectExcerpt(root, entry, { offset = 0, maxBytes = 65536, signal, assertCurrentAuthority } = {}) {
-  if (
-    !Number.isSafeInteger(offset) ||
-    offset < 0 ||
-    !Number.isSafeInteger(maxBytes) ||
-    maxBytes < 1 ||
-    maxBytes > 512 * 1024 * 1024
-  )
+  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 512 * 1024 * 1024)
     fail("PROJECT_COPY_EXCERPT_INVALID");
-  if (!entry || typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(entry.sha256))
-    fail("PROJECT_COPY_INVENTORY_INVALID");
+  if (!entry || typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(entry.sha256)) fail("PROJECT_COPY_INVENTORY_INVALID");
   const chunks = [];
   const observed = inspectCopiedProjectFile(root, entry.path, {
-    signal, assertCurrentAuthority,
+    signal,
+    assertCurrentAuthority,
     onChunk(bytes, start) {
       const from = Math.max(offset, start),
         to = Math.min(offset + maxBytes, start + bytes.length);
       if (to > from) chunks.push(Buffer.from(bytes.subarray(from - start, to - start)));
     },
   });
-  if (observed.sha256 !== entry.sha256 || observed.bytes !== entry.bytes)
-    fail("PROJECT_COPY_SOURCE_CHANGED");
+  if (observed.sha256 !== entry.sha256 || observed.bytes !== entry.bytes) fail("PROJECT_COPY_SOURCE_CHANGED");
   return {
     bytes: Buffer.concat(chunks),
     totalBytes: observed.bytes,
@@ -253,23 +230,13 @@ export function copyOriginal(
     target = copiedProjectFile(bundleRoot, relative),
     sourceEntry = { ...entry, path: sourceRelative };
   if (fs.existsSync(target)) {
-    verifyCopiedProjectFile(
-      bundleRoot,
-      { ...entry, path: relative },
-      { signal, assertCurrentAuthority },
-    );
+    verifyCopiedProjectFile(bundleRoot, { ...entry, path: relative }, { signal, assertCurrentAuthority });
     return;
   }
   verifyCopiedProjectFile(sourceRoot, sourceEntry, { signal, assertCurrentAuthority });
   const source = copiedProjectFile(sourceRoot, sourceRelative),
     before = fs.lstatSync(source, { bigint: true });
-  const tmpRelative =
-      (stagingDirectory ?? path.posix.dirname(relative)) +
-      "/." +
-      entry.sha256 +
-      "-" +
-      crypto.randomUUID() +
-      ".part",
+  const tmpRelative = (stagingDirectory ?? path.posix.dirname(relative)) + "/." + entry.sha256 + "-" + crypto.randomUUID() + ".part",
     temporary = copiedProjectFile(bundleRoot, tmpRelative);
   const input = fs.openSync(source, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0)),
     hash = crypto.createHash("sha256");
@@ -280,8 +247,7 @@ export function copyOriginal(
     check();
     output = fs.openSync(temporary, "wx");
     const opened = fs.fstatSync(input, { bigint: true });
-    if (opened.ino !== before.ino || opened.dev !== before.dev || opened.nlink !== 1n)
-      fail("PROJECT_COPY_SOURCE_CHANGED");
+    if (opened.ino !== before.ino || opened.dev !== before.dev || opened.nlink !== 1n) fail("PROJECT_COPY_SOURCE_CHANGED");
     const buffer = Buffer.alloc(64 * 1024);
     for (;;) {
       check();
@@ -301,8 +267,7 @@ export function copyOriginal(
     fs.fsyncSync(output);
     fs.closeSync(output);
     closed = true;
-    if (bytes !== entry.bytes || hash.digest("hex") !== entry.sha256)
-      fail("PROJECT_COPY_SOURCE_CHANGED");
+    if (bytes !== entry.bytes || hash.digest("hex") !== entry.sha256) fail("PROJECT_COPY_SOURCE_CHANGED");
     verifyCopiedProjectFile(sourceRoot, sourceEntry, { signal, assertCurrentAuthority });
     // link is no-clobber on every supported OS; remove only our private stage.
     check();

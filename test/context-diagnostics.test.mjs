@@ -76,7 +76,9 @@ test("diagnostics reject malformed requests before preview and restore instrumen
   await assert.rejects(() => measureContextDiagnostics({ task: "a task" }), /both --project and --task/);
   const originalRead = fs.readFileSync;
   const originalWrite = fs.writeFileSync;
-  await assert.rejects(() => measureContextDiagnostics({ project: path.join(os.tmpdir(), "no-head-diagnostic-project"), task: "Inspect queue", iterations: 1 }));
+  await assert.rejects(() =>
+    measureContextDiagnostics({ project: path.join(os.tmpdir(), "no-head-diagnostic-project"), task: "Inspect queue", iterations: 1 }),
+  );
   assert.equal(fs.readFileSync, originalRead);
   assert.equal(fs.writeFileSync, originalWrite);
 });

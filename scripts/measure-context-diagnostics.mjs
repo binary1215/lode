@@ -17,22 +17,38 @@ function sourceRevision(root) {
     const marker = path.join(cursor, ".git");
     if (fs.existsSync(marker)) {
       try {
-        const gitDirectory = fs.statSync(marker).isDirectory() ? marker
-          : path.resolve(cursor, fs.readFileSync(marker, "utf8").trim().replace(/^gitdir:\s*/, ""));
+        const gitDirectory = fs.statSync(marker).isDirectory()
+          ? marker
+          : path.resolve(
+              cursor,
+              fs
+                .readFileSync(marker, "utf8")
+                .trim()
+                .replace(/^gitdir:\s*/, ""),
+            );
         const head = fs.readFileSync(path.join(gitDirectory, "HEAD"), "utf8").trim();
         if (/^[a-f0-9]{40,64}$/.test(head)) return { status: "observed", commit: head, worktreeClean: "not-measured" };
         const ref = head.replace(/^ref:\s*/, "");
         if (!ref.startsWith("refs/") || ref.includes("..")) break;
         const common = fs.existsSync(path.join(gitDirectory, "commondir"))
-          ? path.resolve(gitDirectory, fs.readFileSync(path.join(gitDirectory, "commondir"), "utf8").trim()) : gitDirectory;
+          ? path.resolve(gitDirectory, fs.readFileSync(path.join(gitDirectory, "commondir"), "utf8").trim())
+          : gitDirectory;
         for (const directory of new Set([gitDirectory, common])) {
           const loose = path.join(directory, ref);
-          const commit = fs.existsSync(loose) ? fs.readFileSync(loose, "utf8").trim()
+          const commit = fs.existsSync(loose)
+            ? fs.readFileSync(loose, "utf8").trim()
             : fs.existsSync(path.join(directory, "packed-refs"))
-              ? fs.readFileSync(path.join(directory, "packed-refs"), "utf8").split(/\r?\n/).find((line) => line.endsWith(` ${ref}`))?.split(" ")[0] : null;
+              ? fs
+                  .readFileSync(path.join(directory, "packed-refs"), "utf8")
+                  .split(/\r?\n/)
+                  .find((line) => line.endsWith(` ${ref}`))
+                  ?.split(" ")[0]
+              : null;
           if (/^[a-f0-9]{40,64}$/.test(commit || "")) return { status: "observed", commit, worktreeClean: "not-measured" };
         }
-      } catch { /* A source archive or unreadable Git metadata is a usable diagnostic input. */ }
+      } catch {
+        /* A source archive or unreadable Git metadata is a usable diagnostic input. */
+      }
       break;
     }
     const parent = path.dirname(cursor);
@@ -44,9 +60,11 @@ function sourceRevision(root) {
 
 function dependencySummary(root) {
   const library = path.join(root, "scripts", "lib");
-  const files = fs.readdirSync(library, { withFileTypes: true })
+  const files = fs
+    .readdirSync(library, { withFileTypes: true })
     .filter((item) => item.isFile() && item.name.endsWith(".mjs"))
-    .map((item) => path.join(library, item.name)).sort();
+    .map((item) => path.join(library, item.name))
+    .sort();
   const known = new Set(files);
   const graph = new Map();
   let sourceLines = 0;
@@ -70,18 +88,26 @@ function dependencySummary(root) {
     stack.push(node);
     active.add(node);
     for (const target of graph.get(node)) {
-      if (!index.has(target)) { visit(target); low.set(node, Math.min(low.get(node), low.get(target))); }
-      else if (active.has(target)) low.set(node, Math.min(low.get(node), index.get(target)));
+      if (!index.has(target)) {
+        visit(target);
+        low.set(node, Math.min(low.get(node), low.get(target)));
+      } else if (active.has(target)) low.set(node, Math.min(low.get(node), index.get(target)));
     }
     if (low.get(node) !== index.get(node)) return;
     const component = [];
     let member;
-    do { member = stack.pop(); active.delete(member); component.push(member); } while (member !== node);
+    do {
+      member = stack.pop();
+      active.delete(member);
+      component.push(member);
+    } while (member !== node);
     if (component.length > 1 || graph.get(node).includes(node)) cycles.push(component.map((file) => path.relative(root, file).replaceAll("\\", "/")).sort());
   }
   for (const file of files) if (!index.has(file)) visit(file);
   return {
-    moduleCount: files.length, sourceLines, sourceUtf8Bytes,
+    moduleCount: files.length,
+    sourceLines,
+    sourceUtf8Bytes,
     staticRelativeImportEdges: [...graph.values()].reduce((count, targets) => count + targets.length, 0),
     cyclicComponents: cycles.sort((left, right) => left[0].localeCompare(right[0])),
     method: "static-relative-import-declaration-text-scan-within-scripts/lib",
@@ -93,7 +119,10 @@ function dependencySummary(root) {
 async function observePreview(operation) {
   const originals = new Map();
   const metrics = { readFileSyncCalls: 0, readFileSyncReturnedPayloadBytes: 0, readSyncCalls: 0, readSyncReturnedBytes: 0, filesystemMutationAttempts: 0 };
-  const replace = (name, fn) => { originals.set(name, fs[name]); fs[name] = fn; };
+  const replace = (name, fn) => {
+    originals.set(name, fs[name]);
+    fs[name] = fn;
+  };
   const readFile = fs.readFileSync;
   replace("readFileSync", function (...args) {
     const value = Reflect.apply(readFile, fs, args);
@@ -114,18 +143,44 @@ async function observePreview(operation) {
     error.code = "DIAGNOSTIC_READ_ONLY_VIOLATION";
     throw error;
   };
-  for (const name of ["writeFileSync", "appendFileSync", "writeSync", "mkdirSync", "mkdtempSync", "renameSync", "copyFileSync", "cpSync", "unlinkSync", "rmSync", "rmdirSync", "truncateSync", "ftruncateSync", "chmodSync", "chownSync", "utimesSync", "symlinkSync", "linkSync"]) {
+  for (const name of [
+    "writeFileSync",
+    "appendFileSync",
+    "writeSync",
+    "mkdirSync",
+    "mkdtempSync",
+    "renameSync",
+    "copyFileSync",
+    "cpSync",
+    "unlinkSync",
+    "rmSync",
+    "rmdirSync",
+    "truncateSync",
+    "ftruncateSync",
+    "chmodSync",
+    "chownSync",
+    "utimesSync",
+    "symlinkSync",
+    "linkSync",
+  ]) {
     replace(name, rejectWrite);
   }
   const open = fs.openSync;
   replace("openSync", function (file, flags, ...rest) {
-    if (typeof flags === "string" ? /[wa+]/.test(flags)
-      : (flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_APPEND)) !== 0) rejectWrite();
+    if (
+      typeof flags === "string"
+        ? /[wa+]/.test(flags)
+        : (flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_APPEND)) !== 0
+    )
+      rejectWrite();
     return Reflect.apply(open, fs, [file, flags, ...rest]);
   });
   const start = performance.now();
-  try { return { result: await operation(), elapsedMs: performance.now() - start, observedFs: metrics }; }
-  finally { for (const [name, original] of originals) fs[name] = original; }
+  try {
+    return { result: await operation(), elapsedMs: performance.now() - start, observedFs: metrics };
+  } finally {
+    for (const [name, original] of originals) fs[name] = original;
+  }
 }
 
 function percentiles(values) {
@@ -145,22 +200,29 @@ export async function measureContextDiagnostics({ project = null, task = null, i
   }
   const countHint = (value) => tools.filter((tool) => tool.annotations?.readOnlyHint === value).length;
   const report = {
-    schemaVersion: 1, kind: "ContextDiagnosticsReport",
+    schemaVersion: 1,
+    kind: "ContextDiagnosticsReport",
     runtime: { node: process.version, platform: process.platform, architecture: process.arch, osRelease: os.release() },
     sourceRevision: sourceRevision(pluginRoot),
     mcpCatalog: {
-      tools: tools.length, catalogArrayUtf8Bytes: Buffer.byteLength(JSON.stringify(tools), "utf8"),
-      readOnlyTrue: countHint(true), readOnlyFalse: countHint(false),
+      tools: tools.length,
+      catalogArrayUtf8Bytes: Buffer.byteLength(JSON.stringify(tools), "utf8"),
+      readOnlyTrue: countHint(true),
+      readOnlyFalse: countHint(false),
       readOnlyHintMissing: tools.filter((tool) => !Object.hasOwn(tool.annotations || {}, "readOnlyHint")).length,
-      readOnlyHintInvalid: tools.filter((tool) => Object.hasOwn(tool.annotations || {}, "readOnlyHint") && typeof tool.annotations.readOnlyHint !== "boolean").length,
+      readOnlyHintInvalid: tools.filter((tool) => Object.hasOwn(tool.annotations || {}, "readOnlyHint") && typeof tool.annotations.readOnlyHint !== "boolean")
+        .length,
       modelContextDeliveryBytes: "not-measured-host-discovery-dependent",
     },
     dependencies: dependencySummary(pluginRoot),
     contextPreview: { status: "not-requested" },
     interpretation: {
-      authorityEffect: "none", persisted: false, persistsCapsule: false,
+      authorityEffect: "none",
+      persisted: false,
+      persistsCapsule: false,
       timingInCapsuleIdentity: false,
-      headDiscoveryQuality: "not-measured", semanticSufficiency: "not-measured-HEAD-owned",
+      headDiscoveryQuality: "not-measured",
+      semanticSufficiency: "not-measured-HEAD-owned",
       taskResumeAndFinalEditCorrectness: "not-measured-requires-independent-end-to-end-evaluation",
       repositoryCoverage: "Mechanical inclusion of indexed source records is not proof of source body consumption by the executor.",
     },
@@ -168,27 +230,38 @@ export async function measureContextDiagnostics({ project = null, task = null, i
   if (project !== null) {
     const samples = [];
     for (let index = 0; index < iterations; index += 1) {
-      const { result, elapsedMs, observedFs } = await observePreview(async () => (await previewContextWorkflow({ root: project, task, evidenceNeeds: [] })));
+      const { result, elapsedMs, observedFs } = await observePreview(async () => await previewContextWorkflow({ root: project, task, evidenceNeeds: [] }));
       const { capsule, workflow } = result;
       samples.push({
-        iteration: index + 1, phase: index === 0 ? "first-preview-in-process" : "repeated-preview-in-process",
-        elapsedMs, observedFs, capsuleId: capsule.capsuleId, capsuleHash: capsule.capsuleHash,
-        workflowStatus: workflow.status, worldState: workflow.world.state,
+        iteration: index + 1,
+        phase: index === 0 ? "first-preview-in-process" : "repeated-preview-in-process",
+        elapsedMs,
+        observedFs,
+        capsuleId: capsule.capsuleId,
+        capsuleHash: capsule.capsuleHash,
+        workflowStatus: workflow.status,
+        worldState: workflow.world.state,
         evidenceGapCount: capsule.evidenceGaps.length,
         semanticSufficiencyOwner: "HEAD",
         repositoryRecordCount: capsule.repositoryContext.length,
-        usedApproxTokens: capsule.budget.usedApproxTokens, maxApproxTokens: capsule.budget.maxApproxTokens,
+        usedApproxTokens: capsule.budget.usedApproxTokens,
+        maxApproxTokens: capsule.budget.maxApproxTokens,
       });
     }
     report.contextPreview = {
-      status: "measured", taskSha256: createHash("sha256").update(task).digest("hex"), iterations,
-      evidenceNeedSource: "none-lexical-baseline-only", samples,
+      status: "measured",
+      taskSha256: createHash("sha256").update(task).digest("hex"),
+      iterations,
+      evidenceNeedSource: "none-lexical-baseline-only",
+      samples,
       firstCall: percentiles(samples.slice(0, 1).map((sample) => sample.elapsedMs)),
       repeatedCalls: percentiles(samples.slice(1).map((sample) => sample.elapsedMs)),
       allCalls: percentiles(samples.map((sample) => sample.elapsedMs)),
       stableCapsuleIdentity: new Set(samples.map((sample) => sample.capsuleHash)).size === 1,
-      osColdCache: "not-controlled-not-claimed", moduleImportTime: "excluded",
-      fsMeasurement: "Observed synchronous fs API returned payload bytes only; UTF-8 strings re-encoded. Counters can overlap and must not be summed. Excludes async, native and child-process I/O; not physical disk I/O or cache-miss measurement.",
+      osColdCache: "not-controlled-not-claimed",
+      moduleImportTime: "excluded",
+      fsMeasurement:
+        "Observed synchronous fs API returned payload bytes only; UTF-8 strings re-encoded. Counters can overlap and must not be summed. Excludes async, native and child-process I/O; not physical disk I/O or cache-miss measurement.",
       noRefreshOrPersistenceRequested: true,
     };
   }
@@ -197,11 +270,15 @@ export async function measureContextDiagnostics({ project = null, task = null, i
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
-  process.stderr.write(`${JSON.stringify({ event: "diagnostic-process", pid: process.pid, parentPid: process.ppid, command: "measure-context-diagnostics.mjs", cwd: process.cwd(), ports: [] })}\n`);
+  process.stderr.write(
+    `${JSON.stringify({ event: "diagnostic-process", pid: process.pid, parentPid: process.ppid, command: "measure-context-diagnostics.mjs", cwd: process.cwd(), ports: [] })}\n`,
+  );
   try {
     const args = process.argv.slice(2);
     if (args.length === 1 && args[0] === "--help") {
-      process.stdout.write("Usage: node scripts/measure-context-diagnostics.mjs [--project <existing-project> --task <task>] [--iterations 1..20]\nRead-only local measurements. No provider call, refresh, initialization, or saved report.\n");
+      process.stdout.write(
+        "Usage: node scripts/measure-context-diagnostics.mjs [--project <existing-project> --task <task>] [--iterations 1..20]\nRead-only local measurements. No provider call, refresh, initialization, or saved report.\n",
+      );
     } else {
       const options = {};
       for (let index = 0; index < args.length; index += 2) {

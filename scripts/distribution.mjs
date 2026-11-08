@@ -39,8 +39,11 @@ function usage() {
 
 function readOnboardingInput(file) {
   if (!file) return null;
-  try { return JSON.parse(fs.readFileSync(path.resolve(file), "utf8")); }
-  catch (error) { throw new Error(`Onboarding input is invalid JSON: ${error.message}`); }
+  try {
+    return JSON.parse(fs.readFileSync(path.resolve(file), "utf8"));
+  } catch (error) {
+    throw new Error(`Onboarding input is invalid JSON: ${error.message}`);
+  }
 }
 
 export async function runDistributionCommand(argv = process.argv.slice(2)) {
@@ -60,9 +63,10 @@ export async function runDistributionCommand(argv = process.argv.slice(2)) {
         sourceRoot,
         nativeOverlayRoot: acquisition.status === "verified" ? acquisition.pluginRoot : null,
       });
-      distribution.native = acquisition.status === "verified"
-        ? { ...distribution.native, assetName: acquisition.assetName, assetSha256: acquisition.assetSha256, buildCommit: acquisition.buildCommit }
-        : { status: "javascript-fallback", deliveryStatus: acquisition.status, reasonCode: acquisition.reasonCode || null };
+      distribution.native =
+        acquisition.status === "verified"
+          ? { ...distribution.native, assetName: acquisition.assetName, assetSha256: acquisition.assetSha256, buildCommit: acquisition.buildCommit }
+          : { status: "javascript-fallback", deliveryStatus: acquisition.status, reasonCode: acquisition.reasonCode || null };
       if (!options.project) return distribution;
       const activePluginRoot = path.join(distribution.installRoot, "releases", distribution.releaseId);
       const project = await initializeOrResumeProject({
@@ -86,10 +90,13 @@ export async function runDistributionCommand(argv = process.argv.slice(2)) {
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
-  Promise.resolve().then(async () => (await runDistributionCommand())).then((result) => {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  }).catch((error) => {
-    process.stdout.write(`${JSON.stringify({ status: "failed", code: error.code || "HEAD_DISTRIBUTION_ERROR", error: error.message }, null, 2)}\n`);
-    process.exitCode = 1;
-  });
+  Promise.resolve()
+    .then(async () => await runDistributionCommand())
+    .then((result) => {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    })
+    .catch((error) => {
+      process.stdout.write(`${JSON.stringify({ status: "failed", code: error.code || "HEAD_DISTRIBUTION_ERROR", error: error.message }, null, 2)}\n`);
+      process.exitCode = 1;
+    });
 }

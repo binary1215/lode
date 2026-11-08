@@ -36,11 +36,71 @@ const MAX_PRODUCT_CONTEXT_RELATIONSHIPS = 48;
 const PRODUCT_ENTITY_KINDS = new Set(["FeatureGroup", "Capability", "Feature", "Requirement", "Constraint", "Decision", "Policy"]);
 
 const STOP_WORDS = new Set([
-  "the", "is", "are", "was", "were", "a", "an", "and", "or", "for", "from", "with", "into", "this", "that",
-  "what", "why", "how", "when", "where", "will", "would", "should", "could", "task", "current",
-  "현재", "이번", "관련", "위한", "무엇", "어떻게", "왜", "언제", "에서", "으로", "이다", "있다",
+  "the",
+  "is",
+  "are",
+  "was",
+  "were",
+  "a",
+  "an",
+  "and",
+  "or",
+  "for",
+  "from",
+  "with",
+  "into",
+  "this",
+  "that",
+  "what",
+  "why",
+  "how",
+  "when",
+  "where",
+  "will",
+  "would",
+  "should",
+  "could",
+  "task",
+  "current",
+  "현재",
+  "이번",
+  "관련",
+  "위한",
+  "무엇",
+  "어떻게",
+  "왜",
+  "언제",
+  "에서",
+  "으로",
+  "이다",
+  "있다",
 ]);
-const KOREAN_PARTICLES = ["으로", "에서", "에게", "까지", "부터", "처럼", "하고", "하며", "하면", "한다", "하고자", "만들고자", "을", "를", "은", "는", "이", "가", "과", "와", "의", "로", "도", "만"];
+const KOREAN_PARTICLES = [
+  "으로",
+  "에서",
+  "에게",
+  "까지",
+  "부터",
+  "처럼",
+  "하고",
+  "하며",
+  "하면",
+  "한다",
+  "하고자",
+  "만들고자",
+  "을",
+  "를",
+  "은",
+  "는",
+  "이",
+  "가",
+  "과",
+  "와",
+  "의",
+  "로",
+  "도",
+  "만",
+];
 
 const fail = (message, code = "CONTEXT_COMPILER_ERROR") => {
   const error = new Error(message);
@@ -65,7 +125,11 @@ function normalizeContextBudget(value) {
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   }
   return value;
 }
@@ -75,8 +139,11 @@ function canonicalJson(value) {
 }
 
 function readJson(file, label) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`${label} is invalid JSON: ${error.message}`, "INVALID_CONTEXT_CANON"); }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(`${label} is invalid JSON: ${error.message}`, "INVALID_CONTEXT_CANON");
+  }
 }
 
 function atomicWrite(file, content) {
@@ -102,7 +169,12 @@ function normalizedLexicalText(value) {
 
 function terms(value) {
   const result = new Set();
-  const originalIdentifiers = String(value).normalize("NFKC").replace(/https?:\/\/[^\s)>\]}]+/giu, " ").toLocaleLowerCase().match(/[\p{L}\p{N}]{2,}/gu) || [];
+  const originalIdentifiers =
+    String(value)
+      .normalize("NFKC")
+      .replace(/https?:\/\/[^\s)>\]}]+/giu, " ")
+      .toLocaleLowerCase()
+      .match(/[\p{L}\p{N}]{2,}/gu) || [];
   for (const token of new Set([...originalIdentifiers, ...(normalizedLexicalText(value).match(/[\p{L}\p{N}]{2,}/gu) || [])])) {
     if (!STOP_WORDS.has(token)) result.add(token);
     if (!/[\p{Script=Hangul}]/u.test(token)) continue;
@@ -128,11 +200,13 @@ function matchedTerms(left, right) {
 }
 
 function rankBounded(items, taskTerms, body, limit) {
-  return items.map((item, index) => ({
-    item,
-    index,
-    relevance: overlap(taskTerms, terms(body(item))),
-  })).sort((left, right) => right.relevance - left.relevance || left.index - right.index)
+  return items
+    .map((item, index) => ({
+      item,
+      index,
+      relevance: overlap(taskTerms, terms(body(item))),
+    }))
+    .sort((left, right) => right.relevance - left.relevance || left.index - right.index)
     .slice(0, limit)
     .map(({ item }) => item);
 }
@@ -184,12 +258,14 @@ function compactTraversalMetadata(traversal) {
       digest: digest(canonicalJson(inclusion)),
     },
     exclusion: traversal.exclusion,
-    boundary: traversal.boundary ? {
-      items: compactList(traversal.boundary.items, 12),
-      nextAnchorIds: compactList(traversal.boundary.nextAnchorIds, 12),
-      omittedItemCount: traversal.boundary.omittedItemCount,
-      complete: traversal.boundary.complete,
-    } : null,
+    boundary: traversal.boundary
+      ? {
+          items: compactList(traversal.boundary.items, 12),
+          nextAnchorIds: compactList(traversal.boundary.nextAnchorIds, 12),
+          omittedItemCount: traversal.boundary.omittedItemCount,
+          complete: traversal.boundary.complete,
+        }
+      : null,
     truncated: traversal.truncated,
   };
 }
@@ -215,10 +291,11 @@ export function validateKnowledge(value) {
     for (const item of value[key]) validateId(item?.id, key);
   }
   const ids = new Set();
-  for (const key of ["evidence", "claims", "decisions", "unknowns"]) for (const item of value[key]) {
-    if (ids.has(item.id)) fail(`Knowledge id is duplicated: ${item.id}`, "DUPLICATE_KNOWLEDGE_ID");
-    ids.add(item.id);
-  }
+  for (const key of ["evidence", "claims", "decisions", "unknowns"])
+    for (const item of value[key]) {
+      if (ids.has(item.id)) fail(`Knowledge id is duplicated: ${item.id}`, "DUPLICATE_KNOWLEDGE_ID");
+      ids.add(item.id);
+    }
   return value;
 }
 
@@ -229,13 +306,17 @@ async function loadSources(root, includeRepositoryWorld = true, worldDomains = n
     knowledge: path.join(root, relativeProjectArtifact(storage, "context", "knowledge.json")),
     managedManifest: path.join(root, relativeProjectArtifact(storage, "generated", "manifest.json")),
   };
-  for (const [name, file] of Object.entries(files)) if (!fs.existsSync(file)) {
-    fail(`Context source is missing: ${name}`, "MISSING_CONTEXT_SOURCE");
-  }
+  for (const [name, file] of Object.entries(files))
+    if (!fs.existsSync(file)) {
+      fail(`Context source is missing: ${name}`, "MISSING_CONTEXT_SOURCE");
+    }
   const raw = Object.fromEntries(Object.entries(files).map(([name, file]) => [name, fs.readFileSync(file, "utf8")]));
   let worldModel = null;
-  try { if (includeRepositoryWorld) worldModel = (await inspectWorldDomainFreshness({ root, storage, ...(worldDomains ? { domains: worldDomains } : {}) })); }
-  catch (error) { worldModel = { status: "unavailable", reasonCode: error.code || "WORLD_EVIDENCE_UNAVAILABLE" }; }
+  try {
+    if (includeRepositoryWorld) worldModel = await inspectWorldDomainFreshness({ root, storage, ...(worldDomains ? { domains: worldDomains } : {}) });
+  } catch (error) {
+    worldModel = { status: "unavailable", reasonCode: error.code || "WORLD_EVIDENCE_UNAVAILABLE" };
+  }
   const direction = readProjectDirection({ root, storage });
   if (direction) raw.projectDirection = canonicalJson(direction);
   return { files, raw, knowledge: validateKnowledge(JSON.parse(raw.knowledge)), worldModel, direction };
@@ -251,7 +332,8 @@ function contextSnapshot(inspected, sources) {
     if (sources.worldModel.snapshot.temporalProvenanceGraph) layers.push("temporal-provenance-alpha");
     if (domainCurrent(sources.worldModel, "product")) layers.push("product-canon-projection-alpha");
     if (hasGitHistory && domainCurrent(sources.worldModel, "git")) layers.push("git-history-alpha");
-    if (domainCurrent(sources.worldModel, "runtime") && sources.worldModel.snapshot.externalRuntimeState?.coverage === "point-in-time-host-export") layers.push("external-runtime-state-alpha");
+    if (domainCurrent(sources.worldModel, "runtime") && sources.worldModel.snapshot.externalRuntimeState?.coverage === "point-in-time-host-export")
+      layers.push("external-runtime-state-alpha");
     if (!domainCurrent(sources.worldModel, "code")) layers.splice(1, 1, "repository-code-evidence-excluded");
     coverage = layers.join("+");
   }
@@ -272,29 +354,35 @@ function contextSnapshot(inspected, sources) {
 export async function buildContextSnapshot(root = ".") {
   const inspected = inspectProject(root);
   if (inspected.status !== "ready") fail(`Project must be ready to build a context snapshot; current status: ${inspected.status}.`, "PROJECT_NOT_READY");
-  const sources = (await loadSources(inspected.project.projectRoot, true, null, inspected.storage));
+  const sources = await loadSources(inspected.project.projectRoot, true, null, inspected.storage);
   return contextSnapshot(inspected, sources);
 }
 
 function evidenceIndex(knowledge) {
-  return new Map(knowledge.evidence.map((item) => [item.id, {
-    kind: "Evidence",
-    id: item.id,
-    sourceKind: item.sourceKind || "project-artifact",
-    uri: item.uri || "",
-    digest: item.digest || "",
-    summary: item.summary || "",
-    observedAt: item.observedAt || "",
-    instructionAuthority: false,
-  }]));
+  return new Map(
+    knowledge.evidence.map((item) => [
+      item.id,
+      {
+        kind: "Evidence",
+        id: item.id,
+        sourceKind: item.sourceKind || "project-artifact",
+        uri: item.uri || "",
+        digest: item.digest || "",
+        summary: item.summary || "",
+        observedAt: item.observedAt || "",
+        instructionAuthority: false,
+      },
+    ]),
+  );
 }
 
 function itemCandidate(kind, item, taskTerms, evidenceById, historyClass) {
-  const body = kind === "Claim"
-    ? item.statement
-    : kind === "Decision"
-      ? [item.title, item.decision, item.reason, ...(item.constraints || [])].filter(Boolean).join(" ")
-      : item.statement;
+  const body =
+    kind === "Claim"
+      ? item.statement
+      : kind === "Decision"
+        ? [item.title, item.decision, item.reason, ...(item.constraints || [])].filter(Boolean).join(" ")
+        : item.statement;
   const tags = Array.isArray(item.tags) ? item.tags.map(String) : [];
   const candidateTerms = terms(`${body} ${tags.join(" ")}`);
   const matches = matchedTerms(taskTerms, candidateTerms);
@@ -329,27 +417,32 @@ function activeCandidates(knowledge, task, historyClass) {
   return candidates.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
 }
 
-function domainCurrent(worldModel, domain) { return worldModel?.freshness?.domains?.[domain]?.status === "current"; }
+function domainCurrent(worldModel, domain) {
+  return worldModel?.freshness?.domains?.[domain]?.status === "current";
+}
 async function queryTemporalProjection(worldModel, graphProjectionAdapter, query) {
   const graph = worldModel.snapshot.temporalProvenanceGraph;
   const eligibility = buildWorldTraversalEligibility(worldModel.snapshot, worldModel.freshness.domains);
   const needsMask = eligibility.nodeIds.length !== graph.nodes.length || eligibility.edgeIds.length !== graph.edges.length;
-  return (await queryGraphProjection({
-    projectRoot: worldModel.storage.projectRoot,
-    storage: worldModel.storage,
-    graph: worldModel.snapshot.temporalProvenanceGraph,
-    adapter: graphProjectionAdapter,
-    query: { ...query, ...(needsMask ? { eligibility } : {}) },
-  })).result;
+  return (
+    await queryGraphProjection({
+      projectRoot: worldModel.storage.projectRoot,
+      storage: worldModel.storage,
+      graph: worldModel.snapshot.temporalProvenanceGraph,
+      adapter: graphProjectionAdapter,
+      query: { ...query, ...(needsMask ? { eligibility } : {}) },
+    })
+  ).result;
 }
 
 function relationEndpointPaths(relation) {
-  return [...new Set([
-    ...(relation.endpointPaths || []),
-    relation.from?.path,
-    relation.to?.path,
-    relation.evidence?.path,
-  ].filter((value) => typeof value === "string" && value).map((value) => value.replaceAll("\\", "/")))].sort();
+  return [
+    ...new Set(
+      [...(relation.endpointPaths || []), relation.from?.path, relation.to?.path, relation.evidence?.path]
+        .filter((value) => typeof value === "string" && value)
+        .map((value) => value.replaceAll("\\", "/")),
+    ),
+  ].sort();
 }
 
 function relationMatchesNeed(relation, need, carrierPath = "") {
@@ -364,15 +457,18 @@ function repositoryCandidates(worldModel, task, budget = DEFAULT_CONTEXT_BUDGET,
   const taskTerms = terms(task);
   const graph = worldModel.snapshot.semanticGraph || null;
   const nodes = new Map((graph?.nodes || []).map((node) => [node.id, node]));
-  const nodeReference = (node) => node ? {
-    id: node.id,
-    kind: node.kind,
-    path: node.path,
-    name: node.name,
-    specifier: node.specifier,
-    symbolKind: node.symbolKind,
-    line: node.line,
-  } : null;
+  const nodeReference = (node) =>
+    node
+      ? {
+          id: node.id,
+          kind: node.kind,
+          path: node.path,
+          name: node.name,
+          specifier: node.specifier,
+          symbolKind: node.symbolKind,
+          line: node.line,
+        }
+      : null;
   const relationshipEdgesByPath = new Map();
   for (const edge of graph?.edges || []) {
     const relation = {
@@ -392,34 +488,37 @@ function repositoryCandidates(worldModel, task, budget = DEFAULT_CONTEXT_BUDGET,
       relationshipEdgesByPath.get(filePath).push(relation);
     }
   }
-  const ranked = worldModel.snapshot.files.map((file) => {
-    const lightweightBody = [
-      file.path,
-      file.classification,
-      file.language,
-      ...file.symbols.map((item) => `${item.kind} ${item.name}`),
-      ...file.dependencies.map((item) => `${item.kind} ${item.specifier}`),
-    ].join(" ");
-    const matches = matchedTerms(taskTerms, terms(lightweightBody));
-    const pathMatches = matchedTerms(taskTerms, terms(file.path));
-    const relevance = matches.length;
-    const importance = ["source", "test"].includes(file.classification) ? 3 : 1;
-    return {
-      file,
-      relevance,
-      matchedTerms: matches,
-      pathMatchedTerms: pathMatches,
-      importance,
-      score: relevance * 25 + pathMatches.length * 10 + importance * 4,
-    };
-  }).sort((left, right) => right.score - left.score || left.file.path.localeCompare(right.file.path));
+  const ranked = worldModel.snapshot.files
+    .map((file) => {
+      const lightweightBody = [
+        file.path,
+        file.classification,
+        file.language,
+        ...file.symbols.map((item) => `${item.kind} ${item.name}`),
+        ...file.dependencies.map((item) => `${item.kind} ${item.specifier}`),
+      ].join(" ");
+      const matches = matchedTerms(taskTerms, terms(lightweightBody));
+      const pathMatches = matchedTerms(taskTerms, terms(file.path));
+      const relevance = matches.length;
+      const importance = ["source", "test"].includes(file.classification) ? 3 : 1;
+      return {
+        file,
+        relevance,
+        matchedTerms: matches,
+        pathMatchedTerms: pathMatches,
+        importance,
+        score: relevance * 25 + pathMatches.length * 10 + importance * 4,
+      };
+    })
+    .sort((left, right) => right.score - left.score || left.file.path.localeCompare(right.file.path));
   const expansionLimit = Math.min(MAX_REPOSITORY_GRAPH_EXPANSIONS, Math.max(8, Math.ceil(Number(budget) / 4000) * 8));
   const relevantRanked = ranked.filter((item) => item.relevance > 0);
   const seedLimit = Math.max(4, Math.ceil(expansionLimit / 2));
   const expandedPaths = new Set(relevantRanked.slice(0, seedLimit).map((item) => item.file.path));
   for (const seed of relevantRanked.slice(0, seedLimit)) {
     if (expandedPaths.size >= expansionLimit) break;
-    const neighbors = (relationshipEdgesByPath.get(seed.file.path) || []).flatMap((edge) => edge.endpointPaths)
+    const neighbors = (relationshipEdgesByPath.get(seed.file.path) || [])
+      .flatMap((edge) => edge.endpointPaths)
       .filter((filePath) => filePath && filePath !== seed.file.path)
       .sort();
     for (const filePath of neighbors) {
@@ -432,134 +531,203 @@ function repositoryCandidates(worldModel, task, budget = DEFAULT_CONTEXT_BUDGET,
     expandedPaths.add(item.file.path);
   }
   const relationNeeds = needs.filter((need) => need.kind === "semantic-relation");
-  return ranked.map(({ file, relevance: lightweightRelevance, matchedTerms: lightweightMatches, pathMatchedTerms, importance, score: lightweightScore }) => {
-    const expanded = expandedPaths.has(file.path);
-    const allRelationships = relationshipEdgesByPath.get(file.path) || [];
-    const relationBody = (item) => [
-      item.type,
-      item.from?.path,
-      item.from?.name,
-      item.to?.path,
-      item.to?.name,
-      item.to?.specifier,
-    ].filter(Boolean).join(" ");
-    // Discovery limits must not make HEAD-requested evidence ineligible.
-    // Each need reserves its explicit minimum; the shared Capsule budget still
-    // controls packing, and every remaining adjacency is counted as omitted.
-    const requiredRelationships = relationNeeds.flatMap((need) => rankBounded(
-      allRelationships.filter((relation) => relationMatchesNeed(relation, need, file.path)),
-      taskTerms, relationBody, need.minimumItems,
-    ));
-    const relationshipsById = new Map(requiredRelationships.map((relation) => [relation.id, relation]));
-    if (expanded) {
-      for (const relation of rankBounded(allRelationships, taskTerms, relationBody, MAX_CONTEXT_RELATIONSHIPS_PER_FILE)) {
-        if (relationshipsById.size >= Math.max(MAX_CONTEXT_RELATIONSHIPS_PER_FILE, requiredRelationships.length)) break;
-        relationshipsById.set(relation.id, relation);
+  return ranked
+    .map(({ file, relevance: lightweightRelevance, matchedTerms: lightweightMatches, pathMatchedTerms, importance, score: lightweightScore }) => {
+      const expanded = expandedPaths.has(file.path);
+      const allRelationships = relationshipEdgesByPath.get(file.path) || [];
+      const relationBody = (item) => [item.type, item.from?.path, item.from?.name, item.to?.path, item.to?.name, item.to?.specifier].filter(Boolean).join(" ");
+      // Discovery limits must not make HEAD-requested evidence ineligible.
+      // Each need reserves its explicit minimum; the shared Capsule budget still
+      // controls packing, and every remaining adjacency is counted as omitted.
+      const requiredRelationships = relationNeeds.flatMap((need) =>
+        rankBounded(
+          allRelationships.filter((relation) => relationMatchesNeed(relation, need, file.path)),
+          taskTerms,
+          relationBody,
+          need.minimumItems,
+        ),
+      );
+      const relationshipsById = new Map(requiredRelationships.map((relation) => [relation.id, relation]));
+      if (expanded) {
+        for (const relation of rankBounded(allRelationships, taskTerms, relationBody, MAX_CONTEXT_RELATIONSHIPS_PER_FILE)) {
+          if (relationshipsById.size >= Math.max(MAX_CONTEXT_RELATIONSHIPS_PER_FILE, requiredRelationships.length)) break;
+          relationshipsById.set(relation.id, relation);
+        }
       }
-    }
-    const relationships = [...relationshipsById.values()];
-    const body = [
-      file.path,
-      file.classification,
-      file.language,
-      ...file.symbols.map((item) => `${item.kind} ${item.name}`),
-      ...file.dependencies.map((item) => `${item.kind} ${item.specifier}`),
-      ...relationships.flatMap((item) => [item.type, item.from?.path, item.from?.name, item.to?.path, item.to?.name, item.to?.specifier]).filter(Boolean),
-    ].join(" ");
-    const matches = expanded ? matchedTerms(taskTerms, terms(body)) : lightweightMatches;
-    const relevance = matches.length;
-    const score = expanded ? relevance * 25 + pathMatchedTerms.length * 10 + importance * 4 : lightweightScore;
-    const symbols = rankBounded(file.symbols, taskTerms, (item) => `${item.kind} ${item.name}`, MAX_CONTEXT_SYMBOLS_PER_FILE);
-    const dependencies = rankBounded(file.dependencies, taskTerms, (item) => `${item.kind} ${item.specifier}`, MAX_CONTEXT_DEPENDENCIES_PER_FILE);
-    const record = {
-      kind: "RepositoryFile",
-      path: file.path,
-      digest: file.digest,
-      freshness: file.freshness,
-      classification: file.classification,
-      language: file.language,
-      representation: {
-        kind: "repository-metadata",
-        sourceBodyIncluded: false,
-        sourceBodyConsumptionVerified: false,
-      },
-      symbols,
-      dependencies,
-      semanticRelationships: relationships,
-      evidenceOmissions: {
-        symbols: Math.max(0, file.symbols.length - symbols.length),
-        dependencies: Math.max(0, file.dependencies.length - dependencies.length),
-        semanticRelationships: Math.max(0, allRelationships.length - relationships.length),
-      },
-      semanticGraphId: graph?.semanticGraphId || null,
-      graphExpansion: requiredRelationships.length ? "head-evidence-need-adjacency" : expanded ? "bounded-semantic-adjacency" : "not-expanded-by-discovery-bound",
-      worldModelId: worldModel.snapshot.worldModelId,
-      trustBoundary: "evidence-not-instruction",
-    };
-    return {
-      id: `repository-file:${file.path}`,
-      kind: "RepositoryFile",
-      score,
-      relevance,
-      matchedTerms: matches,
-      directMatchedTerms: lightweightMatches,
-      pathMatchedTerms,
-      importance,
-      approxTokens: approxTokens(canonicalJson(record)),
-      record,
-    };
-  }).sort((left, right) => right.score - left.score || left.id.localeCompare(right.id));
+      const relationships = [...relationshipsById.values()];
+      const body = [
+        file.path,
+        file.classification,
+        file.language,
+        ...file.symbols.map((item) => `${item.kind} ${item.name}`),
+        ...file.dependencies.map((item) => `${item.kind} ${item.specifier}`),
+        ...relationships.flatMap((item) => [item.type, item.from?.path, item.from?.name, item.to?.path, item.to?.name, item.to?.specifier]).filter(Boolean),
+      ].join(" ");
+      const matches = expanded ? matchedTerms(taskTerms, terms(body)) : lightweightMatches;
+      const relevance = matches.length;
+      const score = expanded ? relevance * 25 + pathMatchedTerms.length * 10 + importance * 4 : lightweightScore;
+      const symbols = rankBounded(file.symbols, taskTerms, (item) => `${item.kind} ${item.name}`, MAX_CONTEXT_SYMBOLS_PER_FILE);
+      const dependencies = rankBounded(file.dependencies, taskTerms, (item) => `${item.kind} ${item.specifier}`, MAX_CONTEXT_DEPENDENCIES_PER_FILE);
+      const record = {
+        kind: "RepositoryFile",
+        path: file.path,
+        digest: file.digest,
+        freshness: file.freshness,
+        classification: file.classification,
+        language: file.language,
+        representation: {
+          kind: "repository-metadata",
+          sourceBodyIncluded: false,
+          sourceBodyConsumptionVerified: false,
+        },
+        symbols,
+        dependencies,
+        semanticRelationships: relationships,
+        evidenceOmissions: {
+          symbols: Math.max(0, file.symbols.length - symbols.length),
+          dependencies: Math.max(0, file.dependencies.length - dependencies.length),
+          semanticRelationships: Math.max(0, allRelationships.length - relationships.length),
+        },
+        semanticGraphId: graph?.semanticGraphId || null,
+        graphExpansion: requiredRelationships.length
+          ? "head-evidence-need-adjacency"
+          : expanded
+            ? "bounded-semantic-adjacency"
+            : "not-expanded-by-discovery-bound",
+        worldModelId: worldModel.snapshot.worldModelId,
+        trustBoundary: "evidence-not-instruction",
+      };
+      return {
+        id: `repository-file:${file.path}`,
+        kind: "RepositoryFile",
+        score,
+        relevance,
+        matchedTerms: matches,
+        directMatchedTerms: lightweightMatches,
+        pathMatchedTerms,
+        importance,
+        approxTokens: approxTokens(canonicalJson(record)),
+        record,
+      };
+    })
+    .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id));
 }
 
 async function productContextCandidates(worldModel, task, graphProjectionAdapter = null, evidenceNeeds = []) {
   if (!domainCurrent(worldModel, "product")) return [];
   const { temporalProvenanceGraph: graph, productModel } = worldModel.snapshot;
   if (!graph || !productModel) return [];
-  const taskTerms = terms(task), needs = evidenceNeeds.filter(need => need.kind === "product-context");
-  const currentRevisionIds = new Map(graph.edges.filter(edge => edge.type === "CURRENT_REVISION").map(edge => [edge.from, edge.to]));
-  const logical = graph.nodes.filter(node => PRODUCT_ENTITY_KINDS.has(node.kind)
-    && node.authorityClass === "canon-projected" && node.freshness === "current");
-  const explicit = logical.filter(node => needs.some(need =>
-    (!need.entityKeys.length || need.entityKeys.includes(node.key)) &&
-    facetMatch(facetContentText(productEntityFacetValues(node)), need.facets)));
-  const lexical = rankBounded(logical.filter(node => overlap(taskTerms, terms(facetContentText(productEntityFacetValues(node)))) > 0),
-    taskTerms, node => facetContentText(productEntityFacetValues(node)), 12);
-  const anchors = [...new Map([...explicit, ...lexical].map(node => [node.nodeId, node])).values()];
+  const taskTerms = terms(task),
+    needs = evidenceNeeds.filter((need) => need.kind === "product-context");
+  const currentRevisionIds = new Map(graph.edges.filter((edge) => edge.type === "CURRENT_REVISION").map((edge) => [edge.from, edge.to]));
+  const logical = graph.nodes.filter(
+    (node) => PRODUCT_ENTITY_KINDS.has(node.kind) && node.authorityClass === "canon-projected" && node.freshness === "current",
+  );
+  const explicit = logical.filter((node) =>
+    needs.some(
+      (need) => (!need.entityKeys.length || need.entityKeys.includes(node.key)) && facetMatch(facetContentText(productEntityFacetValues(node)), need.facets),
+    ),
+  );
+  const lexical = rankBounded(
+    logical.filter((node) => overlap(taskTerms, terms(facetContentText(productEntityFacetValues(node)))) > 0),
+    taskTerms,
+    (node) => facetContentText(productEntityFacetValues(node)),
+    12,
+  );
+  const anchors = [...new Map([...explicit, ...lexical].map((node) => [node.nodeId, node])).values()];
   if (!anchors.length) return [];
   // One bounded relation query serves the selected original identities. Missing
   // requested entities/facets remain gaps, rather than triggering another state.
-  const traversal = (await queryTemporalProjection(worldModel, graphProjectionAdapter, {
-    anchorIds: anchors.slice(0, 32).map(node => node.nodeId), expectedGraphSnapshotId: graph.graphSnapshotId,
-    relations: ["CONTAINS", "REALIZES", "GOVERNED_BY", "HAS_REVISION", "CURRENT_REVISION", "PARENT_OF",
-      "IMPLEMENTS", "VERIFIED_BY", "IMPACTS", "MATERIALIZED_AS", "REFERENCES", "PROMOTED_FROM", "PRODUCES", "REVIEWED_BY"],
-    authorityClasses: ["canon-projected", "reviewed", "derived", "heuristic"], freshness: ["current"],
-    includeUnreviewedCandidates: false, depth: 3, maxNodes: 100, maxEdges: 200,
-  }));
-  const exactIds = new Set(anchors.slice(0, 32).flatMap(node => [node.nodeId, currentRevisionIds.get(node.nodeId)].filter(Boolean)));
-  const exactNodes = traversal.nodes.filter(node => exactIds.has(node.nodeId));
-  const selectedNodes = [...exactNodes, ...rankBounded(traversal.nodes.filter(node => !exactIds.has(node.nodeId)),
-    taskTerms, node => facetContentText(productEntityFacetValues(node)), Math.max(0, MAX_PRODUCT_CONTEXT_ENTITIES - exactNodes.length))];
-  const entities = selectedNodes.map(node => ({ ...node,
+  const traversal = await queryTemporalProjection(worldModel, graphProjectionAdapter, {
+    anchorIds: anchors.slice(0, 32).map((node) => node.nodeId),
+    expectedGraphSnapshotId: graph.graphSnapshotId,
+    relations: [
+      "CONTAINS",
+      "REALIZES",
+      "GOVERNED_BY",
+      "HAS_REVISION",
+      "CURRENT_REVISION",
+      "PARENT_OF",
+      "IMPLEMENTS",
+      "VERIFIED_BY",
+      "IMPACTS",
+      "MATERIALIZED_AS",
+      "REFERENCES",
+      "PROMOTED_FROM",
+      "PRODUCES",
+      "REVIEWED_BY",
+    ],
+    authorityClasses: ["canon-projected", "reviewed", "derived", "heuristic"],
+    freshness: ["current"],
+    includeUnreviewedCandidates: false,
+    depth: 3,
+    maxNodes: 100,
+    maxEdges: 200,
+  });
+  const exactIds = new Set(anchors.slice(0, 32).flatMap((node) => [node.nodeId, currentRevisionIds.get(node.nodeId)].filter(Boolean)));
+  const exactNodes = traversal.nodes.filter((node) => exactIds.has(node.nodeId));
+  const selectedNodes = [
+    ...exactNodes,
+    ...rankBounded(
+      traversal.nodes.filter((node) => !exactIds.has(node.nodeId)),
+      taskTerms,
+      (node) => facetContentText(productEntityFacetValues(node)),
+      Math.max(0, MAX_PRODUCT_CONTEXT_ENTITIES - exactNodes.length),
+    ),
+  ];
+  const entities = selectedNodes.map((node) => ({
+    ...node,
     logicalEntityId: node.logicalEntityId || (PRODUCT_ENTITY_KINDS.has(node.kind) ? node.nodeId : null),
-    currentRevisionId: PRODUCT_ENTITY_KINDS.has(node.kind) ? currentRevisionIds.get(node.nodeId) || null
-      : PRODUCT_ENTITY_KINDS.has(node.kind.replace(/Revision$/, "")) ? node.nodeId : null }));
-  const selectedIds = new Set(entities.map(node => node.nodeId));
-  const relationships = traversal.edges.filter(edge => selectedIds.has(edge.from) && selectedIds.has(edge.to)).slice(0, MAX_PRODUCT_CONTEXT_RELATIONSHIPS);
-  const relationshipBoundary = traversal.edges.filter(edge => selectedIds.has(edge.from) !== selectedIds.has(edge.to))
-    .map(edge => ({ edgeId: edge.edgeId, type: edge.type, nextAnchorId: selectedIds.has(edge.from) ? edge.to : edge.from }));
-  const record = { kind: "ProductContext", projectId: worldModel.snapshot.projectId,
-    productModelId: productModel.productModelId, productModelHash: productModel.productModelHash,
-    source: worldModel.snapshot.productModelSource, entities, relationships,
-    projectionOmissions: { entities: traversal.nodes.length - entities.length, relationships: traversal.edges.length - relationships.length,
-      anchoredEntities: Math.max(0, anchors.length - 32), traversalTruncated: Boolean(traversal.truncated), countsScope: "observed-bounded-traversal-only" },
-    relationshipBoundary: { items: relationshipBoundary.slice(0, 50), omitted: Math.max(0, relationshipBoundary.length - 50),
-      complete: relationshipBoundary.length === 0 && !traversal.truncated }, temporalTraversal: compactTraversalMetadata(traversal),
-    worldModelId: worldModel.snapshot.worldModelId, instructionAuthority: false, promotionAuthority: false,
-    trustBoundary: "derived-projection-of-user-owned-product-canon" };
+    currentRevisionId: PRODUCT_ENTITY_KINDS.has(node.kind)
+      ? currentRevisionIds.get(node.nodeId) || null
+      : PRODUCT_ENTITY_KINDS.has(node.kind.replace(/Revision$/, ""))
+        ? node.nodeId
+        : null,
+  }));
+  const selectedIds = new Set(entities.map((node) => node.nodeId));
+  const relationships = traversal.edges.filter((edge) => selectedIds.has(edge.from) && selectedIds.has(edge.to)).slice(0, MAX_PRODUCT_CONTEXT_RELATIONSHIPS);
+  const relationshipBoundary = traversal.edges
+    .filter((edge) => selectedIds.has(edge.from) !== selectedIds.has(edge.to))
+    .map((edge) => ({ edgeId: edge.edgeId, type: edge.type, nextAnchorId: selectedIds.has(edge.from) ? edge.to : edge.from }));
+  const record = {
+    kind: "ProductContext",
+    projectId: worldModel.snapshot.projectId,
+    productModelId: productModel.productModelId,
+    productModelHash: productModel.productModelHash,
+    source: worldModel.snapshot.productModelSource,
+    entities,
+    relationships,
+    projectionOmissions: {
+      entities: traversal.nodes.length - entities.length,
+      relationships: traversal.edges.length - relationships.length,
+      anchoredEntities: Math.max(0, anchors.length - 32),
+      traversalTruncated: Boolean(traversal.truncated),
+      countsScope: "observed-bounded-traversal-only",
+    },
+    relationshipBoundary: {
+      items: relationshipBoundary.slice(0, 50),
+      omitted: Math.max(0, relationshipBoundary.length - 50),
+      complete: relationshipBoundary.length === 0 && !traversal.truncated,
+    },
+    temporalTraversal: compactTraversalMetadata(traversal),
+    worldModelId: worldModel.snapshot.worldModelId,
+    instructionAuthority: false,
+    promotionAuthority: false,
+    trustBoundary: "derived-projection-of-user-owned-product-canon",
+  };
   const matches = matchedTerms(taskTerms, terms(facetContentText(entities.map(productEntityFacetValues))));
-  return [{ id: `product-context:${traversal.resultId}`, kind: "ProductContext", score: matches.length * 25 + 20,
-    relevance: matches.length, matchedTerms: matches, importance: 5,
-    approxTokens: approxTokens(canonicalJson(record)), record }];
+  return [
+    {
+      id: `product-context:${traversal.resultId}`,
+      kind: "ProductContext",
+      score: matches.length * 25 + 20,
+      relevance: matches.length,
+      matchedTerms: matches,
+      importance: 5,
+      approxTokens: approxTokens(canonicalJson(record)),
+      record,
+    },
+  ];
 }
 
 async function graphTraversalCandidates(worldModel, evidenceNeeds, graphProjectionAdapter = null) {
@@ -571,60 +739,72 @@ async function graphTraversalCandidates(worldModel, evidenceNeeds, graphProjecti
   const snapshot = worldModel.snapshot;
   const graph = snapshot.temporalProvenanceGraph;
   if (!graph) fail("HEAD graph anchors require a current temporal GraphSnapshot.", "GRAPH_ANCHOR_GRAPH_NOT_BUILT");
-  return (await Promise.all(anchoredNeeds.map(async (need) => {
-    const proposal = need.graphAnchor;
-    if (proposal.projectId !== snapshot.projectId) fail(`Evidence need ${need.id} graphAnchor belongs to another Project.`, "GRAPH_ANCHOR_PROJECT_MISMATCH");
-    if (proposal.worldModelId !== snapshot.worldModelId) fail(`Evidence need ${need.id} graphAnchor is stale for the current World Model.`, "GRAPH_ANCHOR_WORLD_MODEL_MISMATCH");
-    if (proposal.graphSnapshotId !== graph.graphSnapshotId) fail(`Evidence need ${need.id} graphAnchor is stale for the current GraphSnapshot.`, "GRAPH_ANCHOR_GRAPH_SNAPSHOT_MISMATCH");
-    const eligibility = buildWorldTraversalEligibility(snapshot, worldModel.freshness.domains);
-    if (proposal.nodeIds.some(id => graph.nodes.some(node => node.nodeId === id && node.freshness === "current") && !eligibility.nodeIds.includes(id))) {
-      fail(`Evidence need ${need.id} selected an anchor whose domain is not current; independent source discovery remains available.`, "GRAPH_ANCHOR_WORLD_MODEL_STALE");
-    }
-    const traversal = (await queryTemporalProjection(worldModel, graphProjectionAdapter, {
-      anchorIds: proposal.nodeIds,
-      expectedGraphSnapshotId: proposal.graphSnapshotId,
-      relations: need.relationTypes,
-      authorityClasses: ["canon-projected", "reviewed", "derived", "heuristic", "runtime-observed"],
-      freshness: ["current"],
-      minConfidence: 0,
-      includeUnreviewedCandidates: false,
-      depth: proposal.depth,
-      maxNodes: proposal.maxNodes,
-      maxEdges: proposal.maxEdges,
-    }));
-    const nodePaths = new Map(traversal.nodes.map((node) => [node.nodeId, node.path || null]));
-    const relationships = traversal.edges.map((edge) => ({
-      ...edge,
-      endpointPaths: [...new Set([nodePaths.get(edge.from), nodePaths.get(edge.to)].filter(Boolean))].sort(),
-    }));
-    const record = {
-      kind: "GraphTraversalEvidence",
-      evidenceNeedId: need.id,
-      graphAnchorProposal: proposal,
-      projectId: snapshot.projectId,
-      worldModelId: snapshot.worldModelId,
-      graphSnapshotId: graph.graphSnapshotId,
-      nodes: traversal.nodes,
-      relationships,
-      temporalTraversal: compactTraversalMetadata(traversal),
-      authority: "derived-evidence-only",
-      instructionAuthority: false,
-      promotionAuthority: false,
-      recoveryAuthority: false,
-      semanticAcceptance: "HEAD-only",
-      trustBoundary: "provider-proposal-validated-as-current-bounded-evidence-not-instruction",
-    };
-    return {
-      id: `graph-traversal-evidence:${need.id}:${traversal.resultId}`,
-      kind: "GraphTraversalEvidence",
-      score: 100,
-      relevance: 0,
-      matchedTerms: [],
-      importance: 5,
-      approxTokens: approxTokens(canonicalJson(record)),
-      record,
-    };
-  }))).sort((left, right) => left.id.localeCompare(right.id));
+  return (
+    await Promise.all(
+      anchoredNeeds.map(async (need) => {
+        const proposal = need.graphAnchor;
+        if (proposal.projectId !== snapshot.projectId)
+          fail(`Evidence need ${need.id} graphAnchor belongs to another Project.`, "GRAPH_ANCHOR_PROJECT_MISMATCH");
+        if (proposal.worldModelId !== snapshot.worldModelId)
+          fail(`Evidence need ${need.id} graphAnchor is stale for the current World Model.`, "GRAPH_ANCHOR_WORLD_MODEL_MISMATCH");
+        if (proposal.graphSnapshotId !== graph.graphSnapshotId)
+          fail(`Evidence need ${need.id} graphAnchor is stale for the current GraphSnapshot.`, "GRAPH_ANCHOR_GRAPH_SNAPSHOT_MISMATCH");
+        const eligibility = buildWorldTraversalEligibility(snapshot, worldModel.freshness.domains);
+        if (
+          proposal.nodeIds.some((id) => graph.nodes.some((node) => node.nodeId === id && node.freshness === "current") && !eligibility.nodeIds.includes(id))
+        ) {
+          fail(
+            `Evidence need ${need.id} selected an anchor whose domain is not current; independent source discovery remains available.`,
+            "GRAPH_ANCHOR_WORLD_MODEL_STALE",
+          );
+        }
+        const traversal = await queryTemporalProjection(worldModel, graphProjectionAdapter, {
+          anchorIds: proposal.nodeIds,
+          expectedGraphSnapshotId: proposal.graphSnapshotId,
+          relations: need.relationTypes,
+          authorityClasses: ["canon-projected", "reviewed", "derived", "heuristic", "runtime-observed"],
+          freshness: ["current"],
+          minConfidence: 0,
+          includeUnreviewedCandidates: false,
+          depth: proposal.depth,
+          maxNodes: proposal.maxNodes,
+          maxEdges: proposal.maxEdges,
+        });
+        const nodePaths = new Map(traversal.nodes.map((node) => [node.nodeId, node.path || null]));
+        const relationships = traversal.edges.map((edge) => ({
+          ...edge,
+          endpointPaths: [...new Set([nodePaths.get(edge.from), nodePaths.get(edge.to)].filter(Boolean))].sort(),
+        }));
+        const record = {
+          kind: "GraphTraversalEvidence",
+          evidenceNeedId: need.id,
+          graphAnchorProposal: proposal,
+          projectId: snapshot.projectId,
+          worldModelId: snapshot.worldModelId,
+          graphSnapshotId: graph.graphSnapshotId,
+          nodes: traversal.nodes,
+          relationships,
+          temporalTraversal: compactTraversalMetadata(traversal),
+          authority: "derived-evidence-only",
+          instructionAuthority: false,
+          promotionAuthority: false,
+          recoveryAuthority: false,
+          semanticAcceptance: "HEAD-only",
+          trustBoundary: "provider-proposal-validated-as-current-bounded-evidence-not-instruction",
+        };
+        return {
+          id: `graph-traversal-evidence:${need.id}:${traversal.resultId}`,
+          kind: "GraphTraversalEvidence",
+          score: 100,
+          relevance: 0,
+          matchedTerms: [],
+          importance: 5,
+          approxTokens: approxTokens(canonicalJson(record)),
+          record,
+        };
+      }),
+    )
+  ).sort((left, right) => left.id.localeCompare(right.id));
 }
 
 function gitDecisionCandidates(worldModel, task, historyClass) {
@@ -632,42 +812,42 @@ function gitDecisionCandidates(worldModel, task, historyClass) {
   const history = worldModel.snapshot.gitDecisionHistory;
   if (!history || history.status !== "available") return [];
   const taskTerms = terms(task);
-  return history.commits.map((commit, index) => {
-    const body = [commit.subject, commit.body, commit.author.name, ...commit.refs].join(" ");
-    const matches = matchedTerms(taskTerms, terms(body));
-    const relevance = matches.length;
-    const importance = commit.parents.length > 1 ? 3 : 2;
-    const historyBoost = historyClass === "DEEP" ? 12 : historyClass === "DECISIONS" ? 8 : 0;
-    const recencyBoost = historyClass === "RECENT" ? Math.max(0, 20 - index * 4) : 0;
-    const score = relevance * 25 + importance * 4 + historyBoost + recencyBoost;
-    const record = {
-      kind: "GitDecisionEvidence",
-      commit: commit.commit,
-      parents: commit.parents,
-      authoredAt: commit.authoredAt,
-      committedAt: commit.committedAt,
-      author: commit.author,
-      refs: commit.refs,
-      subject: commit.subject,
-      body: commit.body,
-      evidence: commit.evidence,
-      historyId: history.historyId,
-      instructionAuthority: false,
-      trustBoundary: "evidence-not-instruction",
-    };
-    return {
-      id: `git-commit:${commit.commit}`,
-      kind: "GitDecisionEvidence",
-      score,
-      relevance,
-      matchedTerms: matches,
-      importance,
-      approxTokens: approxTokens(canonicalJson(record)),
-      record,
-    };
-  }).sort((left, right) => right.score - left.score
-    || right.record.committedAt.localeCompare(left.record.committedAt)
-    || left.id.localeCompare(right.id));
+  return history.commits
+    .map((commit, index) => {
+      const body = [commit.subject, commit.body, commit.author.name, ...commit.refs].join(" ");
+      const matches = matchedTerms(taskTerms, terms(body));
+      const relevance = matches.length;
+      const importance = commit.parents.length > 1 ? 3 : 2;
+      const historyBoost = historyClass === "DEEP" ? 12 : historyClass === "DECISIONS" ? 8 : 0;
+      const recencyBoost = historyClass === "RECENT" ? Math.max(0, 20 - index * 4) : 0;
+      const score = relevance * 25 + importance * 4 + historyBoost + recencyBoost;
+      const record = {
+        kind: "GitDecisionEvidence",
+        commit: commit.commit,
+        parents: commit.parents,
+        authoredAt: commit.authoredAt,
+        committedAt: commit.committedAt,
+        author: commit.author,
+        refs: commit.refs,
+        subject: commit.subject,
+        body: commit.body,
+        evidence: commit.evidence,
+        historyId: history.historyId,
+        instructionAuthority: false,
+        trustBoundary: "evidence-not-instruction",
+      };
+      return {
+        id: `git-commit:${commit.commit}`,
+        kind: "GitDecisionEvidence",
+        score,
+        relevance,
+        matchedTerms: matches,
+        importance,
+        approxTokens: approxTokens(canonicalJson(record)),
+        record,
+      };
+    })
+    .sort((left, right) => right.score - left.score || right.record.committedAt.localeCompare(left.record.committedAt) || left.id.localeCompare(right.id));
 }
 
 function runtimeStateCandidates(worldModel, task) {
@@ -678,48 +858,43 @@ function runtimeStateCandidates(worldModel, task) {
   const explicitRuntimes = new Set(runtimeState.summary.runtimes.filter((item) => taskTerms.has(item)));
   const explicitKinds = new Set([...new Set(runtimeState.observations.map((item) => item.kind))].filter((item) => taskTerms.has(item)));
   const explicitStates = new Set([...new Set(runtimeState.observations.map((item) => item.state))].filter((item) => taskTerms.has(item)));
-  return runtimeState.observations.filter((observation) => {
-    if (explicitRuntimes.size && !explicitRuntimes.has(observation.runtime)) return false;
-    if (explicitKinds.size && !explicitKinds.has(observation.kind)) return false;
-    if (explicitStates.size && !explicitStates.has(observation.state)) return false;
-    return true;
-  }).map((observation) => {
-    const body = [
-      observation.runtime,
-      observation.kind,
-      observation.state,
-      observation.providerVersion,
-      ...observation.capabilities,
-    ].join(" ");
-    const matches = matchedTerms(taskTerms, terms(body));
-    const relevance = matches.length;
-    const importance = ["failed", "blocked", "active"].includes(observation.state) ? 3 : 2;
-    const score = relevance * 25 + importance * 4;
-    const record = {
-      kind: "RuntimeStateEvidence",
-      ...observation,
-      runtimeStateId: runtimeState.runtimeStateId,
-      instructionAuthority: false,
-      controlAuthority: false,
-      trustBoundary: "evidence-not-instruction",
-    };
-    return {
-      id: observation.observationId,
-      kind: "RuntimeStateEvidence",
-      score,
-      relevance,
-      matchedTerms: matches,
-      importance,
-      approxTokens: approxTokens(canonicalJson(record)),
-      record,
-    };
-  }).sort((left, right) => right.score - left.score || left.id.localeCompare(right.id));
+  return runtimeState.observations
+    .filter((observation) => {
+      if (explicitRuntimes.size && !explicitRuntimes.has(observation.runtime)) return false;
+      if (explicitKinds.size && !explicitKinds.has(observation.kind)) return false;
+      if (explicitStates.size && !explicitStates.has(observation.state)) return false;
+      return true;
+    })
+    .map((observation) => {
+      const body = [observation.runtime, observation.kind, observation.state, observation.providerVersion, ...observation.capabilities].join(" ");
+      const matches = matchedTerms(taskTerms, terms(body));
+      const relevance = matches.length;
+      const importance = ["failed", "blocked", "active"].includes(observation.state) ? 3 : 2;
+      const score = relevance * 25 + importance * 4;
+      const record = {
+        kind: "RuntimeStateEvidence",
+        ...observation,
+        runtimeStateId: runtimeState.runtimeStateId,
+        instructionAuthority: false,
+        controlAuthority: false,
+        trustBoundary: "evidence-not-instruction",
+      };
+      return {
+        id: observation.observationId,
+        kind: "RuntimeStateEvidence",
+        score,
+        relevance,
+        matchedTerms: matches,
+        importance,
+        approxTokens: approxTokens(canonicalJson(record)),
+        record,
+      };
+    })
+    .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id));
 }
 
 function observationCandidates(projectRoot, projectId, evidenceNeeds, sourceObservations = [], storage = null) {
-  const requestedIds = new Set(evidenceNeeds
-    .filter((need) => need.kind === "observation")
-    .flatMap((need) => need.observationIds));
+  const requestedIds = new Set(evidenceNeeds.filter((need) => need.kind === "observation").flatMap((need) => need.observationIds));
   if (!requestedIds.size) return [];
   const suppliedIds = new Set(sourceObservations.map((bundle) => bundle.observation.observationId));
   const projection = [...requestedIds].every((id) => suppliedIds.has(id))
@@ -728,14 +903,23 @@ function observationCandidates(projectRoot, projectId, evidenceNeeds, sourceObse
   const nodes = new Map(projection.nodes.map((node) => [node.nodeId, node]));
   for (const bundle of sourceObservations) {
     const node = sourceObservationNode(projectRoot, projectId, bundle, storage);
-    if (nodes.has(node.nodeId) && nodes.get(node.nodeId).observationHash !== node.observationHash) fail("Conflicting source Observation.", "SOURCE_OBSERVATION_INVALID");
+    if (nodes.has(node.nodeId) && nodes.get(node.nodeId).observationHash !== node.observationHash)
+      fail("Conflicting source Observation.", "SOURCE_OBSERVATION_INVALID");
     nodes.set(node.nodeId, node);
   }
   return [...nodes.values()]
     .filter((node) => requestedIds.has(node.nodeId) && ["ObservationRecord", "DerivedObservationRecord"].includes(node.kind))
     .map((node) => {
-      if ([SOURCE_OBSERVATION_TYPE, DECLARATION_OBSERVATION_TYPE].includes(node.typeKey) && !sourceObservations.some((bundle) => bundle.observation.observationId === node.nodeId)) {
-        const verified = sourceObservationNode(projectRoot, projectId, readSourceObservation(projectRoot, projectId, node.payload.bundleKey, { storage }), storage);
+      if (
+        [SOURCE_OBSERVATION_TYPE, DECLARATION_OBSERVATION_TYPE].includes(node.typeKey) &&
+        !sourceObservations.some((bundle) => bundle.observation.observationId === node.nodeId)
+      ) {
+        const verified = sourceObservationNode(
+          projectRoot,
+          projectId,
+          readSourceObservation(projectRoot, projectId, node.payload.bundleKey, { storage }),
+          storage,
+        );
         if (verified.observationHash !== node.observationHash) fail("Source Observation binding mismatch.", "SOURCE_OBSERVATION_INVALID");
         node = verified;
       }
@@ -773,11 +957,15 @@ function normalizeEvidenceNeeds(evidenceNeeds) {
     if (!value || typeof value !== "object" || Array.isArray(value)) fail(`Evidence need ${index} must be an object.`, "INVALID_EVIDENCE_NEEDS");
     const unknownKeys = Object.keys(value).filter((key) => !allowedKeys.has(key));
     if (unknownKeys.length) fail(`Evidence need ${index} has unsupported fields: ${unknownKeys.sort().join(", ")}.`, "INVALID_EVIDENCE_NEEDS");
-    const id = String(value.id || "").trim().toLocaleLowerCase();
+    const id = String(value.id || "")
+      .trim()
+      .toLocaleLowerCase();
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) fail(`Evidence need ${index} has an invalid id.`, "INVALID_EVIDENCE_NEEDS");
     if (seen.has(id)) fail(`Evidence need id is duplicated: ${id}.`, "INVALID_EVIDENCE_NEEDS");
     seen.add(id);
-    const kind = String(value.kind || "").trim().toLocaleLowerCase();
+    const kind = String(value.kind || "")
+      .trim()
+      .toLocaleLowerCase();
     if (!knownKinds.has(kind)) fail(`Evidence need ${id} has an unsupported kind: ${kind || "(empty)"}.`, "INVALID_EVIDENCE_NEEDS");
     const rawPaths = value.paths == null ? [] : value.paths;
     if (!Array.isArray(rawPaths) || rawPaths.length > 32 || rawPaths.some((item) => typeof item !== "string" || !item.trim())) {
@@ -795,7 +983,8 @@ function normalizeEvidenceNeeds(evidenceNeeds) {
       fail(`Evidence need ${id} entityKeys must be an array of at most 32 non-empty Product keys.`, "INVALID_EVIDENCE_NEEDS");
     }
     const entityKeys = [...new Set(rawEntityKeys.map((item) => item.trim()))].sort();
-    if (entityKeys.some((item) => !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(item))) fail(`Evidence need ${id} contains an invalid Product key.`, "INVALID_EVIDENCE_NEEDS");
+    if (entityKeys.some((item) => !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(item)))
+      fail(`Evidence need ${id} contains an invalid Product key.`, "INVALID_EVIDENCE_NEEDS");
     if (entityKeys.length && kind !== "product-context") {
       fail(`Evidence need ${id} may use entityKeys only with product-context evidence.`, "INVALID_EVIDENCE_NEEDS");
     }
@@ -819,7 +1008,8 @@ function normalizeEvidenceNeeds(evidenceNeeds) {
     }
     const facets = [...new Set(rawFacets.flatMap((item) => [...terms(item)]))].sort();
     const rawRelations = value.relationTypes == null ? [] : value.relationTypes;
-    if (!Array.isArray(rawRelations) || rawRelations.length > 16) fail(`Evidence need ${id} relationTypes must be an array of at most 16 values.`, "INVALID_EVIDENCE_NEEDS");
+    if (!Array.isArray(rawRelations) || rawRelations.length > 16)
+      fail(`Evidence need ${id} relationTypes must be an array of at most 16 values.`, "INVALID_EVIDENCE_NEEDS");
     const relationTypes = [...new Set(rawRelations.map((item) => String(item).trim().toUpperCase()))].sort();
     if (relationTypes.some((item) => !/^[A-Z][A-Z0-9_]{0,63}$/.test(item))) fail(`Evidence need ${id} has an invalid relation type.`, "INVALID_EVIDENCE_NEEDS");
     if (relationTypes.length && !["semantic-relation", "temporal-relation"].includes(kind)) {
@@ -837,27 +1027,40 @@ function normalizeEvidenceNeeds(evidenceNeeds) {
       const worldModelId = String(value.graphAnchor.worldModelId || "").trim();
       const graphSnapshotId = String(value.graphAnchor.graphSnapshotId || "").trim();
       const rawNodeIds = value.graphAnchor.nodeIds;
-      const nodeIds = Array.isArray(rawNodeIds) ? rawNodeIds.map((nodeId) => typeof nodeId === "string" ? nodeId.trim() : nodeId) : rawNodeIds;
+      const nodeIds = Array.isArray(rawNodeIds) ? rawNodeIds.map((nodeId) => (typeof nodeId === "string" ? nodeId.trim() : nodeId)) : rawNodeIds;
       const depth = Number(value.graphAnchor.depth);
       const maxNodes = Number(value.graphAnchor.maxNodes);
       const maxEdges = Number(value.graphAnchor.maxEdges);
-      if (!projectId || projectId.length > 256
-        || !/^world-model-[a-f0-9]{24}$/.test(worldModelId)
-        || !/^graph-snapshot-[a-f0-9]{24}$/.test(graphSnapshotId)
-        || !Array.isArray(nodeIds) || nodeIds.length < 1 || nodeIds.length > 32
-        || nodeIds.some((nodeId) => typeof nodeId !== "string" || !nodeId.trim() || nodeId.length > 256)
-        || new Set(nodeIds).size !== nodeIds.length
-        || !Number.isInteger(depth) || depth < 1 || depth > 3
-        || !Number.isInteger(maxNodes) || maxNodes < nodeIds.length || maxNodes > 500
-        || !Number.isInteger(maxEdges) || maxEdges < 1 || maxEdges > 1000
-        || relationTypes.length < 1 || facets.length > 0) {
+      if (
+        !projectId ||
+        projectId.length > 256 ||
+        !/^world-model-[a-f0-9]{24}$/.test(worldModelId) ||
+        !/^graph-snapshot-[a-f0-9]{24}$/.test(graphSnapshotId) ||
+        !Array.isArray(nodeIds) ||
+        nodeIds.length < 1 ||
+        nodeIds.length > 32 ||
+        nodeIds.some((nodeId) => typeof nodeId !== "string" || !nodeId.trim() || nodeId.length > 256) ||
+        new Set(nodeIds).size !== nodeIds.length ||
+        !Number.isInteger(depth) ||
+        depth < 1 ||
+        depth > 3 ||
+        !Number.isInteger(maxNodes) ||
+        maxNodes < nodeIds.length ||
+        maxNodes > 500 ||
+        !Number.isInteger(maxEdges) ||
+        maxEdges < 1 ||
+        maxEdges > 1000 ||
+        relationTypes.length < 1 ||
+        facets.length > 0
+      ) {
         fail(`Evidence need ${id} graphAnchor must be exact, current-bindable, relation-bounded, and within traversal limits.`, "INVALID_EVIDENCE_NEEDS");
       }
       const proposal = { projectId, worldModelId, graphSnapshotId, nodeIds: [...nodeIds].sort(), depth, maxNodes, maxEdges };
       graphAnchor = { ...proposal, proposalDigest: digest(canonicalJson(proposal)) };
     }
     const minimumItems = value.minimumItems == null ? 1 : Number(value.minimumItems);
-    if (!Number.isInteger(minimumItems) || minimumItems < 1 || minimumItems > 20) fail(`Evidence need ${id} minimumItems must be an integer from 1 to 20.`, "INVALID_EVIDENCE_NEEDS");
+    if (!Number.isInteger(minimumItems) || minimumItems < 1 || minimumItems > 20)
+      fail(`Evidence need ${id} minimumItems must be an integer from 1 to 20.`, "INVALID_EVIDENCE_NEEDS");
     const rationale = value.rationale == null ? "" : String(value.rationale).trim();
     if (rationale.length > 500) fail(`Evidence need ${id} rationale must be at most 500 characters.`, "INVALID_EVIDENCE_NEEDS");
     return { id, kind, paths, entityKeys, observationIds, facets, relationTypes, graphAnchor, minimumItems, rationale };
@@ -895,18 +1098,29 @@ function facetContentText(value) {
 }
 
 function relationFacetValues(relation) {
-  const endpoint = (value) => value && typeof value === "object"
-    ? [value.kind, value.path, value.name, value.specifier, value.symbolKind] : [];
-  return [relation.type, relation.endpointPaths, endpoint(relation.from), endpoint(relation.to),
-    relation.evidence?.path, relation.specifier, relation.callee];
+  const endpoint = (value) => (value && typeof value === "object" ? [value.kind, value.path, value.name, value.specifier, value.symbolKind] : []);
+  return [relation.type, relation.endpointPaths, endpoint(relation.from), endpoint(relation.to), relation.evidence?.path, relation.specifier, relation.callee];
 }
 
 function productEntityFacetValues(entity) {
   const semantic = entity.semantic || {};
-  return [entity.kind?.replace(/Revision$/, ""), entity.key, entity.path, entity.name, entity.relationshipType, entity.subject,
-    semantic.key, semantic.name, semantic.description, semantic.statement, semantic.status,
-    semantic.parentFeatureGroupKeys, semantic.featureGroupKeys, semantic.capabilityKeys,
-    (semantic.governedBy || []).map((reference) => [reference.kind, reference.key])];
+  return [
+    entity.kind?.replace(/Revision$/, ""),
+    entity.key,
+    entity.path,
+    entity.name,
+    entity.relationshipType,
+    entity.subject,
+    semantic.key,
+    semantic.name,
+    semantic.description,
+    semantic.statement,
+    semantic.status,
+    semantic.parentFeatureGroupKeys,
+    semantic.featureGroupKeys,
+    semantic.capabilityKeys,
+    (semantic.governedBy || []).map((reference) => [reference.kind, reference.key]),
+  ];
 }
 
 function candidateFacetContent(candidate) {
@@ -919,11 +1133,15 @@ function candidateFacetContent(candidate) {
     case "Decision":
       return facetContentText([record.title, record.decision, record.reason, record.constraints, record.tags, evidenceSummaries]);
     case "RepositoryFile":
-      return facetContentText([record.path, record.classification, record.language,
+      return facetContentText([
+        record.path,
+        record.classification,
+        record.language,
         (record.symbols || []).map((item) => [item.kind, item.name]),
         (record.dependencies || []).map((item) => [item.kind, item.specifier]),
         (record.semanticRelationships || []).map(relationFacetValues),
-        (record.temporalRelationships || []).map(relationFacetValues)]);
+        (record.temporalRelationships || []).map(relationFacetValues),
+      ]);
     case "ProductContext":
       return facetContentText([(record.entities || []).map(productEntityFacetValues), (record.relationships || []).map(relationFacetValues)]);
     case "GitDecisionEvidence":
@@ -950,9 +1168,7 @@ function candidateEvidenceMatches(candidate, need) {
   const record = candidate.record;
   const candidateBody = candidateFacetContent(candidate);
   if (need.kind === "observation") {
-    return candidate.kind === "ObservationEvidence" && need.observationIds.includes(candidate.id)
-      ? [evidenceItem(candidate, { kind: need.kind })]
-      : [];
+    return candidate.kind === "ObservationEvidence" && need.observationIds.includes(candidate.id) ? [evidenceItem(candidate, { kind: need.kind })] : [];
   }
   if (need.paths.length && !["semantic-relation", "temporal-relation"].includes(need.kind) && (!record.path || !need.paths.includes(record.path))) return [];
   if (candidate.kind === "GraphTraversalEvidence" && record.evidenceNeedId !== need.id) return [];
@@ -975,10 +1191,16 @@ function candidateEvidenceMatches(candidate, need) {
   if (simpleKinds[need.kind]) {
     if (need.kind === "product-context") {
       if (candidate.kind !== "ProductContext") return [];
-      const identities = record.entities.filter((entity) => (!need.entityKeys.length || matchedEntityKeys.includes(entity.key))
-        && facetMatch(facetContentText(productEntityFacetValues(entity)), need.facets)
-        && entity.logicalEntityId && entity.currentRevisionId
-        && entity.authorityClass === "canon-projected" && entity.freshness === "current")
+      const identities = record.entities
+        .filter(
+          (entity) =>
+            (!need.entityKeys.length || matchedEntityKeys.includes(entity.key)) &&
+            facetMatch(facetContentText(productEntityFacetValues(entity)), need.facets) &&
+            entity.logicalEntityId &&
+            entity.currentRevisionId &&
+            entity.authorityClass === "canon-projected" &&
+            entity.freshness === "current",
+        )
         .map((entity) => ({
           projectId: record.projectId,
           productModelId: record.productModelId,
@@ -996,9 +1218,7 @@ function candidateEvidenceMatches(candidate, need) {
         productEntity: identity,
       }));
     }
-    return candidate.kind === simpleKinds[need.kind]
-      ? [evidenceItem(candidate, { kind: need.kind, path: record.path || null })]
-      : [];
+    return candidate.kind === simpleKinds[need.kind] ? [evidenceItem(candidate, { kind: need.kind, path: record.path || null })] : [];
   }
   if (need.kind.startsWith("repository-")) {
     if (candidate.kind !== "RepositoryFile") return [];
@@ -1006,55 +1226,92 @@ function candidateEvidenceMatches(candidate, need) {
     if (need.kind === "repository-test" && record.classification !== "test") return [];
     return [evidenceItem(candidate, { kind: need.kind, path: record.path })];
   }
-  const relationValues = need.kind === "semantic-relation"
-    ? (candidate.kind === "RepositoryFile" ? record.semanticRelationships || [] : [])
-    : candidate.kind === "RepositoryFile"
-      ? record.temporalRelationships || []
-      : ["ProductContext", "GraphTraversalEvidence"].includes(candidate.kind) ? record.relationships || [] : [];
-  return relationValues.filter((relation) => relationMatchesNeed(relation, need, record.path || "")).map((relation, index) => {
-    const relationType = String(relation.type || "").toUpperCase();
-    const relationId = relation.id || relation.edgeId || `${candidate.id}:${relationType}:${index}`;
-    return evidenceItem(candidate, {
-      id: relationId,
-      kind: need.kind,
-      path: record.path || null,
-      relationType,
-      value: relation,
+  const relationValues =
+    need.kind === "semantic-relation"
+      ? candidate.kind === "RepositoryFile"
+        ? record.semanticRelationships || []
+        : []
+      : candidate.kind === "RepositoryFile"
+        ? record.temporalRelationships || []
+        : ["ProductContext", "GraphTraversalEvidence"].includes(candidate.kind)
+          ? record.relationships || []
+          : [];
+  return relationValues
+    .filter((relation) => relationMatchesNeed(relation, need, record.path || ""))
+    .map((relation, index) => {
+      const relationType = String(relation.type || "").toUpperCase();
+      const relationId = relation.id || relation.edgeId || `${candidate.id}:${relationType}:${index}`;
+      return evidenceItem(candidate, {
+        id: relationId,
+        kind: need.kind,
+        path: record.path || null,
+        relationType,
+        value: relation,
+      });
     });
-  });
 }
 
 // HEAD owns evidence requirements and sufficiency. Match references guide packing
 // and expose missing material; they are not an inclusion proof or execution gate.
 function selectContext(candidates, needs, maximum, baseCost) {
-  const matches = new Map(candidates.map(candidate => [candidate.id,
-    Object.fromEntries(needs.map(need => [need.id, candidateEvidenceMatches(candidate, need)]))]));
-  const ordered = [...candidates].sort((a, b) =>
-    Number(Object.values(matches.get(b.id)).some(items => items.length)) -
-    Number(Object.values(matches.get(a.id)).some(items => items.length)) ||
-    b.score - a.score || a.id.localeCompare(b.id));
-  const included = [], excluded = [];
+  const matches = new Map(
+    candidates.map((candidate) => [candidate.id, Object.fromEntries(needs.map((need) => [need.id, candidateEvidenceMatches(candidate, need)]))]),
+  );
+  const ordered = [...candidates].sort(
+    (a, b) =>
+      Number(Object.values(matches.get(b.id)).some((items) => items.length)) - Number(Object.values(matches.get(a.id)).some((items) => items.length)) ||
+      b.score - a.score ||
+      a.id.localeCompare(b.id),
+  );
+  const included = [],
+    excluded = [];
   let used = baseCost;
   for (const candidate of ordered) {
     const reason = used + candidate.approxTokens > maximum ? "context-budget" : null;
     if (reason) excluded.push({ id: candidate.id, kind: candidate.kind, reason });
-    else { included.push(candidate); used += candidate.approxTokens; }
+    else {
+      included.push(candidate);
+      used += candidate.approxTokens;
+    }
   }
-  const includedIds = new Set(included.map(candidate => candidate.id));
-  const evidenceGaps = needs.flatMap(need => {
-    const collect = items => new Set(items.flatMap(candidate => matches.get(candidate.id)[need.id].map(item => item.id))).size;
-    const available = collect(candidates), selected = collect(included);
-    return selected >= need.minimumItems ? [] : [{ id: need.id, kind: need.kind,
-      requestedMinimum: need.minimumItems, selected, available,
-      availabilityScope: "compiled-candidate-material-only", missingEvidenceMayExist: true,
-      reason: available > selected ? "context-budget" : "matching-evidence-unavailable",
-      omittedCandidateIds: candidates.filter(candidate => !includedIds.has(candidate.id) && matches.get(candidate.id)[need.id].length).map(candidate => candidate.id) }];
+  const includedIds = new Set(included.map((candidate) => candidate.id));
+  const evidenceGaps = needs.flatMap((need) => {
+    const collect = (items) => new Set(items.flatMap((candidate) => matches.get(candidate.id)[need.id].map((item) => item.id))).size;
+    const available = collect(candidates),
+      selected = collect(included);
+    return selected >= need.minimumItems
+      ? []
+      : [
+          {
+            id: need.id,
+            kind: need.kind,
+            requestedMinimum: need.minimumItems,
+            selected,
+            available,
+            availabilityScope: "compiled-candidate-material-only",
+            missingEvidenceMayExist: true,
+            reason: available > selected ? "context-budget" : "matching-evidence-unavailable",
+            omittedCandidateIds: candidates
+              .filter((candidate) => !includedIds.has(candidate.id) && matches.get(candidate.id)[need.id].length)
+              .map((candidate) => candidate.id),
+          },
+        ];
   });
   return { included, excluded, used, evidenceGaps };
 }
 
-async function compileContextUncoordinated({ root = ".", task, budget = DEFAULT_CONTEXT_BUDGET, evidenceNeeds = [], persist = false, graphProjectionAdapter = null, sourceObservations = [], includeRepositoryWorld = true } = {}) {
-  if (persist && sourceObservations.length) fail("Ephemeral source observations must be retained before durable Capsule compilation.", "EPHEMERAL_SOURCE_REFERENCE");
+async function compileContextUncoordinated({
+  root = ".",
+  task,
+  budget = DEFAULT_CONTEXT_BUDGET,
+  evidenceNeeds = [],
+  persist = false,
+  graphProjectionAdapter = null,
+  sourceObservations = [],
+  includeRepositoryWorld = true,
+} = {}) {
+  if (persist && sourceObservations.length)
+    fail("Ephemeral source observations must be retained before durable Capsule compilation.", "EPHEMERAL_SOURCE_REFERENCE");
   if (typeof task !== "string" || !task.trim()) fail("Context compilation requires a task.", "TASK_REQUIRED");
   const normalizedBudget = normalizeContextBudget(budget);
   const { maxApproxTokens } = normalizedBudget;
@@ -1063,9 +1320,10 @@ async function compileContextUncoordinated({ root = ".", task, budget = DEFAULT_
   const projectRoot = inspected.project.projectRoot;
   const format = formatForVerifiedOwner(inspected.storage);
   const needContract = evidenceNeedContract(task, evidenceNeeds, format);
-  const codeOnlyNeeds = needContract.needs.length && needContract.needs.every(need =>
-    ["repository-file", "repository-source", "repository-test", "semantic-relation"].includes(need.kind));
-  const sources = (await loadSources(projectRoot, includeRepositoryWorld, codeOnlyNeeds ? ["code"] : null, inspected.storage));
+  const codeOnlyNeeds =
+    needContract.needs.length &&
+    needContract.needs.every((need) => ["repository-file", "repository-source", "repository-test", "semantic-relation"].includes(need.kind));
+  const sources = await loadSources(projectRoot, includeRepositoryWorld, codeOnlyNeeds ? ["code"] : null, inspected.storage);
   const snapshot = contextSnapshot(inspected, sources);
   const projectContext = sources.raw.projectContext.trim();
   const historyClass = historyRelevance(task);
@@ -1113,19 +1371,34 @@ async function compileContextUncoordinated({ root = ".", task, budget = DEFAULT_
     },
     evidenceNeedContract: needContract,
     evidenceGaps: selection.evidenceGaps,
-    omissions: { total: selection.excluded.length, byReason: Object.fromEntries(
-      [...new Set(selection.excluded.map(item => item.reason))].map(reason => [reason, selection.excluded.filter(item => item.reason === reason).length])),
+    omissions: {
+      total: selection.excluded.length,
+      byReason: Object.fromEntries(
+        [...new Set(selection.excluded.map((item) => item.reason))].map((reason) => [
+          reason,
+          selection.excluded.filter((item) => item.reason === reason).length,
+        ]),
+      ),
       boundedRepresentations: selection.included.flatMap(({ id, record }) => {
         const limits = record.evidenceOmissions || record.projectionOmissions;
-        return limits && Object.values(limits).some(value => value === true || typeof value === "number" && value > 0)
-          ? [{ candidateId: id, ...limits }] : [];
-      }), countsScope: "observed-candidates-and-bounded-representations; not-total-project-coverage" },
+        return limits && Object.values(limits).some((value) => value === true || (typeof value === "number" && value > 0))
+          ? [{ candidateId: id, ...limits }]
+          : [];
+      }),
+      countsScope: "observed-candidates-and-bounded-representations; not-total-project-coverage",
+    },
     uncertainty: [
       "HEAD assesses semantic sufficiency; selection and lexical matching do not establish correctness or approval.",
-      ...(sources.worldModel?.status !== "current" ? ["Repository World evidence is absent, unavailable or stale; inspect task-relevant current source directly."] : []),
+      ...(sources.worldModel?.status !== "current"
+        ? ["Repository World evidence is absent, unavailable or stale; inspect task-relevant current source directly."]
+        : []),
       ...(selection.evidenceGaps.length ? ["Some HEAD-selected evidence is missing or outside this budget; dependent judgments need further inspection."] : []),
-      ...(selection.included.some(item => item.kind === "RepositoryFile") ? ["Repository metadata is included; original source bodies have not been consumed."] : []),
-      ...(approxTokens(canonicalJson(base)) > maxApproxTokens ? ["Required current direction exceeds the requested budget; preserved without truncation."] : []),
+      ...(selection.included.some((item) => item.kind === "RepositoryFile")
+        ? ["Repository metadata is included; original source bodies have not been consumed."]
+        : []),
+      ...(approxTokens(canonicalJson(base)) > maxApproxTokens
+        ? ["Required current direction exceeds the requested budget; preserved without truncation."]
+        : []),
     ],
     semanticSufficiencyOwner: format.value("HEAD"),
     authority: inspected.project.authority,
@@ -1141,51 +1414,67 @@ async function compileContextUncoordinated({ root = ".", task, budget = DEFAULT_
     runtimeStateEvidence: selection.included.filter((item) => item.kind === "RuntimeStateEvidence").map((item) => item.record),
     graphTraversalEvidence: selection.included.filter((item) => item.kind === "GraphTraversalEvidence").map((item) => item.record),
     observationEvidence: selection.included.filter((item) => item.kind === "ObservationEvidence").map((item) => item.record),
-    repositoryGraph: domainCurrent(sources.worldModel, "code") && sources.worldModel.snapshot.semanticGraph ? {
-      semanticGraphId: sources.worldModel.snapshot.semanticGraph.semanticGraphId,
-      accuracy: sources.worldModel.snapshot.semanticGraph.accuracy,
-      authority: sources.worldModel.snapshot.semanticGraph.authority,
-      summary: sources.worldModel.snapshot.semanticGraph.summary,
-    } : null,
-    repositoryTemporalGraph: sources.worldModel?.snapshot?.temporalProvenanceGraph ? {
-      graphSnapshotId: sources.worldModel.snapshot.temporalProvenanceGraph.graphSnapshotId,
-      graphSnapshotHash: sources.worldModel.snapshot.temporalProvenanceGraph.graphSnapshotHash,
-      sourceSnapshotId: sources.worldModel.snapshot.temporalProvenanceGraph.sourceSnapshotId,
-      parentSourceSnapshotIds: sources.worldModel.snapshot.temporalProvenanceGraph.parentSourceSnapshotIds,
-      authority: sources.worldModel.snapshot.temporalProvenanceGraph.authority,
-      rebuildable: sources.worldModel.snapshot.temporalProvenanceGraph.rebuildable,
-      uniqueAuthority: sources.worldModel.snapshot.temporalProvenanceGraph.uniqueAuthority,
-      consumption: "domain-eligible-traversal-of-original-snapshot",
-      summary: sources.worldModel.snapshot.temporalProvenanceGraph.summary,
-    } : null,
-    repositoryHistory: domainCurrent(sources.worldModel, "git") && sources.worldModel.snapshot.gitDecisionHistory ? {
-      historyId: sources.worldModel.snapshot.gitDecisionHistory.historyId,
-      status: sources.worldModel.snapshot.gitDecisionHistory.status,
-      coverage: sources.worldModel.snapshot.gitDecisionHistory.coverage,
-      reasonCode: sources.worldModel.snapshot.gitDecisionHistory.reasonCode,
-      authority: sources.worldModel.snapshot.gitDecisionHistory.authority,
-      interpretation: sources.worldModel.snapshot.gitDecisionHistory.interpretation,
-      summary: sources.worldModel.snapshot.gitDecisionHistory.summary,
-    } : null,
-    repositoryRuntimeState: domainCurrent(sources.worldModel, "runtime") && sources.worldModel.snapshot.externalRuntimeState ? {
-      runtimeStateId: sources.worldModel.snapshot.externalRuntimeState.runtimeStateId,
-      status: sources.worldModel.snapshot.externalRuntimeState.status,
-      coverage: sources.worldModel.snapshot.externalRuntimeState.coverage,
-      reasonCode: sources.worldModel.snapshot.externalRuntimeState.reasonCode,
-      authority: sources.worldModel.snapshot.externalRuntimeState.authority,
-      interpretation: sources.worldModel.snapshot.externalRuntimeState.interpretation,
-      observedAt: sources.worldModel.snapshot.externalRuntimeState.observedAt,
-      summary: sources.worldModel.snapshot.externalRuntimeState.summary,
-    } : null,
+    repositoryGraph:
+      domainCurrent(sources.worldModel, "code") && sources.worldModel.snapshot.semanticGraph
+        ? {
+            semanticGraphId: sources.worldModel.snapshot.semanticGraph.semanticGraphId,
+            accuracy: sources.worldModel.snapshot.semanticGraph.accuracy,
+            authority: sources.worldModel.snapshot.semanticGraph.authority,
+            summary: sources.worldModel.snapshot.semanticGraph.summary,
+          }
+        : null,
+    repositoryTemporalGraph: sources.worldModel?.snapshot?.temporalProvenanceGraph
+      ? {
+          graphSnapshotId: sources.worldModel.snapshot.temporalProvenanceGraph.graphSnapshotId,
+          graphSnapshotHash: sources.worldModel.snapshot.temporalProvenanceGraph.graphSnapshotHash,
+          sourceSnapshotId: sources.worldModel.snapshot.temporalProvenanceGraph.sourceSnapshotId,
+          parentSourceSnapshotIds: sources.worldModel.snapshot.temporalProvenanceGraph.parentSourceSnapshotIds,
+          authority: sources.worldModel.snapshot.temporalProvenanceGraph.authority,
+          rebuildable: sources.worldModel.snapshot.temporalProvenanceGraph.rebuildable,
+          uniqueAuthority: sources.worldModel.snapshot.temporalProvenanceGraph.uniqueAuthority,
+          consumption: "domain-eligible-traversal-of-original-snapshot",
+          summary: sources.worldModel.snapshot.temporalProvenanceGraph.summary,
+        }
+      : null,
+    repositoryHistory:
+      domainCurrent(sources.worldModel, "git") && sources.worldModel.snapshot.gitDecisionHistory
+        ? {
+            historyId: sources.worldModel.snapshot.gitDecisionHistory.historyId,
+            status: sources.worldModel.snapshot.gitDecisionHistory.status,
+            coverage: sources.worldModel.snapshot.gitDecisionHistory.coverage,
+            reasonCode: sources.worldModel.snapshot.gitDecisionHistory.reasonCode,
+            authority: sources.worldModel.snapshot.gitDecisionHistory.authority,
+            interpretation: sources.worldModel.snapshot.gitDecisionHistory.interpretation,
+            summary: sources.worldModel.snapshot.gitDecisionHistory.summary,
+          }
+        : null,
+    repositoryRuntimeState:
+      domainCurrent(sources.worldModel, "runtime") && sources.worldModel.snapshot.externalRuntimeState
+        ? {
+            runtimeStateId: sources.worldModel.snapshot.externalRuntimeState.runtimeStateId,
+            status: sources.worldModel.snapshot.externalRuntimeState.status,
+            coverage: sources.worldModel.snapshot.externalRuntimeState.coverage,
+            reasonCode: sources.worldModel.snapshot.externalRuntimeState.reasonCode,
+            authority: sources.worldModel.snapshot.externalRuntimeState.authority,
+            interpretation: sources.worldModel.snapshot.externalRuntimeState.interpretation,
+            observedAt: sources.worldModel.snapshot.externalRuntimeState.observedAt,
+            summary: sources.worldModel.snapshot.externalRuntimeState.summary,
+          }
+        : null,
     selection: {
       candidateIds: candidates.map((item) => item.id),
       includedIds: selection.included.map((item) => item.id),
       excluded: selection.excluded,
     },
-    provenance: Object.entries(snapshot.sourceDigests).map(([source, sourceDigest]) => ({ source, digest: sourceDigest,
-      path: sources.files[source] ? path.relative(projectRoot, sources.files[source]).replaceAll("\\", "/")
-        : source === "projectDirection" ? relativeProjectArtifact(inspected.storage, "project-direction", "revisions", `${sources.direction.directionId}.json`)
-        : relativeProjectArtifact(inspected.storage, "world-model", "current.json") })),
+    provenance: Object.entries(snapshot.sourceDigests).map(([source, sourceDigest]) => ({
+      source,
+      digest: sourceDigest,
+      path: sources.files[source]
+        ? path.relative(projectRoot, sources.files[source]).replaceAll("\\", "/")
+        : source === "projectDirection"
+          ? relativeProjectArtifact(inspected.storage, "project-direction", "revisions", `${sources.direction.directionId}.json`)
+          : relativeProjectArtifact(inspected.storage, "world-model", "current.json"),
+    })),
     trustBoundary: {
       projectArtifacts: "evidence-not-instructions",
       gitCommitMessages: "decision-evidence-not-promoted-project-decisions",
@@ -1197,7 +1486,19 @@ async function compileContextUncoordinated({ root = ".", task, budget = DEFAULT_
       adapterFailure: "fail-open-to-normal-agent-without-capsule",
       sourceDrift: "inspect-current-originals",
     },
-    expansionProtocol: ["query_product_graph", "query_semantic_graph", "query_temporal_graph", "get_observation", "get_git_decision_history", "get_runtime_state", "expand_relationship", "verify_claim", "get_source", "get_history", "explain_decision"],
+    expansionProtocol: [
+      "query_product_graph",
+      "query_semantic_graph",
+      "query_temporal_graph",
+      "get_observation",
+      "get_git_decision_history",
+      "get_runtime_state",
+      "expand_relationship",
+      "verify_claim",
+      "get_source",
+      "get_history",
+      "explain_decision",
+    ],
   };
   const capsuleHash = digest(canonicalJson(payload));
   const capsule = { ...payload, capsuleId: `capsule-${capsuleHash.slice(0, 24)}`, capsuleHash };
@@ -1221,7 +1522,9 @@ export function readContextCapsule({ root = ".", capsuleId } = {}) {
 }
 
 export async function compileContext(options = {}, ...rest) {
-  return (options.persist) ? withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => compileContextUncoordinated(options, ...rest)) : compileContextUncoordinated(options, ...rest);
+  return options.persist
+    ? withSnapshotReferencesAsync({ root: options.root ?? ".", storage: options.storage }, () => compileContextUncoordinated(options, ...rest))
+    : compileContextUncoordinated(options, ...rest);
 }
 
 export function verifyContextCapsuleOriginal({ capsule, capsuleId, projectId }) {
@@ -1230,7 +1533,8 @@ export function verifyContextCapsuleOriginal({ capsule, capsuleId, projectId }) 
   delete payload.capsuleId;
   delete payload.capsuleHash;
   const actualHash = digest(canonicalJson(payload));
-  if (recordedHash !== actualHash || capsuleId !== `capsule-${actualHash.slice(0, 24)}`) fail("Context Capsule digest verification failed.", "CAPSULE_DIGEST_MISMATCH");
+  if (recordedHash !== actualHash || capsuleId !== `capsule-${actualHash.slice(0, 24)}`)
+    fail("Context Capsule digest verification failed.", "CAPSULE_DIGEST_MISMATCH");
   if (capsule.snapshot?.projectId !== projectId) {
     fail("Context Capsule belongs to another HEAD Project.", "CONTEXT_CAPSULE_PROJECT_MISMATCH");
   }

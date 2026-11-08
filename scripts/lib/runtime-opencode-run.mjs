@@ -1,9 +1,9 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
-const sessionIdOf = record => {
+const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
-const originalFormat = record => familyFormatForOriginal({ kind: record?.kind }, record);
+const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -20,11 +20,7 @@ import {
   RUNTIME_STRUCTURED_RESULT_VERSION,
 } from "./runtime-invocation-lifecycle.mjs";
 import { persistRuntimeInvocationRecord } from "./runtime-invocation-record.mjs";
-import {
-  verifyRuntimeExecutionLeaseOwnership,
-  withRuntimeExecutionLease,
-  recordRuntimeInvocationStartFailure,
-} from "./runtime-execution-lease.mjs";
+import { verifyRuntimeExecutionLeaseOwnership, withRuntimeExecutionLease, recordRuntimeInvocationStartFailure } from "./runtime-execution-lease.mjs";
 import { resolveVerifiedProcessSupervisor } from "./runtime-process-supervisor.mjs";
 import { runSupervisedRuntimeOneShot } from "./runtime-supervised-one-shot.mjs";
 
@@ -37,13 +33,17 @@ const fail = (message, code = "OPENCODE_RUN_PROVIDER_ERROR") => {
   throw error;
 };
 
-const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
 function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compareText).map((key) => [key, canonicalValue(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort(compareText)
+        .map((key) => [key, canonicalValue(value[key])]),
+    );
   }
   return value;
 }
@@ -52,7 +52,7 @@ const canonicalJson = (value) => JSON.stringify(canonicalValue(value));
 
 function isWithin(parent, child) {
   const relative = path.relative(parent, child);
-  return relative === "" || relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 function permissionPolicy(workspaceMode) {
@@ -84,14 +84,30 @@ export function buildOpenCodeProviderEnvironment(environment, workspaceMode, mod
   const providerBaseUrlName = providerEnvironmentPrefix ? `${providerEnvironmentPrefix}_BASE_URL` : "";
   const selectedProviderEnvironmentNames = new Set([providerApiKeyName, providerBaseUrlName].filter(Boolean));
   const fixedNames = new Set([
-    "appdata", "comspec", "home", "homedrive", "homepath", "http_proxy", "https_proxy", "lang", "lc_all",
-    "localappdata", "no_proxy", "path", "ssl_cert_dir", "ssl_cert_file", "systemroot", "temp", "tmp", "userprofile", "windir",
+    "appdata",
+    "comspec",
+    "home",
+    "homedrive",
+    "homepath",
+    "http_proxy",
+    "https_proxy",
+    "lang",
+    "lc_all",
+    "localappdata",
+    "no_proxy",
+    "path",
+    "ssl_cert_dir",
+    "ssl_cert_file",
+    "systemroot",
+    "temp",
+    "tmp",
+    "userprofile",
+    "windir",
   ]);
   const result = {};
   for (const [key, value] of Object.entries(environment || {})) {
     const normalized = key.toLowerCase();
-    if ((fixedNames.has(normalized) || selectedProviderEnvironmentNames.has(key))
-      && typeof value === "string") result[key] = value;
+    if ((fixedNames.has(normalized) || selectedProviderEnvironmentNames.has(key)) && typeof value === "string") result[key] = value;
   }
   const permission = permissionPolicy(workspaceMode);
   result.CI = "1";
@@ -113,12 +129,7 @@ export function buildOpenCodeProviderEnvironment(environment, workspaceMode, mod
 }
 
 function operationalProviderDirectory(operationalStateRoot, authorization) {
-  const directory = path.join(
-    operationalStateRoot,
-    "runtime-provider-invocations",
-    authorization.projectId,
-    authorization.authorizationId,
-  );
+  const directory = path.join(operationalStateRoot, "runtime-provider-invocations", authorization.projectId, authorization.authorizationId);
   if (!isWithin(operationalStateRoot, directory) || directory === operationalStateRoot) {
     fail("OpenCode operational invocation directory escaped its host-local root.", "UNSAFE_OPENCODE_OPERATIONAL_STATE");
   }
@@ -168,11 +179,7 @@ function removeOperationalControlState(operationalStateRoot, authorization, stat
 }
 
 function opencodeArguments({ projectRoot, model }) {
-  return [
-    "run", "--format", "json", "--pure", "--dir", projectRoot,
-    ...(model ? ["--model", model] : []),
-    "--title", "HEAD Agent invocation",
-  ];
+  return ["run", "--format", "json", "--pure", "--dir", projectRoot, ...(model ? ["--model", model] : []), "--title", "HEAD Agent invocation"];
 }
 
 function parseStructuredText(value, scopeKind) {
@@ -181,11 +188,15 @@ function parseStructuredText(value, scopeKind) {
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/iu);
   const candidate = fenced ? fenced[1] : trimmed;
   let document;
-  try { document = JSON.parse(candidate); }
-  catch { return null; }
+  try {
+    document = JSON.parse(candidate);
+  } catch {
+    return null;
+  }
   if (!document || typeof document !== "object" || Array.isArray(document)) return null;
-  try { return verifyRuntimeStructuredResult(document, { scopeKind }); }
-  catch {}
+  try {
+    return verifyRuntimeStructuredResult(document, { scopeKind });
+  } catch {}
   const normalized = {
     schemaVersion: 1,
     kind: "RuntimeStructuredResult",
@@ -197,8 +208,11 @@ function parseStructuredText(value, scopeKind) {
     verification: document.verification,
     unknowns: document.unknowns,
   };
-  try { return verifyRuntimeStructuredResult(normalized, { scopeKind }); }
-  catch { return null; }
+  try {
+    return verifyRuntimeStructuredResult(normalized, { scopeKind });
+  } catch {
+    return null;
+  }
 }
 
 export function extractOpenCodeStructuredResult(record, { scopeKind = null } = {}) {
@@ -215,11 +229,14 @@ const OPENCODE_DIAGNOSTIC_RULES = Object.freeze([
   Object.freeze({ code: "opencode.permission", pattern: /permission.{0,32}(denied|rejected|required)|access denied|permission denied/ }),
 ]);
 
-export function classifyOpenCodeProviderDiagnostics({ record = null, stderr = "", exitCode = null,
-  structuredResultObserved = null, eventTypes = [] } = {}) {
+export function classifyOpenCodeProviderDiagnostics({ record = null, stderr = "", exitCode = null, structuredResultObserved = null, eventTypes = [] } = {}) {
   const codes = new Set();
-  const type = record && typeof record === "object" && !Array.isArray(record)
-    ? String(record.type || record.eventType || record.kind || "").trim().toLowerCase() : "";
+  const type =
+    record && typeof record === "object" && !Array.isArray(record)
+      ? String(record.type || record.eventType || record.kind || "")
+          .trim()
+          .toLowerCase()
+      : "";
   const sources = [];
   if (/error|fail/.test(type)) sources.push(canonicalJson(record).toLowerCase());
   if (typeof stderr === "string" && stderr.trim()) sources.push(stderr.slice(0, 512 * 1024).toLowerCase());
@@ -232,15 +249,26 @@ export function classifyOpenCodeProviderDiagnostics({ record = null, stderr = ""
   return [...codes].sort(compareText);
 }
 
-function verifyCurrentOpenCodeTarget({ authorization, protocolEvidence, projectBinding, targetResolver, platform, environment, fileSystem, requireInvocationSurface }) {
+function verifyCurrentOpenCodeTarget({
+  authorization,
+  protocolEvidence,
+  projectBinding,
+  targetResolver,
+  platform,
+  environment,
+  fileSystem,
+  requireInvocationSurface,
+}) {
   const protocol = verifyRuntimeProtocolEvidence(protocolEvidence);
   const binding = verifyRuntimeProjectBinding(projectBinding);
   if (authorization.runtime !== "opencode") fail("OpenCode run requires an OpenCode authorization.", "OPENCODE_AUTHORIZATION_REQUIRED");
-  if (protocol.evidenceId !== authorization.runtimeProtocolEvidenceId
-    || binding.bindingId !== authorization.runtimeProjectBindingId
-    || binding.protocolEvidenceId !== protocol.evidenceId
-    || binding.projectId !== authorization.projectId
-    || sessionIdOf(binding) !== sessionIdOf(authorization)) {
+  if (
+    protocol.evidenceId !== authorization.runtimeProtocolEvidenceId ||
+    binding.bindingId !== authorization.runtimeProjectBindingId ||
+    binding.protocolEvidenceId !== protocol.evidenceId ||
+    binding.projectId !== authorization.projectId ||
+    sessionIdOf(binding) !== sessionIdOf(authorization)
+  ) {
     fail("OpenCode capability and project binding changed after authorization.", "OPENCODE_RUN_CAPABILITY_BINDING_DRIFT");
   }
   const observation = protocol.observations.find((item) => item.runtime === "opencode");
@@ -252,35 +280,48 @@ function verifyCurrentOpenCodeTarget({ authorization, protocolEvidence, projectB
     fail("The authorized OpenCode executable does not prove every fixed one-shot invocation option.", "OPENCODE_RUN_INVOCATION_SURFACE_NOT_VERIFIED");
   }
   const target = targetResolver({ runtime: "opencode", platform, environment, fileSystem });
-  if (!target?.executablePath || !path.isAbsolute(target.executablePath)
-    || canonicalJson(target.observation) !== canonicalJson(observation.executable)
-    || target.observation.availability !== "candidate-found" || !target.observation.directSpawnSafe || target.observation.symbolicLink) {
+  if (
+    !target?.executablePath ||
+    !path.isAbsolute(target.executablePath) ||
+    canonicalJson(target.observation) !== canonicalJson(observation.executable) ||
+    target.observation.availability !== "candidate-found" ||
+    !target.observation.directSpawnSafe ||
+    target.observation.symbolicLink
+  ) {
     fail("OpenCode executable identity changed or is not safe for direct spawn.", "OPENCODE_RUN_EXECUTABLE_DRIFT");
   }
   return { target, observation };
 }
 
-export async function executeOpenCodeRuntimeInvocation({
-  root = ".",
-  authorization,
-  sessionRequest = "",
-  protocolEvidence,
-  projectBinding,
-  signal = null,
-  platform = process.platform,
-  environment = process.env,
-  fileSystem = fs,
-  spawnImplementation = spawn,
-  targetResolver = resolveReadOnlyRuntimeExecutableTarget,
-  supervisorSelection = null,
-  providerArguments = null,
-  onProcessEvent = () => {},
-  evidenceMode = "actual-provider",
-  persist = true,
-} = {}, { preConsumeGate = null } = {}) {
+export async function executeOpenCodeRuntimeInvocation(
+  {
+    root = ".",
+    authorization,
+    sessionRequest = "",
+    protocolEvidence,
+    projectBinding,
+    signal = null,
+    platform = process.platform,
+    environment = process.env,
+    fileSystem = fs,
+    spawnImplementation = spawn,
+    targetResolver = resolveReadOnlyRuntimeExecutableTarget,
+    supervisorSelection = null,
+    providerArguments = null,
+    onProcessEvent = () => {},
+    evidenceMode = "actual-provider",
+    persist = true,
+  } = {},
+  { preConsumeGate = null } = {},
+) {
   const verified = verifyRuntimeInvocationAuthorization(authorization);
-  if (verified.workerInput?.executionBoundary) fail("Selected-workspace execution requires a verified policy adapter; this attached adapter cannot fall back to the canonical root.", "WORKER_JOB_POLICY_UNAVAILABLE");
-  if (!new Set(["actual-provider", "protocol-fixture"]).has(evidenceMode)) fail("OpenCode execution evidence mode is invalid.", "INVALID_OPENCODE_RUN_EVIDENCE_MODE");
+  if (verified.workerInput?.executionBoundary)
+    fail(
+      "Selected-workspace execution requires a verified policy adapter; this attached adapter cannot fall back to the canonical root.",
+      "WORKER_JOB_POLICY_UNAVAILABLE",
+    );
+  if (!new Set(["actual-provider", "protocol-fixture"]).has(evidenceMode))
+    fail("OpenCode execution evidence mode is invalid.", "INVALID_OPENCODE_RUN_EVIDENCE_MODE");
   const prepared = prepareRuntimeInvocationExecution({ root, authorization: verified, sessionRequest });
   const { target } = verifyCurrentOpenCodeTarget({
     authorization: verified,
@@ -295,61 +336,65 @@ export async function executeOpenCodeRuntimeInvocation({
   if (evidenceMode === "actual-provider" && providerArguments !== null) {
     fail("Actual OpenCode execution arguments cannot be replaced.", "OPENCODE_RUN_ARGUMENT_OVERRIDE_REJECTED");
   }
-  const selectedProviderEnvironment = buildOpenCodeProviderEnvironment(
-    environment,
-    verified.workspaceMode,
-    verified.runtimeSelection?.model || null,
-  );
+  const selectedProviderEnvironment = buildOpenCodeProviderEnvironment(environment, verified.workspaceMode, verified.runtimeSelection?.model || null);
   const selectedSupervisor = supervisorSelection || resolveVerifiedProcessSupervisor({ pluginRoot });
   const callerFenceDigest = buildRuntimeInvocationCallerFence(prepared.projectRoot, verified.authorizationId);
   const providerMode = evidenceMode === "actual-provider" ? "actual-opencode" : "opencode-protocol-fixture";
-  const leased = await withRuntimeExecutionLease({
-    projectRoot: prepared.projectRoot,
-    authorization: verified,
-    ownerFenceDigest: callerFenceDigest,
-  }, async ({ lease, consumption, operationalStateRoot }) => {
-    verifyRuntimeExecutionLeaseOwnership({
+  const leased = await withRuntimeExecutionLease(
+    {
       projectRoot: prepared.projectRoot,
-      operationalStateRoot,
       authorization: verified,
-      lease,
-      consumption,
-    });
-    let controlState;
-    try {
-      controlState = createOperationalControlState(operationalStateRoot, verified);
-      return await runSupervisedRuntimeOneShot({
-        runtime: "opencode",
-        operationalStateRoot,
-        onNeverStarted: (errorCode) => recordRuntimeInvocationStartFailure({ projectRoot: prepared.projectRoot, authorization: verified, lease, consumption, errorCode }),
-        executablePath: target.executablePath,
-        args: providerArguments === null ? opencodeArguments({
-          projectRoot: prepared.projectRoot,
-          model: verified.runtimeSelection?.model || null,
-        }) : providerArguments,
+      ownerFenceDigest: callerFenceDigest,
+    },
+    async ({ lease, consumption, operationalStateRoot }) => {
+      verifyRuntimeExecutionLeaseOwnership({
         projectRoot: prepared.projectRoot,
-        providerEnvironment: selectedProviderEnvironment,
+        operationalStateRoot,
         authorization: verified,
-        input: prepared.input,
+        lease,
         consumption,
-        callerFenceDigest,
-        signal,
-        spawnImplementation,
-        onProcessEvent,
-        providerMode,
-        sensitiveRoots: [prepared.projectRoot, operationalStateRoot],
-        supervisorSelection: selectedSupervisor,
-        supervisorControlFile: controlState.controlFile,
-        commandLabel: "opencode run",
-        spawnFailureCode: "OPENCODE_RUN_SPAWN_FAILED",
-        classifyProviderDiagnostics: classifyOpenCodeProviderDiagnostics,
-        extractStructuredResult: extractOpenCodeStructuredResult,
-        completionEventTypes: ["step_finish"],
       });
-    } finally {
-      removeOperationalControlState(operationalStateRoot, verified, controlState);
-    }
-  }, { preConsumeGate });
+      let controlState;
+      try {
+        controlState = createOperationalControlState(operationalStateRoot, verified);
+        return await runSupervisedRuntimeOneShot({
+          runtime: "opencode",
+          operationalStateRoot,
+          onNeverStarted: (errorCode) =>
+            recordRuntimeInvocationStartFailure({ projectRoot: prepared.projectRoot, authorization: verified, lease, consumption, errorCode }),
+          executablePath: target.executablePath,
+          args:
+            providerArguments === null
+              ? opencodeArguments({
+                  projectRoot: prepared.projectRoot,
+                  model: verified.runtimeSelection?.model || null,
+                })
+              : providerArguments,
+          projectRoot: prepared.projectRoot,
+          providerEnvironment: selectedProviderEnvironment,
+          authorization: verified,
+          input: prepared.input,
+          consumption,
+          callerFenceDigest,
+          signal,
+          spawnImplementation,
+          onProcessEvent,
+          providerMode,
+          sensitiveRoots: [prepared.projectRoot, operationalStateRoot],
+          supervisorSelection: selectedSupervisor,
+          supervisorControlFile: controlState.controlFile,
+          commandLabel: "opencode run",
+          spawnFailureCode: "OPENCODE_RUN_SPAWN_FAILED",
+          classifyProviderDiagnostics: classifyOpenCodeProviderDiagnostics,
+          extractStructuredResult: extractOpenCodeStructuredResult,
+          completionEventTypes: ["step_finish"],
+        });
+      } finally {
+        removeOperationalControlState(operationalStateRoot, verified, controlState);
+      }
+    },
+    { preConsumeGate },
+  );
   const draft = buildRuntimeResultPacketDraft({
     authorization: verified,
     receipt: leased.result.receipt,
@@ -357,7 +402,13 @@ export async function executeOpenCodeRuntimeInvocation({
     providerResult: leased.result.providerResult,
   });
   const record = persist
-    ? persistRuntimeInvocationRecord({ projectRoot: prepared.projectRoot, authorization: verified, events: leased.result.events, receipt: leased.result.receipt, draft })
+    ? persistRuntimeInvocationRecord({
+        projectRoot: prepared.projectRoot,
+        authorization: verified,
+        events: leased.result.events,
+        receipt: leased.result.receipt,
+        draft,
+      })
     : { recorded: false, eventCount: leased.result.events.length, receiptId: leased.result.receipt.receiptId, draftId: draft.draftId };
   return {
     status: leased.result.receipt.status === "completed" ? "provider_invocation_completed" : "provider_invocation_finished_with_evidence",

@@ -4,10 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { copiedProjectFile, inspectCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { readSnapshotFile, SNAPSHOT_STORAGE_LIMITS } from "./snapshot-storage-codec.mjs";
-import {
-  verifySelectedCodexHistory,
-  codexNativePortabilityProfile,
-} from "./codex-native-portability.mjs";
+import { verifySelectedCodexHistory, codexNativePortabilityProfile } from "./codex-native-portability.mjs";
 import { inspectCodexRolloutOriginal } from "./codex-native-rollout.mjs";
 
 const fail = (code) => {
@@ -54,11 +51,7 @@ export function inspectCodexNativePayload({ directory, expectedPayloadId = null,
     !Array.isArray(payload.threadIds) ||
     !payload.threadIds.length ||
     new Set(payload.threadIds).size !== payload.threadIds.length ||
-    payload.threadIds.some(
-      (id) =>
-        typeof id !== "string" ||
-        !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id),
-    ) ||
+    payload.threadIds.some((id) => typeof id !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)) ||
     JSON.stringify(payload.threadIds) !== JSON.stringify(payload.history?.threadIds) ||
     !Array.isArray(payload.files) ||
     payload.files.length !== payload.threadIds.length ||
@@ -83,8 +76,7 @@ export function inspectCodexNativePayload({ directory, expectedPayloadId = null,
       ids.has(entry.threadId) ||
       names.has(entry.path.toLowerCase()) ||
       !/^(?:sessions|archived_sessions)\/.+\.jsonl(?:\.zst)?$/.test(entry.path) ||
-      (!path.basename(entry.path).endsWith("-" + entry.threadId + ".jsonl") &&
-        !path.basename(entry.path).endsWith("-" + entry.threadId + ".jsonl.zst"))
+      (!path.basename(entry.path).endsWith("-" + entry.threadId + ".jsonl") && !path.basename(entry.path).endsWith("-" + entry.threadId + ".jsonl.zst"))
     )
       fail("NATIVE_CODEX_PAYLOAD_INVALID");
     copiedProjectFile(root, entry.path);
@@ -101,40 +93,25 @@ export function inspectCodexNativePayload({ directory, expectedPayloadId = null,
           history: payload.history,
           signal,
         });
-    const raw =
-      format?.raw || inspectCopiedProjectFile(root, "objects/" + entry.sha256 + ".bin", { signal });
-    if (raw.sha256 !== entry.sha256 || raw.bytes !== entry.bytes)
-      fail("NATIVE_CODEX_PAYLOAD_RAW_CHANGED");
+    const raw = format?.raw || inspectCopiedProjectFile(root, "objects/" + entry.sha256 + ".bin", { signal });
+    if (raw.sha256 !== entry.sha256 || raw.bytes !== entry.bytes) fail("NATIVE_CODEX_PAYLOAD_RAW_CHANGED");
     const actualFormat = format?.formatAndAddressReady ? "verified" : "partial";
     const actualClosure = format?.unresolvedClosure || ["compressed-format-unverified"];
-    if (
-      declared[0].rawFormat !== actualFormat ||
-      JSON.stringify(declared[0].unresolvedClosure) !== JSON.stringify(actualClosure)
-    )
+    if (declared[0].rawFormat !== actualFormat || JSON.stringify(declared[0].unresolvedClosure) !== JSON.stringify(actualClosure))
       fail("NATIVE_CODEX_PAYLOAD_INVALID");
     const historical = sourceState.find((row) => row.id === entry.threadId);
-    const parentSelected =
-      historical.attached_thread_parent_id == null ||
-      payload.threadIds.includes(historical.attached_thread_parent_id);
-    if ((declared[0].parentClosure === "selected-or-none") !== parentSelected)
-      fail("NATIVE_CODEX_PAYLOAD_INVALID");
+    const parentSelected = historical.attached_thread_parent_id == null || payload.threadIds.includes(historical.attached_thread_parent_id);
+    if ((declared[0].parentClosure === "selected-or-none") !== parentSelected) fail("NATIVE_CODEX_PAYLOAD_INVALID");
     coverage.push({
       threadId: entry.threadId,
       rawFormat: format?.formatAndAddressReady ? "verified" : "partial",
       unresolvedClosure: format?.unresolvedClosure || ["compressed-format-unverified"],
-      parentClosure:
-        declared[0].parentClosure === "selected-or-none"
-          ? "declared-selected-or-none"
-          : "not-selected",
+      parentClosure: declared[0].parentClosure === "selected-or-none" ? "declared-selected-or-none" : "not-selected",
     });
   }
-  const mechanicalOriginalsReady = coverage.every(
-    (item) => item.rawFormat === "verified" && item.parentClosure === "declared-selected-or-none",
-  );
+  const mechanicalOriginalsReady = coverage.every((item) => item.rawFormat === "verified" && item.parentClosure === "declared-selected-or-none");
   return {
-    status: mechanicalOriginalsReady
-      ? "verified-native-originals"
-      : "verified-native-originals-partial",
+    status: mechanicalOriginalsReady ? "verified-native-originals" : "verified-native-originals-partial",
     directory: root,
     payloadId,
     payloadDigest: digest,

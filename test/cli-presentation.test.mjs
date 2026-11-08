@@ -15,8 +15,10 @@ test("cleanup presentation separates zero success, yield, unsupported, preserved
   ];
   for (const [status, deletedCount, code, explanation] of cases) {
     const value = { requestedApply: true, status, deletedCount, reclaimedBytes: deletedCount * 10, ...(code ? { code } : {}) };
-    const original = JSON.stringify(value), output = formatCliResult("storage-gc", value);
-    assert.match(output, explanation); assert.match(output, new RegExp(status));
+    const original = JSON.stringify(value),
+      output = formatCliResult("storage-gc", value);
+    assert.match(output, explanation);
+    assert.match(output, new RegExp(status));
     if (code) assert(output.includes(code));
     assert.equal(JSON.stringify(value), original);
     if (status !== "gc_applied") assert(!output.includes("completed successfully"));
@@ -24,14 +26,27 @@ test("cleanup presentation separates zero success, yield, unsupported, preserved
 });
 
 test("Session list presents existing purpose and stored pointers without live-state inference", () => {
-  const value = { projectId: "project-A", defaultSessionId: "session-A", sessions: [
-    { sessionId: "session-A", purpose: "Investigate reservation expiry; local only", default: true,
-      state: { latestCheckpoint: "checkpoint-A", activeRunId: "run-A", pendingReview: "review-A", extra: { untouched: false } } },
-    { sessionId: "session-B", purpose: "Independent documentation", default: false, state: { latestCheckpoint: null } },
-  ], unknown: [] };
-  const before = JSON.stringify(value), cli = formatCliResult("session-list", value), mcp = formatMcpToolContent("head_session_list", value);
-  assert.equal(cli, mcp); assert.equal(JSON.stringify(value), before);
-  for (const text of ["Investigate reservation expiry; local only", "Independent documentation", "checkpoint-A", "review-A", "untouched", "unknown"]) assert.ok(cli.includes(text));
+  const value = {
+    projectId: "project-A",
+    defaultSessionId: "session-A",
+    sessions: [
+      {
+        sessionId: "session-A",
+        purpose: "Investigate reservation expiry; local only",
+        default: true,
+        state: { latestCheckpoint: "checkpoint-A", activeRunId: "run-A", pendingReview: "review-A", extra: { untouched: false } },
+      },
+      { sessionId: "session-B", purpose: "Independent documentation", default: false, state: { latestCheckpoint: null } },
+    ],
+    unknown: [],
+  };
+  const before = JSON.stringify(value),
+    cli = formatCliResult("session-list", value),
+    mcp = formatMcpToolContent("head_session_list", value);
+  assert.equal(cli, mcp);
+  assert.equal(JSON.stringify(value), before);
+  for (const text of ["Investigate reservation expiry; local only", "Independent documentation", "checkpoint-A", "review-A", "untouched", "unknown"])
+    assert.ok(cli.includes(text));
   assert.match(cli, /not freshly verified execution or completion/);
   assert.ok(!/verified successful|all work completed|live running/i.test(cli));
 });
@@ -56,26 +71,52 @@ import {
 } from "../scripts/lib/cli-presentation.mjs";
 
 function repeatedWorkFixture() {
-  const common = { projectId: "project-owner", sessionId: "session-owner", kind: "Evidence", subtype: "SessionWorkEvidence",
-    schemaVersion: 1, protocol: { name: "synthetic-work", version: "1" },
-    authorityBoundary: { planeId: "P3", instructionAuthority: false, recoveryAuthority: false } };
-  return { status: "work_context_partial", records: [0, 1].map(index => ({ ...structuredClone(common),
-    evidenceId: `evidence-${index}`, evidenceDigest: `digest-${index}`, recordedAt: `time-${index}`,
-    content: { summary: `Body ${index}`, references: [{ path: "same.txt", digest: `declared-${index}` }],
-      pending: [`Not completed ${index}`], unknowns: [`Unknown ${index}`] },
-    references: [{ path: "same.txt", digest: `verified-${index}`, status: index ? "changed" : "matching-current-bytes" }] })),
+  const common = {
+    projectId: "project-owner",
+    sessionId: "session-owner",
+    kind: "Evidence",
+    subtype: "SessionWorkEvidence",
+    schemaVersion: 1,
+    protocol: { name: "synthetic-work", version: "1" },
+    authorityBoundary: { planeId: "P3", instructionAuthority: false, recoveryAuthority: false },
+  };
+  return {
+    status: "work_context_partial",
+    records: [0, 1].map((index) => ({
+      ...structuredClone(common),
+      evidenceId: `evidence-${index}`,
+      evidenceDigest: `digest-${index}`,
+      recordedAt: `time-${index}`,
+      content: {
+        summary: `Body ${index}`,
+        references: [{ path: "same.txt", digest: `declared-${index}` }],
+        pending: [`Not completed ${index}`],
+        unknowns: [`Unknown ${index}`],
+      },
+      references: [{ path: "same.txt", digest: `verified-${index}`, status: index ? "changed" : "matching-current-bytes" }],
+    })),
     coverage: { originals: 9, inspected: 2, included: 2, selection: "historical hints; no completeness claim" },
-    omissions: { uninspected: 7, byBudget: 0 }, expansion: "Read exact original only when useful", common };
+    omissions: { uninspected: 7, byBudget: 0 },
+    expansion: "Read exact original only when useful",
+    common,
+  };
 }
 function presentedRecord(text, index) {
-  const heading = i => { const offset = text.indexOf(`\nRecord[${i}]:\n`); return offset < 0 ? -1 : offset + 1; };
-  const start = heading(index), next = heading(index + 1);
+  const heading = (i) => {
+    const offset = text.indexOf(`\nRecord[${i}]:\n`);
+    return offset < 0 ? -1 : offset + 1;
+  };
+  const start = heading(index),
+    next = heading(index + 1);
   const envelope = text.indexOf("Additional original fields at workContext:\n", start);
-  assert.ok(start >= 0); const ends = [next, envelope].filter(offset => offset >= 0);
+  assert.ok(start >= 0);
+  const ends = [next, envelope].filter((offset) => offset >= 0);
   return text.slice(start, ends.length ? Math.min(...ends) : undefined);
 }
 test("common work fields preserve exact collection membership, all values and separate reference roles", () => {
-  const value = repeatedWorkFixture(), before = JSON.stringify(value), text = formatSessionWorkContext(value);
+  const value = repeatedWorkFixture(),
+    before = JSON.stringify(value),
+    text = formatSessionWorkContext(value);
   assert.ok(text.includes(`Common stored fields for Record[0], Record[1]:\n${JSON.stringify(value.common, null, 2)}\n`));
   assert.match(text, /Session work group/);
   for (const index of [0, 1]) assert.equal(text.split(`\nRecord[${index}]:\n`).length - 1, 1);
@@ -84,91 +125,161 @@ test("common work fields preserve exact collection membership, all values and se
     for (const key of Object.keys(value.common)) assert.ok(!part.includes(`"${key}":`) && !part.includes(`${key}:`), key);
     for (const key of ["evidenceId", "evidenceDigest", "recordedAt"]) assert.ok(part.includes(JSON.stringify(record[key])));
     for (const refs of [record.content.references, record.references]) assert.ok(part.includes(JSON.stringify({ references: refs }, null, 2).slice(2, -2)));
-    assert.ok(part.includes(`Body ${index}`)); assert.ok(part.includes(`Not completed ${index}`)); assert.ok(part.includes(`Unknown ${index}`));
+    assert.ok(part.includes(`Body ${index}`));
+    assert.ok(part.includes(`Not completed ${index}`));
+    assert.ok(part.includes(`Unknown ${index}`));
   }
   for (const key of ["coverage", "omissions", "expansion"]) assert.ok(text.includes(JSON.stringify({ [key]: value[key] }, null, 2).slice(2, -2)));
-  assert.equal(JSON.stringify(value), before); assert.equal(text, formatCliResult("session-work-read", value));
+  assert.equal(JSON.stringify(value), before);
+  assert.equal(text, formatCliResult("session-work-read", value));
   assert.equal(text, formatMcpToolContent("head_session_work_read", value));
 });
 test("mixed missing null empty and unsupported work owners stay individual without filling absent fields", () => {
-  for (const key of ["projectId", "sessionId"]) for (const raw of [undefined, null, "", false, 0, "other-owner"]) {
-    const value = repeatedWorkFixture(); if (raw === undefined) delete value.records[1][key]; else value.records[1][key] = raw;
-    const before = JSON.stringify(value), text = formatSessionWorkContext(value); assert.ok(!text.includes("Common stored fields for"));
-    assert.ok(presentedRecord(text, 0).includes(`${key}: ${JSON.stringify(value.records[0][key])}`));
-    if (raw === undefined) assert.ok(!presentedRecord(text, 1).includes(`${key}:`));
-    else assert.ok(presentedRecord(text, 1).includes(`${key}: ${JSON.stringify(raw)}`));
-    assert.equal(JSON.stringify(value), before);
-  }
+  for (const key of ["projectId", "sessionId"])
+    for (const raw of [undefined, null, "", false, 0, "other-owner"]) {
+      const value = repeatedWorkFixture();
+      if (raw === undefined) delete value.records[1][key];
+      else value.records[1][key] = raw;
+      const before = JSON.stringify(value),
+        text = formatSessionWorkContext(value);
+      assert.ok(!text.includes("Common stored fields for"));
+      assert.ok(presentedRecord(text, 0).includes(`${key}: ${JSON.stringify(value.records[0][key])}`));
+      if (raw === undefined) assert.ok(!presentedRecord(text, 1).includes(`${key}:`));
+      else assert.ok(presentedRecord(text, 1).includes(`${key}: ${JSON.stringify(raw)}`));
+      assert.equal(JSON.stringify(value), before);
+    }
   for (const raw of [null, false, 0, "", [], {}, { kind: "Other", content: {} }]) {
-    const value = repeatedWorkFixture(); value.records[1] = raw; assert.ok(!formatSessionWorkContext(value).includes("Common stored fields for"));
+    const value = repeatedWorkFixture();
+    value.records[1] = raw;
+    assert.ok(!formatSessionWorkContext(value).includes("Common stored fields for"));
   }
   for (const raw of [null, false, 0, "", []]) {
-    const value = repeatedWorkFixture(); value.records[1].content = raw; const text = formatSessionWorkContext(value);
-    assert.ok(!text.includes("Common stored fields for")); assert.ok(presentedRecord(text, 1).includes(`content: ${JSON.stringify(raw)}`));
+    const value = repeatedWorkFixture();
+    value.records[1].content = raw;
+    const text = formatSessionWorkContext(value);
+    assert.ok(!text.includes("Common stored fields for"));
+    assert.ok(presentedRecord(text, 1).includes(`content: ${JSON.stringify(raw)}`));
   }
 });
 test("different missing inherited or differently typed metadata cannot disappear into common values", () => {
-  for (const [key, raw] of [["schemaVersion", "1"], ["protocol", { version: "1", name: "synthetic-work" }],
-    ["authorityBoundary", { planeId: "P4", instructionAuthority: false, recoveryAuthority: false }]]) for (const missing of [false, true]) {
-    const value = repeatedWorkFixture(); if (missing) delete value.records[1][key]; else value.records[1][key] = raw;
-    const expected = { ...value.common }; delete expected[key]; const text = formatSessionWorkContext(value);
-    assert.ok(text.includes(`Common stored fields for Record[0], Record[1]:\n${JSON.stringify(expected, null, 2)}`));
-    assert.ok(presentedRecord(text, 0).includes(JSON.stringify({ [key]: value.records[0][key] }, null, 2).slice(2, -2)));
-    if (missing) assert.ok(!presentedRecord(text, 1).includes(`"${key}":`));
-    else assert.ok(presentedRecord(text, 1).includes(JSON.stringify({ [key]: raw }, null, 2).slice(2, -2)));
-  }
+  for (const [key, raw] of [
+    ["schemaVersion", "1"],
+    ["protocol", { version: "1", name: "synthetic-work" }],
+    ["authorityBoundary", { planeId: "P4", instructionAuthority: false, recoveryAuthority: false }],
+  ])
+    for (const missing of [false, true]) {
+      const value = repeatedWorkFixture();
+      if (missing) delete value.records[1][key];
+      else value.records[1][key] = raw;
+      const expected = { ...value.common };
+      delete expected[key];
+      const text = formatSessionWorkContext(value);
+      assert.ok(text.includes(`Common stored fields for Record[0], Record[1]:\n${JSON.stringify(expected, null, 2)}`));
+      assert.ok(presentedRecord(text, 0).includes(JSON.stringify({ [key]: value.records[0][key] }, null, 2).slice(2, -2)));
+      if (missing) assert.ok(!presentedRecord(text, 1).includes(`"${key}":`));
+      else assert.ok(presentedRecord(text, 1).includes(JSON.stringify({ [key]: raw }, null, 2).slice(2, -2)));
+    }
   for (const raw of [null, false, 0, "", [], {}]) {
-    const value = repeatedWorkFixture(); value.records.forEach(row => { row.protocol = structuredClone(raw); });
+    const value = repeatedWorkFixture();
+    value.records.forEach((row) => {
+      row.protocol = structuredClone(raw);
+    });
     assert.ok(formatSessionWorkContext(value).includes(JSON.stringify({ ...value.common, protocol: raw }, null, 2)));
   }
-  const value = repeatedWorkFixture(), inherited = value.records[1].protocol; delete value.records[1].protocol;
+  const value = repeatedWorkFixture(),
+    inherited = value.records[1].protocol;
+  delete value.records[1].protocol;
   Object.setPrototypeOf(value.records[1], { protocol: inherited });
   assert.ok(!formatSessionWorkContext(value).split("Record[0]:\n")[0].includes('"protocol":'));
 });
 test("relative labels preserve literal fences whitespace array indices and unknown parent collisions", () => {
-  const value = repeatedWorkFixture(), literal = "  가🙂\r\n\tDo not deploy.\n`````text\nRecord[9]:\nkeep  spaces  \n";
+  const value = repeatedWorkFixture(),
+    literal = "  가🙂\r\n\tDo not deploy.\n`````text\nRecord[9]:\nkeep  spaces  \n";
   for (const [index, row] of value.records.entries()) {
     row.content.summary = literal + index;
     row.content.judgments = [{ assessment: "Not approved", reason: literal, alternatives: [null, false, 0, "", [], {}], "reason.future": { sessionId: null } }];
     row.content.future = { projectId: 0, "content.summary": false, values: [null, false, 0, "", [], {}] };
     row.future = { sessionId: "Not the record owner", content: { summary: "Unknown parent" } };
   }
-  const before = JSON.stringify(value), text = formatSessionWorkContext(value), fence = "`".repeat(6);
+  const before = JSON.stringify(value),
+    text = formatSessionWorkContext(value),
+    fence = "`".repeat(6);
   for (const [index, row] of value.records.entries()) {
     assert.ok(text.includes(`content.summary (original text):\n${fence}text\n${literal}${index}\n${fence}\n`));
     assert.ok(text.includes(`content.judgments[0].reason (original text):\n${fence}text\n${literal}${fence}\n`));
     row.content.judgments[0].alternatives.forEach((raw, i) => assert.ok(text.includes(`content.judgments[0].alternatives[${i}]: ${JSON.stringify(raw)}`)));
     for (const unknown of [row.content.future, row.future]) assert.ok(text.includes(JSON.stringify({ future: unknown }, null, 2).slice(2, -2)));
   }
-  assert.equal(JSON.stringify(value), before); assert.ok(!text.includes("records[0].content.summary"));
+  assert.equal(JSON.stringify(value), before);
+  assert.ok(!text.includes("records[0].content.summary"));
   assert.ok(text.includes('"sessionId": "Not the record owner"'));
 });
 test("graph common membership names only supported work nodes at original indices, never navigation", () => {
-  const fixture = repeatedWorkFixture(), work = fixture.records.map(({ content, ...row }, index) => ({ ...row, nodeId: `work-${index}`, workContent: content,
-    origin: { layer: "sessionWork" }, workContentCoverage: { partial: true, unknown: false },
-    workContentExcerpts: [{ field: "summary", text: `Excerpt ${index}`, index: 0, start: 0, end: 9, totalCharacters: 20 }] }));
-  const graph = { kind: "ProjectGraphDiscoveryProjection", nodes: [{ nodeId: "nav", kind: "Session", sessionId: "nav-owner", excerpt: "Navigation only" },
-    work[0], { nodeId: "reference", kind: "Reference", future: null }, work[1]], edges: [], coverage: { state: "partial", hint: "not proof" } };
-  const before = JSON.stringify(graph), text = formatMcpToolContent("head_project_graph", graph);
+  const fixture = repeatedWorkFixture(),
+    work = fixture.records.map(({ content, ...row }, index) => ({
+      ...row,
+      nodeId: `work-${index}`,
+      workContent: content,
+      origin: { layer: "sessionWork" },
+      workContentCoverage: { partial: true, unknown: false },
+      workContentExcerpts: [{ field: "summary", text: `Excerpt ${index}`, index: 0, start: 0, end: 9, totalCharacters: 20 }],
+    }));
+  const graph = {
+    kind: "ProjectGraphDiscoveryProjection",
+    nodes: [
+      { nodeId: "nav", kind: "Session", sessionId: "nav-owner", excerpt: "Navigation only" },
+      work[0],
+      { nodeId: "reference", kind: "Reference", future: null },
+      work[1],
+    ],
+    edges: [],
+    coverage: { state: "partial", hint: "not proof" },
+  };
+  const before = JSON.stringify(graph),
+    text = formatMcpToolContent("head_project_graph", graph);
   assert.equal(text, formatCliResult("graph-query", graph));
-  assert.ok(text.includes("Logical Session")); assert.ok(text.includes("Navigation only"));
+  assert.ok(text.includes("Logical Session"));
+  assert.ok(text.includes("Navigation only"));
   // One-based terminal references retain the original indices; they are not
   // flattened to only the work-node subset.
   for (let i = 0; i < 4; i++) assert.equal(text.split(`\n[${i + 1}] `).length - 1, 1);
-  assert.ok(text.includes("partial text")); assert.ok(text.includes("Partial original summary[0]"));
+  assert.ok(text.includes("partial text"));
+  assert.ok(text.includes("Partial original summary[0]"));
   const terminal = formatCliResult("graph-query", graph, { diagnostics: true });
-  assert.ok(terminal.includes("Selected connections")); assert.ok(terminal.includes('"hint": "not proof"')); assert.equal(JSON.stringify(graph), before);
-  for (const change of [node => { delete node.projectId; }, node => { node.sessionId = null; }, node => { node.kind = "Other"; }, node => { node.workContent = null; }]) {
-    const ambiguous = structuredClone(graph); change(ambiguous.nodes[3]); const output = formatMcpToolContent("head_project_graph", ambiguous);
+  assert.ok(terminal.includes("Selected connections"));
+  assert.ok(terminal.includes('"hint": "not proof"'));
+  assert.equal(JSON.stringify(graph), before);
+  for (const change of [
+    (node) => {
+      delete node.projectId;
+    },
+    (node) => {
+      node.sessionId = null;
+    },
+    (node) => {
+      node.kind = "Other";
+    },
+    (node) => {
+      node.workContent = null;
+    },
+  ]) {
+    const ambiguous = structuredClone(graph);
+    change(ambiguous.nodes[3]);
+    const output = formatMcpToolContent("head_project_graph", ambiguous);
     assert.equal(output, formatCliResult("graph-query", ambiguous));
-    assert.ok(!output.includes("Common stored fields for")); assert.ok(output.includes("Logical Session")); assert.ok(output.includes("Navigation only"));
+    assert.ok(!output.includes("Common stored fields for"));
+    assert.ok(output.includes("Logical Session"));
+    assert.ok(output.includes("Navigation only"));
   }
 });
 
 test("unresolved Session cards preserve current cancellation without claiming recovery or diagnostics", () => {
-  const value = { status: "session_selection_unresolved", sessionId: null,
+  const value = {
+    status: "session_selection_unresolved",
+    sessionId: null,
     currentProjectDirection: { input: { goal: "Inspect local source", constraints: ["Do not publish"], decisions: [], cancelledActions: ["deploy"] } },
-    nextHeadAction: "Continue independent work; only dependent work needs a verified selected Session." };
+    nextHeadAction: "Continue independent work; only dependent work needs a verified selected Session.",
+  };
   for (const command of ["status", "doctor", "conversation-enter", "session-restore", "init", "resume", "run-start", "compact-status"]) {
     const text = formatCliResult(command, value);
     assert.match(text, /independent work can continue/u);
@@ -192,12 +303,15 @@ test("real CLI help renders direct default and state-aware ordinary Host delegat
   const root = path.resolve(import.meta.dirname, "..");
   const cli = path.join(root, "scripts/head.mjs");
   function invoke(args) {
-    const command = process.execPath, fullArgs = [cli, ...args];
+    const command = process.execPath,
+      fullArgs = [cli, ...args];
     const record = { command, args: fullArgs, cwd: root, parentPid: process.pid, ports: [] };
     console.log(JSON.stringify({ event: "planned", ...record }));
     const child = spawnSync(command, fullArgs, { cwd: root, encoding: "utf8", windowsHide: true, timeout: 20000, maxBuffer: 2 * 1024 * 1024 });
     console.log(JSON.stringify({ event: "closed", ...record, pid: child.pid, exitCode: child.status, signal: child.signal }));
-    assert.ifError(child.error); assert.equal(child.status, 0, child.stderr); assert.equal(child.stderr, "");
+    assert.ifError(child.error);
+    assert.equal(child.status, 0, child.stderr);
+    assert.equal(child.stderr, "");
     return child.stdout;
   }
   for (const command of ["help", "help-all"]) {
@@ -225,7 +339,7 @@ test("MCP discovery discloses every operation effect without granting approval",
   }
   const response = await dispatch({ jsonrpc: "2.0", id: "effects", method: "tools/list" });
   assert(response.result.tools.length < tools.length);
-  assert(response.result.tools.some(tool => tool.name === "lode_tools_discover"));
+  assert(response.result.tools.some((tool) => tool.name === "lode_tools_discover"));
 });
 
 function projectExperience({ recoveryState = "no-current-checkpoint", recoveryAttention = false, productState = "not_activated" } = {}) {
@@ -250,7 +364,9 @@ function projectExperience({ recoveryState = "no-current-checkpoint", recoveryAt
       status: recoveryAttention ? "attention" : "clear",
       userDecisionRequired: false,
       headActionRequired: recoveryAttention,
-      items: recoveryAttention ? [{ owner: "HEAD", summary: "Inspect recovery evidence; ordinary work remains available when it does not depend on that checkpoint." }] : [],
+      items: recoveryAttention
+        ? [{ owner: "HEAD", summary: "Inspect recovery evidence; ordinary work remains available when it does not depend on that checkpoint." }]
+        : [],
     },
     presentation: { mode: recoveryAttention ? "exception" : "quiet" },
     runtime: { activePackageVersion: "fixture-version" },
@@ -290,32 +406,74 @@ test("ordinary project status leads with the task and hides implementation detai
 
 test("quiet and notice readiness disclose preserved Host configuration and modified projections without a work gate", () => {
   for (const mode of ["quiet", "notice", "normal"]) {
-    const value = projectExperience(); value.presentation = { mode };
-    value.project = { integrations: { claude: { status: "manual", mcpProjection: ".lode/generated/claude.mcp.json", instructionProjection: ".lode/generated/lode-instructions.md" }, codex: { status: "managed", path: "AGENTS.md" } } };
+    const value = projectExperience();
+    value.presentation = { mode };
+    value.project = {
+      integrations: {
+        claude: { status: "manual", mcpProjection: ".lode/generated/claude.mcp.json", instructionProjection: ".lode/generated/lode-instructions.md" },
+        codex: { status: "managed", path: "AGENTS.md" },
+      },
+    };
     value.drift = [{ path: "AGENTS.md", reason: "modified" }];
     const before = JSON.stringify(value);
     for (const text of [formatProjectStatus(value), formatProjectBootstrap(value)]) {
-      assert(text.includes("Automatic connection was not verified")); assert(text.includes(".lode/generated/claude.mcp.json"));
-      assert(text.includes("AGENTS.md (modified)")); assert(text.includes("ordinary work continues"));
-      assert(!text.includes("run doctor before continuing")); assert(!text.includes("Host connected"));
+      assert(text.includes("Automatic connection was not verified"));
+      assert(text.includes(".lode/generated/claude.mcp.json"));
+      assert(text.includes("AGENTS.md (modified)"));
+      assert(text.includes("ordinary work continues"));
+      assert(!text.includes("run doctor before continuing"));
+      assert(!text.includes("Host connected"));
     }
     assert.equal(JSON.stringify(value), before);
   }
-  const value = projectExperience(); value.project = { integrations: { codex: { status: "managed", path: "AGENTS.md" } } };
+  const value = projectExperience();
+  value.project = { integrations: { codex: { status: "managed", path: "AGENTS.md" } } };
   assert(!formatProjectStatus(value).includes("Automatic connection"));
 });
 
 test("World and document CLI summaries bound human output while preserving the raw result and exact read routes", () => {
-  const world = { status: "stale", snapshot: { worldModelId: "world-model-A", summary: { fileCount: 9000, symbolCount: 30000 }, files: Array(500).fill({ text: "do-not-dump-original".repeat(100) }), temporalProvenanceGraph: { graphSnapshotId: "graph-A", nodes: Array(500).fill({ text: "do-not-dump-original" }) } },
-    changes: { added: Array.from({ length: 100 }, (_, i) => `src/new-${i}.mjs`), changed: ["src/action.mjs"], removed: [], productModelChanged: true } };
-  const before = JSON.stringify(world), text = formatCliResult("world-status", world);
-  assert(text.length < 2200); assert(text.includes("World: stale")); assert(text.includes("fileCount: 9000")); assert(text.includes("94 more in --json")); assert(text.includes('lode-agent world-status "<project>" --json'));
-  assert(!text.includes("do-not-dump-original")); assert.equal(JSON.stringify(world), before);
-  const docs = { status: "projected", worldModelStatus: "current", worldModelId: "world-A", projection: { projection: { documentProjectionId: "docs-A", documents: Array(500).fill({ content: "do-not-dump-original" }), summary: { documentCount: 500 } }, publishedLocations: Array.from({ length: 500 }, (_, i) => ({ relativePath: `knowledge/${i}.md` })) } };
-  const built = formatCliResult("world-docs-build", docs); assert(built.length < 2200); assert(built.includes("documentCount: 500")); assert(built.includes("497 more in --json")); assert(!built.includes("do-not-dump-original"));
+  const world = {
+    status: "stale",
+    snapshot: {
+      worldModelId: "world-model-A",
+      summary: { fileCount: 9000, symbolCount: 30000 },
+      files: Array(500).fill({ text: "do-not-dump-original".repeat(100) }),
+      temporalProvenanceGraph: { graphSnapshotId: "graph-A", nodes: Array(500).fill({ text: "do-not-dump-original" }) },
+    },
+    changes: { added: Array.from({ length: 100 }, (_, i) => `src/new-${i}.mjs`), changed: ["src/action.mjs"], removed: [], productModelChanged: true },
+  };
+  const before = JSON.stringify(world),
+    text = formatCliResult("world-status", world);
+  assert(text.length < 2200);
+  assert(text.includes("World: stale"));
+  assert(text.includes("fileCount: 9000"));
+  assert(text.includes("94 more in --json"));
+  assert(text.includes('lode-agent world-status "<project>" --json'));
+  assert(!text.includes("do-not-dump-original"));
+  assert.equal(JSON.stringify(world), before);
+  const docs = {
+    status: "projected",
+    worldModelStatus: "current",
+    worldModelId: "world-A",
+    projection: {
+      projection: { documentProjectionId: "docs-A", documents: Array(500).fill({ content: "do-not-dump-original" }), summary: { documentCount: 500 } },
+      publishedLocations: Array.from({ length: 500 }, (_, i) => ({ relativePath: `knowledge/${i}.md` })),
+    },
+  };
+  const built = formatCliResult("world-docs-build", docs);
+  assert(built.length < 2200);
+  assert(built.includes("documentCount: 500"));
+  assert(built.includes("497 more in --json"));
+  assert(!built.includes("do-not-dump-original"));
   assert(built.includes("do not repeat a mutation solely to inspect details"));
-  const current = formatCliResult("world-docs-status", { status: "source-stale", worldModelStatus: "stale", projection: { status: "current", candidateRequired: true, drift: [{ relativePath: "knowledge/policy.md", changeType: "modified" }] } });
-  assert(current.includes("source-stale")); assert(current.includes("knowledge/policy.md (modified)")); assert(current.includes("independent work continues"));
+  const current = formatCliResult("world-docs-status", {
+    status: "source-stale",
+    worldModelStatus: "stale",
+    projection: { status: "current", candidateRequired: true, drift: [{ relativePath: "knowledge/policy.md", changeType: "modified" }] },
+  });
+  assert(current.includes("source-stale"));
+  assert(current.includes("knowledge/policy.md (modified)"));
+  assert(current.includes("independent work continues"));
   const receipt = { status: "verified", receipt: { refreshReceiptId: "refresh-receipt-abc" } };
   assert(formatCliResult("world-refresh-read", receipt).includes('--receipt "refresh-receipt-abc" --json'));
 });
@@ -328,27 +486,60 @@ test("World refresh summary reads actual nested receipt changes and separate blo
     ["blocked-edited-view", "DOCUMENT_CHANGE_CANDIDATES_REQUIRE_REVIEW", candidateSetId],
     ["failed", "DOCUMENT_PROJECTION_PUBLISH_MISMATCH", null],
   ]) {
-    const value = { status: "refreshed", receiptFile: "synthetic/refresh-receipt.json",
-      worldModel: { worldModelId: "world-model-" + "b".repeat(24), sourceSnapshotId: "source-snapshot-" + "c".repeat(24), graphSnapshotId: "graph-snapshot-" + "d".repeat(24) },
-      receipt: { kind: "IncrementalRefreshReceipt", status: "refreshed", refreshReceiptId: "incremental-refresh-receipt-" + "e".repeat(24),
-        observedChanges: { added: Array.from({ length: 100 }, (_, i) => `src/added-${i}.mjs`), changed: ["src/action.mjs"], removed: ["src/old.mjs"] } },
-      postRefreshProjection: { status, receiptFile: "synthetic/post-refresh-receipt.json", receipt: { kind: "PostRefreshProjectionReceipt",
-        postRefreshProjectionReceiptId: "post-refresh-projection-receipt-" + "f".repeat(24), outcome: {
-          status, reasonCode, documentProjectionId: null, documentProjectionHash: null, candidateSetId: candidate, candidateSetHash: candidate ? "a".repeat(64) : null,
-        } } },
+    const value = {
+      status: "refreshed",
+      receiptFile: "synthetic/refresh-receipt.json",
+      worldModel: {
+        worldModelId: "world-model-" + "b".repeat(24),
+        sourceSnapshotId: "source-snapshot-" + "c".repeat(24),
+        graphSnapshotId: "graph-snapshot-" + "d".repeat(24),
+      },
+      receipt: {
+        kind: "IncrementalRefreshReceipt",
+        status: "refreshed",
+        refreshReceiptId: "incremental-refresh-receipt-" + "e".repeat(24),
+        observedChanges: { added: Array.from({ length: 100 }, (_, i) => `src/added-${i}.mjs`), changed: ["src/action.mjs"], removed: ["src/old.mjs"] },
+      },
+      postRefreshProjection: {
+        status,
+        receiptFile: "synthetic/post-refresh-receipt.json",
+        receipt: {
+          kind: "PostRefreshProjectionReceipt",
+          postRefreshProjectionReceiptId: "post-refresh-projection-receipt-" + "f".repeat(24),
+          outcome: {
+            status,
+            reasonCode,
+            documentProjectionId: null,
+            documentProjectionHash: null,
+            candidateSetId: candidate,
+            candidateSetHash: candidate ? "a".repeat(64) : null,
+          },
+        },
+      },
     };
-    const before = JSON.stringify(value), output = formatCliResult("world-refresh", value);
-    assert(output.includes("World: refreshed.")); assert(output.includes("Recorded refresh source added")); assert(output.includes("src/added-0.mjs")); assert(output.includes("94 more in --json"));
-    assert(output.includes("src/action.mjs")); assert(output.includes("src/old.mjs")); assert(output.includes(reasonCode)); assert(output.includes(status));
-    assert(output.includes("World refresh remains recorded")); assert(output.length < 3000);
+    const before = JSON.stringify(value),
+      output = formatCliResult("world-refresh", value);
+    assert(output.includes("World: refreshed."));
+    assert(output.includes("Recorded refresh source added"));
+    assert(output.includes("src/added-0.mjs"));
+    assert(output.includes("94 more in --json"));
+    assert(output.includes("src/action.mjs"));
+    assert(output.includes("src/old.mjs"));
+    assert(output.includes(reasonCode));
+    assert(output.includes(status));
+    assert(output.includes("World refresh remains recorded"));
+    assert(output.length < 3000);
     if (candidate) {
       assert(output.includes(candidateSetId));
       assert(output.includes(`lode-agent world-docs-candidates "<project>" --candidate-set "${candidateSetId}" --json`));
       assert(output.includes("independent work continues"));
     } else assert(!output.includes("world-docs-candidates"));
-    assert(!output.includes("World: failed")); assert(!output.includes("World: blocked")); assert.equal(JSON.stringify(value), before);
+    assert(!output.includes("World: failed"));
+    assert(!output.includes("World: blocked"));
+    assert.equal(JSON.stringify(value), before);
     const historical = formatCliResult("world-refresh-read", { status: "verified", receipt: value.receipt });
-    assert(historical.includes("Recorded refresh source changed")); assert(historical.includes("src/action.mjs"));
+    assert(historical.includes("Recorded refresh source changed"));
+    assert(historical.includes("src/action.mjs"));
   }
 });
 
@@ -370,10 +561,12 @@ test("bootstrap and restore keep the original task and authority boundary visibl
   assert.match(restored, /this read changed no checkpoint or authority/u);
   assert.doesNotMatch(restored, /checkpoint-secret-id|review-secret-id/u);
 
-  const attention = formatProjectStatus(projectExperience({
-    recoveryState: "attention-required",
-    recoveryAttention: true,
-  }));
+  const attention = formatProjectStatus(
+    projectExperience({
+      recoveryState: "attention-required",
+      recoveryAttention: true,
+    }),
+  );
   assert.match(attention, /User decision: none for ordinary work/u);
   assert.match(attention, /ordinary work remains available when it does not depend on that checkpoint/u);
   assert.doesNotMatch(attention, /User decision: attention required/u);
@@ -428,8 +621,12 @@ test("Feature mapping presentation follows typed fresh, stale, recovery, and Run
     status: "awaiting_review",
     candidateSet,
     reviewRecovery: { status: "pointer-update-pending", reviewDecisionId: "review-secret-id", requiresNewUserDecision: false },
-    reviewReadiness: { acceptanceAvailable: false, explicitRejectionAvailable: false, runConflict: false,
-      nextAction: "Retry the unchanged saved ReviewDecision to finish its pending state update; no new user decision is needed." },
+    reviewReadiness: {
+      acceptanceAvailable: false,
+      explicitRejectionAvailable: false,
+      runConflict: false,
+      nextAction: "Retry the unchanged saved ReviewDecision to finish its pending state update; no new user decision is needed.",
+    },
   });
   assert.match(recovery, /decision is already saved/u);
   assert.match(recovery, /User decision: none/u);
@@ -440,23 +637,42 @@ test("Feature mapping presentation follows typed fresh, stale, recovery, and Run
     status: "awaiting_review",
     candidateSet,
     reviewRecovery: null,
-    reviewReadiness: { acceptanceAvailable: false, explicitRejectionAvailable: false, runConflict: true,
-      nextAction: "Finish the existing Run or its pending review before changing the mapping review state." },
+    reviewReadiness: {
+      acceptanceAvailable: false,
+      explicitRejectionAvailable: false,
+      runConflict: true,
+      nextAction: "Finish the existing Run or its pending review before changing the mapping review state.",
+    },
   });
   assert.match(runConflict, /waiting for the current Run boundary/u);
   assert.match(runConflict, /User decision: none/u);
   assert.doesNotMatch(runConflict, /Options: accept/u);
 
   for (const value of [
-    { status: "awaiting_review", candidateSet, reviewRecovery: null,
-      reviewReadiness: { evidenceStatus: "current", acceptanceAvailable: true, explicitRejectionAvailable: true, runConflict: false } },
-    { status: "awaiting_review", candidateSet, reviewRecovery: null,
-      reviewReadiness: { evidenceStatus: "stale", acceptanceAvailable: false, explicitRejectionAvailable: true, runConflict: false } },
-    { status: "awaiting_review", candidateSet,
+    {
+      status: "awaiting_review",
+      candidateSet,
+      reviewRecovery: null,
+      reviewReadiness: { evidenceStatus: "current", acceptanceAvailable: true, explicitRejectionAvailable: true, runConflict: false },
+    },
+    {
+      status: "awaiting_review",
+      candidateSet,
+      reviewRecovery: null,
+      reviewReadiness: { evidenceStatus: "stale", acceptanceAvailable: false, explicitRejectionAvailable: true, runConflict: false },
+    },
+    {
+      status: "awaiting_review",
+      candidateSet,
       reviewRecovery: { status: "pointer-update-pending", requiresNewUserDecision: false },
-      reviewReadiness: { acceptanceAvailable: false, explicitRejectionAvailable: false, runConflict: false } },
-    { status: "awaiting_review", candidateSet, reviewRecovery: null,
-      reviewReadiness: { acceptanceAvailable: false, explicitRejectionAvailable: false, runConflict: true } },
+      reviewReadiness: { acceptanceAvailable: false, explicitRejectionAvailable: false, runConflict: false },
+    },
+    {
+      status: "awaiting_review",
+      candidateSet,
+      reviewRecovery: null,
+      reviewReadiness: { acceptanceAvailable: false, explicitRejectionAvailable: false, runConflict: true },
+    },
   ]) {
     assert.equal(formatCliResult("feature-mapping-status", value), formatMcpToolContent("head_feature_mapping_status", value));
   }
@@ -468,8 +684,12 @@ test("Change impact presentation avoids repeat approval and keeps stale rejectio
     status: "awaiting_review",
     candidateSet,
     reviewRecovery: { status: "pointer-update-pending", reviewDecisionId: "review-secret-id", requiresNewUserDecision: false },
-    reviewReadiness: { acceptanceAvailable: false, explicitRejectionAvailable: false, runConflict: false,
-      nextAction: "Retry the unchanged saved ReviewDecision to finish its pending state update; no new user decision is needed." },
+    reviewReadiness: {
+      acceptanceAvailable: false,
+      explicitRejectionAvailable: false,
+      runConflict: false,
+      nextAction: "Retry the unchanged saved ReviewDecision to finish its pending state update; no new user decision is needed.",
+    },
   };
   const recoveryOutput = formatChangeSetStatus(recovery);
   assert.match(recoveryOutput, /decision is already saved/u);
@@ -522,12 +742,14 @@ test("Run and conformance projections never promote evidence into approval or a 
 });
 
 function conversationContextFixture({ restored = false, mode = "quiet" } = {}) {
-  const currentProjectDirection = { input: {
-    goal: "Inspect the generation comparison reason, local write position and remaining cancellation boundary.",
-    constraints: ["Local synthetic investigation only; do not publish or change a service."],
-    decisions: ["Keep the investigation local, despite the earlier deployment plan."],
-    cancelledActions: ["Publish or deploy this synthetic local result"],
-  } };
+  const currentProjectDirection = {
+    input: {
+      goal: "Inspect the generation comparison reason, local write position and remaining cancellation boundary.",
+      constraints: ["Local synthetic investigation only; do not publish or change a service."],
+      decisions: ["Keep the investigation local, despite the earlier deployment plan."],
+      cancelledActions: ["Publish or deploy this synthetic local result"],
+    },
+  };
   const checkpoint = {
     checkpointId: "checkpoint-private-id",
     purpose: "Retained purpose " + "p".repeat(270) + "; local rewrite cancelled; inspect only.",
@@ -539,54 +761,84 @@ function conversationContextFixture({ restored = false, mode = "quiet" } = {}) {
   const contents = [
     { summary: "Generation comparison", judgments: [{ reason: "An earlier request can arrive later; elapsed TTL alone does not order responses." }] },
     { summary: "Clock alternative", judgments: [{ alternatives: ["Client-clock order is unreliable if clocks move or disagree."] }] },
-    { summary: "Local change", observedWork: ["Enabled the generation check immediately before the synthetic cache write; TTL remains 60. No service was changed."] },
-    { summary: "Remaining boundary", pending: ["Cancellation racing with a write still needs local investigation."], unknowns: ["Actual Host/model behavior is unverified."] },
+    {
+      summary: "Local change",
+      observedWork: ["Enabled the generation check immediately before the synthetic cache write; TTL remains 60. No service was changed."],
+    },
+    {
+      summary: "Remaining boundary",
+      pending: ["Cancellation racing with a write still needs local investigation."],
+      unknowns: ["Actual Host/model behavior is unverified."],
+    },
   ];
   return {
     status: restored ? "conversation_direction_restored" : "conversation_ready",
-    presentation: { mode }, attention: { items: [] },
+    presentation: { mode },
+    attention: { items: [] },
     projectStatus: { currentProjectDirection },
-    ...(restored ? { restore: { status: "session_restored_from_artifacts", checkpoint,
-      projection: { currentProjectDirection, checkpoint,
-        currentExecution: { status: "verified", sessionPointer: {} } } } } : {}),
-    workContext: { status: "work_context_available", sessionId: "selected-session",
+    ...(restored
+      ? {
+          restore: {
+            status: "session_restored_from_artifacts",
+            checkpoint,
+            projection: { currentProjectDirection, checkpoint, currentExecution: { status: "verified", sessionPointer: {} } },
+          },
+        }
+      : {}),
+    workContext: {
+      status: "work_context_available",
+      sessionId: "selected-session",
       sessionPurpose: "Current selected Session purpose: investigate locally without deployment.",
-      records: contents.map((content, i) => ({ evidenceId: `retained-${i}`, evidenceDigest: `digest-${i}`, recordedAt: "2026-10-18T00:00:00Z",
-        selectionRole: "recent", content, references: [{ path: "src/cache-policy.json", digest: `source-${i}`,
-          status: i < 2 ? "changed" : "matching-current-bytes" }] })),
-      coverage: { originals: 4, included: 4 }, omissions: { uninspected: 0 }, nextAfterEvidenceId: null },
+      records: contents.map((content, i) => ({
+        evidenceId: `retained-${i}`,
+        evidenceDigest: `digest-${i}`,
+        recordedAt: "2026-10-18T00:00:00Z",
+        selectionRole: "recent",
+        content,
+        references: [{ path: "src/cache-policy.json", digest: `source-${i}`, status: i < 2 ? "changed" : "matching-current-bytes" }],
+      })),
+      coverage: { originals: 4, included: 4 },
+      omissions: { uninspected: 0 },
+      nextAfterEvidenceId: null,
+    },
   };
 }
 
 function assertConversationLiterals(text, entry) {
   const input = entry.projectStatus.currentProjectDirection.input;
-  for (const literal of [input.goal, ...input.constraints, ...input.decisions, ...input.cancelledActions,
-    entry.workContext.sessionPurpose]) assert(text.includes(literal), literal);
+  for (const literal of [input.goal, ...input.constraints, ...input.decisions, ...input.cancelledActions, entry.workContext.sessionPurpose])
+    assert(text.includes(literal), literal);
   if (entry.restore) {
     const checkpoint = entry.restore.checkpoint;
     for (const literal of [checkpoint.purpose, ...checkpoint.approvedDecisions, checkpoint.currentPosition, checkpoint.nextExpectedResult]) {
       assert(text.includes(literal), literal);
     }
     assert.match(text, /historical context, not current execution or permission/u);
-    assert.equal(text.split("historical context, not current execution or permission").length - 1, 1,
-      "The historical non-authorization boundary remains adjacent to the checkpoint, once");
+    assert.equal(
+      text.split("historical context, not current execution or permission").length - 1,
+      1,
+      "The historical non-authorization boundary remains adjacent to the checkpoint, once",
+    );
   }
-  assert(text.endsWith(formatSessionWorkContext(entry.workContext, { boundaryShown: true })),
-    "All full P3 bodies, coverage and diagnoses survive the factored contextual heading");
+  assert(
+    text.endsWith(formatSessionWorkContext(entry.workContext, { boundaryShown: true })),
+    "All full P3 bodies, coverage and diagnoses survive the factored contextual heading",
+  );
   assert(text.indexOf(input.cancelledActions[0]) < text.indexOf("Recorded Session work (historical P3)"));
   assert.equal(text.split("Current common direction (").length - 1, 1, "Current direction is presented once");
 }
 
 test("conversation context keeps current meaning and full fitting historical bodies in quiet, notice and normal text", () => {
-  for (const restored of [false, true]) for (const mode of ["quiet", "notice", "exception"]) {
-    const entry = conversationContextFixture({ restored, mode });
-    const before = JSON.stringify(entry);
-    const cli = formatCliResult("conversation-enter", entry);
-    assert.equal(cli, formatMcpToolContent("head_conversation_enter", entry));
-    assertConversationLiterals(cli, entry);
-    assert.equal(JSON.stringify(entry), before, "Formatting must not change structured input");
-    assert.doesNotMatch(cli, /Please approve|Which Session|Run this command|content omitted/u);
-  }
+  for (const restored of [false, true])
+    for (const mode of ["quiet", "notice", "exception"]) {
+      const entry = conversationContextFixture({ restored, mode });
+      const before = JSON.stringify(entry);
+      const cli = formatCliResult("conversation-enter", entry);
+      assert.equal(cli, formatMcpToolContent("head_conversation_enter", entry));
+      assertConversationLiterals(cli, entry);
+      assert.equal(JSON.stringify(entry), before, "Formatting must not change structured input");
+      assert.doesNotMatch(cli, /Please approve|Which Session|Run this command|content omitted/u);
+    }
 });
 
 test("conversation context preserves lifecycle wrapper outcomes without losing supplied context", () => {
@@ -619,16 +871,31 @@ test("conversation context distinguishes unavailable, never recorded, explicit e
   const unavailableText = formatConversationRecovery(unavailable);
   assert.match(unavailableText, /unavailable, not empty/u);
   assert.match(unavailableText, /only direction-dependent effects/u);
-  assert(!unavailableText.includes(unavailable.restore.projection.currentProjectDirection.input.goal), "Diagnosed null must not fall back to another view's stale content");
+  assert(
+    !unavailableText.includes(unavailable.restore.projection.currentProjectDirection.input.goal),
+    "Diagnosed null must not fall back to another view's stale content",
+  );
   assert(unavailableText.includes(unavailable.restore.checkpoint.currentPosition), "Valid selected checkpoint is independent of unavailable common direction");
   assert(unavailableText.endsWith(formatSessionWorkContext(unavailable.workContext, { boundaryShown: true })));
 
   const base = { status: "conversation_ready", presentation: { mode: "quiet" } };
   assert.match(formatConversationRecovery({ ...base, projectStatus: { currentProjectDirection: null } }), /not recorded \(not an approved empty direction\)/u);
-  assert.match(formatConversationRecovery({ ...base, projectStatus: { currentProjectDirection: {
-    input: { goal: "", constraints: [], decisions: [], cancelledActions: [] },
-  } } }), /explicitly recorded empty goal and lists/u);
-  assert.equal(formatConversationRecovery(base), "Lode is ready — continue the task.\n", "No-content entry stays one line with no empty forms or new follow-up");
+  assert.match(
+    formatConversationRecovery({
+      ...base,
+      projectStatus: {
+        currentProjectDirection: {
+          input: { goal: "", constraints: [], decisions: [], cancelledActions: [] },
+        },
+      },
+    }),
+    /explicitly recorded empty goal and lists/u,
+  );
+  assert.equal(
+    formatConversationRecovery(base),
+    "Lode is ready — continue the task.\n",
+    "No-content entry stays one line with no empty forms or new follow-up",
+  );
   for (const metadata of [undefined, null, [], "unavailable"]) {
     const value = conversationContextFixture();
     value.projectStatus.currentProjectDirectionAvailability = metadata;
@@ -642,24 +909,34 @@ test("conversation context distinguishes unavailable, never recorded, explicit e
 
 test("conversation context keeps a valid zero-P3 Session purpose but never backfills excluded context", () => {
   for (const status of ["work_context_not_recorded", "work_context_partial", "work_context_available"]) {
-    const entry = { status: "conversation_ready", presentation: { mode: "quiet" },
-      workContext: { status, sessionId: "selected", sessionPurpose: "Local inspection only; no checkpoint exists.", records: [], coverage: { originals: 0 } } };
+    const entry = {
+      status: "conversation_ready",
+      presentation: { mode: "quiet" },
+      workContext: { status, sessionId: "selected", sessionPurpose: "Local inspection only; no checkpoint exists.", records: [], coverage: { originals: 0 } },
+    };
     const text = formatConversationRecovery(entry);
     assert(text.includes(entry.workContext.sessionPurpose));
     if (status === "work_context_not_recorded") assert.doesNotMatch(text, /Selected Session work evidence/u);
     assert.doesNotMatch(text, /Latest retained Session checkpoint|Historical next/u);
   }
   for (const status of ["work_context_basis_changed", "work_context_unavailable"]) {
-    const entry = { status: "recovery_attention_required", reasonCode: "CONVERSATION_ENTRY_BASIS_CHANGED",
+    const entry = {
+      status: "recovery_attention_required",
+      reasonCode: "CONVERSATION_ENTRY_BASIS_CHANGED",
       workContext: { status, sessionPurpose: "STALE SELECTED PURPOSE", records: [] },
-      projectStatus: { state: { purpose: "DEFAULT PURPOSE MUST NOT LEAK" } } };
+      projectStatus: { state: { purpose: "DEFAULT PURPOSE MUST NOT LEAK" } },
+    };
     // The existing P3 formatter contract is unchanged; only the new selected
     // purpose block must not mislabel an excluded shell as current P2.
     assert.doesNotMatch(formatConversationRecovery(entry), /Selected Session purpose: STALE|DEFAULT PURPOSE MUST NOT LEAK/u);
   }
-  const changed = { status: "recovery_attention_required", reasonCode: "CONVERSATION_ENTRY_BASIS_CHANGED",
+  const changed = {
+    status: "recovery_attention_required",
+    reasonCode: "CONVERSATION_ENTRY_BASIS_CHANGED",
     currentProjectDirection: { input: { goal: "New current goal", constraints: [], decisions: [], cancelledActions: ["deploy"] } },
-    sessionId: null, workContext: { status: "work_context_basis_changed", records: [] } };
+    sessionId: null,
+    workContext: { status: "work_context_basis_changed", records: [] },
+  };
   assert.match(formatConversationRecovery(changed), /New current goal/u);
   assert.match(formatConversationRecovery(changed), /Cancelled action: deploy/u);
   assert.doesNotMatch(formatConversationRecovery(changed), /Selected Session purpose:|Latest retained Session checkpoint/u);
@@ -668,14 +945,26 @@ test("conversation context keeps a valid zero-P3 Session purpose but never backf
 test("conversation context keeps actual explicit-null empty Core quiet to one line without hiding meaningful siblings", () => {
   // Source-grounded default initialization: the direction property exists and
   // is null, unlike the separate uninspected/missing-property fixture above.
-  const entry = { status: "conversation_ready", recoveryState: "no-current-checkpoint",
-    presentation: { mode: "quiet" }, projectStatus: { currentProjectDirection: null },
-    workContext: { kind: "SessionWorkContextProjection", authorityPlane: "P4",
-      status: "work_context_not_recorded", sessionId: "default-session", sessionPurpose: null,
-      interpretation: "P3 Lode-authored historical evidence, not current direction, approval, or proof of an external effect. Current Project constraints and selected Session P2 take precedence.",
-      nextAfterEvidenceId: null, records: [], unavailable: [],
+  const entry = {
+    status: "conversation_ready",
+    recoveryState: "no-current-checkpoint",
+    presentation: { mode: "quiet" },
+    projectStatus: { currentProjectDirection: null },
+    workContext: {
+      kind: "SessionWorkContextProjection",
+      authorityPlane: "P4",
+      status: "work_context_not_recorded",
+      sessionId: "default-session",
+      sessionPurpose: null,
+      interpretation:
+        "P3 Lode-authored historical evidence, not current direction, approval, or proof of an external effect. Current Project constraints and selected Session P2 take precedence.",
+      nextAfterEvidenceId: null,
+      records: [],
+      unavailable: [],
       coverage: { originals: 0, inspected: 0, valid: 0, unavailable: 0, included: 0, maxRecords: 8, maxCharacters: 32768, usedCharacters: 2 },
-      omissions: { byBudget: 0, uninspected: 0, omittedIdCount: 0, unavailableDetailCount: 0, evidenceIds: [] } } };
+      omissions: { byBudget: 0, uninspected: 0, omittedIdCount: 0, unavailableDetailCount: 0, evidenceIds: [] },
+    },
+  };
   const before = JSON.stringify(entry);
   assert.equal(formatConversationRecovery(entry), "Lode is ready — continue the task.\n");
   assert.equal(formatCliResult("conversation-enter", entry), formatMcpToolContent("head_conversation_enter", entry));
@@ -708,17 +997,25 @@ test("conversation context keeps actual explicit-null empty Core quiet to one li
 test("conversation context leaves genuine execution conflicts distinct from historical checkpoint meaning", () => {
   for (const status of ["verified", "incomplete", "conflict"]) {
     const entry = conversationContextFixture({ restored: true });
-    entry.restore.projection.currentExecution = { status, sessionPointer: { activeRunId: "active-run",
-      pendingReview: { runId: "pending-run", wholePlanId: "whole-plan", resultPacketId: "result" },
-      requiredPlanAction: { kind: "revise", disposition: "revise", wholePlanId: "whole-plan", reviewDecisionId: "review" } } };
+    entry.restore.projection.currentExecution = {
+      status,
+      sessionPointer: {
+        activeRunId: "active-run",
+        pendingReview: { runId: "pending-run", wholePlanId: "whole-plan", resultPacketId: "result" },
+        requiredPlanAction: { kind: "revise", disposition: "revise", wholePlanId: "whole-plan", reviewDecisionId: "review" },
+      },
+    };
     const text = formatConversationRecovery(entry);
     assertConversationLiterals(text, entry);
     assert(text.includes(`Canonical execution observation (${status})`));
     assert.match(text, /active-run|pending-run/u);
     assert.match(text, /requiredPlanAction/u);
   }
-  const corrupt = { status: "recovery_attention_required", reasonCode: "INVALID_RECOVERY_CHECKPOINT",
-    restore: { status: "restore_failed", checkpoint: { purpose: "UNVERIFIED CHECKPOINT BODY" } } };
+  const corrupt = {
+    status: "recovery_attention_required",
+    reasonCode: "INVALID_RECOVERY_CHECKPOINT",
+    restore: { status: "restore_failed", checkpoint: { purpose: "UNVERIFIED CHECKPOINT BODY" } },
+  };
   assert.doesNotMatch(formatConversationRecovery(corrupt), /UNVERIFIED CHECKPOINT BODY|Latest retained Session checkpoint/u);
   assert.match(formatConversationRecovery(corrupt), /Ordinary independent work remains available/u);
 });
@@ -730,15 +1027,15 @@ test("conversation context direct restore shares full meaning without exposing p
   assert.equal(text, formatCliResult("session-restore", entry.restore));
   assert.equal(text, formatMcpToolContent("head_session_restore", entry.restore));
   const checkpoint = entry.restore.checkpoint;
-  for (const field of [checkpoint.purpose, ...checkpoint.approvedDecisions, checkpoint.currentPosition, checkpoint.nextExpectedResult]) assert(text.includes(field));
+  for (const field of [checkpoint.purpose, ...checkpoint.approvedDecisions, checkpoint.currentPosition, checkpoint.nextExpectedResult])
+    assert(text.includes(field));
   assert(text.includes(entry.restore.projection.currentProjectDirection.input.cancelledActions[0]));
   assert.match(text, /Latest retained Session checkpoint \(historical context, not current execution or permission\)/u);
   assert.equal(text.split("historical context, not current execution or permission").length - 1, 1);
   assert.doesNotMatch(text, /checkpoint-private-id|review-private-id/u);
   assert.equal(JSON.stringify(entry.restore), before);
 
-  const unavailable = { ...entry.restore, currentProjectDirection: null,
-    currentProjectDirectionAvailability: { status: "unavailable" } };
+  const unavailable = { ...entry.restore, currentProjectDirection: null, currentProjectDirectionAvailability: { status: "unavailable" } };
   const unavailableText = formatSessionRestore(unavailable);
   assert.match(unavailableText, /unavailable, not empty/u);
   assert(unavailableText.includes(checkpoint.currentPosition));
@@ -760,15 +1057,37 @@ test("conversation context preserves long multilingual content and whitespace wi
 });
 
 test("work bodies preserve exact literals and object-local unknown residuals without payload duplication", () => {
-  const content = { summary: "BODY_ONLY_ONCE", judgments: [{ assessment: "Inspect only", reason: "A reason\n  ```code```\nwith spaces  ",
-    alternatives: ["Other choice", null, false, 0, []], future: { reason: null, summary: false, values: [0, [], {}] } }],
-    observedWork: ["Local change only"], pending: ["Pending cancellation/write ordering"], unknowns: ["Unverified external result"],
-    suggestedFollowUp: [], future: { judgments: null, pending: false } };
-  const value = { status: "work_context_partial", projectId: "project", sessionId: "session-A",
-    records: [{ evidenceId: "a", sessionId: "session-A", content, future: { content: 0 }, savedActivity: {}, workContentCoverage: {} },
-      { evidenceId: "b", sessionId: "session-B", content: { summary: "Second owner body", unknowns: false }, future: null }],
-    coverage: { originals: 2, included: 2 }, omissions: { uninspected: 0 }, nextAfterEvidenceId: null, future: { records: [] } };
-  const before = JSON.stringify(value), text = formatSessionWorkContext(value);
+  const content = {
+    summary: "BODY_ONLY_ONCE",
+    judgments: [
+      {
+        assessment: "Inspect only",
+        reason: "A reason\n  ```code```\nwith spaces  ",
+        alternatives: ["Other choice", null, false, 0, []],
+        future: { reason: null, summary: false, values: [0, [], {}] },
+      },
+    ],
+    observedWork: ["Local change only"],
+    pending: ["Pending cancellation/write ordering"],
+    unknowns: ["Unverified external result"],
+    suggestedFollowUp: [],
+    future: { judgments: null, pending: false },
+  };
+  const value = {
+    status: "work_context_partial",
+    projectId: "project",
+    sessionId: "session-A",
+    records: [
+      { evidenceId: "a", sessionId: "session-A", content, future: { content: 0 }, savedActivity: {}, workContentCoverage: {} },
+      { evidenceId: "b", sessionId: "session-B", content: { summary: "Second owner body", unknowns: false }, future: null },
+    ],
+    coverage: { originals: 2, included: 2 },
+    omissions: { uninspected: 0 },
+    nextAfterEvidenceId: null,
+    future: { records: [] },
+  };
+  const before = JSON.stringify(value),
+    text = formatSessionWorkContext(value);
   assert.equal(JSON.stringify(value), before);
   assert.equal(text.split("BODY_ONLY_ONCE").length - 1, 1);
   const first = text.slice(text.indexOf("Record[0]:"), text.indexOf("Record[1]:"));
@@ -776,12 +1095,17 @@ test("work bodies preserve exact literals and object-local unknown residuals wit
   assert(first.includes(content.judgments[0].reason));
   assert(first.indexOf("Inspect only") < first.indexOf(content.judgments[0].reason));
   assert(first.indexOf(content.judgments[0].reason) < first.indexOf("Other choice"));
-  assert(first.includes("savedActivity: {}")); assert(first.includes("workContentCoverage: {}"));
-  assert(first.includes('"reason": null')); assert(first.includes('"summary": false'));
-  assert(first.includes('"content": 0')); assert(second.includes('"future": null'));
+  assert(first.includes("savedActivity: {}"));
+  assert(first.includes("workContentCoverage: {}"));
+  assert(first.includes('"reason": null'));
+  assert(first.includes('"summary": false'));
+  assert(first.includes('"content": 0'));
+  assert(second.includes('"future": null'));
   assert(second.includes('"unknowns": false'));
-  assert(!first.includes("Second owner body")); assert(!second.includes("BODY_ONLY_ONCE"));
-  assert(text.includes('"nextAfterEvidenceId": null')); assert(text.includes('"records": []'));
+  assert(!first.includes("Second owner body"));
+  assert(!second.includes("BODY_ONLY_ONCE"));
+  assert(text.includes('"nextAfterEvidenceId": null'));
+  assert(text.includes('"records": []'));
   for (const raw of [null, false, 0, "", [], {}]) {
     const mixed = { status: "work_context_partial", records: [{ content: raw }] };
     const output = formatSessionWorkContext(mixed);
@@ -802,8 +1126,14 @@ const workRoleLabels = [
 function explainedContent(index = 0) {
   return {
     summary: `Local result ${index}; not deployed.`,
-    judgments: [{ assessment: `Inspect only ${index}`, reason: `Earlier reason ${index}: TTL does not order requests.\n  취소 조건은 유지한다.`,
-      alternatives: [`Rejected clock order ${index}; clocks can move.`], future: { accepted: false } }],
+    judgments: [
+      {
+        assessment: `Inspect only ${index}`,
+        reason: `Earlier reason ${index}: TTL does not order requests.\n  취소 조건은 유지한다.`,
+        alternatives: [`Rejected clock order ${index}; clocks can move.`],
+        future: { accepted: false },
+      },
+    ],
     observedWork: [`Local generation check ${index}; no service changed.`],
     pending: [`Cancellation/write race ${index} remains unverified.`],
     unknowns: [`Actual Host behavior ${index} is unknown.`],
@@ -817,26 +1147,35 @@ function expectedOriginalText(at, value) {
 }
 
 function expectedExplainedBody(content, location = "content", explain = true) {
-  const label = index => explain ? `${workRoleLabels[index]}:\n` : "";
-  return expectedOriginalText(`${location}.summary`, content.summary)
-    + label(0) + expectedOriginalText(`${location}.judgments[0].assessment`, content.judgments[0].assessment)
-    + expectedOriginalText(`${location}.judgments[0].reason`, content.judgments[0].reason)
-    + label(1) + expectedOriginalText(`${location}.judgments[0].alternatives[0]`, content.judgments[0].alternatives[0])
-    + `Additional original fields at ${location}.judgments[0]:\n${JSON.stringify({ future: content.judgments[0].future }, null, 2)}\n`
-    + ["observedWork", "pending", "unknowns", "suggestedFollowUp"].map((key, index) =>
-      label(index + 2) + expectedOriginalText(`${location}.${key}[0]`, content[key][0])).join("")
-    + `Additional original fields at ${location}:\n${JSON.stringify({ future: content.future }, null, 2)}\n`;
+  const label = (index) => (explain ? `${workRoleLabels[index]}:\n` : "");
+  return (
+    expectedOriginalText(`${location}.summary`, content.summary) +
+    label(0) +
+    expectedOriginalText(`${location}.judgments[0].assessment`, content.judgments[0].assessment) +
+    expectedOriginalText(`${location}.judgments[0].reason`, content.judgments[0].reason) +
+    label(1) +
+    expectedOriginalText(`${location}.judgments[0].alternatives[0]`, content.judgments[0].alternatives[0]) +
+    `Additional original fields at ${location}.judgments[0]:\n${JSON.stringify({ future: content.judgments[0].future }, null, 2)}\n` +
+    ["observedWork", "pending", "unknowns", "suggestedFollowUp"]
+      .map((key, index) => label(index + 2) + expectedOriginalText(`${location}.${key}[0]`, content[key][0]))
+      .join("") +
+    `Additional original fields at ${location}:\n${JSON.stringify({ future: content.future }, null, 2)}\n`
+  );
 }
 
 test("Session-only work role labels preserve exact single and multi-record bodies, owner and uncertainty", () => {
   for (const count of [1, 2]) {
     const value = repeatedWorkFixture();
     value.records = value.records.slice(0, count);
-    value.records.forEach((row, index) => { row.content = explainedContent(index); });
-    const before = structuredClone(value), serialized = Buffer.from(JSON.stringify(value));
+    value.records.forEach((row, index) => {
+      row.content = explainedContent(index);
+    });
+    const before = structuredClone(value),
+      serialized = Buffer.from(JSON.stringify(value));
     const text = formatSessionWorkContext(value);
     for (const [index, row] of value.records.entries()) {
-      const body = expectedExplainedBody(row.content), record = presentedRecord(text, index);
+      const body = expectedExplainedBody(row.content),
+        record = presentedRecord(text, index);
       assert.ok(record.includes(body), "Every original path, literal, field order and residual stays contiguous under its record");
       assert.equal(Buffer.byteLength(record.slice(record.indexOf(body), record.indexOf(body) + body.length)), Buffer.byteLength(body));
       for (const label of workRoleLabels) assert.equal(record.split(`${label}:\n`).length - 1, 1, label);
@@ -847,7 +1186,8 @@ test("Session-only work role labels preserve exact single and multi-record bodie
     for (const label of workRoleLabels) assert.equal(text.split(`${label}:\n`).length - 1, count);
     assert.equal(text, formatCliResult("session-work-read", value));
     assert.equal(text, formatMcpToolContent("head_session_work_read", value));
-    assert.deepEqual(value, before); assert.deepEqual(Buffer.from(JSON.stringify(value)), serialized);
+    assert.deepEqual(value, before);
+    assert.deepEqual(Buffer.from(JSON.stringify(value)), serialized);
     assert.match(text, /P3, not current direction or permission/u);
     assert.doesNotMatch(text, /Task completed|currently executing|approved to deploy/u);
   }
@@ -860,11 +1200,13 @@ test("empty missing and unsupported role fields keep originals without explanato
       if (raw !== undefined) content[key] = structuredClone(raw);
     }
     const value = { status: "work_context_partial", records: [{ evidenceId: "unsupported", content }] };
-    const before = structuredClone(value), text = formatSessionWorkContext(value);
+    const before = structuredClone(value),
+      text = formatSessionWorkContext(value);
     for (const label of workRoleLabels) assert.ok(!text.includes(`${label}:\n`), `${label}: ${JSON.stringify(raw)}`);
-    if (raw !== undefined) for (const key of ["judgments", "observedWork", "pending", "unknowns", "suggestedFollowUp"]) {
-      assert.ok(text.includes(Array.isArray(raw) ? `content.${key}: []` : `"${key}": ${JSON.stringify(raw)}`));
-    }
+    if (raw !== undefined)
+      for (const key of ["judgments", "observedWork", "pending", "unknowns", "suggestedFollowUp"]) {
+        assert.ok(text.includes(Array.isArray(raw) ? `content.${key}: []` : `"${key}": ${JSON.stringify(raw)}`));
+      }
     assert.deepEqual(value, before);
   }
   for (const alternatives of [undefined, null, false, 0, "", [], {}]) {
@@ -873,46 +1215,91 @@ test("empty missing and unsupported role fields keep originals without explanato
     const text = formatSessionWorkContext({ status: "work_context_partial", records: [{ content: { judgments: [judgment] } }] });
     assert.match(text, /Saved judgments and reasons:\n/u);
     assert.ok(!text.includes("Alternatives considered in this saved judgment:\n"));
-    if (alternatives !== undefined) assert.ok(text.includes(Array.isArray(alternatives)
-      ? "content.judgments[0].alternatives: []" : `"alternatives": ${JSON.stringify(alternatives)}`));
+    if (alternatives !== undefined)
+      assert.ok(text.includes(Array.isArray(alternatives) ? "content.judgments[0].alternatives: []" : `"alternatives": ${JSON.stringify(alternatives)}`));
   }
 });
 
 test("graph work text retains unlabeled originals for single and grouped bodies in compact and detailed views", () => {
-  for (const count of [1, 2]) for (const details of [false, true]) {
-    const content = Array.from({ length: count }, (_, index) => explainedContent(index));
-    const graph = { kind: "ProjectGraphDiscoveryProjection", query: { details }, basis: { projectId: "project-owner" },
-      nodes: content.map((workContent, index) => ({ nodeId: `graph-work-${index}`, projectId: "project-owner", sessionId: "session-owner",
-        kind: "Evidence", subtype: "SessionWorkEvidence", origin: { layer: "sessionWork" }, instructionAuthority: false, promotionAuthority: false,
-        recoveryAuthority: false, executionAuthority: false, ordinaryWorkBlocked: false, workContent })),
-      edges: [], coverage: { state: "partial", omitted: 7 }, future: { unknown: true } };
-    const before = structuredClone(graph), text = formatMcpToolContent("head_project_graph", graph);
-    const terminal = formatCliResult("graph-query", graph, { diagnostics: true });
-    assert.ok(terminal.includes("Selected connections")); assert.ok(terminal.includes('"unknown": true'));
-    for (const label of workRoleLabels) assert.ok(!text.includes(`${label}:\n`), "Session labels must not leak into graph presentation");
-    assert.equal(text, formatCliResult("graph-query", graph));
-    assert.ok(text.includes("Recorded work")); assert.ok(text.includes("Recorded judgment"));
-    const visible = text.split("\n").map(line => line.replace(/^  \| /u, "")).join("").replace(/\s+/gu, "");
-    for (const body of content) {
-      const messages = [body.summary, ...body.observedWork, ...body.pending, ...body.unknowns, ...body.suggestedFollowUp,
-        ...body.judgments.flatMap(judgment => [judgment.assessment, judgment.reason, ...judgment.alternatives])];
-      for (const message of messages) assert(visible.includes(inertTerminalText(message).replace(/\s+/gu, "")), message);
+  for (const count of [1, 2])
+    for (const details of [false, true]) {
+      const content = Array.from({ length: count }, (_, index) => explainedContent(index));
+      const graph = {
+        kind: "ProjectGraphDiscoveryProjection",
+        query: { details },
+        basis: { projectId: "project-owner" },
+        nodes: content.map((workContent, index) => ({
+          nodeId: `graph-work-${index}`,
+          projectId: "project-owner",
+          sessionId: "session-owner",
+          kind: "Evidence",
+          subtype: "SessionWorkEvidence",
+          origin: { layer: "sessionWork" },
+          instructionAuthority: false,
+          promotionAuthority: false,
+          recoveryAuthority: false,
+          executionAuthority: false,
+          ordinaryWorkBlocked: false,
+          workContent,
+        })),
+        edges: [],
+        coverage: { state: "partial", omitted: 7 },
+        future: { unknown: true },
+      };
+      const before = structuredClone(graph),
+        text = formatMcpToolContent("head_project_graph", graph);
+      const terminal = formatCliResult("graph-query", graph, { diagnostics: true });
+      assert.ok(terminal.includes("Selected connections"));
+      assert.ok(terminal.includes('"unknown": true'));
+      for (const label of workRoleLabels) assert.ok(!text.includes(`${label}:\n`), "Session labels must not leak into graph presentation");
+      assert.equal(text, formatCliResult("graph-query", graph));
+      assert.ok(text.includes("Recorded work"));
+      assert.ok(text.includes("Recorded judgment"));
+      const visible = text
+        .split("\n")
+        .map((line) => line.replace(/^  \| /u, ""))
+        .join("")
+        .replace(/\s+/gu, "");
+      for (const body of content) {
+        const messages = [
+          body.summary,
+          ...body.observedWork,
+          ...body.pending,
+          ...body.unknowns,
+          ...body.suggestedFollowUp,
+          ...body.judgments.flatMap((judgment) => [judgment.assessment, judgment.reason, ...judgment.alternatives]),
+        ];
+        for (const message of messages) assert(visible.includes(inertTerminalText(message).replace(/\s+/gu, "")), message);
+      }
+      // Full literal/unknown content remains in the unmodified result and the
+      // explicit diagnostics; default graph text uses the shared inert view.
+      assert.ok(terminal.includes('"omitted": 7'));
+      assert.ok(terminal.includes('"unknown": true'));
+      assert.deepEqual(graph, before);
     }
-    // Full literal/unknown content remains in the unmodified result and the
-    // explicit diagnostics; default graph text uses the shared inert view.
-    assert.ok(terminal.includes('"omitted": 7')); assert.ok(terminal.includes('"unknown": true'));
-    assert.deepEqual(graph, before);
-  }
 });
 
 test("conversation labels keep current cancellation ahead of reasons, pending and related historical source", () => {
   const entry = conversationContextFixture();
   entry.workContext.records[0].content = explainedContent(0);
-  entry.relatedNativeWorkContext = { sources: [{ relation: "parent", workContext: {
-    status: "work_context_available", projectId: "project-owner", sessionId: "parent-session", sessionPurpose: "Parent purpose is historical, not selected direction.",
-    records: [{ evidenceId: "parent-evidence", projectId: "project-owner", sessionId: "parent-session", content: explainedContent(9) }],
-    coverage: { originals: 1, included: 1 }, omissions: { uninspected: 0 } } }] };
-  const before = structuredClone(entry), text = formatConversationRecovery(entry);
+  entry.relatedNativeWorkContext = {
+    sources: [
+      {
+        relation: "parent",
+        workContext: {
+          status: "work_context_available",
+          projectId: "project-owner",
+          sessionId: "parent-session",
+          sessionPurpose: "Parent purpose is historical, not selected direction.",
+          records: [{ evidenceId: "parent-evidence", projectId: "project-owner", sessionId: "parent-session", content: explainedContent(9) }],
+          coverage: { originals: 1, included: 1 },
+          omissions: { uninspected: 0 },
+        },
+      },
+    ],
+  };
+  const before = structuredClone(entry),
+    text = formatConversationRecovery(entry);
   const cancellation = entry.projectStatus.currentProjectDirection.input.cancelledActions[0];
   assert.ok(text.indexOf(cancellation) < text.indexOf("Saved judgments and reasons:\n"));
   assert.ok(text.indexOf("Saved judgments and reasons:\n") < text.indexOf(entry.workContext.records[0].content.pending[0]));

@@ -7,21 +7,25 @@ const server = http.createServer(async (request, response) => {
   for await (const chunk of request) chunks.push(chunk);
   requestCount += 1;
   let body;
-  try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
-  catch {
+  try {
+    body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
     response.writeHead(400, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ error: "invalid-json" }));
     return;
   }
-  if (request.method !== "POST" || request.url !== "/api/v1/query/head-benchmark"
-    || request.headers.authorization !== `Basic ${Buffer.from("benchmark-reader:benchmark-secret").toString("base64")}`) {
+  if (
+    request.method !== "POST" ||
+    request.url !== "/api/v1/query/head-benchmark" ||
+    request.headers.authorization !== `Basic ${Buffer.from("benchmark-reader:benchmark-secret").toString("base64")}`
+  ) {
     response.writeHead(401, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ error: "unauthorized" }));
     return;
   }
   const result = body.command.includes("topologyJson")
-    ? [{ topologyJson: "{\"kind\":\"benchmark-topology\"}" }]
-    : [{ recordType: "HeadAgentGraphNode", nodeJson: "{\"nodeId\":\"node-1\"}", edgeJson: null, recordDepth: 0 }];
+    ? [{ topologyJson: '{"kind":"benchmark-topology"}' }]
+    : [{ recordType: "HeadAgentGraphNode", nodeJson: '{"nodeId":"node-1"}', edgeJson: null, recordDepth: 0 }];
   response.writeHead(200, { "Content-Type": "application/json" });
   response.end(JSON.stringify({ result }));
 });

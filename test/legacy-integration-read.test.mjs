@@ -17,12 +17,26 @@ import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
 import { seedLegacyProject } from "./helpers/legacy-project-fixture.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
 
-
 const pluginRoot = path.resolve(import.meta.dirname, "..");
-const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object"
-  ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
-const hash = (value) => crypto.createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
-const write = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`); };
+const canonical = (value) =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : value && typeof value === "object"
+      ? Object.fromEntries(
+          Object.keys(value)
+            .sort()
+            .map((key) => [key, canonical(value[key])]),
+        )
+      : value;
+const hash = (value) =>
+  crypto
+    .createHash("sha256")
+    .update(JSON.stringify(canonical(value)))
+    .digest("hex");
+const write = (file, value) => {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+};
 async function fixture(t, { legacy = false } = {}) {
   const parent = process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
   fs.mkdirSync(parent, { recursive: true });
@@ -30,18 +44,47 @@ async function fixture(t, { legacy = false } = {}) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   if (legacy) seedLegacyProject(root, pluginRoot);
   else initializeProject({ root, pluginRoot, runtimes: ["codex"] });
-  const storage = inspectProject(root).storage, directory = formatForVerifiedOwner(storage).directory;
+  const storage = inspectProject(root).storage,
+    directory = formatForVerifiedOwner(storage).directory;
   const capsule = (await compileContext({ root, task: "Verify legacy integration original reading", budget: 2048, persist: true })).capsule;
-  const plan = createWholePlanSnapshot({ root, objective: "Preserve original approval", plan: [{ id: "execute", outcome: "Original identity survives" }] }).artifact;
-  const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId,
-    scope: "Bounded legacy fixture", acceptanceCriteria: ["Original approval is exact"] }).artifact;
+  const plan = createWholePlanSnapshot({
+    root,
+    objective: "Preserve original approval",
+    plan: [{ id: "execute", outcome: "Original identity survives" }],
+  }).artifact;
+  const contract = createExecutionContract({
+    root,
+    wholePlanId: plan.wholePlanId,
+    capsuleId: capsule.capsuleId,
+    scope: "Bounded legacy fixture",
+    acceptanceCriteria: ["Original approval is exact"],
+  }).artifact;
   const run = startRun({ root, executionContractId: contract.executionContractId }).run;
-  finishRun({ root, outcome: "Original integration fixture", evidence: [{ uri: "test/legacy-integration-read.test.mjs", digest: "fixture" }],
-    planDelta: "No rewrite", impactRadius: ["test fixture"], verification: [{ check: "fixture", status: "passed" }], unknowns: [] });
-  const review = reviewRun({ root, reviewContextId: getPendingReviewContext({ root }).review.reviewContextId,
-    disposition: "accept", rationale: "Exact fixture verified", nextActions: ["Record explicit direction"] }).reviewDecision;
-  const input = { runId: run.runId, reviewDecisionId: review.reviewDecisionId, purpose: "Preserve reviewed original",
-    approvedDecisions: ["Exact result accepted"], currentPosition: "Accepted fixture", nextExpectedResult: "Manual next authorized work", openReviewIds: [] };
+  finishRun({
+    root,
+    outcome: "Original integration fixture",
+    evidence: [{ uri: "test/legacy-integration-read.test.mjs", digest: "fixture" }],
+    planDelta: "No rewrite",
+    impactRadius: ["test fixture"],
+    verification: [{ check: "fixture", status: "passed" }],
+    unknowns: [],
+  });
+  const review = reviewRun({
+    root,
+    reviewContextId: getPendingReviewContext({ root }).review.reviewContextId,
+    disposition: "accept",
+    rationale: "Exact fixture verified",
+    nextActions: ["Record explicit direction"],
+  }).reviewDecision;
+  const input = {
+    runId: run.runId,
+    reviewDecisionId: review.reviewDecisionId,
+    purpose: "Preserve reviewed original",
+    approvedDecisions: ["Exact result accepted"],
+    currentPosition: "Accepted fixture",
+    nextExpectedResult: "Manual next authorized work",
+    openReviewIds: [],
+  };
   return { root, input, storage, directory, stateFile: path.join(root, directory, "sessions", "current.json") };
 }
 
@@ -49,12 +92,23 @@ async function fixture(t, { legacy = false } = {}) {
 // not a production migration or compatibility producer API.
 function historicalRequest(root, input, changes = {}) {
   const inspected = inspectProject(root);
-  const payload = { schemaVersion: SCHEMA_VERSION, kind: "RunResultIntegrationRequest",
+  const payload = {
+    schemaVersion: SCHEMA_VERSION,
+    kind: "RunResultIntegrationRequest",
     protocol: { name: "head-agent-core-run-result-integration", version: "0.1.0" },
-    projectId: inspected.project.projectId, sessionId: inspected.state.sessionId,
+    projectId: inspected.project.projectId,
+    sessionId: inspected.state.sessionId,
     authorityBoundary: artifactAuthorityBoundary("RunResultIntegrationRequest"),
-    runId: input.runId, reviewDecisionId: input.reviewDecisionId, input, integrationInputHash: hash(input),
-    requestedAt: "2026-09-22T00:00:00.000Z", recoveryAuthority: false, instructionAuthority: false, promotionAuthority: false, ...changes };
+    runId: input.runId,
+    reviewDecisionId: input.reviewDecisionId,
+    input,
+    integrationInputHash: hash(input),
+    requestedAt: "2026-09-22T00:00:00.000Z",
+    recoveryAuthority: false,
+    instructionAuthority: false,
+    promotionAuthority: false,
+    ...changes,
+  };
   const integrationRequestHash = hash(payload);
   const request = { ...payload, integrationRequestId: `run-result-integration-request-${integrationRequestHash.slice(0, 24)}`, integrationRequestHash };
   const file = path.join(root, ".head", "sessions", "integrations", "requests", `${input.reviewDecisionId}.json`);
@@ -73,31 +127,58 @@ function committedHistorical(f) {
   write(checkpointFile, checkpoint);
   fs.unlinkSync(current.file); // Exact owned synthetic record replaced by the frozen old-format fixture.
   write(f.stateFile, { ...JSON.parse(fs.readFileSync(f.stateFile)), latestCheckpoint: checkpoint.checkpointId });
-  const receiptPayload = { schemaVersion: SCHEMA_VERSION, kind: "RunResultIntegrationReceipt",
+  const receiptPayload = {
+    schemaVersion: SCHEMA_VERSION,
+    kind: "RunResultIntegrationReceipt",
     protocol: { name: "head-agent-core-run-result-integration", version: "0.1.0" },
-    projectId: checkpoint.projectId, sessionId: checkpoint.sessionId, authorityBoundary: artifactAuthorityBoundary("RunResultIntegrationReceipt"),
-    runId: f.input.runId, reviewDecisionId: f.input.reviewDecisionId, resultPacketId: integration.resultPacketId,
-    checkpointId: checkpoint.checkpointId, checkpointDigest, integrationRequestId: request.integrationRequestId,
-    integrationInputHash: request.integrationInputHash, integratedAt: "2026-09-22T00:01:00.000Z",
-    checkpointFieldSource: "explicit-head-user-integration-input-only", resultPacketRole: "reference-evidence-only",
-    reviewDecisionCreated: false, recoveryAuthority: false, instructionAuthority: false, promotionAuthority: false };
+    projectId: checkpoint.projectId,
+    sessionId: checkpoint.sessionId,
+    authorityBoundary: artifactAuthorityBoundary("RunResultIntegrationReceipt"),
+    runId: f.input.runId,
+    reviewDecisionId: f.input.reviewDecisionId,
+    resultPacketId: integration.resultPacketId,
+    checkpointId: checkpoint.checkpointId,
+    checkpointDigest,
+    integrationRequestId: request.integrationRequestId,
+    integrationInputHash: request.integrationInputHash,
+    integratedAt: "2026-09-22T00:01:00.000Z",
+    checkpointFieldSource: "explicit-head-user-integration-input-only",
+    resultPacketRole: "reference-evidence-only",
+    reviewDecisionCreated: false,
+    recoveryAuthority: false,
+    instructionAuthority: false,
+    promotionAuthority: false,
+  };
   const integrationReceiptHash = hash(receiptPayload);
   const receipt = { ...receiptPayload, integrationReceiptId: `run-result-integration-${integrationReceiptHash.slice(0, 24)}`, integrationReceiptHash };
   const receiptFile = path.join(f.root, ".head", "sessions", "integrations", `${f.input.reviewDecisionId}.json`);
   write(receiptFile, receipt);
   return { requestFile, checkpointFile, receiptFile, checkpoint, receipt };
 }
-function bytes(files) { return files.map((file) => fs.readFileSync(file, "utf8")); }
+function bytes(files) {
+  return files.map((file) => fs.readFileSync(file, "utf8"));
+}
 function checkpointFiles(root) {
   const ledger = path.join(root, ".head", "sessions", "ledger");
   return fs.existsSync(ledger) ? fs.readdirSync(ledger).filter((name) => name.endsWith(".json")) : [];
 }
 
 test("new integration accepts only three fields and never produces historical request or receipt", async (t) => {
-  const f = (await fixture(t));
-  assert.throws(() => createRecoveryCheckpoint({ root: f.root, ...f.input, reviewedRunIntegration: {
-    runId: f.input.runId, reviewDecisionId: f.input.reviewDecisionId, integrationInputHash: hash(f.input),
-    integrationRequestId: "run-result-integration-request-000000000000000000000000" } }), { code: "INVALID_RUN_RESULT_INTEGRATION" });
+  const f = await fixture(t);
+  assert.throws(
+    () =>
+      createRecoveryCheckpoint({
+        root: f.root,
+        ...f.input,
+        reviewedRunIntegration: {
+          runId: f.input.runId,
+          reviewDecisionId: f.input.reviewDecisionId,
+          integrationInputHash: hash(f.input),
+          integrationRequestId: "run-result-integration-request-000000000000000000000000",
+        },
+      }),
+    { code: "INVALID_RUN_RESULT_INTEGRATION" },
+  );
   const recorded = integrateReviewedRunCheckpoint({ root: f.root, ...f.input });
   assert.equal(Object.hasOwn(recorded.integration, "integrationRequestId"), false);
   assert.equal(Object.hasOwn(recorded.integration, "previousCheckpointId"), true);
@@ -108,14 +189,22 @@ test("new integration accepts only three fields and never produces historical re
 });
 
 test("fully committed historical originals reuse identity and bytes even after independent newer direction", async (t) => {
-  const f = (await fixture(t, { legacy: true }));
+  const f = await fixture(t, { legacy: true });
   const legacy = committedHistorical(f);
   const files = [legacy.requestFile, legacy.checkpointFile, legacy.receiptFile, f.stateFile];
   const originals = bytes(files);
-  assert.equal(readRunResultIntegration({ root: f.root, reviewDecisionId: f.input.reviewDecisionId }).receipt.integrationReceiptId, legacy.receipt.integrationReceiptId);
+  assert.equal(
+    readRunResultIntegration({ root: f.root, reviewDecisionId: f.input.reviewDecisionId }).receipt.integrationReceiptId,
+    legacy.receipt.integrationReceiptId,
+  );
   assert.equal(integrateReviewedRunCheckpoint({ root: f.root, ...f.input }).checkpoint.checkpointId, legacy.checkpoint.checkpointId);
   assert.deepEqual(bytes(files), originals);
-  const current = createRecoveryCheckpoint({ root: f.root, purpose: "Independent newer direction", currentPosition: "Newer work", nextExpectedResult: "Keep latest checkpoint" }).checkpoint;
+  const current = createRecoveryCheckpoint({
+    root: f.root,
+    purpose: "Independent newer direction",
+    currentPosition: "Newer work",
+    nextExpectedResult: "Keep latest checkpoint",
+  }).checkpoint;
   const currentBytes = fs.readFileSync(f.stateFile, "utf8");
   assert.equal(integrateReviewedRunCheckpoint({ root: f.root, ...f.input }).checkpoint.checkpointId, legacy.checkpoint.checkpointId);
   assert.equal(fs.readFileSync(f.stateFile, "utf8"), currentBytes);
@@ -124,10 +213,13 @@ test("fully committed historical originals reuse identity and bytes even after i
 });
 
 test("historical restore preserves missing optional result evidence and latest common cancellation", async (t) => {
-  const f = (await fixture(t, { legacy: true }));
+  const f = await fixture(t, { legacy: true });
   const legacy = committedHistorical(f);
   const originals = bytes([legacy.requestFile, legacy.checkpointFile, legacy.receiptFile]);
-  const direction = updateProjectDirection({ root: f.root, input: { goal: "Current common goal", cancelledActions: ["Manual next authorized work"] } }).direction;
+  const direction = updateProjectDirection({
+    root: f.root,
+    input: { goal: "Current common goal", cancelledActions: ["Manual next authorized work"] },
+  }).direction;
   fs.unlinkSync(path.join(f.root, ".head", "lineage", "result-packets", `${legacy.checkpoint.reviewedRunIntegration.resultPacketId}.json`));
   const restored = restoreSessionFromArtifacts({ root: f.root });
   assert.equal(restored.projection.integrationEvidence.status, "missing-evidence");
@@ -137,7 +229,7 @@ test("historical restore preserves missing optional result evidence and latest c
 });
 
 test("verified request-only interruption remains pending without writes and cannot block independent Session work", async (t) => {
-  const f = (await fixture(t, { legacy: true }));
+  const f = await fixture(t, { legacy: true });
   const legacy = historicalRequest(f.root, f.input);
   const cancellation = updateProjectDirection({ root: f.root, input: { goal: "Current goal", cancelledActions: [f.input.nextExpectedResult] } }).direction;
   const originals = bytes([legacy.file, f.stateFile]);
@@ -153,33 +245,66 @@ test("verified request-only interruption remains pending without writes and cann
   assert.equal(pending.currentProjectDirection.directionId, cancellation.directionId);
   assert.equal(pending.ordinaryWorkBlocked, false);
   assert.equal(pending.userDecisionRequired, false);
-  assert.throws(() => integrateReviewedRunCheckpoint({ root: f.root, ...f.input }), (error) => {
-    assert.equal(error.code, "RUN_RESULT_LEGACY_INTEGRATION_PENDING");
-    assert.equal(error.pendingIntegration.request.integrationRequestId, legacy.request.integrationRequestId);
-    assert.match(error.message, /manually transfer/); return true;
+  assert.throws(
+    () => integrateReviewedRunCheckpoint({ root: f.root, ...f.input }),
+    (error) => {
+      assert.equal(error.code, "RUN_RESULT_LEGACY_INTEGRATION_PENDING");
+      assert.equal(error.pendingIntegration.request.integrationRequestId, legacy.request.integrationRequestId);
+      assert.match(error.message, /manually transfer/);
+      return true;
+    },
+  );
+  assert.throws(() => integrateReviewedRunCheckpoint({ root: f.root, ...f.input, nextExpectedResult: "Divergent direction" }), {
+    code: "RUN_RESULT_INTEGRATION_CONFLICT",
   });
-  assert.throws(() => integrateReviewedRunCheckpoint({ root: f.root, ...f.input, nextExpectedResult: "Divergent direction" }), { code: "RUN_RESULT_INTEGRATION_CONFLICT" });
-  assert.throws(() => createRecoveryCheckpoint({ root: f.root, ...f.input, reviewedRunIntegration: {
-    runId: f.input.runId, reviewDecisionId: f.input.reviewDecisionId, integrationInputHash: hash(f.input) } }), { code: "RUN_RESULT_LEGACY_INTEGRATION_PENDING" });
+  assert.throws(
+    () =>
+      createRecoveryCheckpoint({
+        root: f.root,
+        ...f.input,
+        reviewedRunIntegration: {
+          runId: f.input.runId,
+          reviewDecisionId: f.input.reviewDecisionId,
+          integrationInputHash: hash(f.input),
+        },
+      }),
+    { code: "RUN_RESULT_LEGACY_INTEGRATION_PENDING" },
+  );
   assert.deepEqual(bytes([legacy.file, f.stateFile]), originals);
   assert.deepEqual(checkpointFiles(f.root), before);
   const other = createHeadSession({ root: f.root, purpose: "Independent ordinary work" });
   withSessionRoute(f.root, other.sessionId, () => {
-    const checkpoint = createRecoveryCheckpoint({ root: f.root, purpose: "Independent session direction", currentPosition: "Ordinary independent work", nextExpectedResult: "Still applicable work" }).checkpoint;
+    const checkpoint = createRecoveryCheckpoint({
+      root: f.root,
+      purpose: "Independent session direction",
+      currentPosition: "Ordinary independent work",
+      nextExpectedResult: "Still applicable work",
+    }).checkpoint;
     assert.equal(restoreSessionFromArtifacts({ root: f.root }).checkpoint.checkpointId, checkpoint.checkpointId);
-    assert.throws(() => readRunResultIntegration({ root: f.root, reviewDecisionId: f.input.reviewDecisionId }), { code: "RUN_RESULT_INTEGRATION_REQUEST_CONFLICT" });
+    assert.throws(() => readRunResultIntegration({ root: f.root, reviewDecisionId: f.input.reviewDecisionId }), {
+      code: "RUN_RESULT_INTEGRATION_REQUEST_CONFLICT",
+    });
   });
-  const ordinary = createRecoveryCheckpoint({ root: f.root, purpose: "Direct work", currentPosition: "Pending integration only", nextExpectedResult: "Unrelated direct next work" }).checkpoint;
+  const ordinary = createRecoveryCheckpoint({
+    root: f.root,
+    purpose: "Direct work",
+    currentPosition: "Pending integration only",
+    nextExpectedResult: "Unrelated direct next work",
+  }).checkpoint;
   assert.equal(restoreSessionFromArtifacts({ root: f.root }).checkpoint.checkpointId, ordinary.checkpointId);
   assert.equal(fs.readFileSync(legacy.file, "utf8"), originals[0]);
 });
 
 test("historical target request corruption, wrong owner and malformed originals fail locally and are preserved", async (t) => {
-  const f = (await fixture(t, { legacy: true }));
+  const f = await fixture(t, { legacy: true });
   let legacy = historicalRequest(f.root, f.input, { projectId: "another-project" });
-  assert.throws(() => readRunResultIntegration({ root: f.root, reviewDecisionId: f.input.reviewDecisionId }), { code: "RUN_RESULT_INTEGRATION_REQUEST_CONFLICT" });
+  assert.throws(() => readRunResultIntegration({ root: f.root, reviewDecisionId: f.input.reviewDecisionId }), {
+    code: "RUN_RESULT_INTEGRATION_REQUEST_CONFLICT",
+  });
   legacy = historicalRequest(f.root, f.input, { sessionId: "session-00000000-0000-0000-0000-000000000000" });
-  assert.throws(() => readRunResultIntegration({ root: f.root, reviewDecisionId: f.input.reviewDecisionId }), { code: "RUN_RESULT_INTEGRATION_REQUEST_CONFLICT" });
+  assert.throws(() => readRunResultIntegration({ root: f.root, reviewDecisionId: f.input.reviewDecisionId }), {
+    code: "RUN_RESULT_INTEGRATION_REQUEST_CONFLICT",
+  });
   legacy = historicalRequest(f.root, f.input);
   write(legacy.file, { ...legacy.request, integrationInputHash: "0".repeat(64) });
   const corrupt = fs.readFileSync(legacy.file, "utf8");
@@ -188,11 +313,13 @@ test("historical target request corruption, wrong owner and malformed originals 
   fs.writeFileSync(legacy.file, "{broken");
   assert.throws(() => readRunResultIntegration({ root: f.root, reviewDecisionId: f.input.reviewDecisionId }), { code: "INVALID_SESSION_RECOVERY_ARTIFACT" });
   assert.equal(fs.readFileSync(legacy.file, "utf8"), "{broken");
-  assert.doesNotThrow(() => createRecoveryCheckpoint({ root: f.root, purpose: "Unrelated local work", currentPosition: "Target failure only", nextExpectedResult: "Direct work" }));
+  assert.doesNotThrow(() =>
+    createRecoveryCheckpoint({ root: f.root, purpose: "Unrelated local work", currentPosition: "Target failure only", nextExpectedResult: "Direct work" }),
+  );
 });
 
 test("historical committed receipt damage is not bypassed by an exact replay", async (t) => {
-  const f = (await fixture(t, { legacy: true }));
+  const f = await fixture(t, { legacy: true });
   const legacy = committedHistorical(f);
   write(legacy.receiptFile, { ...legacy.receipt, checkpointDigest: "0".repeat(64) });
   const originals = bytes([legacy.requestFile, legacy.checkpointFile, legacy.receiptFile, f.stateFile]);

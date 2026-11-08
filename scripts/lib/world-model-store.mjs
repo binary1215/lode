@@ -1,6 +1,12 @@
 import { verifyLooseSnapshotAddress } from "./snapshot-backend-reclamation.mjs";
 import { withSnapshotReferences, withSnapshotReferencesAsync } from "./snapshot-reference-lifetime.mjs";
-import { DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT, createSnapshotComposition, hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
+import {
+  DOMAIN_BUNDLE_LAYOUT,
+  SHARED_DOMAIN_LAYOUT,
+  CHUNKED_CODE_LAYOUT,
+  createSnapshotComposition,
+  hydrateSnapshotEntry,
+} from "./snapshot-domain-bundles.mjs";
 import { GitSnapshotStore } from "./git-snapshot-store.mjs";
 import { storedSnapshotLocation, readSnapshotFile, writeStoredSnapshot, listStoredSnapshotIds } from "./snapshot-storage-codec.mjs";
 import crypto from "node:crypto";
@@ -11,14 +17,7 @@ import { formatForVerifiedOwner, projectOwnsRecordedRoot } from "./project-stora
 export const WORLD_MODEL_STORE_ADAPTER_VERSION = "0.1.0";
 export const WORLD_MODEL_STORAGE_CONTRACT = "replaceable-rebuildable-materialized-view";
 
-const REQUIRED_METHODS = [
-  "describe",
-  "readPointer",
-  "readSnapshot",
-  "writePointer",
-  "writeSnapshot",
-  "listSnapshotIds",
-];
+const REQUIRED_METHODS = ["describe", "readPointer", "readSnapshot", "writePointer", "writeSnapshot", "listSnapshotIds"];
 
 const fail = (message, code = "WORLD_MODEL_STORE_ERROR") => {
   const error = new Error(message);
@@ -47,8 +46,9 @@ function snapshotId(value) {
 }
 
 function parseDocument(file, label) {
-  try { return file.endsWith(".json.gz") ? readSnapshotFile(file).document : JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) {
+  try {
+    return file.endsWith(".json.gz") ? readSnapshotFile(file).document : JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
     // Corrupt encoding is a document error; operational failures keep their code.
     if (file.endsWith(".json.gz") && error.code && error.code !== "INVALID_SNAPSHOT_ENCODING") throw error;
     fail(`${label} is invalid JSON: ${error.message}`, "INVALID_WORLD_MODEL_STORE_DOCUMENT");
@@ -60,9 +60,10 @@ export function assertWorldModelStoreAdapter(adapter) {
   if (adapter.adapterVersion !== WORLD_MODEL_STORE_ADAPTER_VERSION) {
     fail(`WorldModelStoreAdapter version must be ${WORLD_MODEL_STORE_ADAPTER_VERSION}.`, "INCOMPATIBLE_WORLD_MODEL_STORE_ADAPTER");
   }
-  for (const method of REQUIRED_METHODS) if (typeof adapter[method] !== "function") {
-    fail(`WorldModelStoreAdapter is missing ${method}().`, "INVALID_WORLD_MODEL_STORE_ADAPTER");
-  }
+  for (const method of REQUIRED_METHODS)
+    if (typeof adapter[method] !== "function") {
+      fail(`WorldModelStoreAdapter is missing ${method}().`, "INVALID_WORLD_MODEL_STORE_ADAPTER");
+    }
   const descriptor = adapter.describe();
   if (!descriptor || typeof descriptor.adapterKind !== "string" || !descriptor.adapterKind.trim()) {
     fail("WorldModelStoreAdapter descriptor requires adapterKind.", "INVALID_WORLD_MODEL_STORE_ADAPTER");
@@ -83,9 +84,12 @@ export class LocalJsonWorldModelStoreAdapter {
     this.storage = storage;
     // Layout selection is not ownership verification. Unowned lower adapters
     // retain their whole-document contract; compositions still recheck owner.
-    if (snapshotLayout === undefined) snapshotLayout = snapshotEncoding === "git" || !projectOwnsRecordedRoot(storage, this.projectRoot) ? "whole" : CHUNKED_CODE_LAYOUT;
-    if (!["whole", DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT].includes(snapshotLayout)) fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
-    this.snapshotLayout = snapshotLayout; this.bundleEncoding = bundleEncoding;
+    if (snapshotLayout === undefined)
+      snapshotLayout = snapshotEncoding === "git" || !projectOwnsRecordedRoot(storage, this.projectRoot) ? "whole" : CHUNKED_CODE_LAYOUT;
+    if (!["whole", DOMAIN_BUNDLE_LAYOUT, SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT].includes(snapshotLayout))
+      fail("Unknown snapshot layout.", "INVALID_SNAPSHOT_LAYOUT");
+    this.snapshotLayout = snapshotLayout;
+    this.bundleEncoding = bundleEncoding;
     this.snapshotEncoding = snapshotEncoding;
     this.gitOptions = gitOptions;
     this.gitStore = () => new GitSnapshotStore({ projectRoot: this.projectRoot, storage: this.storage, ...this.gitOptions });
@@ -111,7 +115,11 @@ export class LocalJsonWorldModelStoreAdapter {
   }
 
   snapshotLocation(worldModelId) {
-    return storedSnapshotLocation(this.projectRoot, path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "world-model", "snapshots", `${snapshotId(worldModelId)}.json`), this.snapshotEncoding === "git" ? "gzip" : this.snapshotEncoding);
+    return storedSnapshotLocation(
+      this.projectRoot,
+      path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "world-model", "snapshots", `${snapshotId(worldModelId)}.json`),
+      this.snapshotEncoding === "git" ? "gzip" : this.snapshotEncoding,
+    );
   }
 
   readPointer() {
@@ -122,8 +130,11 @@ export class LocalJsonWorldModelStoreAdapter {
 
   async readSnapshot(worldModelId) {
     const location = this.snapshotLocation(worldModelId);
-    const entry = fs.existsSync(location) ? { location, document: parseDocument(location, "World Model snapshot") }
-      : this.storage?.projectFile ? await this.gitStore().read(worldModelId) : null;
+    const entry = fs.existsSync(location)
+      ? { location, document: parseDocument(location, "World Model snapshot") }
+      : this.storage?.projectFile
+        ? await this.gitStore().read(worldModelId)
+        : null;
     return hydrateSnapshotEntry({ root: this.projectRoot, storage: this.storage, entry });
   }
 
@@ -136,13 +147,28 @@ export class LocalJsonWorldModelStoreAdapter {
     if (existing) return { ...existing, created: false };
     // The storage adapter also accepts opaque documents; only complete typed
     // snapshots use the default composition. Their Core verifier is unchanged.
-    if (this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT || [SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT].includes(this.snapshotLayout) && document.temporalProvenanceGraph?.kind === "GraphSnapshot") {
-      document = createSnapshotComposition({ root: this.projectRoot, storage: this.storage, document, encoding: this.bundleEncoding, layout: this.snapshotLayout }).document;
+    if (
+      this.snapshotLayout === DOMAIN_BUNDLE_LAYOUT ||
+      ([SHARED_DOMAIN_LAYOUT, CHUNKED_CODE_LAYOUT].includes(this.snapshotLayout) && document.temporalProvenanceGraph?.kind === "GraphSnapshot")
+    ) {
+      document = createSnapshotComposition({
+        root: this.projectRoot,
+        storage: this.storage,
+        document,
+        encoding: this.bundleEncoding,
+        layout: this.snapshotLayout,
+      }).document;
     }
     if (this.snapshotEncoding === "git") {
       return hydrateSnapshotEntry({ root: this.projectRoot, storage: this.storage, entry: await this.gitStore().write(worldModelId, document) });
     }
-    const written = writeStoredSnapshot({ root: this.projectRoot, jsonFile: path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "world-model", "snapshots", `${snapshotId(worldModelId)}.json`), document, encoding: this.snapshotEncoding, readDocument: file => parseDocument(file, "World Model snapshot") });
+    const written = writeStoredSnapshot({
+      root: this.projectRoot,
+      jsonFile: path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "world-model", "snapshots", `${snapshotId(worldModelId)}.json`),
+      document,
+      encoding: this.snapshotEncoding,
+      readDocument: (file) => parseDocument(file, "World Model snapshot"),
+    });
     return hydrateSnapshotEntry({ root: this.projectRoot, storage: this.storage, entry: written });
   }
 
@@ -158,11 +184,12 @@ export class LocalJsonWorldModelStoreAdapter {
         if (!fs.existsSync(targetFile)) {
           // This is a synchronous address revalidation under the active lifetime.
           // Unsupported Git layouts retain their GC exclusion rather than adding a semantic preparation gate.
-          if(fs.existsSync(gitDirectory)&&verifyLooseSnapshotAddress({root:this.projectRoot,storage:this.storage,id:target}))continue;
+          if (fs.existsSync(gitDirectory) && verifyLooseSnapshotAddress({ root: this.projectRoot, storage: this.storage, id: target })) continue;
           throw Object.assign(new Error("Snapshot pointer target is missing."), { code: "SNAPSHOT_POINTER_TARGET_MISSING" });
         }
         const original = parseDocument(targetFile, "Snapshot pointer target");
-        if (original.worldModelId !== target) throw Object.assign(new Error("Snapshot pointer target identity changed."), { code: "SNAPSHOT_POINTER_TARGET_MISMATCH" });
+        if (original.worldModelId !== target)
+          throw Object.assign(new Error("Snapshot pointer target identity changed."), { code: "SNAPSHOT_POINTER_TARGET_MISMATCH" });
       }
       const location = this.pointerLocation();
       atomicWrite(location, json(document));
@@ -172,7 +199,12 @@ export class LocalJsonWorldModelStoreAdapter {
 
   async listSnapshotIds() {
     const directory = path.join(this.projectRoot, formatForVerifiedOwner(this.storage).directory, "world-model", "snapshots");
-    return [...new Set([...listStoredSnapshotIds(this.projectRoot, directory, "world-model"), ...(this.storage?.projectFile ? await this.gitStore().list("world-model") : [])])].sort();
+    return [
+      ...new Set([
+        ...listStoredSnapshotIds(this.projectRoot, directory, "world-model"),
+        ...(this.storage?.projectFile ? await this.gitStore().list("world-model") : []),
+      ]),
+    ].sort();
   }
 }
 

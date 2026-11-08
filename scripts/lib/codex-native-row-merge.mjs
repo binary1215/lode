@@ -1,9 +1,5 @@
 import crypto from "node:crypto";
-import {
-  readSelectedCodexHistory,
-  verifySelectedCodexHistory,
-  codexNativePortabilityProfile,
-} from "./codex-native-portability.mjs";
+import { readSelectedCodexHistory, verifySelectedCodexHistory, codexNativePortabilityProfile } from "./codex-native-portability.mjs";
 import { decodeSqliteCell } from "./native-sqlite-values.mjs";
 
 const plans = new WeakMap(),
@@ -22,9 +18,7 @@ const cellKey = (cell) => {
 };
 const rowKey = (row) => JSON.stringify(row.map(cellKey));
 function tableProfile(name) {
-  return profile.databases
-    .find((db) => db.file === "thread_history_1.sqlite")
-    .tables.find((table) => table.name === name);
+  return profile.databases.find((db) => db.file === "thread_history_1.sqlite").tables.find((table) => table.name === name);
 }
 function primaryKey(table, row) {
   const columns = tableProfile(table.name)
@@ -35,11 +29,7 @@ function primaryKey(table, row) {
 function fingerprint(history) {
   return crypto
     .createHash("sha256")
-    .update(
-      JSON.stringify(
-        history.tables.map((table) => ({ name: table.name, rows: table.rows.map(rowKey).sort() })),
-      ),
-    )
+    .update(JSON.stringify(history.tables.map((table) => ({ name: table.name, rows: table.rows.map(rowKey).sort() }))))
     .digest("hex");
 }
 function compare(source, target) {
@@ -51,13 +41,11 @@ function compare(source, target) {
     for (const row of observed.rows) {
       const key = primaryKey(table, row),
         original = expected.get(key);
-      if (!original || rowKey(row) !== rowKey(original))
-        fail("NATIVE_CODEX_TARGET_HISTORY_DIVERGED");
+      if (!original || rowKey(row) !== rowKey(original)) fail("NATIVE_CODEX_TARGET_HISTORY_DIVERGED");
       expected.delete(key);
       equalRows++;
     }
-    for (const row of expected.values())
-      missing.push({ table: table.name, columns: [...table.columns], row: structuredClone(row) });
+    for (const row of expected.values()) missing.push({ table: table.name, columns: [...table.columns], row: structuredClone(row) });
   }
   return { missing, equalRows };
 }
@@ -78,11 +66,7 @@ export function planCodexNativeRowMerge(database, { history, ...basis }) {
   });
   return {
     plan,
-    status: comparison.missing.length
-      ? comparison.equalRows
-        ? "exact-partial"
-        : "absent"
-      : "equal",
+    status: comparison.missing.length ? (comparison.equalRows ? "exact-partial" : "absent") : "equal",
     missingRows: comparison.missing.length,
     equalRows: comparison.equalRows,
     authorityPlane: "P4",
@@ -103,18 +87,9 @@ export function applyCodexNativeRowMerge(plan, database) {
   if (fingerprint(current) !== saved.before) fail("NATIVE_CODEX_TARGET_HISTORY_CHANGED");
   for (const entry of saved.missing) {
     const fixed = tableProfile(entry.table).columns.map((column) => column.name);
-    if (JSON.stringify(fixed) !== JSON.stringify(entry.columns))
-      fail("NATIVE_CODEX_HISTORY_INVALID");
+    if (JSON.stringify(fixed) !== JSON.stringify(entry.columns)) fail("NATIVE_CODEX_HISTORY_INVALID");
     database
-      .prepare(
-        "INSERT INTO " +
-          quote(entry.table) +
-          " (" +
-          fixed.map(quote).join(",") +
-          ") VALUES (" +
-          fixed.map(() => "?").join(",") +
-          ")",
-      )
+      .prepare("INSERT INTO " + quote(entry.table) + " (" + fixed.map(quote).join(",") + ") VALUES (" + fixed.map(() => "?").join(",") + ")")
       .run(...entry.row.map(decodeSqliteCell));
   }
   const after = readSelectedCodexHistory(database, {

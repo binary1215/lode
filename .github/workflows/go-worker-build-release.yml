@@ -131,6 +131,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
 
+      - name: Check JavaScript formatting
+        run: npx --yes prettier@3.9.10 --check .
+
       - name: Set up Go from the worker module
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:

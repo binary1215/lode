@@ -6,17 +6,9 @@ import { spawn } from "node:child_process";
 import { initializeProject, inspectProject } from "./lib/head-core.mjs";
 import { formatForVerifiedOwner } from "./lib/project-storage-format.mjs";
 import { buildRuntimeVersionEvidence } from "./lib/runtime-machine-execution.mjs";
-import {
-  buildRuntimeProjectBinding,
-  buildRuntimeProtocolEvidence,
-} from "./lib/runtime-protocol-evidence.mjs";
-import {
-  buildRuntimeInvocationAuthorization,
-  readRuntimeInvocationAuthorization,
-} from "./lib/runtime-invocation-lifecycle.mjs";
-import {
-  RUNTIME_OPERATIONAL_STATE_ENV,
-} from "./lib/runtime-execution-lease.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "./lib/runtime-protocol-evidence.mjs";
+import { buildRuntimeInvocationAuthorization, readRuntimeInvocationAuthorization } from "./lib/runtime-invocation-lifecycle.mjs";
+import { RUNTIME_OPERATIONAL_STATE_ENV } from "./lib/runtime-execution-lease.mjs";
 import { executeCodexRuntimeInvocation } from "./lib/runtime-codex-exec.mjs";
 import { executeOpenCodeRuntimeInvocation } from "./lib/runtime-opencode-run.mjs";
 import { readRuntimeInvocationResult } from "./lib/runtime-run-result-application.mjs";
@@ -83,21 +75,25 @@ function recordProcess(event) {
 
 function recordingSpawn(command, args, options) {
   const child = spawn(command, args, options);
-  child.once("spawn", () => recordProcess({
-    type: "spawn",
-    pid: child.pid,
-    parentPid: process.pid,
-    command: [command, ...args].join(" "),
-    cwd: options.cwd,
-    ports: "none",
-  }));
-  child.once("exit", (exitCode, signal) => recordProcess({
-    type: "exit",
-    pid: child.pid,
-    parentPid: process.pid,
-    exitCode,
-    signal: signal || "none",
-  }));
+  child.once("spawn", () =>
+    recordProcess({
+      type: "spawn",
+      pid: child.pid,
+      parentPid: process.pid,
+      command: [command, ...args].join(" "),
+      cwd: options.cwd,
+      ports: "none",
+    }),
+  );
+  child.once("exit", (exitCode, signal) =>
+    recordProcess({
+      type: "exit",
+      pid: child.pid,
+      parentPid: process.pid,
+      exitCode,
+      signal: signal || "none",
+    }),
+  );
   return child;
 }
 
@@ -106,10 +102,12 @@ function evidenceFixtureOutput(command, args) {
   const key = args.join(" ");
   if (key === "--version") return `${runtime} 1.2.3\n`;
   if (runtime === "codex" && key === "--help") return "exec\nmcp-server\napp-server\n";
-  if (runtime === "codex" && key === "exec --help") return "Run Codex non-interactively\n--json\n--output-schema\n--color\n--sandbox\n--skip-git-repo-check\n--cd\n--ephemeral\nresume\n";
+  if (runtime === "codex" && key === "exec --help")
+    return "Run Codex non-interactively\n--json\n--output-schema\n--color\n--sandbox\n--skip-git-repo-check\n--cd\n--ephemeral\nresume\n";
   if (runtime === "codex" && key === "app-server --help") return "stdio://\ngenerate-json-schema\n--listen\n";
   if (runtime === "opencode" && key === "--help") return "opencode run\nopencode acp\nopencode serve\nopencode session\n";
-  if (runtime === "opencode" && key === "run --help") return "Run OpenCode with a message\n--format choices: json\n--pure\n--dir\n--title\n--session\n--continue\n";
+  if (runtime === "opencode" && key === "run --help")
+    return "Run OpenCode with a message\n--format choices: json\n--pure\n--dir\n--title\n--session\n--continue\n";
   if (runtime === "opencode" && key === "acp --help") return "Agent Client Protocol\n--cwd\n--port\n";
   return "unsupported fixture invocation\n";
 }
@@ -215,8 +213,10 @@ async function replacementChild(root, previousAuthorizationId, fixtureBin) {
 
   const boundary = await buildFreshRuntimeBoundary(root, fixtureBin);
   const format = formatForVerifiedOwner(boundary.inspected.storage);
-  assert(boundary.inspected.state.sessionId === previousAuthorization[format.sessionIdField],
-    "Fresh replacement process did not recover the original canonical HEAD Session.");
+  assert(
+    boundary.inspected.state.sessionId === previousAuthorization[format.sessionIdField],
+    "Fresh replacement process did not recover the original canonical HEAD Session.",
+  );
   const request = "Continue from canonical HEAD artifacts using OpenCode after Codex provider loss.";
   const authorization = buildRuntimeInvocationAuthorization({
     root,
@@ -229,7 +229,9 @@ async function replacementChild(root, previousAuthorizationId, fixtureBin) {
     persist: true,
   }).authorization;
   const observation = boundary.protocolEvidence.observations.find((item) => item.runtime === "opencode");
-  const supervisorRoot = path.resolve(process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot);
+  const supervisorRoot = path.resolve(
+    process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+  );
   const execution = await executeOpenCodeRuntimeInvocation({
     root,
     authorization,
@@ -245,26 +247,22 @@ async function replacementChild(root, previousAuthorizationId, fixtureBin) {
   const persisted = readRuntimeInvocationResult({ root, storage: boundary.inspected.storage, authorizationId: authorization.authorizationId });
   assert(persisted.draft.draftHash === execution.draft.draftHash, "OpenCode replacement result did not round-trip through project artifacts.");
   assertProviderSessionIdentityAbsent(persisted, "OpenCode replacement record");
-  process.stdout.write(`${JSON.stringify({
-    kind: "ProviderReplacementChildResult",
-    projectId: boundary.inspected.project.projectId,
-    [format.sessionIdField]: boundary.inspected.state.sessionId,
-    previousAuthorizationId,
-    replacementAuthorizationId: authorization.authorizationId,
-    replacementDraftHash: execution.draft.draftHash,
-    replacementRuntime: authorization.runtime,
-  })}\n`);
+  process.stdout.write(
+    `${JSON.stringify({
+      kind: "ProviderReplacementChildResult",
+      projectId: boundary.inspected.project.projectId,
+      [format.sessionIdField]: boundary.inspected.state.sessionId,
+      previousAuthorizationId,
+      replacementAuthorizationId: authorization.authorizationId,
+      replacementDraftHash: execution.draft.draftHash,
+      replacementRuntime: authorization.runtime,
+    })}\n`,
+  );
 }
 
 function runReplacementProcess({ root, previousAuthorizationId, fixtureBin, operationalRoot, supervisorRoot }) {
   return new Promise((resolve, reject) => {
-    const child = recordingSpawn(process.execPath, [
-      scriptPath,
-      "--replacement-child",
-      root,
-      previousAuthorizationId,
-      fixtureBin,
-    ], {
+    const child = recordingSpawn(process.execPath, [scriptPath, "--replacement-child", root, previousAuthorizationId, fixtureBin], {
       cwd: pluginRoot,
       env: {
         ...process.env,
@@ -289,11 +287,16 @@ function runReplacementProcess({ root, previousAuthorizationId, fixtureBin, oper
     child.once("error", reject);
     child.once("close", (exitCode, signal) => {
       if (exitCode !== 0) {
-        reject(new Error(`Replacement process failed with exit=${exitCode ?? "null"} signal=${signal || "none"} stderrBytes=${Buffer.byteLength(stderr, "utf8")}.`));
+        reject(
+          new Error(`Replacement process failed with exit=${exitCode ?? "null"} signal=${signal || "none"} stderrBytes=${Buffer.byteLength(stderr, "utf8")}.`),
+        );
         return;
       }
       try {
-        const result = stdout.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
+        const result = stdout
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .map((line) => JSON.parse(line))
           .find((value) => value.kind === "ProviderReplacementChildResult");
         assert(result, "Replacement process did not emit its bounded result.");
         resolve(result);
@@ -307,10 +310,15 @@ function runReplacementProcess({ root, previousAuthorizationId, fixtureBin, oper
 async function parentMain() {
   const resolvedRoot = path.resolve(temporaryRoot);
   const resolvedOperationalRoot = path.resolve(temporaryOperationalRoot);
-  assert(resolvedRoot.startsWith(`${pluginRoot}${path.sep}`) && path.basename(resolvedRoot).startsWith(".test-tmp-provider-replacement-"),
-    "Provider replacement fixture root escaped the plugin workspace.");
-  assert(resolvedOperationalRoot.startsWith(`${pluginRoot}${path.sep}`) && path.basename(resolvedOperationalRoot).startsWith(".test-tmp-provider-replacement-operational-"),
-    "Provider replacement operational root escaped the plugin workspace.");
+  assert(
+    resolvedRoot.startsWith(`${pluginRoot}${path.sep}`) && path.basename(resolvedRoot).startsWith(".test-tmp-provider-replacement-"),
+    "Provider replacement fixture root escaped the plugin workspace.",
+  );
+  assert(
+    resolvedOperationalRoot.startsWith(`${pluginRoot}${path.sep}`) &&
+      path.basename(resolvedOperationalRoot).startsWith(".test-tmp-provider-replacement-operational-"),
+    "Provider replacement operational root escaped the plugin workspace.",
+  );
   const previousOperationalRoot = process.env[RUNTIME_OPERATIONAL_STATE_ENV];
   process.env[RUNTIME_OPERATIONAL_STATE_ENV] = resolvedOperationalRoot;
   fs.mkdirSync(resolvedRoot, { recursive: false });
@@ -322,7 +330,9 @@ async function parentMain() {
     assert(initialized.status === "ready", "Provider replacement fixture project initialization failed.");
     assert(!fs.existsSync(path.join(resolvedRoot, ".git")), "Provider replacement fixture unexpectedly required Git.");
     const fixtureBin = createRuntimeFixtureBin(resolvedOperationalRoot);
-    const supervisorRoot = path.resolve(process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot);
+    const supervisorRoot = path.resolve(
+      process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+    );
     const codex = await executeCodexBeforeLoss({
       root: resolvedRoot,
       fixtureBin,
@@ -338,29 +348,36 @@ async function parentMain() {
     assert(replacement.projectId === initialized.project.projectId, "Provider replacement changed canonical project identity.");
     assert(replacement[format.sessionIdField] === codex.authorization[format.sessionIdField], "Provider replacement changed canonical HEAD Session identity.");
     assert(replacement.replacementRuntime === "opencode", "Provider replacement did not select OpenCode.");
-    assert(replacement.replacementAuthorizationId !== codex.authorization.authorizationId,
-      "Provider replacement reused the consumed Codex authorization.");
+    assert(replacement.replacementAuthorizationId !== codex.authorization.authorizationId, "Provider replacement reused the consumed Codex authorization.");
     const recoveredReplacement = readRuntimeInvocationResult({
       root: resolvedRoot,
       storage: initialized.storage,
       authorizationId: replacement.replacementAuthorizationId,
     });
-    assert(recoveredReplacement.draft.draftHash === replacement.replacementDraftHash,
-      "Parent process could not recover the replacement result from project artifacts.");
+    assert(
+      recoveredReplacement.draft.draftHash === replacement.replacementDraftHash,
+      "Parent process could not recover the replacement result from project artifacts.",
+    );
     assertProviderSessionIdentityAbsent(recoveredReplacement, "Parent-recovered replacement record");
-    process.stdout.write(`${JSON.stringify({
-      status: "provider_replacement_recovery_verified",
-      projectId: initialized.project.projectId,
-      [format.sessionIdField]: codex.authorization[format.sessionIdField],
-      firstRuntime: "codex",
-      replacementRuntime: replacement.replacementRuntime,
-      firstAuthorizationId: codex.authorization.authorizationId,
-      replacementAuthorizationId: replacement.replacementAuthorizationId,
-      freshProcessBoundary: true,
-      providerSessionIdentityPersisted: false,
-      gitRequired: false,
-      graphDbRequired: false,
-    }, null, 2)}\n`);
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          status: "provider_replacement_recovery_verified",
+          projectId: initialized.project.projectId,
+          [format.sessionIdField]: codex.authorization[format.sessionIdField],
+          firstRuntime: "codex",
+          replacementRuntime: replacement.replacementRuntime,
+          firstAuthorizationId: codex.authorization.authorizationId,
+          replacementAuthorizationId: replacement.replacementAuthorizationId,
+          freshProcessBoundary: true,
+          providerSessionIdentityPersisted: false,
+          gitRequired: false,
+          graphDbRequired: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
   } finally {
     if (previousOperationalRoot === undefined) delete process.env[RUNTIME_OPERATIONAL_STATE_ENV];
     else process.env[RUNTIME_OPERATIONAL_STATE_ENV] = previousOperationalRoot;
@@ -368,8 +385,10 @@ async function parentMain() {
       { target: resolvedRoot, prefix: ".test-tmp-provider-replacement-" },
       { target: resolvedOperationalRoot, prefix: ".test-tmp-provider-replacement-operational-" },
     ]) {
-      assert(target.startsWith(`${pluginRoot}${path.sep}`) && path.basename(target).startsWith(prefix),
-        "Refusing to remove an unverified provider replacement temporary directory.");
+      assert(
+        target.startsWith(`${pluginRoot}${path.sep}`) && path.basename(target).startsWith(prefix),
+        "Refusing to remove an unverified provider replacement temporary directory.",
+      );
       fs.rmSync(target, { recursive: true, force: true });
     }
   }

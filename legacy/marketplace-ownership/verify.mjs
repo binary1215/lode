@@ -6,12 +6,20 @@ import { validateGoWorkerManifest } from "../../scripts/lib/go-worker-adapter.mj
 import { verifyArcadeDbNativeBridgeManifest } from "../../scripts/lib/arcadedb-native-bridge.mjs";
 
 const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
-const canonical = (value) => JSON.stringify(value, function (_key, item) {
-  return item && typeof item === "object" && !Array.isArray(item)
-    ? Object.fromEntries(Object.keys(item).sort(compare).map((key) => [key, item[key]])) : item;
-});
-const fail = (message) => { throw Object.assign(new Error(message), { code: "LEGACY_MARKETPLACE_OWNERSHIP_REJECTED" }); };
+const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const canonical = (value) =>
+  JSON.stringify(value, function (_key, item) {
+    return item && typeof item === "object" && !Array.isArray(item)
+      ? Object.fromEntries(
+          Object.keys(item)
+            .sort(compare)
+            .map((key) => [key, item[key]]),
+        )
+      : item;
+  });
+const fail = (message) => {
+  throw Object.assign(new Error(message), { code: "LEGACY_MARKETPLACE_OWNERSHIP_REJECTED" });
+};
 const approved = Object.freeze({
   codex: {
     commit: "559f38e955a9ea79512d551afcf209391ca631bc",
@@ -29,8 +37,11 @@ const approved = Object.freeze({
   },
 });
 const targets = [
-  ["darwin", "arm64", "darwin-arm64"], ["darwin", "x64", "darwin-x64"],
-  ["linux", "arm64", "linux-arm64"], ["linux", "x64", "linux-x64"], ["win32", "x64", "windows-x64"],
+  ["darwin", "arm64", "darwin-arm64"],
+  ["darwin", "x64", "darwin-x64"],
+  ["linux", "arm64", "linux-arm64"],
+  ["linux", "x64", "linux-x64"],
+  ["win32", "x64", "windows-x64"],
 ];
 
 // Read-only historical proof, not a runtime resolver or compatibility adapter.
@@ -54,13 +65,21 @@ export function snapshotInventory(root) {
 
 export function verifyHistoricalSupervisorManifest(manifest, { platform, arch }) {
   const target = targets.find(([p, a]) => p === platform && a === arch);
-  if (!target || !manifest?.binary || !/^[a-f0-9]{64}$/.test(manifest.binary.sha256)
-    || !Number.isSafeInteger(manifest.binary.size) || manifest.binary.size < 1) fail("Unknown historical supervisor target or binary.");
+  if (!target || !manifest?.binary || !/^[a-f0-9]{64}$/.test(manifest.binary.sha256) || !Number.isSafeInteger(manifest.binary.size) || manifest.binary.size < 1)
+    fail("Unknown historical supervisor target or binary.");
   const payload = {
-    schemaVersion: 1, kind: "HeadAgentProcessSupervisorManifest", manifestVersion: "0.1.0", supervisorProtocolVersion: "0.1.0",
+    schemaVersion: 1,
+    kind: "HeadAgentProcessSupervisorManifest",
+    manifestVersion: "0.1.0",
+    supervisorProtocolVersion: "0.1.0",
     target: { platform, arch, directory: target[2] },
     binary: { relativePath: `head-agent-supervisor${platform === "win32" ? ".exe" : ""}`, sha256: manifest.binary.sha256, size: manifest.binary.size },
-    processModel: { transport: "single-request-stdio-with-control-fd3", windowsTreeOwnership: "job-object-kill-on-close", posixTreeOwnership: "isolated-process-group", shellInterpretation: false },
+    processModel: {
+      transport: "single-request-stdio-with-control-fd3",
+      windowsTreeOwnership: "job-object-kill-on-close",
+      posixTreeOwnership: "isolated-process-group",
+      shellInterpretation: false,
+    },
     authority: { kind: "operational-process-control-only", instructionAuthority: false, promotionAuthority: false, mutatesCanon: false },
   };
   const hash = sha256(canonical(payload));
@@ -72,19 +91,35 @@ export function verifyHistoricalSupervisorManifest(manifest, { platform, arch })
 
 export function verifyHistoricalMarketplaceOwnership({ root, provider, expectedRepository, expectedMarketplaceName, expectedSnapshotCommit } = {}) {
   const pin = approved[provider];
-  if (!root || !pin || expectedRepository !== "binary1215/head-agent-plugin" || expectedMarketplaceName !== "head-agent-plugin"
-    || expectedSnapshotCommit !== pin.commit) fail("Not an approved historical ownership lookup.");
+  if (
+    !root ||
+    !pin ||
+    expectedRepository !== "binary1215/head-agent-plugin" ||
+    expectedMarketplaceName !== "head-agent-plugin" ||
+    expectedSnapshotCommit !== pin.commit
+  )
+    fail("Not an approved historical ownership lookup.");
   const resolved = path.resolve(root);
   const inventory = snapshotInventory(resolved);
   const contentDigest = sha256(JSON.stringify(inventory));
   if (contentDigest !== pin.digest) fail("Historical snapshot whole-tree bytes differ from the approved source.");
   const markerBytes = fs.readFileSync(path.join(resolved, pin.marker));
-  const markerBlob = crypto.createHash("sha1").update(Buffer.from(`blob ${markerBytes.length}\0`)).update(markerBytes).digest("hex");
+  const markerBlob = crypto
+    .createHash("sha1")
+    .update(Buffer.from(`blob ${markerBytes.length}\0`))
+    .update(markerBytes)
+    .digest("hex");
   const marker = JSON.parse(markerBytes);
-  if (markerBlob !== pin.markerBlob || marker.snapshotId !== pin.snapshotId
-    || marker.sourceRepository !== expectedRepository || marker.marketplaceName !== expectedMarketplaceName
-    || marker.sourceCommit !== "e496d9621dc6b39fe05dc454d6258084caeb6a52"
-    || marker.pluginVersion !== "0.3.0-beta.12+codex.20260907233130" || marker.pluginName !== "head-agent-core") fail("Historical marker identity differs.");
+  if (
+    markerBlob !== pin.markerBlob ||
+    marker.snapshotId !== pin.snapshotId ||
+    marker.sourceRepository !== expectedRepository ||
+    marker.marketplaceName !== expectedMarketplaceName ||
+    marker.sourceCommit !== "e496d9621dc6b39fe05dc454d6258084caeb6a52" ||
+    marker.pluginVersion !== "0.3.0-beta.12+codex.20260907233130" ||
+    marker.pluginName !== "head-agent-core"
+  )
+    fail("Historical marker identity differs.");
   const pluginRoot = path.join(resolved, "plugins", marker.pluginName);
   for (const [platform, arch, directory] of targets) {
     const targetRoot = path.join(pluginRoot, "dist", directory);
@@ -101,17 +136,32 @@ export function verifyHistoricalMarketplaceOwnership({ root, provider, expectedR
     const metadata = JSON.parse(fs.readFileSync(path.join(targetRoot, "BUILD-METADATA.json"), "utf8"));
     if (metadata.commit !== marker.sourceCommit || metadata.version !== marker.pluginVersion) fail("Historical native build identity differs.");
   }
-  return { status: "historical_marketplace_ownership_verified", provider, snapshotCommit: pin.commit,
-    snapshotId: marker.snapshotId, contentDigest, nativeTargetCount: targets.length,
-    authorityEffect: "none", executable: false, installable: false, purpose: "existing-branch-replacement-only" };
+  return {
+    status: "historical_marketplace_ownership_verified",
+    provider,
+    snapshotCommit: pin.commit,
+    snapshotId: marker.snapshotId,
+    contentDigest,
+    nativeTargetCount: targets.length,
+    authorityEffect: "none",
+    executable: false,
+    installable: false,
+    purpose: "existing-branch-replacement-only",
+  };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  const names = { "--root": "root", "--provider": "provider", "--expected-repository": "expectedRepository",
-    "--expected-marketplace-name": "expectedMarketplaceName", "--expected-snapshot-commit": "expectedSnapshotCommit" };
+  const names = {
+    "--root": "root",
+    "--provider": "provider",
+    "--expected-repository": "expectedRepository",
+    "--expected-marketplace-name": "expectedMarketplaceName",
+    "--expected-snapshot-commit": "expectedSnapshotCommit",
+  };
   const options = {};
   for (let i = 2; i < process.argv.length; i += 2) {
-    const key = names[process.argv[i]], value = process.argv[i + 1];
+    const key = names[process.argv[i]],
+      value = process.argv[i + 1];
     if (!key || !value || value.startsWith("--") || Object.hasOwn(options, key)) fail("Invalid historical ownership arguments.");
     options[key] = value;
   }

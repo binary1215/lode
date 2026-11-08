@@ -46,8 +46,7 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const hasOwnKeyDeep = (value, key) => {
   if (Array.isArray(value)) return value.some((item) => hasOwnKeyDeep(item, key));
   if (!value || typeof value !== "object") return false;
-  return Object.prototype.hasOwnProperty.call(value, key)
-    || Object.values(value).some((item) => hasOwnKeyDeep(item, key));
+  return Object.prototype.hasOwnProperty.call(value, key) || Object.values(value).some((item) => hasOwnKeyDeep(item, key));
 };
 
 try {
@@ -89,9 +88,29 @@ try {
   }
   const activeHostAdapter = new VerifiedWorkspaceHostAdapter({
     driver: {
-      describe: () => ({ schemaVersion: 1, kind: "WorkspaceHostDriverDescriptor", protocol: { name: "head-agent-core-workspace-host-driver", version: WORKSPACE_HOST_COORDINATION_VERSION }, hostKind: "fixture-host", transport: "fixture-memory", providerNeutral: true, tuiScraping: false, providerSessionIdentityPersisted: false }),
-      snapshot: () => ({ schemaVersion: 1, kind: "WorkspaceHostSnapshot", protocol: { name: "head-agent-core-workspace-host-snapshot", version: WORKSPACE_HOST_COORDINATION_VERSION }, hostKind: "fixture-host", transport: "fixture-memory", hostInstanceId: "fixture-host", snapshotSequence: "fixture-snapshot", endpoints: [] }),
-      send: () => { throw new Error("not invoked by contract verification"); },
+      describe: () => ({
+        schemaVersion: 1,
+        kind: "WorkspaceHostDriverDescriptor",
+        protocol: { name: "head-agent-core-workspace-host-driver", version: WORKSPACE_HOST_COORDINATION_VERSION },
+        hostKind: "fixture-host",
+        transport: "fixture-memory",
+        providerNeutral: true,
+        tuiScraping: false,
+        providerSessionIdentityPersisted: false,
+      }),
+      snapshot: () => ({
+        schemaVersion: 1,
+        kind: "WorkspaceHostSnapshot",
+        protocol: { name: "head-agent-core-workspace-host-snapshot", version: WORKSPACE_HOST_COORDINATION_VERSION },
+        hostKind: "fixture-host",
+        transport: "fixture-memory",
+        hostInstanceId: "fixture-host",
+        snapshotSequence: "fixture-snapshot",
+        endpoints: [],
+      }),
+      send: () => {
+        throw new Error("not invoked by contract verification");
+      },
     },
   });
   validateWorkspaceHostAdapter(activeHostAdapter);
@@ -101,23 +120,18 @@ try {
   assert.equal(activeHostComposition.workspaceHostProbe.status, "active");
 
   class EscalatingRuntimeAdapter extends ProjectionOnlyAgentRuntimeAdapter {
-    describe() { return { ...super.describe(), controlOperationsEnabled: true, controlAuthority: true }; }
+    describe() {
+      return { ...super.describe(), controlOperationsEnabled: true, controlAuthority: true };
+    }
   }
-  assert.throws(
-    () => validateAgentRuntimeAdapter(new EscalatingRuntimeAdapter({ runtime: "codex" })),
-    { code: "INVALID_AGENT_RUNTIME_ADAPTER" },
-  );
+  assert.throws(() => validateAgentRuntimeAdapter(new EscalatingRuntimeAdapter({ runtime: "codex" })), { code: "INVALID_AGENT_RUNTIME_ADAPTER" });
   class DivergentRuntimeAdapter extends ProjectionOnlyAgentRuntimeAdapter {
-    probe() { return new ProjectionOnlyAgentRuntimeAdapter({ runtime: "opencode" }).probe(); }
+    probe() {
+      return new ProjectionOnlyAgentRuntimeAdapter({ runtime: "opencode" }).probe();
+    }
   }
-  assert.throws(
-    () => validateAgentRuntimeAdapter(new DivergentRuntimeAdapter({ runtime: "codex" })),
-    { code: "INVALID_AGENT_RUNTIME_ADAPTER" },
-  );
-  assert.throws(
-    () => buildRuntimeAdapterComposition({ runtimes: [] }),
-    { code: "RUNTIME_ADAPTER_RUNTIME_REQUIRED" },
-  );
+  assert.throws(() => validateAgentRuntimeAdapter(new DivergentRuntimeAdapter({ runtime: "codex" })), { code: "INVALID_AGENT_RUNTIME_ADAPTER" });
+  assert.throws(() => buildRuntimeAdapterComposition({ runtimes: [] }), { code: "RUNTIME_ADAPTER_RUNTIME_REQUIRED" });
   const tampered = clone(compositions[0]);
   tampered.activationBoundary.runtimeControlEnabled = true;
   assert.throws(() => verifyRuntimeAdapterComposition(tampered), { code: "INVALID_RUNTIME_ADAPTER_COMPOSITION" });
@@ -194,10 +208,7 @@ try {
   const tamperedProtocolEvidence = clone(protocolEvidence);
   tamperedProtocolEvidence.activationBoundary.runtimeControlEnabled = true;
   assert.throws(() => verifyRuntimeProtocolEvidence(tamperedProtocolEvidence), { code: "INVALID_RUNTIME_PROTOCOL_EVIDENCE" });
-  await assert.rejects(
-    () => buildRuntimeProtocolEvidence({ versionEvidence, runtimes: [] }),
-    { code: "RUNTIME_PROTOCOL_RUNTIME_REQUIRED" },
-  );
+  await assert.rejects(() => buildRuntimeProtocolEvidence({ versionEvidence, runtimes: [] }), { code: "RUNTIME_PROTOCOL_RUNTIME_REQUIRED" });
   const protocolHost = new BoundedProtocolWorkspaceHostAdapter();
   const protocolPlatform = new BoundedProtocolPlatformAdapter({ workspaceHostAdapter: protocolHost });
   for (const runtime of RUNTIME_ADAPTER_RUNTIMES) {
@@ -233,31 +244,37 @@ try {
   tamperedBinding.bindingBoundary.runtimeControlEnabled = true;
   assert.throws(() => verifyRuntimeProjectBinding(tamperedBinding), { code: "INVALID_RUNTIME_PROJECT_BINDING" });
 
-  process.stdout.write(`${JSON.stringify({
-    status: "verified",
-    matrixId: matrix.matrixId,
-    compositionIds: compositions.map((item) => item.compositionId),
-    platforms: matrix.platforms,
-    runtimes: matrix.runtimes,
-    runtimeControlEnabled: false,
-    actualPlatformExecutionValidated: false,
-    actualRuntimeControlValidated: false,
-    machineDiscoveryCompositionId: machineComposition.compositionId,
-    discoveredRuntimes: machineComposition.discoverySummary.discoveredRuntimes,
-    unavailableRuntimes: machineComposition.discoverySummary.unavailableRuntimes,
-    versionEvidenceId: versionEvidence.evidenceId,
-    versionVerifiedRuntimes: versionEvidence.summary.verifiedRuntimes,
-    versionUnavailableRuntimes: versionEvidence.summary.unavailableRuntimes,
-    versionFailedRuntimes: versionEvidence.summary.failedRuntimes,
-    boundedVersionExecutionValidated: versionEvidence.activationBoundary.actualPlatformExecutionValidated,
-    protocolEvidenceId: protocolEvidence.evidenceId,
-    protocolNegotiatedRuntimes: protocolEvidence.summary.negotiatedRuntimes,
-    protocolPartialRuntimes: protocolEvidence.summary.partialRuntimes,
-    boundedProtocolObservationValidated: protocolEvidence.activationBoundary.actualProviderProtocolObservationValidated,
-    projectBindingId: projectBinding.bindingId,
-    projectBindingStatus: projectBinding.status,
-    authorityEffect: "none",
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        status: "verified",
+        matrixId: matrix.matrixId,
+        compositionIds: compositions.map((item) => item.compositionId),
+        platforms: matrix.platforms,
+        runtimes: matrix.runtimes,
+        runtimeControlEnabled: false,
+        actualPlatformExecutionValidated: false,
+        actualRuntimeControlValidated: false,
+        machineDiscoveryCompositionId: machineComposition.compositionId,
+        discoveredRuntimes: machineComposition.discoverySummary.discoveredRuntimes,
+        unavailableRuntimes: machineComposition.discoverySummary.unavailableRuntimes,
+        versionEvidenceId: versionEvidence.evidenceId,
+        versionVerifiedRuntimes: versionEvidence.summary.verifiedRuntimes,
+        versionUnavailableRuntimes: versionEvidence.summary.unavailableRuntimes,
+        versionFailedRuntimes: versionEvidence.summary.failedRuntimes,
+        boundedVersionExecutionValidated: versionEvidence.activationBoundary.actualPlatformExecutionValidated,
+        protocolEvidenceId: protocolEvidence.evidenceId,
+        protocolNegotiatedRuntimes: protocolEvidence.summary.negotiatedRuntimes,
+        protocolPartialRuntimes: protocolEvidence.summary.partialRuntimes,
+        boundedProtocolObservationValidated: protocolEvidence.activationBoundary.actualProviderProtocolObservationValidated,
+        projectBindingId: projectBinding.bindingId,
+        projectBindingStatus: projectBinding.status,
+        authorityEffect: "none",
+      },
+      null,
+      2,
+    )}\n`,
+  );
 } catch (error) {
   process.stderr.write(`${error.code ? `${error.code}: ` : ""}${error.message}\n`);
   process.exitCode = 1;

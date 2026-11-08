@@ -27,30 +27,34 @@ function sourceFile(projectRoot, reference) {
       if (!bytes) break;
       hash.update(buffer.subarray(0, bytes));
     }
-  } finally { fs.closeSync(descriptor); }
+  } finally {
+    fs.closeSync(descriptor);
+  }
   return { state: "read", digest: hash.digest("hex") };
 }
 
 export function inspectProductPolicyEvidenceCurrentness({ projectRoot, candidate } = {}) {
   const items = (candidate?.evidenceAnchors || []).map((anchor) => {
-    if (anchor.kind !== "source") return {
-      kind: anchor.kind,
-      reference: anchor.reference,
-      proposedDigest: anchor.digest,
-      currentDigest: null,
-      state: "not-assessed",
-      reason: "external-evidence-requires-provider-or-human-review",
-    };
-    try {
-      const current = sourceFile(projectRoot, anchor.reference);
-      if (current.state !== "read") return {
+    if (anchor.kind !== "source")
+      return {
         kind: anchor.kind,
         reference: anchor.reference,
         proposedDigest: anchor.digest,
         currentDigest: null,
-        state: current.state,
-        reason: current.reason,
+        state: "not-assessed",
+        reason: "external-evidence-requires-provider-or-human-review",
       };
+    try {
+      const current = sourceFile(projectRoot, anchor.reference);
+      if (current.state !== "read")
+        return {
+          kind: anchor.kind,
+          reference: anchor.reference,
+          proposedDigest: anchor.digest,
+          currentDigest: null,
+          state: current.state,
+          reason: current.reason,
+        };
       const state = current.digest === anchor.digest ? "unchanged" : "changed";
       return {
         kind: anchor.kind,
@@ -71,10 +75,17 @@ export function inspectProductPolicyEvidenceCurrentness({ projectRoot, candidate
       };
     }
   });
-  const counts = Object.fromEntries(["unchanged", "changed", "missing", "not-assessed"].map((state) => [state, items.filter((item) => item.state === state).length]));
-  const byteFreshness = counts.changed || counts.missing ? "changed-or-missing"
-    : !items.length || counts["not-assessed"] === items.length ? "not-assessed"
-      : counts["not-assessed"] ? "partially-assessed" : "unchanged";
+  const counts = Object.fromEntries(
+    ["unchanged", "changed", "missing", "not-assessed"].map((state) => [state, items.filter((item) => item.state === state).length]),
+  );
+  const byteFreshness =
+    counts.changed || counts.missing
+      ? "changed-or-missing"
+      : !items.length || counts["not-assessed"] === items.length
+        ? "not-assessed"
+        : counts["not-assessed"]
+          ? "partially-assessed"
+          : "unchanged";
   return {
     kind: "ProductPolicyEvidenceCurrentnessProjection",
     candidateId: candidate?.candidateId || null,

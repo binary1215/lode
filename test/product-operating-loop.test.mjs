@@ -32,7 +32,6 @@ import { runCommand } from "../scripts/head.mjs";
 import { seedLegacyProject } from "./helpers/legacy-project-fixture.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
 
-
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testParent = process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
 
@@ -40,25 +39,39 @@ test("new neutral hypotheses preserve historical support interpretation and exac
   const { root, directory, format } = fixture({ legacy: true });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const signal = (await recordProductSignal({ root, statement: "A counterexample was observed." })).signal;
-  const fresh = (await recordProductHypothesis({ root, statement: "This may contradict the claim.", rationale: "Counterevidence, not support.", signalIds: [signal.signalId] })).hypothesis;
+  const fresh = (
+    await recordProductHypothesis({
+      root,
+      statement: "This may contradict the claim.",
+      rationale: "Counterevidence, not support.",
+      signalIds: [signal.signalId],
+    })
+  ).hypothesis;
   assert.equal(fresh.protocol.version, "0.5.0");
   assert.equal(fresh.referenceSemantics, "neutral");
   const legacyPayload = structuredClone(fresh);
-  delete legacyPayload.hypothesisId; delete legacyPayload.hypothesisHash; delete legacyPayload.referenceSemantics;
+  delete legacyPayload.hypothesisId;
+  delete legacyPayload.hypothesisHash;
+  delete legacyPayload.referenceSemantics;
   legacyPayload.protocol.version = "0.4.0";
   const legacy = productArtifact(legacyPayload, "product-hypothesis", "hypothesisId", "hypothesisHash");
   const oldPath = path.join(root, directory, "product-operations/hypotheses", `${legacy.hypothesisId}.json`);
   fs.writeFileSync(oldPath, JSON.stringify(legacy));
   const protectedPaths = [oldPath, path.join(root, directory, "context/product-model.json"), path.join(root, directory, "sessions/current.json")];
-  const before = protectedPaths.map(p => fs.readFileSync(p));
+  const before = protectedPaths.map((p) => fs.readFileSync(p));
   assert.equal(verifyProductHypothesis(legacy).hypothesisId, legacy.hypothesisId);
   await buildWorldModel({ root });
   const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
-  assert.ok(graph.edges.some(e => e.from === fresh.hypothesisId && e.to === signal.signalId && e.type === "REFERENCES"));
-  assert.ok(graph.edges.some(e => e.from === legacy.hypothesisId && e.to === signal.signalId && e.type === "SUPPORTED_BY"));
-  assert.equal(graph.edges.some(e => e.from === fresh.hypothesisId && e.type === "SUPPORTED_BY"), false);
+  assert.ok(graph.edges.some((e) => e.from === fresh.hypothesisId && e.to === signal.signalId && e.type === "REFERENCES"));
+  assert.ok(graph.edges.some((e) => e.from === legacy.hypothesisId && e.to === signal.signalId && e.type === "SUPPORTED_BY"));
+  assert.equal(
+    graph.edges.some((e) => e.from === fresh.hypothesisId && e.type === "SUPPORTED_BY"),
+    false,
+  );
   const invalidPayload = { ...legacyPayload, protocol: fresh.protocol };
-  assert.throws(() => verifyProductHypothesis(productArtifact(invalidPayload, "product-hypothesis", "hypothesisId", "hypothesisHash")), { code: "INVALID_PRODUCT_HYPOTHESIS" });
+  assert.throws(() => verifyProductHypothesis(productArtifact(invalidPayload, "product-hypothesis", "hypothesisId", "hypothesisHash")), {
+    code: "INVALID_PRODUCT_HYPOTHESIS",
+  });
   protectedPaths.forEach((p, i) => assert.deepEqual(fs.readFileSync(p), before[i]));
 });
 
@@ -67,13 +80,26 @@ function fixture({ legacy = false } = {}) {
   const root = fs.mkdtempSync(path.join(testParent, "head-agent-product-loop-"));
   if (legacy) seedLegacyProject(root, pluginRoot);
   else initializeProject({ root, pluginRoot, runtimes: ["codex"] });
-  const storage = inspectProject(root).storage, format = formatForVerifiedOwner(storage), directory = format.directory;
+  const storage = inspectProject(root).storage,
+    format = formatForVerifiedOwner(storage),
+    directory = format.directory;
   const product = {
     schemaVersion: 1,
     featureGroups: [{ key: "coordination", name: "Coordination", description: "Whole outcome coordination" }],
     capabilities: [{ key: "continuity", name: "Continuity", description: "Preserve exact references" }],
-    features: [{ key: "head-continuity", name: "HEAD continuity", description: "Portable exact-reference continuity", featureGroupKeys: ["coordination"], capabilityKeys: ["continuity"], governedBy: [] }],
-    requirements: [], constraints: [], decisions: [],
+    features: [
+      {
+        key: "head-continuity",
+        name: "HEAD continuity",
+        description: "Portable exact-reference continuity",
+        featureGroupKeys: ["coordination"],
+        capabilityKeys: ["continuity"],
+        governedBy: [],
+      },
+    ],
+    requirements: [],
+    constraints: [],
+    decisions: [],
   };
   fs.writeFileSync(path.join(root, directory, "context", "product-model.json"), `${JSON.stringify(product, null, 2)}\n`);
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -87,9 +113,19 @@ test("connects the minimal Product Operating Loop while keeping Product Canon an
   const productCanonFile = path.join(root, directory, "context", "product-model.json");
   const canonBefore = fs.readFileSync(productCanonFile, "utf8");
 
-  const signal = await recordProductSignal({ root, statement: "Operators lose the exact product decision context after a provider session is replaced.", source: "manual-observation", evidenceIds: ["evidence-session-replacement"] });
+  const signal = await recordProductSignal({
+    root,
+    statement: "Operators lose the exact product decision context after a provider session is replaced.",
+    source: "manual-observation",
+    evidenceIds: ["evidence-session-replacement"],
+  });
   assert.equal(signal.signal.epistemicClass, "observed-fact");
-  const hypothesis = await recordProductHypothesis({ root, statement: "An on-demand exact-reference continuity view will reduce recovery ambiguity.", signalIds: [signal.signal.signalId], rationale: "The observation points to reference loss, not missing free-text summaries." });
+  const hypothesis = await recordProductHypothesis({
+    root,
+    statement: "An on-demand exact-reference continuity view will reduce recovery ambiguity.",
+    signalIds: [signal.signal.signalId],
+    rationale: "The observation points to reference loss, not missing free-text summaries.",
+  });
   assert.equal(hypothesis.hypothesis.epistemicClass, "hypothesis");
 
   const proposed = await proposeProductInitiative({
@@ -100,7 +136,12 @@ test("connects the minimal Product Operating Loop while keeping Product Canon an
     featureResolution: { kind: "existing-feature", featureKey: "head-continuity" },
   });
   assert.equal(proposed.initiativeCandidate.featureResolution.kind, "existing-feature");
-  const reviewed = await reviewProductInitiative({ root, initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId, disposition: "accept", rationale: "The bounded initiative preserves Session/Run recovery authority and addresses the observed gap." });
+  const reviewed = await reviewProductInitiative({
+    root,
+    initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId,
+    disposition: "accept",
+    rationale: "The bounded initiative preserves Session/Run recovery authority and addresses the observed gap.",
+  });
   assert.equal(reviewed.productCanonMutated, false);
   assert.equal(reviewed.reviewedInitiative.epistemicClass, "approved-decision");
   assert.equal(fs.readFileSync(productCanonFile, "utf8"), canonBefore);
@@ -110,43 +151,141 @@ test("connects the minimal Product Operating Loop while keeping Product Canon an
     title: "  Candidate-only product view  ",
     description: "  Candidate meaning must be normalized before its seed is frozen.  ",
     hypothesisIds: [hypothesis.hypothesis.hypothesisId],
-    featureResolution: { kind: "candidate", feature: { key: "product-loop-view", name: "Product loop view", description: "Queryable product operations", capabilityKeys: ["continuity"] } },
+    featureResolution: {
+      kind: "candidate",
+      feature: { key: "product-loop-view", name: "Product loop view", description: "Queryable product operations", capabilityKeys: ["continuity"] },
+    },
   });
   assert.equal(candidateProposal.featureCandidate.authority, "candidate-not-product-canon");
-  const candidateFile = path.join(root, directory, "product-operations", "initiative-candidates", `${candidateProposal.initiativeCandidate.initiativeCandidateId}.json`);
+  const candidateFile = path.join(
+    root,
+    directory,
+    "product-operations",
+    "initiative-candidates",
+    `${candidateProposal.initiativeCandidate.initiativeCandidateId}.json`,
+  );
   const frozenCandidateBytes = fs.readFileSync(candidateFile, "utf8");
-  const candidateReview = await reviewProductInitiative({ root, initiativeCandidateId: candidateProposal.initiativeCandidate.initiativeCandidateId, disposition: "accept", rationale: "The Feature proposal stays a candidate and the Initiative is separately reviewed." });
+  const candidateReview = await reviewProductInitiative({
+    root,
+    initiativeCandidateId: candidateProposal.initiativeCandidate.initiativeCandidateId,
+    disposition: "accept",
+    rationale: "The Feature proposal stays a candidate and the Initiative is separately reviewed.",
+  });
   assert.equal(fs.readFileSync(candidateFile, "utf8"), frozenCandidateBytes);
   assert.equal(candidateReview.reviewedInitiative.featureResolution.featureCandidateId, candidateProposal.featureCandidate.featureCandidateId);
   assert.equal(fs.readFileSync(productCanonFile, "utf8"), canonBefore);
-  const gapProposal = await proposeProductInitiative({ root, title: "Broad product learning", hypothesisIds: [hypothesis.hypothesis.hypothesisId], featureResolution: { kind: "gap", reason: "The initiative is broader than one Feature; do not force a one-to-one mapping." } });
+  const gapProposal = await proposeProductInitiative({
+    root,
+    title: "Broad product learning",
+    hypothesisIds: [hypothesis.hypothesis.hypothesisId],
+    featureResolution: { kind: "gap", reason: "The initiative is broader than one Feature; do not force a one-to-one mapping." },
+  });
   assert.equal(gapProposal.initiativeCandidate.featureResolution.kind, "gap");
-  const deniedReview = await dispatchMcp({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "head_product_initiative_review", arguments: { project_root: root, initiative_candidate_id: gapProposal.initiativeCandidate.initiativeCandidateId, disposition: "reject", rationale: "The gap is intentionally unresolved.", confirm_user_review: false } } });
+  const deniedReview = await dispatchMcp({
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "head_product_initiative_review",
+      arguments: {
+        project_root: root,
+        initiative_candidate_id: gapProposal.initiativeCandidate.initiativeCandidateId,
+        disposition: "reject",
+        rationale: "The gap is intentionally unresolved.",
+        confirm_user_review: false,
+      },
+    },
+  });
   assert.match(deniedReview.error.message, /explicit user confirmation/);
 
   const graph = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
-  assert.equal(graph.nodes.some((node) => node.kind === "ProductSignal" && node.nodeId === signal.signal.signalId), true);
-  assert.equal(graph.nodes.some((node) => node.kind === "ReviewedProductInitiative" && node.nodeId === reviewed.reviewedInitiative.initiativeId), true);
-  assert.equal(graph.nodes.some((node) => node.kind === "ProductFeatureCandidate" && node.nodeId === candidateProposal.featureCandidate.featureCandidateId), true);
-  assert.equal(graph.edges.some((edge) => edge.type === "REFERENCES" && edge.from === hypothesis.hypothesis.hypothesisId && edge.to === signal.signal.signalId), true);
-  assert.equal(graph.edges.some((edge) => edge.type === "PRODUCES" && edge.from === reviewed.reviewDecision.reviewDecisionId && edge.to === reviewed.reviewedInitiative.initiativeId), true);
+  assert.equal(
+    graph.nodes.some((node) => node.kind === "ProductSignal" && node.nodeId === signal.signal.signalId),
+    true,
+  );
+  assert.equal(
+    graph.nodes.some((node) => node.kind === "ReviewedProductInitiative" && node.nodeId === reviewed.reviewedInitiative.initiativeId),
+    true,
+  );
+  assert.equal(
+    graph.nodes.some((node) => node.kind === "ProductFeatureCandidate" && node.nodeId === candidateProposal.featureCandidate.featureCandidateId),
+    true,
+  );
+  assert.equal(
+    graph.edges.some((edge) => edge.type === "REFERENCES" && edge.from === hypothesis.hypothesis.hypothesisId && edge.to === signal.signal.signalId),
+    true,
+  );
+  assert.equal(
+    graph.edges.some(
+      (edge) => edge.type === "PRODUCES" && edge.from === reviewed.reviewDecision.reviewDecisionId && edge.to === reviewed.reviewedInitiative.initiativeId,
+    ),
+    true,
+  );
 
-  const capsule = (await compileContext({ root, task: "Implement the reviewed continuity initiative", budget: 32_768, persist: true }));
-  const plan = createWholePlanSnapshot({ root, objective: "Implement continuity with reviewed execution lineage", plan: [{ id: "implement", outcome: "Verified continuity implementation" }] });
-  const contract = createExecutionContract({ root, wholePlanId: plan.artifact.wholePlanId, capsuleId: capsule.capsule.capsuleId, scope: "Change the fixture implementation", acceptanceCriteria: ["Return implementation evidence"] });
+  const capsule = await compileContext({ root, task: "Implement the reviewed continuity initiative", budget: 32_768, persist: true });
+  const plan = createWholePlanSnapshot({
+    root,
+    objective: "Implement continuity with reviewed execution lineage",
+    plan: [{ id: "implement", outcome: "Verified continuity implementation" }],
+  });
+  const contract = createExecutionContract({
+    root,
+    wholePlanId: plan.artifact.wholePlanId,
+    capsuleId: capsule.capsule.capsuleId,
+    scope: "Change the fixture implementation",
+    acceptanceCriteria: ["Return implementation evidence"],
+  });
   startRun({ root, executionContractId: contract.artifact.executionContractId });
   fs.appendFileSync(path.join(root, "src", "feature.mjs"), "export const productLoop = true;\n");
-  const finished = finishRun({ root, outcome: "Continuity implementation changed", evidence: [{ uri: "src/feature.mjs", digest: "fixture-product-loop", summary: "Implemented product loop" }], verification: [{ check: "fixture", status: "passed" }] });
+  const finished = finishRun({
+    root,
+    outcome: "Continuity implementation changed",
+    evidence: [{ uri: "src/feature.mjs", digest: "fixture-product-loop", summary: "Implemented product loop" }],
+    verification: [{ check: "fixture", status: "passed" }],
+  });
   const reviewContext = getPendingReviewContext({ root });
-  const executionReview = reviewRun({ root, reviewContextId: reviewContext.review.reviewContextId, disposition: "accept", rationale: "The implementation satisfies the bounded execution contract." });
+  const executionReview = reviewRun({
+    root,
+    reviewContextId: reviewContext.review.reviewContextId,
+    disposition: "accept",
+    rationale: "The implementation satisfies the bounded execution contract.",
+  });
   await buildWorldModel({ root, persist: true });
-  const change = await recordChangeSet({ root, resultPacketId: finished.resultPacket.resultPacketId, reviewDecisionId: executionReview.reviewDecision.reviewDecisionId });
-  const observation = await observeProductOutcome({ root, initiativeId: reviewed.reviewedInitiative.initiativeId, changeSetId: change.changeSet.changeSetId, statement: "The accepted ChangeSet now exposes exact continuity references in the fixture.", epistemicClass: "observed-fact", evidenceIds: ["fixture-product-loop"] });
+  const change = await recordChangeSet({
+    root,
+    resultPacketId: finished.resultPacket.resultPacketId,
+    reviewDecisionId: executionReview.reviewDecision.reviewDecisionId,
+  });
+  const observation = await observeProductOutcome({
+    root,
+    initiativeId: reviewed.reviewedInitiative.initiativeId,
+    changeSetId: change.changeSet.changeSetId,
+    statement: "The accepted ChangeSet now exposes exact continuity references in the fixture.",
+    epistemicClass: "observed-fact",
+    evidenceIds: ["fixture-product-loop"],
+  });
   assert.equal(observation.featureStatusMutated, false);
   assert.equal(observation.successJudgmentRecorded, false);
-  const outcomeGraph = (await queryWorldTemporalGraph({ root, query: "exact continuity references", kinds: ["OutcomeObservation", "ChangeSet", "ReviewedProductInitiative"], relations: ["OBSERVES"], includeUnreviewedCandidates: true, depth: 2, maxNodes: 100, maxEdges: 100 }));
-  assert.equal(outcomeGraph.nodes.some((node) => node.nodeId === observation.outcomeObservation.outcomeObservationId), true);
-  assert.equal((await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph.edges.some((edge) => edge.type === "OBSERVES" && edge.from === observation.outcomeObservation.outcomeObservationId && edge.to === change.changeSet.changeSetId), true);
+  const outcomeGraph = await queryWorldTemporalGraph({
+    root,
+    query: "exact continuity references",
+    kinds: ["OutcomeObservation", "ChangeSet", "ReviewedProductInitiative"],
+    relations: ["OBSERVES"],
+    includeUnreviewedCandidates: true,
+    depth: 2,
+    maxNodes: 100,
+    maxEdges: 100,
+  });
+  assert.equal(
+    outcomeGraph.nodes.some((node) => node.nodeId === observation.outcomeObservation.outcomeObservationId),
+    true,
+  );
+  assert.equal(
+    (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph.edges.some(
+      (edge) => edge.type === "OBSERVES" && edge.from === observation.outcomeObservation.outcomeObservationId && edge.to === change.changeSet.changeSetId,
+    ),
+    true,
+  );
 
   const continuity = await buildHeadContinuitySnapshot({ root });
   assert.equal(continuity.snapshot.persisted, false);
@@ -155,7 +294,12 @@ test("connects the minimal Product Operating Loop while keeping Product Canon an
   assert.deepEqual(continuity.snapshot.outcomeObservationIds, [observation.outcomeObservation.outcomeObservationId]);
   assert.equal(fs.existsSync(path.join(root, directory, "continuity")), false);
   assert.equal((await runCommand(["product-operating-status", root])).authority.graph, "derived-projection");
-  const mcp = await dispatchMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "head_continuity_snapshot", arguments: { project_root: root } } });
+  const mcp = await dispatchMcp({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: { name: "head_continuity_snapshot", arguments: { project_root: root } },
+  });
   assert.equal(mcp.result.structuredContent.snapshot.snapshotId, continuity.snapshot.snapshotId);
   assert.equal(inspectProductOperatingLoop({ root }).projection.outcomeObservations.length, 1);
 });
@@ -185,14 +329,55 @@ test("removes prose formatting, defers Feature resolution to review, and caches 
   assert.equal(fs.existsSync(path.join(root, directory, "product-operations", "feature-candidates")), false);
 
   await assert.rejects(
-    reviewProductInitiative({ root, initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId, disposition: "accept", rationale: "Resolution is intentionally missing." }),
+    reviewProductInitiative({
+      root,
+      initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId,
+      disposition: "accept",
+      rationale: "Resolution is intentionally missing.",
+    }),
     (error) => error.code === "PRODUCT_INITIATIVE_REVIEW_FEATURE_RESOLUTION_REQUIRED",
   );
   assert.equal(inspectProductOperatingLoop({ root, fresh: true }).projection.initiativeReviews.length, 0);
 
-  const denied = await dispatchMcp({ jsonrpc: "2.0", id: 20, method: "tools/call", params: { name: "head_product_initiative_review", arguments: { project_root: root, initiative_candidate_id: proposed.initiativeCandidate.initiativeCandidateId, disposition: "accept", rationale: "The user must own this decision.", confirm_user_review: false, feature_resolution: { kind: "candidate", feature: { key: "relaxed-product-learning", name: "Relaxed product learning", capability_keys: ["continuity"] } } } } });
+  const denied = await dispatchMcp({
+    jsonrpc: "2.0",
+    id: 20,
+    method: "tools/call",
+    params: {
+      name: "head_product_initiative_review",
+      arguments: {
+        project_root: root,
+        initiative_candidate_id: proposed.initiativeCandidate.initiativeCandidateId,
+        disposition: "accept",
+        rationale: "The user must own this decision.",
+        confirm_user_review: false,
+        feature_resolution: {
+          kind: "candidate",
+          feature: { key: "relaxed-product-learning", name: "Relaxed product learning", capability_keys: ["continuity"] },
+        },
+      },
+    },
+  });
   assert.match(denied.error.message, /explicit user confirmation/);
-  const accepted = await dispatchMcp({ jsonrpc: "2.0", id: 21, method: "tools/call", params: { name: "head_product_initiative_review", arguments: { project_root: root, initiative_candidate_id: proposed.initiativeCandidate.initiativeCandidateId, disposition: "accept", rationale: "The reviewed Initiative preserves authority while removing ordinary persistence ritual.", confirm_user_review: true, feature_resolution: { kind: "candidate", feature: { key: "relaxed-product-learning", name: "Relaxed product learning", capability_keys: ["continuity"] } } } } });
+  const accepted = await dispatchMcp({
+    jsonrpc: "2.0",
+    id: 21,
+    method: "tools/call",
+    params: {
+      name: "head_product_initiative_review",
+      arguments: {
+        project_root: root,
+        initiative_candidate_id: proposed.initiativeCandidate.initiativeCandidateId,
+        disposition: "accept",
+        rationale: "The reviewed Initiative preserves authority while removing ordinary persistence ritual.",
+        confirm_user_review: true,
+        feature_resolution: {
+          kind: "candidate",
+          feature: { key: "relaxed-product-learning", name: "Relaxed product learning", capability_keys: ["continuity"] },
+        },
+      },
+    },
+  });
   const reviewed = accepted.result.structuredContent;
   assert.equal(reviewed.status, "initiative_accepted");
   assert.equal(fs.readFileSync(candidateFile, "utf8"), candidateBytes);
@@ -219,13 +404,20 @@ test("removes prose formatting, defers Feature resolution to review, and caches 
   await recordProductSignal({ root, statement: "A write must invalidate the verified read cache." });
   assert.equal(inspectProductOperatingLoop({ root }).readVerification.mode, "fresh-full-verification");
 
-
   const tamperedCandidate = JSON.parse(candidateBytes);
   tamperedCandidate.title = "Tampered cached candidate";
   fs.writeFileSync(candidateFile, `${JSON.stringify(tamperedCandidate, null, 2)}\n`);
-  assert.throws(() => inspectProductOperatingLoop({ root }), (error) => error.code === "PRODUCT_OPERATING_DIGEST_MISMATCH");
+  assert.throws(
+    () => inspectProductOperatingLoop({ root }),
+    (error) => error.code === "PRODUCT_OPERATING_DIGEST_MISMATCH",
+  );
   await assert.rejects(
-    reviewProductInitiative({ root, initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId, disposition: "reject", rationale: "A cached read must never replace review-time candidate verification." }),
+    reviewProductInitiative({
+      root,
+      initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId,
+      disposition: "reject",
+      rationale: "A cached read must never replace review-time candidate verification.",
+    }),
     (error) => error.code === "PRODUCT_OPERATING_DIGEST_MISMATCH",
   );
 });
@@ -238,7 +430,11 @@ function productArtifact(payload, prefix, idField, hashField) {
 test("recovers an exact accepted Initiative after decision publication fails and rejects divergent retries", async (t) => {
   const { root, directory, format } = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const proposed = await proposeProductInitiative({ root, title: "Recover an accepted initiative", reasoning: "A durable user decision must remain replay-safe after a transient output failure." });
+  const proposed = await proposeProductInitiative({
+    root,
+    title: "Recover an accepted initiative",
+    reasoning: "A durable user decision must remain replay-safe after a transient output failure.",
+  });
   const request = {
     root,
     initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId,
@@ -259,8 +455,13 @@ test("recovers an exact accepted Initiative after decision publication fails and
     return originalLink.call(fs, source, destination, ...rest);
   };
   try {
-    await assert.rejects(() => reviewProductInitiative(request), (error) => error.code === "EIO");
-  } finally { fs.linkSync = originalLink; }
+    await assert.rejects(
+      () => reviewProductInitiative(request),
+      (error) => error.code === "EIO",
+    );
+  } finally {
+    fs.linkSync = originalLink;
+  }
   assert.equal(injected, 1);
   const decisionFiles = fs.readdirSync(reviewDirectory).filter((name) => name.endsWith(".json"));
   assert.equal(decisionFiles.length, 1);
@@ -275,8 +476,14 @@ test("recovers an exact accepted Initiative after decision publication fails and
   assert.equal(recovered.persistenceStatus, "existing");
   assert.equal(inspectProductOperatingLoop({ root, fresh: true }).projection.reviewedInitiatives.length, 1);
   const decisionBytes = fs.readFileSync(path.join(reviewDirectory, decisionFiles[0]), "utf8");
-  await assert.rejects(() => reviewProductInitiative({ ...request, rationale: "A divergent replacement rationale." }), (error) => error.code === "PRODUCT_INITIATIVE_ALREADY_REVIEWED");
-  await assert.rejects(() => reviewProductInitiative({ ...request, featureResolution: { kind: "gap", reason: "A different Feature choice." } }), (error) => error.code === "PRODUCT_INITIATIVE_ALREADY_REVIEWED");
+  await assert.rejects(
+    () => reviewProductInitiative({ ...request, rationale: "A divergent replacement rationale." }),
+    (error) => error.code === "PRODUCT_INITIATIVE_ALREADY_REVIEWED",
+  );
+  await assert.rejects(
+    () => reviewProductInitiative({ ...request, featureResolution: { kind: "gap", reason: "A different Feature choice." } }),
+    (error) => error.code === "PRODUCT_INITIATIVE_ALREADY_REVIEWED",
+  );
   assert.equal(fs.readFileSync(path.join(reviewDirectory, decisionFiles[0]), "utf8"), decisionBytes);
   assert.equal(fs.readdirSync(reviewDirectory).filter((name) => name.endsWith(".json")).length, 1);
   assert.equal(fs.existsSync(reviewedDirectory), false);
@@ -285,7 +492,11 @@ test("recovers an exact accepted Initiative after decision publication fails and
 test("keeps completed legacy Initiative reviews readable but never guesses a missing legacy Feature selection", async (t) => {
   const { root, directory, format } = fixture({ legacy: true });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const proposed = await proposeProductInitiative({ root, title: "Legacy review compatibility", reasoning: "Older digest-valid records remain audit-readable." });
+  const proposed = await proposeProductInitiative({
+    root,
+    title: "Legacy review compatibility",
+    reasoning: "Older digest-valid records remain audit-readable.",
+  });
   const request = {
     root,
     initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId,
@@ -322,7 +533,10 @@ test("keeps completed legacy Initiative reviews readable but never guesses a mis
   assert.equal(exactReplay.persistenceStatus, "existing");
   assert.equal(exactReplay.reviewedInitiative.initiativeId, legacyReviewed.initiativeId);
   fs.unlinkSync(path.join(reviewedDirectory, `${legacyReviewed.initiativeId}.json`));
-  await assert.rejects(() => reviewProductInitiative(request), (error) => error.code === "PRODUCT_INITIATIVE_REVIEW_RECOVERY_UNAVAILABLE");
+  await assert.rejects(
+    () => reviewProductInitiative(request),
+    (error) => error.code === "PRODUCT_INITIATIVE_REVIEW_RECOVERY_UNAVAILABLE",
+  );
 });
 
 test("uses legacy frozen Feature evidence for review and missing-output recovery without another user gate", async (t) => {
@@ -366,7 +580,12 @@ test("uses legacy frozen Feature evidence for review and missing-output recovery
   fs.mkdirSync(candidateDirectory, { recursive: true });
   fs.writeFileSync(path.join(featureDirectory, `${featureCandidate.featureCandidateId}.json`), `${JSON.stringify(featureCandidate, null, 2)}\n`);
   fs.writeFileSync(path.join(candidateDirectory, `${initiative.initiativeCandidateId}.json`), `${JSON.stringify(initiative, null, 2)}\n`);
-  const request = { root, initiativeCandidateId: initiative.initiativeCandidateId, disposition: "accept", rationale: "Accept the exact frozen legacy Feature candidate." };
+  const request = {
+    root,
+    initiativeCandidateId: initiative.initiativeCandidateId,
+    disposition: "accept",
+    rationale: "Accept the exact frozen legacy Feature candidate.",
+  };
   const accepted = await reviewProductInitiative(request);
   assert.equal(accepted.status, "initiative_accepted");
   assert.equal(accepted.reviewDecision.featureCandidate.featureCandidateId, featureCandidate.featureCandidateId);
@@ -429,24 +648,35 @@ test("replays an exact legacy rejection without treating its frozen Feature prop
 
 test("rejects Product Operating size, count, total-byte, and compound-output limits before durable writes", async (t) => {
   const roots = [];
-  t.after(() => { for (const root of roots) fs.rmSync(root, { recursive: true, force: true }); });
+  t.after(() => {
+    for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
+  });
 
-  const { root: oversizedRoot, directory: oversizedManagementDirectory, format: oversizedFormat } = fixture(); roots.push(oversizedRoot);
+  const { root: oversizedRoot, directory: oversizedManagementDirectory, format: oversizedFormat } = fixture();
+  roots.push(oversizedRoot);
   const oversizedSignals = path.join(oversizedRoot, oversizedManagementDirectory, "product-operations", "signals");
-  await assert.rejects(() => recordProductSignal({ root: oversizedRoot, statement: "x".repeat(1024 * 1024) }), (error) => error.code === "PRODUCT_OPERATING_LIMIT");
+  await assert.rejects(
+    () => recordProductSignal({ root: oversizedRoot, statement: "x".repeat(1024 * 1024) }),
+    (error) => error.code === "PRODUCT_OPERATING_LIMIT",
+  );
   assert.equal(fs.existsSync(oversizedSignals), false);
   const laterSignal = await recordProductSignal({ root: oversizedRoot, statement: "A later bounded signal remains usable." });
   assert.equal(laterSignal.status, "recorded");
   assert.equal(inspectProductOperatingLoop({ root: oversizedRoot, fresh: true }).projection.signals.length, 1);
 
-  const { root: countRoot, directory: countManagementDirectory, format: countFormat } = fixture(); roots.push(countRoot);
+  const { root: countRoot, directory: countManagementDirectory, format: countFormat } = fixture();
+  roots.push(countRoot);
   const countDirectory = path.join(countRoot, countManagementDirectory, "product-operations", "signals");
   fs.mkdirSync(countDirectory, { recursive: true });
   for (let index = 0; index < 512; index += 1) fs.writeFileSync(path.join(countDirectory, `count-${String(index).padStart(3, "0")}.json`), "{}\n");
-  await assert.rejects(() => recordProductSignal({ root: countRoot, statement: "The 513th artifact must not be written." }), (error) => error.code === "PRODUCT_OPERATING_LIMIT");
+  await assert.rejects(
+    () => recordProductSignal({ root: countRoot, statement: "The 513th artifact must not be written." }),
+    (error) => error.code === "PRODUCT_OPERATING_LIMIT",
+  );
   assert.equal(fs.readdirSync(countDirectory).filter((name) => name.endsWith(".json")).length, 512);
 
-  const { root: totalRoot, directory: totalManagementDirectory, format: totalFormat } = fixture(); roots.push(totalRoot);
+  const { root: totalRoot, directory: totalManagementDirectory, format: totalFormat } = fixture();
+  roots.push(totalRoot);
   const totalDirectory = path.join(totalRoot, totalManagementDirectory, "product-operations", "signals");
   fs.mkdirSync(totalDirectory, { recursive: true });
   for (let index = 0; index < 32; index += 1) {
@@ -454,10 +684,14 @@ test("rejects Product Operating size, count, total-byte, and compound-output lim
     fs.closeSync(fs.openSync(file, "wx"));
     fs.truncateSync(file, 1024 * 1024);
   }
-  await assert.rejects(() => recordProductSignal({ root: totalRoot, statement: "A write beyond the existing total-byte bound must not persist." }), (error) => error.code === "PRODUCT_OPERATING_LIMIT");
+  await assert.rejects(
+    () => recordProductSignal({ root: totalRoot, statement: "A write beyond the existing total-byte bound must not persist." }),
+    (error) => error.code === "PRODUCT_OPERATING_LIMIT",
+  );
   assert.equal(fs.readdirSync(totalDirectory).filter((name) => name.endsWith(".json")).length, 32);
 
-  const { root: compoundRoot, directory: compoundManagementDirectory, format: compoundFormat } = fixture(); roots.push(compoundRoot);
+  const { root: compoundRoot, directory: compoundManagementDirectory, format: compoundFormat } = fixture();
+  roots.push(compoundRoot);
   const project = JSON.parse(fs.readFileSync(path.join(compoundRoot, compoundManagementDirectory, "project.json"), "utf8"));
   const baseCandidate = {
     schemaVersion: 1,
@@ -510,7 +744,12 @@ test("serializes Product Operating writers without turning review or capacity ch
     reasoning: "A rejected Initiative does not adopt its candidate Feature resolution.",
     featureResolution: { kind: "gap", reason: "This candidate intentionally has no one-to-one Feature." },
   });
-  const rejected = await reviewProductInitiative({ root: reviewRoot, initiativeCandidateId: rejectedCandidate.initiativeCandidate.initiativeCandidateId, disposition: "reject", rationale: "Do not adopt this Initiative." });
+  const rejected = await reviewProductInitiative({
+    root: reviewRoot,
+    initiativeCandidateId: rejectedCandidate.initiativeCandidate.initiativeCandidateId,
+    disposition: "reject",
+    rationale: "Do not adopt this Initiative.",
+  });
   assert.equal(rejected.status, "initiative_rejected");
   assert.equal(rejected.reviewDecision.featureResolution, null);
   assert.equal(inspectProductOperatingLoop({ root: reviewRoot, fresh: true }).projection.reviewedInitiatives.length, 0);
@@ -522,13 +761,26 @@ test("serializes Product Operating writers without turning review or capacity ch
     featureResolution: { kind: "gap", reason: "Synthetic concurrency scope." },
   });
   const competing = await Promise.allSettled([
-    reviewProductInitiative({ root: reviewRoot, initiativeCandidateId: competingCandidate.initiativeCandidate.initiativeCandidateId, disposition: "accept", rationale: "Accept the first exact decision." }),
-    reviewProductInitiative({ root: reviewRoot, initiativeCandidateId: competingCandidate.initiativeCandidate.initiativeCandidateId, disposition: "reject", rationale: "Reject through a competing decision." }),
+    reviewProductInitiative({
+      root: reviewRoot,
+      initiativeCandidateId: competingCandidate.initiativeCandidate.initiativeCandidateId,
+      disposition: "accept",
+      rationale: "Accept the first exact decision.",
+    }),
+    reviewProductInitiative({
+      root: reviewRoot,
+      initiativeCandidateId: competingCandidate.initiativeCandidate.initiativeCandidateId,
+      disposition: "reject",
+      rationale: "Reject through a competing decision.",
+    }),
   ]);
   assert.equal(competing.filter((item) => item.status === "fulfilled").length, 1);
   assert.equal(competing.filter((item) => item.status === "rejected" && item.reason.code === "PRODUCT_INITIATIVE_ALREADY_REVIEWED").length, 1);
   const reviewProjection = inspectProductOperatingLoop({ root: reviewRoot, fresh: true }).projection;
-  assert.equal(reviewProjection.initiativeReviews.filter((item) => item.initiativeCandidateId === competingCandidate.initiativeCandidate.initiativeCandidateId).length, 1);
+  assert.equal(
+    reviewProjection.initiativeReviews.filter((item) => item.initiativeCandidateId === competingCandidate.initiativeCandidate.initiativeCandidateId).length,
+    1,
+  );
 
   const project = JSON.parse(fs.readFileSync(path.join(countRoot, countManagementDirectory, "project.json"), "utf8"));
   const signalsDirectory = path.join(countRoot, countManagementDirectory, "product-operations", "signals");
@@ -586,27 +838,45 @@ test("serializes competing Product decisions and capacity checks across independ
     }
   `;
   function launch(startFile, method, options) {
-    const child = spawn(process.execPath, ["--input-type=module", "-e", workerSource, JSON.stringify({ startFile, method, options })], { cwd: pluginRoot, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, ["--input-type=module", "-e", workerSource, JSON.stringify({ startFile, method, options })], {
+      cwd: pluginRoot,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     children.push(child);
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    const started = new Promise((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const started = new Promise((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
     const completed = new Promise((resolve, reject) => {
       child.once("error", reject);
       child.once("exit", (code, signal) => {
-        try { resolve({ code, signal, stderr, result: JSON.parse(stdout) }); }
-        catch (error) { reject(Object.assign(error, { stdout, stderr, code, signal })); }
+        try {
+          resolve({ code, signal, stderr, result: JSON.parse(stdout) });
+        } catch (error) {
+          reject(Object.assign(error, { stdout, stderr, code, signal }));
+        }
       });
     });
     return { started, completed };
   }
   async function race(startFile, calls) {
     const workers = calls.map((call) => launch(startFile, call.method, call.options));
-    try { await Promise.all(workers.map((worker) => worker.started)); }
-    catch (error) {
-      if (error?.code === "EPERM") { t.skip("The local sandbox forbids nested process creation; same-process serialization still runs."); return null; }
+    try {
+      await Promise.all(workers.map((worker) => worker.started));
+    } catch (error) {
+      if (error?.code === "EPERM") {
+        t.skip("The local sandbox forbids nested process creation; same-process serialization still runs.");
+        return null;
+      }
       throw error;
     }
     fs.writeFileSync(startFile, "start\n", { flag: "wx" });
@@ -621,14 +891,36 @@ test("serializes competing Product decisions and capacity checks across independ
   });
   const reviewStart = path.join(reviewRoot, "start-product-review-writers.flag");
   const reviews = await race(reviewStart, [
-    { method: "reviewProductInitiative", options: { root: reviewRoot, initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId, disposition: "accept", rationale: "Accept the exact candidate." } },
-    { method: "reviewProductInitiative", options: { root: reviewRoot, initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId, disposition: "reject", rationale: "Reject the exact candidate." } },
+    {
+      method: "reviewProductInitiative",
+      options: {
+        root: reviewRoot,
+        initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId,
+        disposition: "accept",
+        rationale: "Accept the exact candidate.",
+      },
+    },
+    {
+      method: "reviewProductInitiative",
+      options: {
+        root: reviewRoot,
+        initiativeCandidateId: proposed.initiativeCandidate.initiativeCandidateId,
+        disposition: "reject",
+        rationale: "Reject the exact candidate.",
+      },
+    },
   ]);
   if (reviews == null) return;
-  assert.equal(reviews.filter((item) => item.code === 0 && item.result.status === "initiative_accepted").length
-    + reviews.filter((item) => item.code === 0 && item.result.status === "initiative_rejected").length, 1);
+  assert.equal(
+    reviews.filter((item) => item.code === 0 && item.result.status === "initiative_accepted").length +
+      reviews.filter((item) => item.code === 0 && item.result.status === "initiative_rejected").length,
+    1,
+  );
   assert.equal(reviews.filter((item) => item.code === 2 && item.result.code === "PRODUCT_INITIATIVE_ALREADY_REVIEWED").length, 1);
-  assert.equal(reviews.every((item) => item.signal === null && item.stderr === ""), true);
+  assert.equal(
+    reviews.every((item) => item.signal === null && item.stderr === ""),
+    true,
+  );
   assert.equal(inspectProductOperatingLoop({ root: reviewRoot, fresh: true }).projection.initiativeReviews.length, 1);
 
   const project = JSON.parse(fs.readFileSync(path.join(countRoot, countManagementDirectory, "project.json"), "utf8"));
@@ -659,6 +951,9 @@ test("serializes competing Product decisions and capacity checks across independ
   ]);
   assert.equal(signals.filter((item) => item.code === 0 && item.result.status === "recorded").length, 1);
   assert.equal(signals.filter((item) => item.code === 2 && item.result.code === "PRODUCT_OPERATING_LIMIT").length, 1);
-  assert.equal(signals.every((item) => item.signal === null && item.stderr === ""), true);
+  assert.equal(
+    signals.every((item) => item.signal === null && item.stderr === ""),
+    true,
+  );
   assert.equal(fs.readdirSync(signalsDirectory).filter((name) => name.endsWith(".json")).length, 512);
 });

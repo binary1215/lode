@@ -14,10 +14,7 @@ import { dispatch } from "./mcp-server.mjs";
 import { publicToolName } from "./lib/lode-artifact-composition.mjs";
 import { formatForVerifiedOwner } from "./lib/project-storage-format.mjs";
 import { buildRuntimeVersionEvidence } from "./lib/runtime-machine-execution.mjs";
-import {
-  buildRuntimeProjectBinding,
-  buildRuntimeProtocolEvidence,
-} from "./lib/runtime-protocol-evidence.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "./lib/runtime-protocol-evidence.mjs";
 import {
   buildRuntimeInvocationAuthorization,
   buildRuntimeInvocationLifecycleReceipt,
@@ -54,11 +51,7 @@ import {
   executeClaudeRuntimeInvocation,
   extractClaudeStructuredResult,
 } from "./lib/runtime-claude-print.mjs";
-import {
-  applyRuntimeRunResult,
-  normalizeRuntimeRunResultTextProjection,
-  readRuntimeInvocationResult,
-} from "./lib/runtime-run-result-application.mjs";
+import { applyRuntimeRunResult, normalizeRuntimeRunResultTextProjection, readRuntimeInvocationResult } from "./lib/runtime-run-result-application.mjs";
 import { resolveVerifiedProcessSupervisor } from "./lib/runtime-process-supervisor.mjs";
 import {
   applyBoundedWorkerDispatchResult,
@@ -85,15 +78,22 @@ function assert(condition, message) {
 }
 
 async function rejectsWithCode(operation, expectedCode) {
-  try { await operation(); }
-  catch (error) { return error.code === expectedCode; }
+  try {
+    await operation();
+  } catch (error) {
+    return error.code === expectedCode;
+  }
   return false;
 }
 
 function canonicalFixtureValue(value) {
   if (Array.isArray(value)) return value.map(canonicalFixtureValue);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalFixtureValue(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalFixtureValue(value[key])]),
+    );
   }
   return value;
 }
@@ -103,7 +103,10 @@ function legacyAuthorizationFixture(authorization) {
   delete payload.runtimeSelection;
   delete payload.authorizationId;
   delete payload.authorizationHash;
-  const hash = crypto.createHash("sha256").update(JSON.stringify(canonicalFixtureValue(payload))).digest("hex");
+  const hash = crypto
+    .createHash("sha256")
+    .update(JSON.stringify(canonicalFixtureValue(payload)))
+    .digest("hex");
   return {
     ...payload,
     authorizationId: `execution-authorization-${hash.slice(0, 24)}`,
@@ -121,21 +124,25 @@ function recordProcess(event) {
 
 function recordingSpawn(command, args, options) {
   const child = spawn(command, args, options);
-  child.once("spawn", () => recordProcess({
-    type: "spawn",
-    pid: child.pid,
-    parentPid: process.pid,
-    command: [command, ...args].join(" "),
-    cwd: options.cwd,
-    ports: "none",
-  }));
-  child.once("exit", (exitCode, signal) => recordProcess({
-    type: "exit",
-    pid: child.pid,
-    parentPid: process.pid,
-    exitCode,
-    signal: signal || "none",
-  }));
+  child.once("spawn", () =>
+    recordProcess({
+      type: "spawn",
+      pid: child.pid,
+      parentPid: process.pid,
+      command: [command, ...args].join(" "),
+      cwd: options.cwd,
+      ports: "none",
+    }),
+  );
+  child.once("exit", (exitCode, signal) =>
+    recordProcess({
+      type: "exit",
+      pid: child.pid,
+      parentPid: process.pid,
+      exitCode,
+      signal: signal || "none",
+    }),
+  );
   return child;
 }
 
@@ -144,12 +151,15 @@ function evidenceFixtureOutput(command, args) {
   const runtime = basename.includes("opencode") ? "opencode" : basename.includes("claude") ? "claude" : "codex";
   const key = args.join(" ");
   if (key === "--version") return `${runtime} 1.2.3\n`;
-  if (runtime === "claude" && key === "--help") return "-p, --print\n--output-format stream-json\n--json-schema\n--no-session-persistence\n-r, --resume\n-c, --continue\n--permission-mode\n--tools\n--allowedTools\n--disable-slash-commands\n--setting-sources\n--strict-mcp-config\n--mcp-config\n";
+  if (runtime === "claude" && key === "--help")
+    return "-p, --print\n--output-format stream-json\n--json-schema\n--no-session-persistence\n-r, --resume\n-c, --continue\n--permission-mode\n--tools\n--allowedTools\n--disable-slash-commands\n--setting-sources\n--strict-mcp-config\n--mcp-config\n";
   if (runtime === "codex" && key === "--help") return "exec\nmcp-server\napp-server\n";
-  if (runtime === "codex" && key === "exec --help") return "Run Codex non-interactively\n--json\n--output-schema\n--color\n--sandbox\n--skip-git-repo-check\n--cd\n--ephemeral\nresume\n";
+  if (runtime === "codex" && key === "exec --help")
+    return "Run Codex non-interactively\n--json\n--output-schema\n--color\n--sandbox\n--skip-git-repo-check\n--cd\n--ephemeral\nresume\n";
   if (runtime === "codex" && key === "app-server --help") return "stdio://\ngenerate-json-schema\n--listen\n";
   if (runtime === "opencode" && key === "--help") return "opencode run\nopencode acp\nopencode serve\nopencode session\n";
-  if (runtime === "opencode" && key === "run --help") return "Run OpenCode with a message\n--format choices: json\n--pure\n--dir\n--title\n--session\n--continue\n";
+  if (runtime === "opencode" && key === "run --help")
+    return "Run OpenCode with a message\n--format choices: json\n--pure\n--dir\n--title\n--session\n--continue\n";
   if (runtime === "opencode" && key === "acp --help") return "Agent Client Protocol\n--cwd\n--port\n";
   return "unsupported fixture invocation\n";
 }
@@ -293,36 +303,55 @@ process.stdin.on('end', () => {
 `;
 
 async function main() {
-  const configuredProviderEnvironment = buildOpenCodeProviderEnvironment({
-    PATH: process.env.PATH || "",
-    FIXTURE_CUSTOM_API_KEY: "fixture-key",
-    FIXTURE_CUSTOM_BASE_URL: "https://provider.invalid/custom-root/",
-    UNSELECTED_API_KEY: "must-not-be-forwarded",
-  }, "read-only", "fixture-custom/model-v1");
+  const configuredProviderEnvironment = buildOpenCodeProviderEnvironment(
+    {
+      PATH: process.env.PATH || "",
+      FIXTURE_CUSTOM_API_KEY: "fixture-key",
+      FIXTURE_CUSTOM_BASE_URL: "https://provider.invalid/custom-root/",
+      UNSELECTED_API_KEY: "must-not-be-forwarded",
+    },
+    "read-only",
+    "fixture-custom/model-v1",
+  );
   const configuredProviderOverlay = JSON.parse(configuredProviderEnvironment.OPENCODE_CONFIG_CONTENT);
-  assert(configuredProviderEnvironment.FIXTURE_CUSTOM_API_KEY === "fixture-key"
-    && configuredProviderEnvironment.FIXTURE_CUSTOM_BASE_URL === "https://provider.invalid/custom-root/"
-    && configuredProviderEnvironment.UNSELECTED_API_KEY === undefined,
-  "OpenCode provider environment did not remain scoped to the selected provider.");
-  assert(configuredProviderOverlay.provider === undefined,
-    "HEAD replaced the user's OpenCode provider configuration instead of preserving OpenCode authority.");
-  const nativeProviderEnvironment = buildOpenCodeProviderEnvironment({
-    PATH: process.env.PATH || "",
-    FIXTURE_NATIVE_API_KEY: "fixture-key",
-    FIXTURE_NATIVE_BASE_URL: "https://native.invalid/provider-root/",
-    FIXTURE_CUSTOM_API_KEY: "must-not-be-forwarded",
-  }, "read-only", "fixture-native/model-v2");
+  assert(
+    configuredProviderEnvironment.FIXTURE_CUSTOM_API_KEY === "fixture-key" &&
+      configuredProviderEnvironment.FIXTURE_CUSTOM_BASE_URL === "https://provider.invalid/custom-root/" &&
+      configuredProviderEnvironment.UNSELECTED_API_KEY === undefined,
+    "OpenCode provider environment did not remain scoped to the selected provider.",
+  );
+  assert(
+    configuredProviderOverlay.provider === undefined,
+    "HEAD replaced the user's OpenCode provider configuration instead of preserving OpenCode authority.",
+  );
+  const nativeProviderEnvironment = buildOpenCodeProviderEnvironment(
+    {
+      PATH: process.env.PATH || "",
+      FIXTURE_NATIVE_API_KEY: "fixture-key",
+      FIXTURE_NATIVE_BASE_URL: "https://native.invalid/provider-root/",
+      FIXTURE_CUSTOM_API_KEY: "must-not-be-forwarded",
+    },
+    "read-only",
+    "fixture-native/model-v2",
+  );
   const nativeProviderOverlay = JSON.parse(nativeProviderEnvironment.OPENCODE_CONFIG_CONTENT);
-  assert(nativeProviderEnvironment.FIXTURE_NATIVE_API_KEY === "fixture-key"
-    && nativeProviderEnvironment.FIXTURE_NATIVE_BASE_URL === "https://native.invalid/provider-root/"
-    && nativeProviderEnvironment.FIXTURE_CUSTOM_API_KEY === undefined,
-  "OpenCode native provider environment did not remain scoped to the selected provider.");
-  assert(nativeProviderOverlay.provider === undefined,
-    "HEAD injected a provider preset into the OpenCode configuration overlay.");
+  assert(
+    nativeProviderEnvironment.FIXTURE_NATIVE_API_KEY === "fixture-key" &&
+      nativeProviderEnvironment.FIXTURE_NATIVE_BASE_URL === "https://native.invalid/provider-root/" &&
+      nativeProviderEnvironment.FIXTURE_CUSTOM_API_KEY === undefined,
+    "OpenCode native provider environment did not remain scoped to the selected provider.",
+  );
+  assert(nativeProviderOverlay.provider === undefined, "HEAD injected a provider preset into the OpenCode configuration overlay.");
   const resolvedRoot = path.resolve(temporaryRoot);
   const resolvedOperationalRoot = path.resolve(temporaryOperationalRoot);
-  assert(resolvedRoot.startsWith(`${pluginRoot}${path.sep}`) && path.basename(resolvedRoot).startsWith(".test-tmp-runtime-lifecycle-"), "Temporary lifecycle root escaped the plugin workspace.");
-  assert(resolvedOperationalRoot.startsWith(`${pluginRoot}${path.sep}`) && path.basename(resolvedOperationalRoot).startsWith(".test-tmp-runtime-operational-"), "Temporary operational root escaped the plugin workspace.");
+  assert(
+    resolvedRoot.startsWith(`${pluginRoot}${path.sep}`) && path.basename(resolvedRoot).startsWith(".test-tmp-runtime-lifecycle-"),
+    "Temporary lifecycle root escaped the plugin workspace.",
+  );
+  assert(
+    resolvedOperationalRoot.startsWith(`${pluginRoot}${path.sep}`) && path.basename(resolvedOperationalRoot).startsWith(".test-tmp-runtime-operational-"),
+    "Temporary operational root escaped the plugin workspace.",
+  );
   const previousOperationalRoot = process.env[RUNTIME_OPERATIONAL_STATE_ENV];
   process.env[RUNTIME_OPERATIONAL_STATE_ENV] = resolvedOperationalRoot;
   fs.mkdirSync(resolvedRoot, { recursive: false });
@@ -330,22 +359,30 @@ async function main() {
   try {
     const codexWireSchema = verifyCodexExecWireResultSchema(CODEX_EXEC_RESULT_SCHEMA);
     const codexWireSchemaText = JSON.stringify(codexWireSchema);
-    assert(!codexWireSchemaText.includes("$schema") && !codexWireSchemaText.includes("minLength")
-      && !codexWireSchemaText.includes("maxLength") && !codexWireSchemaText.includes("minItems")
-      && !codexWireSchemaText.includes("maxItems"), "Codex wire schema retained provider-specific constraint keywords.");
+    assert(
+      !codexWireSchemaText.includes("$schema") &&
+        !codexWireSchemaText.includes("minLength") &&
+        !codexWireSchemaText.includes("maxLength") &&
+        !codexWireSchemaText.includes("minItems") &&
+        !codexWireSchemaText.includes("maxItems"),
+      "Codex wire schema retained provider-specific constraint keywords.",
+    );
     let semanticResultBoundsRejected = false;
     try {
-      verifyRuntimeStructuredResult({
-        schemaVersion: 1,
-        kind: "RuntimeStructuredResult",
-        protocolVersion: "0.1.0",
-        outcome: "bounded",
-        evidence: Array.from({ length: 65 }, (_, index) => `evidence-${index}`),
-        planDelta: "",
-        impactRadius: [],
-        verification: [],
-        unknowns: [],
-      }, { scopeKind: "session" });
+      verifyRuntimeStructuredResult(
+        {
+          schemaVersion: 1,
+          kind: "RuntimeStructuredResult",
+          protocolVersion: "0.1.0",
+          outcome: "bounded",
+          evidence: Array.from({ length: 65 }, (_, index) => `evidence-${index}`),
+          planDelta: "",
+          impactRadius: [],
+          verification: [],
+          unknowns: [],
+        },
+        { scopeKind: "session" },
+      );
     } catch (error) {
       semanticResultBoundsRejected = error.code === "INVALID_RUNTIME_STRUCTURED_RESULT";
     }
@@ -357,30 +394,33 @@ async function main() {
       structuredResultObserved: false,
       eventTypes: ["thread.started", "turn.failed"],
     });
-    assert(JSON.stringify(classifiedCodexDiagnostics) === JSON.stringify([
-      "codex.missing-structured-result",
-      "codex.nonzero-exit",
-      "codex.structured-output-rejected",
-      "codex.transport",
-      "codex.turn-failed",
-    ]), "Codex provider diagnostics were not classified deterministically.");
+    assert(
+      JSON.stringify(classifiedCodexDiagnostics) ===
+        JSON.stringify(["codex.missing-structured-result", "codex.nonzero-exit", "codex.structured-output-rejected", "codex.transport", "codex.turn-failed"]),
+      "Codex provider diagnostics were not classified deterministically.",
+    );
     assert(!JSON.stringify(classifiedCodexDiagnostics).includes("private"), "Codex provider diagnostics retained raw error content.");
-    const normalizedOpenCodeResult = extractOpenCodeStructuredResult({
-      type: "text",
-      part: {
+    const normalizedOpenCodeResult = extractOpenCodeStructuredResult(
+      {
         type: "text",
-        text: JSON.stringify({
-          outcome: "OpenCode output normalized.",
-          evidence: ["bounded event"],
-          verification: ["schema verified"],
-          unknowns: [],
-        }),
+        part: {
+          type: "text",
+          text: JSON.stringify({
+            outcome: "OpenCode output normalized.",
+            evidence: ["bounded event"],
+            verification: ["schema verified"],
+            unknowns: [],
+          }),
+        },
       },
-    }, { scopeKind: "session" });
-    assert(normalizedOpenCodeResult?.kind === "RuntimeStructuredResult"
-      && normalizedOpenCodeResult.planDelta === ""
-      && normalizedOpenCodeResult.impactRadius.length === 0,
-    "OpenCode text event did not normalize into the provider-neutral Session result contract.");
+      { scopeKind: "session" },
+    );
+    assert(
+      normalizedOpenCodeResult?.kind === "RuntimeStructuredResult" &&
+        normalizedOpenCodeResult.planDelta === "" &&
+        normalizedOpenCodeResult.impactRadius.length === 0,
+      "OpenCode text event did not normalize into the provider-neutral Session result contract.",
+    );
     const classifiedOpenCodeDiagnostics = classifyOpenCodeProviderDiagnostics({
       record: { type: "error", error: { message: "Permission denied while connecting" } },
       stderr: "rate limit 429",
@@ -388,34 +428,41 @@ async function main() {
       structuredResultObserved: false,
       eventTypes: ["error"],
     });
-    assert(JSON.stringify(classifiedOpenCodeDiagnostics) === JSON.stringify([
-      "opencode.missing-structured-result",
-      "opencode.nonzero-exit",
-      "opencode.permission",
-      "opencode.provider-error",
-      "opencode.rate-limit",
-      "opencode.transport",
-    ]), "OpenCode provider diagnostics were not classified deterministically.");
-    const normalizedClaudeResult = extractClaudeStructuredResult({
-      type: "result",
-      subtype: "success",
-      is_error: false,
-      structured_output: {
-        schemaVersion: 1,
-        kind: "RuntimeStructuredResult",
-        protocolVersion: "0.1.0",
-        outcome: "Claude output normalized.",
-        evidence: ["bounded event"],
-        planDelta: "",
-        impactRadius: [],
-        verification: ["schema verified"],
-        unknowns: [],
+    assert(
+      JSON.stringify(classifiedOpenCodeDiagnostics) ===
+        JSON.stringify([
+          "opencode.missing-structured-result",
+          "opencode.nonzero-exit",
+          "opencode.permission",
+          "opencode.provider-error",
+          "opencode.rate-limit",
+          "opencode.transport",
+        ]),
+      "OpenCode provider diagnostics were not classified deterministically.",
+    );
+    const normalizedClaudeResult = extractClaudeStructuredResult(
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        structured_output: {
+          schemaVersion: 1,
+          kind: "RuntimeStructuredResult",
+          protocolVersion: "0.1.0",
+          outcome: "Claude output normalized.",
+          evidence: ["bounded event"],
+          planDelta: "",
+          impactRadius: [],
+          verification: ["schema verified"],
+          unknowns: [],
+        },
       },
-    }, { scopeKind: "session" });
-    assert(normalizedClaudeResult?.kind === "RuntimeStructuredResult"
-      && normalizedClaudeResult.planDelta === ""
-      && normalizedClaudeResult.impactRadius.length === 0,
-    "Claude result event did not normalize into the provider-neutral Session result contract.");
+      { scopeKind: "session" },
+    );
+    assert(
+      normalizedClaudeResult?.kind === "RuntimeStructuredResult" && normalizedClaudeResult.planDelta === "" && normalizedClaudeResult.impactRadius.length === 0,
+      "Claude result event did not normalize into the provider-neutral Session result contract.",
+    );
     const classifiedClaudeDiagnostics = classifyClaudeProviderDiagnostics({
       record: { type: "result", subtype: "error", is_error: true, result: "Permission denied while connecting" },
       stderr: "rate limit 429",
@@ -423,32 +470,44 @@ async function main() {
       structuredResultObserved: false,
       eventTypes: ["error"],
     });
-    assert(JSON.stringify(classifiedClaudeDiagnostics) === JSON.stringify([
-      "claude.missing-structured-result",
-      "claude.nonzero-exit",
-      "claude.permission",
-      "claude.provider-error",
-      "claude.rate-limit",
-      "claude.transport",
-    ]), "Claude provider diagnostics were not classified deterministically.");
+    assert(
+      JSON.stringify(classifiedClaudeDiagnostics) ===
+        JSON.stringify([
+          "claude.missing-structured-result",
+          "claude.nonzero-exit",
+          "claude.permission",
+          "claude.provider-error",
+          "claude.rate-limit",
+          "claude.transport",
+        ]),
+      "Claude provider diagnostics were not classified deterministically.",
+    );
     const normalizedRunText = normalizeRuntimeRunResultTextProjection({
       outcome: "  completed  ",
       planDelta: "  wrote one file  ",
       impactRadius: ["  run-output.txt  "],
       unknowns: ["  none beyond bounded verification  "],
     });
-    assert(JSON.stringify(normalizedRunText) === JSON.stringify({
-      outcome: "completed",
-      planDelta: "wrote one file",
-      impactRadius: ["run-output.txt"],
-      unknowns: ["none beyond bounded verification"],
-    }), "Runtime Run result text projection diverged from Execution Lineage normalization.");
+    assert(
+      JSON.stringify(normalizedRunText) ===
+        JSON.stringify({
+          outcome: "completed",
+          planDelta: "wrote one file",
+          impactRadius: ["run-output.txt"],
+          unknowns: ["none beyond bounded verification"],
+        }),
+      "Runtime Run result text projection diverged from Execution Lineage normalization.",
+    );
     fs.writeFileSync(path.join(resolvedRoot, "example.mjs"), "export const answer = 42;\n", "utf8");
     const initialized = initializeProject({ root: resolvedRoot, pluginRoot, runtimes: ["claude", "codex", "opencode"] });
     assert(initialized.status === "ready", "Fixture project initialization failed.");
     const initializedProject = inspectProject(resolvedRoot);
     assert(initializedProject.status === "ready", "Fixture project did not remain ready after initialization.");
-    assert(resolveRuntimeOperationalStateRoot({ projectRoot: resolvedRoot, storage: initializedProject.storage, create: false }) === fs.realpathSync(resolvedOperationalRoot), "Host-local operational root did not resolve exactly.");
+    assert(
+      resolveRuntimeOperationalStateRoot({ projectRoot: resolvedRoot, storage: initializedProject.storage, create: false }) ===
+        fs.realpathSync(resolvedOperationalRoot),
+      "Host-local operational root did not resolve exactly.",
+    );
     const runtimeFixtureBin = path.join(resolvedOperationalRoot, "runtime-discovery-fixture");
     fs.mkdirSync(runtimeFixtureBin, { recursive: false });
     for (const runtime of ["claude", "codex", "opencode"]) {
@@ -474,12 +533,14 @@ async function main() {
     }
     assert(projectLocalOperationalRootRejected, "Project-local operational root was accepted.");
     assert(!fs.existsSync(unsafeProjectLocalOperationalRoot), "Rejected project-local operational root was created before validation.");
-    const capsule = (await compileContext({
-      root: resolvedRoot,
-      task: "Prove bounded provider-neutral runtime lifecycle conformance without changing project files.",
-      budget: 32_768,
-      persist: true,
-    })).capsule;
+    const capsule = (
+      await compileContext({
+        root: resolvedRoot,
+        task: "Prove bounded provider-neutral runtime lifecycle conformance without changing project files.",
+        budget: 32_768,
+        persist: true,
+      })
+    ).capsule;
     const plan = createWholePlanSnapshot({
       root: resolvedRoot,
       objective: "Verify the runtime invocation lifecycle boundary.",
@@ -509,7 +570,10 @@ async function main() {
       environment: evidenceEnvironment,
       spawnImplementation: evidenceFixtureSpawn,
     });
-    assert(protocolEvidence.summary.allRequestedProtocolsObserved, `Protocol evidence fixture was partial: ${JSON.stringify(protocolEvidence.observations.map((item) => ({ runtime: item.runtime, negotiated: item.protocolNegotiationObserved, probes: item.probeOutcomes.map((probe) => ({ name: probe.name, status: probe.status, exitCode: probe.exitCode, stdoutBytes: probe.stdoutBytes, stderrBytes: probe.stderrBytes })), capabilities: item.capabilities })))}.`);
+    assert(
+      protocolEvidence.summary.allRequestedProtocolsObserved,
+      `Protocol evidence fixture was partial: ${JSON.stringify(protocolEvidence.observations.map((item) => ({ runtime: item.runtime, negotiated: item.protocolNegotiationObserved, probes: item.probeOutcomes.map((probe) => ({ name: probe.name, status: probe.status, exitCode: probe.exitCode, stdoutBytes: probe.stdoutBytes, stderrBytes: probe.stderrBytes })), capabilities: item.capabilities })))}.`,
+    );
     const projectBinding = buildRuntimeProjectBinding({
       storage: initializedProject.storage,
       projectId: initialized.project.projectId,
@@ -532,9 +596,10 @@ async function main() {
     });
     const driftedCodexObservation = driftedCodexProtocolEvidence.observations.find((item) => item.runtime === "codex");
     const driftedInvocationSurface = driftedCodexObservation.capabilities.find((item) => item.capability === "one-shot-invocation-surface");
-    assert(driftedCodexObservation.protocolNegotiationObserved === true
-      && driftedInvocationSurface?.support === "not-observed",
-    "Codex invocation-surface drift fixture did not preserve generic protocol negotiation while removing one fixed option.");
+    assert(
+      driftedCodexObservation.protocolNegotiationObserved === true && driftedInvocationSurface?.support === "not-observed",
+      "Codex invocation-surface drift fixture did not preserve generic protocol negotiation while removing one fixed option.",
+    );
     const driftedCodexProjectBinding = buildRuntimeProjectBinding({
       storage: initializedProject.storage,
       projectId: initialized.project.projectId,
@@ -574,10 +639,10 @@ async function main() {
       root: resolvedRoot,
       authorizationId: driftedCodexAuthorization.authorizationId,
     });
-    assert(codexInvocationSurfaceRejectedBeforeConsumption
-      && driftedCodexLease.lease.status === "available"
-      && driftedCodexLease.lease.singleUseConsumed === false,
-    "Codex invocation-surface drift was not rejected before execution-lease consumption.");
+    assert(
+      codexInvocationSurfaceRejectedBeforeConsumption && driftedCodexLease.lease.status === "available" && driftedCodexLease.lease.singleUseConsumed === false,
+      "Codex invocation-surface drift was not rejected before execution-lease consumption.",
+    );
     const selectedModelRequest = "Bind one exact runtime model without persisting the raw request.";
     const selectedModelAuthorization = buildRuntimeInvocationAuthorization({
       root: resolvedRoot,
@@ -601,13 +666,19 @@ async function main() {
       limits: { timeoutMs: 5_000 },
       persist: false,
     }).authorization;
-    assert(verifyRuntimeInvocationAuthorization(selectedModelAuthorization).runtimeSelection.model === "fixture-provider/model-v1",
-      "Runtime model selection did not round-trip through authorization verification.");
-    assert(selectedModelAuthorization.authorizationId !== alternateModelAuthorization.authorizationId,
-      "Runtime model drift did not change the immutable authorization identity.");
+    assert(
+      verifyRuntimeInvocationAuthorization(selectedModelAuthorization).runtimeSelection.model === "fixture-provider/model-v1",
+      "Runtime model selection did not round-trip through authorization verification.",
+    );
+    assert(
+      selectedModelAuthorization.authorizationId !== alternateModelAuthorization.authorizationId,
+      "Runtime model drift did not change the immutable authorization identity.",
+    );
     const legacyAuthorization = legacyAuthorizationFixture(selectedModelAuthorization);
-    assert(!("runtimeSelection" in verifyRuntimeInvocationAuthorization(legacyAuthorization)),
-      "Legacy authorization without runtime selection did not verify compatibly.");
+    assert(
+      !("runtimeSelection" in verifyRuntimeInvocationAuthorization(legacyAuthorization)),
+      "Legacy authorization without runtime selection did not verify compatibly.",
+    );
     let invalidRuntimeSelectionRejected = false;
     try {
       buildRuntimeInvocationAuthorization({
@@ -643,7 +714,10 @@ async function main() {
       }).authorization;
       assert(sessionAuthorization.kind === "ExecutionAuthorization", `${runtime} Session authorization kind is invalid.`);
       assert(sessionAuthorization.scope.kind === "session", `${runtime} Session scope was not recorded.`);
-      assert(sessionAuthorization.scope.runId === null && sessionAuthorization.scope.executionContractId === null, `${runtime} Session authorization acquired Run authority.`);
+      assert(
+        sessionAuthorization.scope.runId === null && sessionAuthorization.scope.executionContractId === null,
+        `${runtime} Session authorization acquired Run authority.`,
+      );
       let requestDriftRejected = false;
       try {
         await runRuntimeLifecycleConformance({
@@ -671,8 +745,16 @@ async function main() {
       });
       verifyRuntimeResultPacketDraft(sessionDraft);
       assert(sessionSuccess.receipt.scopeKind === "session", `${runtime} Session receipt lost its scope.`);
-      assert(sessionDraft.scopeKind === "session" && sessionDraft.freshHeadReviewRequired === false, `${runtime} Session result incorrectly requires Fresh HEAD review.`);
-      const sessionPublicArtifacts = JSON.stringify({ authorization: sessionAuthorization, receipt: sessionSuccess.receipt, executionLease: sessionSuccess.executionLease, draft: sessionDraft });
+      assert(
+        sessionDraft.scopeKind === "session" && sessionDraft.freshHeadReviewRequired === false,
+        `${runtime} Session result incorrectly requires Fresh HEAD review.`,
+      );
+      const sessionPublicArtifacts = JSON.stringify({
+        authorization: sessionAuthorization,
+        receipt: sessionSuccess.receipt,
+        executionLease: sessionSuccess.executionLease,
+        draft: sessionDraft,
+      });
       assert(!sessionPublicArtifacts.includes(request), `${runtime} Session authorization persisted the raw request.`);
       sessionResults.push({
         runtime,
@@ -694,7 +776,9 @@ async function main() {
       persist: true,
     }).authorization;
     const codexObservation = protocolEvidence.observations.find((item) => item.runtime === "codex");
-    const supervisorFixtureRoot = path.resolve(process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot);
+    const supervisorFixtureRoot = path.resolve(
+      process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+    );
     const supervisorSelection = resolveVerifiedProcessSupervisor({ pluginRoot: supervisorFixtureRoot });
     const codexProtocolExecution = await executeCodexRuntimeInvocation({
       root: resolvedRoot,
@@ -712,10 +796,15 @@ async function main() {
     assert(codexProtocolExecution.receipt.status === "completed", "Codex exec protocol fixture did not complete.");
     assert(codexProtocolExecution.actualProviderInvoked === false, "Codex protocol fixture was represented as an actual provider invocation.");
     assert(codexProtocolExecution.receipt.providerBoundary.structuredResultObserved === true, "Codex structured result was not observed.");
-    assert(codexProtocolExecution.receipt.processBoundary.supervisionMode === "native-process-tree"
-      && codexProtocolExecution.receipt.processBoundary.descendantTreeOwnershipValidated === true,
-    "Codex protocol fixture did not pass native descendant-tree supervision.");
-    assert(codexProtocolExecution.draft.providerResult?.outcome === "Codex protocol fixture completed.", "Codex structured result was not carried into the draft.");
+    assert(
+      codexProtocolExecution.receipt.processBoundary.supervisionMode === "native-process-tree" &&
+        codexProtocolExecution.receipt.processBoundary.descendantTreeOwnershipValidated === true,
+      "Codex protocol fixture did not pass native descendant-tree supervision.",
+    );
+    assert(
+      codexProtocolExecution.draft.providerResult?.outcome === "Codex protocol fixture completed.",
+      "Codex structured result was not carried into the draft.",
+    );
     assert(codexProtocolExecution.draft.freshHeadReviewRequired === false, "Codex Session protocol fixture incorrectly required Fresh HEAD review.");
     const recordedCodexProtocolExecution = readRuntimeInvocationResult({
       root: resolvedRoot,
@@ -732,9 +821,7 @@ async function main() {
     assert(sessionApplicationRejected, "Session protocol fixture entered canonical Run result application.");
     assert(recordedCodexProtocolExecution.draft.draftHash === codexProtocolExecution.draft.draftHash, "Codex invocation record did not round-trip.");
     assert(!JSON.stringify(recordedCodexProtocolExecution).includes(codexProtocolRequest), "Codex invocation record persisted the raw Session request.");
-    const cliCodexProtocolResult = await runCommand([
-      "runtime-invocation-result", resolvedRoot, "--authorization", codexProtocolAuthorization.authorizationId,
-    ]);
+    const cliCodexProtocolResult = await runCommand(["runtime-invocation-result", resolvedRoot, "--authorization", codexProtocolAuthorization.authorizationId]);
     assert(cliCodexProtocolResult.draft.draftHash === codexProtocolExecution.draft.draftHash, "Codex invocation CLI read failed.");
     const mcpCodexProtocolResult = await dispatch({
       jsonrpc: "2.0",
@@ -773,26 +860,28 @@ async function main() {
     });
     assert(opencodeProtocolExecution.receipt.status === "completed", "OpenCode run protocol fixture did not complete.");
     assert(opencodeProtocolExecution.actualProviderInvoked === false, "OpenCode protocol fixture was represented as an actual provider invocation.");
-    assert(opencodeProtocolExecution.receipt.providerBoundary.structuredResultObserved === true,
-      "OpenCode structured result was not observed.");
-    assert(opencodeProtocolExecution.receipt.processBoundary.supervisionMode === "native-process-tree"
-      && opencodeProtocolExecution.receipt.processBoundary.descendantTreeOwnershipValidated === true,
-    "OpenCode protocol fixture did not pass native descendant-tree supervision.");
-    assert(opencodeProtocolExecution.draft.providerResult?.outcome === "OpenCode protocol fixture completed.",
-      "OpenCode structured result was not carried into the draft.");
-    assert(opencodeProtocolExecution.draft.freshHeadReviewRequired === false,
-      "OpenCode Session protocol fixture incorrectly required Fresh HEAD review.");
+    assert(opencodeProtocolExecution.receipt.providerBoundary.structuredResultObserved === true, "OpenCode structured result was not observed.");
+    assert(
+      opencodeProtocolExecution.receipt.processBoundary.supervisionMode === "native-process-tree" &&
+        opencodeProtocolExecution.receipt.processBoundary.descendantTreeOwnershipValidated === true,
+      "OpenCode protocol fixture did not pass native descendant-tree supervision.",
+    );
+    assert(
+      opencodeProtocolExecution.draft.providerResult?.outcome === "OpenCode protocol fixture completed.",
+      "OpenCode structured result was not carried into the draft.",
+    );
+    assert(opencodeProtocolExecution.draft.freshHeadReviewRequired === false, "OpenCode Session protocol fixture incorrectly required Fresh HEAD review.");
     const recordedOpenCodeProtocolExecution = readRuntimeInvocationResult({
       root: resolvedRoot,
       storage: initializedProject.storage,
       authorizationId: opencodeProtocolAuthorization.authorizationId,
     });
-    assert(recordedOpenCodeProtocolExecution.application === null,
-      "OpenCode Session protocol fixture acquired a Run result application.");
-    assert(recordedOpenCodeProtocolExecution.draft.draftHash === opencodeProtocolExecution.draft.draftHash,
-      "OpenCode invocation record did not round-trip.");
-    assert(!JSON.stringify(recordedOpenCodeProtocolExecution).includes(opencodeProtocolRequest),
-      "OpenCode invocation record persisted the raw Session request.");
+    assert(recordedOpenCodeProtocolExecution.application === null, "OpenCode Session protocol fixture acquired a Run result application.");
+    assert(recordedOpenCodeProtocolExecution.draft.draftHash === opencodeProtocolExecution.draft.draftHash, "OpenCode invocation record did not round-trip.");
+    assert(
+      !JSON.stringify(recordedOpenCodeProtocolExecution).includes(opencodeProtocolRequest),
+      "OpenCode invocation record persisted the raw Session request.",
+    );
     const claudeProtocolRequest = "Return one bounded structured Session result through the Claude print stream-json protocol fixture.";
     const claudeProtocolAuthorization = buildRuntimeInvocationAuthorization({
       root: resolvedRoot,
@@ -806,11 +895,13 @@ async function main() {
     }).authorization;
     const claudeObservation = protocolEvidence.observations.find((item) => item.runtime === "claude");
     const claudeArguments = buildClaudePrintArguments({ workspaceMode: "workspace-write", model: "anthropic/claude-test" });
-    assert(claudeArguments.includes("--no-session-persistence")
-      && claudeArguments.includes("--strict-mcp-config")
-      && claudeArguments.includes("Read,Glob,Grep,Edit,Write")
-      && !claudeArguments.includes("--dangerously-skip-permissions"),
-    "Claude fixed one-shot arguments weakened the authorization or persistence boundary.");
+    assert(
+      claudeArguments.includes("--no-session-persistence") &&
+        claudeArguments.includes("--strict-mcp-config") &&
+        claudeArguments.includes("Read,Glob,Grep,Edit,Write") &&
+        !claudeArguments.includes("--dangerously-skip-permissions"),
+      "Claude fixed one-shot arguments weakened the authorization or persistence boundary.",
+    );
     const claudeProtocolExecution = await executeClaudeRuntimeInvocation({
       root: resolvedRoot,
       authorization: claudeProtocolAuthorization,
@@ -824,23 +915,29 @@ async function main() {
       onProcessEvent: recordProcess,
       persist: true,
     });
-    assert(claudeProtocolExecution.receipt.status === "completed"
-      && claudeProtocolExecution.actualProviderInvoked === false
-      && claudeProtocolExecution.receipt.providerBoundary.structuredResultObserved === true
-      && claudeProtocolExecution.receipt.processBoundary.descendantTreeOwnershipValidated === true,
-    "Claude print protocol fixture did not complete through native descendant-tree supervision.");
-    assert(claudeProtocolExecution.draft.providerResult?.outcome === "Claude protocol fixture completed."
-      && claudeProtocolExecution.draft.freshHeadReviewRequired === false,
-    "Claude structured Session result did not preserve the common result boundary.");
+    assert(
+      claudeProtocolExecution.receipt.status === "completed" &&
+        claudeProtocolExecution.actualProviderInvoked === false &&
+        claudeProtocolExecution.receipt.providerBoundary.structuredResultObserved === true &&
+        claudeProtocolExecution.receipt.processBoundary.descendantTreeOwnershipValidated === true,
+      "Claude print protocol fixture did not complete through native descendant-tree supervision.",
+    );
+    assert(
+      claudeProtocolExecution.draft.providerResult?.outcome === "Claude protocol fixture completed." &&
+        claudeProtocolExecution.draft.freshHeadReviewRequired === false,
+      "Claude structured Session result did not preserve the common result boundary.",
+    );
     const recordedClaudeProtocolExecution = readRuntimeInvocationResult({
       root: resolvedRoot,
       storage: initializedProject.storage,
       authorizationId: claudeProtocolAuthorization.authorizationId,
     });
-    assert(recordedClaudeProtocolExecution.application === null
-      && recordedClaudeProtocolExecution.draft.draftHash === claudeProtocolExecution.draft.draftHash
-      && !JSON.stringify(recordedClaudeProtocolExecution).includes(claudeProtocolRequest),
-    "Claude invocation record did not round-trip without raw request persistence.");
+    assert(
+      recordedClaudeProtocolExecution.application === null &&
+        recordedClaudeProtocolExecution.draft.draftHash === claudeProtocolExecution.draft.draftHash &&
+        !JSON.stringify(recordedClaudeProtocolExecution).includes(claudeProtocolRequest),
+      "Claude invocation record did not round-trip without raw request persistence.",
+    );
     const legacyEventRequest = "Reproduce the historical Codex large-event boundary with the former explicit 128 KiB limit.";
     const legacyEventAuthorization = buildRuntimeInvocationAuthorization({
       root: resolvedRoot,
@@ -865,19 +962,20 @@ async function main() {
       onProcessEvent: recordProcess,
       persist: true,
     });
-    assert(legacyEventExecution.receipt.status === "invalid-event"
-      && legacyEventExecution.receipt.providerBoundary.structuredResultObserved === true
-      && legacyEventExecution.receipt.providerBoundary.diagnosticCodes.includes("codex.event-byte-limit")
-      && legacyEventExecution.draft.unknowns.includes("Provider diagnostic: codex.event-byte-limit")
-      && !legacyEventExecution.receipt.eventTypes.includes("turn.completed"),
-    "Former 128 KiB event boundary did not reproduce the live Run failure shape.");
+    assert(
+      legacyEventExecution.receipt.status === "invalid-event" &&
+        legacyEventExecution.receipt.providerBoundary.structuredResultObserved === true &&
+        legacyEventExecution.receipt.providerBoundary.diagnosticCodes.includes("codex.event-byte-limit") &&
+        legacyEventExecution.draft.unknowns.includes("Provider diagnostic: codex.event-byte-limit") &&
+        !legacyEventExecution.receipt.eventTypes.includes("turn.completed"),
+      "Former 128 KiB event boundary did not reproduce the live Run failure shape.",
+    );
     const recordedLegacyEventExecution = readRuntimeInvocationResult({
       root: resolvedRoot,
       storage: initializedProject.storage,
       authorizationId: legacyEventAuthorization.authorizationId,
     });
-    assert(!JSON.stringify(recordedLegacyEventExecution).includes("aggregated_output"),
-      "Rejected large event payload was persisted in the invocation record.");
+    assert(!JSON.stringify(recordedLegacyEventExecution).includes("aggregated_output"), "Rejected large event payload was persisted in the invocation record.");
     const defaultEventRequest = "Accept one bounded Codex large event under the current default and observe terminal completion.";
     const defaultEventAuthorization = buildRuntimeInvocationAuthorization({
       root: resolvedRoot,
@@ -889,10 +987,8 @@ async function main() {
       limits: { timeoutMs: 5_000 },
       persist: true,
     }).authorization;
-    assert(defaultEventAuthorization.limits.maxEventBytes === 2 * 1024 * 1024,
-      "Current default did not reserve the bounded 2 MiB Codex event envelope.");
-    assert(defaultEventAuthorization.limits.maxStdoutBytes === 8 * 1024 * 1024,
-      "Current default did not retain the bounded 8 MiB total stdout envelope.");
+    assert(defaultEventAuthorization.limits.maxEventBytes === 2 * 1024 * 1024, "Current default did not reserve the bounded 2 MiB Codex event envelope.");
+    assert(defaultEventAuthorization.limits.maxStdoutBytes === 8 * 1024 * 1024, "Current default did not retain the bounded 8 MiB total stdout envelope.");
     const defaultEventExecution = await executeCodexRuntimeInvocation({
       root: resolvedRoot,
       authorization: defaultEventAuthorization,
@@ -906,18 +1002,22 @@ async function main() {
       onProcessEvent: recordProcess,
       persist: true,
     });
-    assert(defaultEventExecution.receipt.status === "completed"
-      && defaultEventExecution.receipt.providerBoundary.structuredResultObserved === true
-      && defaultEventExecution.receipt.eventTypes.includes("turn.completed")
-      && defaultEventExecution.receipt.providerBoundary.diagnosticCodes.length === 0,
-    "Current bounded large-event default did not preserve structured result and terminal completion.");
+    assert(
+      defaultEventExecution.receipt.status === "completed" &&
+        defaultEventExecution.receipt.providerBoundary.structuredResultObserved === true &&
+        defaultEventExecution.receipt.eventTypes.includes("turn.completed") &&
+        defaultEventExecution.receipt.providerBoundary.diagnosticCodes.length === 0,
+      "Current bounded large-event default did not preserve structured result and terminal completion.",
+    );
     const recordedDefaultEventExecution = readRuntimeInvocationResult({
       root: resolvedRoot,
       storage: initializedProject.storage,
       authorizationId: defaultEventAuthorization.authorizationId,
     });
-    assert(!JSON.stringify(recordedDefaultEventExecution).includes("aggregated_output"),
-      "Accepted large event payload was persisted in the invocation record.");
+    assert(
+      !JSON.stringify(recordedDefaultEventExecution).includes("aggregated_output"),
+      "Accepted large event payload was persisted in the invocation record.",
+    );
     const sessionWritePreview = buildRuntimeInvocationAuthorization({
       root: resolvedRoot,
       runtime: "codex",
@@ -927,10 +1027,12 @@ async function main() {
       projectBinding,
       persist: false,
     }).authorization;
-    assert(sessionWritePreview.scope.kind === "session"
-      && sessionWritePreview.requiredAllowedActions.includes("project.write")
-      && sessionWritePreview.authorizationBoundary.freshHeadReviewRequired === false,
-    "Low-risk Session workspace-write was not authorized through the lightweight lane.");
+    assert(
+      sessionWritePreview.scope.kind === "session" &&
+        sessionWritePreview.requiredAllowedActions.includes("project.write") &&
+        sessionWritePreview.authorizationBoundary.freshHeadReviewRequired === false,
+      "Low-risk Session workspace-write was not authorized through the lightweight lane.",
+    );
     const run = startRun({ root: resolvedRoot, executionContractId: contract.executionContractId }).run;
     const results = [];
     for (const runtime of ["claude", "codex", "opencode"]) {
@@ -954,9 +1056,15 @@ async function main() {
         jsonrpc: "2.0",
         id: runtime,
         method: "tools/call",
-        params: { name: publicToolName("head_runtime_invocation_authorization"), arguments: { project_root: resolvedRoot, authorization_id: authorization.authorizationId } },
+        params: {
+          name: publicToolName("head_runtime_invocation_authorization"),
+          arguments: { project_root: resolvedRoot, authorization_id: authorization.authorizationId },
+        },
       });
-      assert(mcpRead.result?.structuredContent?.authorization?.authorizationHash === authorization.authorizationHash, `${runtime} MCP authorization read failed.`);
+      assert(
+        mcpRead.result?.structuredContent?.authorization?.authorizationHash === authorization.authorizationHash,
+        `${runtime} MCP authorization read failed.`,
+      );
       const success = await runRuntimeLifecycleConformance({
         root: resolvedRoot,
         authorization,
@@ -990,17 +1098,22 @@ async function main() {
           consumption: success.executionLease.consumption,
           providerMode: "opencode-protocol-fixture",
         });
-        assert(opencodeProtocolFixtureReceipt.runtime === "opencode"
-          && opencodeProtocolFixtureReceipt.providerBoundary.mode === "opencode-protocol-fixture"
-          && opencodeProtocolFixtureReceipt.providerBoundary.actualProviderInvoked === false,
-        "OpenCode protocol fixture mode did not remain provider-neutral fixture evidence.");
+        assert(
+          opencodeProtocolFixtureReceipt.runtime === "opencode" &&
+            opencodeProtocolFixtureReceipt.providerBoundary.mode === "opencode-protocol-fixture" &&
+            opencodeProtocolFixtureReceipt.providerBoundary.actualProviderInvoked === false,
+          "OpenCode protocol fixture mode did not remain provider-neutral fixture evidence.",
+        );
       }
       verifyRuntimeExecutionLeaseConsumption(success.executionLease.consumption);
       verifyRuntimeExecutionLeaseRelease(success.executionLease.release);
       const tamperedConsumption = { ...success.executionLease.consumption, consumedAt: new Date(0).toISOString() };
       let consumptionTamperRejected = false;
-      try { verifyRuntimeExecutionLeaseConsumption(tamperedConsumption); }
-      catch { consumptionTamperRejected = true; }
+      try {
+        verifyRuntimeExecutionLeaseConsumption(tamperedConsumption);
+      } catch {
+        consumptionTamperRejected = true;
+      }
       assert(consumptionTamperRejected, `${runtime} execution lease consumption tamper was accepted.`);
       assert(success.executionLease.release.operationStatus === "completed", `${runtime} execution lease release did not record completion.`);
       const leaseStatus = inspectRuntimeInvocationExecutionLease({ root: resolvedRoot, authorizationId: authorization.authorizationId });
@@ -1012,9 +1125,15 @@ async function main() {
         jsonrpc: "2.0",
         id: `${runtime}-lease`,
         method: "tools/call",
-        params: { name: publicToolName("head_runtime_invocation_lease_status"), arguments: { project_root: resolvedRoot, authorization_id: authorization.authorizationId } },
+        params: {
+          name: publicToolName("head_runtime_invocation_lease_status"),
+          arguments: { project_root: resolvedRoot, authorization_id: authorization.authorizationId },
+        },
       });
-      assert(mcpLeaseStatus.result?.structuredContent?.lease?.release?.releaseId === success.executionLease.release.releaseId, `${runtime} MCP lease inspection failed.`);
+      assert(
+        mcpLeaseStatus.result?.structuredContent?.lease?.release?.releaseId === success.executionLease.release.releaseId,
+        `${runtime} MCP lease inspection failed.`,
+      );
       let replayRejected = false;
       try {
         await runRuntimeLifecycleConformance({ root: resolvedRoot, authorization, mode: "success", onProcessEvent: recordProcess });
@@ -1029,7 +1148,13 @@ async function main() {
       });
       verifyRuntimeResultPacketDraft(draft);
       assert(draft.rawTranscriptIncluded === false && draft.finalResultPacketPersisted === false, `${runtime} draft crossed the result boundary.`);
-      const publicArtifacts = JSON.stringify({ authorization, events: success.events, receipt: success.receipt, executionLease: success.executionLease, draft });
+      const publicArtifacts = JSON.stringify({
+        authorization,
+        events: success.events,
+        receipt: success.receipt,
+        executionLease: success.executionLease,
+        draft,
+      });
       assert(!publicArtifacts.includes(resolvedRoot), `${runtime} artifacts exposed the project root.`);
       assert(!publicArtifacts.includes("fixture-session"), `${runtime} artifacts exposed the provider-session reference.`);
       assert(!publicArtifacts.includes("answer = 42"), `${runtime} artifacts exposed project content.`);
@@ -1053,8 +1178,11 @@ async function main() {
     delete timeoutAuthorization.authorizationId;
     delete timeoutAuthorization.authorizationHash;
     let timeoutRejected = false;
-    try { verifyRuntimeInvocationAuthorization(timeoutAuthorization); }
-    catch { timeoutRejected = true; }
+    try {
+      verifyRuntimeInvocationAuthorization(timeoutAuthorization);
+    } catch {
+      timeoutRejected = true;
+    }
     assert(timeoutRejected, "Tampered authorization was accepted.");
     const timeoutPlan = buildRuntimeInvocationAuthorization({
       root: resolvedRoot,
@@ -1096,12 +1224,27 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 100));
     const activeLease = inspectRuntimeInvocationExecutionLease({ root: resolvedRoot, authorizationId: cancellationPlan.authorizationId });
     assert(activeLease.lease.status === "consumed-active", "In-flight execution lease was not visible as consumed and active.");
-    assert(activeLease.lease.operationalState.location === "host-local-outside-project"
-      && activeLease.lease.operationalState.pathExposed === false
-      && activeLease.lease.operationalState.ownerLockPersistedInProject === false,
-    "Execution lease inspection did not preserve the external operational-state boundary.");
-    const projectOwnerLock = path.join(resolvedRoot, initializedProject.storage.directory, "runtime", "execution-leases", cancellationPlan.authorizationId, "owner.lock");
-    const operationalOwnerLock = path.join(resolvedOperationalRoot, "runtime-execution-leases", initialized.project.projectId, cancellationPlan.authorizationId, "owner.lock");
+    assert(
+      activeLease.lease.operationalState.location === "host-local-outside-project" &&
+        activeLease.lease.operationalState.pathExposed === false &&
+        activeLease.lease.operationalState.ownerLockPersistedInProject === false,
+      "Execution lease inspection did not preserve the external operational-state boundary.",
+    );
+    const projectOwnerLock = path.join(
+      resolvedRoot,
+      initializedProject.storage.directory,
+      "runtime",
+      "execution-leases",
+      cancellationPlan.authorizationId,
+      "owner.lock",
+    );
+    const operationalOwnerLock = path.join(
+      resolvedOperationalRoot,
+      "runtime-execution-leases",
+      initialized.project.projectId,
+      cancellationPlan.authorizationId,
+      "owner.lock",
+    );
     assert(!fs.existsSync(projectOwnerLock), "Operational owner lock leaked into project lineage.");
     assert(fs.existsSync(operationalOwnerLock), "Operational owner lock was not created in host-local state.");
     let concurrentReplayRejected = false;
@@ -1132,7 +1275,9 @@ async function main() {
       await runRuntimeLifecycleConformance({
         root: resolvedRoot,
         authorization: spawnFailureAuthorization,
-        spawnImplementation: () => { throw new Error("synthetic spawn failure"); },
+        spawnImplementation: () => {
+          throw new Error("synthetic spawn failure");
+        },
         onProcessEvent: recordProcess,
       });
     } catch (error) {
@@ -1170,7 +1315,14 @@ async function main() {
       limits: { timeoutMs: 5_000, maxEvents: 4_093 },
       persist: true,
     }).authorization;
-    const legacyProjectLock = path.join(resolvedRoot, initializedProject.storage.directory, "runtime", "execution-leases", legacyLockAuthorization.authorizationId, "owner.lock");
+    const legacyProjectLock = path.join(
+      resolvedRoot,
+      initializedProject.storage.directory,
+      "runtime",
+      "execution-leases",
+      legacyLockAuthorization.authorizationId,
+      "owner.lock",
+    );
     fs.mkdirSync(legacyProjectLock, { recursive: true });
     let legacyProjectLockRejected = false;
     try {
@@ -1181,8 +1333,7 @@ async function main() {
     assert(legacyProjectLockRejected, "Legacy project-local owner lock was silently ignored.");
     fs.rmdirSync(legacyProjectLock);
     const reviewDirectory = path.join(resolvedRoot, initializedProject.storage.directory, "lineage", "review-decisions");
-    const reviewCount = () => fs.existsSync(reviewDirectory)
-      ? fs.readdirSync(reviewDirectory).filter((name) => name.endsWith(".json")).length : 0;
+    const reviewCount = () => (fs.existsSync(reviewDirectory) ? fs.readdirSync(reviewDirectory).filter((name) => name.endsWith(".json")).length : 0);
     const reviewsBeforeDispatch = reviewCount();
     const workerAuthorization = buildRuntimeInvocationAuthorization({
       root: resolvedRoot,
@@ -1192,7 +1343,12 @@ async function main() {
       protocolEvidence,
       projectBinding,
       limits: { timeoutMs: 5_000, maxEvents: 4_092 },
-      worker: { taskKey: "provider-output-spool", role: "coder", outcome: "Return the synthetic bounded result", selectedContext: "Use the selected fixture evidence only." },
+      worker: {
+        taskKey: "provider-output-spool",
+        role: "coder",
+        outcome: "Return the synthetic bounded result",
+        selectedContext: "Use the selected fixture evidence only.",
+      },
       persist: true,
     }).authorization;
     const workerDispatch = createBoundedWorkerDispatch({
@@ -1200,17 +1356,21 @@ async function main() {
       authorizationId: workerAuthorization.authorizationId,
       role: "coder",
     });
-    assert(workerDispatch.status === "dispatched"
-      && workerDispatch.dispatch.authorityBoundary.planeId === "P3"
-      && workerDispatch.dispatch.ownershipBoundary.wholeOutcomeOwner === formatForVerifiedOwner(initializedProject.storage).roleField,
-    "Bounded worker dispatch did not preserve P3 scope/result ownership beneath HEAD.");
+    assert(
+      workerDispatch.status === "dispatched" &&
+        workerDispatch.dispatch.authorityBoundary.planeId === "P3" &&
+        workerDispatch.dispatch.ownershipBoundary.wholeOutcomeOwner === formatForVerifiedOwner(initializedProject.storage).roleField,
+      "Bounded worker dispatch did not preserve P3 scope/result ownership beneath HEAD.",
+    );
     const sameDispatch = createBoundedWorkerDispatch({
       root: resolvedRoot,
       authorizationId: workerAuthorization.authorizationId,
       role: "coder",
     });
-    assert(sameDispatch.status === "existing" && sameDispatch.dispatch.dispatchId === workerDispatch.dispatch.dispatchId,
-      "Identical bounded worker dispatch did not replay to the same ownership record.");
+    assert(
+      sameDispatch.status === "existing" && sameDispatch.dispatch.dispatchId === workerDispatch.dispatch.dispatchId,
+      "Identical bounded worker dispatch did not replay to the same ownership record.",
+    );
     let competingOwnerRejected = false;
     try {
       createBoundedWorkerDispatch({
@@ -1227,10 +1387,10 @@ async function main() {
       authorizationId: workerAuthorization.authorizationId,
       timeoutMs: 0,
     });
-    assert(pendingWorker.waitOutcome.status === "pending"
-      && pendingWorker.waitOutcome.authorityBoundary.planeId === "P5"
-      && reviewCount() === reviewsBeforeDispatch,
-    "Pending worker wait created authority or lost its P5 boundary.");
+    assert(
+      pendingWorker.waitOutcome.status === "pending" && pendingWorker.waitOutcome.authorityBoundary.planeId === "P5" && reviewCount() === reviewsBeforeDispatch,
+      "Pending worker wait created authority or lost its P5 boundary.",
+    );
     const workerExecution = await executeBoundedWorkerDispatch({
       root: resolvedRoot,
       authorizationId: workerAuthorization.authorizationId,
@@ -1245,55 +1405,79 @@ async function main() {
         onProcessEvent: recordProcess,
       },
     });
-    assert(workerExecution.result.receipt.status === "completed"
-      && workerExecution.result.descendantTreeOwnershipValidated === true,
-    "Native-supervised bounded worker execution did not complete and clean up.");
-    const workerSpool = readRuntimeOutputSpool({ operationalRoot: resolveRuntimeOperationalStateRoot({ projectRoot: resolvedRoot, storage: initializedProject.storage, create: false }), authorization: workerAuthorization });
-    assert(workerSpool.status === "terminal-recorded"
-      && workerSpool.terminal.result.receipt.receiptHash === workerExecution.result.receipt.receiptHash
-      && workerSpool.terminal.ownerExitRequired === true
-      && workerSpool.outputs.stdout.length > 0,
-    "Provider production output did not reach the bounded durable Host spool.");
-    const retryOptions = { root: resolvedRoot, runtime: "codex", protocolEvidence, projectBinding,
-      worker: { taskKey: "provider-prestart-retry", role: "coder", outcome: "Verify retry", selectedContext: "Synthetic no-start fixture" } };
+    assert(
+      workerExecution.result.receipt.status === "completed" && workerExecution.result.descendantTreeOwnershipValidated === true,
+      "Native-supervised bounded worker execution did not complete and clean up.",
+    );
+    const workerSpool = readRuntimeOutputSpool({
+      operationalRoot: resolveRuntimeOperationalStateRoot({ projectRoot: resolvedRoot, storage: initializedProject.storage, create: false }),
+      authorization: workerAuthorization,
+    });
+    assert(
+      workerSpool.status === "terminal-recorded" &&
+        workerSpool.terminal.result.receipt.receiptHash === workerExecution.result.receipt.receiptHash &&
+        workerSpool.terminal.ownerExitRequired === true &&
+        workerSpool.outputs.stdout.length > 0,
+      "Provider production output did not reach the bounded durable Host spool.",
+    );
+    const retryOptions = {
+      root: resolvedRoot,
+      runtime: "codex",
+      protocolEvidence,
+      projectBinding,
+      worker: { taskKey: "provider-prestart-retry", role: "coder", outcome: "Verify retry", selectedContext: "Synthetic no-start fixture" },
+    };
     const prestart = buildRuntimeInvocationAuthorization(retryOptions).authorization;
     let prestartFailed = false;
     try {
-      await executeCodexRuntimeInvocation({ root: resolvedRoot, authorization: prestart, protocolEvidence, projectBinding,
+      await executeCodexRuntimeInvocation({
+        root: resolvedRoot,
+        authorization: prestart,
+        protocolEvidence,
+        projectBinding,
         targetResolver: () => ({ executablePath: process.execPath, observation: codexObservation.executable }),
-        supervisorSelection, providerArguments: ["-e", BOUNDED_WORKER_RUN_PROTOCOL_FIXTURE], evidenceMode: "protocol-fixture",
-        spawnImplementation: () => { throw Object.assign(new Error("Synthetic OS spawn failure"), { code: "EAGAIN" }); } });
-    } catch (error) { prestartFailed = error.code === "CODEX_EXEC_SPAWN_FAILED"; }
+        supervisorSelection,
+        providerArguments: ["-e", BOUNDED_WORKER_RUN_PROTOCOL_FIXTURE],
+        evidenceMode: "protocol-fixture",
+        spawnImplementation: () => {
+          throw Object.assign(new Error("Synthetic OS spawn failure"), { code: "EAGAIN" });
+        },
+      });
+    } catch (error) {
+      prestartFailed = error.code === "CODEX_EXEC_SPAWN_FAILED";
+    }
     assert(prestartFailed, "Provider no-start fixture unexpectedly ran.");
     const followup = buildRuntimeInvocationAuthorization({ ...retryOptions, retry: true }).authorization;
-    assert(followup.workerInput.previousAuthorizationId === prestart.authorizationId,
-      "Actual adapter path did not preserve a verified no-start retry.");
+    assert(followup.workerInput.previousAuthorizationId === prestart.authorizationId, "Actual adapter path did not preserve a verified no-start retry.");
     const completedWorker = await waitForBoundedWorkerDispatch({
       root: resolvedRoot,
       authorizationId: workerAuthorization.authorizationId,
       timeoutMs: 1_000,
     });
-    assert(completedWorker.waitOutcome.status === "completed"
-      && completedWorker.waitOutcome.lifecycleReceiptId === workerExecution.result.receipt.receiptId
-      && completedWorker.waitOutcome.resultDraftId === workerExecution.result.draft.draftId
-      && reviewCount() === reviewsBeforeDispatch,
-    "Durable worker wait did not return the exact result evidence without creating review authority.");
+    assert(
+      completedWorker.waitOutcome.status === "completed" &&
+        completedWorker.waitOutcome.lifecycleReceiptId === workerExecution.result.receipt.receiptId &&
+        completedWorker.waitOutcome.resultDraftId === workerExecution.result.draft.draftId &&
+        reviewCount() === reviewsBeforeDispatch,
+      "Durable worker wait did not return the exact result evidence without creating review authority.",
+    );
 
     const stateFile = path.join(resolvedRoot, initializedProject.storage.directory, "sessions", "current.json");
     const productCanonFile = path.join(resolvedRoot, initializedProject.storage.directory, "context", "product-model.json");
     const stateBeforeWave = fs.readFileSync(stateFile);
     const productCanonBeforeWave = fs.readFileSync(productCanonFile);
     const latestCheckpointBeforeWave = JSON.parse(stateBeforeWave).latestCheckpoint;
-    const authorizationForWave = (maxEvents) => buildRuntimeInvocationAuthorization({
-      root: resolvedRoot,
-      runtime: "codex",
-      scope: { kind: "run" },
-      workspaceMode: "read-only",
-      protocolEvidence,
-      projectBinding,
-      limits: { timeoutMs: 5_000, maxEvents },
-      persist: true,
-    }).authorization;
+    const authorizationForWave = (maxEvents) =>
+      buildRuntimeInvocationAuthorization({
+        root: resolvedRoot,
+        runtime: "codex",
+        scope: { kind: "run" },
+        workspaceMode: "read-only",
+        protocolEvidence,
+        projectBinding,
+        limits: { timeoutMs: 5_000, maxEvents },
+        persist: true,
+      }).authorization;
     const workerAuthorizationB = authorizationForWave(4_091);
     const workerAuthorizationC = authorizationForWave(4_090);
     createBoundedWorkerDispatch({ root: resolvedRoot, authorizationId: workerAuthorizationB.authorizationId, role: "developer" });
@@ -1308,43 +1492,60 @@ async function main() {
       duplicateWaveMemberRejected = error.code === "BOUNDED_WORKER_WAVE_DUPLICATE_MEMBER";
     }
     assert(duplicateWaveMemberRejected, "A worker wave reused one authorization as two members.");
-    assert(await rejectsWithCode(() => createBoundedWorkerWave({
-      root: resolvedRoot,
-      authorizationIds: [workerAuthorization.authorizationId, workerAuthorizationB.authorizationId],
-      workspaceMode: "workspace-write",
-    }), "BOUNDED_WORKER_WAVE_AUTHORIZATION_AMPLIFICATION_REJECTED"),
-    "Worker wave accepted a request to widen member authorization scope.");
+    assert(
+      await rejectsWithCode(
+        () =>
+          createBoundedWorkerWave({
+            root: resolvedRoot,
+            authorizationIds: [workerAuthorization.authorizationId, workerAuthorizationB.authorizationId],
+            workspaceMode: "workspace-write",
+          }),
+        "BOUNDED_WORKER_WAVE_AUTHORIZATION_AMPLIFICATION_REJECTED",
+      ),
+      "Worker wave accepted a request to widen member authorization scope.",
+    );
     const createdWave = createBoundedWorkerWave({
       root: resolvedRoot,
       authorizationIds: [workerAuthorizationC.authorizationId, workerAuthorization.authorizationId, workerAuthorizationB.authorizationId],
     });
-    assert(createdWave.status === "created" && createdWave.wave.authorityBoundary.planeId === "P3"
-      && createdWave.wave.waveBoundary.createsExecutionAuthorization === false
-      && createdWave.wave.waveBoundary.widensMemberScope === false,
-    "Worker wave did not remain a P3 grouping over existing exact authorizations.");
+    assert(
+      createdWave.status === "created" &&
+        createdWave.wave.authorityBoundary.planeId === "P3" &&
+        createdWave.wave.waveBoundary.createsExecutionAuthorization === false &&
+        createdWave.wave.waveBoundary.widensMemberScope === false,
+      "Worker wave did not remain a P3 grouping over existing exact authorizations.",
+    );
     const existingWave = createBoundedWorkerWave({
       root: resolvedRoot,
       authorizationIds: [workerAuthorization.authorizationId, workerAuthorizationB.authorizationId, workerAuthorizationC.authorizationId],
     });
-    assert(existingWave.status === "existing" && existingWave.wave.waveId === createdWave.wave.waveId,
-      "Identical worker wave create did not converge.");
+    assert(existingWave.status === "existing" && existingWave.wave.waveId === createdWave.wave.waveId, "Identical worker wave create did not converge.");
     const openWave = readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }).projection;
-    assert(openWave.state === "open" && openWave.counts.requested === 3 && openWave.counts.started === 1
-      && openWave.counts.returned === 1 && openWave.counts.succeeded === 1 && openWave.counts.failed === 0
-      && openWave.authorityBoundary.planeId === "P4",
-    "Open worker wave status did not distinguish requested, started, returned, and succeeded members.");
-    assert(await rejectsWithCode(
-      () => sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId }),
-      "BOUNDED_WORKER_WAVE_NOT_FULLY_STARTED",
-    ), "A dispatch-only partial wave was sealed.");
-    assert(await rejectsWithCode(
-      () => waitForBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId, timeoutMs: 0 }),
-      "BOUNDED_WORKER_WAVE_NOT_SEALED",
-    ), "Wave wait did not fail closed before seal.");
-    assert(await rejectsWithCode(
-      () => readBoundedWorkerWaveResults({ root: resolvedRoot, waveId: createdWave.wave.waveId }),
-      "BOUNDED_WORKER_WAVE_NOT_SEALED",
-    ), "Wave result aggregation did not fail closed before seal.");
+    assert(
+      openWave.state === "open" &&
+        openWave.counts.requested === 3 &&
+        openWave.counts.started === 1 &&
+        openWave.counts.returned === 1 &&
+        openWave.counts.succeeded === 1 &&
+        openWave.counts.failed === 0 &&
+        openWave.authorityBoundary.planeId === "P4",
+      "Open worker wave status did not distinguish requested, started, returned, and succeeded members.",
+    );
+    assert(
+      await rejectsWithCode(() => sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId }), "BOUNDED_WORKER_WAVE_NOT_FULLY_STARTED"),
+      "A dispatch-only partial wave was sealed.",
+    );
+    assert(
+      await rejectsWithCode(
+        () => waitForBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId, timeoutMs: 0 }),
+        "BOUNDED_WORKER_WAVE_NOT_SEALED",
+      ),
+      "Wave wait did not fail closed before seal.",
+    );
+    assert(
+      await rejectsWithCode(() => readBoundedWorkerWaveResults({ root: resolvedRoot, waveId: createdWave.wave.waveId }), "BOUNDED_WORKER_WAVE_NOT_SEALED"),
+      "Wave result aggregation did not fail closed before seal.",
+    );
 
     await executeBoundedWorkerDispatch({
       root: resolvedRoot,
@@ -1361,20 +1562,24 @@ async function main() {
       },
     });
     const partialWave = readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }).projection;
-    assert(partialWave.counts.started === 2 && partialWave.counts.succeeded === 2 && partialWave.state === "open",
-      "Partially launched wave was not kept open.");
+    assert(
+      partialWave.counts.started === 2 && partialWave.counts.succeeded === 2 && partialWave.state === "open",
+      "Partially launched wave was not kept open.",
+    );
     const successfulWave = createBoundedWorkerWave({
       root: resolvedRoot,
       authorizationIds: [workerAuthorization.authorizationId, workerAuthorizationB.authorizationId],
     });
     sealBoundedWorkerWave({ root: resolvedRoot, waveId: successfulWave.wave.waveId });
     const completedWave = readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: successfulWave.wave.waveId }).projection;
-    assert(completedWave.state === "completed" && completedWave.counts.succeeded === 2 && completedWave.counts.failed === 0,
-      "A fully successful sealed wave did not become completed.");
-    assert(await rejectsWithCode(
-      () => sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId }),
-      "BOUNDED_WORKER_WAVE_NOT_FULLY_STARTED",
-    ), "A partially started wave was sealed.");
+    assert(
+      completedWave.state === "completed" && completedWave.counts.succeeded === 2 && completedWave.counts.failed === 0,
+      "A fully successful sealed wave did not become completed.",
+    );
+    assert(
+      await rejectsWithCode(() => sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId }), "BOUNDED_WORKER_WAVE_NOT_FULLY_STARTED"),
+      "A partially started wave was sealed.",
+    );
     const failedWorkerExecution = await executeBoundedWorkerDispatch({
       root: resolvedRoot,
       authorizationId: workerAuthorizationC.authorizationId,
@@ -1391,84 +1596,111 @@ async function main() {
     });
     assert(failedWorkerExecution.result.receipt.status === "failed", "Fast terminal worker failure did not remain failed evidence.");
     const sealedWave = sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId });
-    assert(sealedWave.status === "sealed" && sealedWave.seal.authorityBoundary.planeId === "P3"
-      && sealedWave.seal.memberStartEvidence.length === 3,
-    "Fully started worker wave did not produce one create-only P3 seal.");
+    assert(
+      sealedWave.status === "sealed" && sealedWave.seal.authorityBoundary.planeId === "P3" && sealedWave.seal.memberStartEvidence.length === 3,
+      "Fully started worker wave did not produce one create-only P3 seal.",
+    );
     const failedWave = readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }).projection;
-    assert(failedWave.state === "failed" && failedWave.counts.started === 3 && failedWave.counts.returned === 3
-      && failedWave.counts.succeeded === 2 && failedWave.counts.failed === 1,
-    "Fast terminal failure was mislabeled as wave success or completion.");
+    assert(
+      failedWave.state === "failed" &&
+        failedWave.counts.started === 3 &&
+        failedWave.counts.returned === 3 &&
+        failedWave.counts.succeeded === 2 &&
+        failedWave.counts.failed === 1,
+      "Fast terminal failure was mislabeled as wave success or completion.",
+    );
     const failedWaveWait = await waitForBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId, timeoutMs: 0 });
-    assert(failedWaveWait.waitOutcome.authorityBoundary.planeId === "P5"
-      && failedWaveWait.waitOutcome.state === "failed" && failedWaveWait.waitOutcome.reviewDecisionCreated === false,
-    "Wave wait did not preserve the P5 failed outcome boundary.");
+    assert(
+      failedWaveWait.waitOutcome.authorityBoundary.planeId === "P5" &&
+        failedWaveWait.waitOutcome.state === "failed" &&
+        failedWaveWait.waitOutcome.reviewDecisionCreated === false,
+      "Wave wait did not preserve the P5 failed outcome boundary.",
+    );
     const failedWaveResults = readBoundedWorkerWaveResults({ root: resolvedRoot, waveId: createdWave.wave.waveId });
-    assert(failedWaveResults.projection.authorityBoundary.planeId === "P4"
-      && failedWaveResults.projection.state === "failed" && failedWaveResults.projection.resultAuthority === "evidence-reference-only",
-    "Wave result projection crossed out of P4 evidence references.");
+    assert(
+      failedWaveResults.projection.authorityBoundary.planeId === "P4" &&
+        failedWaveResults.projection.state === "failed" &&
+        failedWaveResults.projection.resultAuthority === "evidence-reference-only",
+      "Wave result projection crossed out of P4 evidence references.",
+    );
     const sameSeal = sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId });
-    assert(sameSeal.status === "existing" && sameSeal.seal.sealId === sealedWave.seal.sealId,
-      "Wave seal replay did not converge.");
+    assert(sameSeal.status === "existing" && sameSeal.seal.sealId === sealedWave.seal.sealId, "Wave seal replay did not converge.");
     const cliWaveStatus = await runCommand(["worker-wave-status", resolvedRoot, "--wave", createdWave.wave.waveId]);
-    assert(cliWaveStatus.projection.statusProjectionId === failedWave.statusProjectionId,
-      "CLI wave status did not preserve Core identity.");
+    assert(cliWaveStatus.projection.statusProjectionId === failedWave.statusProjectionId, "CLI wave status did not preserve Core identity.");
     const mcpWaveStatus = await dispatch({
       jsonrpc: "2.0",
       id: 8_801,
       method: "tools/call",
       params: { name: publicToolName("head_bounded_worker_wave_status"), arguments: { project_root: resolvedRoot, wave_id: createdWave.wave.waveId } },
     });
-    assert(mcpWaveStatus.result.structuredContent.projection.statusProjectionId === failedWave.statusProjectionId,
-      "Typed MCP wave status did not preserve CLI/Core identity.");
+    assert(
+      mcpWaveStatus.result.structuredContent.projection.statusProjectionId === failedWave.statusProjectionId,
+      "Typed MCP wave status did not preserve CLI/Core identity.",
+    );
 
     const sealPath = path.join(resolvedRoot, initializedProject.storage.directory, "runtime", "worker-waves", `${createdWave.wave.waveId}.terminal.json`);
     const sealBytes = fs.readFileSync(sealPath);
     const tamperedSeal = JSON.parse(sealBytes);
     tamperedSeal.sealHash = "0".repeat(64);
     fs.writeFileSync(sealPath, `${JSON.stringify(tamperedSeal, null, 2)}\n`);
-    assert(await rejectsWithCode(
-      () => readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }),
-      "BOUNDED_WORKER_WAVE_SEAL_DIGEST_MISMATCH",
-    ), "Tampered wave seal was accepted.");
+    assert(
+      await rejectsWithCode(
+        () => readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }),
+        "BOUNDED_WORKER_WAVE_SEAL_DIGEST_MISMATCH",
+      ),
+      "Tampered wave seal was accepted.",
+    );
     fs.writeFileSync(sealPath, sealBytes);
-    const memberPath = path.join(resolvedRoot, initializedProject.storage.directory, "runtime", "worker-dispatches", `${workerAuthorizationB.authorizationId}.json`);
+    const memberPath = path.join(
+      resolvedRoot,
+      initializedProject.storage.directory,
+      "runtime",
+      "worker-dispatches",
+      `${workerAuthorizationB.authorizationId}.json`,
+    );
     const memberBytes = fs.readFileSync(memberPath);
     const tamperedMember = JSON.parse(memberBytes);
     tamperedMember.dispatchHash = "0".repeat(64);
     fs.writeFileSync(memberPath, `${JSON.stringify(tamperedMember, null, 2)}\n`);
-    assert(await rejectsWithCode(
-      () => readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }),
-      "INVALID_BOUNDED_WORKER_DISPATCH",
-    ), "Tampered wave member dispatch was accepted.");
+    assert(
+      await rejectsWithCode(() => readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }), "INVALID_BOUNDED_WORKER_DISPATCH"),
+      "Tampered wave member dispatch was accepted.",
+    );
     fs.writeFileSync(memberPath, memberBytes);
     const currentStateBytes = fs.readFileSync(stateFile);
     const driftedState = JSON.parse(currentStateBytes);
     driftedState.updatedAt = new Date(Date.parse(driftedState.updatedAt) + 1_000).toISOString();
     fs.writeFileSync(stateFile, `${JSON.stringify(driftedState, null, 2)}\n`);
-    assert(readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }).projection.waveId === createdWave.wave.waveId,
-      "An unrelated Session pointer update hid verified wave evidence.");
-    assert(sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId }).status === "existing",
-      "An unrelated Session pointer update invalidated unchanged execution lineage.");
+    assert(
+      readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }).projection.waveId === createdWave.wave.waveId,
+      "An unrelated Session pointer update hid verified wave evidence.",
+    );
+    assert(
+      sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId }).status === "existing",
+      "An unrelated Session pointer update invalidated unchanged execution lineage.",
+    );
     fs.writeFileSync(stateFile, currentStateBytes);
     const contractDriftState = JSON.parse(currentStateBytes);
     contractDriftState.activeExecutionContractId = `execution-contract-${"0".repeat(24)}`;
     fs.writeFileSync(stateFile, `${JSON.stringify(contractDriftState, null, 2)}\n`);
-    assert(await rejectsWithCode(
-      () => sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId }),
-      "BOUNDED_WORKER_WAVE_LINEAGE_DRIFT",
-    ), "A new ExecutionContract pointer did not stale the wave.");
-    assert(readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }).projection.waveId === createdWave.wave.waveId,
-      "ExecutionContract pointer drift hid historical evidence.");
+    assert(
+      await rejectsWithCode(() => sealBoundedWorkerWave({ root: resolvedRoot, waveId: createdWave.wave.waveId }), "BOUNDED_WORKER_WAVE_LINEAGE_DRIFT"),
+      "A new ExecutionContract pointer did not stale the wave.",
+    );
+    assert(
+      readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }).projection.waveId === createdWave.wave.waveId,
+      "ExecutionContract pointer drift hid historical evidence.",
+    );
     fs.writeFileSync(stateFile, currentStateBytes);
     const capsulePath = path.join(resolvedRoot, initializedProject.storage.directory, "context", "capsules", `${createdWave.wave.contextCapsuleId}.json`);
     const capsuleBytes = fs.readFileSync(capsulePath);
     const tamperedCapsule = JSON.parse(capsuleBytes);
     tamperedCapsule.capsuleHash = "0".repeat(64);
     fs.writeFileSync(capsulePath, `${JSON.stringify(tamperedCapsule, null, 2)}\n`);
-    assert(await rejectsWithCode(
-      () => readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }),
-      "CAPSULE_DIGEST_MISMATCH",
-    ), "Context Capsule tamper did not fail the wave status surface.");
+    assert(
+      await rejectsWithCode(() => readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: createdWave.wave.waveId }), "CAPSULE_DIGEST_MISMATCH"),
+      "Context Capsule tamper did not fail the wave status surface.",
+    );
     fs.writeFileSync(capsulePath, capsuleBytes);
 
     const workerAuthorizationD = authorizationForWave(4_089);
@@ -1485,40 +1717,59 @@ async function main() {
       reasonCode: "partial-launch",
       reasonSummary: "Launch evidence is incomplete; do not infer success or recovery direction.",
     });
-    assert(abandoned.status === "abandoned" && abandoned.abandonment.authorityBoundary.planeId === "P3"
-      && abandoned.abandonment.abandonBoundary.privilegedInstruction === false
-      && readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: abandonedWave.wave.waveId }).projection.state === "abandoned",
-    "Partial launch did not become explicit non-success P3 abandonment evidence.");
+    assert(
+      abandoned.status === "abandoned" &&
+        abandoned.abandonment.authorityBoundary.planeId === "P3" &&
+        abandoned.abandonment.abandonBoundary.privilegedInstruction === false &&
+        readBoundedWorkerWaveStatus({ root: resolvedRoot, waveId: abandonedWave.wave.waveId }).projection.state === "abandoned",
+      "Partial launch did not become explicit non-success P3 abandonment evidence.",
+    );
     const sameAbandonment = abandonBoundedWorkerWave({
       root: resolvedRoot,
       waveId: abandonedWave.wave.waveId,
       reasonCode: "partial-launch",
       reasonSummary: "Launch evidence is incomplete; do not infer success or recovery direction.",
     });
-    assert(sameAbandonment.status === "existing" && sameAbandonment.abandonment.abandonmentId === abandoned.abandonment.abandonmentId,
-      "Identical wave abandonment did not converge.");
-    assert(await rejectsWithCode(() => abandonBoundedWorkerWave({
-      root: resolvedRoot,
-      waveId: abandonedWave.wave.waveId,
-      reasonCode: "operator-stop",
-      reasonSummary: "Divergent retry",
-    }), "BOUNDED_WORKER_WAVE_ABANDON_CONFLICT"), "Divergent wave abandonment retry was accepted.");
-    assert(await rejectsWithCode(
-      () => sealBoundedWorkerWave({ root: resolvedRoot, waveId: abandonedWave.wave.waveId }),
-      "BOUNDED_WORKER_WAVE_ABANDONED",
-    ), "Abandoned wave was sealed.");
-    assert(await rejectsWithCode(
-      () => waitForBoundedWorkerWave({ root: resolvedRoot, waveId: abandonedWave.wave.waveId, timeoutMs: 0 }),
-      "BOUNDED_WORKER_WAVE_NOT_SEALED",
-    ), "Abandoned wave wait did not fail closed.");
-    assert(fs.readFileSync(stateFile).equals(stateBeforeWave)
-      && fs.readFileSync(productCanonFile).equals(productCanonBeforeWave)
-      && JSON.parse(fs.readFileSync(stateFile, "utf8")).latestCheckpoint === latestCheckpointBeforeWave
-      && reviewCount() === reviewsBeforeDispatch,
-    "Wave surfaces changed P1 Canon, ReviewDecision, Session pointer, or P2 checkpoint state.");
+    assert(
+      sameAbandonment.status === "existing" && sameAbandonment.abandonment.abandonmentId === abandoned.abandonment.abandonmentId,
+      "Identical wave abandonment did not converge.",
+    );
+    assert(
+      await rejectsWithCode(
+        () =>
+          abandonBoundedWorkerWave({
+            root: resolvedRoot,
+            waveId: abandonedWave.wave.waveId,
+            reasonCode: "operator-stop",
+            reasonSummary: "Divergent retry",
+          }),
+        "BOUNDED_WORKER_WAVE_ABANDON_CONFLICT",
+      ),
+      "Divergent wave abandonment retry was accepted.",
+    );
+    assert(
+      await rejectsWithCode(() => sealBoundedWorkerWave({ root: resolvedRoot, waveId: abandonedWave.wave.waveId }), "BOUNDED_WORKER_WAVE_ABANDONED"),
+      "Abandoned wave was sealed.",
+    );
+    assert(
+      await rejectsWithCode(
+        () => waitForBoundedWorkerWave({ root: resolvedRoot, waveId: abandonedWave.wave.waveId, timeoutMs: 0 }),
+        "BOUNDED_WORKER_WAVE_NOT_SEALED",
+      ),
+      "Abandoned wave wait did not fail closed.",
+    );
+    assert(
+      fs.readFileSync(stateFile).equals(stateBeforeWave) &&
+        fs.readFileSync(productCanonFile).equals(productCanonBeforeWave) &&
+        JSON.parse(fs.readFileSync(stateFile, "utf8")).latestCheckpoint === latestCheckpointBeforeWave &&
+        reviewCount() === reviewsBeforeDispatch,
+      "Wave surfaces changed P1 Canon, ReviewDecision, Session pointer, or P2 checkpoint state.",
+    );
     const persistedWaveText = [createdWave.wave, sealedWave.seal, abandoned.abandonment].map((value) => JSON.stringify(value)).join("\n");
-    assert(!/(?:providerSession|callerHandle|paneId|socketPath|tuiCommand)/iu.test(persistedWaveText),
-      "Provider, caller-handle, pane, socket, or TUI identity entered wave semantic state.");
+    assert(
+      !/(?:providerSession|callerHandle|paneId|socketPath|tuiCommand)/iu.test(persistedWaveText),
+      "Provider, caller-handle, pane, socket, or TUI identity entered wave semantic state.",
+    );
     let duplicateWorkerConsumptionRejected = false;
     try {
       await executeBoundedWorkerDispatch({
@@ -1548,80 +1799,88 @@ async function main() {
     } catch (error) {
       fixtureApplicationRejected = error.code === "RUNTIME_RUN_RESULT_NOT_APPLICABLE";
     }
-    assert(fixtureApplicationRejected && reviewCount() === reviewsBeforeDispatch,
-      "Protocol-fixture worker evidence crossed into canonical ResultPacket or review authority.");
-    process.stdout.write(`${JSON.stringify({
-      status: "runtime_invocation_lifecycle_verified",
-      projectId: initialized.project.projectId,
-      sessionId: initializedProject.state.sessionId,
-      runId: run.runId,
-      executionContractId: contract.executionContractId,
-      protocolEvidenceId: protocolEvidence.evidenceId,
-      projectBindingId: projectBinding.bindingId,
-      runtimes: results,
-      sessionScopes: sessionResults,
-      timeoutReceiptId: timedOut.receipt.receiptId,
-      cancellationReceiptId: cancelled.receipt.receiptId,
-      singleUseLeaseVerified: true,
-      replayRejected: true,
-      concurrentReplayRejected,
-      spawnFailureReleased: true,
-      exactChildCleanupVerified: true,
-      workspaceWriteRejected: true,
-      sessionWorkspaceWriteAuthorized: true,
-      sessionFreshHeadReviewRequired: false,
-      codexExecProtocolFixtureValidated: true,
-      codexStructuredResultRecorded: true,
-      codexDescendantTreeSupervisionValidated: true,
-      codexInvocationSurfacePreflightValidated: true,
-      codexInvocationSurfaceDriftRejectedBeforeConsumption: true,
-      runtimeModelSelectionBound: true,
-      runtimeModelDriftChangesAuthorization: true,
-      invalidRuntimeSelectionRejected,
-      legacyExecutionAuthorizationVerified: true,
-      codexPortableWireSchemaValidated: true,
-      semanticResultBoundsRetained: true,
-      codexPrivacyReducedDiagnosticsValidated: true,
-    opencodeRunProtocolFixtureValidated: true,
-    opencodeConfiguredProviderAuthorityPreserved: true,
-    opencodeProviderEndpointRewritten: false,
-    unselectedProviderCredentialsForwarded: false,
-    opencodeStructuredResultRecorded: true,
-      opencodeDescendantTreeSupervisionValidated: true,
-      codexLargeEventBoundaryReproduced: true,
-      codexLargeEventDefaultValidated: true,
-      providerNeutralInvocationRecordValidated: true,
-      opencodeProtocolFixtureModeValidated: true,
-      sessionRunResultApplicationRejected: true,
-      operationalStateExternalized: true,
-      legacyProjectLockRejected,
-      boundedWorker: {
-        dispatchId: workerDispatch.dispatch.dispatchId,
-        waitOutcomeId: completedWorker.waitOutcome.waitOutcomeId,
-        competingOwnerRejected,
-        duplicateWorkerConsumptionRejected,
-        fixtureApplicationRejected,
-        providerOutputSpoolVerified: true,
-        providerPrestartRetryVerified: true,
-      },
-      boundedWorkerWave: {
-        waveId: createdWave.wave.waveId,
-        sealId: sealedWave.seal.sealId,
-        failedStatusProjectionId: failedWave.statusProjectionId,
-        abandonmentId: abandoned.abandonment.abandonmentId,
-        duplicateMemberRejected: duplicateWaveMemberRejected,
-        partialLaunchSealRejected: true,
-        preSealWaitRejected: true,
-        preSealResultReadRejected: true,
-        terminalFailurePreserved: true,
-        cliMcpParityVerified: true,
-        authorityNonMutationVerified: true,
-      },
-      rawTranscriptPersistedInProject: false,
-      boundedRawProviderOutputPersistedInHost: true,
-      actualProviderInvoked: false,
-      providerControlEnabled: false,
-    }, null, 2)}\n`);
+    assert(
+      fixtureApplicationRejected && reviewCount() === reviewsBeforeDispatch,
+      "Protocol-fixture worker evidence crossed into canonical ResultPacket or review authority.",
+    );
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          status: "runtime_invocation_lifecycle_verified",
+          projectId: initialized.project.projectId,
+          sessionId: initializedProject.state.sessionId,
+          runId: run.runId,
+          executionContractId: contract.executionContractId,
+          protocolEvidenceId: protocolEvidence.evidenceId,
+          projectBindingId: projectBinding.bindingId,
+          runtimes: results,
+          sessionScopes: sessionResults,
+          timeoutReceiptId: timedOut.receipt.receiptId,
+          cancellationReceiptId: cancelled.receipt.receiptId,
+          singleUseLeaseVerified: true,
+          replayRejected: true,
+          concurrentReplayRejected,
+          spawnFailureReleased: true,
+          exactChildCleanupVerified: true,
+          workspaceWriteRejected: true,
+          sessionWorkspaceWriteAuthorized: true,
+          sessionFreshHeadReviewRequired: false,
+          codexExecProtocolFixtureValidated: true,
+          codexStructuredResultRecorded: true,
+          codexDescendantTreeSupervisionValidated: true,
+          codexInvocationSurfacePreflightValidated: true,
+          codexInvocationSurfaceDriftRejectedBeforeConsumption: true,
+          runtimeModelSelectionBound: true,
+          runtimeModelDriftChangesAuthorization: true,
+          invalidRuntimeSelectionRejected,
+          legacyExecutionAuthorizationVerified: true,
+          codexPortableWireSchemaValidated: true,
+          semanticResultBoundsRetained: true,
+          codexPrivacyReducedDiagnosticsValidated: true,
+          opencodeRunProtocolFixtureValidated: true,
+          opencodeConfiguredProviderAuthorityPreserved: true,
+          opencodeProviderEndpointRewritten: false,
+          unselectedProviderCredentialsForwarded: false,
+          opencodeStructuredResultRecorded: true,
+          opencodeDescendantTreeSupervisionValidated: true,
+          codexLargeEventBoundaryReproduced: true,
+          codexLargeEventDefaultValidated: true,
+          providerNeutralInvocationRecordValidated: true,
+          opencodeProtocolFixtureModeValidated: true,
+          sessionRunResultApplicationRejected: true,
+          operationalStateExternalized: true,
+          legacyProjectLockRejected,
+          boundedWorker: {
+            dispatchId: workerDispatch.dispatch.dispatchId,
+            waitOutcomeId: completedWorker.waitOutcome.waitOutcomeId,
+            competingOwnerRejected,
+            duplicateWorkerConsumptionRejected,
+            fixtureApplicationRejected,
+            providerOutputSpoolVerified: true,
+            providerPrestartRetryVerified: true,
+          },
+          boundedWorkerWave: {
+            waveId: createdWave.wave.waveId,
+            sealId: sealedWave.seal.sealId,
+            failedStatusProjectionId: failedWave.statusProjectionId,
+            abandonmentId: abandoned.abandonment.abandonmentId,
+            duplicateMemberRejected: duplicateWaveMemberRejected,
+            partialLaunchSealRejected: true,
+            preSealWaitRejected: true,
+            preSealResultReadRejected: true,
+            terminalFailurePreserved: true,
+            cliMcpParityVerified: true,
+            authorityNonMutationVerified: true,
+          },
+          rawTranscriptPersistedInProject: false,
+          boundedRawProviderOutputPersistedInHost: true,
+          actualProviderInvoked: false,
+          providerControlEnabled: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
   } finally {
     if (previousOperationalRoot === undefined) delete process.env[RUNTIME_OPERATIONAL_STATE_ENV];
     else process.env[RUNTIME_OPERATIONAL_STATE_ENV] = previousOperationalRoot;

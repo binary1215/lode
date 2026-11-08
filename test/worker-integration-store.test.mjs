@@ -16,7 +16,7 @@ function fixture(t) {
   return root;
 }
 
-test("create-only integration publication converges without rewriting or broad authority", t => {
+test("create-only integration publication converges without rewriting or broad authority", (t) => {
   const directory = workerIntegrationDirectory(fixture(t), true);
   const file = path.join(directory, "evidence.json");
   const value = { evidence: "synthetic", applied: false };
@@ -28,37 +28,40 @@ test("create-only integration publication converges without rewriting or broad a
   assert.throws(() => publishIntegrationJson(file, { evidence: "different" }), { code: "WORKER_INTEGRATION_STORAGE_CONFLICT" });
 });
 
-test("complete or partial pending publication recovers without changing earlier pending bytes", t => {
+test("complete or partial pending publication recovers without changing earlier pending bytes", (t) => {
   const directory = workerIntegrationDirectory(fixture(t), true);
   const file = path.join(directory, "evidence.json");
   const value = { evidence: "pending" };
   fs.writeFileSync(`${file}.pending`, `${JSON.stringify(value)}\n`);
   assert.equal(publishIntegrationJson(file, value), true);
   const other = path.join(directory, "partial.json");
-  fs.writeFileSync(`${other}.pending`, "{\"partial\"");
+  fs.writeFileSync(`${other}.pending`, '{"partial"');
   assert.equal(publishIntegrationJson(other, value), true);
   assert.deepEqual(JSON.parse(readIntegrationBytes(other)), value);
-  assert.equal(fs.readFileSync(`${other}.pending`, "utf8"), "{\"partial\"");
+  assert.equal(fs.readFileSync(`${other}.pending`, "utf8"), '{"partial"');
 });
 
-test("crash after fresh recovery link preserves a recognized readable alias", t => {
+test("crash after fresh recovery link preserves a recognized readable alias", (t) => {
   const directory = workerIntegrationDirectory(fixture(t), true);
   const file = path.join(directory, "evidence.json");
   fs.writeFileSync(`${file}.pending`, "partial prior write");
   const unlink = fs.unlinkSync;
-  fs.unlinkSync = target => {
+  fs.unlinkSync = (target) => {
     if (String(target).startsWith(`${file}.pending--`)) throw Object.assign(new Error("fixture unlink crash"), { code: "EIO" });
     return unlink(target);
   };
   const value = { evidence: "recover-link" };
-  try { assert.throws(() => publishIntegrationJson(file, value), { code: "EIO" }); }
-  finally { fs.unlinkSync = unlink; }
+  try {
+    assert.throws(() => publishIntegrationJson(file, value), { code: "EIO" });
+  } finally {
+    fs.unlinkSync = unlink;
+  }
   assert.deepEqual(JSON.parse(readIntegrationBytes(file)), value);
   assert.equal(publishIntegrationJson(file, value), false);
   assert.equal(fs.readFileSync(`${file}.pending`, "utf8"), "partial prior write");
 });
 
-test("exact interrupted publication alias is readable; arbitrary hardlink is not", t => {
+test("exact interrupted publication alias is readable; arbitrary hardlink is not", (t) => {
   const directory = workerIntegrationDirectory(fixture(t), true);
   const file = path.join(directory, "evidence.json");
   const bytes = '{"evidence":"historical"}\n';
@@ -71,41 +74,51 @@ test("exact interrupted publication alias is readable; arbitrary hardlink is not
   assert.throws(() => readIntegrationBytes(file), { code: "WORKER_INTEGRATION_STORAGE_CONFLICT" });
 });
 
-test("flushing failure publishes nothing and complete bytes remain recoverable", t => {
+test("flushing failure publishes nothing and complete bytes remain recoverable", (t) => {
   const directory = workerIntegrationDirectory(fixture(t), true);
   const file = path.join(directory, "evidence.json");
   const value = { evidence: "flush-boundary" };
   const fsync = fs.fsyncSync;
-  fs.fsyncSync = () => { throw Object.assign(new Error("fixture flush failure"), { code: "EIO" }); };
-  try { assert.throws(() => publishIntegrationJson(file, value), { code: "EIO" }); }
-  finally { fs.fsyncSync = fsync; }
+  fs.fsyncSync = () => {
+    throw Object.assign(new Error("fixture flush failure"), { code: "EIO" });
+  };
+  try {
+    assert.throws(() => publishIntegrationJson(file, value), { code: "EIO" });
+  } finally {
+    fs.fsyncSync = fsync;
+  }
   assert.equal(fs.existsSync(file), false);
   assert.equal(publishIntegrationJson(file, value), true);
 });
 
-test("distinct 64-bit file identities do not collide with a retained prior pending file", t => {
+test("distinct 64-bit file identities do not collide with a retained prior pending file", (t) => {
   const directory = workerIntegrationDirectory(fixture(t), true);
-  const file = path.join(directory, "evidence.json"), oldPending = `${file}.pending`;
+  const file = path.join(directory, "evidence.json"),
+    oldPending = `${file}.pending`;
   const pending = `${file}.pending--00000000-0000-0000-0000-000000000000`;
   const bytes = '{"evidence":"exact-current-publication"}\n';
   fs.writeFileSync(oldPending, "retained interrupted earlier receipt");
-  fs.writeFileSync(pending, bytes); fs.linkSync(pending, file);
+  fs.writeFileSync(pending, bytes);
+  fs.linkSync(pending, file);
   const lstat = fs.lstatSync;
   assert.notEqual(lstat(oldPending, { bigint: true }).ino, lstat(pending, { bigint: true }).ino);
   // Deterministic Number precision-loss counterexample, independent of the
   // filesystem's currently assigned inode values. Exact bigint stats are real.
-  fs.lstatSync = function(target, options) {
+  fs.lstatSync = function (target, options) {
     const stat = lstat.call(this, target, options);
     if (!options?.bigint && [file, oldPending, pending].includes(target)) stat.ino = 2 ** 60;
     return stat;
   };
-  try { assert.equal(readIntegrationBytes(file).toString(), bytes); }
-  finally { fs.lstatSync = lstat; }
+  try {
+    assert.equal(readIntegrationBytes(file).toString(), bytes);
+  } finally {
+    fs.lstatSync = lstat;
+  }
   assert.equal(fs.readFileSync(oldPending, "utf8"), "retained interrupted earlier receipt");
   assert.equal(fs.existsSync(pending), true, "Read-only recovery does not clean either pending record");
 });
 
-test("pending replacement between comparison and reopen cannot publish different bytes as success", t => {
+test("pending replacement between comparison and reopen cannot publish different bytes as success", (t) => {
   const directory = workerIntegrationDirectory(fixture(t), true);
   const file = path.join(directory, "evidence.json");
   const value = { evidence: "expected" };
@@ -119,8 +132,11 @@ test("pending replacement between comparison and reopen cannot publish different
     }
     return open(target, flags, ...args);
   };
-  try { assert.throws(() => publishIntegrationJson(file, value), { code: "WORKER_INTEGRATION_STORAGE_CONFLICT" }); }
-  finally { fs.openSync = open; }
+  try {
+    assert.throws(() => publishIntegrationJson(file, value), { code: "WORKER_INTEGRATION_STORAGE_CONFLICT" });
+  } finally {
+    fs.openSync = open;
+  }
   assert.equal(replaced, true);
   assert.equal(fs.existsSync(file), false);
   assert.equal(fs.readFileSync(`${file}.pending`, "utf8"), '{"evidence":"external"}\n');

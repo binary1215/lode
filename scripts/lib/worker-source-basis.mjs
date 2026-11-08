@@ -4,14 +4,21 @@ import fs from "node:fs";
 import path from "node:path";
 
 const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const fail = (message, code = "INVALID_WORKER_SOURCE_BASIS") => { throw Object.assign(new Error(message), { code }); };
+const fail = (message, code = "INVALID_WORKER_SOURCE_BASIS") => {
+  throw Object.assign(new Error(message), { code });
+};
 
 export function workerSourcePathParts(value, storage = undefined) {
   if (typeof value !== "string" || !value || value.includes("\\") || value.includes(":")) fail("Worker source path must be repository relative.");
   const parts = value.split("/");
-  if (parts.some((part) => !part || part === "." || part === ".." || /[\u0000-\u001f]/u.test(part)
-    || /[. ]$/u.test(part) || [".head", ".git"].includes(part.toLowerCase())) || path.isAbsolute(value)
-    || formatForVerifiedOwner(storage).dialect === "lode" && (process.platform === "win32" ? parts[0]?.toLowerCase() : parts[0]) === ".lode") {
+  if (
+    parts.some(
+      (part) =>
+        !part || part === "." || part === ".." || /[\u0000-\u001f]/u.test(part) || /[. ]$/u.test(part) || [".head", ".git"].includes(part.toLowerCase()),
+    ) ||
+    path.isAbsolute(value) ||
+    (formatForVerifiedOwner(storage).dialect === "lode" && (process.platform === "win32" ? parts[0]?.toLowerCase() : parts[0]) === ".lode")
+  ) {
     fail("Worker source path escapes the selected source boundary.");
   }
   return parts;
@@ -40,13 +47,22 @@ function readSource(root, relative, maxBytes, storage) {
     }
     const after = fs.fstatSync(fd);
     const named = fs.lstatSync(file);
-    if (length !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs
-      || after.ctimeMs !== before.ctimeMs || named.isSymbolicLink() || named.ino !== before.ino
-      || named.dev !== before.dev || fs.realpathSync(file) !== resolved) {
+    if (
+      length !== before.size ||
+      after.size !== before.size ||
+      after.mtimeMs !== before.mtimeMs ||
+      after.ctimeMs !== before.ctimeMs ||
+      named.isSymbolicLink() ||
+      named.ino !== before.ino ||
+      named.dev !== before.dev ||
+      fs.realpathSync(file) !== resolved
+    ) {
       fail("Worker source changed while being captured.", "WORKER_SOURCE_BASIS_DRIFT");
     }
     return buffer.subarray(0, length);
-  } finally { fs.closeSync(fd); }
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 // A selected byte basis is evidence, not an OS sandbox or an atomic repository
@@ -74,8 +90,8 @@ export function verifyWorkerSourceBasis(basis, maxBytes, storage = undefined) {
     if (typeof item.contentBase64 !== "string") fail("Worker source bytes are missing.");
     const bytes = Buffer.from(item.contentBase64, "base64");
     total += bytes.length;
-    if (bytes.toString("base64") !== item.contentBase64 || bytes.length !== item.bytes
-      || digest(bytes) !== item.digest || total > maxBytes) fail("Worker source content does not match its bounded digest.");
+    if (bytes.toString("base64") !== item.contentBase64 || bytes.length !== item.bytes || digest(bytes) !== item.digest || total > maxBytes)
+      fail("Worker source content does not match its bounded digest.");
   }
   return basis;
 }

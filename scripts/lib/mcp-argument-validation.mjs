@@ -10,13 +10,13 @@
 export function validateProjectRootArgument(schema, args, where = "arguments") {
   const declared = schema?.properties?.project_root;
   if (!declared) return [];
-  const present = args && typeof args === "object" && !Array.isArray(args)
-    && Object.hasOwn(args, "project_root") && args.project_root !== undefined;
+  const present = args && typeof args === "object" && !Array.isArray(args) && Object.hasOwn(args, "project_root") && args.project_root !== undefined;
   if (!present) {
     return (schema.required || []).includes("project_root") ? [`${where}.project_root is required`] : [];
   }
   const value = args.project_root;
-  if (typeof value !== "string") return [`${where}.project_root must be string, got ${value === null ? "null" : Array.isArray(value) ? "array" : typeof value}`];
+  if (typeof value !== "string")
+    return [`${where}.project_root must be string, got ${value === null ? "null" : Array.isArray(value) ? "array" : typeof value}`];
   const minLength = declared.minLength ?? 1;
   if (value.length < minLength) return [`${where}.project_root must have at least ${minLength} characters`];
   return [];

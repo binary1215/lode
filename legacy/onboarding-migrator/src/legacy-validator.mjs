@@ -36,8 +36,11 @@ function fail(message, code = "LEGACY_ONBOARDING_MIGRATOR_ERROR") {
 }
 
 function readJson(file, label) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`${label} is invalid JSON: ${error.message}`, "LEGACY_MIGRATOR_INVALID_JSON"); }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(`${label} is invalid JSON: ${error.message}`, "LEGACY_MIGRATOR_INVALID_JSON");
+  }
 }
 
 function contentIdentity(document, idField, hashField, prefix, label) {
@@ -45,7 +48,8 @@ function contentIdentity(document, idField, hashField, prefix, label) {
   delete payload[idField];
   delete payload[hashField];
   const hash = onboardingDigest(onboardingCanonicalJson(payload));
-  if (document[hashField] !== hash || document[idField] !== `${prefix}-${hash.slice(0, 24)}`) fail(`${label} digest is invalid.`, "LEGACY_MIGRATOR_DIGEST_MISMATCH");
+  if (document[hashField] !== hash || document[idField] !== `${prefix}-${hash.slice(0, 24)}`)
+    fail(`${label} digest is invalid.`, "LEGACY_MIGRATOR_DIGEST_MISMATCH");
 }
 
 function sortedUnique(values, label) {
@@ -57,46 +61,86 @@ function sortedUnique(values, label) {
 
 function readArtifact(file, label) {
   let stat;
-  try { stat = fs.lstatSync(file); }
-  catch { fail(`${label} is missing or unsafe.`, "LEGACY_MIGRATOR_ARTIFACT_MISSING"); }
+  try {
+    stat = fs.lstatSync(file);
+  } catch {
+    fail(`${label} is missing or unsafe.`, "LEGACY_MIGRATOR_ARTIFACT_MISSING");
+  }
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size < 1 || stat.size > MAX_ENTRY_BYTES) {
     fail(`${label} is missing, unsafe, or exceeds its byte bound.`, stat.size > MAX_ENTRY_BYTES ? "LEGACY_MIGRATOR_LIMIT" : "LEGACY_MIGRATOR_ARTIFACT_MISSING");
   }
   const bytes = fs.readFileSync(file);
   let document;
-  try { document = JSON.parse(bytes.toString("utf8")); }
-  catch (error) { fail(`${label} is invalid JSON: ${error.message}`, "LEGACY_MIGRATOR_INVALID_JSON"); }
+  try {
+    document = JSON.parse(bytes.toString("utf8"));
+  } catch (error) {
+    fail(`${label} is invalid JSON: ${error.message}`, "LEGACY_MIGRATOR_INVALID_JSON");
+  }
   return { document, bytes };
 }
 
 function entry(relative, role, artifactId, protocolFamily, protocolVersion, bytes, interpretationMode = "opaque-historical") {
-  return { path: relative, role, artifactId, protocolFamily, protocolVersion, byteLength: bytes.byteLength, sha256: historicalBoundaryDigest(bytes), interpretationMode };
+  return {
+    path: relative,
+    role,
+    artifactId,
+    protocolFamily,
+    protocolVersion,
+    byteLength: bytes.byteLength,
+    sha256: historicalBoundaryDigest(bytes),
+    interpretationMode,
+  };
 }
 
 function verifyCandidateSet(candidate, projectId) {
   contentIdentity(candidate, "candidateSetId", "candidateSetHash", "onboarding-candidates", "Legacy candidate set");
   const version = candidate.protocol?.name === "head-agent-core-onboarding-candidates" ? candidate.protocol.version : "";
   const family = FAMILIES[version];
-  if (!family || candidate.projectId !== projectId || candidate.schemaVersion !== 1 || candidate.kind !== "OnboardingCandidateSet"
-    || !/^head-[a-f0-9]{20}$/.test(candidate.projectId || "") || !/^session-[A-Fa-f0-9-]{36}$/.test(candidate.sessionId || "")
-    || !["existing", "new"].includes(candidate.inputMode) || !/^onboarding-storage-[a-f0-9]{24}$/.test(candidate.storageSelectionId || "")
-    || !/^source-snapshot-[a-f0-9]{24}$/.test(candidate.sourceSnapshotId || "") || !/^product-model-[a-f0-9]{24}$/.test(candidate.productModelId || "")
-    || candidate.authorityClass !== "candidate-set" || candidate.instructionAuthority !== false || candidate.promotionAuthority !== false
-    || onboardingCanonicalJson(candidate.limits) !== onboardingCanonicalJson(LEGACY_LIMITS)) fail("Legacy candidate family is invalid.", "LEGACY_MIGRATOR_CANDIDATE_INVALID");
+  if (
+    !family ||
+    candidate.projectId !== projectId ||
+    candidate.schemaVersion !== 1 ||
+    candidate.kind !== "OnboardingCandidateSet" ||
+    !/^head-[a-f0-9]{20}$/.test(candidate.projectId || "") ||
+    !/^session-[A-Fa-f0-9-]{36}$/.test(candidate.sessionId || "") ||
+    !["existing", "new"].includes(candidate.inputMode) ||
+    !/^onboarding-storage-[a-f0-9]{24}$/.test(candidate.storageSelectionId || "") ||
+    !/^source-snapshot-[a-f0-9]{24}$/.test(candidate.sourceSnapshotId || "") ||
+    !/^product-model-[a-f0-9]{24}$/.test(candidate.productModelId || "") ||
+    candidate.authorityClass !== "candidate-set" ||
+    candidate.instructionAuthority !== false ||
+    candidate.promotionAuthority !== false ||
+    onboardingCanonicalJson(candidate.limits) !== onboardingCanonicalJson(LEGACY_LIMITS)
+  )
+    fail("Legacy candidate family is invalid.", "LEGACY_MIGRATOR_CANDIDATE_INVALID");
   if (family.worldModel === "required" ? !/^world-model-[a-f0-9]{24}$/.test(candidate.worldModelId || "") : candidate.worldModelId != null) {
     fail("Legacy candidate World binding is invalid.", "LEGACY_MIGRATOR_CANDIDATE_INVALID");
   }
   const alternate = family.reviewField === "reviewDecisionId" ? "producerReviewDecisionId" : "reviewDecisionId";
   if (Object.hasOwn(candidate, alternate)) fail("Legacy candidate producer field is invalid.", "LEGACY_MIGRATOR_CANDIDATE_INVALID");
-  if (!Array.isArray(candidate.candidates) || !Array.isArray(candidate.evidence) || !Array.isArray(candidate.unknowns)
-    || candidate.candidates.length > LEGACY_LIMITS.maxCandidates || candidate.evidence.length > LEGACY_LIMITS.maxEvidenceRecords
-    || candidate.unknowns.length > LEGACY_LIMITS.maxUnknowns) fail("Legacy candidate collections exceed their bound.", "LEGACY_MIGRATOR_LIMIT");
+  if (
+    !Array.isArray(candidate.candidates) ||
+    !Array.isArray(candidate.evidence) ||
+    !Array.isArray(candidate.unknowns) ||
+    candidate.candidates.length > LEGACY_LIMITS.maxCandidates ||
+    candidate.evidence.length > LEGACY_LIMITS.maxEvidenceRecords ||
+    candidate.unknowns.length > LEGACY_LIMITS.maxUnknowns
+  )
+    fail("Legacy candidate collections exceed their bound.", "LEGACY_MIGRATOR_LIMIT");
   const evidenceIds = new Set();
   for (const evidence of candidate.evidence) {
     contentIdentity(evidence, "evidenceId", "evidenceHash", "onboarding-evidence", "Legacy onboarding evidence");
-    if (evidence.instructionAuthority !== false || evidence.promotionAuthority !== false
-      || typeof evidence.sourceKind !== "string" || !evidence.sourceKind || typeof evidence.sourceId !== "string" || !evidence.sourceId
-      || typeof evidence.statement !== "string" || !evidence.statement || evidenceIds.has(evidence.evidenceId)) {
+    if (
+      evidence.instructionAuthority !== false ||
+      evidence.promotionAuthority !== false ||
+      typeof evidence.sourceKind !== "string" ||
+      !evidence.sourceKind ||
+      typeof evidence.sourceId !== "string" ||
+      !evidence.sourceId ||
+      typeof evidence.statement !== "string" ||
+      !evidence.statement ||
+      evidenceIds.has(evidence.evidenceId)
+    ) {
       fail("Legacy Evidence authority or identity is invalid.", "LEGACY_MIGRATOR_CANDIDATE_INVALID");
     }
     evidenceIds.add(evidence.evidenceId);
@@ -107,28 +151,51 @@ function verifyCandidateSet(candidate, projectId) {
   const candidateIds = new Set();
   for (const item of candidate.candidates) {
     contentIdentity(item, "candidateId", "candidateHash", "onboarding-candidate", "Legacy product candidate");
-    if (item.schemaVersion !== 1 || item.kind !== "OnboardingProductCandidate" || !PRODUCT_ENTITY_KINDS_V1.includes(item.productKind)
-      || item.producer !== "head-agent-core-onboarding-inference" || item.producerVersion !== version
-      || item.authorityClass !== "candidate" || item.instructionAuthority !== false || item.promotionAuthority !== false
-      || !Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1
-      || typeof item.explanation !== "string" || !item.explanation || item.explanation.length > 2000
-      || item.sourceSnapshotId !== candidate.sourceSnapshotId
-      || sortedUnique(item.evidenceIds, `Legacy candidate ${item.candidateId} evidence`).some((id) => !evidenceIds.has(id))
-      || candidateIds.has(item.candidateId)) {
+    if (
+      item.schemaVersion !== 1 ||
+      item.kind !== "OnboardingProductCandidate" ||
+      !PRODUCT_ENTITY_KINDS_V1.includes(item.productKind) ||
+      item.producer !== "head-agent-core-onboarding-inference" ||
+      item.producerVersion !== version ||
+      item.authorityClass !== "candidate" ||
+      item.instructionAuthority !== false ||
+      item.promotionAuthority !== false ||
+      !Number.isFinite(item.confidence) ||
+      item.confidence < 0 ||
+      item.confidence > 1 ||
+      typeof item.explanation !== "string" ||
+      !item.explanation ||
+      item.explanation.length > 2000 ||
+      item.sourceSnapshotId !== candidate.sourceSnapshotId ||
+      sortedUnique(item.evidenceIds, `Legacy candidate ${item.candidateId} evidence`).some((id) => !evidenceIds.has(id)) ||
+      candidateIds.has(item.candidateId)
+    ) {
       fail("Legacy product candidate binding is invalid.", "LEGACY_MIGRATOR_CANDIDATE_INVALID");
     }
     candidateIds.add(item.candidateId);
   }
-  const orderedCandidates = [...candidate.candidates].sort((left, right) => (KIND_ORDER.get(left.productKind) - KIND_ORDER.get(right.productKind))
-    || String(left.proposedEntity?.key).localeCompare(String(right.proposedEntity?.key), "en") || left.candidateId.localeCompare(right.candidateId, "en"));
-  if (onboardingCanonicalJson(candidate.candidates.map((item) => item.candidateId)) !== onboardingCanonicalJson(orderedCandidates.map((item) => item.candidateId))) {
+  const orderedCandidates = [...candidate.candidates].sort(
+    (left, right) =>
+      KIND_ORDER.get(left.productKind) - KIND_ORDER.get(right.productKind) ||
+      String(left.proposedEntity?.key).localeCompare(String(right.proposedEntity?.key), "en") ||
+      left.candidateId.localeCompare(right.candidateId, "en"),
+  );
+  if (
+    onboardingCanonicalJson(candidate.candidates.map((item) => item.candidateId)) !== onboardingCanonicalJson(orderedCandidates.map((item) => item.candidateId))
+  ) {
     fail("Legacy product candidate ordering is invalid.", "LEGACY_MIGRATOR_CANDIDATE_INVALID");
   }
   const unknownIds = new Set();
   for (const unknown of candidate.unknowns) {
-    if (!/^onboarding-unknown-[a-f0-9]{24}$/.test(unknown?.unknownId || "") || typeof unknown.statement !== "string" || !unknown.statement
-      || unknown.status !== "open" || sortedUnique(unknown.evidenceIds || [], `Legacy Unknown ${unknown?.unknownId} evidence`).some((id) => !evidenceIds.has(id))
-      || unknownIds.has(unknown.unknownId)) fail("Legacy Unknown binding is invalid.", "LEGACY_MIGRATOR_CANDIDATE_INVALID");
+    if (
+      !/^onboarding-unknown-[a-f0-9]{24}$/.test(unknown?.unknownId || "") ||
+      typeof unknown.statement !== "string" ||
+      !unknown.statement ||
+      unknown.status !== "open" ||
+      sortedUnique(unknown.evidenceIds || [], `Legacy Unknown ${unknown?.unknownId} evidence`).some((id) => !evidenceIds.has(id)) ||
+      unknownIds.has(unknown.unknownId)
+    )
+      fail("Legacy Unknown binding is invalid.", "LEGACY_MIGRATOR_CANDIDATE_INVALID");
     unknownIds.add(unknown.unknownId);
   }
   if (onboardingCanonicalJson(candidate.unknowns.map((item) => item.unknownId)) !== onboardingCanonicalJson([...unknownIds].sort())) {
@@ -147,7 +214,8 @@ function revisionInterpretation(revision) {
   } catch {
     if (revision?.kind !== "ProductModelRevision" || !revision.document || typeof revision.document !== "object") return "opaque-legacy-revision";
     const model = normalizeProductModelDocument(revision.document);
-    if (revision.productModelId !== model.productModelId || revision.productModelHash !== model.productModelHash) fail("Historical Product revision is invalid.", "LEGACY_MIGRATOR_REVISION_INVALID");
+    if (revision.productModelId !== model.productModelId || revision.productModelHash !== model.productModelHash)
+      fail("Historical Product revision is invalid.", "LEGACY_MIGRATOR_REVISION_INVALID");
     return "opaque-legacy-revision";
   }
 }
@@ -158,7 +226,18 @@ function inventoryRevision(projectRoot, productModelId) {
   const revision = snapshot.document;
   if (revision.productModelId !== productModelId) fail("Historical Product revision filename does not match its identity.", "LEGACY_MIGRATOR_REVISION_INVALID");
   const interpretationMode = revisionInterpretation(revision);
-  return { revision, inventory: entry(relative, "historical-product-revision", productModelId, revision.kind || "ProductModelRevision", String(revision.schemaVersion || ""), snapshot.bytes, interpretationMode) };
+  return {
+    revision,
+    inventory: entry(
+      relative,
+      "historical-product-revision",
+      productModelId,
+      revision.kind || "ProductModelRevision",
+      String(revision.schemaVersion || ""),
+      snapshot.bytes,
+      interpretationMode,
+    ),
+  };
 }
 
 function artifactDocuments(projectRoot, relativeDirectory, filePattern, idField, label) {
@@ -166,11 +245,11 @@ function artifactDocuments(projectRoot, relativeDirectory, filePattern, idField,
   if (!fs.existsSync(directory) || !fs.lstatSync(directory).isDirectory() || fs.lstatSync(directory).isSymbolicLink()) {
     fail(`${label} directory is missing or unsafe.`, "LEGACY_MIGRATOR_ARTIFACT_MISSING");
   }
-  const files = fs.readdirSync(directory, { withFileTypes: true })
-    .sort((left, right) => left.name.localeCompare(right.name, "en"));
+  const files = fs.readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name, "en"));
   if (files.length > MAX_FILES) fail(`${label} directory exceeds its bound.`, "LEGACY_MIGRATOR_LIMIT");
   return files.map((item) => {
-    if (!item.isFile() || item.isSymbolicLink() || !filePattern.test(item.name)) fail(`${label} directory contains an unsafe entry.`, "LEGACY_MIGRATOR_ARTIFACT_MISSING");
+    if (!item.isFile() || item.isSymbolicLink() || !filePattern.test(item.name))
+      fail(`${label} directory contains an unsafe entry.`, "LEGACY_MIGRATOR_ARTIFACT_MISSING");
     const relative = `${relativeDirectory}/${item.name}`;
     const artifact = readArtifact(path.join(directory, item.name), label);
     if (`${artifact.document?.[idField]}.json` !== item.name) {
@@ -210,7 +289,8 @@ function validateLegacyChain({ candidates, reviews, projectId }) {
       referencedAsParent.add(parentId);
     }
     const producerReviewDecisionId = familyById.get(candidate.candidateSetId).producerReviewDecisionId;
-    if (!parents.length && producerReviewDecisionId != null) fail("Legacy root candidate has an impossible producer review.", "LEGACY_MIGRATOR_READY_BINDING_MISMATCH");
+    if (!parents.length && producerReviewDecisionId != null)
+      fail("Legacy root candidate has an impossible producer review.", "LEGACY_MIGRATOR_READY_BINDING_MISMATCH");
     if (parents.length && !producerReviewDecisionId) fail("Legacy successor lacks its producer review.", "LEGACY_MIGRATOR_READY_BINDING_MISMATCH");
     if (producerReviewDecisionId) {
       const producer = reviewById.get(producerReviewDecisionId);
@@ -223,8 +303,9 @@ function validateLegacyChain({ candidates, reviews, projectId }) {
   const terminals = candidates.filter((candidate) => !referencedAsParent.has(candidate.candidateSetId));
   if (terminals.length !== 1) fail("Legacy candidate chain must have exactly one terminal candidate.", "LEGACY_MIGRATOR_UNSUPPORTED_CHAIN");
   const terminalCandidate = terminals[0];
-  const accepting = (reviewsByCandidateId.get(terminalCandidate.candidateSetId) || [])
-    .filter((review) => review.promotionAuthority && review.disposition.startsWith("accept"));
+  const accepting = (reviewsByCandidateId.get(terminalCandidate.candidateSetId) || []).filter(
+    (review) => review.promotionAuthority && review.disposition.startsWith("accept"),
+  );
   if (accepting.length !== 1) fail("Legacy terminal candidate requires exactly one accepting review.", "LEGACY_MIGRATOR_UNSUPPORTED_CHAIN");
   const terminalReview = accepting[0];
   expectedReviewIds.add(terminalReview.reviewDecisionId);
@@ -254,21 +335,26 @@ function validateLiveReadyLineage({ state, candidateDocuments, reviewDocuments, 
   if (liveIsLegacy) verifyCandidateSet(liveCandidate, projectId);
   else verifyOnboardingCandidateSetForProjection(liveCandidate, projectId);
   verifyOnboardingReviewDecisionForProjection(liveReview, liveCandidate, projectId);
-  if (!liveReview.promotionAuthority || !liveReview.disposition.startsWith("accept")
-    || liveReview.resultingProductModelId !== canon.model.productModelId
-    || liveReview.resultingProductModelHash !== canon.model.productModelHash) {
+  if (
+    !liveReview.promotionAuthority ||
+    !liveReview.disposition.startsWith("accept") ||
+    liveReview.resultingProductModelId !== canon.model.productModelId ||
+    liveReview.resultingProductModelHash !== canon.model.productModelHash
+  ) {
     fail("Current ready onboarding lineage does not produce live Canon.", "LEGACY_MIGRATOR_INCOMPLETE_READY");
   }
   if (liveIsLegacy) {
-    if (liveCandidate.candidateSetId !== legacyChain.terminalCandidate.candidateSetId
-      || liveReview.reviewDecisionId !== legacyChain.terminalReview.reviewDecisionId) {
+    if (
+      liveCandidate.candidateSetId !== legacyChain.terminalCandidate.candidateSetId ||
+      liveReview.reviewDecisionId !== legacyChain.terminalReview.reviewDecisionId
+    ) {
       fail("Live legacy ready pointer does not match the verified terminal approval.", "LEGACY_MIGRATOR_READY_BINDING_MISMATCH");
     }
     return;
   }
-  const currentCandidateById = new Map(candidateDocuments
-    .filter((candidate) => !FAMILIES[candidate.protocol?.version])
-    .map((candidate) => [candidate.candidateSetId, candidate]));
+  const currentCandidateById = new Map(
+    candidateDocuments.filter((candidate) => !FAMILIES[candidate.protocol?.version]).map((candidate) => [candidate.candidateSetId, candidate]),
+  );
   const ancestry = new Set();
   const visit = (candidateId) => {
     if (ancestry.has(candidateId)) return;
@@ -292,19 +378,32 @@ export function inspectLegacyOnboarding({ root = "." } = {}) {
   const projectRoot = inspected.project.projectRoot;
   const stateFile = path.join(projectRoot, ...ONBOARDING_STATE_RELATIVE_PATH.split("/"));
   const rawState = readJson(stateFile, "Onboarding state");
-  if (rawState.protocol?.version !== ONBOARDING_STATE_PROTOCOL_VERSION) fail("First slice does not migrate legacy onboarding state.", "LEGACY_MIGRATOR_UNSUPPORTED_STATE");
+  if (rawState.protocol?.version !== ONBOARDING_STATE_PROTOCOL_VERSION)
+    fail("First slice does not migrate legacy onboarding state.", "LEGACY_MIGRATOR_UNSUPPORTED_STATE");
   const state = verifyOnboardingState(rawState, { projectId: inspected.project.projectId, sessionId: inspected.state.sessionId });
-  if (state.phase !== "ready" || !state.candidateSetId || !state.latestReviewDecisionId || !state.productModelId) fail("First slice requires complete ready onboarding.", "LEGACY_MIGRATOR_INCOMPLETE_READY");
-  const candidateArtifacts = artifactDocuments(projectRoot, ONBOARDING_CANDIDATE_DIRECTORY,
-    /^onboarding-candidates-[a-f0-9]{24}\.json$/, "candidateSetId", "Onboarding candidate set");
+  if (state.phase !== "ready" || !state.candidateSetId || !state.latestReviewDecisionId || !state.productModelId)
+    fail("First slice requires complete ready onboarding.", "LEGACY_MIGRATOR_INCOMPLETE_READY");
+  const candidateArtifacts = artifactDocuments(
+    projectRoot,
+    ONBOARDING_CANDIDATE_DIRECTORY,
+    /^onboarding-candidates-[a-f0-9]{24}\.json$/,
+    "candidateSetId",
+    "Onboarding candidate set",
+  );
   const candidateDocuments = candidateArtifacts.map((artifact) => artifact.document);
   const candidateArtifactById = new Map(candidateArtifacts.map((artifact) => [artifact.document.candidateSetId, artifact]));
   const legacyCandidates = candidateDocuments.filter((document) => FAMILIES[document.protocol?.version]);
-  for (const candidate of legacyCandidates) if (candidate.sessionId !== state.sessionId) {
-    fail("Legacy candidate does not match the canonical Session.", "LEGACY_MIGRATOR_READY_BINDING_MISMATCH");
-  }
-  const reviewArtifacts = artifactDocuments(projectRoot, ONBOARDING_REVIEW_DIRECTORY,
-    /^onboarding-review-decision-[a-f0-9]{24}\.json$/, "reviewDecisionId", "Onboarding ReviewDecision");
+  for (const candidate of legacyCandidates)
+    if (candidate.sessionId !== state.sessionId) {
+      fail("Legacy candidate does not match the canonical Session.", "LEGACY_MIGRATOR_READY_BINDING_MISMATCH");
+    }
+  const reviewArtifacts = artifactDocuments(
+    projectRoot,
+    ONBOARDING_REVIEW_DIRECTORY,
+    /^onboarding-review-decision-[a-f0-9]{24}\.json$/,
+    "reviewDecisionId",
+    "Onboarding ReviewDecision",
+  );
   const reviewDocuments = reviewArtifacts.map((artifact) => artifact.document);
   const reviewArtifactById = new Map(reviewArtifacts.map((artifact) => [artifact.document.reviewDecisionId, artifact]));
   const legacyChain = validateLegacyChain({ candidates: legacyCandidates, reviews: reviewDocuments, projectId: inspected.project.projectId });
@@ -314,45 +413,76 @@ export function inspectLegacyOnboarding({ root = "." } = {}) {
   if (canon.status !== "present" || canon.model.productModelId !== state.productModelId) {
     fail("Current Canon or historical resulting revision is missing or not independently current-readable.", "LEGACY_MIGRATOR_CURRENT_CANON_UNSUPPORTED");
   }
-  validateLiveReadyLineage({ state, candidateDocuments, reviewDocuments, legacyChain,
-    projectId: inspected.project.projectId, canon });
+  validateLiveReadyLineage({ state, candidateDocuments, reviewDocuments, legacyChain, projectId: inspected.project.projectId, canon });
   const liveRevision = inventoryRevision(projectRoot, canon.model.productModelId);
-  if (liveRevision.inventory.interpretationMode !== "current-typed-with-historical-provenance"
-    || liveRevision.revision.productModelHash !== canon.model.productModelHash) {
+  if (
+    liveRevision.inventory.interpretationMode !== "current-typed-with-historical-provenance" ||
+    liveRevision.revision.productModelHash !== canon.model.productModelHash
+  ) {
     fail("Live current Canon revision is not independently current-readable.", "LEGACY_MIGRATOR_CURRENT_CANON_UNSUPPORTED");
   }
   const entries = [];
   const entryPaths = new Set();
   const addEntry = (value) => {
-    if (!entryPaths.has(value.path)) { entries.push(value); entryPaths.add(value.path); }
+    if (!entryPaths.has(value.path)) {
+      entries.push(value);
+      entryPaths.add(value.path);
+    }
   };
   for (const legacyCandidate of legacyCandidates) {
     const artifact = candidateArtifactById.get(legacyCandidate.candidateSetId);
-    addEntry(entry(artifact.relative, "historical-candidate-set", legacyCandidate.candidateSetId,
-      legacyCandidate.protocol.name, legacyCandidate.protocol.version, artifact.bytes));
+    addEntry(
+      entry(
+        artifact.relative,
+        "historical-candidate-set",
+        legacyCandidate.candidateSetId,
+        legacyCandidate.protocol.name,
+        legacyCandidate.protocol.version,
+        artifact.bytes,
+      ),
+    );
     if (legacyCandidate.worldModelId) {
       const worldRelative = `.head/world-model/snapshots/${legacyCandidate.worldModelId}.json`;
       const worldArtifact = readArtifact(path.join(projectRoot, ...worldRelative.split("/")), "Legacy World embedding");
       const world = worldArtifact.document;
-      addEntry(entry(worldRelative, "legacy-world-embedding-reference", legacyCandidate.worldModelId,
-        world.protocol?.name || world.kind || "WorldModel", world.protocol?.version || String(world.schemaVersion || ""), worldArtifact.bytes));
+      addEntry(
+        entry(
+          worldRelative,
+          "legacy-world-embedding-reference",
+          legacyCandidate.worldModelId,
+          world.protocol?.name || world.kind || "WorldModel",
+          world.protocol?.version || String(world.schemaVersion || ""),
+          worldArtifact.bytes,
+        ),
+      );
     }
   }
   for (const historicalReview of legacyChain.reviewById.values()) {
     const artifact = reviewArtifactById.get(historicalReview.reviewDecisionId);
-    addEntry(entry(artifact.relative, "historical-review", historicalReview.reviewDecisionId,
-      historicalReview.protocol.name, historicalReview.protocol.version, artifact.bytes));
+    addEntry(
+      entry(
+        artifact.relative,
+        "historical-review",
+        historicalReview.reviewDecisionId,
+        historicalReview.protocol.name,
+        historicalReview.protocol.version,
+        artifact.bytes,
+      ),
+    );
     const previous = inventoryRevision(projectRoot, historicalReview.previousProductModelId);
-    if (previous.revision.productModelHash !== historicalReview.previousProductModelHash) fail("Historical review previous revision binding is invalid.", "LEGACY_MIGRATOR_READY_BINDING_MISMATCH");
+    if (previous.revision.productModelHash !== historicalReview.previousProductModelHash)
+      fail("Historical review previous revision binding is invalid.", "LEGACY_MIGRATOR_READY_BINDING_MISMATCH");
     addEntry(previous.inventory);
     if (historicalReview.resultingProductModelId) {
       const resulting = inventoryRevision(projectRoot, historicalReview.resultingProductModelId);
-      if (resulting.revision.productModelHash !== historicalReview.resultingProductModelHash) fail("Historical review resulting revision binding is invalid.", "LEGACY_MIGRATOR_READY_BINDING_MISMATCH");
+      if (resulting.revision.productModelHash !== historicalReview.resultingProductModelHash)
+        fail("Historical review resulting revision binding is invalid.", "LEGACY_MIGRATOR_READY_BINDING_MISMATCH");
       addEntry(resulting.inventory);
     }
   }
   entries.sort((a, b) => a.path.localeCompare(b.path, "en"));
-  if (entries.length > MAX_FILES || entries.reduce((sum, item) => sum + item.byteLength, 0) > MAX_BYTES) fail("Legacy inventory exceeds its bound.", "LEGACY_MIGRATOR_LIMIT");
+  if (entries.length > MAX_FILES || entries.reduce((sum, item) => sum + item.byteLength, 0) > MAX_BYTES)
+    fail("Legacy inventory exceeds its bound.", "LEGACY_MIGRATOR_LIMIT");
   const validation = {
     status: "complete-ready-verified",
     supportedCandidateVersions: [...new Set([...legacyChain.familyById.values()].map((family) => family.version))].sort(),
@@ -363,12 +493,21 @@ export function inspectLegacyOnboarding({ root = "." } = {}) {
     promotionAuthority: false,
   };
   const capability = createVerifiedHistoricalInventoryCapability({ root: projectRoot, projectId: inspected.project.projectId, entries, validation });
-  if (capability.appliedAtBasis.onboardingState.candidateSetId !== state.candidateSetId
-    || capability.appliedAtBasis.onboardingState.latestReviewDecisionId !== state.latestReviewDecisionId
-    || capability.appliedAtBasis.onboardingState.productModelId !== state.productModelId
-    || capability.appliedAtBasis.canon.id !== canon.model.productModelId) {
+  if (
+    capability.appliedAtBasis.onboardingState.candidateSetId !== state.candidateSetId ||
+    capability.appliedAtBasis.onboardingState.latestReviewDecisionId !== state.latestReviewDecisionId ||
+    capability.appliedAtBasis.onboardingState.productModelId !== state.productModelId ||
+    capability.appliedAtBasis.canon.id !== canon.model.productModelId
+  ) {
     fail("Live onboarding basis changed during historical validation.", "LEGACY_MIGRATOR_PREFLIGHT_BASIS_DRIFT");
   }
-  return { status: "complete-ready-verified", projectRoot, projectId: inspected.project.projectId,
-    candidateProtocolVersion: legacyChain.familyById.get(candidate.candidateSetId).version, entries, validation, capability };
+  return {
+    status: "complete-ready-verified",
+    projectRoot,
+    projectId: inspected.project.projectId,
+    candidateProtocolVersion: legacyChain.familyById.get(candidate.candidateSetId).version,
+    entries,
+    validation,
+    capability,
+  };
 }

@@ -1,8 +1,4 @@
-import {
-  nativeSqlitePath,
-  codexNativeHistoryDigest,
-  verifyCodexNativeBeforeBackup,
-} from "./codex-native-backup.mjs";
+import { nativeSqlitePath, codexNativeHistoryDigest, verifyCodexNativeBeforeBackup } from "./codex-native-backup.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -10,16 +6,8 @@ import { DatabaseSync, backup } from "node:sqlite";
 import { assertCodexNativeOffline } from "./codex-native-offline.mjs";
 import { inspectCodexNativePayload } from "./codex-native-payload.mjs";
 import { inspectCodexNativeDatabase } from "./codex-native-portability.mjs";
-import {
-  planCodexNativeRowMerge,
-  applyCodexNativeRowMerge,
-} from "./codex-native-row-merge.mjs";
-import {
-  copiedProjectFile,
-  verifyCopiedProjectFile,
-  inspectCopiedProjectFile,
-  copyOriginal,
-} from "./project-copy-evidence.mjs";
+import { planCodexNativeRowMerge, applyCodexNativeRowMerge } from "./codex-native-row-merge.mjs";
+import { copiedProjectFile, verifyCopiedProjectFile, inspectCopiedProjectFile, copyOriginal } from "./project-copy-evidence.mjs";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
 
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -28,14 +16,10 @@ const fail = (code) => {
   throw Object.assign(new Error(code), { code });
 };
 const version = (db) => db.prepare("PRAGMA data_version").get().data_version;
-const physical = (stat) =>
-  [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].map(String).join(":");
+const physical = (stat) => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].map(String).join(":");
 const contained = (base, file) => {
   const relative = path.relative(base, file);
-  return (
-    !relative ||
-    (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))
-  );
+  return !relative || (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative));
 };
 const cancelled = (signal) => {
   if (signal?.aborted) fail("NATIVE_CODEX_PUBLICATION_CANCELLED");
@@ -76,8 +60,7 @@ export async function publishCodexNativeHistory({
   onProcess,
   assertCurrentAuthority = () => {},
 } = {}) {
-  if (typeof assertCurrentAuthority !== "function")
-    fail("NATIVE_CODEX_AUTHORITY_CHECK_REQUIRED");
+  if (typeof assertCurrentAuthority !== "function") fail("NATIVE_CODEX_AUTHORITY_CHECK_REQUIRED");
   const checkAuthority = () => {
     const result = assertCurrentAuthority();
     if (result && typeof result.then === "function") {
@@ -97,8 +80,7 @@ export async function publishCodexNativeHistory({
     home = offline.home,
     payload = inspected.payload;
   if (offline.engineVersion !== payload.engineVersion) fail("NATIVE_CODEX_PROFILE_UNSUPPORTED");
-  if (contained(home, inspected.directory) || contained(inspected.directory, home))
-    fail("NATIVE_CODEX_SOURCE_TARGET_OVERLAP");
+  if (contained(home, inspected.directory) || contained(inspected.directory, home)) fail("NATIVE_CODEX_SOURCE_TARGET_OVERLAP");
   cancelled(signal);
   checkAuthority();
   const basis = {
@@ -123,15 +105,12 @@ export async function publishCodexNativeHistory({
       stateVersion = version(state.db);
     const selectedState = () =>
       payload.threadIds.map((threadId) => {
-        const row = state.db
-          .prepare("SELECT id,rollout_path FROM threads WHERE id=?")
-          .get(threadId);
+        const row = state.db.prepare("SELECT id,rollout_path FROM threads WHERE id=?").get(threadId);
         if (row) {
           const file = payload.files.find((entry) => entry.threadId === threadId);
           if (
             typeof row.rollout_path !== "string" ||
-            nativeSqlitePath(path.resolve(row.rollout_path)) !==
-              nativeSqlitePath(path.resolve(copiedProjectFile(home, file.path)))
+            nativeSqlitePath(path.resolve(row.rollout_path)) !== nativeSqlitePath(path.resolve(copiedProjectFile(home, file.path)))
           )
             fail("NATIVE_CODEX_TARGET_THREAD_BINDING_DIVERGED");
         }
@@ -167,8 +146,7 @@ export async function publishCodexNativeHistory({
     const operationRelative = ".lode-native-portability/" + operationId;
     const intentFile = copiedProjectFile(home, operationRelative + "/intent.json"),
       hadIntent = fs.existsSync(intentFile);
-    if (hadIntent && !fs.readFileSync(intentFile).equals(intentBytes))
-      fail("NATIVE_CODEX_PUBLICATION_INTENT_CONFLICT");
+    if (hadIntent && !fs.readFileSync(intentFile).equals(intentBytes)) fail("NATIVE_CODEX_PUBLICATION_INTENT_CONFLICT");
     const assertBasis = () => {
       cancelled(signal);
       checkAuthority();
@@ -181,8 +159,7 @@ export async function publishCodexNativeHistory({
       )
         fail("NATIVE_CODEX_TARGET_HISTORY_FILE_CHANGED");
       if (
-        physical(fs.lstatSync(copiedProjectFile(home, state.relative), { bigint: true })) !==
-          state.physical ||
+        physical(fs.lstatSync(copiedProjectFile(home, state.relative), { bigint: true })) !== state.physical ||
         version(state.db) !== stateVersion ||
         JSON.stringify(selectedState()) !== originalState
       )
@@ -245,24 +222,17 @@ export async function publishCodexNativeHistory({
       )
         fail("NATIVE_CODEX_BACKUP_INVALID");
       verifyCopiedProjectFile(home, receipt);
-      verifyCodexNativeBeforeBackup(
-        copiedProjectFile(home, receipt.path),
-        basis,
-        receipt.beforeHistoryDigest,
-      );
+      verifyCodexNativeBeforeBackup(copiedProjectFile(home, receipt.path), basis, receipt.beforeHistoryDigest);
       return receipt;
     };
     let backupReceiptRelative = operationRelative + "/backup.json";
     if (fs.existsSync(copiedProjectFile(home, backupReceiptRelative))) {
       const receipt = validateBackup(backupReceiptRelative);
-      if (receipt.beforeHistoryDigest !== beforeHistoryDigest)
-        backupReceiptRelative =
-          operationRelative + "/backups/before-" + beforeHistoryDigest + ".json";
+      if (receipt.beforeHistoryDigest !== beforeHistoryDigest) backupReceiptRelative = operationRelative + "/backups/before-" + beforeHistoryDigest + ".json";
     }
     if (fs.existsSync(copiedProjectFile(home, backupReceiptRelative))) {
       const receipt = validateBackup(backupReceiptRelative);
-      if (receipt.beforeHistoryDigest !== beforeHistoryDigest)
-        fail("NATIVE_CODEX_BACKUP_BEFORE_STATE_MISMATCH");
+      if (receipt.beforeHistoryDigest !== beforeHistoryDigest) fail("NATIVE_CODEX_BACKUP_BEFORE_STATE_MISMATCH");
     } else {
       cancelled(signal);
       checkAuthority();
@@ -287,9 +257,7 @@ export async function publishCodexNativeHistory({
         try {
           reader.close();
         } catch (error) {
-          if (backupError)
-            backupError.nativeCleanupFailure =
-              error.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
+          if (backupError) backupError.nativeCleanupFailure = error.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
           else throw error;
         }
       }
@@ -322,8 +290,7 @@ export async function publishCodexNativeHistory({
           bytes: observed.bytes,
           sha256: observed.sha256,
           beforeHistoryDigest,
-          scope:
-            "target-history-database-local-backup-only; never transferred or automatically restored",
+          scope: "target-history-database-local-backup-only; never transferred or automatically restored",
         }),
       );
     }
@@ -393,9 +360,7 @@ export async function publishCodexNativeHistory({
       }
     }
     if (cleanupFailure) {
-      if (primary)
-        primary.nativeCleanupFailure =
-          cleanupFailure.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
+      if (primary) primary.nativeCleanupFailure = cleanupFailure.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
       else throw cleanupFailure;
     }
   }

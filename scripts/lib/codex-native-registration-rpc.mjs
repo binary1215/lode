@@ -1,28 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import {
-  spawnSupervisedProcess,
-  verifyRuntimeProcessSupervisorHandle,
-} from "./runtime-process-supervisor.mjs";
+import { spawnSupervisedProcess, verifyRuntimeProcessSupervisorHandle } from "./runtime-process-supervisor.mjs";
 import { copiedProjectFile } from "./project-copy-evidence.mjs";
-import {
-  codexNativeRegistrationScope,
-  observeCodexNativeRegistrationWriters,
-} from "./codex-native-offline.mjs";
+import { codexNativeRegistrationScope, observeCodexNativeRegistrationWriters } from "./codex-native-offline.mjs";
 
 const fail = (code) => {
   throw Object.assign(new Error(code), { code });
 };
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const methods = new Set([
-  "config/read",
-  "thread/resume",
-  "thread/read",
-  "thread/turns/list",
-  "thread/items/list",
-  "thread/unsubscribe",
-]);
+const methods = new Set(["config/read", "thread/resume", "thread/read", "thread/turns/list", "thread/items/list", "thread/unsubscribe"]);
 const disabled = [
   "apps",
   "plugins",
@@ -72,11 +59,9 @@ export async function openCodexNativeRegistrationRpc({
 } = {}) {
   const scope = codexNativeRegistrationScope(witness),
     root = fs.realpathSync(path.resolve(cwd));
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 300000)
-    fail("NATIVE_CODEX_RPC_LIMIT_INVALID");
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 300000) fail("NATIVE_CODEX_RPC_LIMIT_INVALID");
   if (signal?.aborted) fail("NATIVE_CODEX_RPC_CANCELLED");
-  if (!environment || fs.realpathSync(environment.CODEX_HOME) !== scope.home)
-    fail("NATIVE_CODEX_RPC_HOME_MISMATCH");
+  if (!environment || fs.realpathSync(environment.CODEX_HOME) !== scope.home) fail("NATIVE_CODEX_RPC_HOME_MISMATCH");
   const allowed = new Set([
     "SystemRoot",
     "WINDIR",
@@ -93,13 +78,8 @@ export async function openCodexNativeRegistrationRpc({
     "XDG_DATA_HOME",
     "XDG_STATE_HOME",
   ]);
-  const env = Object.fromEntries(
-    Object.entries(environment).filter(
-      ([key, value]) => allowed.has(key) && typeof value === "string",
-    ),
-  );
-  if (!Array.isArray(nativeThreads) || !nativeThreads.length)
-    fail("NATIVE_CODEX_RPC_THREAD_REQUIRED");
+  const env = Object.fromEntries(Object.entries(environment).filter(([key, value]) => allowed.has(key) && typeof value === "string"));
+  if (!Array.isArray(nativeThreads) || !nativeThreads.length) fail("NATIVE_CODEX_RPC_THREAD_REQUIRED");
   const targets = new Map();
   for (const entry of nativeThreads) {
     if (
@@ -203,8 +183,7 @@ export async function openCodexNativeRegistrationRpc({
     pending.clear();
     if (!closing)
       close().catch((error) => {
-        if (failure)
-          failure.nativeCleanupFailure = error.code || "NATIVE_CODEX_RPC_CLEANUP_UNCERTAIN";
+        if (failure) failure.nativeCleanupFailure = error.code || "NATIVE_CODEX_RPC_CLEANUP_UNCERTAIN";
       });
   };
   handle.child.once("error", stop);
@@ -218,9 +197,7 @@ export async function openCodexNativeRegistrationRpc({
   };
   signal?.addEventListener("abort", abort, { once: true });
   const timer = setTimeout(() => {
-    stop(
-      Object.assign(Error("NATIVE_CODEX_RPC_DEADLINE"), { code: "NATIVE_CODEX_RPC_DEADLINE" }),
-    );
+    stop(Object.assign(Error("NATIVE_CODEX_RPC_DEADLINE"), { code: "NATIVE_CODEX_RPC_DEADLINE" }));
   }, timeoutMs);
   handle.child.stderr.on("data", (chunk) => {
     stderrBytes += chunk.length;
@@ -254,12 +231,9 @@ export async function openCodexNativeRegistrationRpc({
       let newline;
       while ((newline = buffer.indexOf(10)) !== -1) {
         if (newline < 1 || newline > 64 * 1024 * 1024) fail("NATIVE_CODEX_RPC_FRAME_INVALID");
-        const frame = JSON.parse(
-          new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, newline)),
-        );
+        const frame = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, newline)));
         buffer = buffer.subarray(newline + 1);
-        if (!frame || typeof frame !== "object" || Array.isArray(frame))
-          fail("NATIVE_CODEX_RPC_FRAME_INVALID");
+        if (!frame || typeof frame !== "object" || Array.isArray(frame)) fail("NATIVE_CODEX_RPC_FRAME_INVALID");
         if (frame.method) {
           // Every server action is denied. Native history and provider notifications
           // cannot gain a filesystem/tool/approval callback through this transport.
@@ -274,8 +248,7 @@ export async function openCodexNativeRegistrationRpc({
           continue;
         }
         const waiter = pending.get(String(frame.id));
-        if (!waiter || (frame.result === undefined && frame.error === undefined))
-          fail("NATIVE_CODEX_RPC_RESPONSE_MISMATCH");
+        if (!waiter || (frame.result === undefined && frame.error === undefined)) fail("NATIVE_CODEX_RPC_RESPONSE_MISMATCH");
         if (frame.error)
           waiter.reject(
             Object.assign(Error("Native SDK request failed"), {
@@ -288,8 +261,7 @@ export async function openCodexNativeRegistrationRpc({
             for (const name of ["nextCursor", "backwardsCursor"]) {
               const cursor = frame.result?.[name];
               if (cursor != null) {
-                if (typeof cursor !== "string" || !cursor || cursor.length > 65536)
-                  fail("NATIVE_CODEX_RPC_CURSOR_INVALID");
+                if (typeof cursor !== "string" || !cursor || cursor.length > 65536) fail("NATIVE_CODEX_RPC_CURSOR_INVALID");
                 const key = JSON.stringify([waiter.method, waiter.threadId, waiter.itemsView]);
                 const owners = cursors.get(cursor) || new Set();
                 owners.add(key);
@@ -309,20 +281,13 @@ export async function openCodexNativeRegistrationRpc({
   record({ event: "started", pid: handle.child.pid, parentPid: process.pid, cwd: root });
 
   async function request(method, params, { requestId = null, beforeWrite = null } = {}) {
-    if (!(method === "initialize" && !initialized) && !methods.has(method))
-      fail("NATIVE_CODEX_RPC_METHOD_NOT_ALLOWED");
+    if (!(method === "initialize" && !initialized) && !methods.has(method)) fail("NATIVE_CODEX_RPC_METHOD_NOT_ALLOWED");
     if (failure) throw failure;
     if (closing || closed) fail("NATIVE_CODEX_RPC_CLOSED");
-    if (
-      method.startsWith("thread/") &&
-      (typeof params?.threadId !== "string" || !targets.has(params.threadId))
-    )
-      fail("NATIVE_CODEX_RPC_THREAD_REQUIRED");
+    if (method.startsWith("thread/") && (typeof params?.threadId !== "string" || !targets.has(params.threadId))) fail("NATIVE_CODEX_RPC_THREAD_REQUIRED");
     if (
       method === "config/read" &&
-      (params.cwd !== root ||
-        params.includeLayers !== false ||
-        Object.keys(params).some((key) => !["cwd", "includeLayers"].includes(key)))
+      (params.cwd !== root || params.includeLayers !== false || Object.keys(params).some((key) => !["cwd", "includeLayers"].includes(key)))
     )
       fail("NATIVE_CODEX_RPC_PARAMS_MISMATCH");
     if (method === "thread/resume") {
@@ -344,8 +309,7 @@ export async function openCodexNativeRegistrationRpc({
               "serviceTier",
             ].includes(key),
         ) ||
-        path.toNamespacedPath(path.resolve(params.path || "")) !==
-          path.toNamespacedPath(targets.get(params.threadId)) ||
+        path.toNamespacedPath(path.resolve(params.path || "")) !== path.toNamespacedPath(targets.get(params.threadId)) ||
         params.cwd !== root ||
         JSON.stringify(params.runtimeWorkspaceRoots) !== JSON.stringify([root]) ||
         params.excludeTurns !== true
@@ -353,48 +317,28 @@ export async function openCodexNativeRegistrationRpc({
         fail("NATIVE_CODEX_RPC_PARAMS_MISMATCH");
       const config = params.config || {};
       if (
-        Object.keys(config).some(
-          (key) => !["model_reasoning_effort", "mcp_servers"].includes(key),
-        ) ||
-        (config.mcp_servers &&
-          Object.values(config.mcp_servers).some(
-            (value) => !value || value.enabled !== false || Object.keys(value).length !== 1,
-          ))
+        Object.keys(config).some((key) => !["model_reasoning_effort", "mcp_servers"].includes(key)) ||
+        (config.mcp_servers && Object.values(config.mcp_servers).some((value) => !value || value.enabled !== false || Object.keys(value).length !== 1))
       )
         fail("NATIVE_CODEX_RPC_PARAMS_MISMATCH");
     }
-    if (
-      method === "thread/read" &&
-      (params.includeTurns !== false ||
-        Object.keys(params).some((key) => !["threadId", "includeTurns"].includes(key)))
-    )
+    if (method === "thread/read" && (params.includeTurns !== false || Object.keys(params).some((key) => !["threadId", "includeTurns"].includes(key))))
       fail("NATIVE_CODEX_RPC_PARAMS_MISMATCH");
     if (
       ["thread/items/list", "thread/turns/list"].includes(method) &&
       (!Number.isInteger(params.limit) ||
         params.limit < 1 ||
         params.limit > 100 ||
-        Object.keys(params).some(
-          (key) => !["threadId", "limit", "cursor", "itemsView"].includes(key),
-        ))
+        Object.keys(params).some((key) => !["threadId", "limit", "cursor", "itemsView"].includes(key)))
     )
       fail("NATIVE_CODEX_RPC_PARAMS_MISMATCH");
     if (["thread/items/list", "thread/turns/list"].includes(method)) {
-      if (
-        (method === "thread/items/list" && Object.hasOwn(params, "itemsView")) ||
-        (method === "thread/turns/list" && params.itemsView !== "full")
-      )
+      if ((method === "thread/items/list" && Object.hasOwn(params, "itemsView")) || (method === "thread/turns/list" && params.itemsView !== "full"))
         fail("NATIVE_CODEX_RPC_PARAMS_MISMATCH");
-      if (
-        params.cursor != null &&
-        !cursors
-          .get(params.cursor)
-          ?.has(JSON.stringify([method, params.threadId, params.itemsView]))
-      )
+      if (params.cursor != null && !cursors.get(params.cursor)?.has(JSON.stringify([method, params.threadId, params.itemsView])))
         fail("NATIVE_CODEX_RPC_CURSOR_INVALID");
     }
-    if (method === "thread/unsubscribe" && Object.keys(params).length !== 1)
-      fail("NATIVE_CODEX_RPC_PARAMS_MISMATCH");
+    if (method === "thread/unsubscribe" && Object.keys(params).length !== 1) fail("NATIVE_CODEX_RPC_PARAMS_MISMATCH");
     const id = requestId || "native-metadata-" + ++nextId;
     if (typeof id !== "string" || used.has(id)) fail("NATIVE_CODEX_RPC_REQUEST_REPLAYED");
     used.add(id);
@@ -451,8 +395,7 @@ export async function openCodexNativeRegistrationRpc({
         fail("NATIVE_CODEX_OTHER_WRITER_PRESENT");
       providerBirth = row.birth;
     }
-    if (failure || closing || closed || handle.state.providerExitObserved)
-      fail("NATIVE_CODEX_RPC_WRITER_OWNERSHIP_UNAVAILABLE");
+    if (failure || closing || closed || handle.state.providerExitObserved) fail("NATIVE_CODEX_RPC_WRITER_OWNERSHIP_UNAVAILABLE");
     return { status: "only-owned-observed-writers", offlineClaim: false, authorityPlane: "P5" };
   };
   const close = () =>
@@ -482,10 +425,7 @@ export async function openCodexNativeRegistrationRpc({
             record({ event: "shutdown", phase: "eof-rejected" });
           },
         );
-      const eofOutcome = await observeBounded(
-        Promise.race([eof, exactClose]),
-        terminationGraceMs,
-      );
+      const eofOutcome = await observeBounded(Promise.race([eof, exactClose]), terminationGraceMs);
       if (eofOutcome.state === "timeout") record({ event: "shutdown", phase: "eof-timeout" });
       if (!closed && eofState === "flushed") {
         record({ event: "shutdown", phase: "grace-started", budgetMs: terminationGraceMs });
@@ -518,12 +458,7 @@ export async function openCodexNativeRegistrationRpc({
         treeCleanupVerified: cleanup.treeCleanupVerified,
         ownershipEstablished: cleanup.ownershipEstablished,
       });
-      if (
-        !cleanup.treeCleanupVerified ||
-        !cleanup.ownershipEstablished ||
-        !cleanup.requestWritten
-      )
-        fail("NATIVE_CODEX_RPC_CLEANUP_UNCERTAIN");
+      if (!cleanup.treeCleanupVerified || !cleanup.ownershipEstablished || !cleanup.requestWritten) fail("NATIVE_CODEX_RPC_CLEANUP_UNCERTAIN");
       if (!failure && eofOutcome.state === "timeout") fail("NATIVE_CODEX_RPC_EOF_TIMEOUT");
       if (!failure && eofState === "rejected") fail("NATIVE_CODEX_RPC_EOF_FAILED");
       if (!failure && forced) fail("NATIVE_CODEX_RPC_FORCED_SHUTDOWN");

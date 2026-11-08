@@ -8,30 +8,73 @@ import { atomicCreateArtifact, atomicWriteArtifact } from "./artifact-storage.mj
 import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import { noteProjectGraphChange } from "./discovery-index.mjs";
 
-const fail = (message, code) => { throw Object.assign(new Error(message), { code }); };
-const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object"
-  ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
-const hash = (value) => crypto.createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
-const read = (file) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (error) { fail(`Project direction is unreadable: ${error.message}`, "INVALID_PROJECT_DIRECTION"); } };
+const fail = (message, code) => {
+  throw Object.assign(new Error(message), { code });
+};
+const canonical = (value) =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : value && typeof value === "object"
+      ? Object.fromEntries(
+          Object.keys(value)
+            .sort()
+            .map((key) => [key, canonical(value[key])]),
+        )
+      : value;
+const hash = (value) =>
+  crypto
+    .createHash("sha256")
+    .update(JSON.stringify(canonical(value)))
+    .digest("hex");
+const read = (file) => {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(`Project direction is unreadable: ${error.message}`, "INVALID_PROJECT_DIRECTION");
+  }
+};
 
 function directionStorage(root) {
-  return resolveProjectStorage(root, { readLegacyProject() {
-    const project = read(safeSessionPath(root, ".head", "project.json"));
-    if (project.projectRoot !== fs.realpathSync(path.resolve(root))) fail("Project identity differs.", "PROJECT_IDENTITY_MISMATCH");
-    return project;
-  } });
+  return resolveProjectStorage(root, {
+    readLegacyProject() {
+      const project = read(safeSessionPath(root, ".head", "project.json"));
+      if (project.projectRoot !== fs.realpathSync(path.resolve(root))) fail("Project identity differs.", "PROJECT_IDENTITY_MISMATCH");
+      return project;
+    },
+  });
 }
 
 export function verifyProjectDirectionOriginal(record, project) {
-  const keys = ["schemaVersion", "kind", "authorityPlane", "authorityBoundary", "projectId", "previousDirectionId", "input", "source", "grantsExecutionAuthorization", "directionId", "directionHash"];
-  if (!record || Object.keys(record).some((key) => !keys.includes(key)) || keys.some((key) => !Object.hasOwn(record, key))
-    || record.schemaVersion !== 1 || record.kind !== "ProjectDirection" || record.authorityPlane !== "P2"
-    || record.source !== "explicit-current-user-direction-conveyed-by-caller" || record.grantsExecutionAuthorization !== false
-    || record.previousDirectionId !== null && !/^direction-[a-f0-9]{24}$/.test(record.previousDirectionId || "")
-    || hash(normalized(record.input)) !== hash(record.input)) fail("Project direction shape or authority is invalid.", "INVALID_PROJECT_DIRECTION");
+  const keys = [
+    "schemaVersion",
+    "kind",
+    "authorityPlane",
+    "authorityBoundary",
+    "projectId",
+    "previousDirectionId",
+    "input",
+    "source",
+    "grantsExecutionAuthorization",
+    "directionId",
+    "directionHash",
+  ];
+  if (
+    !record ||
+    Object.keys(record).some((key) => !keys.includes(key)) ||
+    keys.some((key) => !Object.hasOwn(record, key)) ||
+    record.schemaVersion !== 1 ||
+    record.kind !== "ProjectDirection" ||
+    record.authorityPlane !== "P2" ||
+    record.source !== "explicit-current-user-direction-conveyed-by-caller" ||
+    record.grantsExecutionAuthorization !== false ||
+    (record.previousDirectionId !== null && !/^direction-[a-f0-9]{24}$/.test(record.previousDirectionId || "")) ||
+    hash(normalized(record.input)) !== hash(record.input)
+  )
+    fail("Project direction shape or authority is invalid.", "INVALID_PROJECT_DIRECTION");
   verifyArtifactAuthorityBoundary("ProjectDirection", record.authorityBoundary);
   const { directionId, directionHash, ...payload } = record;
-  if (record.projectId !== project.projectId || directionHash !== hash(payload) || directionId !== `direction-${directionHash.slice(0, 24)}`) fail("Project direction identity/digest differs.", "PROJECT_DIRECTION_INTEGRITY_FAILURE");
+  if (record.projectId !== project.projectId || directionHash !== hash(payload) || directionId !== `direction-${directionHash.slice(0, 24)}`)
+    fail("Project direction identity/digest differs.", "PROJECT_DIRECTION_INTEGRITY_FAILURE");
   return record;
 }
 
@@ -40,7 +83,10 @@ function directionFileStat(file) {
     const stat = fs.lstatSync(file);
     if (stat.isSymbolicLink()) fail("Session path traverses a symlink.", "SESSION_PATH_ESCAPE");
     return stat;
-  } catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 function hasUnlinkedDirectionTrace(root, storage) {
@@ -65,8 +111,10 @@ function hasUnlinkedDirectionTrace(root, storage) {
   };
   const directory = safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction");
   const pointerTrace = traceIn(directory, (name) => pointerStage.test(name));
-  const revisionTrace = traceIn(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "revisions"),
-    (name) => /^direction-.*\.json$/.test(name) || revisionStage.test(name));
+  const revisionTrace = traceIn(
+    safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "revisions"),
+    (name) => /^direction-.*\.json$/.test(name) || revisionStage.test(name),
+  );
   return pointerTrace || revisionTrace;
 }
 
@@ -82,16 +130,26 @@ export function readProjectDirectionRevision({ root = ".", directionId, storage 
   storage ??= directionStorage(root);
   const project = read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project.json"));
   if (project.projectRoot !== fs.realpathSync(path.resolve(root))) fail("Project identity differs.", "PROJECT_IDENTITY_MISMATCH");
-  return verifyProjectDirectionOriginal(read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "revisions", `${directionId}.json`)), project);
+  return verifyProjectDirectionOriginal(
+    read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "revisions", `${directionId}.json`)),
+    project,
+  );
 }
 
 function normalized(input) {
-  if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some((key) => !["goal", "constraints", "decisions", "cancelledActions"].includes(key))) fail("Expected current caller-supplied Project direction.", "INVALID_PROJECT_DIRECTION_INPUT");
+  if (
+    !input ||
+    typeof input !== "object" ||
+    Array.isArray(input) ||
+    Object.keys(input).some((key) => !["goal", "constraints", "decisions", "cancelledActions"].includes(key))
+  )
+    fail("Expected current caller-supplied Project direction.", "INVALID_PROJECT_DIRECTION_INPUT");
   if (typeof input.goal !== "string") fail("Project goal must be text.", "INVALID_PROJECT_DIRECTION_INPUT");
   const result = { goal: input.goal };
   for (const key of ["constraints", "decisions", "cancelledActions"]) {
     const values = input[key] || [];
-    if (!Array.isArray(values) || values.some((value) => typeof value !== "string" || !value.trim())) fail(`${key} must contain text.`, "INVALID_PROJECT_DIRECTION_INPUT");
+    if (!Array.isArray(values) || values.some((value) => typeof value !== "string" || !value.trim()))
+      fail(`${key} must contain text.`, "INVALID_PROJECT_DIRECTION_INPUT");
     result[key] = [...new Set(values)];
   }
   return result;
@@ -102,14 +160,23 @@ export function updateProjectDirection({ root = ".", expectedDirectionId = null,
   storage ??= directionStorage(root);
   return withProjectMutation({ root, storage, scope: "project-direction" }, () => {
     const current = readProjectDirection({ root, storage });
-    if (current && hash(current.input) === hash(direction)
-      && [current.directionId, current.previousDirectionId].includes(expectedDirectionId)) return { status: "reused", direction: current };
-    if ((current?.directionId || null) !== expectedDirectionId) fail("Common Project direction changed; derive against its current exact basis.", "PROJECT_DIRECTION_CONFLICT");
+    if (current && hash(current.input) === hash(direction) && [current.directionId, current.previousDirectionId].includes(expectedDirectionId))
+      return { status: "reused", direction: current };
+    if ((current?.directionId || null) !== expectedDirectionId)
+      fail("Common Project direction changed; derive against its current exact basis.", "PROJECT_DIRECTION_CONFLICT");
     if (current && hash(current.input) === hash(direction)) return { status: "reused", direction: current };
     const project = read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project.json"));
-    const payload = { schemaVersion: 1, kind: "ProjectDirection", authorityPlane: "P2", authorityBoundary: artifactAuthorityBoundary("ProjectDirection"), projectId: project.projectId,
-      previousDirectionId: current?.directionId || null, input: direction,
-      source: "explicit-current-user-direction-conveyed-by-caller", grantsExecutionAuthorization: false };
+    const payload = {
+      schemaVersion: 1,
+      kind: "ProjectDirection",
+      authorityPlane: "P2",
+      authorityBoundary: artifactAuthorityBoundary("ProjectDirection"),
+      projectId: project.projectId,
+      previousDirectionId: current?.directionId || null,
+      input: direction,
+      source: "explicit-current-user-direction-conveyed-by-caller",
+      grantsExecutionAuthorization: false,
+    };
     const directionHash = hash(payload);
     const record = { ...payload, directionId: `direction-${directionHash.slice(0, 24)}`, directionHash };
     const revision = safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "revisions", `${record.directionId}.json`);
@@ -133,7 +200,11 @@ export function assertProjectActionsCurrent({ root = ".", actions = [], storage 
 
 export function assertAuthorizationProjectDirection(root, authorization, storage = undefined) {
   const current = readProjectDirection({ root, storage });
-  if ((authorization.currentProjectDirectionId || null) !== (current?.directionId || null)) fail("Execution authorization predates the current common Project direction; reassess only this effect against current user direction.", "RUNTIME_PROJECT_DIRECTION_DRIFT");
+  if ((authorization.currentProjectDirectionId || null) !== (current?.directionId || null))
+    fail(
+      "Execution authorization predates the current common Project direction; reassess only this effect against current user direction.",
+      "RUNTIME_PROJECT_DIRECTION_DRIFT",
+    );
   return current;
 }
 
@@ -144,10 +215,17 @@ export function inspectProjectDirectionOriginalFiles({ root, directory, project 
   const storage = { directory, dialect: directory === ".lode" ? "lode" : "head" };
   const file = safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "current.json");
   if (!directionFileStat(file)) {
-    if (hasUnlinkedDirectionTrace(root, storage)) fail("Current Project direction linkage is unavailable; retained originals or publication stages are not an approved empty direction.", "PROJECT_DIRECTION_UNAVAILABLE");
+    if (hasUnlinkedDirectionTrace(root, storage))
+      fail(
+        "Current Project direction linkage is unavailable; retained originals or publication stages are not an approved empty direction.",
+        "PROJECT_DIRECTION_UNAVAILABLE",
+      );
     return null;
   }
   const pointer = read(file);
   if (!/^direction-[a-f0-9]{24}$/.test(pointer.directionId || "")) fail("Project direction pointer is invalid.", "INVALID_PROJECT_DIRECTION");
-  return verifyProjectDirectionOriginal(read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "revisions", `${pointer.directionId}.json`)), project);
+  return verifyProjectDirectionOriginal(
+    read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project-direction", "revisions", `${pointer.directionId}.json`)),
+    project,
+  );
 }

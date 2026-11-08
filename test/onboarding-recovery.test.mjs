@@ -12,7 +12,15 @@ import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
 import { initializeOrResumeProject, inspectProjectExperience } from "../scripts/lib/project-bootstrap.mjs";
-import { inspectOptionalOnboarding, inspectOnboarding, recoverOnboardingPromotion, refreshOnboardingCandidates, restoreOnboardingCandidate, reviewOnboarding, startOnboarding } from "../scripts/lib/onboarding.mjs";
+import {
+  inspectOptionalOnboarding,
+  inspectOnboarding,
+  recoverOnboardingPromotion,
+  refreshOnboardingCandidates,
+  restoreOnboardingCandidate,
+  reviewOnboarding,
+  startOnboarding,
+} from "../scripts/lib/onboarding.mjs";
 import crypto from "node:crypto";
 import { inspectConversationalOnboarding } from "../scripts/lib/onboarding-conversation.mjs";
 import { enterConversationRecovery } from "../scripts/lib/compaction-lifecycle.mjs";
@@ -30,23 +38,43 @@ async function fixture() {
   try {
     fs.writeFileSync(path.join(root, "README.md"), "# Message delivery service\n");
     initializeProject({ root, pluginRoot, runtimes: ["codex"] });
-    const storage = inspectProject(root).storage, layout = formatForVerifiedOwner(storage);
+    const storage = inspectProject(root).storage,
+      layout = formatForVerifiedOwner(storage);
     const canonPath = `${layout.directory}/context/product-model.json`;
     const statePath = `${layout.directory}/onboarding/current.json`;
     const reviewDirectory = `${layout.directory}/onboarding/review-decisions`;
     const started = await startOnboarding({
-      root, mode: "new", brief: {
-        schemaVersion: 1, name: "Message service", summary: "Deliver one reviewed message.",
+      root,
+      mode: "new",
+      brief: {
+        schemaVersion: 1,
+        name: "Message service",
+        summary: "Deliver one reviewed message.",
         capabilities: [{ key: "delivery", name: "Delivery", description: "Deliver a message." }],
       },
     });
-    return { root, storage, layout, canonPath, statePath, reviewDirectory, request: { root, candidateSetId: started.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Adopt the reviewed delivery capability." } };
-  } catch (error) { fs.rmSync(root, { recursive: true, force: true }); throw error; }
+    return {
+      root,
+      storage,
+      layout,
+      canonPath,
+      statePath,
+      reviewDirectory,
+      request: { root, candidateSetId: started.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Adopt the reviewed delivery capability." },
+    };
+  } catch (error) {
+    fs.rmSync(root, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 function authorityBytes(root, layout) {
-  return [`${layout.directory}/project.json`, `${layout.directory}/sessions/current.json`, `${layout.directory}/context/product-model.json`, `${layout.directory}/onboarding/current.json`]
-    .map((relative) => fs.readFileSync(path.join(root, relative), "utf8"));
+  return [
+    `${layout.directory}/project.json`,
+    `${layout.directory}/sessions/current.json`,
+    `${layout.directory}/context/product-model.json`,
+    `${layout.directory}/onboarding/current.json`,
+  ].map((relative) => fs.readFileSync(path.join(root, relative), "utf8"));
 }
 
 test("optional candidate damage cannot block public Core entry or resume", async () => {
@@ -58,12 +86,12 @@ test("optional candidate damage cannot block public Core entry or resume", async
     for (const fault of ["schema", "parse", "missing"]) {
       if (fault === "missing") fs.unlinkSync(file);
       else fs.writeFileSync(file, fault === "parse" ? "{" : JSON.stringify({ ...JSON.parse(original), schemaVersion: 99 }));
-      const status = (await inspectProjectExperience({ root }));
+      const status = await inspectProjectExperience({ root });
       assert.equal(status.readiness.core.state, "ready");
       assert.equal(status.readiness.product.state, "integrity_attention");
       assert.equal(status.attention.ordinaryWorkBlocked, false);
       assert.equal(status.attention.userDecisionRequired, false);
-      const entry = (await enterConversationRecovery({ root }));
+      const entry = await enterConversationRecovery({ root });
       assert.equal(entry.status, "conversation_ready");
       assert.equal(entry.projectStatus.readiness.product.state, "integrity_attention");
       assert.equal((await initializeOrResumeProject({ root, pluginRoot, profile: "core" })).readiness.core.state, "ready");
@@ -72,7 +100,9 @@ test("optional candidate damage cannot block public Core entry or resume", async
       assert.deepEqual(authorityBytes(root, layout).slice(0, 2), p2);
       fs.writeFileSync(file, original);
     }
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("exact candidate restoration preserves damaged bytes and does not repeat approval", async () => {
@@ -98,7 +128,9 @@ test("exact candidate restoration preserves damaged bytes and does not repeat ap
     fs.unlinkSync(file);
     assert.equal(restoreOnboardingCandidate({ ...request, sourceContent, expectedRawHash: null }).status, "restored");
     assert.equal((await inspectOnboarding({ root })).status, "ready");
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("damaged unreviewed candidate uses existing semantic refresh without inheriting authority", async () => {
@@ -110,33 +142,73 @@ test("damaged unreviewed candidate uses existing semantic refresh without inheri
     const damaged = Buffer.from("{broken");
     fs.writeFileSync(file, damaged);
     const p1p2 = authorityBytes(root, layout).slice(0, 3);
-    const semanticProposal = { schemaVersion: 1, sourceSnapshotId: world.temporalProvenanceGraph.sourceSnapshotId,
-      candidates: [{ productKind: "Capability", proposedEntity: { key: "dispatch", name: "Dispatch", description: "Deliver reviewed messages." },
-        explanation: "The project README describes message delivery.", confidence: 0.8, evidence: [{ path: "README.md", line: 1 }] }] };
-    const result = await refreshOnboardingCandidates({ root, semanticProposal,
-      recoveryBasis: { pointerHash: state.pointerHash, rawHash: crypto.createHash("sha256").update(damaged).digest("hex") } });
+    const semanticProposal = {
+      schemaVersion: 1,
+      sourceSnapshotId: world.temporalProvenanceGraph.sourceSnapshotId,
+      candidates: [
+        {
+          productKind: "Capability",
+          proposedEntity: { key: "dispatch", name: "Dispatch", description: "Deliver reviewed messages." },
+          explanation: "The project README describes message delivery.",
+          confidence: 0.8,
+          evidence: [{ path: "README.md", line: 1 }],
+        },
+      ],
+    };
+    const result = await refreshOnboardingCandidates({
+      root,
+      semanticProposal,
+      recoveryBasis: { pointerHash: state.pointerHash, rawHash: crypto.createHash("sha256").update(damaged).digest("hex") },
+    });
     assert.notEqual(result.candidateSet.candidateSetId, request.candidateSetId);
     assert.deepEqual(result.candidateSet.parentCandidateSetIds, []);
     assert.equal(result.state.latestReviewDecisionId, null);
     assert.deepEqual(authorityBytes(root, layout).slice(0, 3), p1p2);
     assert.equal((await inspectOnboarding({ root })).status, "awaiting_review");
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("semantic recovery preserves failed preconditions and resumes exact custody after interruption", async () => {
   for (const fault of ["canon-drift", "throw-after-unlink", "crash-after-unlink"]) {
     const { root, layout, canonPath, statePath, reviewDirectory, request } = await fixture();
     try {
-      const state = (await inspectOnboarding({ root })).state, world = (await inspectWorldModel({ root })).snapshot;
+      const state = (await inspectOnboarding({ root })).state,
+        world = (await inspectWorldModel({ root })).snapshot;
       const file = path.join(root, layout.directory, "onboarding/candidate-sets", `${request.candidateSetId}.json`);
       const damaged = Buffer.from("{broken");
       fs.writeFileSync(file, damaged);
-      const options = { root, recoveryBasis: { pointerHash: state.pointerHash, rawHash: crypto.createHash("sha256").update(damaged).digest("hex") },
-        semanticProposal: { schemaVersion: 1, sourceSnapshotId: world.temporalProvenanceGraph.sourceSnapshotId,
-          candidates: [{ productKind: "Capability", proposedEntity: { key: "dispatch", name: "Dispatch", description: "Deliver messages." },
-            explanation: "README describes delivery.", confidence: 0.8, evidence: [{ path: "README.md", line: 1 }] }] } };
+      const options = {
+        root,
+        recoveryBasis: { pointerHash: state.pointerHash, rawHash: crypto.createHash("sha256").update(damaged).digest("hex") },
+        semanticProposal: {
+          schemaVersion: 1,
+          sourceSnapshotId: world.temporalProvenanceGraph.sourceSnapshotId,
+          candidates: [
+            {
+              productKind: "Capability",
+              proposedEntity: { key: "dispatch", name: "Dispatch", description: "Deliver messages." },
+              explanation: "README describes delivery.",
+              confidence: 0.8,
+              evidence: [{ path: "README.md", line: 1 }],
+            },
+          ],
+        },
+      };
       if (fault === "canon-drift") {
-        fs.writeFileSync(path.join(root, canonPath), JSON.stringify({ schemaVersion: 1, featureGroups: [], capabilities: [{ key: "later", name: "Later", description: "Later approved value." }], features: [], requirements: [], constraints: [], decisions: [] }));
+        fs.writeFileSync(
+          path.join(root, canonPath),
+          JSON.stringify({
+            schemaVersion: 1,
+            featureGroups: [],
+            capabilities: [{ key: "later", name: "Later", description: "Later approved value." }],
+            features: [],
+            requirements: [],
+            constraints: [],
+            decisions: [],
+          }),
+        );
         const before = authorityBytes(root, layout);
         await assert.rejects(() => refreshOnboardingCandidates(options), { code: "ONBOARDING_PRODUCT_CANON_DRIFT" });
         assert.deepEqual(authorityBytes(root, layout), before);
@@ -149,7 +221,12 @@ test("semantic recovery preserves failed preconditions and resumes exact custody
         const original=fs.unlinkSync;fs.unlinkSync=function(file){const result=original.apply(this,arguments);if(String(file)===${JSON.stringify(file)}){${fault === "crash-after-unlink" ? "process.exit(44)" : "throw Object.assign(new Error('injected'),{code:'TEST_INJECTED'})"};}return result;};syncBuiltinESMExports();
         const {refreshOnboardingCandidates}=await import(${JSON.stringify(moduleUrl)});
         try{await refreshOnboardingCandidates(${JSON.stringify(options)});}catch(error){if(error.code!=='TEST_INJECTED')throw error;}`;
-      const child = spawnSync(process.execPath, ["--input-type=module", "-e", source], { cwd: pluginRoot, encoding: "utf8", timeout: 45000, windowsHide: true });
+      const child = spawnSync(process.execPath, ["--input-type=module", "-e", source], {
+        cwd: pluginRoot,
+        encoding: "utf8",
+        timeout: 45000,
+        windowsHide: true,
+      });
       assert.equal(child.error, undefined);
       assert.equal(child.status, fault === "crash-after-unlink" ? 44 : 0, child.stderr);
       if (fault === "throw-after-unlink") assert.deepEqual(fs.readFileSync(file), damaged);
@@ -159,7 +236,9 @@ test("semantic recovery preserves failed preconditions and resumes exact custody
       assert.equal(result.status, "onboarding_candidates_refreshed");
       assert.deepEqual(authorityBytes(root, layout).slice(0, 3), before.slice(0, 3));
       assert.deepEqual(result.candidateSet.parentCandidateSetIds, []);
-    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -205,7 +284,9 @@ function interruptedReview(request, boundary, { layout, throwInstead = false } =
     process.stdout.write(JSON.stringify(result));
   `;
   const result = spawnSync(process.execPath, ["--input-type=module", "-e", source], {
-    cwd: pluginRoot, encoding: "utf8", timeout: 45_000,
+    cwd: pluginRoot,
+    encoding: "utf8",
+    timeout: 45_000,
   });
   if (result.stderr) process.stderr.write(result.stderr);
   assert.equal(result.error, undefined, `subprocess must complete: ${result.error}`);
@@ -230,10 +311,10 @@ test("onboarding crash recovery follows durable approval at every publication bo
         const completed = await reviewOnboarding(request);
         assert.equal(completed.status, "onboarding_ready");
       } else {
-        const inspected = (await inspectOnboarding({ root }));
+        const inspected = await inspectOnboarding({ root });
         if (boundary !== "state-2") {
           assert.equal(inspected.status, "promotion_recovery_pending");
-          const guide = (await inspectConversationalOnboarding({ root }));
+          const guide = await inspectConversationalOnboarding({ root });
           assert.equal(guide.nextAction, "initialize_or_resume");
           assert.deepEqual(guide.materialChoicesRequired, []);
           const readOnlyBefore = authorityBytes(root, layout);
@@ -252,7 +333,9 @@ test("onboarding crash recovery follows durable approval at every publication bo
       assert.equal(fs.readdirSync(path.join(root, reviewDirectory)).length, 1);
       await assert.rejects(() => reviewOnboarding({ ...request, rationale: "A different approval." }), { code: "ONBOARDING_REVIEW_REPLAY_CONFLICT" });
       assert.deepEqual(authorityBytes(root, layout), completed);
-    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -268,7 +351,9 @@ test("failed optional projection preserves approval and resumes without a second
     await initializeOrResumeProject({ root, pluginRoot, profile: "product" });
     assert.equal((await inspectOnboarding({ root })).status, "ready");
     assert.equal(fs.readdirSync(path.join(root, reviewDirectory)).length, 1);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("recovery and old replay preserve a foreign later Canon and reject tampered decisions", async () => {
@@ -293,7 +378,9 @@ test("recovery and old replay preserve a foreign later Canon and reject tampered
     fs.writeFileSync(decisionFile, JSON.stringify(decision));
     await assert.rejects(() => recoverOnboardingPromotion({ root }), { code: "ONBOARDING_REVIEW_DIGEST_MISMATCH" });
     assert.equal(fs.readFileSync(canonFile, "utf8"), foreignBytes);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("concurrent identical reviews converge and completed replay does not refresh later source edits", async () => {
@@ -310,7 +397,9 @@ test("concurrent identical reviews converge and completed replay does not refres
     assert.equal(replay.productCanonChanged, false);
     assert.deepEqual(authorityBytes(root, layout), stable);
     assert.equal(fs.readFileSync(path.join(root, layout.directory, "world-model/current.json"), "utf8"), worldPointer);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("approved promotion recovers without a retained World graph", async () => {
@@ -325,7 +414,9 @@ test("approved promotion recovers without a retained World graph", async () => {
       assert.equal(result.status, "onboarding_ready");
       assert.equal((await inspectOnboarding({ root })).status, "ready");
       assert.equal(fs.readdirSync(path.join(root, reviewDirectory)).length, 1);
-    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -366,50 +457,62 @@ function treeBytes(root) {
 }
 
 function treeReadSnapshot(root) {
-  return fs.readdirSync(root, { recursive: true, withFileTypes: true }).filter(item => item.isFile()).map(item => {
-    const file = path.join(item.parentPath, item.name), stat = fs.statSync(file);
-    return [path.relative(root, file), crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex"), stat.mtimeMs, stat.mode];
-  }).sort(([a], [b]) => a.localeCompare(b));
+  return fs
+    .readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((item) => item.isFile())
+    .map((item) => {
+      const file = path.join(item.parentPath, item.name),
+        stat = fs.statSync(file);
+      return [path.relative(root, file), crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex"), stat.mtimeMs, stat.mode];
+    })
+    .sort(([a], [b]) => a.localeCompare(b));
 }
 
-for (const worldState of ["current", "stale", "missing", "corrupt"]) test(`ordinary entry leaves ${worldState} aggregate World explicitly unchecked without weakening full diagnosis`, async () => {
-  const { root, layout, canonPath, statePath, reviewDirectory, request } = await fixture();
-  try {
-    const accepted = await reviewOnboarding(request);
-    const worldFile = worldSnapshotFile(root, accepted.worldModel.worldModelId);
-    if (worldState === "stale") fs.appendFileSync(path.join(root, "README.md"), "\nChanged synthetic source after approval.\n");
-    if (worldState === "missing") fs.unlinkSync(worldFile);
-    if (worldState === "corrupt") fs.writeFileSync(worldFile, "{broken-derived-world");
-    const before = treeReadSnapshot(root), fullBefore = (await inspectProjectExperience({ root }));
-    if (worldState === "corrupt") {
-      (await assert.rejects(async () => (await inspectOnboarding({ root }))));
-      assert.equal(fullBefore.readiness.product.state, "integrity_attention");
-    } else {
-      const full = (await inspectOnboarding({ root }));
-      assert.equal(full.worldModel.status, worldState === "missing" ? "unavailable" : worldState);
-      assert.equal(fullBefore.readiness.product.state, worldState === "current" ? "ready" : "refresh_required");
-      assert.equal(fullBefore.readiness.context.repositoryEvidence,
-        worldState === "current" ? "available-current-world" : worldState === "missing" ? "missing-excluded" : "stale-excluded");
+for (const worldState of ["current", "stale", "missing", "corrupt"])
+  test(`ordinary entry leaves ${worldState} aggregate World explicitly unchecked without weakening full diagnosis`, async () => {
+    const { root, layout, canonPath, statePath, reviewDirectory, request } = await fixture();
+    try {
+      const accepted = await reviewOnboarding(request);
+      const worldFile = worldSnapshotFile(root, accepted.worldModel.worldModelId);
+      if (worldState === "stale") fs.appendFileSync(path.join(root, "README.md"), "\nChanged synthetic source after approval.\n");
+      if (worldState === "missing") fs.unlinkSync(worldFile);
+      if (worldState === "corrupt") fs.writeFileSync(worldFile, "{broken-derived-world");
+      const before = treeReadSnapshot(root),
+        fullBefore = await inspectProjectExperience({ root });
+      if (worldState === "corrupt") {
+        await assert.rejects(async () => await inspectOnboarding({ root }));
+        assert.equal(fullBefore.readiness.product.state, "integrity_attention");
+      } else {
+        const full = await inspectOnboarding({ root });
+        assert.equal(full.worldModel.status, worldState === "missing" ? "unavailable" : worldState);
+        assert.equal(fullBefore.readiness.product.state, worldState === "current" ? "ready" : "refresh_required");
+        assert.equal(
+          fullBefore.readiness.context.repositoryEvidence,
+          worldState === "current" ? "available-current-world" : worldState === "missing" ? "missing-excluded" : "stale-excluded",
+        );
+      }
+      const entry = await enterConversationRecovery({ root }),
+        product = entry.projectStatus.readiness.product;
+      assert.equal(entry.status, "conversation_ready");
+      assert.equal(entry.projectStatus.status, "core_ready");
+      assert.equal(product.state, "reviewed_world_unchecked");
+      assert.equal(product.onboardingStatus, "ready_world_unchecked");
+      assert.equal(product.governanceActivated, true);
+      assert.equal(entry.projectStatus.readiness.context.state, "world-not-inspected");
+      assert.equal(entry.projectStatus.readiness.context.repositoryEvidence, "not-inspected");
+      assert.equal(entry.projectStatus.readiness.context.worldModelId, null);
+      assert.equal(entry.projectStatus.capabilities.find((item) => item.id === "product-governance").availability, "available-on-demand");
+      assert.equal(entry.projectStatus.nextAction.id, "work_directly");
+      assert.equal(entry.headActionRequired, false);
+      assert.equal(entry.userDecisionRequired, false);
+      assert.equal(entry.ordinaryWorkBlocked, false);
+      assert.deepEqual(entry.blockedOperations, []);
+      assert.deepEqual(await inspectProjectExperience({ root }), fullBefore, "Explicit full diagnostic facts do not change after unchecked entry");
+      assert.deepEqual(treeReadSnapshot(root), before, "All entry/full diagnostic reads preserve bytes, mtime and mode");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
-    const entry = (await enterConversationRecovery({ root })), product = entry.projectStatus.readiness.product;
-    assert.equal(entry.status, "conversation_ready");
-    assert.equal(entry.projectStatus.status, "core_ready");
-    assert.equal(product.state, "reviewed_world_unchecked");
-    assert.equal(product.onboardingStatus, "ready_world_unchecked");
-    assert.equal(product.governanceActivated, true);
-    assert.equal(entry.projectStatus.readiness.context.state, "world-not-inspected");
-    assert.equal(entry.projectStatus.readiness.context.repositoryEvidence, "not-inspected");
-    assert.equal(entry.projectStatus.readiness.context.worldModelId, null);
-    assert.equal(entry.projectStatus.capabilities.find(item => item.id === "product-governance").availability, "available-on-demand");
-    assert.equal(entry.projectStatus.nextAction.id, "work_directly");
-    assert.equal(entry.headActionRequired, false);
-    assert.equal(entry.userDecisionRequired, false);
-    assert.equal(entry.ordinaryWorkBlocked, false);
-    assert.deepEqual(entry.blockedOperations, []);
-    assert.deepEqual((await inspectProjectExperience({ root })), fullBefore, "Explicit full diagnostic facts do not change after unchecked entry");
-    assert.deepEqual(treeReadSnapshot(root), before, "All entry/full diagnostic reads preserve bytes, mtime and mode");
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
-});
+  });
 
 test("entry still validates ReviewDecision and Product Canon originals rather than treating unchecked World as approval", async () => {
   const { root, layout, canonPath, statePath, reviewDirectory, request } = await fixture();
@@ -417,21 +520,25 @@ test("entry still validates ReviewDecision and Product Canon originals rather th
     const accepted = await reviewOnboarding(request);
     const reviewFile = path.join(root, reviewDirectory, `${accepted.reviewDecision.reviewDecisionId}.json`);
     for (const file of [reviewFile, path.join(root, canonPath)]) {
-      const original = fs.readFileSync(file), data = JSON.parse(original);
+      const original = fs.readFileSync(file),
+        data = JSON.parse(original);
       if (file === reviewFile) data.rationale = "Tampered synthetic approval";
       else data.capabilities[0].name = "Tampered synthetic Canon";
       fs.writeFileSync(file, JSON.stringify(data));
-      const before = treeReadSnapshot(root), entry = (await enterConversationRecovery({ root }));
+      const before = treeReadSnapshot(root),
+        entry = await enterConversationRecovery({ root });
       assert.equal(entry.projectStatus.readiness.product.state, "integrity_attention");
       assert.equal(entry.projectStatus.readiness.product.governanceActivated, null);
       assert.equal(entry.projectStatus.readiness.context.repositoryEvidence, "unverified-excluded");
       assert.equal(entry.ordinaryWorkBlocked, false);
       assert.equal(entry.userDecisionRequired, false);
-      (await assert.rejects(async () => (await inspectOnboarding({ root }))));
+      await assert.rejects(async () => await inspectOnboarding({ root }));
       assert.deepEqual(treeReadSnapshot(root), before);
       fs.writeFileSync(file, original);
     }
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("entry keeps explicitly selected P2 when the separate default Product owner is damaged", async () => {
@@ -439,13 +546,22 @@ test("entry keeps explicitly selected P2 when the separate default Product owner
   try {
     await reviewOnboarding(request);
     const selected = createHeadSession({ root, purpose: "Inspect selected synthetic Session, not default" });
-    const checkpoint = withSessionRoute(root, selected.sessionId, () => createRecoveryCheckpoint({ root,
-      purpose: selected.state.purpose, approvedDecisions: [], currentPosition: "Selected original checkpoint",
-      nextExpectedResult: "Explain only; never deploy" }).checkpoint);
+    const checkpoint = withSessionRoute(
+      root,
+      selected.sessionId,
+      () =>
+        createRecoveryCheckpoint({
+          root,
+          purpose: selected.state.purpose,
+          approvedDecisions: [],
+          currentPosition: "Selected original checkpoint",
+          nextExpectedResult: "Explain only; never deploy",
+        }).checkpoint,
+    );
     const latest = updateProjectDirection({ root, input: { goal: "Independent local explanation", cancelledActions: ["deploy"] } }).direction;
     fs.writeFileSync(path.join(root, layout.directory, "sessions/current.json"), "{broken-default-session");
     const before = treeReadSnapshot(root);
-    const entry = (await withSessionRoute(root, selected.sessionId, async () => (await enterConversationRecovery({ root }))));
+    const entry = await withSessionRoute(root, selected.sessionId, async () => await enterConversationRecovery({ root }));
     assert.equal(entry.projectStatus.project.sessionId, selected.sessionId);
     assert.equal(entry.projectStatus.state.sessionId, selected.sessionId);
     assert.equal(entry.restore.checkpoint.checkpointDigest, checkpoint.checkpointDigest);
@@ -457,7 +573,9 @@ test("entry keeps explicitly selected P2 when the separate default Product owner
     assert.equal(entry.recoveryDependentWorkBlocked, false);
     assert.equal(entry.persisted, false);
     assert.deepEqual(treeReadSnapshot(root), before);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("completed acceptance tolerates absent World across Core entry, status and both resumes without writes", async () => {
@@ -468,11 +586,11 @@ test("completed acceptance tolerates absent World across Core entry, status and 
       if (missing === "directory") fs.rmSync(path.join(root, layout.directory, "world-model"), { recursive: true, force: true });
       else fs.unlinkSync(worldSnapshotFile(root, approved.worldModel.worldModelId));
       const before = treeBytes(root);
-      const status = (await inspectOnboarding({ root }));
+      const status = await inspectOnboarding({ root });
       assert.equal(status.status, "ready_world_changed");
       assert.equal(status.worldModel.status, "unavailable");
       assert.equal(status.worldModel.reasonCode, missing === "directory" ? "WORLD_MODEL_NOT_BUILT" : "WORLD_MODEL_SNAPSHOT_MISSING");
-      const experience = (await inspectProjectExperience({ root }));
+      const experience = await inspectProjectExperience({ root });
       assert.equal(experience.readiness.core.state, "ready");
       assert.equal(experience.readiness.product.state, "refresh_required");
       assert.equal((await inspectConversationalOnboarding({ root })).nextAction, "refresh_or_reconcile_world");
@@ -491,16 +609,17 @@ test("completed acceptance tolerates absent World across Core entry, status and 
       const decision = JSON.parse(fs.readFileSync(decisionFile, "utf8"));
       decision.rationale = "tampered";
       fs.writeFileSync(decisionFile, JSON.stringify(decision));
-      (await assert.rejects(async () => (await inspectOnboarding({ root })), { code: "ONBOARDING_REVIEW_DIGEST_MISMATCH" }));
-    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+      await assert.rejects(async () => await inspectOnboarding({ root }), { code: "ONBOARDING_REVIEW_DIGEST_MISMATCH" });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 
 async function nonPromotingRequest(root, request, disposition) {
   if (disposition === "reject") return { ...request, disposition };
   const candidate = (await inspectOnboarding({ root })).candidateSet.candidates[0];
-  return { ...request, disposition, userEdits: [{ candidateId: candidate.candidateId,
-    entity: { ...candidate.proposedEntity, name: "Reviewed delivery" } }] };
+  return { ...request, disposition, userEdits: [{ candidateId: candidate.candidateId, entity: { ...candidate.proposedEntity, name: "Reviewed delivery" } }] };
 }
 
 test("revise and reject recover every publication boundary and their actual next workflow", async () => {
@@ -508,19 +627,23 @@ test("revise and reject recover every publication boundary and their actual next
     for (const boundary of ["decision", ...(disposition === "revise" ? ["candidate"] : []), "state-1", "world", "state-2"]) {
       const { root, layout, canonPath, statePath, reviewDirectory, request: initial } = await fixture();
       try {
-        const request = (await nonPromotingRequest(root, initial, disposition));
+        const request = await nonPromotingRequest(root, initial, disposition);
         const before = authorityBytes(root, layout);
         interruptedReview(request, boundary, { layout });
         assert.deepEqual(authorityBytes(root, layout).slice(0, 3), before.slice(0, 3), "non-promoting decision never changes Canon/Project/Session");
-        const status = (await inspectOnboarding({ root }));
+        const status = await inspectOnboarding({ root });
         if (boundary !== "state-2") {
           assert.equal(status.status, "review_recovery_pending", `${disposition}:${boundary}`);
-          const guide = (await inspectConversationalOnboarding({ root }));
+          const guide = await inspectConversationalOnboarding({ root });
           assert.equal(guide.nextAction, "initialize_or_resume");
           assert.deepEqual(guide.materialChoicesRequired, []);
         }
         const replay = await reviewOnboarding(request);
-        assert.equal(replay.status, disposition === "revise" ? "onboarding_revision_awaiting_review" : "onboarding_rejected", JSON.stringify(replay.projection));
+        assert.equal(
+          replay.status,
+          disposition === "revise" ? "onboarding_revision_awaiting_review" : "onboarding_rejected",
+          JSON.stringify(replay.projection),
+        );
         const after = treeBytes(root);
         await initializeOrResumeProject({ root, pluginRoot, profile: "product" });
         assert.equal(await recoverOnboardingPromotion({ root }), null);
@@ -531,11 +654,18 @@ test("revise and reject recover every publication boundary and their actual next
         assert.deepEqual(treeBytes(root), after);
         if (disposition === "revise") {
           const successor = (await inspectOnboarding({ root })).candidateSet;
-          const accepted = await reviewOnboarding({ root, candidateSetId: successor.candidateSetId, disposition: "accept-all", rationale: "Approve the reviewed successor." });
+          const accepted = await reviewOnboarding({
+            root,
+            candidateSetId: successor.candidateSetId,
+            disposition: "accept-all",
+            rationale: "Approve the reviewed successor.",
+          });
           assert.equal(accepted.status, "onboarding_ready", `${disposition}:${boundary} ${JSON.stringify(accepted.projection)}`);
           assert.equal(accepted.productModel.capabilities[0].name, "Reviewed delivery");
         } else assert.equal((await inspectOnboarding({ root })).status, "rejected");
-      } finally { fs.rmSync(root, { recursive: true, force: true }); }
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
     }
   }
 });
@@ -544,7 +674,7 @@ test("legacy Graph-only review remnants reconcile from persisted records without
   for (const disposition of ["revise", "reject"]) {
     const { root, layout, canonPath, statePath, reviewDirectory, request: initial } = await fixture();
     try {
-      const request = (await nonPromotingRequest(root, initial, disposition));
+      const request = await nonPromotingRequest(root, initial, disposition);
       const beforeState = fs.readFileSync(path.join(root, statePath), "utf8");
       const beforeCanon = fs.readFileSync(path.join(root, canonPath), "utf8");
       const completed = await reviewOnboarding(request);
@@ -552,7 +682,8 @@ test("legacy Graph-only review remnants reconcile from persisted records without
       // Graph-first implementation, using a real verified current snapshot.
       fs.writeFileSync(path.join(root, statePath), beforeState);
       fs.unlinkSync(path.join(root, reviewDirectory, `${completed.reviewDecision.reviewDecisionId}.json`));
-      if (completed.candidateSet) fs.unlinkSync(path.join(root, layout.directory, "onboarding/candidate-sets", `${completed.candidateSet.candidateSetId}.json`));
+      if (completed.candidateSet)
+        fs.unlinkSync(path.join(root, layout.directory, "onboarding/candidate-sets", `${completed.candidateSet.candidateSetId}.json`));
       assert.equal((await inspectWorldModel({ root })).status, "stale");
       assert.equal(await recoverOnboardingPromotion({ root }), null);
       const refreshed = await refreshOnboardingCandidates({ root });
@@ -562,7 +693,9 @@ test("legacy Graph-only review remnants reconcile from persisted records without
       assert.equal(fs.readFileSync(path.join(root, statePath), "utf8"), beforeState);
       const reviewed = await reviewOnboarding(request);
       assert.equal(reviewed.status, disposition === "revise" ? "onboarding_revision_awaiting_review" : "onboarding_rejected");
-    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -570,21 +703,20 @@ test("awaiting review refreshes missing optional World before offering the origi
   for (const missing of ["directory", "snapshot"]) {
     const { root, layout, canonPath, statePath, reviewDirectory, request } = await fixture();
     try {
-      const initial = (await inspectOnboarding({ root }));
+      const initial = await inspectOnboarding({ root });
       if (missing === "directory") fs.rmSync(path.join(root, layout.directory, "world-model"), { recursive: true, force: true });
       else fs.unlinkSync(worldSnapshotFile(root, initial.worldModel.worldModelId));
       const before = treeBytes(root);
       const authority = authorityBytes(root, layout);
-      const guide = (await inspectConversationalOnboarding({ root }));
+      const guide = await inspectConversationalOnboarding({ root });
       assert.equal(guide.nextAction, "refresh_or_reconcile_world");
       assert.deepEqual(guide.materialChoicesRequired, []);
       assert.equal((await inspectProjectExperience({ root })).readiness.product.state, "refresh_required");
       assert.equal((await inspectProjectExperience({ root })).readiness.context.repositoryEvidence, "missing-excluded");
-      const entry = (await enterConversationRecovery({ root }));
+      const entry = await enterConversationRecovery({ root });
       assert.equal(entry.projectStatus.readiness.product.state, "review_required");
       assert.equal(entry.projectStatus.readiness.context.repositoryEvidence, "not-inspected");
-      assert.equal(entry.attention.items.find(item => item.id === "product-canon-review").actionability,
-        "when-product-governance-is-in-scope");
+      assert.equal(entry.attention.items.find((item) => item.id === "product-canon-review").actionability, "when-product-governance-is-in-scope");
       assert.equal(entry.userDecisionRequired, false);
       assert.equal(entry.ordinaryWorkBlocked, false);
       await initializeOrResumeProject({ root, pluginRoot, profile: "core" });
@@ -596,7 +728,9 @@ test("awaiting review refreshes missing optional World before offering the origi
       assert.deepEqual(authorityBytes(root, layout), authority, "view reconstruction preserves Canon, Session and exact candidate pointer");
       assert.equal(fs.existsSync(path.join(root, reviewDirectory)), false, "refresh creates no approval");
       assert.equal((await reviewOnboarding(request)).status, "onboarding_ready");
-    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -604,7 +738,7 @@ test("completed revise and reject replay disclose later source drift without reb
   for (const disposition of ["revise", "reject"]) {
     const { root, layout, canonPath, statePath, reviewDirectory, request: initial } = await fixture();
     try {
-      const request = (await nonPromotingRequest(root, initial, disposition));
+      const request = await nonPromotingRequest(root, initial, disposition);
       const completed = await reviewOnboarding(request);
       fs.appendFileSync(path.join(root, "README.md"), "\nRepository changed after the decision.\n");
       const before = treeBytes(root);
@@ -619,7 +753,9 @@ test("completed revise and reject replay disclose later source drift without reb
         assert.equal(resumed.onboardingAction, "fresh-head-semantic-reproposal-required");
         assert.equal((await inspectConversationalOnboarding({ root })).nextAction, "refresh_or_reconcile_world");
       }
-    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -631,7 +767,10 @@ test("optional World availability does not conceal snapshot tampering", async ()
     const snapshot = readFixtureSnapshot(filename);
     snapshot.worldModelId = "tampered";
     writeFixtureSnapshot(filename, snapshot);
-    (await assert.rejects(async () => (await inspectOnboarding({ root })), (error) => !["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"].includes(error.code)));
+    await assert.rejects(
+      async () => await inspectOnboarding({ root }),
+      (error) => !["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"].includes(error.code),
+    );
     const core = await initializeOrResumeProject({ root, pluginRoot, profile: "core" });
     assert.equal(core.readiness.core.state, "ready");
     assert.equal(core.readiness.product.state, "integrity_attention");
@@ -640,138 +779,257 @@ test("optional World availability does not conceal snapshot tampering", async ()
     const pointer = JSON.parse(fs.readFileSync(pointerFile, "utf8"));
     pointer.worldModelHash = "0".repeat(64);
     fs.writeFileSync(pointerFile, JSON.stringify(pointer));
-    (await assert.rejects(async () => (await inspectOnboarding({ root })), { code: "WORLD_MODEL_POINTER_MISMATCH" }));
-    await assert.rejects(async () => (await initializeOrResumeProject({ root, pluginRoot, profile: "product" })), { code: "WORLD_MODEL_POINTER_MISMATCH" });
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    await assert.rejects(async () => await inspectOnboarding({ root }), { code: "WORLD_MODEL_POINTER_MISMATCH" });
+    await assert.rejects(async () => await initializeOrResumeProject({ root, pluginRoot, profile: "product" }), { code: "WORLD_MODEL_POINTER_MISMATCH" });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
-test("physical composition and part damage remain strict Product errors without blocking Core", async t => {
-  for (const layout of ["shared-domains-v2", "chunked-code-v3"]) await t.test(layout, async t => {
-    const { root, storage, canonPath, request } = await fixture();
-    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    const accepted = await reviewOnboarding(request);
-    const file = worldSnapshotFile(root, accepted.worldModel.worldModelId);
-    const chunked = layout === "chunked-code-v3";
-    if (!chunked) {
-      // An explicit retained v2 fixture supplements, rather than replaces, the
-      // omitted-layout production default exercised by the v3 branch.
-      const document = readFixtureSnapshot(file);
-      const composition = createSnapshotComposition({ root, storage, document, layout }).document;
-      writeFixtureSnapshot(file, composition);
-      const pointerFile = path.join(root, storage.directory, "world-model/current.json");
-      const pointer = JSON.parse(fs.readFileSync(pointerFile, "utf8"));
-      pointer.readerRequirements = snapshotReaderRequirements({ document, snapshotStorage: { layout } });
-      fs.writeFileSync(pointerFile, JSON.stringify(pointer));
-    }
-    await inspectOnboarding({ root });
-    const canonFile = path.resolve(root, canonPath);
-    const original = fs.readFileSync(file), canon = fs.readFileSync(canonFile);
-    const protectedAuthority = authorityBytes(root, formatForVerifiedOwner(storage));
-    const physical = readSnapshotFile(file).document;
-    assert.equal(physical.kind, "SnapshotComposition");
-    assert.equal(physical.schemaVersion, chunked ? 3 : 2);
-    const partFile = path.join(root, physical.code.address), originalPart = fs.readFileSync(partFile);
-    const writePart = (ref, raw) => {
-      ref.sha256 = crypto.createHash("sha256").update(raw).digest("hex"); ref.byteLength = raw.length;
-      ref.address = path.posix.join(path.posix.dirname(ref.address), String(ref.sha256) + ".json.gz");
-      const target = path.join(root, ref.address);
-      fs.writeFileSync(target, zlib.gzipSync(raw), { flag: "wx" });
-      return target;
-    };
-    const forgedPart = (value, raw, graph = false) => {
-      const target = writePart(graph ? value.graph.code : value.code, raw);
-      writeFixtureSnapshot(file, value);
-      return target;
-    };
-    const changedPayload = (change, graph = false) => {
-      const value = structuredClone(physical), ref = graph ? value.graph.code : value.code;
-      const part = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root, ref.address)))); change(part);
-      return forgedPart(value, Buffer.from(JSON.stringify(part) + "\n"), graph);
-    };
-    const changedLeaf = change => {
-      const value = structuredClone(physical);
-      const index = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root, value.code.address))));
-      assert.ok(index.payload.chunks.length > 0);
-      const ref = index.payload.chunks[0].ref;
-      const leaf = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root, ref.address))));
-      change(leaf);
-      const leafFile = writePart(ref, Buffer.from(JSON.stringify(leaf) + "\n"));
-      return [forgedPart(value, Buffer.from(JSON.stringify(index) + "\n")), leafFile];
-    };
-    const payloadError = chunked ? "INVALID_SNAPSHOT_CODE_CHUNKS" : "INVALID_SNAPSHOT_BUNDLE_SHAPE";
-    const cases = [
-      ["duplicate exact representation", "SNAPSHOT_REPRESENTATION_CONFLICT", () => {
-        const duplicate = file.replace(/\.gz$/, "");
-        assert.notEqual(duplicate, file);
-        fs.writeFileSync(duplicate, zlib.gunzipSync(original), { flag: "wx" });
-        return duplicate;
-      }, () => fs.unlinkSync(file.replace(/\.gz$/, ""))],
-      ["root encoding", "INVALID_WORLD_MODEL_STORE_DOCUMENT", () => fs.writeFileSync(file, "invalid gzip")],
-      ["root shape", "INVALID_SNAPSHOT_COMPOSITION", () => {
-        const value = structuredClone(physical); value.unrecorded = true; writeFixtureSnapshot(file, value);
-      }],
-      ["unsupported schema", "STORAGE_VERSION_MISMATCH", () => {
-        const value = structuredClone(physical); value.schemaVersion = 4; writeFixtureSnapshot(file, value);
-      }],
-      ["unsupported producer", "STORAGE_VERSION_MISMATCH", () => {
-        const value = structuredClone(physical); value.producer.version = "9.0.0"; writeFixtureSnapshot(file, value);
-      }],
-      ["same address conflicting descriptor", "CONFLICTING_SNAPSHOT_BUNDLE_DESCRIPTOR", () => {
-        const value = structuredClone(physical);
-        Object.assign(value.code, { address: value.graph.code.address, sha256: value.graph.code.sha256, byteLength: value.graph.code.byteLength });
+test("physical composition and part damage remain strict Product errors without blocking Core", async (t) => {
+  for (const layout of ["shared-domains-v2", "chunked-code-v3"])
+    await t.test(layout, async (t) => {
+      const { root, storage, canonPath, request } = await fixture();
+      t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+      const accepted = await reviewOnboarding(request);
+      const file = worldSnapshotFile(root, accepted.worldModel.worldModelId);
+      const chunked = layout === "chunked-code-v3";
+      if (!chunked) {
+        // An explicit retained v2 fixture supplements, rather than replaces, the
+        // omitted-layout production default exercised by the v3 branch.
+        const document = readFixtureSnapshot(file);
+        const composition = createSnapshotComposition({ root, storage, document, layout }).document;
+        writeFixtureSnapshot(file, composition);
+        const pointerFile = path.join(root, storage.directory, "world-model/current.json");
+        const pointer = JSON.parse(fs.readFileSync(pointerFile, "utf8"));
+        pointer.readerRequirements = snapshotReaderRequirements({ document, snapshotStorage: { layout } });
+        fs.writeFileSync(pointerFile, JSON.stringify(pointer));
+      }
+      await inspectOnboarding({ root });
+      const canonFile = path.resolve(root, canonPath);
+      const original = fs.readFileSync(file),
+        canon = fs.readFileSync(canonFile);
+      const protectedAuthority = authorityBytes(root, formatForVerifiedOwner(storage));
+      const physical = readSnapshotFile(file).document;
+      assert.equal(physical.kind, "SnapshotComposition");
+      assert.equal(physical.schemaVersion, chunked ? 3 : 2);
+      const partFile = path.join(root, physical.code.address),
+        originalPart = fs.readFileSync(partFile);
+      const writePart = (ref, raw) => {
+        ref.sha256 = crypto.createHash("sha256").update(raw).digest("hex");
+        ref.byteLength = raw.length;
+        ref.address = path.posix.join(path.posix.dirname(ref.address), String(ref.sha256) + ".json.gz");
+        const target = path.join(root, ref.address);
+        fs.writeFileSync(target, zlib.gzipSync(raw), { flag: "wx" });
+        return target;
+      };
+      const forgedPart = (value, raw, graph = false) => {
+        const target = writePart(graph ? value.graph.code : value.code, raw);
         writeFixtureSnapshot(file, value);
-      }],
-      ["reconstructed digest", "SNAPSHOT_COMPOSITION_DIGEST_MISMATCH", () => {
-        const value = structuredClone(physical); value.reconstructedSha256 = "0".repeat(64); writeFixtureSnapshot(file, value);
-      }],
-      ["part encoding", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => fs.writeFileSync(partFile, "invalid gzip")],
-      ["part digest", "SNAPSHOT_BUNDLE_DIGEST_MISMATCH", () => {
-        const value = JSON.parse(zlib.gunzipSync(originalPart)); value.projectId = "x" + value.projectId.slice(1);
-        fs.writeFileSync(partFile, zlib.gzipSync(JSON.stringify(value) + "\n"));
-      }],
-      ["root null body", "INVALID_SNAPSHOT_COMPOSITION", () => {
-        const value = structuredClone(physical); value.body = null; writeFixtureSnapshot(file, value);
-      }],
-      ["legacy null graph reference", "SNAPSHOT_BUNDLE_TYPE_MISMATCH", () => {
-        const value = structuredClone(physical); value.schemaVersion = 1; value.producer.version = "0.1.0"; value.graph = null; writeFixtureSnapshot(file, value);
-      }],
-      ["rehashed invalid UTF8", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => forgedPart(structuredClone(physical), Buffer.from([0xff, 0x0a]))],
-      ["rehashed non JSON", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => forgedPart(structuredClone(physical), Buffer.from("{invalid}\n"))],
-      ["rehashed null bundle", "SNAPSHOT_BUNDLE_TYPE_MISMATCH", () => forgedPart(structuredClone(physical), Buffer.from("null\n"))],
-      ["rehashed null world payload", payloadError, () => changedPayload(part => { part.payload = null; })],
-      ["rehashed null graph payload", payloadError, () => changedPayload(part => { part.payload = null; }, true)],
-      ["rehashed invalid graph arrays", payloadError, () => changedPayload(part => {
-        if (chunked) { part.payload.lists.nodes.order = null; part.payload.lists.edges.order = {}; }
-        else { part.payload.nodes = null; part.payload.edges = {}; }
-      }, true)],
-      ["graph order exceeds code records", "INVALID_SNAPSHOT_BUNDLE_SHAPE", () => {
-        const value = structuredClone(physical); value.graph.nodeOrder.push(true); writeFixtureSnapshot(file, value);
-      }],
-      ...(chunked ? [
-        ["rehashed invalid bucket order", payloadError, () => changedPayload(part => { part.payload.lists.files.order.push(64); })],
-        ["rehashed leaf array group", payloadError, () => changedLeaf(part => { part.payload.group = ["world"]; })],
-        ["rehashed leaf list shape", payloadError, () => changedLeaf(part => { part.payload.lists.files = null; })],
-      ] : []),
-    ];
-    for (const [name, code, corrupt, cleanup] of cases) await t.test(name, async () => {
-      try {
-        const result = corrupt();
-        const observedParts = Array.isArray(result) ? result : [result || partFile];
-        const badRoot = fs.readFileSync(file), badParts = observedParts.map(part => fs.readFileSync(part));
-        await assert.rejects(() => inspectOnboarding({ root }), { code });
-        await assert.rejects(() => initializeOrResumeProject({ root, pluginRoot, profile: "product" }), { code });
-        const diagnostic = await inspectOptionalOnboarding({ root });
-        assert.equal(diagnostic.reasonCode, code);
-        assert.equal(diagnostic.ordinaryWorkBlocked, false);
-        const core = await initializeOrResumeProject({ root, pluginRoot, profile: "core" });
-        assert.equal(core.readiness.core.state, "ready");
-        assert.equal(core.readiness.product.state, "integrity_attention");
-        assert.deepEqual(fs.readFileSync(file), badRoot);
-        observedParts.forEach((part, index) => assert.deepEqual(fs.readFileSync(part), badParts[index]));
-        assert.deepEqual(fs.readFileSync(canonFile), canon);
-        assert.deepEqual(authorityBytes(root, formatForVerifiedOwner(storage)), protectedAuthority);
-      } finally { fs.writeFileSync(file, original); fs.writeFileSync(partFile, originalPart); cleanup?.(); }
+        return target;
+      };
+      const changedPayload = (change, graph = false) => {
+        const value = structuredClone(physical),
+          ref = graph ? value.graph.code : value.code;
+        const part = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root, ref.address))));
+        change(part);
+        return forgedPart(value, Buffer.from(JSON.stringify(part) + "\n"), graph);
+      };
+      const changedLeaf = (change) => {
+        const value = structuredClone(physical);
+        const index = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root, value.code.address))));
+        assert.ok(index.payload.chunks.length > 0);
+        const ref = index.payload.chunks[0].ref;
+        const leaf = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(root, ref.address))));
+        change(leaf);
+        const leafFile = writePart(ref, Buffer.from(JSON.stringify(leaf) + "\n"));
+        return [forgedPart(value, Buffer.from(JSON.stringify(index) + "\n")), leafFile];
+      };
+      const payloadError = chunked ? "INVALID_SNAPSHOT_CODE_CHUNKS" : "INVALID_SNAPSHOT_BUNDLE_SHAPE";
+      const cases = [
+        [
+          "duplicate exact representation",
+          "SNAPSHOT_REPRESENTATION_CONFLICT",
+          () => {
+            const duplicate = file.replace(/\.gz$/, "");
+            assert.notEqual(duplicate, file);
+            fs.writeFileSync(duplicate, zlib.gunzipSync(original), { flag: "wx" });
+            return duplicate;
+          },
+          () => fs.unlinkSync(file.replace(/\.gz$/, "")),
+        ],
+        ["root encoding", "INVALID_WORLD_MODEL_STORE_DOCUMENT", () => fs.writeFileSync(file, "invalid gzip")],
+        [
+          "root shape",
+          "INVALID_SNAPSHOT_COMPOSITION",
+          () => {
+            const value = structuredClone(physical);
+            value.unrecorded = true;
+            writeFixtureSnapshot(file, value);
+          },
+        ],
+        [
+          "unsupported schema",
+          "STORAGE_VERSION_MISMATCH",
+          () => {
+            const value = structuredClone(physical);
+            value.schemaVersion = 4;
+            writeFixtureSnapshot(file, value);
+          },
+        ],
+        [
+          "unsupported producer",
+          "STORAGE_VERSION_MISMATCH",
+          () => {
+            const value = structuredClone(physical);
+            value.producer.version = "9.0.0";
+            writeFixtureSnapshot(file, value);
+          },
+        ],
+        [
+          "same address conflicting descriptor",
+          "CONFLICTING_SNAPSHOT_BUNDLE_DESCRIPTOR",
+          () => {
+            const value = structuredClone(physical);
+            Object.assign(value.code, { address: value.graph.code.address, sha256: value.graph.code.sha256, byteLength: value.graph.code.byteLength });
+            writeFixtureSnapshot(file, value);
+          },
+        ],
+        [
+          "reconstructed digest",
+          "SNAPSHOT_COMPOSITION_DIGEST_MISMATCH",
+          () => {
+            const value = structuredClone(physical);
+            value.reconstructedSha256 = "0".repeat(64);
+            writeFixtureSnapshot(file, value);
+          },
+        ],
+        ["part encoding", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => fs.writeFileSync(partFile, "invalid gzip")],
+        [
+          "part digest",
+          "SNAPSHOT_BUNDLE_DIGEST_MISMATCH",
+          () => {
+            const value = JSON.parse(zlib.gunzipSync(originalPart));
+            value.projectId = "x" + value.projectId.slice(1);
+            fs.writeFileSync(partFile, zlib.gzipSync(JSON.stringify(value) + "\n"));
+          },
+        ],
+        [
+          "root null body",
+          "INVALID_SNAPSHOT_COMPOSITION",
+          () => {
+            const value = structuredClone(physical);
+            value.body = null;
+            writeFixtureSnapshot(file, value);
+          },
+        ],
+        [
+          "legacy null graph reference",
+          "SNAPSHOT_BUNDLE_TYPE_MISMATCH",
+          () => {
+            const value = structuredClone(physical);
+            value.schemaVersion = 1;
+            value.producer.version = "0.1.0";
+            value.graph = null;
+            writeFixtureSnapshot(file, value);
+          },
+        ],
+        ["rehashed invalid UTF8", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => forgedPart(structuredClone(physical), Buffer.from([0xff, 0x0a]))],
+        ["rehashed non JSON", "INVALID_SNAPSHOT_BUNDLE_ENCODING", () => forgedPart(structuredClone(physical), Buffer.from("{invalid}\n"))],
+        ["rehashed null bundle", "SNAPSHOT_BUNDLE_TYPE_MISMATCH", () => forgedPart(structuredClone(physical), Buffer.from("null\n"))],
+        [
+          "rehashed null world payload",
+          payloadError,
+          () =>
+            changedPayload((part) => {
+              part.payload = null;
+            }),
+        ],
+        [
+          "rehashed null graph payload",
+          payloadError,
+          () =>
+            changedPayload((part) => {
+              part.payload = null;
+            }, true),
+        ],
+        [
+          "rehashed invalid graph arrays",
+          payloadError,
+          () =>
+            changedPayload((part) => {
+              if (chunked) {
+                part.payload.lists.nodes.order = null;
+                part.payload.lists.edges.order = {};
+              } else {
+                part.payload.nodes = null;
+                part.payload.edges = {};
+              }
+            }, true),
+        ],
+        [
+          "graph order exceeds code records",
+          "INVALID_SNAPSHOT_BUNDLE_SHAPE",
+          () => {
+            const value = structuredClone(physical);
+            value.graph.nodeOrder.push(true);
+            writeFixtureSnapshot(file, value);
+          },
+        ],
+        ...(chunked
+          ? [
+              [
+                "rehashed invalid bucket order",
+                payloadError,
+                () =>
+                  changedPayload((part) => {
+                    part.payload.lists.files.order.push(64);
+                  }),
+              ],
+              [
+                "rehashed leaf array group",
+                payloadError,
+                () =>
+                  changedLeaf((part) => {
+                    part.payload.group = ["world"];
+                  }),
+              ],
+              [
+                "rehashed leaf list shape",
+                payloadError,
+                () =>
+                  changedLeaf((part) => {
+                    part.payload.lists.files = null;
+                  }),
+              ],
+            ]
+          : []),
+      ];
+      for (const [name, code, corrupt, cleanup] of cases)
+        await t.test(name, async () => {
+          try {
+            const result = corrupt();
+            const observedParts = Array.isArray(result) ? result : [result || partFile];
+            const badRoot = fs.readFileSync(file),
+              badParts = observedParts.map((part) => fs.readFileSync(part));
+            await assert.rejects(() => inspectOnboarding({ root }), { code });
+            await assert.rejects(() => initializeOrResumeProject({ root, pluginRoot, profile: "product" }), { code });
+            const diagnostic = await inspectOptionalOnboarding({ root });
+            assert.equal(diagnostic.reasonCode, code);
+            assert.equal(diagnostic.ordinaryWorkBlocked, false);
+            const core = await initializeOrResumeProject({ root, pluginRoot, profile: "core" });
+            assert.equal(core.readiness.core.state, "ready");
+            assert.equal(core.readiness.product.state, "integrity_attention");
+            assert.deepEqual(fs.readFileSync(file), badRoot);
+            observedParts.forEach((part, index) => assert.deepEqual(fs.readFileSync(part), badParts[index]));
+            assert.deepEqual(fs.readFileSync(canonFile), canon);
+            assert.deepEqual(authorityBytes(root, formatForVerifiedOwner(storage)), protectedAuthority);
+          } finally {
+            fs.writeFileSync(file, original);
+            fs.writeFileSync(partFile, originalPart);
+            cleanup?.();
+          }
+        });
+      await inspectOnboarding({ root });
     });
-    await inspectOnboarding({ root });
-  });
 });

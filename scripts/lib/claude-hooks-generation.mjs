@@ -13,12 +13,14 @@ export function renderClaudeHooks(currentText, catalog) {
   const groups = hooks?.hooks?.PreToolUse;
   const matchers = claudeNativeHookMatchers(catalog);
   const servers = [ARTIFACT_COMPOSITION.serverName, `plugin:${ARTIFACT_COMPOSITION.pluginName}:${ARTIFACT_COMPOSITION.serverName}`];
-  if (!Array.isArray(groups) || groups.length !== matchers.length
-    || groups.some((group, index) => group?.hooks?.[0]?.server !== servers[index])) {
-    throw Object.assign(new Error("hooks/claude.json PreToolUse groups must be the direct and plugin MCP namespaces, in that order."),
-      { code: "CLAUDE_HOOKS_SHAPE_UNEXPECTED" });
+  if (!Array.isArray(groups) || groups.length !== matchers.length || groups.some((group, index) => group?.hooks?.[0]?.server !== servers[index])) {
+    throw Object.assign(new Error("hooks/claude.json PreToolUse groups must be the direct and plugin MCP namespaces, in that order."), {
+      code: "CLAUDE_HOOKS_SHAPE_UNEXPECTED",
+    });
   }
-  groups.forEach((group, index) => { group.matcher = matchers[index]; });
+  groups.forEach((group, index) => {
+    group.matcher = matchers[index];
+  });
   return `${JSON.stringify(hooks, null, 2)}\n`;
 }
 

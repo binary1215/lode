@@ -4,12 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { createRecoveryCheckpoint, inspectCompaction, prepareCompactionFromCurrentCheckpoint, settleCompactionContinuation } from "../scripts/lib/compaction-recovery.mjs";
 import {
-  enterConversationRecovery,
-  InMemoryCompactionLifecycleHostAdapter,
-  processCompactionLifecycle,
-} from "../scripts/lib/compaction-lifecycle.mjs";
+  createRecoveryCheckpoint,
+  inspectCompaction,
+  prepareCompactionFromCurrentCheckpoint,
+  settleCompactionContinuation,
+} from "../scripts/lib/compaction-recovery.mjs";
+import { enterConversationRecovery, InMemoryCompactionLifecycleHostAdapter, processCompactionLifecycle } from "../scripts/lib/compaction-lifecycle.mjs";
 import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
 import { dispatch, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
@@ -56,12 +57,13 @@ function event(root, kind, overrides = {}) {
 }
 
 async function enqueue(adapter, value) {
-  (await adapter.enqueue(value));
+  await adapter.enqueue(value);
   return adapter;
 }
 
 function projectFiles(root) {
-  return fs.readdirSync(root, { recursive: true, withFileTypes: true })
+  return fs
+    .readdirSync(root, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => path.relative(root, path.join(entry.parentPath, entry.name)).replaceAll("\\", "/"))
     .sort();
@@ -71,13 +73,16 @@ test("durable continuation consumption with interrupted epoch commit closes only
   const { root, layout } = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const canonical = checkpoint(root);
-  const host = (await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, "before-compaction")));
-  const prepared = (await processCompactionLifecycle({ root, hostAdapter: host }));
+  const host = await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, "before-compaction"));
+  const prepared = await processCompactionLifecycle({ root, hostAdapter: host });
   const epochId = prepared.epoch.epochId;
-  (await enqueue(host, event(root, "after-compaction", { epochId, outcome: "succeeded" })));
-  const nonTransportBytes = () => Object.fromEntries(projectFiles(root)
-    .filter((file) => !file.startsWith(`${layout.directory}/sessions/compaction/`))
-    .map((file) => [file, fs.readFileSync(path.join(root, file), "base64")]));
+  await enqueue(host, event(root, "after-compaction", { epochId, outcome: "succeeded" }));
+  const nonTransportBytes = () =>
+    Object.fromEntries(
+      projectFiles(root)
+        .filter((file) => !file.startsWith(`${layout.directory}/sessions/compaction/`))
+        .map((file) => [file, fs.readFileSync(path.join(root, file), "base64")]),
+    );
   const authorityBefore = nonTransportBytes();
   const rename = fs.renameSync;
   let faultInjected = false;
@@ -88,8 +93,11 @@ test("durable continuation consumption with interrupted epoch commit closes only
     }
     return rename(source, target);
   };
-  try { (await assert.rejects(async () => (await processCompactionLifecycle({ root, hostAdapter: host })), { code: "EIO" })); }
-  finally { fs.renameSync = rename; }
+  try {
+    await assert.rejects(async () => await processCompactionLifecycle({ root, hostAdapter: host }), { code: "EIO" });
+  } finally {
+    fs.renameSync = rename;
+  }
   assert.equal(faultInjected, true);
   const epochFile = path.join(root, layout.directory, "sessions/compaction/epochs", `${epochId}.json`);
   const interruptedBytes = fs.readFileSync(epochFile);
@@ -99,10 +107,12 @@ test("durable continuation consumption with interrupted epoch commit closes only
   assert.equal((await enterConversationRecovery({ root })).restore.checkpoint.checkpointId, canonical.checkpointId);
   assert.deepEqual(fs.readFileSync(epochFile), interruptedBytes, "read-only status must not settle transport");
   assert.deepEqual(nonTransportBytes(), authorityBefore);
-  host.loadContinuation = () => { assert.fail("a consumed continuation must never be loaded again"); };
+  host.loadContinuation = () => {
+    assert.fail("a consumed continuation must never be loaded again");
+  };
   for (const kind of ["conversation-entry", "provider-replaced"]) {
-    const replacementHost = (await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, kind, { userTurnId: 11 })));
-    const entry = (await processCompactionLifecycle({ root, hostAdapter: replacementHost }));
+    const replacementHost = await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, kind, { userTurnId: 11 }));
+    const entry = await processCompactionLifecycle({ root, hostAdapter: replacementHost });
     assert.equal(entry.status, "conversation_direction_restored");
     assert.equal(entry.conversationEntry.restore.checkpoint.checkpointId, canonical.checkpointId);
     assert.equal(entry.ordinaryWorkBlocked, false);
@@ -111,8 +121,10 @@ test("durable continuation consumption with interrupted epoch commit closes only
     assert.deepEqual(nonTransportBytes(), authorityBefore);
   }
   const acknowledge = host.acknowledge.bind(host);
-  host.acknowledge = () => { throw new Error("lost ack"); };
-  const resumed = (await processCompactionLifecycle({ root, hostAdapter: host }));
+  host.acknowledge = () => {
+    throw new Error("lost ack");
+  };
+  const resumed = await processCompactionLifecycle({ root, hostAdapter: host });
   assert.equal(resumed.status, "conversation_direction_restored_after_uncertain_continuation");
   assert.equal(resumed.providerContinuationOutcome, "uncertain");
   assert.equal(resumed.continuationConsumed, true);
@@ -147,11 +159,18 @@ test("P5 interrupted-consumption settlement rejects invented or mismatched evide
   assert.throws(() => settleCompactionContinuation({ root, epochId }), { code: "INVALID_COMPACTION_CONSUMPTION" });
   const consumptionDir = path.join(root, layout.directory, "sessions/compaction/consumptions");
   fs.mkdirSync(consumptionDir, { recursive: true });
-  fs.writeFileSync(path.join(consumptionDir, `${epochId}.json`), JSON.stringify({
-    schemaVersion: prepared.epoch.schemaVersion, kind: "CompactionContinuationConsumption",
-    epochId, checkpointId: prepared.checkpoint.checkpointId, checkpointDigest: "0".repeat(64),
-    consumedAt: new Date().toISOString(), providerSessionIdentityPersisted: false,
-  }));
+  fs.writeFileSync(
+    path.join(consumptionDir, `${epochId}.json`),
+    JSON.stringify({
+      schemaVersion: prepared.epoch.schemaVersion,
+      kind: "CompactionContinuationConsumption",
+      epochId,
+      checkpointId: prepared.checkpoint.checkpointId,
+      checkpointDigest: "0".repeat(64),
+      consumedAt: new Date().toISOString(),
+      providerSessionIdentityPersisted: false,
+    }),
+  );
   assert.throws(() => settleCompactionContinuation({ root, epochId }), { code: "INVALID_COMPACTION_CONSUMPTION" });
   assert.equal(inspectCompaction({ root }).continuationConsumption, "invalid");
   assert.equal(inspectCompaction({ root }).epoch.state, "prepared");
@@ -163,7 +182,7 @@ test("conversation entry restores current P2 direction automatically and otherwi
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const before = fs.readFileSync(path.join(root, layout.directory, "sessions", "current.json"));
   const filesBefore = projectFiles(root);
-  const empty = (await enterConversationRecovery({ root }));
+  const empty = await enterConversationRecovery({ root });
   assert.equal(empty.status, "conversation_ready");
   assert.equal(empty.userDecisionRequired, false);
   assert.equal(empty.projectStatus.kind, "HeadProjectExperienceProjection");
@@ -174,7 +193,7 @@ test("conversation entry restores current P2 direction automatically and otherwi
 
   const canonical = checkpoint(root);
   const stateAfterCheckpoint = fs.readFileSync(path.join(root, layout.directory, "sessions", "current.json"));
-  const restored = (await enterConversationRecovery({ root }));
+  const restored = await enterConversationRecovery({ root });
   assert.equal(restored.status, "conversation_direction_restored");
   assert.equal(restored.restore.checkpoint.checkpointId, canonical.checkpointId);
   assert.equal(restored.restore.projection.consumerInstruction.historicalCheckpointContext.nextExpectedResult, canonical.nextExpectedResult);
@@ -192,7 +211,7 @@ test("tampered recovery stops only checkpoint-dependent work and never guesses d
   const value = JSON.parse(fs.readFileSync(file, "utf8"));
   value.nextExpectedResult = "provider summary supplied direction";
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
-  const restored = (await enterConversationRecovery({ root }));
+  const restored = await enterConversationRecovery({ root });
   assert.equal(restored.status, "recovery_attention_required");
   assert.equal(restored.recoveryDependentWorkBlocked, true);
   assert.equal(restored.ordinaryWorkBlocked, false);
@@ -205,10 +224,10 @@ test("lifecycle restores newer P2 direction when its transport token becomes sta
   const { root, layout } = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const host = new InMemoryCompactionLifecycleHostAdapter();
-  (await enqueue(host, event(root, "before-compaction")));
-  (await processCompactionLifecycle({ root, hostAdapter: host, direction: direction() }));
+  await enqueue(host, event(root, "before-compaction"));
+  await processCompactionLifecycle({ root, hostAdapter: host, direction: direction() });
   const prepared = inspectCompaction({ root });
-  (await enqueue(host, event(root, "after-compaction", { epochId: prepared.epoch.epochId, outcome: "succeeded" })));
+  await enqueue(host, event(root, "after-compaction", { epochId: prepared.epoch.epochId, outcome: "succeeded" }));
   const load = host.loadContinuation.bind(host);
   let newer;
   host.loadContinuation = (binding) => {
@@ -216,8 +235,10 @@ test("lifecycle restores newer P2 direction when its transport token becomes sta
     return load(binding);
   };
   const acknowledge = host.acknowledge.bind(host);
-  host.acknowledge = () => { throw new Error("lost acknowledgement"); };
-  const result = (await processCompactionLifecycle({ root, hostAdapter: host }));
+  host.acknowledge = () => {
+    throw new Error("lost acknowledgement");
+  };
+  const result = await processCompactionLifecycle({ root, hostAdapter: host });
   assert.equal(result.status, "conversation_direction_restored_without_transport_continuation");
   assert.equal(result.reasonCode, "COMPACTION_CHECKPOINT_STALE");
   assert.equal(result.continuationConsumed, false);
@@ -228,20 +249,20 @@ test("lifecycle restores newer P2 direction when its transport token becomes sta
   assert.equal(result.conversationEntry.restore.projection.consumerInstruction.historicalCheckpointContext.nextExpectedResult, newer.nextExpectedResult);
   assert.equal(inspectCompaction({ root }).epoch.state, "aborted");
   host.acknowledge = acknowledge;
-  const replay = (await processCompactionLifecycle({ root, hostAdapter: host }));
+  const replay = await processCompactionLifecycle({ root, hostAdapter: host });
   assert.equal(replay.status, "conversation_direction_restored_without_transport_continuation");
   assert.equal(replay.continuationConsumed, false);
   assert.equal(replay.conversationEntry.restore.checkpoint.checkpointId, newer.checkpointId);
   assert.equal(host.inspectHostState().pendingEventCount, 0);
-  (await enqueue(host, event(root, "after-compaction", { epochId: prepared.epoch.epochId, outcome: "failed" })));
-  (await assert.rejects(async () => (await processCompactionLifecycle({ root, hostAdapter: host })), { code: "COMPACTION_LIFECYCLE_DIVERGENT_OUTCOME" }));
+  await enqueue(host, event(root, "after-compaction", { epochId: prepared.epoch.epochId, outcome: "failed" }));
+  await assert.rejects(async () => await processCompactionLifecycle({ root, hostAdapter: host }), { code: "COMPACTION_LIFECYCLE_DIVERGENT_OUTCOME" });
 });
 
 test("missing Host lifecycle hooks stay optional while artifact entry recovery remains available", async (t) => {
   const { root, layout } = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   checkpoint(root);
-  const result = (await processCompactionLifecycle({ root }));
+  const result = await processCompactionLifecycle({ root });
   assert.equal(result.status, "host_lifecycle_unavailable");
   assert.equal(result.conversationEntry.status, "conversation_direction_restored");
   assert.equal(result.ordinaryWorkBlocked, false);
@@ -253,8 +274,8 @@ test("before-compaction reuses an exact current checkpoint and keeps the raw tok
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const canonical = checkpoint(root);
   const stateBefore = fs.readFileSync(path.join(root, layout.directory, "sessions", "current.json"));
-  const adapter = (await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, "before-compaction")));
-  const prepared = (await processCompactionLifecycle({ root, hostAdapter: adapter }));
+  const adapter = await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, "before-compaction"));
+  const prepared = await processCompactionLifecycle({ root, hostAdapter: adapter });
   assert.equal(prepared.status, "compaction_lifecycle_prepared");
   assert.equal(prepared.checkpointReused, true);
   assert.equal(prepared.checkpoint.checkpointId, canonical.checkpointId);
@@ -274,13 +295,13 @@ test("before-compaction reuses an exact current checkpoint and keeps the raw tok
 test("HEAD authors missing recovery direction internally instead of asking the user for lifecycle JSON", async (t) => {
   const { root, layout } = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const adapter = (await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, "before-compaction")));
-  const needsHead = (await processCompactionLifecycle({ root, hostAdapter: adapter }));
+  const adapter = await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, "before-compaction"));
+  const needsHead = await processCompactionLifecycle({ root, hostAdapter: adapter });
   assert.equal(needsHead.status, "head_direction_required");
   assert.equal(needsHead.headActionRequired, true);
   assert.equal(needsHead.userDecisionRequired, false);
   assert.equal(needsHead.ordinaryWorkBlocked, false);
-  const prepared = (await processCompactionLifecycle({ root, hostAdapter: adapter, direction: direction() }));
+  const prepared = await processCompactionLifecycle({ root, hostAdapter: adapter, direction: direction() });
   assert.equal(prepared.status, "compaction_lifecycle_prepared");
   assert.equal(prepared.checkpointReused, false);
 });
@@ -289,23 +310,23 @@ test("successful after-compaction restores P2 first, consumes once, and duplicat
   const { root, layout } = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   checkpoint(root);
-  const adapter = (await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, "before-compaction")));
-  const prepared = (await processCompactionLifecycle({ root, hostAdapter: adapter }));
+  const adapter = await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, "before-compaction"));
+  const prepared = await processCompactionLifecycle({ root, hostAdapter: adapter });
   const after = event(root, "after-compaction", { epochId: prepared.epoch.epochId, outcome: "succeeded" });
-  (await adapter.enqueue(after));
-  const continued = (await processCompactionLifecycle({ root, hostAdapter: adapter }));
+  await adapter.enqueue(after);
+  const continued = await processCompactionLifecycle({ root, hostAdapter: adapter });
   assert.equal(continued.status, "compaction_lifecycle_continued");
   assert.equal(continued.conversationEntry.status, "conversation_direction_restored");
   assert.equal(continued.continuationConsumed, true);
   assert.equal(inspectCompaction({ root }).epoch.state, "continued");
 
-  (await adapter.enqueue({ ...after, eventId: `${after.eventId}-duplicate` }));
-  const duplicate = (await processCompactionLifecycle({ root, hostAdapter: adapter }));
+  await adapter.enqueue({ ...after, eventId: `${after.eventId}-duplicate` });
+  const duplicate = await processCompactionLifecycle({ root, hostAdapter: adapter });
   assert.equal(duplicate.status, "compaction_lifecycle_already_continued");
   assert.equal(duplicate.continuationConsumed, true);
 
-  (await adapter.enqueue({ ...after, eventId: `${after.eventId}-divergent`, outcome: "failed" }));
-  (await assert.rejects(async () => (await processCompactionLifecycle({ root, hostAdapter: adapter })), { code: "COMPACTION_LIFECYCLE_DIVERGENT_OUTCOME" }));
+  await adapter.enqueue({ ...after, eventId: `${after.eventId}-divergent`, outcome: "failed" });
+  await assert.rejects(async () => await processCompactionLifecycle({ root, hostAdapter: adapter }), { code: "COMPACTION_LIFECYCLE_DIVERGENT_OUTCOME" });
 });
 
 test("uncertain, failed, and newer-turn outcomes never replay or silently continue", async (t) => {
@@ -313,26 +334,26 @@ test("uncertain, failed, and newer-turn outcomes never replay or silently contin
   t.after(() => roots.forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
   for (const root of roots) checkpoint(root);
 
-  const uncertainHost = (await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(roots[0], "before-compaction")));
-  const uncertainPrepared = (await processCompactionLifecycle({ root: roots[0], hostAdapter: uncertainHost }));
-  (await uncertainHost.enqueue(event(roots[0], "after-compaction", { epochId: uncertainPrepared.epoch.epochId, outcome: "uncertain" })));
-  const uncertain = (await processCompactionLifecycle({ root: roots[0], hostAdapter: uncertainHost }));
+  const uncertainHost = await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(roots[0], "before-compaction"));
+  const uncertainPrepared = await processCompactionLifecycle({ root: roots[0], hostAdapter: uncertainHost });
+  await uncertainHost.enqueue(event(roots[0], "after-compaction", { epochId: uncertainPrepared.epoch.epochId, outcome: "uncertain" }));
+  const uncertain = await processCompactionLifecycle({ root: roots[0], hostAdapter: uncertainHost });
   assert.equal(uncertain.status, "provider_compaction_outcome_uncertain");
   assert.equal(uncertain.retryAllowed, false);
   assert.equal(uncertain.continuationConsumed, false);
   assert.equal(inspectCompaction({ root: roots[0] }).epoch.state, "prepared");
 
-  const failedHost = (await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(roots[1], "before-compaction")));
-  const failedPrepared = (await processCompactionLifecycle({ root: roots[1], hostAdapter: failedHost }));
-  (await failedHost.enqueue(event(roots[1], "after-compaction", { epochId: failedPrepared.epoch.epochId, outcome: "failed" })));
-  const failed = (await processCompactionLifecycle({ root: roots[1], hostAdapter: failedHost }));
+  const failedHost = await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(roots[1], "before-compaction"));
+  const failedPrepared = await processCompactionLifecycle({ root: roots[1], hostAdapter: failedHost });
+  await failedHost.enqueue(event(roots[1], "after-compaction", { epochId: failedPrepared.epoch.epochId, outcome: "failed" }));
+  const failed = await processCompactionLifecycle({ root: roots[1], hostAdapter: failedHost });
   assert.equal(failed.status, "provider_compaction_failed");
   assert.equal(inspectCompaction({ root: roots[1] }).epoch.state, "aborted");
 
-  const newerHost = (await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(roots[2], "before-compaction")));
-  const newerPrepared = (await processCompactionLifecycle({ root: roots[2], hostAdapter: newerHost }));
-  (await newerHost.enqueue(event(roots[2], "after-compaction", { epochId: newerPrepared.epoch.epochId, outcome: "succeeded", userTurnId: 11 })));
-  const newer = (await processCompactionLifecycle({ root: roots[2], hostAdapter: newerHost }));
+  const newerHost = await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(roots[2], "before-compaction"));
+  const newerPrepared = await processCompactionLifecycle({ root: roots[2], hostAdapter: newerHost });
+  await newerHost.enqueue(event(roots[2], "after-compaction", { epochId: newerPrepared.epoch.epochId, outcome: "succeeded", userTurnId: 11 }));
+  const newer = await processCompactionLifecycle({ root: roots[2], hostAdapter: newerHost });
   assert.equal(newer.status, "compaction_lifecycle_superseded");
   assert.equal(newer.continuationConsumed, false);
   assert.equal(inspectCompaction({ root: roots[2] }).epoch.state, "superseded");
@@ -344,10 +365,12 @@ test("Host token retention and loss fail safely while verified P2 remains usable
   for (const root of roots) checkpoint(root);
 
   class UncertainRetentionHost extends InMemoryCompactionLifecycleHostAdapter {
-    retainContinuation() { return { status: "uncertain" }; }
+    retainContinuation() {
+      return { status: "uncertain" };
+    }
   }
-  const retentionHost = (await enqueue(new UncertainRetentionHost(), event(roots[0], "before-compaction")));
-  const retention = (await processCompactionLifecycle({ root: roots[0], hostAdapter: retentionHost }));
+  const retentionHost = await enqueue(new UncertainRetentionHost(), event(roots[0], "before-compaction"));
+  const retention = await processCompactionLifecycle({ root: roots[0], hostAdapter: retentionHost });
   assert.equal(retention.status, "recovery_attention_required");
   assert.equal(retention.reasonCode, "COMPACTION_HOST_RETENTION_UNCERTAIN");
   assert.equal(retention.userDecisionRequired, false);
@@ -355,12 +378,14 @@ test("Host token retention and loss fail safely while verified P2 remains usable
   assert.equal((await enterConversationRecovery({ root: roots[0] })).status, "conversation_direction_restored");
 
   class MissingTokenHost extends InMemoryCompactionLifecycleHostAdapter {
-    loadContinuation() { return { status: "unavailable" }; }
+    loadContinuation() {
+      return { status: "unavailable" };
+    }
   }
-  const missingHost = (await enqueue(new MissingTokenHost(), event(roots[1], "before-compaction")));
-  const prepared = (await processCompactionLifecycle({ root: roots[1], hostAdapter: missingHost }));
-  (await missingHost.enqueue(event(roots[1], "after-compaction", { epochId: prepared.epoch.epochId, outcome: "succeeded" })));
-  const missing = (await processCompactionLifecycle({ root: roots[1], hostAdapter: missingHost }));
+  const missingHost = await enqueue(new MissingTokenHost(), event(roots[1], "before-compaction"));
+  const prepared = await processCompactionLifecycle({ root: roots[1], hostAdapter: missingHost });
+  await missingHost.enqueue(event(roots[1], "after-compaction", { epochId: prepared.epoch.epochId, outcome: "succeeded" }));
+  const missing = await processCompactionLifecycle({ root: roots[1], hostAdapter: missingHost });
   assert.equal(missing.status, "conversation_direction_restored_without_transport_continuation");
   assert.equal(missing.conversationEntry.status, "conversation_direction_restored");
   assert.equal(missing.freshLogicalHeadRequired, true);
@@ -372,10 +397,10 @@ test("conversation-entry and provider replacement restore artifacts and supersed
   const { root, layout } = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   checkpoint(root);
-  const adapter = (await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, "before-compaction")));
-  const prepared = (await processCompactionLifecycle({ root, hostAdapter: adapter }));
-  (await adapter.enqueue(event(root, "provider-replaced", { userTurnId: 11 })));
-  const replacement = (await processCompactionLifecycle({ root, hostAdapter: adapter }));
+  const adapter = await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, "before-compaction"));
+  const prepared = await processCompactionLifecycle({ root, hostAdapter: adapter });
+  await adapter.enqueue(event(root, "provider-replaced", { userTurnId: 11 }));
+  const replacement = await processCompactionLifecycle({ root, hostAdapter: adapter });
   assert.equal(replacement.status, "conversation_direction_restored");
   assert.equal(replacement.pendingContinuationSuperseded, true);
   assert.equal(replacement.conversationEntry.restore.checkpoint.checkpointId, prepared.checkpoint.checkpointId);
@@ -386,8 +411,8 @@ test("cross-project events and authority-amplifying Host descriptors fail closed
   const { root, layout } = temporaryProject();
   const { root: other } = temporaryProject();
   t.after(() => [root, other].forEach((item) => fs.rmSync(item, { recursive: true, force: true })));
-  const cross = (await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(other, "conversation-entry")));
-  (await assert.rejects(async () => (await processCompactionLifecycle({ root, hostAdapter: cross })), { code: "COMPACTION_LIFECYCLE_PROJECT_MISMATCH" }));
+  const cross = await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(other, "conversation-entry"));
+  await assert.rejects(async () => await processCompactionLifecycle({ root, hostAdapter: cross }), { code: "COMPACTION_LIFECYCLE_PROJECT_MISMATCH" });
 
   const base = new InMemoryCompactionLifecycleHostAdapter();
   const bad = {
@@ -397,17 +422,29 @@ test("cross-project events and authority-amplifying Host descriptors fail closed
     loadContinuation: (...args) => base.loadContinuation(...args),
     acknowledge: (...args) => base.acknowledge(...args),
   };
-  (await assert.rejects(async () => (await processCompactionLifecycle({ root, hostAdapter: bad })), { code: "COMPACTION_LIFECYCLE_AUTHORITY_VIOLATION" }));
+  await assert.rejects(async () => await processCompactionLifecycle({ root, hostAdapter: bad }), { code: "COMPACTION_LIFECYCLE_AUTHORITY_VIOLATION" });
 });
 
 test("MCP and CLI expose the same Core behavior without making recovery a user ritual", async (t) => {
   const { root, layout } = temporaryProject();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   checkpoint(root);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_conversation_enter"), true);
-  assert.equal(mcpTools.some((tool) => tool.name === "lode_compaction_lifecycle_step"), true);
-  assert.equal((await runCommand(["help"])).commands.some((command) => command.includes("conversation-enter")), false);
-  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("conversation-enter")), true);
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_conversation_enter"),
+    true,
+  );
+  assert.equal(
+    mcpTools.some((tool) => tool.name === "lode_compaction_lifecycle_step"),
+    true,
+  );
+  assert.equal(
+    (await runCommand(["help"])).commands.some((command) => command.includes("conversation-enter")),
+    false,
+  );
+  assert.equal(
+    (await runCommand(["help-all"])).commands.some((command) => command.includes("conversation-enter")),
+    true,
+  );
   assert.equal((await runCommand(["conversation-enter", root])).status, "conversation_direction_restored");
   assert.equal((await runCommand(["compaction-lifecycle-step", root])).status, "host_lifecycle_unavailable");
 
@@ -420,7 +457,7 @@ test("MCP and CLI expose the same Core behavior without making recovery a user r
   assert.equal(mcp.result.structuredContent.status, "conversation_direction_restored");
   assert.match(mcp.result.content[0].text, /continue the task/u);
   assert.doesNotMatch(mcp.result.content[0].text, /checkpoint-[a-f0-9]{24}/u);
-  const cli = formatCliResult("conversation-enter", (await runCommand(["conversation-enter", root])));
+  const cli = formatCliResult("conversation-enter", await runCommand(["conversation-enter", root]));
   assert.match(cli, /continue the task/u);
   assert.doesNotMatch(cli, /checkpoint-[a-f0-9]{24}/u);
 });

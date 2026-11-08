@@ -54,8 +54,13 @@ function median(values) {
 }
 
 class ObservationLedger {
-  constructor() { this.reset(); }
-  reset() { this.operations = new Map(); this.writeAttemptCount = 0; }
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.operations = new Map();
+    this.writeAttemptCount = 0;
+  }
   observe(name, started, value) {
     const current = this.operations.get(name) || { calls: 0, normalizedResponseBytes: 0, elapsedMs: [] };
     current.calls += 1;
@@ -66,11 +71,18 @@ class ObservationLedger {
   }
   summary() {
     return {
-      operations: Object.fromEntries([...this.operations.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([name, value]) => [name, {
-        calls: value.calls,
-        normalizedResponseBytes: value.normalizedResponseBytes,
-        medianElapsedMs: median(value.elapsedMs),
-      }])),
+      operations: Object.fromEntries(
+        [...this.operations.entries()]
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([name, value]) => [
+            name,
+            {
+              calls: value.calls,
+              normalizedResponseBytes: value.normalizedResponseBytes,
+              medianElapsedMs: median(value.elapsedMs),
+            },
+          ]),
+      ),
       writeAttemptCount: this.writeAttemptCount,
     };
   }
@@ -83,7 +95,9 @@ class FixtureArcadeDbTransport extends ObservationLedger {
     this.pointers = new Map();
     this.topologies = new Map();
   }
-  describe() { return { protocol: "arcadedb-http-json", credentialsPersisted: false }; }
+  describe() {
+    return { protocol: "arcadedb-http-json", credentialsPersisted: false };
+  }
   ensureSchema() {}
   ensureTopologySchema() {}
   readPointer(projectId) {
@@ -94,7 +108,9 @@ class FixtureArcadeDbTransport extends ObservationLedger {
     const started = performance.now();
     return this.observe("readSnapshot", started, this.snapshots.get(`${projectId}:${graphSnapshotId}`) ?? null);
   }
-  writePointer(projectId, pointerJson) { this.pointers.set(projectId, pointerJson); }
+  writePointer(projectId, pointerJson) {
+    this.pointers.set(projectId, pointerJson);
+  }
   writeSnapshot(projectId, graphSnapshotId, snapshotJson) {
     const key = `${projectId}:${graphSnapshotId}`;
     const created = !this.snapshots.has(key);
@@ -103,8 +119,10 @@ class FixtureArcadeDbTransport extends ObservationLedger {
   }
   listSnapshotIds(projectId) {
     const started = performance.now();
-    const values = [...this.snapshots.keys()].filter((key) => key.startsWith(`${projectId}:`))
-      .map((key) => key.slice(projectId.length + 1)).sort();
+    const values = [...this.snapshots.keys()]
+      .filter((key) => key.startsWith(`${projectId}:`))
+      .map((key) => key.slice(projectId.length + 1))
+      .sort();
     return this.observe("listSnapshotIds", started, values);
   }
   readTopology(projectId, graphSnapshotId) {
@@ -133,7 +151,10 @@ class FixtureArcadeDbTransport extends ObservationLedger {
     const visitedNodes = new Set(anchorIds);
     const visitedEdges = new Set();
     const records = anchorIds.map((nodeId) => ({
-      recordType: "HeadAgentGraphNode", nodeJson: graphProjectionCanonicalJson(nodeById.get(nodeId)), edgeJson: null, recordDepth: 0,
+      recordType: "HeadAgentGraphNode",
+      nodeJson: graphProjectionCanonicalJson(nodeById.get(nodeId)),
+      edgeJson: null,
+      recordDepth: 0,
     }));
     let frontier = new Set(anchorIds);
     for (let level = 0; level < maxDepth && frontier.size; level += 1) {
@@ -142,53 +163,110 @@ class FixtureArcadeDbTransport extends ObservationLedger {
         if ((!frontier.has(edge.from) && !frontier.has(edge.to)) || visitedEdges.has(edge.edgeId)) continue;
         visitedEdges.add(edge.edgeId);
         records.push({
-          recordType: "HeadAgentGraphEdge", nodeJson: null, edgeJson: graphProjectionCanonicalJson(edge), recordDepth: (level * 2) + 1,
+          recordType: "HeadAgentGraphEdge",
+          nodeJson: null,
+          edgeJson: graphProjectionCanonicalJson(edge),
+          recordDepth: level * 2 + 1,
         });
         for (const nodeId of [edge.from, edge.to]) if (!visitedNodes.has(nodeId)) next.add(nodeId);
       }
       for (const nodeId of [...next].sort()) {
         visitedNodes.add(nodeId);
         records.push({
-          recordType: "HeadAgentGraphNode", nodeJson: graphProjectionCanonicalJson(nodeById.get(nodeId)), edgeJson: null, recordDepth: (level + 1) * 2,
+          recordType: "HeadAgentGraphNode",
+          nodeJson: graphProjectionCanonicalJson(nodeById.get(nodeId)),
+          edgeJson: null,
+          recordDepth: (level + 1) * 2,
         });
       }
       frontier = next;
     }
     const response = {
-      protocolVersion: "0.1.0", graphSnapshotId, anchorIds: [...anchorIds], maxDepth, maxRecords,
-      truncated: records.length > maxRecords, records: records.slice(0, maxRecords),
+      protocolVersion: "0.1.0",
+      graphSnapshotId,
+      anchorIds: [...anchorIds],
+      maxDepth,
+      maxRecords,
+      truncated: records.length > maxRecords,
+      records: records.slice(0, maxRecords),
     };
     return this.observe("queryTopology", started, response);
   }
 }
 
 class ReadOnlyObservedArcadeDbTransport extends ObservationLedger {
-  constructor(delegate) { super(); this.delegate = delegate; }
-  describe() { return this.delegate.describe(); }
-  denyWrite() { this.writeAttemptCount += 1; fail("Live benchmark transport is read-only.", "LIVE_BENCHMARK_WRITE_FORBIDDEN"); }
-  ensureSchema() { return this.denyWrite(); }
-  ensureTopologySchema() { return this.denyWrite(); }
-  ensureSyncSchema() { return this.denyWrite(); }
-  writePointer() { return this.denyWrite(); }
-  writeSnapshot() { return this.denyWrite(); }
-  writeTopology() { return this.denyWrite(); }
-  writeSyncManifest() { return this.denyWrite(); }
-  writeSyncCheckpoint() { return this.denyWrite(); }
-  applySyncBatch() { return this.denyWrite(); }
-  writePointerCompareAndSwap() { return this.denyWrite(); }
+  constructor(delegate) {
+    super();
+    this.delegate = delegate;
+  }
+  describe() {
+    return this.delegate.describe();
+  }
+  denyWrite() {
+    this.writeAttemptCount += 1;
+    fail("Live benchmark transport is read-only.", "LIVE_BENCHMARK_WRITE_FORBIDDEN");
+  }
+  ensureSchema() {
+    return this.denyWrite();
+  }
+  ensureTopologySchema() {
+    return this.denyWrite();
+  }
+  ensureSyncSchema() {
+    return this.denyWrite();
+  }
+  writePointer() {
+    return this.denyWrite();
+  }
+  writeSnapshot() {
+    return this.denyWrite();
+  }
+  writeTopology() {
+    return this.denyWrite();
+  }
+  writeSyncManifest() {
+    return this.denyWrite();
+  }
+  writeSyncCheckpoint() {
+    return this.denyWrite();
+  }
+  applySyncBatch() {
+    return this.denyWrite();
+  }
+  writePointerCompareAndSwap() {
+    return this.denyWrite();
+  }
   call(name, args) {
     const started = performance.now();
     return this.observe(name, started, this.delegate[name](...args));
   }
-  readPointer(...args) { return this.call("readPointer", args); }
-  readSnapshot(...args) { return this.call("readSnapshot", args); }
-  listSnapshotIds(...args) { return this.call("listSnapshotIds", args); }
-  readTopology(...args) { return this.call("readTopology", args); }
-  readTopologyManifest(...args) { return this.call("readTopologyManifest", args); }
-  queryTopology(...args) { return this.call("queryTopology", args); }
-  readSyncManifest(...args) { return this.call("readSyncManifest", args); }
-  readSyncCheckpoints(...args) { return this.call("readSyncCheckpoints", args); }
-  readSyncBatchRecords(...args) { return this.call("readSyncBatchRecords", args); }
+  readPointer(...args) {
+    return this.call("readPointer", args);
+  }
+  readSnapshot(...args) {
+    return this.call("readSnapshot", args);
+  }
+  listSnapshotIds(...args) {
+    return this.call("listSnapshotIds", args);
+  }
+  readTopology(...args) {
+    return this.call("readTopology", args);
+  }
+  readTopologyManifest(...args) {
+    return this.call("readTopologyManifest", args);
+  }
+  queryTopology(...args) {
+    return this.call("queryTopology", args);
+  }
+  readSyncManifest(...args) {
+    return this.call("readSyncManifest", args);
+  }
+  readSyncCheckpoints(...args) {
+    return this.call("readSyncCheckpoints", args);
+  }
+  readSyncBatchRecords(...args) {
+    return this.call("readSyncBatchRecords", args);
+  }
 }
 
 function fixtureGraph() {
@@ -253,8 +331,11 @@ function verifyPreparedReadShape(transportSummary, iterations) {
 
 async function runFixture(iterations, queryText) {
   const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "lode-prepared-benchmark-"));
-  try { return await runSyntheticFixture(iterations, queryText, root); }
-  finally { fs.rmSync(root, { recursive: true, force: true }); }
+  try {
+    return await runSyntheticFixture(iterations, queryText, root);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 async function runSyntheticFixture(iterations, queryText, projectRoot) {
   const graph = fixtureGraph();
@@ -266,7 +347,10 @@ async function runSyntheticFixture(iterations, queryText, projectRoot) {
   const expected = JSON.parse(fs.readFileSync(expectedFixtureFile, "utf8"));
   const actualExpectation = fixtureExpectation({ graph, request, result, costEvidence });
   if (graphProjectionCanonicalJson(expected) !== graphProjectionCanonicalJson(actualExpectation)) {
-    fail(`Prepared traversal benchmark no longer matches the reviewed fixture identity. Actual: ${JSON.stringify(actualExpectation)}`, "BENCHMARK_FIXTURE_IDENTITY_DRIFT");
+    fail(
+      `Prepared traversal benchmark no longer matches the reviewed fixture identity. Actual: ${JSON.stringify(actualExpectation)}`,
+      "BENCHMARK_FIXTURE_IDENTITY_DRIFT",
+    );
   }
   const selection = buildStorageSelection({
     projectId: graph.projectId,
@@ -285,7 +369,7 @@ async function runSyntheticFixture(iterations, queryText, projectRoot) {
     serverTraversalRequired: true,
     preparedTraversalRequired: true,
   });
-  (await materializeGraphProjection({ projectRoot, graph, adapter }));
+  await materializeGraphProjection({ projectRoot, graph, adapter });
   const alternateAnchor = graph.nodes.find((node) => !request.traversalQuery.anchorIds.includes(node.nodeId));
   if (!alternateAnchor) fail("Benchmark requires a second graph anchor for receipt replay rejection.", "BENCHMARK_REPLAY_ANCHOR_MISSING");
   const alternateResult = queryTemporalProvenanceGraph(graph, {
@@ -295,12 +379,12 @@ async function runSyntheticFixture(iterations, queryText, projectRoot) {
     maxEdges: 0,
   });
   const alternateRequest = buildPreparedTraversalRequest({ graph, result: alternateResult });
-  const replayedVerification = (await adapter.queryPrepared(alternateRequest));
+  const replayedVerification = await adapter.queryPrepared(alternateRequest);
   const queryPrepared = adapter.queryPrepared.bind(adapter);
   adapter.queryPrepared = () => replayedVerification;
   let receiptReplayRejected = false;
   try {
-    (await queryGraphProjection({ projectRoot, graph, adapter, query }));
+    await queryGraphProjection({ projectRoot, graph, adapter, query });
   } catch (error) {
     if (error.code !== "PREPARED_TRAVERSAL_VERIFICATION_MISMATCH") throw error;
     receiptReplayRejected = true;
@@ -313,23 +397,23 @@ async function runSyntheticFixture(iterations, queryText, projectRoot) {
   let receiptReuseCount = 0;
   for (let index = 0; index < iterations; index += 1) {
     const started = performance.now();
-    const execution = (await queryGraphProjection({ projectRoot, graph, adapter, query }));
+    const execution = await queryGraphProjection({ projectRoot, graph, adapter, query });
     elapsedMs.push(Math.max(0, performance.now() - started));
     if (execution.result.resultId !== result.resultId || execution.result.resultHash !== result.resultHash) {
       fail("Fixture benchmark semantic identity drifted.", "BENCHMARK_SEMANTIC_IDENTITY_DRIFT");
     }
     const receipt = execution.diagnostics.preparedTraversal?.clientReceiptVerification;
-    if (receipt?.verificationDocumentDigest !== "independently-verified"
-      || receipt.requestBinding !== "same-stack-locally-built-request"
-      || receipt.fullRequestReverification !== false) {
+    if (
+      receipt?.verificationDocumentDigest !== "independently-verified" ||
+      receipt.requestBinding !== "same-stack-locally-built-request" ||
+      receipt.fullRequestReverification !== false
+    ) {
       fail("Fixture benchmark did not use the bounded client-receipt verification path.", "BENCHMARK_RECEIPT_VERIFICATION_DRIFT");
     }
     receiptReuseCount += 1;
   }
   const transportSummary = transport.summary();
-  if (transportSummary.writeAttemptCount !== 0
-    || transportSummary.operations.readSnapshot?.calls
-    || transportSummary.operations.readTopology?.calls) {
+  if (transportSummary.writeAttemptCount !== 0 || transportSummary.operations.readSnapshot?.calls || transportSummary.operations.readTopology?.calls) {
     fail("Prepared fixture benchmark performed a forbidden full read or write.", "BENCHMARK_BOUNDARY_VIOLATION");
   }
   const readShape = verifyPreparedReadShape(transportSummary, iterations);
@@ -357,11 +441,10 @@ async function runSyntheticFixture(iterations, queryText, projectRoot) {
 
 async function runLive(projectRoot, iterations, queryText) {
   const inspected = inspectArcadeDbGraphProjectionActivation({ projectRoot });
-  if (inspected.status !== "verified-active"
-    || inspected.conformanceReport?.candidateAdapter?.preparedTraversalProtocolVersion !== "0.1.0") {
+  if (inspected.status !== "verified-active" || inspected.conformanceReport?.candidateAdapter?.preparedTraversalProtocolVersion !== "0.1.0") {
     fail("Live benchmark requires a verified prepared-traversal ArcadeDB activation.", "LIVE_PREPARED_TRAVERSAL_NOT_ACTIVE");
   }
-  const world = (await inspectWorldModel({ root: projectRoot }));
+  const world = await inspectWorldModel({ root: projectRoot });
   const graph = world.snapshot.temporalProvenanceGraph;
   const query = queryFor(graph, queryText);
   const result = queryTemporalProvenanceGraph(graph, query);
@@ -377,24 +460,23 @@ async function runLive(projectRoot, iterations, queryText) {
   let receiptReuseCount = 0;
   for (let index = 0; index < iterations; index += 1) {
     const started = performance.now();
-    const execution = (await queryGraphProjection({ projectRoot, graph, adapter, query }));
+    const execution = await queryGraphProjection({ projectRoot, graph, adapter, query });
     elapsedMs.push(Math.max(0, performance.now() - started));
-    if (execution.result.resultId !== result.resultId || execution.result.resultHash !== result.resultHash
-      || execution.diagnostics.fallbackUsed) {
+    if (execution.result.resultId !== result.resultId || execution.result.resultHash !== result.resultHash || execution.diagnostics.fallbackUsed) {
       fail("Live benchmark used fallback or changed semantic identity.", "LIVE_BENCHMARK_CONFORMANCE_FAILED");
     }
     const receipt = execution.diagnostics.preparedTraversal?.clientReceiptVerification;
-    if (receipt?.verificationDocumentDigest !== "independently-verified"
-      || receipt.requestBinding !== "same-stack-locally-built-request"
-      || receipt.fullRequestReverification !== false) {
+    if (
+      receipt?.verificationDocumentDigest !== "independently-verified" ||
+      receipt.requestBinding !== "same-stack-locally-built-request" ||
+      receipt.fullRequestReverification !== false
+    ) {
       fail("Live benchmark did not use the bounded client-receipt verification path.", "LIVE_BENCHMARK_RECEIPT_VERIFICATION_DRIFT");
     }
     receiptReuseCount += 1;
   }
   const transportSummary = transport.summary();
-  if (transportSummary.writeAttemptCount !== 0
-    || transportSummary.operations.readSnapshot?.calls
-    || transportSummary.operations.readTopology?.calls) {
+  if (transportSummary.writeAttemptCount !== 0 || transportSummary.operations.readSnapshot?.calls || transportSummary.operations.readTopology?.calls) {
     fail("Live benchmark performed a forbidden full read or write.", "LIVE_BENCHMARK_BOUNDARY_VIOLATION");
   }
   const readShape = verifyPreparedReadShape(transportSummary, iterations);
@@ -421,48 +503,54 @@ async function runLive(projectRoot, iterations, queryText) {
 
 try {
   const { iterations, liveProject, query } = parseArguments(process.argv.slice(2));
-  const execution = liveProject
-    ? await runLive(liveProject, iterations, query)
-    : await runFixture(iterations, query);
+  const execution = liveProject ? await runLive(liveProject, iterations, query) : await runFixture(iterations, query);
   const elapsed = [...execution.elapsedMs].sort((left, right) => left - right);
-  process.stdout.write(`${JSON.stringify({
-    schemaVersion: 1,
-    kind: "PreparedTraversalBenchmarkReport",
-    mode: execution.mode,
-    semanticIdentity: {
-      graphSnapshotId: execution.graph.graphSnapshotId,
-      graphSnapshotHash: execution.graph.graphSnapshotHash,
-      requestId: execution.request.requestId,
-      requestHash: execution.request.requestHash,
-      resultId: execution.result.resultId,
-      resultHash: execution.result.resultHash,
-      costEvidenceId: execution.costEvidence.evidenceId,
-      costEvidenceHash: execution.costEvidence.evidenceHash,
-    },
-    deterministicCost: execution.costEvidence,
-    diagnostics: {
-      iterations,
-      minElapsedMs: elapsed[0],
-      medianElapsedMs: median(elapsed),
-      maxElapsedMs: elapsed.at(-1),
-      transport: execution.transportSummary,
-      pointerReadOptimization: execution.readShape,
-      clientReceiptOptimization: execution.receiptVerification,
-      timingSemantic: false,
-    },
-    safety: {
-      queryPhaseReadOnly: true,
-      persistentWrites: false,
-      credentialsPersisted: false,
-      fullSnapshotReads: 0,
-      fullTopologyReads: 0,
-      ...(execution.receiptReplayRejected == null ? {} : {
-        distinctValidReceiptReplayRejected: execution.receiptReplayRejected === true,
-      }),
-      liveEnvironmentValidated: execution.liveEnvironmentValidated,
-    },
-    authorityEffect: "none",
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        kind: "PreparedTraversalBenchmarkReport",
+        mode: execution.mode,
+        semanticIdentity: {
+          graphSnapshotId: execution.graph.graphSnapshotId,
+          graphSnapshotHash: execution.graph.graphSnapshotHash,
+          requestId: execution.request.requestId,
+          requestHash: execution.request.requestHash,
+          resultId: execution.result.resultId,
+          resultHash: execution.result.resultHash,
+          costEvidenceId: execution.costEvidence.evidenceId,
+          costEvidenceHash: execution.costEvidence.evidenceHash,
+        },
+        deterministicCost: execution.costEvidence,
+        diagnostics: {
+          iterations,
+          minElapsedMs: elapsed[0],
+          medianElapsedMs: median(elapsed),
+          maxElapsedMs: elapsed.at(-1),
+          transport: execution.transportSummary,
+          pointerReadOptimization: execution.readShape,
+          clientReceiptOptimization: execution.receiptVerification,
+          timingSemantic: false,
+        },
+        safety: {
+          queryPhaseReadOnly: true,
+          persistentWrites: false,
+          credentialsPersisted: false,
+          fullSnapshotReads: 0,
+          fullTopologyReads: 0,
+          ...(execution.receiptReplayRejected == null
+            ? {}
+            : {
+                distinctValidReceiptReplayRejected: execution.receiptReplayRejected === true,
+              }),
+          liveEnvironmentValidated: execution.liveEnvironmentValidated,
+        },
+        authorityEffect: "none",
+      },
+      null,
+      2,
+    )}\n`,
+  );
 } catch (error) {
   process.stderr.write(`${error.code ? `${error.code}: ` : ""}${error.message}\n`);
   process.exitCode = 1;

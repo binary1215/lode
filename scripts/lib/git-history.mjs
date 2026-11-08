@@ -8,9 +8,7 @@ import { resolveLocalGitRepository, LOCAL_GIT_DISCOVERY_ARGS, localGitReadEnviro
 export const GIT_HISTORY_ADAPTER_VERSION = "0.2.0";
 export const GIT_DECISION_HISTORY_VERSION = "0.2.0";
 
-export const HOST_OPERATIONAL_GIT_REF_PREFIXES = Object.freeze([
-  "refs/codex/turn-diffs",
-]);
+export const HOST_OPERATIONAL_GIT_REF_PREFIXES = Object.freeze(["refs/codex/turn-diffs"]);
 
 const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -28,7 +26,11 @@ const digest = (value) => crypto.createHash("sha256").update(value).digest("hex"
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   }
   return value;
 }
@@ -38,7 +40,9 @@ function canonicalJson(value) {
 }
 
 function normalizedGitReference(value) {
-  const ref = String(value || "").trim().replaceAll("\\", "/");
+  const ref = String(value || "")
+    .trim()
+    .replaceAll("\\", "/");
   if (!ref.startsWith("refs/") || ref.length > 1024 || /[\x00-\x20\x7f]/.test(ref)) return "";
   if (["~", "^", ":", "?", "*", "["].some((character) => ref.includes(character))) return "";
   if (ref.includes("..") || ref.includes("@{") || ref.includes("//") || ref.endsWith("/") || ref.endsWith(".")) return "";
@@ -57,7 +61,9 @@ export function classifyGitReference(value) {
 }
 
 function isLegacyShortHostDecoration(value) {
-  const normalized = String(value || "").trim().replaceAll("\\", "/");
+  const normalized = String(value || "")
+    .trim()
+    .replaceAll("\\", "/");
   return normalized === "codex/turn-diffs" || normalized.startsWith("codex/turn-diffs/");
 }
 
@@ -74,8 +80,7 @@ function normalizedGitDecoration(value) {
   if (arrow >= 0) {
     const left = decoration.slice(0, arrow).trim();
     const right = decoration.slice(arrow + 4).trim();
-    const allowed = (part) => part === "HEAD"
-      || (part.startsWith("refs/") ? classifyGitReference(part) === "product" : !isLegacyShortHostDecoration(part));
+    const allowed = (part) => part === "HEAD" || (part.startsWith("refs/") ? classifyGitReference(part) === "product" : !isLegacyShortHostDecoration(part));
     return allowed(left) && allowed(right) ? decoration : "";
   }
   if (decoration.startsWith("refs/")) return classifyGitReference(decoration) === "product" ? decoration : "";
@@ -138,7 +143,9 @@ function runProcess(command, args, { cwd, timeoutMs, maxBufferBytes }) {
       stdout.push(chunk);
     });
     child.stderr.on("data", () => {});
-    child.once("error", (error) => { processError = error; });
+    child.once("error", (error) => {
+      processError = error;
+    });
     child.once("close", (status) => {
       if (settled) return;
       settled = true;
@@ -181,9 +188,10 @@ export function parseGitLog(stdout) {
 function reachableCommits(commits, referenceCommits) {
   if (!referenceCommits.length) return commits;
   const byId = new Map(commits.map((commit) => [commit.commit, commit]));
-  for (const commit of referenceCommits) if (!byId.has(commit)) {
-    fail(`Git history input does not contain current reference commit ${commit}.`, "GIT_HISTORY_REFERENCE_MISMATCH");
-  }
+  for (const commit of referenceCommits)
+    if (!byId.has(commit)) {
+      fail(`Git history input does not contain current reference commit ${commit}.`, "GIT_HISTORY_REFERENCE_MISMATCH");
+    }
   const reachable = new Set();
   const stack = [...referenceCommits];
   while (stack.length) {
@@ -238,9 +246,10 @@ export function assertGitHistoryAdapter(adapter) {
   if (!READABLE_GIT_HISTORY_ADAPTER_VERSIONS.has(adapter.adapterVersion)) {
     fail(`GitHistoryAdapter version must be readable by ${GIT_HISTORY_ADAPTER_VERSION}.`, "INCOMPATIBLE_GIT_HISTORY_ADAPTER");
   }
-  for (const method of REQUIRED_METHODS) if (typeof adapter[method] !== "function") {
-    fail(`GitHistoryAdapter is missing ${method}().`, "INVALID_GIT_HISTORY_ADAPTER");
-  }
+  for (const method of REQUIRED_METHODS)
+    if (typeof adapter[method] !== "function") {
+      fail(`GitHistoryAdapter is missing ${method}().`, "INVALID_GIT_HISTORY_ADAPTER");
+    }
   const descriptor = adapter.describe();
   if (!descriptor || typeof descriptor.adapterKind !== "string" || !descriptor.adapterKind.trim()) {
     fail("GitHistoryAdapter descriptor requires adapterKind.", "INVALID_GIT_HISTORY_ADAPTER");
@@ -273,46 +282,68 @@ export class GitCliHistoryAdapter {
 
   async readHistory({ projectRoot, referenceCommits = [], referenceTags = [] }) {
     let repository;
-    try { repository = resolveLocalGitRepository(projectRoot); }
-    catch (error) { return { status: "unavailable", coverage: "none", reasonCode: error.code || "LOCAL_GIT_METADATA_UNAVAILABLE", commits: [] }; }
-    if (repository.status !== "available") return {
-      status: "not-a-git-repository",
-      coverage: "none",
-      reasonCode: "git-directory-absent",
-      commits: [],
-    };
+    try {
+      repository = resolveLocalGitRepository(projectRoot);
+    } catch (error) {
+      return { status: "unavailable", coverage: "none", reasonCode: error.code || "LOCAL_GIT_METADATA_UNAVAILABLE", commits: [] };
+    }
+    if (repository.status !== "available")
+      return {
+        status: "not-a-git-repository",
+        coverage: "none",
+        reasonCode: "git-directory-absent",
+        commits: [],
+      };
     const roots = [...new Set(referenceCommits.map((item) => String(item).toLocaleLowerCase()))].sort();
     const includeTags = referenceTags.length > 0;
-    if (!roots.length && !includeTags) return {
-      status: "empty",
-      coverage: "empty-repository",
-      reasonCode: "",
-      commits: [],
-    };
+    if (!roots.length && !includeTags)
+      return {
+        status: "empty",
+        coverage: "empty-repository",
+        reasonCode: "",
+        commits: [],
+      };
     const processOptions = { cwd: projectRoot, timeoutMs: this.timeoutMs, maxBufferBytes: this.maxBufferBytes };
     const discovery = await runProcess(this.command, ["--no-optional-locks", ...LOCAL_GIT_DISCOVERY_ARGS], processOptions);
     if (discovery.error || discovery.status !== 0) return { status: "unavailable", coverage: "none", reasonCode: stableReason(discovery), commits: [] };
-    try { repository.matchesDiscovery(Buffer.from(discovery.stdout)); }
-    catch (error) { return { status: "unavailable", coverage: "none", reasonCode: error.code || "LOCAL_GIT_DISCOVERY_MISMATCH", commits: [] }; }
-    const result = await runProcess(this.command, [
-      "-C", projectRoot,
-      "-c", "i18n.logOutputEncoding=UTF-8",
-      "--no-pager",
-      "log", "--topo-order", "--date-order", "--no-show-signature", "--decorate=full",
-      "--decorate-refs-exclude=refs/codex/turn-diffs/**",
-      "--format=%H%x00%P%x00%aI%x00%cI%x00%an%x00%ae%x00%D%x00%B%x00",
-      ...roots,
-      ...(includeTags ? ["--tags"] : []),
-    ], processOptions);
-    try { repository.assertCurrent(); }
-    catch (error) { return { status: "unavailable", coverage: "none", reasonCode: error.code || "LOCAL_GIT_MAPPING_DRIFT", commits: [] }; }
-    if (result.error || result.status !== 0) return {
-      status: "unavailable",
-      coverage: "none",
-      reasonCode: stableReason(result),
-      commits: [],
-      diagnostics: { exitStatus: Number.isInteger(result.status) ? result.status : null, childPid: result.childPid || null },
-    };
+    try {
+      repository.matchesDiscovery(Buffer.from(discovery.stdout));
+    } catch (error) {
+      return { status: "unavailable", coverage: "none", reasonCode: error.code || "LOCAL_GIT_DISCOVERY_MISMATCH", commits: [] };
+    }
+    const result = await runProcess(
+      this.command,
+      [
+        "-C",
+        projectRoot,
+        "-c",
+        "i18n.logOutputEncoding=UTF-8",
+        "--no-pager",
+        "log",
+        "--topo-order",
+        "--date-order",
+        "--no-show-signature",
+        "--decorate=full",
+        "--decorate-refs-exclude=refs/codex/turn-diffs/**",
+        "--format=%H%x00%P%x00%aI%x00%cI%x00%an%x00%ae%x00%D%x00%B%x00",
+        ...roots,
+        ...(includeTags ? ["--tags"] : []),
+      ],
+      processOptions,
+    );
+    try {
+      repository.assertCurrent();
+    } catch (error) {
+      return { status: "unavailable", coverage: "none", reasonCode: error.code || "LOCAL_GIT_MAPPING_DRIFT", commits: [] };
+    }
+    if (result.error || result.status !== 0)
+      return {
+        status: "unavailable",
+        coverage: "none",
+        reasonCode: stableReason(result),
+        commits: [],
+        diagnostics: { exitStatus: Number.isInteger(result.status) ? result.status : null, childPid: result.childPid || null },
+      };
     return {
       status: "available",
       coverage: "all-reachable-commits",
@@ -376,15 +407,18 @@ export async function buildGitDecisionHistory({ projectRoot, adapter = null, ref
   const byId = new Map();
   for (const commit of normalized) {
     const existing = byId.get(commit.commit);
-    if (existing && canonicalJson(existing) !== canonicalJson(commit)) fail("GitHistoryAdapter returned conflicting duplicate commits.", "CONFLICTING_GIT_HISTORY_COMMIT");
+    if (existing && canonicalJson(existing) !== canonicalJson(commit))
+      fail("GitHistoryAdapter returned conflicting duplicate commits.", "CONFLICTING_GIT_HISTORY_COMMIT");
     byId.set(commit.commit, commit);
   }
-  const tagRoots = status === "available" ? [...byId.values()]
-    .filter((commit) => commit.refs.some((ref) => tags.includes(tagNameFromDecoration(ref))))
-    .map((commit) => commit.commit) : [];
+  const tagRoots =
+    status === "available"
+      ? [...byId.values()].filter((commit) => commit.refs.some((ref) => tags.includes(tagNameFromDecoration(ref)))).map((commit) => commit.commit)
+      : [];
   const roots = [...new Set([...references, ...tagRoots])].sort();
-  const commits = reachableCommits([...byId.values()], status === "available" ? roots : [])
-    .sort((left, right) => right.committedAt.localeCompare(left.committedAt) || left.commit.localeCompare(right.commit));
+  const commits = reachableCommits([...byId.values()], status === "available" ? roots : []).sort(
+    (left, right) => right.committedAt.localeCompare(left.committedAt) || left.commit.localeCompare(right.commit),
+  );
   const effectiveStatus = status === "available" && commits.length === 0 ? "empty" : status;
   const payload = {
     kind: "GitDecisionHistory",
@@ -429,14 +463,14 @@ export function queryGitDecisionHistory(history, { query = "", limit = 50 } = {}
   verifyGitDecisionHistory(history);
   const safeLimit = Number(limit);
   if (!Number.isInteger(safeLimit) || safeLimit < 1 || safeLimit > 500) fail("Git history limit must be from 1 to 500.", "INVALID_GIT_HISTORY_LIMIT");
-  const normalizedQuery = String(query || "").trim().toLocaleLowerCase();
-  const matching = history.commits.filter((commit) => !normalizedQuery || [
-    commit.commit,
-    commit.subject,
-    commit.body,
-    commit.author.name,
-    ...commit.refs,
-  ].join(" ").toLocaleLowerCase().includes(normalizedQuery));
+  const normalizedQuery = String(query || "")
+    .trim()
+    .toLocaleLowerCase();
+  const matching = history.commits.filter(
+    (commit) =>
+      !normalizedQuery ||
+      [commit.commit, commit.subject, commit.body, commit.author.name, ...commit.refs].join(" ").toLocaleLowerCase().includes(normalizedQuery),
+  );
   return {
     historyId: history.historyId,
     status: history.status,

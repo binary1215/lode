@@ -14,7 +14,17 @@ import { restoreSessionFromArtifacts } from "../scripts/lib/session-recovery.mjs
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const moduleUrl = pathToFileURL(path.join(pluginRoot, "scripts/lib/run-lineage.mjs")).href;
-console.log(JSON.stringify({ event: "owned-test-process", pid: process.pid, parentPid: process.ppid, command: process.execPath, args: process.argv.slice(1), cwd: process.cwd(), ports: [] }));
+console.log(
+  JSON.stringify({
+    event: "owned-test-process",
+    pid: process.pid,
+    parentPid: process.ppid,
+    command: process.execPath,
+    args: process.argv.slice(1),
+    cwd: process.cwd(),
+    ports: [],
+  }),
+);
 
 async function fixture(t) {
   const parent = process.env.LODE_AGENT_TEST_TMP || process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
@@ -32,14 +42,31 @@ async function fixture(t) {
   assert.equal(fs.existsSync(path.resolve(root, ".head/project.json")), false);
   const capsule = (await compileContext({ root, task: "Observe one local fixture fact", persist: true })).capsule;
   const plan = createWholePlanSnapshot({ root, objective: "Observe one local fixture fact", plan: [{ id: "observe", outcome: "Recorded fact" }] }).artifact;
-  const contract = createExecutionContract({ root, wholePlanId: plan.wholePlanId, capsuleId: capsule.capsuleId, scope: "Observe one local fixture fact", acceptanceCriteria: ["Evidence is recorded"] }).artifact;
+  const contract = createExecutionContract({
+    root,
+    wholePlanId: plan.wholePlanId,
+    capsuleId: capsule.capsuleId,
+    scope: "Observe one local fixture fact",
+    acceptanceCriteria: ["Evidence is recorded"],
+  }).artifact;
   const { run } = startRun({ root, executionContractId: contract.executionContractId });
-  const finishInput = { root, outcome: "Observed fixture fact", evidence: [{ uri: "fixture-only", digest: "fixture-evidence" }], verification: [{ check: "local fact", status: "passed" }] };
+  const finishInput = {
+    root,
+    outcome: "Observed fixture fact",
+    evidence: [{ uri: "fixture-only", digest: "fixture-evidence" }],
+    verification: [{ check: "local fact", status: "passed" }],
+  };
   return { root, storage, run, contract, finishInput };
 }
 
 function reviewInput(root) {
-  return { root, reviewContextId: getPendingReviewContext({ root }).review.reviewContextId, disposition: "accept", rationale: "The exact fixture evidence meets the contract.", nextActions: ["Continue the accepted direction"] };
+  return {
+    root,
+    reviewContextId: getPendingReviewContext({ root }).review.reviewContextId,
+    disposition: "accept",
+    rationale: "The exact fixture evidence meets the contract.",
+    nextActions: ["Continue the accepted direction"],
+  };
 }
 
 function snapshot(root) {
@@ -56,7 +83,8 @@ function snapshot(root) {
 }
 
 function failAt(kind, boundary, after, operation) {
-  const rename = fs.renameSync, link = fs.linkSync;
+  const rename = fs.renameSync,
+    link = fs.linkSync;
   let injected = false;
   fs.renameSync = (source, target) => {
     const name = path.basename(target);
@@ -83,10 +111,13 @@ function failAt(kind, boundary, after, operation) {
     return link(source, target);
   };
   try {
-    if (boundary === "session" && after) assert.equal(operation().canonicalCommit, "committed", "an exact saved target is acknowledged even when post-publication cleanup fails");
+    if (boundary === "session" && after)
+      assert.equal(operation().canonicalCommit, "committed", "an exact saved target is acknowledged even when post-publication cleanup fails");
     else assert.throws(operation, { code: "EIO" });
+  } finally {
+    fs.renameSync = rename;
+    fs.linkSync = link;
   }
-  finally { fs.renameSync = rename; fs.linkSync = link; }
   assert.equal(injected, true);
 }
 
@@ -94,7 +125,16 @@ function freshRetry(kind, input) {
   const code = `import { ${kind === "finish" ? "finishRun" : "reviewRun"} as retry } from ${JSON.stringify(moduleUrl)};
     console.log(JSON.stringify({event:"owned-retry-process",pid:process.pid,parentPid:process.ppid,command:process.execPath,cwd:process.cwd(),ports:[]}));
     console.log(JSON.stringify(retry(${JSON.stringify(input)})));`;
-  console.log(JSON.stringify({ event: "owned-retry-launch", parentPid: process.pid, command: process.execPath, args: ["--input-type=module", "-e", "exact fixture transition retry"], cwd: pluginRoot, ports: [] }));
+  console.log(
+    JSON.stringify({
+      event: "owned-retry-launch",
+      parentPid: process.pid,
+      command: process.execPath,
+      args: ["--input-type=module", "-e", "exact fixture transition retry"],
+      cwd: pluginRoot,
+      ports: [],
+    }),
+  );
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", code], { cwd: pluginRoot, encoding: "utf8", windowsHide: true, timeout: 60_000 });
   console.log(JSON.stringify({ event: "owned-retry-exit", pid: child.pid, parentPid: process.pid, status: child.status, signal: child.signal, ports: [] }));
   assert.equal(child.error, undefined, child.error?.message);
@@ -107,7 +147,7 @@ for (const kind of ["finish", "review"]) {
   test(`${kind} converges before and after every durable boundary in a fresh process`, async (t) => {
     for (const boundary of ["run", "artifact", "session"]) {
       for (const after of [false, true]) {
-        const { root, storage, run, contract, finishInput } = (await fixture(t));
+        const { root, storage, run, contract, finishInput } = await fixture(t);
         if (kind === "review") finishRun(finishInput);
         const input = kind === "finish" ? finishInput : reviewInput(root);
         const operation = kind === "finish" ? finishRun : reviewRun;
@@ -115,7 +155,9 @@ for (const kind of ["finish", "review"]) {
         failAt(kind, boundary, after, () => operation(input));
         const beforeRead = snapshot(root);
         inspectProject(root);
-        try { getPendingReviewContext({ root }); } catch {}
+        try {
+          getPendingReviewContext({ root });
+        } catch {}
         assert.deepEqual(snapshot(root), beforeRead, "inspection must never repair P2");
         const result = freshRetry(kind, input);
         assert.equal(result.status, kind === "finish" ? "run_awaiting_review" : "run_reviewed");
@@ -131,7 +173,14 @@ for (const kind of ["finish", "review"]) {
           assert.equal(pending.review.resultPacket.resultPacketId, result.resultPacket.resultPacketId);
           reviewRun(reviewInput(root));
         }
-        createRecoveryCheckpoint({ root, purpose: "Explicit HEAD fixture direction", approvedDecisions: [], currentPosition: "Exact transition recovered", nextExpectedResult: "Start the next bounded fixture Run", openReviewIds: [] });
+        createRecoveryCheckpoint({
+          root,
+          purpose: "Explicit HEAD fixture direction",
+          approvedDecisions: [],
+          currentPosition: "Exact transition recovered",
+          nextExpectedResult: "Start the next bounded fixture Run",
+          openReviewIds: [],
+        });
         assert.equal(restoreSessionFromArtifacts({ root }).status, "session_restored_from_artifacts");
         assert.equal(startRun({ root, executionContractId: contract.executionContractId }).status, "run_started");
       }
@@ -141,17 +190,29 @@ for (const kind of ["finish", "review"]) {
 
 test("review convergence preserves every non-accept disposition and its existing next-work boundary", async (t) => {
   for (const disposition of ["revise", "expand", "rollback", "escalate"]) {
-    const { root, storage, contract, finishInput } = (await fixture(t));
+    const { root, storage, contract, finishInput } = await fixture(t);
     finishRun(finishInput);
     const input = { ...reviewInput(root), disposition };
     failAt("review", "session", false, () => reviewRun(input));
     const reviewed = reviewRun(input);
     assert.equal(reviewed.reviewDecision.disposition, disposition);
     assert.equal(reviewed.state.requiredPlanAction.disposition, disposition);
-    assert.throws(() => startRun({ root, executionContractId: contract.executionContractId }), { code: ["revise", "expand"].includes(disposition) ? "NEXT_WHOLE_PLAN_REQUIRED" : "USER_DIRECTION_REQUIRED" });
+    assert.throws(() => startRun({ root, executionContractId: contract.executionContractId }), {
+      code: ["revise", "expand"].includes(disposition) ? "NEXT_WHOLE_PLAN_REQUIRED" : "USER_DIRECTION_REQUIRED",
+    });
     if (["revise", "expand"].includes(disposition)) {
-      const next = createNextWholePlanSnapshot({ root, reviewDecisionId: reviewed.reviewDecision.reviewDecisionId, plan: [{ id: "revise", outcome: "Follow the exact reviewed next plan" }] }).artifact;
-      const nextContract = createExecutionContract({ root, wholePlanId: next.wholePlanId, capsuleId: contract.capsuleId, scope: "Follow the explicit revised plan", acceptanceCriteria: ["Revised outcome recorded"] }).artifact;
+      const next = createNextWholePlanSnapshot({
+        root,
+        reviewDecisionId: reviewed.reviewDecision.reviewDecisionId,
+        plan: [{ id: "revise", outcome: "Follow the exact reviewed next plan" }],
+      }).artifact;
+      const nextContract = createExecutionContract({
+        root,
+        wholePlanId: next.wholePlanId,
+        capsuleId: contract.capsuleId,
+        scope: "Follow the explicit revised plan",
+        acceptanceCriteria: ["Revised outcome recorded"],
+      }).artifact;
       assert.equal(startRun({ root, executionContractId: nextContract.executionContractId }).status, "run_started");
     }
   }
@@ -159,7 +220,7 @@ test("review convergence preserves every non-accept disposition and its existing
 
 test("already-partial legacy Run records converge only through their exact stored result and decision", async (t) => {
   for (const kind of ["finish", "review"]) {
-    const { root, storage, run, finishInput } = (await fixture(t));
+    const { root, storage, run, finishInput } = await fixture(t);
     if (kind === "review") finishRun(finishInput);
     const input = kind === "finish" ? finishInput : reviewInput(root);
     const operation = kind === "finish" ? finishRun : reviewRun;
@@ -169,7 +230,9 @@ test("already-partial legacy Run records converge only through their exact store
     delete legacy.sessionTransition;
     fs.writeFileSync(file, JSON.stringify(legacy));
     const original = snapshot(root);
-    assert.throws(() => operation({ ...input, ...(kind === "finish" ? { outcome: "Invented result" } : { rationale: "Invented judgment" }) }), { code: "RUN_TRANSITION_CONFLICT" });
+    assert.throws(() => operation({ ...input, ...(kind === "finish" ? { outcome: "Invented result" } : { rationale: "Invented judgment" }) }), {
+      code: "RUN_TRANSITION_CONFLICT",
+    });
     assert.deepEqual(snapshot(root), original);
     const result = operation(input);
     assert.equal(result.run.runId, run.runId);
@@ -180,7 +243,7 @@ test("already-partial legacy Run records converge only through their exact store
 
 for (const kind of ["finish", "review"]) {
   test(`${kind} incomplete transition cannot overwrite fields changed by intervening HEAD work`, async (t) => {
-    const { root, storage, finishInput } = (await fixture(t));
+    const { root, storage, finishInput } = await fixture(t);
     if (kind === "review") finishRun(finishInput);
     const input = kind === "finish" ? finishInput : reviewInput(root);
     const operation = kind === "finish" ? finishRun : reviewRun;
@@ -193,12 +256,19 @@ for (const kind of ["finish", "review"]) {
   });
 
   test(`${kind} completed replay preserves later checkpoint metadata but rejects changed operation pointers`, async (t) => {
-    const { root, storage, finishInput } = (await fixture(t));
+    const { root, storage, finishInput } = await fixture(t);
     if (kind === "review") finishRun(finishInput);
     const input = kind === "finish" ? finishInput : reviewInput(root);
     const operation = kind === "finish" ? finishRun : reviewRun;
     const original = operation(input);
-    createRecoveryCheckpoint({ root, purpose: "Explicit later checkpoint", approvedDecisions: [], currentPosition: "Already completed operation", nextExpectedResult: "Continue the actual current direction", openReviewIds: [] });
+    createRecoveryCheckpoint({
+      root,
+      purpose: "Explicit later checkpoint",
+      approvedDecisions: [],
+      currentPosition: "Already completed operation",
+      nextExpectedResult: "Continue the actual current direction",
+      openReviewIds: [],
+    });
     const session = inspectProject(root).state;
     assert.notEqual(session.latestCheckpoint, original.state.latestCheckpoint);
     const withCheckpoint = snapshot(root);
@@ -217,13 +287,16 @@ for (const kind of ["finish", "review"]) {
 
 for (const kind of ["finish", "review"]) {
   test(`${kind} rejects divergent retries, Session drift and tampered evidence without writes`, async (t) => {
-    const { root, storage, run, finishInput } = (await fixture(t));
+    const { root, storage, run, finishInput } = await fixture(t);
     if (kind === "review") finishRun(finishInput);
     const input = kind === "finish" ? finishInput : reviewInput(root);
     const operation = kind === "finish" ? finishRun : reviewRun;
     failAt(kind, "artifact", true, () => operation(input));
     const prepared = snapshot(root);
-    assert.throws(() => operation({ ...input, ...(kind === "finish" ? { outcome: "Different result" } : { disposition: "reject", rationale: "Different decision" }) }), kind === "finish" ? { code: "RUN_TRANSITION_CONFLICT" } : { code: "INVALID_REVIEW_DISPOSITION" });
+    assert.throws(
+      () => operation({ ...input, ...(kind === "finish" ? { outcome: "Different result" } : { disposition: "reject", rationale: "Different decision" }) }),
+      kind === "finish" ? { code: "RUN_TRANSITION_CONFLICT" } : { code: "INVALID_REVIEW_DISPOSITION" },
+    );
     if (kind === "review") {
       assert.throws(() => operation({ ...input, disposition: "revise" }), { code: "RUN_TRANSITION_CONFLICT" });
       assert.throws(() => finishRun(finishInput), { code: "RUN_TRANSITION_CONFLICT" });
@@ -246,7 +319,10 @@ for (const kind of ["finish", "review"]) {
     assert.deepEqual(snapshot(root), tampered);
     fs.writeFileSync(artifactFile, bytes);
     const idField = kind === "finish" ? "resultPacketId" : "reviewDecisionId";
-    fs.writeFileSync(artifactFile, JSON.stringify({ ...JSON.parse(bytes), [idField]: `${kind === "finish" ? "result-packet" : "review-decision"}-${"0".repeat(24)}` }));
+    fs.writeFileSync(
+      artifactFile,
+      JSON.stringify({ ...JSON.parse(bytes), [idField]: `${kind === "finish" ? "result-packet" : "review-decision"}-${"0".repeat(24)}` }),
+    );
     const idTampered = snapshot(root);
     assert.throws(() => operation(input), { code: "LINEAGE_DIGEST_MISMATCH" });
     assert.deepEqual(snapshot(root), idTampered);

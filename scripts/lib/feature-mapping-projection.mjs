@@ -27,7 +27,11 @@ const fail = (message, code = "FEATURE_MAPPING_PROJECTION_ERROR") => {
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   }
   return value;
 }
@@ -66,12 +70,18 @@ function sortedUnique(values, label) {
 }
 
 function verifyEndpoint(endpoint, label) {
-  if (!endpoint || typeof endpoint !== "object" || Array.isArray(endpoint)
-    || typeof endpoint.nodeId !== "string" || !endpoint.nodeId
-    || typeof endpoint.kind !== "string" || !endpoint.kind
-    || typeof endpoint.revisionId !== "string" || !endpoint.revisionId
-    || (endpoint.continuityGeneration != null
-      && (!Number.isSafeInteger(endpoint.continuityGeneration) || endpoint.continuityGeneration < 0))) {
+  if (
+    !endpoint ||
+    typeof endpoint !== "object" ||
+    Array.isArray(endpoint) ||
+    typeof endpoint.nodeId !== "string" ||
+    !endpoint.nodeId ||
+    typeof endpoint.kind !== "string" ||
+    !endpoint.kind ||
+    typeof endpoint.revisionId !== "string" ||
+    !endpoint.revisionId ||
+    (endpoint.continuityGeneration != null && (!Number.isSafeInteger(endpoint.continuityGeneration) || endpoint.continuityGeneration < 0))
+  ) {
     fail(`${label} is invalid.`, "INVALID_FEATURE_MAPPING_ENDPOINT");
   }
   return endpoint;
@@ -84,12 +94,20 @@ function verifyEvidence(evidence) {
     prefix: "feature-mapping-evidence",
     label: "Feature mapping Evidence",
   });
-  if (evidence.kind !== "FeatureMappingEvidence" || evidence.schemaVersion !== 1
-    || typeof evidence.sourceKind !== "string" || !evidence.sourceKind
-    || typeof evidence.sourceNodeId !== "string" || !evidence.sourceNodeId
-    || typeof evidence.sourceRevisionId !== "string" || !evidence.sourceRevisionId
-    || typeof evidence.statement !== "string" || !evidence.statement
-    || evidence.instructionAuthority !== false || evidence.promotionAuthority !== false) {
+  if (
+    evidence.kind !== "FeatureMappingEvidence" ||
+    evidence.schemaVersion !== 1 ||
+    typeof evidence.sourceKind !== "string" ||
+    !evidence.sourceKind ||
+    typeof evidence.sourceNodeId !== "string" ||
+    !evidence.sourceNodeId ||
+    typeof evidence.sourceRevisionId !== "string" ||
+    !evidence.sourceRevisionId ||
+    typeof evidence.statement !== "string" ||
+    !evidence.statement ||
+    evidence.instructionAuthority !== false ||
+    evidence.promotionAuthority !== false
+  ) {
     fail("Feature mapping Evidence fields or authority are invalid.", "INVALID_FEATURE_MAPPING_EVIDENCE");
   }
   return evidence;
@@ -102,30 +120,41 @@ function verifyCandidate(candidate, evidenceIds, storage) {
     prefix: "feature-mapping-candidate",
     label: "Feature mapping candidate",
   });
-  if (candidate.kind !== "FeatureMappingCandidate" || candidate.schemaVersion !== 1
-    || !["IMPLEMENTS", "VERIFIED_BY"].includes(candidate.relationshipType)
-    || candidate.authorityClass !== "candidate" || candidate.instructionAuthority !== false
-    || candidate.promotionAuthority !== false || candidate.producer !== formatForVerifiedOwner(storage).protocol("head-agent-core-feature-mapping-proposal-normalizer")
-    || candidate.producerVersion !== FEATURE_MAPPING_VERSION
-    || !Number.isFinite(candidate.confidence) || candidate.confidence < 0 || candidate.confidence > 1
-    || typeof candidate.explanation !== "string" || !candidate.explanation || candidate.explanation.length > 2000
-    || !/^source-snapshot-[a-f0-9]{24}$/.test(candidate.sourceSnapshotId || "")) {
+  if (
+    candidate.kind !== "FeatureMappingCandidate" ||
+    candidate.schemaVersion !== 1 ||
+    !["IMPLEMENTS", "VERIFIED_BY"].includes(candidate.relationshipType) ||
+    candidate.authorityClass !== "candidate" ||
+    candidate.instructionAuthority !== false ||
+    candidate.promotionAuthority !== false ||
+    candidate.producer !== formatForVerifiedOwner(storage).protocol("head-agent-core-feature-mapping-proposal-normalizer") ||
+    candidate.producerVersion !== FEATURE_MAPPING_VERSION ||
+    !Number.isFinite(candidate.confidence) ||
+    candidate.confidence < 0 ||
+    candidate.confidence > 1 ||
+    typeof candidate.explanation !== "string" ||
+    !candidate.explanation ||
+    candidate.explanation.length > 2000 ||
+    !/^source-snapshot-[a-f0-9]{24}$/.test(candidate.sourceSnapshotId || "")
+  ) {
     fail("Feature mapping candidate fields or authority are invalid.", "INVALID_FEATURE_MAPPING_CANDIDATE");
   }
   verifyEndpoint(candidate.from, "Feature mapping candidate from endpoint");
   verifyEndpoint(candidate.to, "Feature mapping candidate to endpoint");
-  if (candidate.relationshipType === "IMPLEMENTS"
-    && (!["File", "Symbol"].includes(candidate.from.kind) || !["Feature", "Capability"].includes(candidate.to.kind))) {
+  if (
+    candidate.relationshipType === "IMPLEMENTS" &&
+    (!["File", "Symbol"].includes(candidate.from.kind) || !["Feature", "Capability"].includes(candidate.to.kind))
+  ) {
     fail("IMPLEMENTS candidates must point from File or Symbol to Feature or Capability.", "INVALID_FEATURE_MAPPING_DIRECTION");
   }
-  if (candidate.relationshipType === "VERIFIED_BY"
-    && (!["Feature", "Capability"].includes(candidate.from.kind) || candidate.to.kind !== "Test")) {
+  if (candidate.relationshipType === "VERIFIED_BY" && (!["Feature", "Capability"].includes(candidate.from.kind) || candidate.to.kind !== "Test")) {
     fail("VERIFIED_BY candidates must point from Feature or Capability to Test.", "INVALID_FEATURE_MAPPING_DIRECTION");
   }
   sortedUnique(candidate.evidenceIds, `Candidate ${candidate.candidateId} evidenceIds`);
-  for (const evidenceId of candidate.evidenceIds) if (!evidenceIds.has(evidenceId)) {
-    fail(`Feature mapping candidate references unknown Evidence: ${evidenceId}`, "UNKNOWN_FEATURE_MAPPING_EVIDENCE");
-  }
+  for (const evidenceId of candidate.evidenceIds)
+    if (!evidenceIds.has(evidenceId)) {
+      fail(`Feature mapping candidate references unknown Evidence: ${evidenceId}`, "UNKNOWN_FEATURE_MAPPING_EVIDENCE");
+    }
   return candidate;
 }
 
@@ -136,23 +165,31 @@ export function verifyFeatureMappingCandidateSet(document, projectId = "", stora
     prefix: "feature-mapping-candidates",
     label: "Feature mapping candidate set",
   });
-  if (document.schemaVersion !== 1 || document.kind !== "FeatureMappingCandidateSet"
-    || !familyFormatForOriginal("head-agent-core-feature-mapping-candidates", document, storage)
-    || document.protocol?.version !== FEATURE_MAPPING_VERSION
-    || (projectId && document.projectId !== projectId)
-    || !/^world-model-[a-f0-9]{24}$/.test(document.worldModelId || "")
-    || !/^graph-snapshot-[a-f0-9]{24}$/.test(document.graphSnapshotId || "")
-    || !/^source-snapshot-[a-f0-9]{24}$/.test(document.sourceSnapshotId || "")
-    || !/^product-model-[a-f0-9]{24}$/.test(document.productModelId || "")
-    || !/^[a-f0-9]{64}$/.test(document.productModelHash || "")
-    || document.authorityClass !== "candidate-set" || document.instructionAuthority !== false
-    || document.promotionAuthority !== false) {
+  if (
+    document.schemaVersion !== 1 ||
+    document.kind !== "FeatureMappingCandidateSet" ||
+    !familyFormatForOriginal("head-agent-core-feature-mapping-candidates", document, storage) ||
+    document.protocol?.version !== FEATURE_MAPPING_VERSION ||
+    (projectId && document.projectId !== projectId) ||
+    !/^world-model-[a-f0-9]{24}$/.test(document.worldModelId || "") ||
+    !/^graph-snapshot-[a-f0-9]{24}$/.test(document.graphSnapshotId || "") ||
+    !/^source-snapshot-[a-f0-9]{24}$/.test(document.sourceSnapshotId || "") ||
+    !/^product-model-[a-f0-9]{24}$/.test(document.productModelId || "") ||
+    !/^[a-f0-9]{64}$/.test(document.productModelHash || "") ||
+    document.authorityClass !== "candidate-set" ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false
+  ) {
     fail("Feature mapping candidate-set fields or authority are invalid.", "INVALID_FEATURE_MAPPING_CANDIDATE_SET");
   }
-  if (!Array.isArray(document.candidates) || !Array.isArray(document.evidence) || !Array.isArray(document.unknowns)
-    || document.candidates.length > LIMITS.maxCandidatesPerSet
-    || document.evidence.length > LIMITS.maxEvidencePerSet
-    || document.unknowns.length > LIMITS.maxUnknownsPerSet) {
+  if (
+    !Array.isArray(document.candidates) ||
+    !Array.isArray(document.evidence) ||
+    !Array.isArray(document.unknowns) ||
+    document.candidates.length > LIMITS.maxCandidatesPerSet ||
+    document.evidence.length > LIMITS.maxEvidencePerSet ||
+    document.unknowns.length > LIMITS.maxUnknownsPerSet
+  ) {
     fail("Feature mapping candidate set exceeds its bounded collections.", "FEATURE_MAPPING_CANDIDATE_SET_LIMIT");
   }
   const evidenceIds = new Set();
@@ -167,15 +204,20 @@ export function verifyFeatureMappingCandidateSet(document, projectId = "", stora
     if (candidateIds.has(candidate.candidateId)) fail("Duplicate Feature mapping candidate.", "DUPLICATE_FEATURE_MAPPING_CANDIDATE");
     candidateIds.add(candidate.candidateId);
   }
-  if (featureMappingCanonicalJson(document.candidates.map((item) => item.candidateId))
-    !== featureMappingCanonicalJson([...candidateIds].sort())
-    || featureMappingCanonicalJson(document.evidence.map((item) => item.evidenceId))
-    !== featureMappingCanonicalJson([...evidenceIds].sort())) {
+  if (
+    featureMappingCanonicalJson(document.candidates.map((item) => item.candidateId)) !== featureMappingCanonicalJson([...candidateIds].sort()) ||
+    featureMappingCanonicalJson(document.evidence.map((item) => item.evidenceId)) !== featureMappingCanonicalJson([...evidenceIds].sort())
+  ) {
     fail("Feature mapping candidates and Evidence must use identity order.", "FEATURE_MAPPING_ORDER_MISMATCH");
   }
   for (const unknown of document.unknowns) {
-    if (!unknown || !/^feature-mapping-unknown-[a-f0-9]{24}$/.test(unknown.unknownId || "")
-      || typeof unknown.statement !== "string" || !unknown.statement || unknown.status !== "open") {
+    if (
+      !unknown ||
+      !/^feature-mapping-unknown-[a-f0-9]{24}$/.test(unknown.unknownId || "") ||
+      typeof unknown.statement !== "string" ||
+      !unknown.statement ||
+      unknown.status !== "open"
+    ) {
       fail("Feature mapping Unknown is invalid.", "INVALID_FEATURE_MAPPING_UNKNOWN");
     }
     sortedUnique(unknown.evidenceIds, `Unknown ${unknown.unknownId} evidenceIds`);
@@ -190,22 +232,33 @@ export function verifyFeatureMappingReviewDecision(document, candidateSet, proje
     prefix: "feature-mapping-review-decision",
     label: "Feature mapping ReviewDecision",
   });
-  if (document.schemaVersion !== 1 || document.kind !== "ReviewDecision"
-    || !familyFormatForOriginal("head-agent-core-feature-mapping-review", document, storage ?? familyFormatForOriginal("head-agent-core-feature-mapping-candidates", candidateSet))
-    || document.protocol?.version !== FEATURE_MAPPING_VERSION
-    || document.decisionScope !== "feature-implementation-mapping"
-    || (projectId && document.projectId !== projectId)
-    || !["accept-all", "accept-selection", "reject"].includes(document.disposition)
-    || document.authority !== "explicit-user-feature-mapping-review"
-    || document.instructionAuthority !== true
-    || document.promotionAuthority !== document.disposition.startsWith("accept")
-    || typeof document.rationale !== "string" || !document.rationale) {
+  if (
+    document.schemaVersion !== 1 ||
+    document.kind !== "ReviewDecision" ||
+    !familyFormatForOriginal(
+      "head-agent-core-feature-mapping-review",
+      document,
+      storage ?? familyFormatForOriginal("head-agent-core-feature-mapping-candidates", candidateSet),
+    ) ||
+    document.protocol?.version !== FEATURE_MAPPING_VERSION ||
+    document.decisionScope !== "feature-implementation-mapping" ||
+    (projectId && document.projectId !== projectId) ||
+    !["accept-all", "accept-selection", "reject"].includes(document.disposition) ||
+    document.authority !== "explicit-user-feature-mapping-review" ||
+    document.instructionAuthority !== true ||
+    document.promotionAuthority !== document.disposition.startsWith("accept") ||
+    typeof document.rationale !== "string" ||
+    !document.rationale
+  ) {
     fail("Feature mapping ReviewDecision fields or authority are invalid.", "INVALID_FEATURE_MAPPING_REVIEW");
   }
-  if (!candidateSet || document.candidateSetId !== candidateSet.candidateSetId
-    || document.sourceSnapshotId !== candidateSet.sourceSnapshotId
-    || document.productModelId !== candidateSet.productModelId
-    || document.productModelHash !== candidateSet.productModelHash) {
+  if (
+    !candidateSet ||
+    document.candidateSetId !== candidateSet.candidateSetId ||
+    document.sourceSnapshotId !== candidateSet.sourceSnapshotId ||
+    document.productModelId !== candidateSet.productModelId ||
+    document.productModelHash !== candidateSet.productModelHash
+  ) {
     fail("Feature mapping ReviewDecision scope does not match its candidate set.", "FEATURE_MAPPING_REVIEW_SCOPE_MISMATCH");
   }
   sortedUnique(document.acceptedCandidateIds, "acceptedCandidateIds");
@@ -213,8 +266,7 @@ export function verifyFeatureMappingReviewDecision(document, candidateSet, proje
   const known = new Set(candidateSet.candidates.map((item) => item.candidateId));
   const accepted = new Set(document.acceptedCandidateIds);
   const rejected = new Set(document.rejectedCandidateIds);
-  if ([...accepted, ...rejected].some((id) => !known.has(id)) || [...accepted].some((id) => rejected.has(id))
-    || accepted.size + rejected.size !== known.size) {
+  if ([...accepted, ...rejected].some((id) => !known.has(id)) || [...accepted].some((id) => rejected.has(id)) || accepted.size + rejected.size !== known.size) {
     fail("Feature mapping ReviewDecision candidate partition is invalid.", "INVALID_FEATURE_MAPPING_REVIEW_SELECTION");
   }
   if (document.disposition === "reject" && accepted.size !== 0) {
@@ -246,9 +298,11 @@ function safeDirectory(projectRoot, relative) {
 function readArtifacts(projectRoot, relative, label, limit, storage) {
   const directory = safeDirectory(projectRoot, relativeProjectArtifact(storage, ...relative.split("/").slice(1)));
   if (!fs.existsSync(directory)) return { items: [], bytes: 0 };
-  const files = fs.readdirSync(directory, { withFileTypes: true })
+  const files = fs
+    .readdirSync(directory, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-    .map((entry) => path.join(directory, entry.name)).sort();
+    .map((entry) => path.join(directory, entry.name))
+    .sort();
   if (files.length > limit) fail(`${label} count exceeds its bound.`, "FEATURE_MAPPING_PROJECTION_LIMIT");
   const items = [];
   let bytes = 0;
@@ -257,22 +311,33 @@ function readArtifacts(projectRoot, relative, label, limit, storage) {
     if (size > LIMITS.maxArtifactBytes) fail(`${label} artifact is too large.`, "FEATURE_MAPPING_PROJECTION_LIMIT");
     bytes += size;
     if (bytes > LIMITS.maxTotalBytes) fail(`${label} artifacts exceed their total bound.`, "FEATURE_MAPPING_PROJECTION_LIMIT");
-    try { items.push(JSON.parse(fs.readFileSync(file, "utf8"))); }
-    catch (error) { fail(`${label} artifact is invalid JSON: ${error.message}`, "INVALID_FEATURE_MAPPING_ARTIFACT"); }
+    try {
+      items.push(JSON.parse(fs.readFileSync(file, "utf8")));
+    } catch (error) {
+      fail(`${label} artifact is invalid JSON: ${error.message}`, "INVALID_FEATURE_MAPPING_ARTIFACT");
+    }
   }
   return { items, bytes };
 }
 
 export function verifyFeatureMappingProjectionInput(projection, storage = undefined) {
-  if (!projection || projection.kind !== "FeatureMappingProjectionInput"
-    || !familyFormatForOriginal("head-agent-core-feature-mapping-projection", projection, storage)
-    || projection.protocol?.version !== FEATURE_MAPPING_VERSION
-    || !Array.isArray(projection.candidateSets) || !Array.isArray(projection.reviewDecisions)) {
+  if (
+    !projection ||
+    projection.kind !== "FeatureMappingProjectionInput" ||
+    !familyFormatForOriginal("head-agent-core-feature-mapping-projection", projection, storage) ||
+    projection.protocol?.version !== FEATURE_MAPPING_VERSION ||
+    !Array.isArray(projection.candidateSets) ||
+    !Array.isArray(projection.reviewDecisions)
+  ) {
     fail("Feature mapping projection input is invalid.", "INVALID_FEATURE_MAPPING_PROJECTION");
   }
   const candidateById = new Map();
   for (const candidateSet of projection.candidateSets) {
-    verifyFeatureMappingCandidateSet(candidateSet, projection.projectId, familyFormatForOriginal("head-agent-core-feature-mapping-projection", projection, storage));
+    verifyFeatureMappingCandidateSet(
+      candidateSet,
+      projection.projectId,
+      familyFormatForOriginal("head-agent-core-feature-mapping-projection", projection, storage),
+    );
     if (candidateById.has(candidateSet.candidateSetId)) fail("Duplicate Feature mapping candidate set.", "DUPLICATE_FEATURE_MAPPING_CANDIDATE_SET");
     candidateById.set(candidateSet.candidateSetId, candidateSet);
   }
@@ -280,7 +345,12 @@ export function verifyFeatureMappingProjectionInput(projection, storage = undefi
   for (const review of projection.reviewDecisions) {
     const candidateSet = candidateById.get(review.candidateSetId);
     if (!candidateSet) fail("Feature mapping review references an unknown candidate set.", "UNKNOWN_FEATURE_MAPPING_CANDIDATE_SET");
-    verifyFeatureMappingReviewDecision(review, candidateSet, projection.projectId, familyFormatForOriginal("head-agent-core-feature-mapping-projection", projection, storage));
+    verifyFeatureMappingReviewDecision(
+      review,
+      candidateSet,
+      projection.projectId,
+      familyFormatForOriginal("head-agent-core-feature-mapping-projection", projection, storage),
+    );
     if (reviewIds.has(review.reviewDecisionId)) fail("Duplicate Feature mapping ReviewDecision.", "DUPLICATE_FEATURE_MAPPING_REVIEW");
     reviewIds.add(review.reviewDecisionId);
   }
@@ -337,9 +407,12 @@ export function loadFeatureMappingProjection({
     promotionAuthority: false,
   };
   const hash = featureMappingDigest(featureMappingCanonicalJson(payload));
-  return verifyFeatureMappingProjectionInput({
-    ...payload,
-    projectionInputId: `feature-mapping-projection-${hash.slice(0, 24)}`,
-    projectionInputHash: hash,
-  }, storage);
+  return verifyFeatureMappingProjectionInput(
+    {
+      ...payload,
+      projectionInputId: `feature-mapping-projection-${hash.slice(0, 24)}`,
+      projectionInputHash: hash,
+    },
+    storage,
+  );
 }

@@ -1,31 +1,43 @@
 import { formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
 import {
-  PRODUCT_POLICY_VERSION, PRODUCT_POLICY_CANDIDATE_DIRECTORY, PRODUCT_POLICY_REVIEW_DIRECTORY,
-  productPolicyCanonicalJson, requiredText, optionalText, safeFile, readJson,
-  normalizeEvidenceAnchors, evidenceStatusFor, policyHash, candidateFile, reviewFile, nextPolicyModel,
-  verifyProductPolicyCandidate, verifyProductPolicyReviewDecision,
-  readProductPolicyCandidateRecord, readProductPolicyReviewDecisionRecord,
+  PRODUCT_POLICY_VERSION,
+  PRODUCT_POLICY_CANDIDATE_DIRECTORY,
+  PRODUCT_POLICY_REVIEW_DIRECTORY,
+  productPolicyCanonicalJson,
+  requiredText,
+  optionalText,
+  safeFile,
+  readJson,
+  normalizeEvidenceAnchors,
+  evidenceStatusFor,
+  policyHash,
+  candidateFile,
+  reviewFile,
+  nextPolicyModel,
+  verifyProductPolicyCandidate,
+  verifyProductPolicyReviewDecision,
+  readProductPolicyCandidateRecord,
+  readProductPolicyReviewDecisionRecord,
 } from "./product-policy-records.mjs";
 export {
-  PRODUCT_POLICY_VERSION, PRODUCT_POLICY_CANDIDATE_DIRECTORY, PRODUCT_POLICY_REVIEW_DIRECTORY,
-  productPolicyCanonicalJson, verifyProductPolicyCandidate, verifyProductPolicyReviewDecision,
+  PRODUCT_POLICY_VERSION,
+  PRODUCT_POLICY_CANDIDATE_DIRECTORY,
+  PRODUCT_POLICY_REVIEW_DIRECTORY,
+  productPolicyCanonicalJson,
+  verifyProductPolicyCandidate,
+  verifyProductPolicyReviewDecision,
 } from "./product-policy-records.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
 import { verifyProductModelRevisionForProjection, productModelRevisionForImmutableRetry } from "./onboarding-projection.mjs";
-import {
-  normalizeProductModelDocument,
-  productModelDocument,
-  readProductModelCanon,
-} from "./product-model.mjs";
+import { normalizeProductModelDocument, productModelDocument, readProductModelCanon } from "./product-model.mjs";
 import { withProjectMutation, withProjectMutationAsync } from "./project-mutation-lock.mjs";
 import { artifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import { buildWorldModel, readWorldModel } from "./world-model.mjs";
 import { refreshWorldModel } from "./incremental-refresh.mjs";
 import { inspectProductPolicyEvidenceCurrentness } from "./product-policy-evidence.mjs";
-
 
 const REVIEW_ID = /^review-decision-[a-f0-9]{24}$/;
 const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
@@ -38,19 +50,14 @@ const fail = (message, code = "PRODUCT_POLICY_ERROR") => {
   throw error;
 };
 
-
 const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-
-
-
 
 function readyProject(root, action) {
   const inspected = inspectProject(root);
   if (inspected.status !== "ready") fail(`Project must be ready for ${action}.`, "PROJECT_NOT_READY");
   return inspected;
 }
-
 
 function atomicWrite(file, content) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -63,20 +70,18 @@ function atomicWrite(file, content) {
   }
 }
 
-
 function persistImmutable(file, document, verifier, label) {
   const bytes = Buffer.byteLength(json(document));
   if (bytes > MAX_ARTIFACT_BYTES) fail(`${label} exceeds the bounded artifact size.`, "PRODUCT_POLICY_ARTIFACT_LIMIT");
   if (fs.existsSync(file)) {
     const existing = verifier(readJson(file, label));
-    if (productPolicyCanonicalJson(existing) !== productPolicyCanonicalJson(document)) fail(`${label} identity collision detected.`, "PRODUCT_POLICY_IMMUTABLE_COLLISION");
+    if (productPolicyCanonicalJson(existing) !== productPolicyCanonicalJson(document))
+      fail(`${label} identity collision detected.`, "PRODUCT_POLICY_IMMUTABLE_COLLISION");
     return { status: "existing", file, document: existing };
   }
   atomicWrite(file, json(document));
   return { status: "recorded", file, document };
 }
-
-
 
 function sourceEvidenceDigest(projectRoot, reference) {
   const file = safeFile(projectRoot, reference);
@@ -93,17 +98,22 @@ function sourceEvidenceDigest(projectRoot, reference) {
       if (!read) break;
       hash.update(buffer.subarray(0, read));
     }
-  } finally { fs.closeSync(fd); }
+  } finally {
+    fs.closeSync(fd);
+  }
   return hash.digest("hex");
 }
 
 function bindLocalEvidence(projectRoot, anchors) {
-  return normalizeEvidenceAnchors(anchors).map((anchor) => {
-    if (anchor.kind !== "source") return anchor;
-    const currentDigest = sourceEvidenceDigest(projectRoot, anchor.reference);
-    if (anchor.digest && anchor.digest !== currentDigest) fail(`Policy source evidence digest does not match: ${anchor.reference}`, "PRODUCT_POLICY_EVIDENCE_STALE");
-    return { ...anchor, digest: currentDigest };
-  }).sort((left, right) => productPolicyCanonicalJson(left).localeCompare(productPolicyCanonicalJson(right)));
+  return normalizeEvidenceAnchors(anchors)
+    .map((anchor) => {
+      if (anchor.kind !== "source") return anchor;
+      const currentDigest = sourceEvidenceDigest(projectRoot, anchor.reference);
+      if (anchor.digest && anchor.digest !== currentDigest)
+        fail(`Policy source evidence digest does not match: ${anchor.reference}`, "PRODUCT_POLICY_EVIDENCE_STALE");
+      return { ...anchor, digest: currentDigest };
+    })
+    .sort((left, right) => productPolicyCanonicalJson(left).localeCompare(productPolicyCanonicalJson(right)));
 }
 
 function revalidateLocalEvidence(projectRoot, candidate) {
@@ -122,32 +132,32 @@ function revalidateLocalEvidence(projectRoot, candidate) {
   };
 }
 
-
-
-
 function revisionFile(projectRoot, productModelId, storage = null) {
   return safeFile(projectRoot, relativeProjectArtifact(storage, "onboarding", "product-model-revisions", `${productModelId}.json`));
 }
 
 function productRevision(model, storage = null) {
   if (!storage?.projectId) fail("Product revision requires a verified Project owner.", "PROJECT_IDENTITY_MISMATCH");
-  return verifyProductModelRevisionForProjection({
-    schemaVersion: SCHEMA_VERSION,
-    kind: "ProductModelRevision",
-    projectId: storage.projectId,
-    productModelId: model.productModelId,
-    productModelHash: model.productModelHash,
-    document: productModelDocument(model),
-    authority: "user-owned-project-canon-revision",
-  }, storage);
+  return verifyProductModelRevisionForProjection(
+    {
+      schemaVersion: SCHEMA_VERSION,
+      kind: "ProductModelRevision",
+      projectId: storage.projectId,
+      productModelId: model.productModelId,
+      productModelHash: model.productModelHash,
+      document: productModelDocument(model),
+      authority: "user-owned-project-canon-revision",
+    },
+    storage,
+  );
 }
 
 function persistProductRevision(root, model, storage) {
-  const file = revisionFile(root, model.productModelId, storage), revision = productRevision(model, storage);
+  const file = revisionFile(root, model.productModelId, storage),
+    revision = productRevision(model, storage);
   const intended = fs.existsSync(file) ? productModelRevisionForImmutableRetry(readJson(file, "Product Model revision"), revision, storage) : revision;
-  return persistImmutable(file, intended, value => verifyProductModelRevisionForProjection(value, storage), "Product Model revision");
+  return persistImmutable(file, intended, (value) => verifyProductModelRevisionForProjection(value, storage), "Product Model revision");
 }
-
 
 function buildCandidate({ inspected, operation, key, baseModel, prior, proposed, resultingModel, evidenceAnchors, explanation }) {
   const payload = {
@@ -182,7 +192,6 @@ function buildCandidate({ inspected, operation, key, baseModel, prior, proposed,
   return { ...payload, candidateId: `policy-candidate-${candidateHash.slice(0, 24)}`, candidateHash };
 }
 
-
 function buildReview({ candidate, disposition, rationale, storage = null }) {
   const accepting = disposition === "accept";
   const payload = {
@@ -211,43 +220,83 @@ function buildReview({ candidate, disposition, rationale, storage = null }) {
   return { ...payload, reviewDecisionId: `review-decision-${reviewDecisionHash.slice(0, 24)}`, reviewDecisionHash };
 }
 
-
 function recordedReview(projectRoot, candidate, storage = null) {
   const directory = safeFile(projectRoot, relativeProjectArtifact(storage, "product-policy", "review-decisions"));
   if (!fs.existsSync(directory)) return null;
-  const names = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort();
+  const names = fs
+    .readdirSync(directory)
+    .filter((name) => name.endsWith(".json"))
+    .sort();
   if (names.length > MAX_REVIEWS) fail("Product Policy review directory exceeds its bounded audit limit.", "PRODUCT_POLICY_ARTIFACT_LIMIT");
   const matches = [];
   for (const name of names) {
     if (!REVIEW_ID.test(name.slice(0, -5))) fail("Product Policy review directory contains an unexpected artifact.", "INVALID_PRODUCT_POLICY_ARTIFACT");
-    const review = verifyProductPolicyReviewDecision(readJson(path.join(directory, name), "Product Policy ReviewDecision"), null, "", formatForVerifiedOwner(storage));
-    if (review.reviewDecisionId !== name.slice(0, -5)) fail("Product Policy ReviewDecision filename does not match its identity.", "PRODUCT_POLICY_ARTIFACT_IDENTITY_MISMATCH");
-    if (review.candidateId === candidate.candidateId) matches.push(verifyProductPolicyReviewDecision(review, candidate, candidate.projectId, formatForVerifiedOwner(storage)));
+    const review = verifyProductPolicyReviewDecision(
+      readJson(path.join(directory, name), "Product Policy ReviewDecision"),
+      null,
+      "",
+      formatForVerifiedOwner(storage),
+    );
+    if (review.reviewDecisionId !== name.slice(0, -5))
+      fail("Product Policy ReviewDecision filename does not match its identity.", "PRODUCT_POLICY_ARTIFACT_IDENTITY_MISMATCH");
+    if (review.candidateId === candidate.candidateId)
+      matches.push(verifyProductPolicyReviewDecision(review, candidate, candidate.projectId, formatForVerifiedOwner(storage)));
   }
   if (matches.length > 1) fail("Product Policy candidate has conflicting durable decisions.", "PRODUCT_POLICY_REVIEW_CONFLICT");
   return matches[0] || null;
 }
 
-export async function proposeProductPolicy({ root = ".", operation = "create", key, name = null, description = null, statement = null, appliesTo = null, governedBy = null, evidenceAnchors = [], explanation = "" } = {}) {
-  return (await withProjectMutationAsync({ root, scope: "onboarding-promotion" }, async () => {
+export async function proposeProductPolicy({
+  root = ".",
+  operation = "create",
+  key,
+  name = null,
+  description = null,
+  statement = null,
+  appliesTo = null,
+  governedBy = null,
+  evidenceAnchors = [],
+  explanation = "",
+} = {}) {
+  return await withProjectMutationAsync({ root, scope: "onboarding-promotion" }, async () => {
     const inspected = readyProject(root, "Product Policy proposal");
     const canon = readProductModelCanon({ projectRoot: inspected.project.projectRoot, storage: inspected.storage }).model;
     const normalizedOperation = requiredText(operation, "Policy operation", 16).toLowerCase();
-    if (!["create", "revise", "retire"].includes(normalizedOperation)) fail("Policy operation must be create, revise, or retire.", "INVALID_PRODUCT_POLICY_INPUT");
+    if (!["create", "revise", "retire"].includes(normalizedOperation))
+      fail("Policy operation must be create, revise, or retire.", "INVALID_PRODUCT_POLICY_INPUT");
     const policyKey = requiredText(key, "Policy key", 128);
-    const transition = nextPolicyModel({ baseModel: canon, operation: normalizedOperation, key: policyKey, name, description, statement, appliesTo, governedBy, storage: inspected.storage });
-    const candidate = verifyProductPolicyCandidate(buildCandidate({
-      inspected,
+    const transition = nextPolicyModel({
+      baseModel: canon,
       operation: normalizedOperation,
       key: policyKey,
-      baseModel: canon,
-      prior: transition.prior,
-      proposed: transition.proposed,
-      resultingModel: transition.resultingModel,
-      evidenceAnchors: bindLocalEvidence(inspected.project.projectRoot, evidenceAnchors),
-      explanation: optionalText(explanation, "Policy proposal explanation", 4000),
-    }), inspected.project.projectId, inspected.storage);
-    const entry = persistImmutable(candidateFile(inspected.project.projectRoot, candidate.candidateId, inspected.storage), candidate, (value) => verifyProductPolicyCandidate(value, inspected.project.projectId, inspected.storage), "Product Policy candidate");
+      name,
+      description,
+      statement,
+      appliesTo,
+      governedBy,
+      storage: inspected.storage,
+    });
+    const candidate = verifyProductPolicyCandidate(
+      buildCandidate({
+        inspected,
+        operation: normalizedOperation,
+        key: policyKey,
+        baseModel: canon,
+        prior: transition.prior,
+        proposed: transition.proposed,
+        resultingModel: transition.resultingModel,
+        evidenceAnchors: bindLocalEvidence(inspected.project.projectRoot, evidenceAnchors),
+        explanation: optionalText(explanation, "Policy proposal explanation", 4000),
+      }),
+      inspected.project.projectId,
+      inspected.storage,
+    );
+    const entry = persistImmutable(
+      candidateFile(inspected.project.projectRoot, candidate.candidateId, inspected.storage),
+      candidate,
+      (value) => verifyProductPolicyCandidate(value, inspected.project.projectId, inspected.storage),
+      "Product Policy candidate",
+    );
     return {
       status: "awaiting-review",
       file: entry.file,
@@ -256,7 +305,7 @@ export async function proposeProductPolicy({ root = ".", operation = "create", k
       ordinaryWorkBlocked: false,
       userAction: `Review exact candidate ${candidate.candidateId}; accepting changes Product Canon, rejecting only records the disposition.`,
     };
-  }));
+  });
 }
 
 export function readProductPolicyCandidate({ root = ".", candidateId } = {}) {
@@ -271,11 +320,11 @@ export function readProductPolicyReviewDecision({ root = ".", reviewDecisionId }
 
 async function refreshPolicyProjection(projectRoot, reviewDecisionId) {
   try {
-    (await readWorldModel({ root: projectRoot }));
+    await readWorldModel({ root: projectRoot });
     return await refreshWorldModel({ root: projectRoot, triggerKind: "manual", triggerEvidenceIds: [reviewDecisionId] });
   } catch (error) {
     if (!new Set(["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"]).has(error.code)) throw error;
-    return (await buildWorldModel({ root: projectRoot }));
+    return await buildWorldModel({ root: projectRoot });
   }
 }
 
@@ -289,13 +338,24 @@ export async function reviewProductPolicy({ root = ".", candidateId, disposition
       const inspected = readyProject(outer.project.projectRoot, "Product Policy review");
       const candidate = readProductPolicyCandidate({ root: inspected.project.projectRoot, candidateId }).candidate;
       if (candidate.sessionId !== inspected.state.sessionId) fail("Product Policy candidate belongs to another HEAD Session.", "PRODUCT_POLICY_SESSION_DRIFT");
-      const intended = verifyProductPolicyReviewDecision(buildReview({ candidate, disposition: normalizedDisposition, rationale: normalizedRationale, storage: inspected.storage }), candidate, inspected.project.projectId, inspected.storage);
+      const intended = verifyProductPolicyReviewDecision(
+        buildReview({ candidate, disposition: normalizedDisposition, rationale: normalizedRationale, storage: inspected.storage }),
+        candidate,
+        inspected.project.projectId,
+        inspected.storage,
+      );
       const existing = recordedReview(inspected.project.projectRoot, candidate, inspected.storage);
-      if (existing && existing.reviewDecisionId !== intended.reviewDecisionId) fail(`A different ReviewDecision is already durable for this candidate: ${existing.reviewDecisionId}`, "PRODUCT_POLICY_REVIEW_CONFLICT");
+      if (existing && existing.reviewDecisionId !== intended.reviewDecisionId)
+        fail(`A different ReviewDecision is already durable for this candidate: ${existing.reviewDecisionId}`, "PRODUCT_POLICY_REVIEW_CONFLICT");
       const review = existing || intended;
       const canon = readProductModelCanon({ projectRoot: inspected.project.projectRoot, storage: inspected.storage }).model;
       if (normalizedDisposition === "reject") {
-        const entry = persistImmutable(reviewFile(inspected.project.projectRoot, review.reviewDecisionId, inspected.storage), review, (value) => verifyProductPolicyReviewDecision(value, candidate, inspected.project.projectId, inspected.storage), "Product Policy ReviewDecision");
+        const entry = persistImmutable(
+          reviewFile(inspected.project.projectRoot, review.reviewDecisionId, inspected.storage),
+          review,
+          (value) => verifyProductPolicyReviewDecision(value, candidate, inspected.project.projectId, inspected.storage),
+          "Product Policy ReviewDecision",
+        );
         return { status: "rejected", inspected, candidate, review, reviewFile: entry.file, canonChanged: false };
       }
       const atBase = canon.productModelId === candidate.baseProductModelId && canon.productModelHash === candidate.baseProductModelHash;
@@ -304,14 +364,24 @@ export async function reviewProductPolicy({ root = ".", candidateId, disposition
       if (atBase && (inspected.state.activeRunId || inspected.state.pendingReview)) {
         fail("Product Policy acceptance cannot change Product Canon while a Run is active or awaiting result review.", "PRODUCT_POLICY_RUN_CONFLICT");
       }
-      const evidenceCheck = existing ? { status: "bound-by-durable-review", replayed: true }
+      const evidenceCheck = existing
+        ? { status: "bound-by-durable-review", replayed: true }
         : { ...revalidateLocalEvidence(inspected.project.projectRoot, candidate), replayed: false };
-      const entry = persistImmutable(reviewFile(inspected.project.projectRoot, review.reviewDecisionId, inspected.storage), review, (value) => verifyProductPolicyReviewDecision(value, candidate, inspected.project.projectId, inspected.storage), "Product Policy ReviewDecision");
+      const entry = persistImmutable(
+        reviewFile(inspected.project.projectRoot, review.reviewDecisionId, inspected.storage),
+        review,
+        (value) => verifyProductPolicyReviewDecision(value, candidate, inspected.project.projectId, inspected.storage),
+        "Product Policy ReviewDecision",
+      );
       const baseModel = normalizeProductModelDocument(candidate.baseProductModelDocument, inspected.storage);
       const resultModel = normalizeProductModelDocument(candidate.resultingProductModelDocument, inspected.storage);
       persistProductRevision(inspected.project.projectRoot, baseModel, inspected.storage);
       persistProductRevision(inspected.project.projectRoot, resultModel, inspected.storage);
-      if (atBase) atomicWrite(safeFile(inspected.project.projectRoot, relativeProjectArtifact(inspected.storage, "context", "product-model.json")), json(productModelDocument(resultModel)));
+      if (atBase)
+        atomicWrite(
+          safeFile(inspected.project.projectRoot, relativeProjectArtifact(inspected.storage, "context", "product-model.json")),
+          json(productModelDocument(resultModel)),
+        );
       return { status: "accepted", inspected, candidate, review, reviewFile: entry.file, canonChanged: atBase, evidenceCheck };
     });
   });
@@ -336,13 +406,22 @@ function acceptedPolicySuccessors(projectRoot, projectId, storage = null) {
   const directory = safeFile(projectRoot, relativeProjectArtifact(storage, "product-policy", "review-decisions"));
   const successors = new Map();
   if (!fs.existsSync(directory)) return successors;
-  const names = fs.readdirSync(directory).filter((name) => name.endsWith(".json")).sort();
+  const names = fs
+    .readdirSync(directory)
+    .filter((name) => name.endsWith(".json"))
+    .sort();
   if (names.length > MAX_REVIEWS) fail("Product Policy review directory exceeds its bounded audit limit.", "PRODUCT_POLICY_ARTIFACT_LIMIT");
   for (const name of names) {
     const reviewDecisionId = name.slice(0, -5);
     if (!REVIEW_ID.test(reviewDecisionId)) fail("Product Policy review directory contains an unexpected artifact.", "INVALID_PRODUCT_POLICY_ARTIFACT");
-    const review = verifyProductPolicyReviewDecision(readJson(path.join(directory, name), "Product Policy ReviewDecision"), null, projectId, formatForVerifiedOwner(storage));
-    if (review.reviewDecisionId !== reviewDecisionId) fail("Product Policy ReviewDecision filename does not match its identity.", "PRODUCT_POLICY_ARTIFACT_IDENTITY_MISMATCH");
+    const review = verifyProductPolicyReviewDecision(
+      readJson(path.join(directory, name), "Product Policy ReviewDecision"),
+      null,
+      projectId,
+      formatForVerifiedOwner(storage),
+    );
+    if (review.reviewDecisionId !== reviewDecisionId)
+      fail("Product Policy ReviewDecision filename does not match its identity.", "PRODUCT_POLICY_ARTIFACT_IDENTITY_MISMATCH");
     if (review.disposition !== "accept") continue;
     const candidate = readProductPolicyCandidateRecord({ root: projectRoot, candidateId: review.candidateId, storage }).candidate;
     verifyProductPolicyReviewDecision(review, candidate, projectId, formatForVerifiedOwner(storage));
@@ -371,16 +450,30 @@ export function inspectProductPolicyStatus({ root = ".", candidateId } = {}) {
   const candidate = readProductPolicyCandidate({ root: inspected.project.projectRoot, candidateId }).candidate;
   const review = recordedReview(inspected.project.projectRoot, candidate, inspected.storage);
   const canon = readProductModelCanon({ projectRoot: inspected.project.projectRoot, storage: inspected.storage }).model;
-  const superseded = review?.disposition === "accept" && reachesProductModel(
-    acceptedPolicySuccessors(inspected.project.projectRoot, inspected.project.projectId, inspected.storage),
-    candidate.resultingProductModelId,
-    canon.productModelId,
-  );
-  const canonState = canon.productModelId === candidate.resultingProductModelId ? "result-current"
-    : superseded ? "superseded" : canon.productModelId === candidate.baseProductModelId ? "base-current" : "diverged";
-  const status = !review ? "awaiting-review" : review.disposition === "reject" ? "rejected"
-    : canonState === "result-current" ? "accepted"
-      : canonState === "superseded" ? "accepted-historical" : "review-recorded-application-pending";
+  const superseded =
+    review?.disposition === "accept" &&
+    reachesProductModel(
+      acceptedPolicySuccessors(inspected.project.projectRoot, inspected.project.projectId, inspected.storage),
+      candidate.resultingProductModelId,
+      canon.productModelId,
+    );
+  const canonState =
+    canon.productModelId === candidate.resultingProductModelId
+      ? "result-current"
+      : superseded
+        ? "superseded"
+        : canon.productModelId === candidate.baseProductModelId
+          ? "base-current"
+          : "diverged";
+  const status = !review
+    ? "awaiting-review"
+    : review.disposition === "reject"
+      ? "rejected"
+      : canonState === "result-current"
+        ? "accepted"
+        : canonState === "superseded"
+          ? "accepted-historical"
+          : "review-recorded-application-pending";
   return {
     status,
     candidateId: candidate.candidateId,

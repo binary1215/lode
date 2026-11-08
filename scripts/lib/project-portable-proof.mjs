@@ -13,23 +13,14 @@ const fail = () => {
 };
 const sha = (value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const shape = (value, fields) =>
-  value &&
-  typeof value === "object" &&
-  !Array.isArray(value) &&
-  Object.keys(value).sort().join(",") === fields.slice().sort().join(",");
+  value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join(",") === fields.slice().sort().join(",");
 const invariant = (value) => {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail();
   const { projectRoot, location, ...rest } = value;
   return JSON.stringify(rest);
 };
 
-export function verifyPortableProjectLocation(
-  root,
-  directory,
-  project,
-  verifySourceLocation,
-  readOriginal = null,
-) {
+export function verifyPortableProjectLocation(root, directory, project, verifySourceLocation, readOriginal = null) {
   const originalBytes = (relative) => {
     if (readOriginal) return readOriginal(relative);
     const file = copiedProjectFile(root, relative),
@@ -44,10 +35,7 @@ export function verifyPortableProjectLocation(
   };
   const location = project?.location;
   if (location?.kind !== PORTABLE_PROJECT_LOCATION_KIND || !sha(location.admissionDigest)) fail();
-  const receipt = exact(
-    directory + "/project-location/portable/" + location.admissionDigest + ".json",
-    location.admissionDigest,
-  );
+  const receipt = exact(directory + "/project-location/portable/" + location.admissionDigest + ".json", location.admissionDigest);
   if (
     !shape(receipt, [
       "schemaVersion",
@@ -93,22 +81,14 @@ export function verifyPortableProjectLocation(
       !Number.isSafeInteger(entry.bytes) ||
       entry.bytes < 0 ||
       !sha(entry.sha256) ||
-      entry.path
-        .split("/")
-        .some((part) => !part || part === "." || part === ".." || /[\\:\u0000-\u001f]/.test(part))
+      entry.path.split("/").some((part) => !part || part === "." || part === ".." || /[\\:\u0000-\u001f]/.test(part))
     )
       fail();
     names.add(entry.path.toLowerCase());
   }
-  const source = exact(
-    directory + "/project-location/history/" + receipt.sourceProjectDigest + ".json",
-    receipt.sourceProjectDigest,
-  );
+  const source = exact(directory + "/project-location/history/" + receipt.sourceProjectDigest + ".json", receipt.sourceProjectDigest);
   if (source.projectId !== project.projectId || invariant(source) !== invariant(project)) fail();
-  const manifest = exact(
-    directory + "/project-location/portable-bundles/" + receipt.bundleManifestDigest + ".json",
-    receipt.bundleManifestDigest,
-  );
+  const manifest = exact(directory + "/project-location/portable-bundles/" + receipt.bundleManifestDigest + ".json", receipt.bundleManifestDigest);
   if (
     manifest.kind !== "PortableProjectBundle" ||
     manifest.projectId !== project.projectId ||
@@ -142,18 +122,13 @@ export function verifyPortableProjectLocation(
       if (current.projectRoot !== receipt.targetRoot) fail();
       break;
     }
-    current = exact(
-      directory + "/project-location/history/" + link.previousProjectDigest + ".json",
-      link.previousProjectDigest,
-    );
+    current = exact(directory + "/project-location/history/" + link.previousProjectDigest + ".json", link.previousProjectDigest);
   }
   return {
     origin: receipt.origin,
     identityRoot: sourceProof.identityRoot,
     roots: [...new Set([...roots, ...sourceProof.roots])],
-    digest: hash(
-      JSON.stringify({ project, admissionDigest: location.admissionDigest, history: [...seen] }),
-    ),
+    digest: hash(JSON.stringify({ project, admissionDigest: location.admissionDigest, history: [...seen] })),
     locationKind: PORTABLE_PROJECT_LOCATION_KIND,
     copyAdmission: receipt,
     copyAdmissionDigest: location.admissionDigest,

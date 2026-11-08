@@ -10,14 +10,7 @@ export const ONBOARDING_PRODUCT_REVISION_DIRECTORY = ".head/onboarding/product-m
 export const ONBOARDING_STORAGE_DIRECTORY = ".head/onboarding/storage-selections";
 export const SESSION_RECORD_DIRECTORY = ".head/sessions/records";
 
-const PHASES = new Set([
-  "initialized",
-  "awaiting-evidence",
-  "awaiting-review",
-  "revision-required",
-  "rejected",
-  "ready",
-]);
+const PHASES = new Set(["initialized", "awaiting-evidence", "awaiting-review", "revision-required", "rejected", "ready"]);
 
 const fail = (message, code = "ONBOARDING_CONTRACT_ERROR") => {
   const error = new Error(message);
@@ -28,7 +21,11 @@ const fail = (message, code = "ONBOARDING_CONTRACT_ERROR") => {
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   }
   return value;
 }
@@ -106,20 +103,22 @@ function secretReferenceNames(value) {
     if (source[field] == null) continue;
     const name = requiredText(source[field], `GraphDB secretReferenceNames.${field}`);
     if (!/^[A-Z][A-Z0-9_]{2,127}$/.test(name)) {
-      fail(
-        `GraphDB secretReferenceNames.${field} must be an environment-style reference name, not a credential value.`,
-        "INVALID_ONBOARDING_SECRET_REFERENCE",
-      );
+      fail(`GraphDB secretReferenceNames.${field} must be an environment-style reference name, not a credential value.`, "INVALID_ONBOARDING_SECRET_REFERENCE");
     }
-    if (new Set([
-      "NODE_OPTIONS", "NODE_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH",
-      "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH",
-      "GODEBUG", "GOTRACEBACK",
-    ]).has(name)) {
-      fail(
-        `GraphDB secretReferenceNames.${field} cannot name a child-process control variable.`,
-        "INVALID_ONBOARDING_SECRET_REFERENCE",
-      );
+    if (
+      new Set([
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        "GODEBUG",
+        "GOTRACEBACK",
+      ]).has(name)
+    ) {
+      fail(`GraphDB secretReferenceNames.${field} cannot name a child-process control variable.`, "INVALID_ONBOARDING_SECRET_REFERENCE");
     }
     result[field] = name;
   }
@@ -146,8 +145,11 @@ export function buildStorageSelection({ projectId, selection = null } = {}, stor
   } else {
     const endpoint = requiredText(source.endpoint, "GraphDB endpoint");
     let parsed;
-    try { parsed = new URL(endpoint); }
-    catch { fail("GraphDB endpoint must be an absolute HTTP or HTTPS URL.", "INVALID_ONBOARDING_GRAPHDB_ENDPOINT"); }
+    try {
+      parsed = new URL(endpoint);
+    } catch {
+      fail("GraphDB endpoint must be an absolute HTTP or HTTPS URL.", "INVALID_ONBOARDING_GRAPHDB_ENDPOINT");
+    }
     if (!new Set(["http:", "https:"]).has(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
       fail(
         "GraphDB endpoint must use HTTP(S) and cannot embed credentials, query parameters, or fragments.",
@@ -165,24 +167,29 @@ export function buildStorageSelection({ projectId, selection = null } = {}, stor
       capabilityStatus: "pending-unverified-adapter",
     };
   }
-  return withIdentity({
-    schemaVersion: 1,
-    kind: "OnboardingStorageSelection",
-    protocol: { name: format.protocol("head-agent-core-onboarding-storage"), version: ONBOARDING_PROTOCOL_VERSION },
-    projectId: normalizedProjectId,
-    mode,
-    local: {
-      adapterKind: "local-json",
-      authority: "derived-evidence-only",
-      rebuildable: true,
-      uniqueAuthority: false,
+  return withIdentity(
+    {
+      schemaVersion: 1,
+      kind: "OnboardingStorageSelection",
+      protocol: { name: format.protocol("head-agent-core-onboarding-storage"), version: ONBOARDING_PROTOCOL_VERSION },
+      projectId: normalizedProjectId,
+      mode,
+      local: {
+        adapterKind: "local-json",
+        authority: "derived-evidence-only",
+        rebuildable: true,
+        uniqueAuthority: false,
+      },
+      graphdb,
+      localFallback: true,
+      credentialValuesPersisted: false,
+      instructionAuthority: false,
+      promotionAuthority: false,
     },
-    graphdb,
-    localFallback: true,
-    credentialValuesPersisted: false,
-    instructionAuthority: false,
-    promotionAuthority: false,
-  }, "onboarding-storage", "storageSelectionId", "storageSelectionHash");
+    "onboarding-storage",
+    "storageSelectionId",
+    "storageSelectionHash",
+  );
 }
 
 export function verifyStorageSelection(document, projectId = "", storage) {
@@ -197,15 +204,21 @@ export function verifyStorageSelection(document, projectId = "", storage) {
   }
   const format = familyFormatForOriginal("head-agent-core-onboarding-storage", verified, storage);
   if (!format) fail("Onboarding storage selection fields are invalid.", "INVALID_ONBOARDING_STORAGE_SELECTION");
-  const rebuilt = buildStorageSelection({
-    projectId: verified.projectId,
-    selection: verified.mode === "local" ? { mode: "local" } : {
-      mode: "graphdb",
-      endpoint: verified.graphdb?.endpoint,
-      database: verified.graphdb?.database,
-      secretReferenceNames: verified.graphdb?.secretReferenceNames,
+  const rebuilt = buildStorageSelection(
+    {
+      projectId: verified.projectId,
+      selection:
+        verified.mode === "local"
+          ? { mode: "local" }
+          : {
+              mode: "graphdb",
+              endpoint: verified.graphdb?.endpoint,
+              database: verified.graphdb?.database,
+              secretReferenceNames: verified.graphdb?.secretReferenceNames,
+            },
     },
-  }, format);
+    format,
+  );
   if (onboardingCanonicalJson(rebuilt) !== onboardingCanonicalJson(verified)) {
     fail("Onboarding storage selection fields are invalid.", "INVALID_ONBOARDING_STORAGE_SELECTION");
   }
@@ -217,18 +230,23 @@ export function buildSessionRecord({ project, sessionState } = {}, storage) {
   if (!project || typeof project !== "object" || !sessionState || typeof sessionState !== "object") {
     fail("Project and session state are required.", "INVALID_ONBOARDING_SESSION");
   }
-  return withIdentity({
-    schemaVersion: 1,
-    kind: format.kind("HeadSession"),
-    protocol: { name: format.protocol("head-agent-core-session"), version: ONBOARDING_PROTOCOL_VERSION },
-    projectId: requiredText(project.projectId, "project.projectId"),
-    sessionId: requiredText(sessionState.sessionId, "sessionState.sessionId"),
-    createdAt: optionalText(project.createdAt || sessionState.updatedAt, "Session createdAt"),
-    providerReferences: [],
-    identityBoundary: format.value("project-scoped-head-session-not-provider-conversation"),
-    instructionAuthority: false,
-    promotionAuthority: false,
-  }, "session-record", "sessionRecordId", "sessionRecordHash");
+  return withIdentity(
+    {
+      schemaVersion: 1,
+      kind: format.kind("HeadSession"),
+      protocol: { name: format.protocol("head-agent-core-session"), version: ONBOARDING_PROTOCOL_VERSION },
+      projectId: requiredText(project.projectId, "project.projectId"),
+      sessionId: requiredText(sessionState.sessionId, "sessionState.sessionId"),
+      createdAt: optionalText(project.createdAt || sessionState.updatedAt, "Session createdAt"),
+      providerReferences: [],
+      identityBoundary: format.value("project-scoped-head-session-not-provider-conversation"),
+      instructionAuthority: false,
+      promotionAuthority: false,
+    },
+    "session-record",
+    "sessionRecordId",
+    "sessionRecordHash",
+  );
 }
 
 export function verifySessionRecord(document, { projectId = "", sessionId = "", storage } = {}) {
@@ -243,31 +261,37 @@ export function verifySessionRecord(document, { projectId = "", sessionId = "", 
   }
   const format = familyFormatForOriginal("head-agent-core-session", verified, storage);
   if (!format) fail("HEAD Session record fields are invalid.", "INVALID_ONBOARDING_SESSION");
-  const rebuilt = buildSessionRecord({
-    project: { projectId: verified.projectId, createdAt: verified.createdAt },
-    sessionState: { sessionId: verified.sessionId },
-  }, format);
+  const rebuilt = buildSessionRecord(
+    {
+      project: { projectId: verified.projectId, createdAt: verified.createdAt },
+      sessionState: { sessionId: verified.sessionId },
+    },
+    format,
+  );
   if (onboardingCanonicalJson(rebuilt) !== onboardingCanonicalJson(verified)) {
     fail("HEAD Session record fields are invalid.", "INVALID_ONBOARDING_SESSION");
   }
   return verified;
 }
 
-function buildOnboardingStateDocument({
-  projectId,
-  sessionId,
-  phase = "initialized",
-  stateRevision = 0,
-  storageSelectionId,
-  worldModelId = null,
-  sourceSnapshotId = null,
-  candidateSetId = null,
-  latestReviewDecisionId = null,
-  productModelId = null,
-  previousProductModelId = null,
-  migration = "native",
-  updatedAt,
-} = {}, { protocolVersion, reviewField, storage }) {
+function buildOnboardingStateDocument(
+  {
+    projectId,
+    sessionId,
+    phase = "initialized",
+    stateRevision = 0,
+    storageSelectionId,
+    worldModelId = null,
+    sourceSnapshotId = null,
+    candidateSetId = null,
+    latestReviewDecisionId = null,
+    productModelId = null,
+    previousProductModelId = null,
+    migration = "native",
+    updatedAt,
+  } = {},
+  { protocolVersion, reviewField, storage },
+) {
   const format = formatForVerifiedOwner(storage);
   const normalizedPhase = requiredText(phase, "Onboarding phase");
   if (!PHASES.has(normalizedPhase)) fail("Onboarding phase is invalid.", "INVALID_ONBOARDING_PHASE");
@@ -327,8 +351,10 @@ export function verifyOnboardingState(document, { projectId = "", sessionId = ""
   const format = familyFormatForOriginal("head-agent-core-onboarding", document, storage);
   const stateVersion = format ? document.protocol.version : "";
   if (stateVersion !== ONBOARDING_STATE_PROTOCOL_VERSION) {
-    fail("Unsupported onboarding state requires an explicit standalone migration or recovery operation.", stateVersion === ONBOARDING_PROTOCOL_VERSION
-      ? "ONBOARDING_LEGACY_STATE_REQUIRES_MIGRATOR" : "INVALID_ONBOARDING_STATE");
+    fail(
+      "Unsupported onboarding state requires an explicit standalone migration or recovery operation.",
+      stateVersion === ONBOARDING_PROTOCOL_VERSION ? "ONBOARDING_LEGACY_STATE_REQUIRES_MIGRATOR" : "INVALID_ONBOARDING_STATE",
+    );
   }
   const stateInput = {
     projectId: document.projectId,
@@ -355,15 +381,18 @@ export function verifyOnboardingState(document, { projectId = "", sessionId = ""
 export function initialOnboardingDocuments({ project, sessionState, productModelId, updatedAt, storage: inputStorage } = {}, storage = inputStorage) {
   const sessionRecord = buildSessionRecord({ project, sessionState }, storage);
   const storageSelection = buildStorageSelection({ projectId: project.projectId, selection: { mode: "local" } }, storage);
-  const state = buildOnboardingState({
-    projectId: project.projectId,
-    sessionId: sessionState.sessionId,
-    phase: "initialized",
-    stateRevision: 0,
-    storageSelectionId: storageSelection.storageSelectionId,
-    productModelId,
-    migration: "native",
-    updatedAt,
-  }, storage);
+  const state = buildOnboardingState(
+    {
+      projectId: project.projectId,
+      sessionId: sessionState.sessionId,
+      phase: "initialized",
+      stateRevision: 0,
+      storageSelectionId: storageSelection.storageSelectionId,
+      productModelId,
+      migration: "native",
+      updatedAt,
+    },
+    storage,
+  );
   return { sessionRecord, storageSelection, state };
 }

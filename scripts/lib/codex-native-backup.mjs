@@ -2,18 +2,12 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { iterateSqliteStorageRows } from "./native-sqlite-values.mjs";
-import {
-  inspectCodexNativeDatabase,
-  codexNativePortabilityProfile,
-} from "./codex-native-portability.mjs";
-const profile = codexNativePortabilityProfile().databases.find(
-  (db) => db.file === "thread_history_1.sqlite",
-);
+import { inspectCodexNativeDatabase, codexNativePortabilityProfile } from "./codex-native-portability.mjs";
+const profile = codexNativePortabilityProfile().databases.find((db) => db.file === "thread_history_1.sqlite");
 const fail = (code) => {
   throw Object.assign(new Error(code), { code });
 };
-export const nativeSqlitePath = (file) =>
-  process.platform === "win32" ? path.toNamespacedPath(file) : file;
+export const nativeSqlitePath = (file) => (process.platform === "win32" ? path.toNamespacedPath(file) : file);
 
 // A streamed logical digest of the complete before-history DB. No row values
 // are logged, copied to Core or accumulated in memory. Only pinned table and
@@ -50,8 +44,7 @@ export function verifyCodexNativeBeforeBackup(file, basis, expectedBeforeDigest)
     try {
       db.close();
     } catch (error) {
-      if (primary)
-        primary.nativeCleanupFailure = error.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
+      if (primary) primary.nativeCleanupFailure = error.code || "NATIVE_CODEX_DATABASE_CLOSE_FAILED";
       else throw error;
     }
   }

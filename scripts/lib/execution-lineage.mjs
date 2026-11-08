@@ -33,7 +33,11 @@ const digest = (value) => crypto.createHash("sha256").update(value).digest("hex"
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   }
   return value;
 }
@@ -163,8 +167,9 @@ function persistArtifact(root, artifact, persist, storage) {
     const existing = readLineageArtifact({ root, artifactId });
     return { status: "existing", file, artifact: existing.artifact };
   }
-  try { atomicCreateArtifact(file, json(artifact)); }
-  catch (error) {
+  try {
+    atomicCreateArtifact(file, json(artifact));
+  } catch (error) {
     if (error.code !== "EEXIST") throw error;
     return { status: "existing", file, artifact: readLineageArtifact({ root, artifactId }).artifact };
   }
@@ -177,8 +182,11 @@ export function readLineageArtifact({ root = ".", artifactId } = {}) {
   const file = artifactFile(project.projectRoot, definition, artifactId, projectStorage.get(project));
   if (!fs.existsSync(file)) fail(`Lineage artifact not found: ${artifactId}`, "LINEAGE_ARTIFACT_NOT_FOUND");
   let artifact;
-  try { artifact = JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`Lineage artifact is invalid JSON: ${error.message}`, "INVALID_LINEAGE_ARTIFACT"); }
+  try {
+    artifact = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(`Lineage artifact is invalid JSON: ${error.message}`, "INVALID_LINEAGE_ARTIFACT");
+  }
   verifyLineageArtifactOriginal({ artifact, artifactId, projectId: project.projectId, storage: projectStorage.get(project) });
   return { status: "verified", file, artifact };
 }
@@ -193,8 +201,12 @@ function verifiedFreshLodeReview(review, storage) {
   const format = formatForVerifiedOwner(storage);
   // Legacy review validation historically used kind/hash/prefix, not a new
   // protocol/version readiness gate. Only the new family adds its tuple guard.
-  if (!review || review.kind !== format.kind("FreshHeadReview")
-    || format.dialect === "lode" && !familyFormatForOriginal("head-agent-core-fresh-head-review", review, storage)) fail("Fresh HEAD review context is required.", "INVALID_FRESH_HEAD_REVIEW");
+  if (
+    !review ||
+    review.kind !== format.kind("FreshHeadReview") ||
+    (format.dialect === "lode" && !familyFormatForOriginal("head-agent-core-fresh-head-review", review, storage))
+  )
+    fail("Fresh HEAD review context is required.", "INVALID_FRESH_HEAD_REVIEW");
   const recordedHash = review.reviewContextHash;
   const recordedId = review.reviewContextId;
   const payload = { ...review };
@@ -240,16 +252,12 @@ export function buildFreshLodeReview({ root = ".", wholePlanId, resultPacketId, 
     },
     authority: project.authority,
     reviewProtocol: {
-      question: "Does the result deliver the user's intended outcome to its next actual consumer? Which evidence supports that claim, what remains unverified, and does the ExecutionContract still serve the WholePlanSnapshot objective and invariants rather than narrowing them? Distinguish source changes, fixture/test success, installation, and actual Host behavior; require only evidence appropriate to this task's claims.",
+      question:
+        "Does the result deliver the user's intended outcome to its next actual consumer? Which evidence supports that claim, what remains unverified, and does the ExecutionContract still serve the WholePlanSnapshot objective and invariants rather than narrowing them? Distinguish source changes, fixture/test success, installation, and actual Host behavior; require only evidence appropriate to this task's claims.",
       allowedDispositions: ["accept", "revise", "expand", "rollback", "escalate"],
       requiredReturn: ["disposition", "rationale", "nextActions"],
     },
-    excludedContext: [
-      "executor-transcript",
-      "raw-failure-log",
-      "provider-session-state",
-      "unpromoted-repository-instructions",
-    ],
+    excludedContext: ["executor-transcript", "raw-failure-log", "provider-session-state", "unpromoted-repository-instructions"],
   };
   const reviewContextHash = digest(canonicalJson(payload));
   const review = {
@@ -288,12 +296,8 @@ function createNextWholePlanSnapshotUncoordinated({ root = ".", reviewDecisionId
     fail("Only revise or expand ReviewDecisions may create a next WholePlanSnapshot.", "NEXT_PLAN_NOT_ALLOWED");
   }
   const previous = requireArtifact(project.projectRoot, review.wholePlanId, "WholePlanSnapshot");
-  const nextInvariants = invariants == null
-    ? previous.invariants || []
-    : stringList(invariants, "Whole-plan invariants");
-  const nextSources = sources == null
-    ? previous.sources || []
-    : recordList(sources, "Whole-plan sources");
+  const nextInvariants = invariants == null ? previous.invariants || [] : stringList(invariants, "Whole-plan invariants");
+  const nextSources = sources == null ? previous.sources || [] : recordList(sources, "Whole-plan sources");
   const artifact = buildArtifact({
     project,
     kind: "WholePlanSnapshot",
@@ -314,7 +318,17 @@ function createNextWholePlanSnapshotUncoordinated({ root = ".", reviewDecisionId
   return persistArtifact(project.projectRoot, artifact, persist, projectStorage.get(project));
 }
 
-function createExecutionContractUncoordinated({ root = ".", wholePlanId, capsuleId, scope, acceptanceCriteria, constraints = [], allowedActions = [], forbiddenActions = [], persist = true } = {}) {
+function createExecutionContractUncoordinated({
+  root = ".",
+  wholePlanId,
+  capsuleId,
+  scope,
+  acceptanceCriteria,
+  constraints = [],
+  allowedActions = [],
+  forbiddenActions = [],
+  persist = true,
+} = {}) {
   const project = projectForWrite(root);
   const planId = requiredText(wholePlanId, "Whole-plan id");
   const contextId = requiredText(capsuleId, "Context Capsule id");
@@ -345,7 +359,18 @@ function createExecutionContractUncoordinated({ root = ".", wholePlanId, capsule
   return persistArtifact(project.projectRoot, artifact, persist, projectStorage.get(project));
 }
 
-function createResultPacketUncoordinated({ root = ".", executionContractId, outcome, evidence, planDelta = "", impactRadius = [], verification, unknowns = [], knowledgeProposals = [], persist = true } = {}) {
+function createResultPacketUncoordinated({
+  root = ".",
+  executionContractId,
+  outcome,
+  evidence,
+  planDelta = "",
+  impactRadius = [],
+  verification,
+  unknowns = [],
+  knowledgeProposals = [],
+  persist = true,
+} = {}) {
   const project = projectForWrite(root);
   const contractId = requiredText(executionContractId, "Execution Contract id");
   const contract = requireArtifact(project.projectRoot, contractId, "ExecutionContract");
@@ -376,7 +401,17 @@ function createResultPacketUncoordinated({ root = ".", executionContractId, outc
   return persistArtifact(project.projectRoot, artifact, persist, projectStorage.get(project));
 }
 
-function createReviewDecisionUncoordinated({ root = ".", wholePlanId, resultPacketId, reviewContext, disposition, rationale, nextActions = [], knowledgeProposalRecommendations = [], persist = true } = {}) {
+function createReviewDecisionUncoordinated({
+  root = ".",
+  wholePlanId,
+  resultPacketId,
+  reviewContext,
+  disposition,
+  rationale,
+  nextActions = [],
+  knowledgeProposalRecommendations = [],
+  persist = true,
+} = {}) {
   const project = projectForWrite(root);
   const planId = requiredText(wholePlanId, "Whole-plan id");
   const resultId = requiredText(resultPacketId, "Result Packet id");
@@ -403,10 +438,7 @@ function createReviewDecisionUncoordinated({ root = ".", wholePlanId, resultPack
       disposition: normalizedDisposition,
       rationale: requiredText(rationale, "Review rationale"),
       nextActions: stringList(nextActions, "Review next actions"),
-      knowledgeProposalRecommendations: knowledgeRecommendations(
-        knowledgeProposalRecommendations,
-        result.knowledgeProposals || [],
-      ),
+      knowledgeProposalRecommendations: knowledgeRecommendations(knowledgeProposalRecommendations, result.knowledgeProposals || []),
     },
     parents: [
       { relation: "reviews-against", targetId: planId },
@@ -421,28 +453,38 @@ function createReviewDecisionUncoordinated({ root = ".", wholePlanId, resultPack
 export { buildFreshLodeReview as buildFreshHeadReview };
 
 export function createWholePlanSnapshot(options = {}, ...rest) {
-  return options.persist === false ? createWholePlanSnapshotUncoordinated(options, ...rest) : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createWholePlanSnapshotUncoordinated(options, ...rest));
+  return options.persist === false
+    ? createWholePlanSnapshotUncoordinated(options, ...rest)
+    : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createWholePlanSnapshotUncoordinated(options, ...rest));
 }
 
 export function createNextWholePlanSnapshot(options = {}, ...rest) {
-  return options.persist === false ? createNextWholePlanSnapshotUncoordinated(options, ...rest) : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createNextWholePlanSnapshotUncoordinated(options, ...rest));
+  return options.persist === false
+    ? createNextWholePlanSnapshotUncoordinated(options, ...rest)
+    : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createNextWholePlanSnapshotUncoordinated(options, ...rest));
 }
 
 export function createExecutionContract(options = {}, ...rest) {
-  return options.persist === false ? createExecutionContractUncoordinated(options, ...rest) : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createExecutionContractUncoordinated(options, ...rest));
+  return options.persist === false
+    ? createExecutionContractUncoordinated(options, ...rest)
+    : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createExecutionContractUncoordinated(options, ...rest));
 }
 
 export function createResultPacket(options = {}, ...rest) {
-  return options.persist === false ? createResultPacketUncoordinated(options, ...rest) : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createResultPacketUncoordinated(options, ...rest));
+  return options.persist === false
+    ? createResultPacketUncoordinated(options, ...rest)
+    : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createResultPacketUncoordinated(options, ...rest));
 }
 
 export function createReviewDecision(options = {}, ...rest) {
-  return options.persist === false ? createReviewDecisionUncoordinated(options, ...rest) : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createReviewDecisionUncoordinated(options, ...rest));
+  return options.persist === false
+    ? createReviewDecisionUncoordinated(options, ...rest)
+    : withSnapshotReferences({ root: options.root ?? ".", storage: options.storage }, () => createReviewDecisionUncoordinated(options, ...rest));
 }
 
 export function lineageArtifactRelativePath(artifactId, directory) {
   if (![".lode", ".head"].includes(directory)) fail("Unknown lineage format.", "INVALID_LINEAGE_ID");
-  return [directory, "lineage", definitionForId(artifactId).directory, artifactId+".json"].join("/");
+  return [directory, "lineage", definitionForId(artifactId).directory, artifactId + ".json"].join("/");
 }
 
 export function verifyLineageArtifactOriginal({ artifact, artifactId, projectId, storage }) {

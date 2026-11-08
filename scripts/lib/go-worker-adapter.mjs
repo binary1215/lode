@@ -36,15 +36,16 @@ const TARGETS = Object.freeze({
 });
 const OPERATION_PATTERN = /^[a-z][a-z0-9.-]{2,127}\.v[1-9][0-9]*$/;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
-const RECOVERABLE_NATIVE_CODES = new Set([
-  "GO_WORKER_NOT_AVAILABLE",
-  "GO_WORKER_SPAWN_FAILED",
-  "GO_WORKER_CRASHED",
-  "GO_WORKER_STDIN_FAILED",
-]);
+const RECOVERABLE_NATIVE_CODES = new Set(["GO_WORKER_NOT_AVAILABLE", "GO_WORKER_SPAWN_FAILED", "GO_WORKER_CRASHED", "GO_WORKER_STDIN_FAILED"]);
 const DIAGNOSTIC_FIELDS = new Set([
-  "backend", "adapterName", "executionMode", "fallbackUsed", "fallbackReasonCode",
-  "workerPid", "workerRelativePath", "workerSha256",
+  "backend",
+  "adapterName",
+  "executionMode",
+  "fallbackUsed",
+  "fallbackReasonCode",
+  "workerPid",
+  "workerRelativePath",
+  "workerSha256",
 ]);
 
 const fail = (message, code = "GO_WORKER_ERROR", details = null) => {
@@ -56,7 +57,12 @@ const fail = (message, code = "GO_WORKER_ERROR", details = null) => {
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   return value;
 }
 
@@ -77,7 +83,8 @@ function assertFields(value, allowed, label) {
   const keys = Object.keys(value);
   const unexpected = keys.filter((key) => !allowed.includes(key));
   const missing = allowed.filter((key) => !keys.includes(key));
-  if (unexpected.length || missing.length) fail(`${label} fields are invalid.`, "INVALID_GO_WORKER_MANIFEST", { unexpected: unexpected.sort(), missing: missing.sort() });
+  if (unexpected.length || missing.length)
+    fail(`${label} fields are invalid.`, "INVALID_GO_WORKER_MANIFEST", { unexpected: unexpected.sort(), missing: missing.sort() });
 }
 
 function normalizedRelativePath(value, label) {
@@ -85,7 +92,8 @@ function normalizedRelativePath(value, label) {
     fail(`${label} must be a normalized relative path.`, "INVALID_GO_WORKER_MANIFEST");
   }
   const normalized = path.posix.normalize(value);
-  if (normalized !== value || normalized === "." || normalized === ".." || normalized.startsWith("../")) fail(`${label} escapes its manifest directory.`, "INVALID_GO_WORKER_MANIFEST");
+  if (normalized !== value || normalized === "." || normalized === ".." || normalized.startsWith("../"))
+    fail(`${label} escapes its manifest directory.`, "INVALID_GO_WORKER_MANIFEST");
   return value;
 }
 
@@ -141,48 +149,105 @@ export function createGoWorkerManifest({ platform, arch, binaryFile, manifestDir
   const relativePath = path.relative(root, file).replaceAll("\\", "/");
   normalizedRelativePath(relativePath, "binary.relativePath");
   const normalizedOperations = [...operations].sort(compareText);
-  if (normalizedOperations.length === 0 || new Set(normalizedOperations).size !== normalizedOperations.length
-    || normalizedOperations.some((operation) => !OPERATION_PATTERN.test(operation))) fail("Go worker operations are invalid.", "INVALID_GO_WORKER_MANIFEST");
-  return validateGoWorkerManifest(withManifestIdentity(manifestPayload({
-    target: { platform: target.platform, arch: target.arch, directory: target.directory },
-    binary: {
-      relativePath,
-      sha256: digest(fs.readFileSync(file)),
-      size: stat.size,
-    },
-    operations: normalizedOperations,
-  })), { platform, arch });
+  if (
+    normalizedOperations.length === 0 ||
+    new Set(normalizedOperations).size !== normalizedOperations.length ||
+    normalizedOperations.some((operation) => !OPERATION_PATTERN.test(operation))
+  )
+    fail("Go worker operations are invalid.", "INVALID_GO_WORKER_MANIFEST");
+  return validateGoWorkerManifest(
+    withManifestIdentity(
+      manifestPayload({
+        target: { platform: target.platform, arch: target.arch, directory: target.directory },
+        binary: {
+          relativePath,
+          sha256: digest(fs.readFileSync(file)),
+          size: stat.size,
+        },
+        operations: normalizedOperations,
+      }),
+    ),
+    { platform, arch },
+  );
 }
 
 export function validateGoWorkerManifest(manifest, { platform = process.platform, arch = process.arch } = {}) {
-  assertFields(manifest, ["schemaVersion", "kind", "manifestVersion", "workerProtocolVersion", "target", "binary", "operations", "processModel", "authority", "manifestId", "manifestHash"], "Go worker manifest");
+  assertFields(
+    manifest,
+    [
+      "schemaVersion",
+      "kind",
+      "manifestVersion",
+      "workerProtocolVersion",
+      "target",
+      "binary",
+      "operations",
+      "processModel",
+      "authority",
+      "manifestId",
+      "manifestHash",
+    ],
+    "Go worker manifest",
+  );
   const target = targetFor(platform, arch, manifest.kind === "HeadAgentWorkerManifest");
   assertFields(manifest.target, ["platform", "arch", "directory"], "Go worker manifest target");
   assertFields(manifest.binary, ["relativePath", "sha256", "size"], "Go worker manifest binary");
   assertFields(manifest.processModel, ["stdio", "descendants", "network", "projectWrites"], "Go worker manifest process model");
-  assertFields(manifest.authority, ["kind", "instructionAuthority", "promotionAuthority", "controlAuthority", "mutatesProject", "mutatesCanon"], "Go worker manifest authority");
-  if (manifest.schemaVersion !== 1 || !["HeadAgentWorkerManifest", "LodeAgentWorkerManifest"].includes(manifest.kind) || manifest.manifestVersion !== GO_WORKER_MANIFEST_VERSION
-    || manifest.workerProtocolVersion !== WORKER_PROTOCOL_VERSION
-    || canonicalJson(manifest.target) !== canonicalJson({ platform: target.platform, arch: target.arch, directory: target.directory })) {
+  assertFields(
+    manifest.authority,
+    ["kind", "instructionAuthority", "promotionAuthority", "controlAuthority", "mutatesProject", "mutatesCanon"],
+    "Go worker manifest authority",
+  );
+  if (
+    manifest.schemaVersion !== 1 ||
+    !["HeadAgentWorkerManifest", "LodeAgentWorkerManifest"].includes(manifest.kind) ||
+    manifest.manifestVersion !== GO_WORKER_MANIFEST_VERSION ||
+    manifest.workerProtocolVersion !== WORKER_PROTOCOL_VERSION ||
+    canonicalJson(manifest.target) !== canonicalJson({ platform: target.platform, arch: target.arch, directory: target.directory })
+  ) {
     fail("Go worker manifest target or protocol is incompatible.", "GO_WORKER_MANIFEST_INCOMPATIBLE");
   }
   normalizedRelativePath(manifest.binary.relativePath, "binary.relativePath");
-  if (manifest.binary.relativePath !== target.executable || !HASH_PATTERN.test(manifest.binary.sha256)
-    || !Number.isInteger(manifest.binary.size) || manifest.binary.size < 1) fail("Go worker binary identity is invalid.", "INVALID_GO_WORKER_MANIFEST");
-  if (!Array.isArray(manifest.operations) || manifest.operations.length === 0
-    || canonicalJson([...manifest.operations].sort(compareText)) !== canonicalJson(manifest.operations)
-    || new Set(manifest.operations).size !== manifest.operations.length
-    || manifest.operations.some((operation) => !OPERATION_PATTERN.test(operation))) fail("Go worker operations are invalid.", "INVALID_GO_WORKER_MANIFEST");
-  if (canonicalJson(manifest.processModel) !== canonicalJson({
-    stdio: "single-request-single-response-json", descendants: "forbidden", network: "forbidden", projectWrites: "forbidden",
-  }) || canonicalJson(manifest.authority) !== canonicalJson({
-    kind: "computation-only", instructionAuthority: false, promotionAuthority: false, controlAuthority: false, mutatesProject: false, mutatesCanon: false,
-  })) fail("Go worker process or authority contract is invalid.", "INVALID_GO_WORKER_MANIFEST");
+  if (
+    manifest.binary.relativePath !== target.executable ||
+    !HASH_PATTERN.test(manifest.binary.sha256) ||
+    !Number.isInteger(manifest.binary.size) ||
+    manifest.binary.size < 1
+  )
+    fail("Go worker binary identity is invalid.", "INVALID_GO_WORKER_MANIFEST");
+  if (
+    !Array.isArray(manifest.operations) ||
+    manifest.operations.length === 0 ||
+    canonicalJson([...manifest.operations].sort(compareText)) !== canonicalJson(manifest.operations) ||
+    new Set(manifest.operations).size !== manifest.operations.length ||
+    manifest.operations.some((operation) => !OPERATION_PATTERN.test(operation))
+  )
+    fail("Go worker operations are invalid.", "INVALID_GO_WORKER_MANIFEST");
+  if (
+    canonicalJson(manifest.processModel) !==
+      canonicalJson({
+        stdio: "single-request-single-response-json",
+        descendants: "forbidden",
+        network: "forbidden",
+        projectWrites: "forbidden",
+      }) ||
+    canonicalJson(manifest.authority) !==
+      canonicalJson({
+        kind: "computation-only",
+        instructionAuthority: false,
+        promotionAuthority: false,
+        controlAuthority: false,
+        mutatesProject: false,
+        mutatesCanon: false,
+      })
+  )
+    fail("Go worker process or authority contract is invalid.", "INVALID_GO_WORKER_MANIFEST");
   const payload = { ...manifest };
   delete payload.manifestId;
   delete payload.manifestHash;
   const expected = withManifestIdentity(payload);
-  if (expected.manifestId !== manifest.manifestId || expected.manifestHash !== manifest.manifestHash) fail("Go worker manifest digest verification failed.", "GO_WORKER_MANIFEST_DIGEST_MISMATCH");
+  if (expected.manifestId !== manifest.manifestId || expected.manifestHash !== manifest.manifestHash)
+    fail("Go worker manifest digest verification failed.", "GO_WORKER_MANIFEST_DIGEST_MISMATCH");
   return manifest;
 }
 
@@ -210,16 +275,19 @@ export function resolveVerifiedGoWorker({ pluginRoot = ".", manifestFile = null,
   validateGoWorkerManifest(manifest, { platform, arch });
   const manifestDirectory = path.dirname(manifestPath);
   const expectedTarget = targetFor(platform, arch);
-  if (path.basename(manifestDirectory) !== expectedTarget.directory) fail("Go worker manifest is not in its target distribution directory.", "GO_WORKER_PATH_ESCAPE");
+  if (path.basename(manifestDirectory) !== expectedTarget.directory)
+    fail("Go worker manifest is not in its target distribution directory.", "GO_WORKER_PATH_ESCAPE");
   const binaryPath = path.resolve(manifestDirectory, ...manifest.binary.relativePath.split("/"));
-  if (!inside(root, binaryPath) || !inside(manifestDirectory, binaryPath)) fail("Go worker binary escapes the plugin distribution root.", "GO_WORKER_PATH_ESCAPE");
+  if (!inside(root, binaryPath) || !inside(manifestDirectory, binaryPath))
+    fail("Go worker binary escapes the plugin distribution root.", "GO_WORKER_PATH_ESCAPE");
   const binaryStat = fs.lstatSync(binaryPath, { throwIfNoEntry: false });
   if (!binaryStat?.isFile() || binaryStat.isSymbolicLink()) fail("Go worker binary is missing or unsafe.", "GO_WORKER_BINARY_MISSING");
   const realBinary = fs.realpathSync.native(binaryPath);
   if (!inside(realRoot, realBinary)) fail("Go worker binary resolves outside the plugin distribution root.", "GO_WORKER_PATH_ESCAPE");
   if (platform !== "win32" && (binaryStat.mode & 0o111) === 0) fail("Go worker binary is not executable.", "GO_WORKER_BINARY_NOT_EXECUTABLE");
   const bytes = fs.readFileSync(binaryPath);
-  if (bytes.length !== manifest.binary.size || digest(bytes) !== manifest.binary.sha256) fail("Go worker binary integrity verification failed.", "GO_WORKER_BINARY_DIGEST_MISMATCH");
+  if (bytes.length !== manifest.binary.size || digest(bytes) !== manifest.binary.sha256)
+    fail("Go worker binary integrity verification failed.", "GO_WORKER_BINARY_DIGEST_MISMATCH");
   return Object.freeze({
     manifest,
     manifestPath,
@@ -233,7 +301,8 @@ export function createWorkerHealthReferenceAdapter() {
     name: "worker-health-javascript-reference",
     operations: {
       [WORKER_HEALTH_OPERATION]: (input) => {
-        if (![canonicalJson(WORKER_HEALTH_INPUT), canonicalJson({ probe: "lode-agent-core" })].includes(canonicalJson(input))) fail("Worker health input is invalid.", "INVALID_WORKER_HEALTH_INPUT");
+        if (![canonicalJson(WORKER_HEALTH_INPUT), canonicalJson({ probe: "lode-agent-core" })].includes(canonicalJson(input)))
+          fail("Worker health input is invalid.", "INVALID_WORKER_HEALTH_INPUT");
         return {
           kind: "WorkerHealthResult",
           status: "ready",
@@ -392,7 +461,14 @@ export class GoWorkerComputeAdapter {
   #diagnostics = new Map();
   #activePids = new Set();
 
-  constructor({ pluginRoot = ".", manifestFile = null, platform = process.platform, arch = process.arch, fallbackAdapter = createWorkerHealthReferenceAdapter(), storage = null } = {}) {
+  constructor({
+    pluginRoot = ".",
+    manifestFile = null,
+    platform = process.platform,
+    arch = process.arch,
+    fallbackAdapter = createWorkerHealthReferenceAdapter(),
+    storage = null,
+  } = {}) {
     this.#fallback = fallbackAdapter;
     this.#fallbackDescriptor = validateComputeAdapter(fallbackAdapter);
     try {
@@ -433,16 +509,19 @@ export class GoWorkerComputeAdapter {
       fail(`Neither Go worker nor fallback supports ${request.operation}.`, "UNSUPPORTED_COMPUTE_OPERATION");
     }
     const response = await this.#fallback.execute(request, { signal, outputRetryToken });
-    this.#diagnostics.set(request.requestId, operationalDiagnostics({
-      backend: this.#fallbackDescriptor.backend,
-      adapterName: this.#fallbackDescriptor.name,
-      executionMode: this.#fallbackDescriptor.executionMode,
-      fallbackUsed: true,
-      fallbackReasonCode: reasonCode,
-      workerPid,
-      workerRelativePath: this.#selection?.workerRelativePath || "",
-      workerSha256: this.#selection?.manifest.binary.sha256 || "",
-    }));
+    this.#diagnostics.set(
+      request.requestId,
+      operationalDiagnostics({
+        backend: this.#fallbackDescriptor.backend,
+        adapterName: this.#fallbackDescriptor.name,
+        executionMode: this.#fallbackDescriptor.executionMode,
+        fallbackUsed: true,
+        fallbackReasonCode: reasonCode,
+        workerPid,
+        workerRelativePath: this.#selection?.workerRelativePath || "",
+        workerSha256: this.#selection?.manifest.binary.sha256 || "",
+      }),
+    );
     return response;
   }
 
@@ -457,19 +536,26 @@ export class GoWorkerComputeAdapter {
     try {
       const executed = await invokeWorker(this.#selection, request, {
         signal,
-        onProcessStart: (pid) => { if (Number.isInteger(pid)) this.#activePids.add(pid); },
-        onProcessEnd: (pid) => { if (Number.isInteger(pid)) this.#activePids.delete(pid); },
+        onProcessStart: (pid) => {
+          if (Number.isInteger(pid)) this.#activePids.add(pid);
+        },
+        onProcessEnd: (pid) => {
+          if (Number.isInteger(pid)) this.#activePids.delete(pid);
+        },
       });
-      this.#diagnostics.set(request.requestId, operationalDiagnostics({
-        backend: "go-worker",
-        adapterName: "verified-go-worker",
-        executionMode: "bounded-stdio-single-request",
-        fallbackUsed: false,
-        fallbackReasonCode: "",
-        workerPid: executed.workerPid,
-        workerRelativePath: this.#selection.workerRelativePath,
-        workerSha256: this.#selection.manifest.binary.sha256,
-      }));
+      this.#diagnostics.set(
+        request.requestId,
+        operationalDiagnostics({
+          backend: "go-worker",
+          adapterName: "verified-go-worker",
+          executionMode: "bounded-stdio-single-request",
+          fallbackUsed: false,
+          fallbackReasonCode: "",
+          workerPid: executed.workerPid,
+          workerRelativePath: this.#selection.workerRelativePath,
+          workerSha256: this.#selection.manifest.binary.sha256,
+        }),
+      );
       return executed.response;
     } catch (error) {
       if (!signal?.aborted && RECOVERABLE_NATIVE_CODES.has(error.code)) {

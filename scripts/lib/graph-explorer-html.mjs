@@ -8,9 +8,16 @@ export function renderGraphExplorer(snapshot) {
   const assets = path.resolve(import.meta.dirname, "../graph-explorer");
   const css = fs.readFileSync(path.join(assets, "style.css"), "utf8");
   const codec = fs.readFileSync(path.join(assets, "codec.js"), "utf8").replace(/^export const explorerCodec =/m, "const explorerCodec =");
-  const script = codec + "\n" + ["cards.js", "exploration.js", "product-perspectives.js", "browser.js"].map(file => fs.readFileSync(path.join(assets, file), "utf8")).join("\n");
-  const json = JSON.stringify(explorerCodec.encode(snapshot)).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")
-    .replaceAll("&", "\\u0026").replaceAll("\u2028", "\\u2028").replaceAll("\u2029", "\\u2029");
+  const script =
+    codec +
+    "\n" +
+    ["cards.js", "exploration.js", "product-perspectives.js", "browser.js"].map((file) => fs.readFileSync(path.join(assets, file), "utf8")).join("\n");
+  const json = JSON.stringify(explorerCodec.encode(snapshot))
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'none'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">

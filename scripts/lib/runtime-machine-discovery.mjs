@@ -2,10 +2,7 @@ import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-stora
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {
-  RUNTIME_ADAPTER_PLATFORMS,
-  RUNTIME_ADAPTER_RUNTIMES,
-} from "./runtime-adapter.mjs";
+import { RUNTIME_ADAPTER_PLATFORMS, RUNTIME_ADAPTER_RUNTIMES } from "./runtime-adapter.mjs";
 
 export const RUNTIME_MACHINE_DISCOVERY_VERSION = "0.1.0";
 
@@ -19,12 +16,16 @@ const fail = (message, code = "RUNTIME_MACHINE_DISCOVERY_ERROR") => {
   throw error;
 };
 
-const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compareText).map((key) => [key, canonicalValue(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort(compareText)
+        .map((key) => [key, canonicalValue(value[key])]),
+    );
   }
   return value;
 }
@@ -58,7 +59,9 @@ function assertFields(value, fields, label) {
 }
 
 function normalizeRuntime(value) {
-  const runtime = String(value || "").trim().toLowerCase();
+  const runtime = String(value || "")
+    .trim()
+    .toLowerCase();
   if (!RUNTIME_ADAPTER_RUNTIMES.includes(runtime)) {
     fail(`Unsupported runtime machine interface: ${runtime || "(empty)"}.`, "UNSUPPORTED_RUNTIME_MACHINE_INTERFACE");
   }
@@ -66,7 +69,9 @@ function normalizeRuntime(value) {
 }
 
 function normalizePlatform(value) {
-  const platform = String(value || "").trim().toLowerCase();
+  const platform = String(value || "")
+    .trim()
+    .toLowerCase();
   if (!RUNTIME_ADAPTER_PLATFORMS.includes(platform)) {
     fail(`Unsupported runtime machine platform: ${platform || "(empty)"}.`, "UNSUPPORTED_RUNTIME_MACHINE_PLATFORM");
   }
@@ -82,10 +87,7 @@ function normalizedRuntimes(values) {
 }
 
 function disabledOperation(kind, operation) {
-  fail(
-    `${kind} operation ${operation} is disabled during read-only machine discovery.`,
-    "RUNTIME_ADAPTER_CONTROL_NOT_ENABLED",
-  );
+  fail(`${kind} operation ${operation} is disabled during read-only machine discovery.`, "RUNTIME_ADAPTER_CONTROL_NOT_ENABLED");
 }
 
 function pathValue(environment) {
@@ -94,10 +96,13 @@ function pathValue(environment) {
 
 function pathEntries(environment, platform) {
   const delimiter = platform === "win32" ? ";" : ":";
-  return String(pathValue(environment)).split(delimiter).map((entry) => {
-    const trimmed = entry.trim();
-    return trimmed.startsWith('"') && trimmed.endsWith('"') ? trimmed.slice(1, -1) : trimmed;
-  }).filter((entry) => entry && path.isAbsolute(entry));
+  return String(pathValue(environment))
+    .split(delimiter)
+    .map((entry) => {
+      const trimmed = entry.trim();
+      return trimmed.startsWith('"') && trimmed.endsWith('"') ? trimmed.slice(1, -1) : trimmed;
+    })
+    .filter((entry) => entry && path.isAbsolute(entry));
 }
 
 function executableNames(runtime, platform) {
@@ -168,12 +173,7 @@ function resolveExecutableObservation(options) {
   return resolveExecutableCandidate(options).observation;
 }
 
-export function resolveReadOnlyRuntimeExecutableTarget({
-  runtime,
-  platform = process.platform,
-  environment = process.env,
-  fileSystem = fs,
-} = {}) {
+export function resolveReadOnlyRuntimeExecutableTarget({ runtime, platform = process.platform, environment = process.env, fileSystem = fs } = {}) {
   return resolveExecutableCandidate({ runtime, platform, environment, fileSystem });
 }
 
@@ -239,7 +239,9 @@ export class ReadOnlyPlatformAdapter {
     this.environment = environment;
     this.fileSystem = fileSystem;
   }
-  describe() { return platformDescriptor(this.platform); }
+  describe() {
+    return platformDescriptor(this.platform);
+  }
   probe() {
     const payload = {
       schemaVersion: 1,
@@ -260,9 +262,15 @@ export class ReadOnlyPlatformAdapter {
       fileSystem: this.fileSystem,
     });
   }
-  spawnOwned() { return disabledOperation("PlatformAdapter", "spawn-owned"); }
-  inspectOwned() { return disabledOperation("PlatformAdapter", "inspect-owned"); }
-  terminateOwned() { return disabledOperation("PlatformAdapter", "terminate-owned"); }
+  spawnOwned() {
+    return disabledOperation("PlatformAdapter", "spawn-owned");
+  }
+  inspectOwned() {
+    return disabledOperation("PlatformAdapter", "inspect-owned");
+  }
+  terminateOwned() {
+    return disabledOperation("PlatformAdapter", "terminate-owned");
+  }
 }
 
 export class ReadOnlyAgentRuntimeAdapter {
@@ -274,7 +282,9 @@ export class ReadOnlyAgentRuntimeAdapter {
     }
     this.platformAdapter = platformAdapter;
   }
-  describe() { return agentDescriptor(this.runtime, this.storage); }
+  describe() {
+    return agentDescriptor(this.runtime, this.storage);
+  }
   probe() {
     const executable = this.platformAdapter.resolveExecutable(this.runtime);
     const payload = {
@@ -290,15 +300,27 @@ export class ReadOnlyAgentRuntimeAdapter {
     };
     return verifyAgentRuntimeMachineProbe(identify(payload, "agent-runtime-machine-probe", "probeId", "probeHash"));
   }
-  start() { return disabledOperation("AgentRuntimeAdapter", "start"); }
-  resume() { return disabledOperation("AgentRuntimeAdapter", "resume"); }
-  stream() { return disabledOperation("AgentRuntimeAdapter", "stream"); }
-  interrupt() { return disabledOperation("AgentRuntimeAdapter", "interrupt"); }
-  close() { return disabledOperation("AgentRuntimeAdapter", "close"); }
+  start() {
+    return disabledOperation("AgentRuntimeAdapter", "start");
+  }
+  resume() {
+    return disabledOperation("AgentRuntimeAdapter", "resume");
+  }
+  stream() {
+    return disabledOperation("AgentRuntimeAdapter", "stream");
+  }
+  interrupt() {
+    return disabledOperation("AgentRuntimeAdapter", "interrupt");
+  }
+  close() {
+    return disabledOperation("AgentRuntimeAdapter", "close");
+  }
 }
 
 export class ReadOnlyWorkspaceHostAdapter {
-  describe() { return hostDescriptor(); }
+  describe() {
+    return hostDescriptor();
+  }
   probe() {
     const payload = {
       schemaVersion: 1,
@@ -310,39 +332,69 @@ export class ReadOnlyWorkspaceHostAdapter {
     };
     return verifyWorkspaceHostMachineProbe(identify(payload, "workspace-host-machine-probe", "probeId", "probeHash"));
   }
-  attach() { return disabledOperation("WorkspaceHostAdapter", "attach"); }
-  send() { return disabledOperation("WorkspaceHostAdapter", "send"); }
-  receive() { return disabledOperation("WorkspaceHostAdapter", "receive"); }
-  detach() { return disabledOperation("WorkspaceHostAdapter", "detach"); }
+  attach() {
+    return disabledOperation("WorkspaceHostAdapter", "attach");
+  }
+  send() {
+    return disabledOperation("WorkspaceHostAdapter", "send");
+  }
+  receive() {
+    return disabledOperation("WorkspaceHostAdapter", "receive");
+  }
+  detach() {
+    return disabledOperation("WorkspaceHostAdapter", "detach");
+  }
 }
 
 function validateExecutableObservation(document) {
-  assertFields(document, [
-    "runtime", "availability", "launcherKind", "directSpawnSafe", "pathDigest", "canonicalPathDigest",
-    "byteLength", "symbolicLink",
-  ], "Runtime executable observation");
+  assertFields(
+    document,
+    ["runtime", "availability", "launcherKind", "directSpawnSafe", "pathDigest", "canonicalPathDigest", "byteLength", "symbolicLink"],
+    "Runtime executable observation",
+  );
   normalizeRuntime(document.runtime);
   const available = document.availability === "candidate-found";
-  if ((!available && document.availability !== "not-found")
-    || !["native-executable", "command-shim", "extensionless-candidate", "none"].includes(document.launcherKind)
-    || typeof document.directSpawnSafe !== "boolean" || typeof document.symbolicLink !== "boolean"
-    || !Number.isSafeInteger(document.byteLength) || document.byteLength < 0
-    || (available && (!/^[a-f0-9]{64}$/.test(document.pathDigest) || !/^[a-f0-9]{64}$/.test(document.canonicalPathDigest)
-      || document.byteLength < 1 || document.launcherKind === "none"))
-    || (!available && (document.pathDigest !== "" || document.canonicalPathDigest !== "" || document.byteLength !== 0
-      || document.launcherKind !== "none" || document.directSpawnSafe || document.symbolicLink))) {
+  if (
+    (!available && document.availability !== "not-found") ||
+    !["native-executable", "command-shim", "extensionless-candidate", "none"].includes(document.launcherKind) ||
+    typeof document.directSpawnSafe !== "boolean" ||
+    typeof document.symbolicLink !== "boolean" ||
+    !Number.isSafeInteger(document.byteLength) ||
+    document.byteLength < 0 ||
+    (available &&
+      (!/^[a-f0-9]{64}$/.test(document.pathDigest) ||
+        !/^[a-f0-9]{64}$/.test(document.canonicalPathDigest) ||
+        document.byteLength < 1 ||
+        document.launcherKind === "none")) ||
+    (!available &&
+      (document.pathDigest !== "" ||
+        document.canonicalPathDigest !== "" ||
+        document.byteLength !== 0 ||
+        document.launcherKind !== "none" ||
+        document.directSpawnSafe ||
+        document.symbolicLink))
+  ) {
     fail("Runtime executable observation is invalid.", "INVALID_RUNTIME_EXECUTABLE_OBSERVATION");
   }
   return document;
 }
 
 export function verifyPlatformMachineProbe(document) {
-  assertFields(document, ["schemaVersion", "kind", "protocolVersion", "descriptor", "pathEntryCount", "status", "authorityEffect", "probeId", "probeHash"], "Platform machine probe");
-  if (canonicalJson(document.descriptor) !== canonicalJson(platformDescriptor(normalizePlatform(document.descriptor?.platform)))
-    || document.schemaVersion !== 1 || document.kind !== "PlatformMachineProbe"
-    || document.protocolVersion !== RUNTIME_MACHINE_DISCOVERY_VERSION
-    || !Number.isSafeInteger(document.pathEntryCount) || document.pathEntryCount < 0
-    || document.status !== "read-only-machine-discovery" || document.authorityEffect !== "none") {
+  assertFields(
+    document,
+    ["schemaVersion", "kind", "protocolVersion", "descriptor", "pathEntryCount", "status", "authorityEffect", "probeId", "probeHash"],
+    "Platform machine probe",
+  );
+  if (
+    canonicalJson(document.descriptor) !== canonicalJson(platformDescriptor(normalizePlatform(document.descriptor?.platform))) ||
+    document.schemaVersion !== 1 ||
+    document.kind !== "PlatformMachineProbe" ||
+    document.protocolVersion !== RUNTIME_MACHINE_DISCOVERY_VERSION ||
+    !Number.isSafeInteger(document.pathEntryCount) ||
+    document.pathEntryCount < 0 ||
+    document.status !== "read-only-machine-discovery" ||
+    document.authorityEffect !== "none"
+  ) {
     fail("Platform machine probe is invalid.", "INVALID_PLATFORM_MACHINE_PROBE");
   }
   verifyIdentity(document, { prefix: "platform-machine-probe", idKey: "probeId", hashKey: "probeHash", code: "PLATFORM_MACHINE_PROBE_DIGEST_MISMATCH" });
@@ -350,32 +402,72 @@ export function verifyPlatformMachineProbe(document) {
 }
 
 export function verifyAgentRuntimeMachineProbe(document) {
-  assertFields(document, ["schemaVersion", "kind", "protocolVersion", "descriptor", "platform", "executable", "status", "runtimeControlEnabled", "authorityEffect", "probeId", "probeHash"], "Agent runtime machine probe");
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocolVersion",
+      "descriptor",
+      "platform",
+      "executable",
+      "status",
+      "runtimeControlEnabled",
+      "authorityEffect",
+      "probeId",
+      "probeHash",
+    ],
+    "Agent runtime machine probe",
+  );
   const runtime = normalizeRuntime(document.descriptor?.runtime);
   const format = Object.hasOwn(document.descriptor || {}, "lodeSessionIdentity")
-    ? formatForVerifiedOwner({ dialect: "lode", directory: ".lode" }) : formatForVerifiedOwner();
+    ? formatForVerifiedOwner({ dialect: "lode", directory: ".lode" })
+    : formatForVerifiedOwner();
   validateExecutableObservation(document.executable);
-  if (canonicalJson(document.descriptor) !== canonicalJson(agentDescriptor(runtime, format))
-    || document.executable.runtime !== runtime || !RUNTIME_ADAPTER_PLATFORMS.includes(document.platform)
-    || document.schemaVersion !== 1 || document.kind !== "AgentRuntimeMachineProbe"
-    || document.protocolVersion !== RUNTIME_MACHINE_DISCOVERY_VERSION
-    || document.status !== document.executable.availability
-    || document.runtimeControlEnabled !== false || document.authorityEffect !== "none") {
+  if (
+    canonicalJson(document.descriptor) !== canonicalJson(agentDescriptor(runtime, format)) ||
+    document.executable.runtime !== runtime ||
+    !RUNTIME_ADAPTER_PLATFORMS.includes(document.platform) ||
+    document.schemaVersion !== 1 ||
+    document.kind !== "AgentRuntimeMachineProbe" ||
+    document.protocolVersion !== RUNTIME_MACHINE_DISCOVERY_VERSION ||
+    document.status !== document.executable.availability ||
+    document.runtimeControlEnabled !== false ||
+    document.authorityEffect !== "none"
+  ) {
     fail("Agent runtime machine probe is invalid.", "INVALID_AGENT_RUNTIME_MACHINE_PROBE");
   }
-  verifyIdentity(document, { prefix: "agent-runtime-machine-probe", idKey: "probeId", hashKey: "probeHash", code: "AGENT_RUNTIME_MACHINE_PROBE_DIGEST_MISMATCH" });
+  verifyIdentity(document, {
+    prefix: "agent-runtime-machine-probe",
+    idKey: "probeId",
+    hashKey: "probeHash",
+    code: "AGENT_RUNTIME_MACHINE_PROBE_DIGEST_MISMATCH",
+  });
   return document;
 }
 
 export function verifyWorkspaceHostMachineProbe(document) {
-  assertFields(document, ["schemaVersion", "kind", "protocolVersion", "descriptor", "status", "authorityEffect", "probeId", "probeHash"], "Workspace host machine probe");
-  if (canonicalJson(document.descriptor) !== canonicalJson(hostDescriptor())
-    || document.schemaVersion !== 1 || document.kind !== "WorkspaceHostMachineProbe"
-    || document.protocolVersion !== RUNTIME_MACHINE_DISCOVERY_VERSION
-    || document.status !== "read-only-machine-discovery" || document.authorityEffect !== "none") {
+  assertFields(
+    document,
+    ["schemaVersion", "kind", "protocolVersion", "descriptor", "status", "authorityEffect", "probeId", "probeHash"],
+    "Workspace host machine probe",
+  );
+  if (
+    canonicalJson(document.descriptor) !== canonicalJson(hostDescriptor()) ||
+    document.schemaVersion !== 1 ||
+    document.kind !== "WorkspaceHostMachineProbe" ||
+    document.protocolVersion !== RUNTIME_MACHINE_DISCOVERY_VERSION ||
+    document.status !== "read-only-machine-discovery" ||
+    document.authorityEffect !== "none"
+  ) {
     fail("Workspace host machine probe is invalid.", "INVALID_WORKSPACE_HOST_MACHINE_PROBE");
   }
-  verifyIdentity(document, { prefix: "workspace-host-machine-probe", idKey: "probeId", hashKey: "probeHash", code: "WORKSPACE_HOST_MACHINE_PROBE_DIGEST_MISMATCH" });
+  verifyIdentity(document, {
+    prefix: "workspace-host-machine-probe",
+    idKey: "probeId",
+    hashKey: "probeHash",
+    code: "WORKSPACE_HOST_MACHINE_PROBE_DIGEST_MISMATCH",
+  });
   return document;
 }
 
@@ -383,7 +475,8 @@ export function buildRuntimeMachineComposition({
   runtimes = RUNTIME_ADAPTER_RUNTIMES,
   platform = process.platform,
   environment = process.env,
-  fileSystem = fs, storage,
+  fileSystem = fs,
+  storage,
 } = {}) {
   const selectedRuntimes = normalizedRuntimes(runtimes);
   const platformAdapter = new ReadOnlyPlatformAdapter({ platform, environment, fileSystem });
@@ -423,45 +516,83 @@ export function buildRuntimeMachineComposition({
 }
 
 export function verifyRuntimeMachineComposition(document) {
-  assertFields(document, [
-    "schemaVersion", "kind", "protocolVersion", "selectedRuntimes", "platformProbe", "workspaceHostProbe",
-    "agentRuntimeProbes", "discoverySummary", "activationBoundary", "authority", "instructionAuthority",
-    "promotionAuthority", "controlAuthority", "mutatesCanon", "compositionId", "compositionHash",
-  ], "Runtime machine composition");
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocolVersion",
+      "selectedRuntimes",
+      "platformProbe",
+      "workspaceHostProbe",
+      "agentRuntimeProbes",
+      "discoverySummary",
+      "activationBoundary",
+      "authority",
+      "instructionAuthority",
+      "promotionAuthority",
+      "controlAuthority",
+      "mutatesCanon",
+      "compositionId",
+      "compositionHash",
+    ],
+    "Runtime machine composition",
+  );
   assertFields(document.discoverySummary, ["discoveredRuntimes", "unavailableRuntimes", "rawPathsExposed"], "Runtime discovery summary");
-  assertFields(document.activationBoundary, [
-    "phase", "machineInterfaceDiscoveryValidated", "actualPlatformExecutionValidated", "actualRuntimeControlValidated",
-    "runtimeControlEnabled", "capabilityDoesNotGrantAuthorization", "executionContractRequiredForControl",
-    "providerSessionReferencesOperationalOnly", "tuiScrapingAllowed",
-  ], "Runtime machine activation boundary");
+  assertFields(
+    document.activationBoundary,
+    [
+      "phase",
+      "machineInterfaceDiscoveryValidated",
+      "actualPlatformExecutionValidated",
+      "actualRuntimeControlValidated",
+      "runtimeControlEnabled",
+      "capabilityDoesNotGrantAuthorization",
+      "executionContractRequiredForControl",
+      "providerSessionReferencesOperationalOnly",
+      "tuiScrapingAllowed",
+    ],
+    "Runtime machine activation boundary",
+  );
   const runtimes = normalizedRuntimes(document.selectedRuntimes);
   verifyPlatformMachineProbe(document.platformProbe);
   verifyWorkspaceHostMachineProbe(document.workspaceHostProbe);
   const probes = document.agentRuntimeProbes.map(verifyAgentRuntimeMachineProbe);
   const discovered = probes.filter((probe) => probe.status === "candidate-found").map((probe) => probe.descriptor.runtime);
   const unavailable = probes.filter((probe) => probe.status === "not-found").map((probe) => probe.descriptor.runtime);
-  if (canonicalJson(document.selectedRuntimes) !== canonicalJson(runtimes)
-    || canonicalJson(probes.map((probe) => probe.descriptor.runtime)) !== canonicalJson(runtimes)
-    || canonicalJson(document.discoverySummary) !== canonicalJson({ discoveredRuntimes: discovered, unavailableRuntimes: unavailable, rawPathsExposed: false })
-    || document.schemaVersion !== 1 || document.kind !== "RuntimeMachineComposition"
-    || document.protocolVersion !== RUNTIME_MACHINE_DISCOVERY_VERSION
-    || canonicalJson(document.activationBoundary) !== canonicalJson({
-      phase: "read-only-machine-discovery",
-      machineInterfaceDiscoveryValidated: true,
-      actualPlatformExecutionValidated: false,
-      actualRuntimeControlValidated: false,
-      runtimeControlEnabled: false,
-      capabilityDoesNotGrantAuthorization: true,
-      executionContractRequiredForControl: true,
-      providerSessionReferencesOperationalOnly: true,
-      tuiScrapingAllowed: false,
-    })
-    || document.authority !== "operational-observation-only"
-    || document.instructionAuthority !== false || document.promotionAuthority !== false
-    || document.controlAuthority !== false || document.mutatesCanon !== false) {
+  if (
+    canonicalJson(document.selectedRuntimes) !== canonicalJson(runtimes) ||
+    canonicalJson(probes.map((probe) => probe.descriptor.runtime)) !== canonicalJson(runtimes) ||
+    canonicalJson(document.discoverySummary) !== canonicalJson({ discoveredRuntimes: discovered, unavailableRuntimes: unavailable, rawPathsExposed: false }) ||
+    document.schemaVersion !== 1 ||
+    document.kind !== "RuntimeMachineComposition" ||
+    document.protocolVersion !== RUNTIME_MACHINE_DISCOVERY_VERSION ||
+    canonicalJson(document.activationBoundary) !==
+      canonicalJson({
+        phase: "read-only-machine-discovery",
+        machineInterfaceDiscoveryValidated: true,
+        actualPlatformExecutionValidated: false,
+        actualRuntimeControlValidated: false,
+        runtimeControlEnabled: false,
+        capabilityDoesNotGrantAuthorization: true,
+        executionContractRequiredForControl: true,
+        providerSessionReferencesOperationalOnly: true,
+        tuiScrapingAllowed: false,
+      }) ||
+    document.authority !== "operational-observation-only" ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false ||
+    document.controlAuthority !== false ||
+    document.mutatesCanon !== false
+  ) {
     fail("Runtime machine composition is invalid.", "INVALID_RUNTIME_MACHINE_COMPOSITION");
   }
-  verifyIdentity(document, { prefix: "runtime-machine-composition", idKey: "compositionId", hashKey: "compositionHash", code: "RUNTIME_MACHINE_COMPOSITION_DIGEST_MISMATCH" });
+  verifyIdentity(document, {
+    prefix: "runtime-machine-composition",
+    idKey: "compositionId",
+    hashKey: "compositionHash",
+    code: "RUNTIME_MACHINE_COMPOSITION_DIGEST_MISMATCH",
+  });
   return document;
 }
 

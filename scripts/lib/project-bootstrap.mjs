@@ -10,24 +10,34 @@ import { readProjectDirectionView } from "./project-direction-view.mjs";
 import { noteProjectGraphChange, projectGraphIndexPath } from "./discovery-index.mjs";
 import { fileURLToPath } from "node:url";
 import { convergeProjectInstallation, initializeProject, inspectProject, isProjectRecoveryReadable } from "./lode-core.mjs";
-import { inspectOnboarding, inspectOptionalOnboarding, inspectOptionalOnboardingForEntry, recoverOnboardingPromotion, refreshOnboardingCandidates, startOnboarding } from "./onboarding.mjs";
+import {
+  inspectOnboarding,
+  inspectOptionalOnboarding,
+  inspectOptionalOnboardingForEntry,
+  recoverOnboardingPromotion,
+  refreshOnboardingCandidates,
+  startOnboarding,
+} from "./onboarding.mjs";
 import { buildRepositorySourceScope } from "./repository-source-scope.mjs";
 import { inspectRecoveryCheckpointDiagnosis } from "./recovery-checkpoint-diagnosis.mjs";
 import { actionability, withExperienceProjections } from "./experience-projection.mjs";
 import { linkProjectInstructions, validateInstructionIntegration } from "./project-instruction-link.mjs";
 import { inspectPendingProjectImport } from "./project-portability.mjs";
 import { resumeProjectLocation, repairProjectBytesForResume } from "./project-relocation.mjs";
-import { withSessionCallContext, validateRelocationSessionSelection, sessionSelectionUnresolved, defaultSessionStatePath, sessionStatePath } from "./session-routing.mjs";
+import {
+  withSessionCallContext,
+  validateRelocationSessionSelection,
+  sessionSelectionUnresolved,
+  defaultSessionStatePath,
+  sessionStatePath,
+} from "./session-routing.mjs";
 import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
 import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
 
 export const PROJECT_BOOTSTRAP_PROTOCOL_VERSION = "0.6.0";
 
 const activePluginRoot = fs.realpathSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".."));
-const packageVersion = JSON.parse(fs.readFileSync(
-  path.join(activePluginRoot, "package.json"),
-  "utf8",
-)).version;
+const packageVersion = JSON.parse(fs.readFileSync(path.join(activePluginRoot, "package.json"), "utf8")).version;
 
 const PROJECT_PROFILES = new Set(["core", "product"]);
 
@@ -59,13 +69,22 @@ function validateProfile(value) {
 }
 
 function onboardingSummary(inspected) {
-  if (inspected.status === "not_transferred") return {
-    status:inspected.status,reasonCode:inspected.reasonCode,candidateSetId:null,candidateCount:null,verification:inspected.verification,
-  };
-  if (inspected.status === "integrity_attention") return {
-    status: inspected.status, reasonCode: inspected.reasonCode,
-    candidateSetId: null, candidateCount: null, verification: "unverified",
-  };
+  if (inspected.status === "not_transferred")
+    return {
+      status: inspected.status,
+      reasonCode: inspected.reasonCode,
+      candidateSetId: null,
+      candidateCount: null,
+      verification: inspected.verification,
+    };
+  if (inspected.status === "integrity_attention")
+    return {
+      status: inspected.status,
+      reasonCode: inspected.reasonCode,
+      candidateSetId: null,
+      candidateCount: null,
+      verification: "unverified",
+    };
   const latestReviewDecisionId = inspected.state.latestReviewDecisionId ?? inspected.state.reviewDecisionId ?? null;
   return {
     status: inspected.status,
@@ -85,11 +104,15 @@ function onboardingSummary(inspected) {
 function productReadiness(status) {
   const states = {
     not_transferred: {
-      state:"not_transferred",status:"core_ready",action:"work_directly",
-      summary:"Selected Core/Session originals were transferred. Optional Product governance and World data were outside this bundle; they were not recreated or judged corrupt.",
+      state: "not_transferred",
+      status: "core_ready",
+      action: "work_directly",
+      summary:
+        "Selected Core/Session originals were transferred. Optional Product governance and World data were outside this bundle; they were not recreated or judged corrupt.",
     },
     integrity_attention: {
-      state: "integrity_attention", status: "product_integrity_attention",
+      state: "integrity_attention",
+      status: "product_integrity_attention",
       action: "inspect_product_governance",
       summary: "Core remains available. Inspect optional Product evidence before work that depends on it; no automatic repair or new review is performed.",
     },
@@ -139,7 +162,8 @@ function productReadiness(status) {
       state: "reviewed_world_unchecked",
       status: "core_ready",
       action: "work_directly",
-      summary: "Core and reviewed Product originals are available. Detailed World freshness was not inspected for this conversation; continue the task and validate World evidence only when it is needed.",
+      summary:
+        "Core and reviewed Product originals are available. Detailed World freshness was not inspected for this conversation; continue the task and validate World evidence only when it is needed.",
     },
     ready_world_changed: {
       state: "refresh_required",
@@ -151,21 +175,25 @@ function productReadiness(status) {
       state: "refresh_required",
       status: "product_refresh_required",
       action: "resume_product_governance",
-      summary: "The Product decision is already recorded. Product resume completes its interrupted application and derived projection without another user review; ordinary Core work remains available.",
+      summary:
+        "The Product decision is already recorded. Product resume completes its interrupted application and derived projection without another user review; ordinary Core work remains available.",
     },
     review_recovery_pending: {
       state: "refresh_required",
       status: "product_refresh_required",
       action: "resume_product_governance",
-      summary: "The revision or rejection is already recorded. Product resume completes its interrupted application without another user decision; ordinary Core work remains available.",
+      summary:
+        "The revision or rejection is already recorded. Product resume completes its interrupted application without another user decision; ordinary Core work remains available.",
     },
   };
-  return states[status] || {
-    state: "inspection_required",
-    status: "product_inspection_required",
-    action: "inspect_product_governance",
-    summary: `Product governance reported an unrecognized state: ${status}.`,
-  };
+  return (
+    states[status] || {
+      state: "inspection_required",
+      status: "product_inspection_required",
+      action: "inspect_product_governance",
+      summary: `Product governance reported an unrecognized state: ${status}.`,
+    }
+  );
 }
 
 // Machine-emitted CLI hints use the entry point every install has; the
@@ -177,34 +205,41 @@ function contextReadiness({ coreState, productState, onboardingInspection = null
     cli: `${CLI_DISPLAY} context-prepare <project> --task <exact-task>`,
     mcpTool: publicToolName("head_context_prepare"),
   };
-  if (coreState !== "ready") return {
-    state: "blocked",
-    repositoryEvidence: "blocked-until-core-ready",
-    worldModelId: null,
-    entrypoint,
-  };
-  if (productState === "integrity_attention") return {
-    state: "curated-only", repositoryEvidence: "unverified-excluded",
-    worldModelId: null, entrypoint,
-  };
-  if (onboardingInspection?.worldModel?.status === "not-inspected") return {
-    state: "world-not-inspected",
-    repositoryEvidence: "not-inspected",
-    worldModelId: null,
-    entrypoint,
-  };
-  if (onboardingInspection?.worldModel?.status === "current") return {
-    state: "repository-ready",
-    repositoryEvidence: "available-current-world",
-    worldModelId: onboardingInspection.worldModel.worldModelId,
-    entrypoint,
-  };
-  if (productState === "refresh_required" || onboardingInspection?.worldModel) return {
-    state: "world-refresh-required",
-    repositoryEvidence: onboardingInspection?.worldModel?.status === "unavailable" ? "missing-excluded" : "stale-excluded",
-    worldModelId: onboardingInspection?.worldModel?.status === "unavailable" ? null : onboardingInspection?.worldModel?.worldModelId || null,
-    entrypoint,
-  };
+  if (coreState !== "ready")
+    return {
+      state: "blocked",
+      repositoryEvidence: "blocked-until-core-ready",
+      worldModelId: null,
+      entrypoint,
+    };
+  if (productState === "integrity_attention")
+    return {
+      state: "curated-only",
+      repositoryEvidence: "unverified-excluded",
+      worldModelId: null,
+      entrypoint,
+    };
+  if (onboardingInspection?.worldModel?.status === "not-inspected")
+    return {
+      state: "world-not-inspected",
+      repositoryEvidence: "not-inspected",
+      worldModelId: null,
+      entrypoint,
+    };
+  if (onboardingInspection?.worldModel?.status === "current")
+    return {
+      state: "repository-ready",
+      repositoryEvidence: "available-current-world",
+      worldModelId: onboardingInspection.worldModel.worldModelId,
+      entrypoint,
+    };
+  if (productState === "refresh_required" || onboardingInspection?.worldModel)
+    return {
+      state: "world-refresh-required",
+      repositoryEvidence: onboardingInspection?.worldModel?.status === "unavailable" ? "missing-excluded" : "stale-excluded",
+      worldModelId: onboardingInspection?.worldModel?.status === "unavailable" ? null : onboardingInspection?.worldModel?.worldModelId || null,
+      entrypoint,
+    };
   return {
     state: "curated-only",
     repositoryEvidence: "requires-explicit-product-world",
@@ -217,8 +252,12 @@ function runtimeProjection(projectInspection = null) {
   const configuredPackageVersion = projectInspection?.installation?.packageVersion || null;
   const configuredRoot = projectInspection?.installation?.pluginRoot || null;
   const configuredRootMatchesLoaded = configuredRoot == null ? null : path.resolve(configuredRoot) === activePluginRoot;
-  const state = configuredPackageVersion == null ? "version-unrecorded"
-    : configuredPackageVersion === packageVersion && configuredRootMatchesLoaded ? "current" : "project-integration-outdated";
+  const state =
+    configuredPackageVersion == null
+      ? "version-unrecorded"
+      : configuredPackageVersion === packageVersion && configuredRootMatchesLoaded
+        ? "current"
+        : "project-integration-outdated";
   return {
     activePackageVersion: packageVersion,
     loadedPackageVersion: packageVersion,
@@ -299,9 +338,11 @@ export function recoveryReadiness(projectInspection, { includeRestore = false } 
       state: "verified-current-checkpoint",
       currentCheckpoint: true,
       restorable: true,
-      ...actionability({ headActionRequired: diagnosis.headActionRequired,
+      ...actionability({
+        headActionRequired: diagnosis.headActionRequired,
         recoveryDependentWorkBlocked: diagnosis.recoveryDependentWorkBlocked,
-        blockedOperations: diagnosis.recoveryDependentWorkBlocked ? ["run-storage-transition"] : [] }),
+        blockedOperations: diagnosis.recoveryDependentWorkBlocked ? ["run-storage-transition"] : [],
+      }),
       checkpointId: diagnosis.currentCheckpoint.checkpointId,
       sessionRestoreId: diagnosis.artifactRecovery.sessionRestoreId,
       currentExecutionStatus: diagnosis.artifactRecovery.currentExecutionStatus,
@@ -371,7 +412,8 @@ function entrypoint(action, onboardingInspection = null) {
       cli: worldAbsent ? `${CLI_DISPLAY} world-index <project>` : `${CLI_DISPLAY} world-refresh <project>`,
       worldOperation: worldAbsent ? "rebuild" : "incremental-refresh",
       mcpTool: null,
-      note: worldAbsent ? "The derived World is absent. Explicitly rebuild from retained Canon and evidence; no Product reapproval is needed."
+      note: worldAbsent
+        ? "The derived World is absent. Explicitly rebuild from retained Canon and evidence; no Product reapproval is needed."
         : "The current typed MCP surface is read-only for refresh state; use the explicit CLI mutation entrypoint.",
     },
     work_with_product_context: {
@@ -401,16 +443,23 @@ function capabilityGuide({ coreState, productState, contextState, runtimes = [] 
     },
     {
       id: "product-governance",
-      availability: blocked || (productState === "not_activated" ? "available-not-activated"
-        : productState === "reviewed_world_unchecked" ? "available-on-demand"
-          : productState === "ready" ? "active-ready" : "active-action-required"),
+      availability:
+        blocked ||
+        (productState === "not_activated"
+          ? "available-not-activated"
+          : productState === "reviewed_world_unchecked"
+            ? "available-on-demand"
+            : productState === "ready"
+              ? "active-ready"
+              : "active-action-required"),
       useWhen: "The task needs reviewed product meaning, World/Graph evidence, or governed document projections.",
       entrypoint: `${publicToolName("head_project_initialize_or_resume")} profile=product, then ${publicToolName("head_onboarding_guide")}`,
     },
     {
       id: "context-compiler",
       availability: blocked || contextState.repositoryEvidence,
-      useWhen: "Reproducible selected-context handoff, a durable Run or recovery actually needs a Capsule. Ordinary reading/editing uses needed files directly; the Compiler does not decide semantic sufficiency.",
+      useWhen:
+        "Reproducible selected-context handoff, a durable Run or recovery actually needs a Capsule. Ordinary reading/editing uses needed files directly; the Compiler does not decide semantic sufficiency.",
       entrypoint: publicToolName("head_context_prepare"),
     },
     {
@@ -423,7 +472,8 @@ function capabilityGuide({ coreState, productState, contextState, runtimes = [] 
       id: "bounded-workers",
       availability: blocked || "requires-session-or-run-authorization",
       useWhen: "Inspect or settle retained managed work, not ordinary parallel delegation or an automatic fallback.",
-      entrypoint: "Use exact status/cancel diagnostics; explicit retained-work maintenance keeps original authorization and effect checks. Ordinary delegation uses available Host tools.",
+      entrypoint:
+        "Use exact status/cancel diagnostics; explicit retained-work maintenance keeps original authorization and effect checks. Ordinary delegation uses available Host tools.",
     },
     {
       id: "compaction-recovery",
@@ -445,34 +495,67 @@ function capabilityGuide({ coreState, productState, contextState, runtimes = [] 
 // the effective merged Host config, plugin loading, or a live MCP connection.
 function opencodeConnection(projectInspection) {
   if (!projectInspection.project?.runtimes?.includes("opencode")) return null;
-  const root = projectInspection.project.projectRoot, storage = projectInspection.storage;
-  const expected = ["generated/" + formatForVerifiedOwner(storage).dialect + "-instructions.md", "instructions/project.md"]
-    .map(relative => storage.directory + "/" + relative);
+  const root = projectInspection.project.projectRoot,
+    storage = projectInspection.storage;
+  const expected = ["generated/" + formatForVerifiedOwner(storage).dialect + "-instructions.md", "instructions/project.md"].map(
+    (relative) => storage.directory + "/" + relative,
+  );
   const projection = storage.directory + "/generated/opencode.json";
-  const observation = { configPath: "opencode.json", projection, scope: "bounded-local-files-only; merged Host configuration not inspected",
-    hostLoaded: "unknown", ordinaryWorkBlocked: false, persisted: false, instructions: {}, mcp: {} };
+  const observation = {
+    configPath: "opencode.json",
+    projection,
+    scope: "bounded-local-files-only; merged Host configuration not inspected",
+    hostLoaded: "unknown",
+    ordinaryWorkBlocked: false,
+    persisted: false,
+    instructions: {},
+    mcp: {},
+  };
   function readText(relative) {
     const file = safeSnapshotPath(root, path.join(root, relative));
     let descriptor;
     try {
       descriptor = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
       const before = fs.fstatSync(descriptor);
-      if (!before.isFile() || before.nlink !== 1 || before.size > 1024 * 1024) throw Object.assign(new Error("Uninspectable configuration"), { code: "CONFIG_UNAVAILABLE" });
-      const buffer = Buffer.alloc(before.size + 1), count = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
-      const after = fs.fstatSync(descriptor), named = fs.lstatSync(file);
-      if (count !== before.size || before.size !== after.size || before.mtimeMs !== after.mtimeMs || named.isSymbolicLink()
-        || named.dev !== before.dev || named.ino !== before.ino || named.size !== after.size || named.mtimeMs !== after.mtimeMs) {
+      if (!before.isFile() || before.nlink !== 1 || before.size > 1024 * 1024)
+        throw Object.assign(new Error("Uninspectable configuration"), { code: "CONFIG_UNAVAILABLE" });
+      const buffer = Buffer.alloc(before.size + 1),
+        count = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
+      const after = fs.fstatSync(descriptor),
+        named = fs.lstatSync(file);
+      if (
+        count !== before.size ||
+        before.size !== after.size ||
+        before.mtimeMs !== after.mtimeMs ||
+        named.isSymbolicLink() ||
+        named.dev !== before.dev ||
+        named.ino !== before.ino ||
+        named.size !== after.size ||
+        named.mtimeMs !== after.mtimeMs
+      ) {
         throw Object.assign(new Error("Configuration changed during inspection"), { code: "CONFIG_CHANGED_CONCURRENTLY" });
       }
-      const bytes = buffer.subarray(0, count), text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      const bytes = buffer.subarray(0, count),
+        text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       if (text.includes("\0")) throw Object.assign(new Error("Unsupported configuration encoding"), { code: "CONFIG_UNAVAILABLE" });
       return { bytes, text };
-    } catch (error) { if (error.code === "ENOENT") return null; throw error; }
-    finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
+    } catch (error) {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    } finally {
+      if (descriptor !== undefined) fs.closeSync(descriptor);
+    }
   }
-  const unknown = reason => ({ ...observation, configStatus: "unknown", reasonCode: reason,
-    instructions: { status: "unknown", nextAction: "Inspect the existing instructions and AGENTS.md in place; reuse sufficient links instead of adding duplicates." },
-    mcp: { status: "unknown", nextAction: `Inspect the existing MCP entry against ${projection}; preserve disabled entries and user overrides.` } });
+  const unknown = (reason) => ({
+    ...observation,
+    configStatus: "unknown",
+    reasonCode: reason,
+    instructions: {
+      status: "unknown",
+      nextAction: "Inspect the existing instructions and AGENTS.md in place; reuse sufficient links instead of adding duplicates.",
+    },
+    mcp: { status: "unknown", nextAction: `Inspect the existing MCP entry against ${projection}; preserve disabled entries and user overrides.` },
+  });
   try {
     // OpenCode supports JSONC and layered configs. This observer deliberately
     // does not strip comments or pretend to implement the Host's merge parser.
@@ -482,194 +565,313 @@ function opencodeConnection(projectInspection) {
     if (!config || typeof config !== "object" || Array.isArray(config)) return unknown("CONFIG_SHAPE_UNKNOWN");
     observation.configStatus = original ? "observed" : "missing";
     const list = config.instructions;
-    const invalidInstructions = list !== undefined && (!Array.isArray(list) || list.some(item => typeof item !== "string"));
-    const normalized = (invalidInstructions ? [] : list || []).map(item => /[*?{}]/.test(item) ? item
-      : path.relative(root, path.resolve(root, item)).replaceAll("\\", "/"));
-    let missing = expected.filter(item => !normalized.includes(item));
+    const invalidInstructions = list !== undefined && (!Array.isArray(list) || list.some((item) => typeof item !== "string"));
+    const normalized = (invalidInstructions ? [] : list || []).map((item) =>
+      /[*?{}]/.test(item) ? item : path.relative(root, path.resolve(root, item)).replaceAll("\\", "/"),
+    );
+    let missing = expected.filter((item) => !normalized.includes(item));
     let agents, agentsError;
-    try { agents = readText("AGENTS.md"); } catch (error) { agentsError = error.code || "INSTRUCTIONS_UNAVAILABLE"; }
-    const managedAgents = projectInspection.project.integrations?.codex?.status === "managed"
-      && !projectInspection.drift.some(item => item.path === "AGENTS.md") && agents;
+    try {
+      agents = readText("AGENTS.md");
+    } catch (error) {
+      agentsError = error.code || "INSTRUCTIONS_UNAVAILABLE";
+    }
+    const managedAgents =
+      projectInspection.project.integrations?.codex?.status === "managed" && !projectInspection.drift.some((item) => item.path === "AGENTS.md") && agents;
     const explicitLink = agents?.text.includes(`For Lode work, read \`${expected[0]}\` and \`${expected[1]}\`.`);
-    const referenced = agents && expected.some(item => agents.text.includes(item));
+    const referenced = agents && expected.some((item) => agents.text.includes(item));
     if (managedAgents || explicitLink) missing = [];
-    observation.instructions = { status: missing.length ? referenced || normalized.some(item => /[*?{]/.test(item)) ? "unknown" : "missing" : "configured",
-      via: managedAgents ? "managed-AGENTS.md" : explicitLink ? "explicit-AGENTS.md-link" : "instructions-array", missing,
+    observation.instructions = {
+      status: missing.length ? (referenced || normalized.some((item) => /[*?{]/.test(item)) ? "unknown" : "missing") : "configured",
+      via: managedAgents ? "managed-AGENTS.md" : explicitLink ? "explicit-AGENTS.md-link" : "instructions-array",
+      missing,
       duplicateCount: normalized.length - new Set(normalized).size,
-      nextAction: !missing.length ? "Reuse the existing instruction connection; do not add duplicates. Host consumption remains unverified."
-        : referenced ? "Review the existing AGENTS.md reference in place before adding anything; do not duplicate a sufficient connection."
-        : `Use ${projection} for only the missing instructions: ${missing.join(", ")}. Edit within existing setup authority; preserve order and settings.` };
-    if (invalidInstructions || agentsError && missing.length) observation.instructions = { status: "unknown", reasonCode: agentsError || "CONFIG_INSTRUCTIONS_SHAPE_UNKNOWN",
-      nextAction: "Inspect only the existing instruction configuration in place; do not rewrite or duplicate it. The independently observed MCP entry remains available." };
+      nextAction: !missing.length
+        ? "Reuse the existing instruction connection; do not add duplicates. Host consumption remains unverified."
+        : referenced
+          ? "Review the existing AGENTS.md reference in place before adding anything; do not duplicate a sufficient connection."
+          : `Use ${projection} for only the missing instructions: ${missing.join(", ")}. Edit within existing setup authority; preserve order and settings.`,
+    };
+    if (invalidInstructions || (agentsError && missing.length))
+      observation.instructions = {
+        status: "unknown",
+        reasonCode: agentsError || "CONFIG_INSTRUCTIONS_SHAPE_UNKNOWN",
+        nextAction:
+          "Inspect only the existing instruction configuration in place; do not rewrite or duplicate it. The independently observed MCP entry remains available.",
+      };
     const invalidMcp = config.mcp !== undefined && (!config.mcp || typeof config.mcp !== "object" || Array.isArray(config.mcp));
     const script = path.join(projectInspection.installation.pluginRoot, "scripts/mcp-server.mjs");
     const entries = [];
     for (const [key, item] of Object.entries(invalidMcp ? {} : config.mcp || {})) {
-      const conventional = ["lode", "head"].includes(key), command = item?.command;
-      let status = "conflicting", reason = "different-launch";
-      if (item?.type === "local" && Array.isArray(command) && command.length === 2 && typeof command[0] === "string" && typeof command[1] === "string"
-        && /^node(?:\.exe)?$/i.test(path.basename(command[0]))) {
-        if (command[1] === "{env:LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs") { status = "unknown"; reason = "host-plugin-root-substitution-unverified"; }
-        else if (/[{}$]/.test(command[1])) { status = "unknown"; reason = "host-variable-unresolved"; }
-        else {
-          try { if (fs.realpathSync(path.resolve(root, command[1])) === fs.realpathSync(script)) { status = "configured"; reason = "exact-local-script"; } }
-          catch { /* Unresolved files are not evidence of a working launch. */ }
+      const conventional = ["lode", "head"].includes(key),
+        command = item?.command;
+      let status = "conflicting",
+        reason = "different-launch";
+      if (
+        item?.type === "local" &&
+        Array.isArray(command) &&
+        command.length === 2 &&
+        typeof command[0] === "string" &&
+        typeof command[1] === "string" &&
+        /^node(?:\.exe)?$/i.test(path.basename(command[0]))
+      ) {
+        if (command[1] === "{env:LODE_PLUGIN_ROOT}/scripts/mcp-server.mjs") {
+          status = "unknown";
+          reason = "host-plugin-root-substitution-unverified";
+        } else if (/[{}$]/.test(command[1])) {
+          status = "unknown";
+          reason = "host-variable-unresolved";
+        } else {
+          try {
+            if (fs.realpathSync(path.resolve(root, command[1])) === fs.realpathSync(script)) {
+              status = "configured";
+              reason = "exact-local-script";
+            }
+          } catch {
+            /* Unresolved files are not evidence of a working launch. */
+          }
         }
       }
       // A variable-shaped command alone does not identify Lode. Unrelated
       // servers stay unrelated; a nonconventional alias needs the exact script.
       if (!conventional && status !== "configured") continue;
-      if (item?.enabled === false) { status = "disabled"; reason = "user-disabled-entry"; }
+      if (item?.enabled === false) {
+        status = "disabled";
+        reason = "user-disabled-entry";
+      }
       entries.push({ key, status, reason });
     }
     const state = entries.length > 1 ? "multiple-entries" : entries[0]?.status || "missing";
-    observation.mcp = { status: state, entries,
-      nextAction: state === "configured" ? "Reuse the existing exact launch; no duplicate server is needed. Actual Host loading remains unverified."
-        : state === "missing" ? `Compare the missing Lode MCP entry with ${projection}; add only that entry within the current authorized setup request, preserving other servers, model and permissions.`
-        : state === "unknown" ? "Verify the launch variable (normally LODE_PLUGIN_ROOT) in the OpenCode Host or its existing managed plugin resolver; do not replace it or infer loading from this process environment."
-        : "Preserve the existing entries and disabled state. Resolve only the specific override or duplicate with the user when that change is needed; ordinary work continues." };
-    if (invalidMcp) observation.mcp = { status: "unknown", reasonCode: "CONFIG_MCP_SHAPE_UNKNOWN",
-      nextAction: `Inspect only the existing MCP shape against ${projection}; preserve the independent instruction connection and user settings.` };
+    observation.mcp = {
+      status: state,
+      entries,
+      nextAction:
+        state === "configured"
+          ? "Reuse the existing exact launch; no duplicate server is needed. Actual Host loading remains unverified."
+          : state === "missing"
+            ? `Compare the missing Lode MCP entry with ${projection}; add only that entry within the current authorized setup request, preserving other servers, model and permissions.`
+            : state === "unknown"
+              ? "Verify the launch variable (normally LODE_PLUGIN_ROOT) in the OpenCode Host or its existing managed plugin resolver; do not replace it or infer loading from this process environment."
+              : "Preserve the existing entries and disabled state. Resolve only the specific override or duplicate with the user when that change is needed; ordinary work continues.",
+    };
+    if (invalidMcp)
+      observation.mcp = {
+        status: "unknown",
+        reasonCode: "CONFIG_MCP_SHAPE_UNKNOWN",
+        nextAction: `Inspect only the existing MCP shape against ${projection}; preserve the independent instruction connection and user settings.`,
+      };
     // A read observation cannot lock an external editor. Detect an observed
     // change across this bounded inspection; never write/repair the config.
     const latest = readText("opencode.json");
     if (original ? !latest?.bytes.equals(original.bytes) : latest) return unknown("CONFIG_CHANGED_CONCURRENTLY");
     return observation;
-  } catch (error) { return unknown(error instanceof SyntaxError ? "JSON_OR_JSONC_NOT_INTERPRETED" : error.code || "CONFIG_UNAVAILABLE"); }
+  } catch (error) {
+    return unknown(error instanceof SyntaxError ? "JSON_OR_JSONC_NOT_INTERPRETED" : error.code || "CONFIG_UNAVAILABLE");
+  }
 }
 
 function projectExperience(projectInspection, onboardingInspection = null, recoveryOverride = null) {
   if (projectInspection.status === "not_initialized") {
     const action = "initialize_core";
     const context = contextReadiness({ coreState: "not_initialized", productState: "unavailable" });
-    return withExperienceProjections({
-      kind: formatForVerifiedOwner(projectInspection.storage).kind("HeadProjectExperienceProjection"),
-      protocolVersion: PROJECT_BOOTSTRAP_PROTOCOL_VERSION,
-      status: "not_initialized",
-      projectRoot: projectInspection.projectRoot,
-      readiness: {
-        core: { state: "not_initialized", managedProjectionDriftCount: 0 },
-        product: { state: "unavailable", governanceActivated: false, onboardingStatus: null },
-        context,
-        recovery: recoveryOverride || recoveryReadiness(projectInspection),
+    return withExperienceProjections(
+      {
+        kind: formatForVerifiedOwner(projectInspection.storage).kind("HeadProjectExperienceProjection"),
+        protocolVersion: PROJECT_BOOTSTRAP_PROTOCOL_VERSION,
+        status: "not_initialized",
+        projectRoot: projectInspection.projectRoot,
+        readiness: {
+          core: { state: "not_initialized", managedProjectionDriftCount: 0 },
+          product: { state: "unavailable", governanceActivated: false, onboardingStatus: null },
+          context,
+          recovery: recoveryOverride || recoveryReadiness(projectInspection),
+        },
+        nextAction: {
+          id: action,
+          summary: "Initialize the constitutional Core and one canonical Project/Session before using optional capabilities.",
+          entrypoint: entrypoint(action),
+        },
+        capabilities: capabilityGuide({ coreState: "not_initialized", productState: "unavailable", contextState: context }),
+        runtime: runtimeProjection(projectInspection),
+        authority: { advisoryOnly: true, persisted: false, mutatesProject: false, activatesCapabilities: false, grantsAuthorization: false },
       },
-      nextAction: { id: action, summary: "Initialize the constitutional Core and one canonical Project/Session before using optional capabilities.", entrypoint: entrypoint(action) },
-      capabilities: capabilityGuide({ coreState: "not_initialized", productState: "unavailable", contextState: context }),
-      runtime: runtimeProjection(projectInspection),
-      authority: { advisoryOnly: true, persisted: false, mutatesProject: false, activatesCapabilities: false, grantsAuthorization: false },
-    }, projectInspection.storage);
+      projectInspection.storage,
+    );
   }
 
-  const pendingCandidateNeedsWorld = ["awaiting_review", "revision_required"].includes(onboardingInspection?.status)
-    && onboardingInspection.worldModel?.status !== "not-inspected"
-    && (onboardingInspection.worldModel?.status !== "current" || onboardingInspection.worldModel.matchesCandidateSource === false);
-  const product = onboardingInspection ? productReadiness(pendingCandidateNeedsWorld ? "ready_world_changed" : onboardingInspection.status) : {
-    state: "inspection_blocked",
-    status: "core_drifted",
-    action: "review_managed_projection_drift",
-    summary: "Managed project projections have drifted. Product readiness is not inferred until Core integrity is restored.",
-  };
+  const pendingCandidateNeedsWorld =
+    ["awaiting_review", "revision_required"].includes(onboardingInspection?.status) &&
+    onboardingInspection.worldModel?.status !== "not-inspected" &&
+    (onboardingInspection.worldModel?.status !== "current" || onboardingInspection.worldModel.matchesCandidateSource === false);
+  const product = onboardingInspection
+    ? productReadiness(pendingCandidateNeedsWorld ? "ready_world_changed" : onboardingInspection.status)
+    : {
+        state: "inspection_blocked",
+        status: "core_drifted",
+        action: "review_managed_projection_drift",
+        summary: "Managed project projections have drifted. Product readiness is not inferred until Core integrity is restored.",
+      };
   const coreState = projectInspection.status === "ready" ? "ready" : "drifted";
   const projectionDriftOnly = coreState === "drifted" && isProjectRecoveryReadable(projectInspection);
   const unrelatedDefaultProductLoss = onboardingInspection?.unavailableDependency === "default-session";
   const context = contextReadiness({ coreState, productState: product.state, onboardingInspection });
   const recovery = recoveryOverride || recoveryReadiness(projectInspection);
-  const action = coreState === "ready" ? unrelatedDefaultProductLoss ? "work_directly" : product.action
-    : projectionDriftOnly ? "work_directly" : "review_managed_projection_drift";
-  return withExperienceProjections({
-    kind: "HeadProjectExperienceProjection",
-    protocolVersion: PROJECT_BOOTSTRAP_PROTOCOL_VERSION,
-    status: coreState === "ready" ? product.status : "core_drifted",
-    project: { ...projectInspection.project, sessionId: projectInspection.state.sessionId },
-    ...(projectInspection.project.runtimes.includes("opencode") ? { opencodeConnection: opencodeConnection(projectInspection) } : {}),
-    state: projectInspection.state,
-    ...readProjectDirectionView({ root: projectInspection.project.projectRoot }),
-    drift: projectInspection.drift,
-    readiness: {
-      core: { state: coreState, managedProjectionDriftCount: projectInspection.drift.length,
-        ...(projectionDriftOnly ? { projectionDriftOnly: true } : {}) },
-      product: {
-        state: product.state,
-        governanceActivated: onboardingInspection && onboardingInspection.status !== "integrity_attention" ? !["initialized", "migration_required"].includes(onboardingInspection.status) : null,
-        onboardingStatus: onboardingInspection?.status || null,
-        ...(onboardingInspection?.reasonCode ? { reasonCode: onboardingInspection.reasonCode } : {}),
+  const action =
+    coreState === "ready"
+      ? unrelatedDefaultProductLoss
+        ? "work_directly"
+        : product.action
+      : projectionDriftOnly
+        ? "work_directly"
+        : "review_managed_projection_drift";
+  return withExperienceProjections(
+    {
+      kind: "HeadProjectExperienceProjection",
+      protocolVersion: PROJECT_BOOTSTRAP_PROTOCOL_VERSION,
+      status: coreState === "ready" ? product.status : "core_drifted",
+      project: { ...projectInspection.project, sessionId: projectInspection.state.sessionId },
+      ...(projectInspection.project.runtimes.includes("opencode") ? { opencodeConnection: opencodeConnection(projectInspection) } : {}),
+      state: projectInspection.state,
+      ...readProjectDirectionView({ root: projectInspection.project.projectRoot }),
+      drift: projectInspection.drift,
+      readiness: {
+        core: { state: coreState, managedProjectionDriftCount: projectInspection.drift.length, ...(projectionDriftOnly ? { projectionDriftOnly: true } : {}) },
+        product: {
+          state: product.state,
+          governanceActivated:
+            onboardingInspection && onboardingInspection.status !== "integrity_attention"
+              ? !["initialized", "migration_required"].includes(onboardingInspection.status)
+              : null,
+          onboardingStatus: onboardingInspection?.status || null,
+          ...(onboardingInspection?.reasonCode ? { reasonCode: onboardingInspection.reasonCode } : {}),
+        },
+        context,
+        storage: inspectStorageReaderCompatibility({
+          root: projectInspection.project.projectRoot,
+          storage: projectInspection.storage,
+          verifyWorldPointer: (pointer) => verifyWorldModelPointerOriginal(pointer, projectInspection.project.projectId),
+          verifyGraphPointer: (pointer) => {
+            verifyGraphProjectionPointer(pointer, null, projectInspection.storage);
+            if (pointer.projectId !== projectInspection.project.projectId)
+              throw Object.assign(new Error("Graph pointer Project mismatch."), { code: "GRAPH_PROJECTION_PROJECT_MISMATCH" });
+          },
+        }),
+        recovery,
       },
-      context,
-      storage: inspectStorageReaderCompatibility({ root: projectInspection.project.projectRoot, storage: projectInspection.storage,
-        verifyWorldPointer: pointer => verifyWorldModelPointerOriginal(pointer, projectInspection.project.projectId),
-        verifyGraphPointer: pointer => { verifyGraphProjectionPointer(pointer, null, projectInspection.storage);
-          if (pointer.projectId !== projectInspection.project.projectId) throw Object.assign(new Error("Graph pointer Project mismatch."), { code: "GRAPH_PROJECTION_PROJECT_MISMATCH" }); } }),
-      recovery,
+      nextAction: {
+        id: action,
+        summary: unrelatedDefaultProductLoss
+          ? "Continue from the selected Session. Optional Product facts depending on the damaged default Session are unavailable; they are not a prerequisite for this work."
+          : coreState === "ready"
+            ? product.summary
+            : projectionDriftOnly
+              ? "Continue the task from verified records. Generated projection differences remain untouched; review them only before an affected managed mutation."
+              : "Review managed-file drift before any mutating Lode operation. No automatic repair is attempted.",
+        entrypoint: entrypoint(action, onboardingInspection),
+      },
+      capabilities: capabilityGuide({ coreState, productState: product.state, contextState: context, runtimes: projectInspection.project.runtimes }),
+      runtime: runtimeProjection(projectInspection),
+      ...(projectInspection.project.runtimes.includes("codex")
+        ? {
+            codexHookTrust: inspectCodexHookTrust({ projectRoot: projectInspection.project.projectRoot, pluginRoot: activePluginRoot }),
+          }
+        : {}),
+      authority: { advisoryOnly: true, persisted: false, mutatesProject: false, activatesCapabilities: false, grantsAuthorization: false },
     },
-    nextAction: {
-      id: action,
-      summary: unrelatedDefaultProductLoss ? "Continue from the selected Session. Optional Product facts depending on the damaged default Session are unavailable; they are not a prerequisite for this work."
-        : coreState === "ready" ? product.summary : projectionDriftOnly
-        ? "Continue the task from verified records. Generated projection differences remain untouched; review them only before an affected managed mutation."
-        : "Review managed-file drift before any mutating Lode operation. No automatic repair is attempted.",
-      entrypoint: entrypoint(action, onboardingInspection),
-    },
-    capabilities: capabilityGuide({ coreState, productState: product.state, contextState: context, runtimes: projectInspection.project.runtimes }),
-    runtime: runtimeProjection(projectInspection),
-    ...(projectInspection.project.runtimes.includes("codex") ? {
-      codexHookTrust: inspectCodexHookTrust({ projectRoot: projectInspection.project.projectRoot, pluginRoot: activePluginRoot }),
-    } : {}),
-    authority: { advisoryOnly: true, persisted: false, mutatesProject: false, activatesCapabilities: false, grantsAuthorization: false },
-  }, projectInspection.storage);
+    projectInspection.storage,
+  );
 }
 
 // Physical location facts only: no Session selection, recovery, binding lookup,
 // publication lock, or adoption. Normal owned roots retain their existing route.
 export function inspectProjectLocationExperience({ root = ".", sessionId } = {}) {
-  const pendingImport=inspectPendingProjectImport({root});
-  if(pendingImport)return withExperienceProjections({
-    kind:"LodeProjectExperienceProjection",status:"project_import_pending",projectRoot:pendingImport.projectRoot,projectImport:pendingImport,
-    readiness:{core:{state:"import_pending"},product:{state:"not-inspected"},context:{state:"not-inspected"},recovery:{state:"not-restored",headActionRequired:true}},
-    nextAction:{id:"continue_selected_import",summary:"The selected import is incomplete. Reuse its exact bundle through the import entrypoint; ordinary coding remains available and no task execution was replayed.",
-      entrypoint:{tool:publicToolName("head_project_bundle_import"),bundleId:pendingImport.bundleId,bundleRootHint:pendingImport.bundleRootHint}},
-    authority:{plane:"P4",advisoryOnly:true,persisted:false,mutatesProject:false,grantsAuthorization:false,writesRecoveryDirection:false},
+  const pendingImport = inspectPendingProjectImport({ root });
+  if (pendingImport)
+    return withExperienceProjections({
+      kind: "LodeProjectExperienceProjection",
+      status: "project_import_pending",
+      projectRoot: pendingImport.projectRoot,
+      projectImport: pendingImport,
+      readiness: {
+        core: { state: "import_pending" },
+        product: { state: "not-inspected" },
+        context: { state: "not-inspected" },
+        recovery: { state: "not-restored", headActionRequired: true },
+      },
+      nextAction: {
+        id: "continue_selected_import",
+        summary:
+          "The selected import is incomplete. Reuse its exact bundle through the import entrypoint; ordinary coding remains available and no task execution was replayed.",
+        entrypoint: { tool: publicToolName("head_project_bundle_import"), bundleId: pendingImport.bundleId, bundleRootHint: pendingImport.bundleRootHint },
+      },
+      authority: { plane: "P4", advisoryOnly: true, persisted: false, mutatesProject: false, grantsAuthorization: false, writesRecoveryDirection: false },
+    });
+  const location = resumeProjectLocation({
+    root,
+    pluginRoot: activePluginRoot,
+    inspectOnly: true,
+    validateSelection:
+      sessionId === undefined
+        ? null
+        : (owner) => {
+            if (typeof sessionId !== "string") throw new Error("An explicit logical Session route must be text.");
+            validateRelocationSessionSelection(owner, { sessionId });
+          },
   });
-  const location = resumeProjectLocation({ root, pluginRoot: activePluginRoot, inspectOnly: true,
-    validateSelection: sessionId === undefined ? null : owner => {
-      if (typeof sessionId !== "string") throw new Error("An explicit logical Session route must be text.");
-      validateRelocationSessionSelection(owner, { sessionId });
-    } });
   if (!location) return null;
   const state = location.publicationPending ? "relocation_pending" : "relocation_available";
   return withExperienceProjections({
-    kind: "LodeProjectExperienceProjection", protocolVersion: PROJECT_BOOTSTRAP_PROTOCOL_VERSION, status: state,
+    kind: "LodeProjectExperienceProjection",
+    protocolVersion: PROJECT_BOOTSTRAP_PROTOCOL_VERSION,
+    status: state,
     projectRoot: location.projectRoot,
     retainedProject: { projectId: location.projectId, previousRoot: location.previousRoot },
     projectLocation: { ...location, authorityPlane: "P4", executionReplayAllowed: false, nativeBindingTransferred: false },
     selectedSession: { status: "not-inspected", selectionClaimed: false },
-    readiness: { core: { state }, product: { state: "not-inspected" }, context: { state: "not-inspected" },
-      recovery: { state: "not-inspected", directionRestored: false, headActionRequired: false } },
-    nextAction: { id: "resume_existing_project", summary: "Explicitly resume this existing Project at the new folder; do not initialize a replacement. This read has not selected or restored a Session.",
-      entrypoint: { cli: "resume", tool: "lode_project_initialize_or_resume", profile: "core" } },
-    authority: { plane: "P4", advisoryOnly: true, persisted: false, mutatesProject: false, grantsAuthorization: false,
-      writesRecoveryDirection: false },
+    readiness: {
+      core: { state },
+      product: { state: "not-inspected" },
+      context: { state: "not-inspected" },
+      recovery: { state: "not-inspected", directionRestored: false, headActionRequired: false },
+    },
+    nextAction: {
+      id: "resume_existing_project",
+      summary: "Explicitly resume this existing Project at the new folder; do not initialize a replacement. This read has not selected or restored a Session.",
+      entrypoint: { cli: "resume", tool: "lode_project_initialize_or_resume", profile: "core" },
+    },
+    authority: { plane: "P4", advisoryOnly: true, persisted: false, mutatesProject: false, grantsAuthorization: false, writesRecoveryDirection: false },
   });
 }
 
-function missingDefaultSessionProjection(root,error) {
-  if(!["INVALID_CANON","INVALID_SESSION_CANON","ENOENT"].includes(error.code))return null;
-  const storage=resolveProjectStorage(root);if(!storage)return null;
-  const file=defaultSessionStatePath(root,storage);
-  if(error.headSessionRecordPath!==file&&error.path!==file)return null;
-  if(sessionStatePath(root,storage)!==file)return null;
-  try{fs.lstatSync(file);return null;}catch(observed){if(observed.code!=="ENOENT")throw error;}
-  return sessionSelectionUnresolved(root,{reasonCode:"DEFAULT_SESSION_ABSENT"});
+function missingDefaultSessionProjection(root, error) {
+  if (!["INVALID_CANON", "INVALID_SESSION_CANON", "ENOENT"].includes(error.code)) return null;
+  const storage = resolveProjectStorage(root);
+  if (!storage) return null;
+  const file = defaultSessionStatePath(root, storage);
+  if (error.headSessionRecordPath !== file && error.path !== file) return null;
+  if (sessionStatePath(root, storage) !== file) return null;
+  try {
+    fs.lstatSync(file);
+    return null;
+  } catch (observed) {
+    if (observed.code !== "ENOENT") throw error;
+  }
+  return sessionSelectionUnresolved(root, { reasonCode: "DEFAULT_SESSION_ABSENT" });
 }
 
 export async function inspectProjectExperience({ root = ".", recoveryOverride = null } = {}) {
   const location = inspectProjectLocationExperience({ root });
   if (location) return location;
   let project;
-  try { project = inspectProject(root); } catch(error) {
-    const projection=missingDefaultSessionProjection(root,error);if(projection)return projection;throw error;
+  try {
+    project = inspectProject(root);
+  } catch (error) {
+    const projection = missingDefaultSessionProjection(root, error);
+    if (projection) return projection;
+    throw error;
   }
   if (project.status !== "ready") return projectExperience(project, null, recoveryOverride);
-  return projectExperience(project, (await inspectOptionalOnboarding({ root })), recoveryOverride);
+  return projectExperience(project, await inspectOptionalOnboarding({ root }), recoveryOverride);
 }
 
 // Fixed internal consumer boundary. Keep the later managed-file/selected-owner
@@ -677,7 +879,7 @@ export async function inspectProjectExperience({ root = ".", recoveryOverride = 
 export async function inspectConversationProjectExperience({ root = ".", recoveryOverride = null } = {}) {
   const project = inspectProject(root);
   if (project.status !== "ready") return projectExperience(project, null, recoveryOverride);
-  return projectExperience(project, (await inspectOptionalOnboardingForEntry({ root })), recoveryOverride);
+  return projectExperience(project, await inspectOptionalOnboardingForEntry({ root }), recoveryOverride);
 }
 
 function bootstrapResponse({ root, profile, before, installation, onboardingAction, inputDisposition, inspected, extra = {} }) {
@@ -700,51 +902,99 @@ function bootstrapResponse({ root, profile, before, installation, onboardingActi
 }
 
 export async function initializeOrResumeProject(options = {}) {
-  const { root = ".", pluginRoot, runtimes = null, profile: requestedProfile = "core", onboarding = null,
-    instructionIntegration = null, projectSessionRoute = null, copiedProject = null, writeRootInstructionFiles = false } = options;
+  const {
+    root = ".",
+    pluginRoot,
+    runtimes = null,
+    profile: requestedProfile = "core",
+    onboarding = null,
+    instructionIntegration = null,
+    projectSessionRoute = null,
+    copiedProject = null,
+    writeRootInstructionFiles = false,
+  } = options;
   validateInstructionIntegration(instructionIntegration);
   const profile = validateProfile(requestedProfile);
   const onboardingInput = validateOnboardingInput(onboarding);
   if (profile === "core" && Object.keys(onboardingInput).length) {
     const fields = Object.keys(onboardingInput).sort().join(", ");
-    fail("PROJECT_BOOTSTRAP_PROFILE_REQUIRED", `For Core initialization or resume, omit Product onboarding fields (${fields}). The mode existing/new choice belongs to Product onboarding. Use the explicit product profile when that is the requested outcome.`);
+    fail(
+      "PROJECT_BOOTSTRAP_PROFILE_REQUIRED",
+      `For Core initialization or resume, omit Product onboarding fields (${fields}). The mode existing/new choice belongs to Product onboarding. Use the explicit product profile when that is the requested outcome.`,
+    );
   }
   if (copiedProject !== null && copiedProject !== "verified-copy") fail("PROJECT_COPY_CHOICE_INVALID", "copiedProject must be verified-copy.");
-  if(inspectPendingProjectImport({root}))return inspectProjectLocationExperience({root});
+  if (inspectPendingProjectImport({ root })) return inspectProjectLocationExperience({ root });
   const route = projectSessionRoute ? { sessionId: projectSessionRoute.sessionId, context: projectSessionRoute.context } : null;
-  let contextResolved=false;
+  let contextResolved = false;
   const resolveContext = async () => {
-    if(!route || route.context || !projectSessionRoute.resolveContext || contextResolved)return null;
-    contextResolved=true;
-    try { route.context=await projectSessionRoute.resolveContext();return null; }
-    catch(error) { if(route.sessionId===undefined)return error.code||"HEAD_SESSION_CONTEXT_UNAVAILABLE";return null; }
+    if (!route || route.context || !projectSessionRoute.resolveContext || contextResolved) return null;
+    contextResolved = true;
+    try {
+      route.context = await projectSessionRoute.resolveContext();
+      return null;
+    } catch (error) {
+      if (route.sessionId === undefined) return error.code || "HEAD_SESSION_CONTEXT_UNAVAILABLE";
+      return null;
+    }
   };
-  const validateSelection = owner => validateRelocationSessionSelection(owner, route ?? {});
+  const validateSelection = (owner) => validateRelocationSessionSelection(owner, route ?? {});
   // Decide the explicit copy scope before even an exact-byte repair.
   const locationPreview = resumeProjectLocation({ root, pluginRoot, runtimes, copiedProject, validateSelection, inspectOnly: true });
-  if (locationPreview?.requiredChoice && copiedProject !== "verified-copy") fail("PROJECT_COPY_CHOICE_REQUIRED", "The initial origin cannot be proved. Choose copiedProject=verified-copy for this exact local copy; no file has been changed.");
-  if(!locationPreview){const failure=await resolveContext();if(failure)return sessionSelectionUnresolved(root,{reasonCode:failure});}
+  if (locationPreview?.requiredChoice && copiedProject !== "verified-copy")
+    fail(
+      "PROJECT_COPY_CHOICE_REQUIRED",
+      "The initial origin cannot be proved. Choose copiedProject=verified-copy for this exact local copy; no file has been changed.",
+    );
+  if (!locationPreview) {
+    const failure = await resolveContext();
+    if (failure) return sessionSelectionUnresolved(root, { reasonCode: failure });
+  }
   let byteRepair;
-  try { byteRepair = repairProjectBytesForResume({ root, pluginRoot, runtimes, validateSelection }); }
-  catch(error) { const projection=missingDefaultSessionProjection(root,error);if(projection)return projection;throw error; }
+  try {
+    byteRepair = repairProjectBytesForResume({ root, pluginRoot, runtimes, validateSelection });
+  } catch (error) {
+    const projection = missingDefaultSessionProjection(root, error);
+    if (projection) return projection;
+    throw error;
+  }
   const location = resumeProjectLocation({ root, pluginRoot, runtimes, copiedProject, validateSelection });
   if (location && byteRepair) location.byteRepair = byteRepair;
-  const operation = async () => (await initializeOrResumeCurrentProject({ ...options, root, profile, onboardingInput, location }));
-  if (!projectSessionRoute) return (await operation());
-  const unresolved = reasonCode => {
+  const operation = async () => await initializeOrResumeCurrentProject({ ...options, root, profile, onboardingInput, location });
+  if (!projectSessionRoute) return await operation();
+  const unresolved = (reasonCode) => {
     const value = sessionSelectionUnresolved(root, { reasonCode });
     if (!location) return value;
     const summary = "Project folder location recovery was applied. Logical Session selection and Host linkage remain unconfirmed; no execution was replayed.";
-    return { ...value, projectLocation: location, nextHeadAction: `${summary} ${value.nextHeadAction}`,
-      presentation: { ...value.presentation, mode: "exception", summary } };
+    return {
+      ...value,
+      projectLocation: location,
+      nextHeadAction: `${summary} ${value.nextHeadAction}`,
+      presentation: { ...value.presentation, mode: "exception", summary },
+    };
   };
-  const contextFailure=await resolveContext();if(contextFailure)return unresolved(contextFailure);
-  try { return await withSessionCallContext({ root, ...route }, operation); }
-  catch (error) { if (error.code === "HEAD_SESSION_SELECTION_LOST") return unresolved(error.code); throw error; }
+  const contextFailure = await resolveContext();
+  if (contextFailure) return unresolved(contextFailure);
+  try {
+    return await withSessionCallContext({ root, ...route }, operation);
+  } catch (error) {
+    if (error.code === "HEAD_SESSION_SELECTION_LOST") return unresolved(error.code);
+    throw error;
+  }
 }
 
-async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = null, profile, onboardingInput,
-  instructionIntegration = null, onValidatedSessionSelection = null, location = null, installationContext = null, writeRootInstructionFiles = false }) {
+async function initializeOrResumeCurrentProject({
+  root,
+  pluginRoot,
+  runtimes = null,
+  profile,
+  onboardingInput,
+  instructionIntegration = null,
+  onValidatedSessionSelection = null,
+  location = null,
+  installationContext = null,
+  writeRootInstructionFiles = false,
+}) {
   const before = inspectProject(root);
   let initialization;
   let installation;
@@ -773,13 +1023,18 @@ async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = n
   // inventories are refreshed by actual record writers or explicit indexing;
   // unchanged resume must not create a new derived generation after view loss.
   if (!fs.existsSync(path.join(root, projectGraphIndexPath(initialization.storage ?? before.storage)))) noteProjectGraphChange(root);
-  let current = profile === "core" ? (await inspectOptionalOnboarding({ root })) : (await inspectOnboarding({ root }));
+  let current = profile === "core" ? await inspectOptionalOnboarding({ root }) : await inspectOnboarding({ root });
   if (profile === "core") {
     const productGovernanceActivated = !["initialized", "migration_required", "not_transferred"].includes(current.status);
     return bootstrapResponse({
       root,
       profile,
-      onboardingAction: current.status === "not_transferred" ? "optional-state-outside-transfer-scope" : productGovernanceActivated ? "preserved-existing-state" : "not-activated",
+      onboardingAction:
+        current.status === "not_transferred"
+          ? "optional-state-outside-transfer-scope"
+          : productGovernanceActivated
+            ? "preserved-existing-state"
+            : "not-activated",
       inputDisposition: "not-applicable",
       before,
       installation,
@@ -788,12 +1043,14 @@ async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = n
   }
 
   let onboardingAction;
-  if (["initialized", "migration_required"].includes(current.status)
-    || (current.status === "rejected" && Object.keys(onboardingInput).length)
-    || (current.status === "awaiting_evidence" && Object.keys(onboardingInput).length)) {
+  if (
+    ["initialized", "migration_required"].includes(current.status) ||
+    (current.status === "rejected" && Object.keys(onboardingInput).length) ||
+    (current.status === "awaiting_evidence" && Object.keys(onboardingInput).length)
+  ) {
     const started = await startOnboarding({ root, ...onboardingInput });
     onboardingAction = current.status === "initialized" || current.status === "migration_required" ? "started" : "resumed-analysis";
-    const inspected = (await inspectOnboarding({ root }));
+    const inspected = await inspectOnboarding({ root });
     return bootstrapResponse({
       root,
       profile,
@@ -820,7 +1077,7 @@ async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = n
 
   if (current.status === "awaiting_review" || current.status === "revision_required") {
     const refresh = await refreshOnboardingCandidates({ root, semanticProposal: onboardingInput.semanticProposal || null });
-    current = (await inspectOnboarding({ root }));
+    current = await inspectOnboarding({ root });
     if (refresh.refreshed) {
       return bootstrapResponse({
         root,
@@ -853,24 +1110,39 @@ async function initializeOrResumeCurrentProject({ root, pluginRoot, runtimes = n
         },
         nextAction: {
           id: "provide_product_evidence",
-          summary: "Repository evidence changed. Re-inspect the current SourceSnapshot and submit a fresh Lode semantic proposal; do not review the stale candidate set.",
+          summary:
+            "Repository evidence changed. Re-inspect the current SourceSnapshot and submit a fresh Lode semantic proposal; do not review the stale candidate set.",
           entrypoint: entrypoint("provide_product_evidence"),
         },
       };
     }
   }
 
-  const resumableWithoutMutation = new Set(["awaiting_review", "revision_required", "ready", "ready_world_changed", "promotion_recovery_pending", "review_recovery_pending", "rejected"]);
+  const resumableWithoutMutation = new Set([
+    "awaiting_review",
+    "revision_required",
+    "ready",
+    "ready_world_changed",
+    "promotion_recovery_pending",
+    "review_recovery_pending",
+    "rejected",
+  ]);
   if (!resumableWithoutMutation.has(current.status)) {
     fail("PROJECT_BOOTSTRAP_STATE_UNSUPPORTED", `Unsupported onboarding resume status: ${current.status}`);
   }
   return bootstrapResponse({
     root,
     profile,
-    onboardingAction: current.status === "promotion_recovery_pending" ? "approved-projection-pending"
-      : current.status === "review_recovery_pending" ? "review-projection-pending"
-      : current.status === "rejected" ? "rejected-preserved"
-      : current.status === "awaiting_review" || current.status === "revision_required" ? "review-required" : "already-ready",
+    onboardingAction:
+      current.status === "promotion_recovery_pending"
+        ? "approved-projection-pending"
+        : current.status === "review_recovery_pending"
+          ? "review-projection-pending"
+          : current.status === "rejected"
+            ? "rejected-preserved"
+            : current.status === "awaiting_review" || current.status === "revision_required"
+              ? "review-required"
+              : "already-ready",
     inputDisposition: Object.keys(onboardingInput).length ? "not-reapplied-to-existing-authority-state" : "not-required",
     before,
     installation,

@@ -10,42 +10,51 @@ import { withLocalMutation } from "./project-mutation-lock.mjs";
 // Local P5 reference only. It is not Canon, a checkpoint, direction, or an
 // instruction. The checkpoint remains the recovery source.
 export const USER_PROMPT_REFERENCE_LIMITS = Object.freeze({ prompts: 3, characters: 2000, bytes: 16 * 1024 });
-const LABEL = "Lode user-prompt reference (non-authoritative; earlier excerpts, not a recovery record, current instructions or approval). Current user direction and the selected Session's saved recovery record take precedence.";
+const LABEL =
+  "Lode user-prompt reference (non-authoritative; earlier excerpts, not a recovery record, current instructions or approval). Current user direction and the selected Session's saved recovery record take precedence.";
 const preparations = new WeakMap();
 const operations = new WeakMap();
 const require = createRequire(import.meta.url);
-const exactStat = file => fs.lstatSync(file, { bigint: true });
-const exactDescriptorStat = descriptor => fs.fstatSync(descriptor, { bigint: true });
+const exactStat = (file) => fs.lstatSync(file, { bigint: true });
+const exactDescriptorStat = (descriptor) => fs.fstatSync(descriptor, { bigint: true });
 
 function redact(text) {
-  return text
-    // The scan is bounded before matching. An unfinished key masks to the end
-    // rather than leaking its first 2000 characters after truncation.
-    .replace(/-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]{0,40}PRIVATE KEY-----|$)/gi, "[redacted-private-key]")
-    .replace(/\b(?:sk|rk)-[A-Za-z0-9_-]{4,}/gi, "[redacted-token]")
-    .replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{4,}/gi, "[redacted-token]")
-    .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{4,}/g, "[redacted-token]")
-    .replace(/\b(authorization["']?\s*[:=]\s*["']?(?:Bearer|Basic))[ \t]+[A-Za-z0-9._~+\/=\-]+/gi, "$1 [redacted-token]")
-    .replace(/\b(Bearer|Basic)[ \t]+([A-Za-z0-9._~+\/=\-]{4,})/gi, (match, scheme, token) => {
-      const value = token.endsWith(".") ? token.slice(0, -1) : token;
-      if (scheme.toLowerCase() === "basic") {
-        // Without an Authorization field, ordinary "Basic Implementation" is
-        // prose. A Basic credential is base64(user:password), even if unpadded.
-        if (!/^[A-Za-z0-9+/]+=*$/.test(value) || !Buffer.from(value, "base64").includes(0x3a)) return match;
-      } else if (!/[0-9._~+\/=\-]/.test(value) && value.length < 16) return match;
-      return scheme + " [redacted-token]" + (value.length < token.length ? "." : "");
-    })
-    .replace(/\bxox[baprs]-[A-Za-z0-9-]{4,}/gi, "[redacted-token]")
-    // Assignment syntax is required: discussion of passwords is ordinary prose.
-    .replace(/\b(password|passwd|pwd|api[_-]?key|access[_-]?token|client[_-]?secret)(["']?\s*[:=]\s*)(?:"[^"\r\n]*(?:"|$)|'[^'\r\n]*(?:'|$)|[^\s,;}]+)/gi, "$1$2[redacted-token]");
+  return (
+    text
+      // The scan is bounded before matching. An unfinished key masks to the end
+      // rather than leaking its first 2000 characters after truncation.
+      .replace(/-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]{0,40}PRIVATE KEY-----|$)/gi, "[redacted-private-key]")
+      .replace(/\b(?:sk|rk)-[A-Za-z0-9_-]{4,}/gi, "[redacted-token]")
+      .replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{4,}/gi, "[redacted-token]")
+      .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{4,}/g, "[redacted-token]")
+      .replace(/\b(authorization["']?\s*[:=]\s*["']?(?:Bearer|Basic))[ \t]+[A-Za-z0-9._~+\/=\-]+/gi, "$1 [redacted-token]")
+      .replace(/\b(Bearer|Basic)[ \t]+([A-Za-z0-9._~+\/=\-]{4,})/gi, (match, scheme, token) => {
+        const value = token.endsWith(".") ? token.slice(0, -1) : token;
+        if (scheme.toLowerCase() === "basic") {
+          // Without an Authorization field, ordinary "Basic Implementation" is
+          // prose. A Basic credential is base64(user:password), even if unpadded.
+          if (!/^[A-Za-z0-9+/]+=*$/.test(value) || !Buffer.from(value, "base64").includes(0x3a)) return match;
+        } else if (!/[0-9._~+\/=\-]/.test(value) && value.length < 16) return match;
+        return scheme + " [redacted-token]" + (value.length < token.length ? "." : "");
+      })
+      .replace(/\bxox[baprs]-[A-Za-z0-9-]{4,}/gi, "[redacted-token]")
+      // Assignment syntax is required: discussion of passwords is ordinary prose.
+      .replace(
+        /\b(password|passwd|pwd|api[_-]?key|access[_-]?token|client[_-]?secret)(["']?\s*[:=]\s*)(?:"[^"\r\n]*(?:"|$)|'[^'\r\n]*(?:'|$)|[^\s,;}]+)/gi,
+        "$1$2[redacted-token]",
+      )
+  );
 }
 
 function boundText(text) {
-  const clean = redact(text.slice(0, USER_PROMPT_REFERENCE_LIMITS.bytes)
-    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")).trim();
+  const clean = redact(
+    text
+      .slice(0, USER_PROMPT_REFERENCE_LIMITS.bytes)
+      .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ""),
+  ).trim();
   if (!clean) return "";
-  return clean.length > USER_PROMPT_REFERENCE_LIMITS.characters
-    ? clean.slice(0, USER_PROMPT_REFERENCE_LIMITS.characters) : clean;
+  return clean.length > USER_PROMPT_REFERENCE_LIMITS.characters ? clean.slice(0, USER_PROMPT_REFERENCE_LIMITS.characters) : clean;
 }
 
 function callerFile(root, runtime, nativeSessionId, agentId, environment, create, permissions) {
@@ -55,15 +64,19 @@ function callerFile(root, runtime, nativeSessionId, agentId, environment, create
   const storage = resolveProjectStorage(projectRoot);
   if (!storage) return null;
   const operational = resolveRuntimeOperationalStateRoot({ projectRoot, storage, environment, create });
-  const digest = crypto.createHash("sha256").update(JSON.stringify([storage.projectId, runtime, nativeSessionId, agentId || null])).digest("hex");
+  const digest = crypto
+    .createHash("sha256")
+    .update(JSON.stringify([storage.projectId, runtime, nativeSessionId, agentId || null]))
+    .digest("hex");
   const directory = path.join(operational, "user-prompt-reference");
   if (!fs.existsSync(directory)) {
     if (!create) return null;
     try {
       if (process.platform === "win32") windowsPrivate(directory, "directory", permissions, null, true);
       else fs.mkdirSync(directory, { mode: 0o700 });
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
     }
-    catch (error) { if (error.code !== "EEXIST") throw error; }
   }
   const file = path.join(directory, digest + ".json");
   permissions.lock = path.join(operational, ".user-prompt-locks", digest + ".lock");
@@ -179,24 +192,35 @@ try {
 } catch {[Console]::Error.Write($_.Exception.Message);exit 1}
 `;
 
-const privatePermissions = (deadlineAt = null) => ({ checked: new Set(), wallDeadline: deadlineAt,
-  deadline: performance.now() + (deadlineAt === null ? 5000 : Math.max(0, Math.min(5000, deadlineAt - Date.now()))), failed: false });
+const privatePermissions = (deadlineAt = null) => ({
+  checked: new Set(),
+  wallDeadline: deadlineAt,
+  deadline: performance.now() + (deadlineAt === null ? 5000 : Math.max(0, Math.min(5000, deadlineAt - Date.now()))),
+  failed: false,
+});
 function checkBudget(permissions) {
-  if (permissions.failed || performance.now() >= permissions.deadline
-    || permissions.wallDeadline !== null && (!Number.isSafeInteger(permissions.wallDeadline) || Date.now() >= permissions.wallDeadline)) {
-    permissions.failed = true; throw new Error("Private prompt operation deadline exceeded.");
+  if (
+    permissions.failed ||
+    performance.now() >= permissions.deadline ||
+    (permissions.wallDeadline !== null && (!Number.isSafeInteger(permissions.wallDeadline) || Date.now() >= permissions.wallDeadline))
+  ) {
+    permissions.failed = true;
+    throw new Error("Private prompt operation deadline exceeded.");
   }
 }
 // Internal Hook budget, not a read capability or public Core surface. Transfer,
 // prepare and acknowledgement share one finite operation and checked entries.
 export function createUserPromptReferenceOperation({ deadlineAt } = {}) {
-  const operation = Object.freeze({}); operations.set(operation, privatePermissions(deadlineAt)); return operation;
+  const operation = Object.freeze({});
+  operations.set(operation, privatePermissions(deadlineAt));
+  return operation;
 }
 function operationPermissions(operation) {
   if (operation === undefined) return privatePermissions();
   const permissions = operation && operations.get(operation);
   if (!permissions) throw new Error("Unknown prompt operation.");
-  checkBudget(permissions); return permissions;
+  checkBudget(permissions);
+  return permissions;
 }
 
 function windowsPrivate(file, kind, permissions, existingFile = null, create = false, onCreate = null) {
@@ -205,75 +229,131 @@ function windowsPrivate(file, kind, permissions, existingFile = null, create = f
   if (permissions.failed) throw new Error("Private prompt ACL verification already failed.");
   const requests = [{ path: file, kind, ...(create ? { create: true } : {}) }, ...(existingFile ? [{ path: existingFile, kind: "file" }] : [])];
   if (existingFile && (kind !== "directory" || path.dirname(existingFile) !== file)) throw new Error("Unsafe prompt ACL batch.");
-  const pending = requests.map(request => {
-    const directory = request.kind === "directory", target = request.path;
-    if (directory ? path.basename(target) !== "user-prompt-reference"
-      : path.basename(path.dirname(target)) !== "user-prompt-reference" || !/^(?:[a-f0-9]{64}\.json|\.[a-f0-9]{64}\.json\.[a-f0-9-]{36}\.tmp)$/.test(path.basename(target))) throw new Error("Unsafe prompt ACL target.");
-    let stat;
-    try { stat = exactStat(target); } catch (error) { if (!request.create || error.code !== "ENOENT") throw error; }
-    if (stat && (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile() || stat.nlink !== 1n))) throw new Error("Unsafe prompt ACL entry.");
-    if (request.create && stat) throw new Error("Prompt creation target already exists.");
-    return { request, stat, identity: stat ? JSON.stringify([request.kind, String(stat.dev), String(stat.ino)]) : null };
-  }).filter(item => !permissions.checked.has(item.identity));
+  const pending = requests
+    .map((request) => {
+      const directory = request.kind === "directory",
+        target = request.path;
+      if (
+        directory
+          ? path.basename(target) !== "user-prompt-reference"
+          : path.basename(path.dirname(target)) !== "user-prompt-reference" ||
+            !/^(?:[a-f0-9]{64}\.json|\.[a-f0-9]{64}\.json\.[a-f0-9-]{36}\.tmp)$/.test(path.basename(target))
+      )
+        throw new Error("Unsafe prompt ACL target.");
+      let stat;
+      try {
+        stat = exactStat(target);
+      } catch (error) {
+        if (!request.create || error.code !== "ENOENT") throw error;
+      }
+      if (stat && (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile() || stat.nlink !== 1n)))
+        throw new Error("Unsafe prompt ACL entry.");
+      if (request.create && stat) throw new Error("Prompt creation target already exists.");
+      return { request, stat, identity: stat ? JSON.stringify([request.kind, String(stat.dev), String(stat.ino)]) : null };
+    })
+    .filter((item) => !permissions.checked.has(item.identity));
   // Local to one synchronous capture/freeze/take. Never cache ACLs across turns
   // or callers. Renaming a verified stage within this directory keeps its DACL;
   // each filesystem use still rejects links/replacements by exact entry ID.
   if (!pending.length) return;
   const remaining = Math.floor(permissions.deadline - performance.now());
-  if (remaining <= 0) { permissions.failed = true; throw new Error("Private prompt operation deadline exceeded."); }
+  if (remaining <= 0) {
+    permissions.failed = true;
+    throw new Error("Private prompt operation deadline exceeded.");
+  }
   const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   try {
     const result = childProcess.spawnSync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", WINDOWS_PRIVATE_ACL], {
-      cwd: path.dirname(file), windowsHide: true, shell: false, input: JSON.stringify(pending.map(item => item.request)), encoding: "utf8", timeout: remaining, maxBuffer: 4096,
+      cwd: path.dirname(file),
+      windowsHide: true,
+      shell: false,
+      input: JSON.stringify(pending.map((item) => item.request)),
+      encoding: "utf8",
+      timeout: remaining,
+      maxBuffer: 4096,
     });
-    const output = String(result.stdout || "").trim().split(/\r?\n/);
+    const output = String(result.stdout || "")
+      .trim()
+      .split(/\r?\n/);
     let createdIdentity = null;
     if (create && kind === "file" && output.length && output[0].startsWith("{")) {
       const receipt = JSON.parse(output.shift());
-      if (!/^[0-9]{1,20}$/.test(receipt?.created?.dev) || !/^[0-9]{1,20}$/.test(receipt?.created?.ino)
-        || BigInt(receipt.created.dev) > 0xffffffffffffffffn || BigInt(receipt.created.ino) > 0xffffffffffffffffn
-        || BigInt(receipt.created.ino) === 0n) throw new Error("Invalid prompt creation receipt.");
+      if (
+        !/^[0-9]{1,20}$/.test(receipt?.created?.dev) ||
+        !/^[0-9]{1,20}$/.test(receipt?.created?.ino) ||
+        BigInt(receipt.created.dev) > 0xffffffffffffffffn ||
+        BigInt(receipt.created.ino) > 0xffffffffffffffffn ||
+        BigInt(receipt.created.ino) === 0n
+      )
+        throw new Error("Invalid prompt creation receipt.");
       createdIdentity = receipt.created;
       // Do not adopt a path replacement even when it is owned by this user.
       try {
         const stat = fs.lstatSync(file, { bigint: true });
-        if (stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1n && stat.size === 0n
-          && String(stat.dev) === createdIdentity.dev && String(stat.ino) === createdIdentity.ino) onCreate?.(stat);
-      } catch (error) { if (error.code !== "ENOENT") throw error; }
+        if (
+          stat.isFile() &&
+          !stat.isSymbolicLink() &&
+          stat.nlink === 1n &&
+          stat.size === 0n &&
+          String(stat.dev) === createdIdentity.dev &&
+          String(stat.ino) === createdIdentity.ino
+        )
+          onCreate?.(stat);
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
     }
-    if (result.error || result.status !== 0 || output.join("\n") !== "private" || performance.now() > permissions.deadline) throw new Error("Private prompt ACL unavailable.");
+    if (result.error || result.status !== 0 || output.join("\n") !== "private" || performance.now() > permissions.deadline)
+      throw new Error("Private prompt ACL unavailable.");
     for (const item of pending) {
       const entry = exactStat(item.request.path);
       if (item.request.create && item.request.kind === "file") {
-        if (!createdIdentity || String(entry.dev) !== createdIdentity.dev || String(entry.ino) !== createdIdentity.ino || entry.size !== 0n) throw new Error("Created prompt identity changed.");
+        if (!createdIdentity || String(entry.dev) !== createdIdentity.dev || String(entry.ino) !== createdIdentity.ino || entry.size !== 0n)
+          throw new Error("Created prompt identity changed.");
       }
-      if (item.stat && !sameEntry(item.stat, entry) || entry.isSymbolicLink()
-        || (item.request.kind === "directory" ? !entry.isDirectory() : !entry.isFile() || entry.nlink !== 1n)) throw new Error("Prompt ACL target changed.");
+      if (
+        (item.stat && !sameEntry(item.stat, entry)) ||
+        entry.isSymbolicLink() ||
+        (item.request.kind === "directory" ? !entry.isDirectory() : !entry.isFile() || entry.nlink !== 1n)
+      )
+        throw new Error("Prompt ACL target changed.");
       item.identity = JSON.stringify([item.request.kind, String(entry.dev), String(entry.ino)]);
       if (item.request.create) item.createdEntry = entry;
     }
     // Batch success is all-or-nothing; never cache a partly verified request.
     for (const item of pending) permissions.checked.add(item.identity);
     return pending[0]?.createdEntry;
-  } catch (error) { permissions.failed = true; throw error; }
+  } catch (error) {
+    permissions.failed = true;
+    throw error;
+  }
 }
 
 function privateDirectory(directory, permissions, existingFile = null) {
   checkBudget(permissions);
   const stat = exactStat(directory);
-  if (!stat.isDirectory() || stat.isSymbolicLink()
-    || typeof process.getuid === "function" && stat.uid !== BigInt(process.getuid())) throw new Error("Unsafe prompt directory.");
+  if (!stat.isDirectory() || stat.isSymbolicLink() || (typeof process.getuid === "function" && stat.uid !== BigInt(process.getuid())))
+    throw new Error("Unsafe prompt directory.");
   if (process.platform !== "win32") fs.chmodSync(directory, 0o700);
   else windowsPrivate(directory, "directory", permissions, existingFile);
 }
 
-function sameEntry(a, b) { return a.dev === b.dev && a.ino === b.ino; }
+function sameEntry(a, b) {
+  return a.dev === b.dev && a.ino === b.ino;
+}
 
 function privateFile(file, descriptor, permissions) {
   checkBudget(permissions);
-  const stat = exactDescriptorStat(descriptor), entry = exactStat(file);
-  if (!stat.isFile() || stat.nlink !== 1n || entry.isSymbolicLink() || !sameEntry(stat, entry)
-    || typeof process.getuid === "function" && stat.uid !== BigInt(process.getuid())) throw new Error("Unsafe prompt file.");
+  const stat = exactDescriptorStat(descriptor),
+    entry = exactStat(file);
+  if (
+    !stat.isFile() ||
+    stat.nlink !== 1n ||
+    entry.isSymbolicLink() ||
+    !sameEntry(stat, entry) ||
+    (typeof process.getuid === "function" && stat.uid !== BigInt(process.getuid()))
+  )
+    throw new Error("Unsafe prompt file.");
   if (process.platform !== "win32") fs.fchmodSync(descriptor, 0o600);
   else windowsPrivate(file, "file", permissions);
   if (!sameEntry(stat, exactStat(file))) throw new Error("Prompt entry changed during permission check.");
@@ -296,7 +376,8 @@ function readState(file, permissions, { withDigest = false } = {}) {
     const stat = privateFile(file, descriptor, permissions);
     if (stat.size > USER_PROMPT_REFERENCE_LIMITS.bytes) return null;
     const buffer = Buffer.alloc(USER_PROMPT_REFERENCE_LIMITS.bytes + 1);
-    let used = 0, read;
+    let used = 0,
+      read;
     do {
       read = fs.readSync(descriptor, buffer, used, buffer.length - used, null);
       used += read;
@@ -305,19 +386,29 @@ function readState(file, permissions, { withDigest = false } = {}) {
     const state = JSON.parse(buffer.subarray(0, used).toString("utf8"));
     if (state?.kind !== "UserPromptReference" || state.version !== 1 || !Array.isArray(state.prompts)) return null;
     // Existing references may predate current masks. Never inject their raw text.
-    const prompts = state.prompts.slice(-USER_PROMPT_REFERENCE_LIMITS.prompts)
-      .filter(prompt => prompt && typeof prompt.text === "string")
-      .map(prompt => ({ messageId: typeof prompt.messageId === "string" ? prompt.messageId.slice(0, 256) : null, text: boundText(prompt.text),
+    const prompts = state.prompts
+      .slice(-USER_PROMPT_REFERENCE_LIMITS.prompts)
+      .filter((prompt) => prompt && typeof prompt.text === "string")
+      .map((prompt) => ({
+        messageId: typeof prompt.messageId === "string" ? prompt.messageId.slice(0, 256) : null,
+        text: boundText(prompt.text),
         ...(prompt.previousConversation === true ? { previousConversation: true } : {}),
-        ...(typeof prompt.visibleResponse === "string" ? { visibleResponse: boundText(prompt.visibleResponse) } : {}) }))
-      .filter(prompt => prompt.text);
-    return { prompts, reinject: state.reinject === true,
+        ...(typeof prompt.visibleResponse === "string" ? { visibleResponse: boundText(prompt.visibleResponse) } : {}),
+      }))
+      .filter((prompt) => prompt.text);
+    return {
+      prompts,
+      reinject: state.reinject === true,
       ...(typeof state.visibleAssistant === "string" ? { visibleAssistant: boundText(state.visibleAssistant) } : {}),
       ...(state.visibleAssistantFromPreviousConversation === true ? { visibleAssistantFromPreviousConversation: true } : {}),
       ...(withDigest ? { byteDigest: crypto.createHash("sha256").update(buffer.subarray(0, used)).digest("hex"), entry: stat } : {}),
-      revision: typeof state.revision === "string" ? state.revision : crypto.createHash("sha256").update(buffer.subarray(0, used)).digest("hex") };
-  } catch { return null; }
-  finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
+      revision: typeof state.revision === "string" ? state.revision : crypto.createHash("sha256").update(buffer.subarray(0, used)).digest("hex"),
+    };
+  } catch {
+    return null;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
 }
 
 function existingEntry(file, permissions) {
@@ -325,8 +416,12 @@ function existingEntry(file, permissions) {
   try {
     descriptor = openPrivate(file);
     return privateFile(file, descriptor, permissions);
-  } catch (error) { if (error.code === "ENOENT") return null; throw error; }
-  finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
 }
 
 function writePrivate(file, body, permissions, publication = null) {
@@ -335,9 +430,14 @@ function writePrivate(file, body, permissions, publication = null) {
   const original = existingEntry(file, permissions);
   if (publication?.createOnly && original) throw new Error("Prompt destination already exists.");
   const temporary = path.join(directory, `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  let descriptor, owner, plaintextStarted = false;
+  let descriptor,
+    owner,
+    plaintextStarted = false;
   try {
-    if (process.platform === "win32") windowsPrivate(temporary, "file", permissions, null, true, entry => { owner = entry; });
+    if (process.platform === "win32")
+      windowsPrivate(temporary, "file", permissions, null, true, (entry) => {
+        owner = entry;
+      });
     descriptor = fs.openSync(temporary, process.platform === "win32" ? "r+" : "wx", 0o600);
     if (owner && !sameEntry(owner, exactDescriptorStat(descriptor))) throw new Error("New private stage changed before open.");
     owner = exactDescriptorStat(descriptor); // Own the empty stage even if ACL verification fails.
@@ -346,16 +446,19 @@ function writePrivate(file, body, permissions, publication = null) {
     if (!sameEntry(owner, writable) || writable.size !== 0n) throw new Error("Private stage changed before plaintext write.");
     plaintextStarted = true;
     fs.writeFileSync(descriptor, body);
-    fs.closeSync(descriptor); descriptor = undefined;
+    fs.closeSync(descriptor);
+    descriptor = undefined;
     privateDirectory(directory, permissions);
     const current = existingEntry(file, permissions);
-    if (Boolean(original) !== Boolean(current) || original && !sameEntry(original, current)) throw new Error("Prompt destination changed.");
+    if (Boolean(original) !== Boolean(current) || (original && !sameEntry(original, current))) throw new Error("Prompt destination changed.");
     if (publication?.createOnly) {
       publication.commit(() => {
         checkBudget(permissions);
         // A same-directory link is atomic no-clobber publication. Remove only
         // this call's stage, leaving a single private destination link.
-        fs.linkSync(temporary, file); publication.onCreate(); fs.unlinkSync(temporary);
+        fs.linkSync(temporary, file);
+        publication.onCreate();
+        fs.unlinkSync(temporary);
       });
       const published = existingEntry(file, permissions);
       if (!published || !sameEntry(owner, published)) throw new Error("Prompt publication changed.");
@@ -363,14 +466,22 @@ function writePrivate(file, body, permissions, publication = null) {
     }
     const delays = [5, 10, 20, 40];
     for (let attempt = 0; ; attempt += 1) {
-      try { fs.renameSync(temporary, file); break; }
-      catch (error) {
+      try {
+        fs.renameSync(temporary, file);
+        break;
+      } catch (error) {
         if (process.platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(error.code) || attempt >= delays.length) throw error;
         privateDirectory(directory, permissions);
-        const destination = existingEntry(file, permissions), stage = exactStat(temporary);
-        if (!stage.isFile() || stage.isSymbolicLink() || !sameEntry(owner, stage)
-          || Boolean(current) !== Boolean(destination) || current && (!sameEntry(current, destination)
-            || current.size !== destination.size || current.mtimeMs !== destination.mtimeMs)) throw error;
+        const destination = existingEntry(file, permissions),
+          stage = exactStat(temporary);
+        if (
+          !stage.isFile() ||
+          stage.isSymbolicLink() ||
+          !sameEntry(owner, stage) ||
+          Boolean(current) !== Boolean(destination) ||
+          (current && (!sameEntry(current, destination) || current.size !== destination.size || current.mtimeMs !== destination.mtimeMs))
+        )
+          throw error;
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delays[attempt]);
       }
     }
@@ -380,9 +491,10 @@ function writePrivate(file, body, permissions, publication = null) {
     if (descriptor !== undefined) fs.closeSync(descriptor);
     try {
       const entry = exactStat(temporary);
-      if (owner && entry.isFile() && !entry.isSymbolicLink() && sameEntry(owner, entry)
-        && (plaintextStarted || entry.size === 0n)) fs.unlinkSync(temporary);
-    } catch (error) { if (error.code !== "ENOENT") throw error; }
+      if (owner && entry.isFile() && !entry.isSymbolicLink() && sameEntry(owner, entry) && (plaintextStarted || entry.size === 0n)) fs.unlinkSync(temporary);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
   }
 }
 
@@ -395,12 +507,19 @@ function writeState(file, state, permissions, publication = null) {
   }
   let body = "";
   do {
-    body = JSON.stringify({
-      kind: "UserPromptReference", version: 1, authorityPlane: "P5",
-      recoveryAuthority: false, instructionAuthority: false, revision: crypto.randomUUID(), reinject: state.reinject === true, prompts,
-      ...(state.visibleAssistant ? { visibleAssistant: state.visibleAssistant } : {}),
-      ...(state.visibleAssistantFromPreviousConversation === true ? { visibleAssistantFromPreviousConversation: true } : {}),
-    }) + "\n";
+    body =
+      JSON.stringify({
+        kind: "UserPromptReference",
+        version: 1,
+        authorityPlane: "P5",
+        recoveryAuthority: false,
+        instructionAuthority: false,
+        revision: crypto.randomUUID(),
+        reinject: state.reinject === true,
+        prompts,
+        ...(state.visibleAssistant ? { visibleAssistant: state.visibleAssistant } : {}),
+        ...(state.visibleAssistantFromPreviousConversation === true ? { visibleAssistantFromPreviousConversation: true } : {}),
+      }) + "\n";
     if (Buffer.byteLength(body) <= USER_PROMPT_REFERENCE_LIMITS.bytes) break;
     prompts = prompts.slice(1);
   } while (prompts.length);
@@ -412,45 +531,61 @@ export function captureUserPrompt({ root, runtime, nativeSessionId, agentId = nu
   const next = boundText(typeof text === "string" ? text : "");
   messageId = typeof messageId === "string" && messageId.length <= 256 ? messageId : null;
   if (!next) return { captured: false };
-  let file; const permissions = privatePermissions();
-  try { file = callerFile(root, runtime, nativeSessionId, agentId, environment, true, permissions); }
-  catch { return { captured: false }; }
+  let file;
+  const permissions = privatePermissions();
+  try {
+    file = callerFile(root, runtime, nativeSessionId, agentId, environment, true, permissions);
+  } catch {
+    return { captured: false };
+  }
   if (!file) return { captured: false };
-  try { return mutateReference(permissions, () => {
-    const state = readState(file, permissions) || { prompts: [], reinject: false };
-    // A freeze holds the pre-compaction text. Later synthetic turns cannot replace it.
-    if (state.reinject === true) return { captured: false, frozen: true };
-    const last = state.prompts.at(-1);
-    if (messageId && last?.messageId === messageId && !last.previousConversation) {
-      last.text = last.text.includes(next) && next.length <= last.text.length ? last.text : boundText(last.text.includes(next) ? next : last.text + "\n" + next);
-    } else {
-      state.prompts.push({ messageId: messageId || null, text: next });
-    }
-    writeState(file, state, permissions);
-    return { captured: true };
-  }); } catch { return { captured: false }; }
+  try {
+    return mutateReference(permissions, () => {
+      const state = readState(file, permissions) || { prompts: [], reinject: false };
+      // A freeze holds the pre-compaction text. Later synthetic turns cannot replace it.
+      if (state.reinject === true) return { captured: false, frozen: true };
+      const last = state.prompts.at(-1);
+      if (messageId && last?.messageId === messageId && !last.previousConversation) {
+        last.text =
+          last.text.includes(next) && next.length <= last.text.length ? last.text : boundText(last.text.includes(next) ? next : last.text + "\n" + next);
+      } else {
+        state.prompts.push({ messageId: messageId || null, text: next });
+      }
+      writeState(file, state, permissions);
+      return { captured: true };
+    });
+  } catch {
+    return { captured: false };
+  }
 }
 
 export function freezeUserPromptReference({ root, runtime, nativeSessionId, agentId = null, environment = process.env } = {}) {
-  let file; const permissions = privatePermissions();
-  try { file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions); }
-  catch { return { frozen: false }; }
+  let file;
+  const permissions = privatePermissions();
+  try {
+    file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions);
+  } catch {
+    return { frozen: false };
+  }
   if (!file) return { frozen: false };
-  try { return mutateReference(permissions, () => {
-    const state = readState(file, permissions);
-    if (!state?.prompts?.length) return { frozen: false };
-    state.reinject = true;
-    writeState(file, state, permissions);
-    return { frozen: true };
-  }); } catch { return { frozen: false }; }
+  try {
+    return mutateReference(permissions, () => {
+      const state = readState(file, permissions);
+      if (!state?.prompts?.length) return { frozen: false };
+      state.reinject = true;
+      writeState(file, state, permissions);
+      return { frozen: true };
+    });
+  } catch {
+    return { frozen: false };
+  }
 }
 
 // Only the command Host's direct Stop field is supported. Never inspect a
 // transcript, reasoning, tools, StopFailure error text or OpenCode event order.
 // A Codex turn ID can identify its own response; neither Host contract proves
 // that a later short user reply refers to this proposal.
-export function captureVisibleAssistantReference({ root, runtime, nativeSessionId, agentId = null, environment = process.env,
-  text, turnId = null } = {}) {
+export function captureVisibleAssistantReference({ root, runtime, nativeSessionId, agentId = null, environment = process.env, text, turnId = null } = {}) {
   if (!["codex", "claude"].includes(runtime)) return { captured: false, reason: "unsupported-host-contract" };
   const permissions = privatePermissions();
   try {
@@ -464,87 +599,168 @@ export function captureVisibleAssistantReference({ root, runtime, nativeSessionI
         const last = state.prompts.at(-1);
         if (typeof turnId !== "string" || last.messageId !== turnId) return { captured: false, reason: "unverified-turn" };
         if ((last.visibleResponse || "") === next) return { captured: false, reused: true };
-        if (next) last.visibleResponse = next; else delete last.visibleResponse;
+        if (next) last.visibleResponse = next;
+        else delete last.visibleResponse;
       } else {
         if ((state.visibleAssistant || "") === next && !state.visibleAssistantFromPreviousConversation) return { captured: false, reused: true };
-        if (next) state.visibleAssistant = next; else delete state.visibleAssistant;
+        if (next) state.visibleAssistant = next;
+        else delete state.visibleAssistant;
         delete state.visibleAssistantFromPreviousConversation;
       }
       writeState(file, state, permissions);
       return { captured: Boolean(next), adjacency: "unverified", authorityChanged: false };
     });
-  } catch { return { captured: false }; }
+  } catch {
+    return { captured: false };
+  }
 }
 
 function mutateReference(permissions, operation) {
   checkBudget(permissions);
-  return withLocalMutation({ directory: permissions.lock,
-    timeoutMs: Math.max(0, Math.min(5000, permissions.deadline - performance.now())) }, () => { checkBudget(permissions); return operation(); });
+  return withLocalMutation({ directory: permissions.lock, timeoutMs: Math.max(0, Math.min(5000, permissions.deadline - performance.now())) }, () => {
+    checkBudget(permissions);
+    return operation();
+  });
 }
 
 // Trusted paired-clear composition only. Raw old-caller arguments cannot select
 // a source: the clear verifier owns the one-use proof and commit validation.
 export function transferNativeClearPromptReference({ handoff, root, caller, environment = process.env, deadlineAt, operation } = {}) {
   const { withVerifiedClearPromptTransfer } = require("./session-clear-handoff.mjs");
-  return withVerifiedClearPromptTransfer({ handoff, root, caller, environment, deadlineAt }, scope => {
+  return withVerifiedClearPromptTransfer({ handoff, root, caller, environment, deadlineAt }, (scope) => {
     let created = false;
     try {
-      const permissions = operationPermissions(operation), old = scope.oldCaller, next = scope.nextCaller;
+      const permissions = operationPermissions(operation),
+        old = scope.oldCaller,
+        next = scope.nextCaller;
       const sourceFile = callerFile(scope.root, old.runtime, old.nativeSessionId, old.agentId, environment, false, permissions);
       if (!sourceFile) return { transferred: false, reasonCode: "CLEAR_REFERENCE_MISSING" };
       const sourceLock = permissions.lock;
       const destination = callerFile(scope.root, next.runtime, next.nativeSessionId, next.agentId, environment, true, permissions);
       const locks = [...new Set([sourceLock, permissions.lock])].sort();
       if (!destination || destination === sourceFile) return { transferred: false, reasonCode: "CLEAR_REFERENCE_UNAVAILABLE" };
-      const locked = index => index === locks.length ? copy() : withLocalMutation({ directory: locks[index],
-        timeoutMs: Math.max(0, Math.min(5000, permissions.deadline - performance.now())) }, () => { checkBudget(permissions); return locked(index + 1); });
+      const locked = (index) =>
+        index === locks.length
+          ? copy()
+          : withLocalMutation({ directory: locks[index], timeoutMs: Math.max(0, Math.min(5000, permissions.deadline - performance.now())) }, () => {
+              checkBudget(permissions);
+              return locked(index + 1);
+            });
       const copy = () => {
         if (fs.lstatSync(destination, { throwIfNoEntry: false })) return { transferred: false, reasonCode: "CLEAR_REFERENCE_DESTINATION_EXISTS" };
         const source = readState(sourceFile, permissions, { withDigest: true });
         if (!source?.prompts.length) return { transferred: false, reasonCode: "CLEAR_REFERENCE_MISSING" };
         const directory = exactStat(path.dirname(sourceFile));
-        const state = { prompts: source.prompts.map(prompt => ({ ...prompt, previousConversation: true })), reinject: false,
-          ...(source.visibleAssistant ? { visibleAssistant: source.visibleAssistant, visibleAssistantFromPreviousConversation: true } : {}) };
-        writeState(destination, state, permissions, { createOnly: true, onCreate() { created = true; },
-          commit: publish => scope.commit(() => {
-            checkBudget(permissions);
-            if (!sameEntry(directory, exactStat(path.dirname(sourceFile)))
-              || !sameEntry(source.entry, exactStat(sourceFile)) || fs.lstatSync(destination, { throwIfNoEntry: false })) throw new Error("Prompt transfer source/destination changed.");
-            const current = readState(sourceFile, permissions, { withDigest: true });
-            if (!current || current.revision !== source.revision || current.byteDigest !== source.byteDigest) throw new Error("Prompt transfer generation changed.");
-            publish();
-          }) });
+        const state = {
+          prompts: source.prompts.map((prompt) => ({ ...prompt, previousConversation: true })),
+          reinject: false,
+          ...(source.visibleAssistant ? { visibleAssistant: source.visibleAssistant, visibleAssistantFromPreviousConversation: true } : {}),
+        };
+        writeState(destination, state, permissions, {
+          createOnly: true,
+          onCreate() {
+            created = true;
+          },
+          commit: (publish) =>
+            scope.commit(() => {
+              checkBudget(permissions);
+              if (
+                !sameEntry(directory, exactStat(path.dirname(sourceFile))) ||
+                !sameEntry(source.entry, exactStat(sourceFile)) ||
+                fs.lstatSync(destination, { throwIfNoEntry: false })
+              )
+                throw new Error("Prompt transfer source/destination changed.");
+              const current = readState(sourceFile, permissions, { withDigest: true });
+              if (!current || current.revision !== source.revision || current.byteDigest !== source.byteDigest)
+                throw new Error("Prompt transfer generation changed.");
+              publish();
+            }),
+        });
         return { transferred: true, created: true, conversationOrigin: "previous-native-conversation", ordinaryWorkBlocked: false };
       };
       return locked(0);
-    } catch { return { transferred: false, created, reasonCode: created ? "CLEAR_REFERENCE_CREATED_UNCONFIRMED" : "CLEAR_REFERENCE_UNAVAILABLE" }; }
+    } catch {
+      return { transferred: false, created, reasonCode: created ? "CLEAR_REFERENCE_CREATED_UNCONFIRMED" : "CLEAR_REFERENCE_UNAVAILABLE" };
+    }
   });
 }
 
 // Preparation never consumes. The whole bounded reference is included or left
 // intact; limits count UTF-16 characters, as do the Host context renderers.
-export function prepareUserPromptReference({ root, runtime, nativeSessionId, agentId = null, environment = process.env, force = false,
-  additionalContext = "", limit = Infinity, operation } = {}) {
+export function prepareUserPromptReference({
+  root,
+  runtime,
+  nativeSessionId,
+  agentId = null,
+  environment = process.env,
+  force = false,
+  additionalContext = "",
+  limit = Infinity,
+  operation,
+} = {}) {
   let file, permissions;
-  try { permissions = operationPermissions(operation); file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions); }
-  catch { return null; }
+  try {
+    permissions = operationPermissions(operation);
+    file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions);
+  } catch {
+    return null;
+  }
   const state = readState(file, permissions);
   // Compact and clear pass force so a host without PreCompact still restores.
   // Ordinary requests leave an unfrozen reference in place.
   if (!state?.prompts?.length || (!state.reinject && force !== true)) return null;
-  const lines = state.prompts.map((prompt, index) => (index + 1) + ". " + JSON.stringify({ hostDeliveredPrompt: prompt.text, humanOrigin: "unverified",
-    ...(prompt.previousConversation ? { conversationOrigin: "previous-native-conversation", originalMessageId: prompt.messageId, approval: "not-inferred" } : {}),
-    ...(prompt.visibleResponse ? { visibleFinalResponse: prompt.visibleResponse, source: "Stop.last_assistant_message",
-      ...(prompt.previousConversation ? { originalTurnId: prompt.messageId } : { turnId: prompt.messageId }), adjacencyToLaterUserReply: "unverified", approval: "not-inferred" } : {}) }));
-  if (state.visibleAssistant) lines.push(JSON.stringify({ visibleFinalResponse: state.visibleAssistant,
-    ...(state.visibleAssistantFromPreviousConversation ? { conversationOrigin: "previous-native-conversation" } : {}),
-    source: "Stop.last_assistant_message", adjacencyToUserReply: "unverified", approval: "not-inferred" }));
+  const lines = state.prompts.map(
+    (prompt, index) =>
+      index +
+      1 +
+      ". " +
+      JSON.stringify({
+        hostDeliveredPrompt: prompt.text,
+        humanOrigin: "unverified",
+        ...(prompt.previousConversation
+          ? { conversationOrigin: "previous-native-conversation", originalMessageId: prompt.messageId, approval: "not-inferred" }
+          : {}),
+        ...(prompt.visibleResponse
+          ? {
+              visibleFinalResponse: prompt.visibleResponse,
+              source: "Stop.last_assistant_message",
+              ...(prompt.previousConversation ? { originalTurnId: prompt.messageId } : { turnId: prompt.messageId }),
+              adjacencyToLaterUserReply: "unverified",
+              approval: "not-inferred",
+            }
+          : {}),
+      }),
+  );
+  if (state.visibleAssistant)
+    lines.push(
+      JSON.stringify({
+        visibleFinalResponse: state.visibleAssistant,
+        ...(state.visibleAssistantFromPreviousConversation ? { conversationOrigin: "previous-native-conversation" } : {}),
+        source: "Stop.last_assistant_message",
+        adjacencyToUserReply: "unverified",
+        approval: "not-inferred",
+      }),
+    );
   const text = LABEL + "\n" + lines.join("\n");
-  if (typeof additionalContext !== "string" || typeof limit !== "number" || Number.isNaN(limit) || limit < 0
-    || additionalContext.length + 2 + text.length > limit) return null;
+  if (
+    typeof additionalContext !== "string" ||
+    typeof limit !== "number" ||
+    Number.isNaN(limit) ||
+    limit < 0 ||
+    additionalContext.length + 2 + text.length > limit
+  )
+    return null;
   const preparation = Object.freeze({ text });
-  preparations.set(preparation, { root, runtime, nativeSessionId, agentId, environment, file, revision: state.revision,
-    ...(operation ? { permissions } : {}) });
+  preparations.set(preparation, {
+    root,
+    runtime,
+    nativeSessionId,
+    agentId,
+    environment,
+    file,
+    revision: state.revision,
+    ...(operation ? { permissions } : {}),
+  });
   return preparation;
 }
 
@@ -565,7 +781,9 @@ export function acknowledgeUserPromptReference(preparation) {
       writeState(file, { prompts: [], reinject: false }, permissions);
       return true;
     });
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 // Explicit synchronous take remains available to direct callers. Host delivery

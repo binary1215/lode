@@ -15,17 +15,18 @@ import {
 } from "./git-history.mjs";
 import { buildSemanticGraph, querySemanticGraph, SEMANTIC_GRAPH_VERSION, verifySemanticGraph } from "./semantic-graph.mjs";
 import { collectSourceRelationEvidence, SOURCE_RELATION_EVIDENCE_VERSION } from "./source-relation-evidence.mjs";
-import { normalizeProductModelDocument, productModelDocument, PRODUCT_MODEL_RELATIVE_PATH, PRODUCT_MODEL_VERSION, readProductModelCanon } from "./product-model.mjs";
+import {
+  normalizeProductModelDocument,
+  productModelDocument,
+  PRODUCT_MODEL_RELATIVE_PATH,
+  PRODUCT_MODEL_VERSION,
+  readProductModelCanon,
+} from "./product-model.mjs";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
 import { loadOnboardingGraphProjection, ONBOARDING_GRAPH_PROJECTION_VERSION } from "./onboarding-projection.mjs";
 import { loadProductPolicyGraphProjection, PRODUCT_POLICY_GRAPH_PROJECTION_VERSION } from "./product-policy-projection.mjs";
 import { FEATURE_MAPPING_VERSION, loadFeatureMappingProjection } from "./feature-mapping-projection.mjs";
-import {
-  CHANGE_SET_PROJECTION_VERSION,
-  CHANGE_SET_VERSION,
-  loadChangeSetProjection,
-  VCS_EVIDENCE_VERSION,
-} from "./change-set-projection.mjs";
+import { CHANGE_SET_PROJECTION_VERSION, CHANGE_SET_VERSION, loadChangeSetProjection, VCS_EVIDENCE_VERSION } from "./change-set-projection.mjs";
 import { DOCUMENT_CHANGE_GRAPH_PROJECTION_VERSION, loadDocumentChangeProjection } from "./document-change-projection.mjs";
 import { loadProductOperatingProjection, PRODUCT_OPERATING_LOOP_VERSION } from "./product-operating-projection.mjs";
 import { loadReleaseObservationProjection, RELEASE_OBSERVATION_VERSION } from "./release-observation-projection.mjs";
@@ -65,10 +66,7 @@ import {
   runtimeStateAdapterFromDescriptor,
   verifyExternalRuntimeState,
 } from "./runtime-state.mjs";
-import {
-  createWorldModelStoreAdapter,
-  WORLD_MODEL_STORAGE_CONTRACT,
-} from "./world-model-store.mjs";
+import { createWorldModelStoreAdapter, WORLD_MODEL_STORAGE_CONTRACT } from "./world-model-store.mjs";
 import {
   createGraphProjectionAdapter,
   GRAPH_PROJECTION_ADAPTER_VERSION,
@@ -130,23 +128,27 @@ async function readRecoverableTemporalGraphProjection({ projectRoot, projectId, 
   if (!pointerEntry) return null;
   const pointer = verifyGraphProjectionPointer(pointerEntry.document);
   if (pointer.projectId !== projectId) fail("Graph projection recovery belongs to a different Project.", "GRAPH_PROJECTION_PROJECT_MISMATCH");
-  const snapshotEntry = (await selected.readSnapshot(pointer.graphSnapshotId));
+  const snapshotEntry = await selected.readSnapshot(pointer.graphSnapshotId);
   if (!snapshotEntry) return null;
   const graph = verifyTemporalProvenanceGraph(snapshotEntry.document);
   verifyGraphProjectionPointer(pointer, graph);
   const expected = expectedPointer?.sourceAdapters?.graphProjection || null;
-  if (expected && (expected.graphSnapshotId !== graph.graphSnapshotId
-    || expected.graphSnapshotHash !== graph.graphSnapshotHash
-    || expected.pointerId !== pointer.pointerId)) return null;
+  if (
+    expected &&
+    (expected.graphSnapshotId !== graph.graphSnapshotId || expected.graphSnapshotHash !== graph.graphSnapshotHash || expected.pointerId !== pointer.pointerId)
+  )
+    return null;
   return graph;
 }
 
 function projectionProvesEarlierWorld({ productPolicyProjection, featureMappingProjection, changeSetProjection, documentChangeProjection } = {}) {
-  return (productPolicyProjection?.candidates?.length || 0) > 0
-    || (featureMappingProjection?.candidateSets?.length || 0) > 0
-    || (changeSetProjection?.changeSets?.length || 0) > 0
-    || (changeSetProjection?.candidateSets?.length || 0) > 0
-    || (documentChangeProjection?.candidateSets?.length || 0) > 0;
+  return (
+    (productPolicyProjection?.candidates?.length || 0) > 0 ||
+    (featureMappingProjection?.candidateSets?.length || 0) > 0 ||
+    (changeSetProjection?.changeSets?.length || 0) > 0 ||
+    (changeSetProjection?.candidateSets?.length || 0) > 0 ||
+    (documentChangeProjection?.candidateSets?.length || 0) > 0
+  );
 }
 
 function canonicalJson(value) {
@@ -160,7 +162,12 @@ function loadObservationProjectionForWorld({ projectRoot, projectId, storage = n
     const reasonCode = String(error?.code || "");
     if (!OBSERVATION_WORLD_ERROR_PREFIXES.some((prefix) => reasonCode.startsWith(prefix))) throw error;
     return {
-      projection: loadObservationProjection({ storage, projectRoot, projectId, artifacts: { descriptors: [], observations: [], derivedObservations: [], receipts: [] } }),
+      projection: loadObservationProjection({
+        storage,
+        projectRoot,
+        projectId,
+        artifacts: { descriptors: [], observations: [], derivedObservations: [], receipts: [] },
+      }),
       status: "unavailable",
       reasonCode,
     };
@@ -170,19 +177,28 @@ function loadObservationProjectionForWorld({ projectRoot, projectId, storage = n
 // A byte change proves basis drift, not which actor wrote Canon. Never restore it.
 function canonBytes(projectRoot, storage) {
   const file = path.resolve(projectRoot, ...relativeProjectArtifact(storage, "context", "product-model.json").split("/"));
-  try { return fs.readFileSync(file); } catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  try {
+    return fs.readFileSync(file);
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 function assertCanonBasis(projectRoot, storage, expected) {
   const actual = canonBytes(projectRoot, storage);
   if (actual === null ? expected !== null : expected === null || !actual.equals(expected)) {
-    fail("Product Canon changed while preparing the derived World/Graph view; preserve Canon and rebuild from its current basis.", "WORLD_MODEL_CANON_BASIS_CONFLICT");
+    fail(
+      "Product Canon changed while preparing the derived World/Graph view; preserve Canon and rebuild from its current basis.",
+      "WORLD_MODEL_CANON_BASIS_CONFLICT",
+    );
   }
 }
 
 function noteCanonBasisError(error, projectRoot, storage, expected) {
-  try { assertCanonBasis(projectRoot, storage, expected); }
-  catch (secondary) {
+  try {
+    assertCanonBasis(projectRoot, storage, expected);
+  } catch (secondary) {
     // Preserve the original permission, identity, or I/O failure as primary.
     error.canonBasisDiagnostic = { code: secondary.code || "CANON_BASIS_CHECK_FAILED" };
   }
@@ -206,14 +222,15 @@ function productReferenceKind(ref) {
 
 function referenceRecord(ref, content, peeled = "") {
   const value = String(content || "").trim();
-  if (/^[a-f0-9]{40,64}$/i.test(value)) return {
-    ref,
-    kind: productReferenceKind(ref),
-    targetType: "direct",
-    target: value.toLocaleLowerCase(),
-    peeled: /^[a-f0-9]{40,64}$/i.test(peeled) ? peeled.toLocaleLowerCase() : "",
-    commit: value.toLocaleLowerCase(),
-  };
+  if (/^[a-f0-9]{40,64}$/i.test(value))
+    return {
+      ref,
+      kind: productReferenceKind(ref),
+      targetType: "direct",
+      target: value.toLocaleLowerCase(),
+      peeled: /^[a-f0-9]{40,64}$/i.test(peeled) ? peeled.toLocaleLowerCase() : "",
+      commit: value.toLocaleLowerCase(),
+    };
   if (!value.startsWith("ref: ")) return null;
   const target = value.slice(5).trim().replaceAll("\\", "/");
   if (classifyGitReference(target) === "invalid") return null;
@@ -284,7 +301,10 @@ function gitReferenceState(gitPath) {
   return {
     referencesDigest: digest(canonicalJson(references)),
     references,
-    tagNames: references.filter((item) => item.kind === "tag").map((item) => item.ref.slice("refs/tags/".length)).sort(),
+    tagNames: references
+      .filter((item) => item.kind === "tag")
+      .map((item) => item.ref.slice("refs/tags/".length))
+      .sort(),
     packedReferences,
   };
 }
@@ -309,33 +329,44 @@ function resolvedReferenceCommit(gitPath, references, packedReferences, ref, vis
 
 function gitHeadState(root) {
   let repository;
-  try { repository = resolveLocalGitRepository(root); }
-  catch (error) { return { status: "git-metadata-unavailable", reasonCode: error.code || "LOCAL_GIT_METADATA_UNAVAILABLE", ref: "", commit: "", referencesDigest: "" }; }
+  try {
+    repository = resolveLocalGitRepository(root);
+  } catch (error) {
+    return { status: "git-metadata-unavailable", reasonCode: error.code || "LOCAL_GIT_METADATA_UNAVAILABLE", ref: "", commit: "", referencesDigest: "" };
+  }
   if (repository.status !== "available") return { status: "not-a-git-repository", ref: "", commit: "", referencesDigest: "" };
   const gitPath = repository.commonDir;
   const referenceState = gitReferenceState(gitPath);
   repository.assertCurrent();
   const { referencesDigest, references, tagNames, packedReferences } = referenceState;
   const referencesByName = new Map(references.map((item) => [item.ref, item]));
-  const referencedCommits = () => [...new Set(references
-    .filter((item) => item.kind === "branch" || item.kind === "remote")
-    .map((item) => resolvedReferenceCommit(gitPath, referencesByName, packedReferences, item.ref))
-    .filter(Boolean))].sort();
+  const referencedCommits = () =>
+    [
+      ...new Set(
+        references
+          .filter((item) => item.kind === "branch" || item.kind === "remote")
+          .map((item) => resolvedReferenceCommit(gitPath, referencesByName, packedReferences, item.ref))
+          .filter(Boolean),
+      ),
+    ].sort();
   const headFile = path.join(repository.gitDir, "HEAD");
-  if (!fs.existsSync(headFile)) return { status: "head-missing", ref: "", commit: "", referencesDigest, references, referenceCommits: referencedCommits(), referenceTags: tagNames };
+  if (!fs.existsSync(headFile))
+    return { status: "head-missing", ref: "", commit: "", referencesDigest, references, referenceCommits: referencedCommits(), referenceTags: tagNames };
   const head = fs.readFileSync(headFile, "utf8").trim();
   repository.assertCurrent();
-  if (!head.startsWith("ref: ")) return {
-    status: /^[a-f0-9]{40,64}$/i.test(head) ? "detached-head" : "invalid-head",
-    ref: "",
-    commit: /^[a-f0-9]{40,64}$/i.test(head) ? head.toLowerCase() : "",
-    referencesDigest,
-    references,
-    referenceCommits: [...new Set([...referencedCommits(), ...(/^[a-f0-9]{40,64}$/i.test(head) ? [head.toLowerCase()] : [])])].sort(),
-    referenceTags: tagNames,
-  };
+  if (!head.startsWith("ref: "))
+    return {
+      status: /^[a-f0-9]{40,64}$/i.test(head) ? "detached-head" : "invalid-head",
+      ref: "",
+      commit: /^[a-f0-9]{40,64}$/i.test(head) ? head.toLowerCase() : "",
+      referencesDigest,
+      references,
+      referenceCommits: [...new Set([...referencedCommits(), ...(/^[a-f0-9]{40,64}$/i.test(head) ? [head.toLowerCase()] : [])])].sort(),
+      referenceTags: tagNames,
+    };
   const ref = head.slice(5).trim().replaceAll("\\", "/");
-  if (classifyGitReference(ref) === "invalid") return { status: "invalid-ref", ref, commit: "", referencesDigest, references, referenceCommits: referencedCommits(), referenceTags: tagNames };
+  if (classifyGitReference(ref) === "invalid")
+    return { status: "invalid-ref", ref, commit: "", referencesDigest, references, referenceCommits: referencedCommits(), referenceTags: tagNames };
   const commit = resolvedReferenceCommit(gitPath, referencesByName, packedReferences, ref);
   return {
     status: commit ? "head-and-local-refs" : "unresolved-ref",
@@ -377,137 +408,185 @@ function verifiedSnapshot(snapshot, expectedId = "", storage = null) {
   }
   const format = familyFormatForOriginal("head-agent-core-world-model", snapshot, storage);
   if (!format) fail("World Model snapshot protocol is unsupported.", "INVALID_WORLD_MODEL");
-  if (snapshot.repositoryScan) validateRepositoryScanResult({
-    schemaVersion: 1,
-    kind: "RepositoryScanResult",
-    ...snapshot.repositoryScan,
-    files: snapshot.files,
-    skipped: snapshot.skipped,
-  }, { storage: format });
+  if (snapshot.repositoryScan)
+    validateRepositoryScanResult(
+      {
+        schemaVersion: 1,
+        kind: "RepositoryScanResult",
+        ...snapshot.repositoryScan,
+        files: snapshot.files,
+        skipped: snapshot.skipped,
+      },
+      { storage: format },
+    );
   if (snapshot.semanticGraph) verifySemanticGraph(snapshot.semanticGraph);
   if (snapshot.productModel) {
     const normalizedProductModel = normalizeProductModelDocument(productModelDocument(snapshot.productModel), format);
-    if (normalizedProductModel.productModelId !== snapshot.productModel.productModelId
-      || normalizedProductModel.productModelHash !== snapshot.productModel.productModelHash) {
+    if (
+      normalizedProductModel.productModelId !== snapshot.productModel.productModelId ||
+      normalizedProductModel.productModelHash !== snapshot.productModel.productModelHash
+    ) {
       fail("World Model product canon projection is invalid.", "PRODUCT_MODEL_IDENTITY_MISMATCH");
     }
   }
   if (snapshot.temporalProvenanceGraph) verifyTemporalProvenanceGraph(snapshot.temporalProvenanceGraph);
-  if (snapshot.temporalProvenanceGraph?.protocol?.version === "0.16.0"
-    && canonicalJson(snapshot.temporalProvenanceGraph.relationAnalysisBasis) !== canonicalJson(relationBasisFor(snapshot))) fail("World relation analysis basis differs from its verified code basis.", "WORLD_MODEL_ANALYSIS_BASIS_MISMATCH");
+  if (
+    snapshot.temporalProvenanceGraph?.protocol?.version === "0.16.0" &&
+    canonicalJson(snapshot.temporalProvenanceGraph.relationAnalysisBasis) !== canonicalJson(relationBasisFor(snapshot))
+  )
+    fail("World relation analysis basis differs from its verified code basis.", "WORLD_MODEL_ANALYSIS_BASIS_MISMATCH");
   if (new Set(["0.11.0", "0.12.0", "0.13.0", "0.14.0", "0.15.0", "0.16.0", "0.17.0", "0.18.0", WORLD_MODEL_VERSION]).has(snapshot.protocol?.version)) {
     const projection = snapshot.onboardingProjection;
     const graphProjection = snapshot.temporalProvenanceGraph?.onboardingProjection;
-    if (!projection || projection.authority !== "derived-projection-manifest-not-project-canon"
-      || projection.instructionAuthority !== false || projection.promotionAuthority !== false
-      || projection.projectionInputId !== graphProjection?.projectionInputId
-      || projection.projectionInputHash !== graphProjection?.projectionInputHash
-      || canonicalJson(projection.candidateSetIds) !== canonicalJson(graphProjection?.candidateSetIds)
-      || canonicalJson(projection.reviewDecisionIds) !== canonicalJson(graphProjection?.reviewDecisionIds)
-      || canonicalJson(projection.productModelRevisionIds) !== canonicalJson(graphProjection?.productModelRevisionIds)) {
+    if (
+      !projection ||
+      projection.authority !== "derived-projection-manifest-not-project-canon" ||
+      projection.instructionAuthority !== false ||
+      projection.promotionAuthority !== false ||
+      projection.projectionInputId !== graphProjection?.projectionInputId ||
+      projection.projectionInputHash !== graphProjection?.projectionInputHash ||
+      canonicalJson(projection.candidateSetIds) !== canonicalJson(graphProjection?.candidateSetIds) ||
+      canonicalJson(projection.reviewDecisionIds) !== canonicalJson(graphProjection?.reviewDecisionIds) ||
+      canonicalJson(projection.productModelRevisionIds) !== canonicalJson(graphProjection?.productModelRevisionIds)
+    ) {
       fail("World Model onboarding projection and temporal graph disagree.", "ONBOARDING_TEMPORAL_IDENTITY_MISMATCH");
     }
     if (["0.18.0", WORLD_MODEL_VERSION].includes(snapshot.protocol?.version)) {
       const policyProjection = snapshot.productPolicyProjection;
       const graphPolicyProjection = snapshot.temporalProvenanceGraph?.productPolicyProjection;
-      if (!policyProjection || policyProjection.authority !== "derived-projection-manifest-not-project-canon"
-        || policyProjection.instructionAuthority !== false || policyProjection.promotionAuthority !== false || policyProjection.recoveryAuthority !== false
-        || policyProjection.projectionInputId !== graphPolicyProjection?.projectionInputId
-        || policyProjection.projectionInputHash !== graphPolicyProjection?.projectionInputHash
-        || canonicalJson(policyProjection.candidateIds) !== canonicalJson(graphPolicyProjection?.candidateIds)
-        || canonicalJson(policyProjection.reviewDecisionIds) !== canonicalJson(graphPolicyProjection?.reviewDecisionIds)) {
+      if (
+        !policyProjection ||
+        policyProjection.authority !== "derived-projection-manifest-not-project-canon" ||
+        policyProjection.instructionAuthority !== false ||
+        policyProjection.promotionAuthority !== false ||
+        policyProjection.recoveryAuthority !== false ||
+        policyProjection.projectionInputId !== graphPolicyProjection?.projectionInputId ||
+        policyProjection.projectionInputHash !== graphPolicyProjection?.projectionInputHash ||
+        canonicalJson(policyProjection.candidateIds) !== canonicalJson(graphPolicyProjection?.candidateIds) ||
+        canonicalJson(policyProjection.reviewDecisionIds) !== canonicalJson(graphPolicyProjection?.reviewDecisionIds)
+      ) {
         fail("World Model Product Policy projection and temporal graph disagree.", "PRODUCT_POLICY_TEMPORAL_IDENTITY_MISMATCH");
       }
     }
     const mappingProjection = snapshot.featureMappingProjection;
     const graphMappingProjection = snapshot.temporalProvenanceGraph?.featureMappingProjection;
-    if (!mappingProjection || mappingProjection.authority !== "derived-projection-manifest-not-project-canon"
-      || mappingProjection.instructionAuthority !== false || mappingProjection.promotionAuthority !== false
-      || mappingProjection.projectionInputId !== graphMappingProjection?.projectionInputId
-      || mappingProjection.projectionInputHash !== graphMappingProjection?.projectionInputHash
-      || canonicalJson(mappingProjection.candidateSetIds) !== canonicalJson(graphMappingProjection?.candidateSetIds)
-      || canonicalJson(mappingProjection.reviewDecisionIds) !== canonicalJson(graphMappingProjection?.reviewDecisionIds)) {
+    if (
+      !mappingProjection ||
+      mappingProjection.authority !== "derived-projection-manifest-not-project-canon" ||
+      mappingProjection.instructionAuthority !== false ||
+      mappingProjection.promotionAuthority !== false ||
+      mappingProjection.projectionInputId !== graphMappingProjection?.projectionInputId ||
+      mappingProjection.projectionInputHash !== graphMappingProjection?.projectionInputHash ||
+      canonicalJson(mappingProjection.candidateSetIds) !== canonicalJson(graphMappingProjection?.candidateSetIds) ||
+      canonicalJson(mappingProjection.reviewDecisionIds) !== canonicalJson(graphMappingProjection?.reviewDecisionIds)
+    ) {
       fail("World Model Feature mapping projection and temporal graph disagree.", "FEATURE_MAPPING_TEMPORAL_IDENTITY_MISMATCH");
     }
     const changeProjection = snapshot.changeSetProjection;
     const graphChangeProjection = snapshot.temporalProvenanceGraph?.changeSetProjection;
-    if (!changeProjection || changeProjection.authority !== "derived-projection-manifest-not-change-lineage-authority"
-      || changeProjection.instructionAuthority !== false || changeProjection.promotionAuthority !== false
-      || changeProjection.projectionInputId !== graphChangeProjection?.projectionInputId
-      || changeProjection.projectionInputHash !== graphChangeProjection?.projectionInputHash
-      || canonicalJson(changeProjection.changeSetIds) !== canonicalJson(graphChangeProjection?.changeSetIds)
-      || canonicalJson(changeProjection.candidateSetIds) !== canonicalJson(graphChangeProjection?.candidateSetIds)
-      || canonicalJson(changeProjection.reviewDecisionIds) !== canonicalJson(graphChangeProjection?.reviewDecisionIds)
-      || canonicalJson(changeProjection.vcsEvidenceIds) !== canonicalJson(graphChangeProjection?.vcsEvidenceIds)) {
+    if (
+      !changeProjection ||
+      changeProjection.authority !== "derived-projection-manifest-not-change-lineage-authority" ||
+      changeProjection.instructionAuthority !== false ||
+      changeProjection.promotionAuthority !== false ||
+      changeProjection.projectionInputId !== graphChangeProjection?.projectionInputId ||
+      changeProjection.projectionInputHash !== graphChangeProjection?.projectionInputHash ||
+      canonicalJson(changeProjection.changeSetIds) !== canonicalJson(graphChangeProjection?.changeSetIds) ||
+      canonicalJson(changeProjection.candidateSetIds) !== canonicalJson(graphChangeProjection?.candidateSetIds) ||
+      canonicalJson(changeProjection.reviewDecisionIds) !== canonicalJson(graphChangeProjection?.reviewDecisionIds) ||
+      canonicalJson(changeProjection.vcsEvidenceIds) !== canonicalJson(graphChangeProjection?.vcsEvidenceIds)
+    ) {
       fail("World Model ChangeSet projection and temporal graph disagree.", "CHANGE_SET_TEMPORAL_IDENTITY_MISMATCH");
     }
     const documentChangeProjection = snapshot.documentChangeProjection;
     const graphDocumentChangeProjection = snapshot.temporalProvenanceGraph?.documentChangeProjection;
-    if (!documentChangeProjection || documentChangeProjection.authority !== "derived-projection-manifest-not-document-authority"
-      || documentChangeProjection.instructionAuthority !== false || documentChangeProjection.promotionAuthority !== false
-      || documentChangeProjection.projectionInputId !== graphDocumentChangeProjection?.projectionInputId
-      || documentChangeProjection.projectionInputHash !== graphDocumentChangeProjection?.projectionInputHash
-      || canonicalJson(documentChangeProjection.candidateSetIds) !== canonicalJson(graphDocumentChangeProjection?.candidateSetIds)
-      || canonicalJson(documentChangeProjection.reviewDecisionIds) !== canonicalJson(graphDocumentChangeProjection?.reviewDecisionIds)
-      || canonicalJson(documentChangeProjection.productModelRevisionIds) !== canonicalJson(graphDocumentChangeProjection?.productModelRevisionIds)
-      || canonicalJson(documentChangeProjection.applicationReceiptIds) !== canonicalJson(graphDocumentChangeProjection?.applicationReceiptIds)) {
+    if (
+      !documentChangeProjection ||
+      documentChangeProjection.authority !== "derived-projection-manifest-not-document-authority" ||
+      documentChangeProjection.instructionAuthority !== false ||
+      documentChangeProjection.promotionAuthority !== false ||
+      documentChangeProjection.projectionInputId !== graphDocumentChangeProjection?.projectionInputId ||
+      documentChangeProjection.projectionInputHash !== graphDocumentChangeProjection?.projectionInputHash ||
+      canonicalJson(documentChangeProjection.candidateSetIds) !== canonicalJson(graphDocumentChangeProjection?.candidateSetIds) ||
+      canonicalJson(documentChangeProjection.reviewDecisionIds) !== canonicalJson(graphDocumentChangeProjection?.reviewDecisionIds) ||
+      canonicalJson(documentChangeProjection.productModelRevisionIds) !== canonicalJson(graphDocumentChangeProjection?.productModelRevisionIds) ||
+      canonicalJson(documentChangeProjection.applicationReceiptIds) !== canonicalJson(graphDocumentChangeProjection?.applicationReceiptIds)
+    ) {
       fail("World Model document-change projection and temporal graph disagree.", "DOCUMENT_CHANGE_TEMPORAL_IDENTITY_MISMATCH");
     }
     const operatingProjection = snapshot.productOperatingProjection;
     const graphOperatingProjection = snapshot.temporalProvenanceGraph?.productOperatingProjection;
-    if (!operatingProjection || operatingProjection.authority !== "derived-product-graph-manifest-not-product-or-execution-canon"
-      || operatingProjection.instructionAuthority !== false || operatingProjection.promotionAuthority !== false
-      || operatingProjection.projectionInputId !== graphOperatingProjection?.projectionInputId
-      || operatingProjection.projectionInputHash !== graphOperatingProjection?.projectionInputHash
-      || canonicalJson(operatingProjection.signalIds) !== canonicalJson(graphOperatingProjection?.signalIds)
-      || canonicalJson(operatingProjection.hypothesisIds) !== canonicalJson(graphOperatingProjection?.hypothesisIds)
-      || canonicalJson(operatingProjection.initiativeCandidateIds) !== canonicalJson(graphOperatingProjection?.initiativeCandidateIds)
-      || canonicalJson(operatingProjection.reviewDecisionIds) !== canonicalJson(graphOperatingProjection?.reviewDecisionIds)
-      || canonicalJson(operatingProjection.reviewedInitiativeIds) !== canonicalJson(graphOperatingProjection?.reviewedInitiativeIds)
-      || canonicalJson(operatingProjection.featureCandidateIds) !== canonicalJson(graphOperatingProjection?.featureCandidateIds)
-      || canonicalJson(operatingProjection.outcomeObservationIds) !== canonicalJson(graphOperatingProjection?.outcomeObservationIds)) {
+    if (
+      !operatingProjection ||
+      operatingProjection.authority !== "derived-product-graph-manifest-not-product-or-execution-canon" ||
+      operatingProjection.instructionAuthority !== false ||
+      operatingProjection.promotionAuthority !== false ||
+      operatingProjection.projectionInputId !== graphOperatingProjection?.projectionInputId ||
+      operatingProjection.projectionInputHash !== graphOperatingProjection?.projectionInputHash ||
+      canonicalJson(operatingProjection.signalIds) !== canonicalJson(graphOperatingProjection?.signalIds) ||
+      canonicalJson(operatingProjection.hypothesisIds) !== canonicalJson(graphOperatingProjection?.hypothesisIds) ||
+      canonicalJson(operatingProjection.initiativeCandidateIds) !== canonicalJson(graphOperatingProjection?.initiativeCandidateIds) ||
+      canonicalJson(operatingProjection.reviewDecisionIds) !== canonicalJson(graphOperatingProjection?.reviewDecisionIds) ||
+      canonicalJson(operatingProjection.reviewedInitiativeIds) !== canonicalJson(graphOperatingProjection?.reviewedInitiativeIds) ||
+      canonicalJson(operatingProjection.featureCandidateIds) !== canonicalJson(graphOperatingProjection?.featureCandidateIds) ||
+      canonicalJson(operatingProjection.outcomeObservationIds) !== canonicalJson(graphOperatingProjection?.outcomeObservationIds)
+    ) {
       fail("World Model product-operating projection and temporal graph disagree.", "PRODUCT_OPERATING_TEMPORAL_IDENTITY_MISMATCH");
     }
     if (new Set(["0.15.0", "0.16.0", "0.17.0", "0.18.0", WORLD_MODEL_VERSION]).has(snapshot.protocol?.version)) {
       const releaseProjection = snapshot.releaseObservationProjection;
       const graphReleaseProjection = snapshot.temporalProvenanceGraph?.releaseObservationProjection;
-      if (!releaseProjection || releaseProjection.authority !== "derived-projection-manifest-not-release-authority"
-        || releaseProjection.instructionAuthority !== false || releaseProjection.promotionAuthority !== false
-        || releaseProjection.projectionInputId !== graphReleaseProjection?.projectionInputId
-        || releaseProjection.projectionInputHash !== graphReleaseProjection?.projectionInputHash
-        || canonicalJson(releaseProjection.branchStateObservationIds) !== canonicalJson(graphReleaseProjection?.branchStateObservationIds)
-        || canonicalJson(releaseProjection.deploymentResultObservationIds) !== canonicalJson(graphReleaseProjection?.deploymentResultObservationIds)
-        || canonicalJson(releaseProjection.releaseObservationIds) !== canonicalJson(graphReleaseProjection?.releaseObservationIds)) {
+      if (
+        !releaseProjection ||
+        releaseProjection.authority !== "derived-projection-manifest-not-release-authority" ||
+        releaseProjection.instructionAuthority !== false ||
+        releaseProjection.promotionAuthority !== false ||
+        releaseProjection.projectionInputId !== graphReleaseProjection?.projectionInputId ||
+        releaseProjection.projectionInputHash !== graphReleaseProjection?.projectionInputHash ||
+        canonicalJson(releaseProjection.branchStateObservationIds) !== canonicalJson(graphReleaseProjection?.branchStateObservationIds) ||
+        canonicalJson(releaseProjection.deploymentResultObservationIds) !== canonicalJson(graphReleaseProjection?.deploymentResultObservationIds) ||
+        canonicalJson(releaseProjection.releaseObservationIds) !== canonicalJson(graphReleaseProjection?.releaseObservationIds)
+      ) {
         fail("World Model release-observation projection and temporal graph disagree.", "RELEASE_OBSERVATION_TEMPORAL_IDENTITY_MISMATCH");
       }
     }
     if (new Set(["0.16.0", "0.17.0", "0.18.0", WORLD_MODEL_VERSION]).has(snapshot.protocol?.version)) {
       const observationProjection = snapshot.observationProjection;
       const graphObservationProjection = snapshot.temporalProvenanceGraph?.observationProjection;
-      if (!observationProjection || observationProjection.authority !== "derived-projection-manifest-not-observation-or-product-authority"
-        || observationProjection.instructionAuthority !== false || observationProjection.promotionAuthority !== false || observationProjection.recoveryAuthority !== false
-        || !["projected", "unavailable"].includes(observationProjection.status)
-        || observationProjection.status === "projected" && observationProjection.reasonCode !== ""
-        || observationProjection.status === "unavailable" && (typeof observationProjection.reasonCode !== "string" || !observationProjection.reasonCode)
-        || observationProjection.projectionId !== graphObservationProjection?.projectionId
-        || observationProjection.projectionHash !== graphObservationProjection?.projectionHash
-        || canonicalJson(observationProjection.descriptorIds) !== canonicalJson(graphObservationProjection?.descriptorIds)
-        || canonicalJson(observationProjection.observationIds) !== canonicalJson(graphObservationProjection?.observationIds)
-        || canonicalJson(observationProjection.derivedObservationIds) !== canonicalJson(graphObservationProjection?.derivedObservationIds)
-        || canonicalJson(observationProjection.receiptIds) !== canonicalJson(graphObservationProjection?.receiptIds)) {
+      if (
+        !observationProjection ||
+        observationProjection.authority !== "derived-projection-manifest-not-observation-or-product-authority" ||
+        observationProjection.instructionAuthority !== false ||
+        observationProjection.promotionAuthority !== false ||
+        observationProjection.recoveryAuthority !== false ||
+        !["projected", "unavailable"].includes(observationProjection.status) ||
+        (observationProjection.status === "projected" && observationProjection.reasonCode !== "") ||
+        (observationProjection.status === "unavailable" && (typeof observationProjection.reasonCode !== "string" || !observationProjection.reasonCode)) ||
+        observationProjection.projectionId !== graphObservationProjection?.projectionId ||
+        observationProjection.projectionHash !== graphObservationProjection?.projectionHash ||
+        canonicalJson(observationProjection.descriptorIds) !== canonicalJson(graphObservationProjection?.descriptorIds) ||
+        canonicalJson(observationProjection.observationIds) !== canonicalJson(graphObservationProjection?.observationIds) ||
+        canonicalJson(observationProjection.derivedObservationIds) !== canonicalJson(graphObservationProjection?.derivedObservationIds) ||
+        canonicalJson(observationProjection.receiptIds) !== canonicalJson(graphObservationProjection?.receiptIds)
+      ) {
         fail("World Model Observation projection and temporal graph disagree.", "OBSERVATION_TEMPORAL_IDENTITY_MISMATCH");
       }
     }
   }
-  if (snapshot.productModel && snapshot.temporalProvenanceGraph
-    && (snapshot.productModel.productModelId !== snapshot.temporalProvenanceGraph.productModelId
-      || snapshot.productModel.productModelHash !== snapshot.temporalProvenanceGraph.productModelHash)) {
+  if (
+    snapshot.productModel &&
+    snapshot.temporalProvenanceGraph &&
+    (snapshot.productModel.productModelId !== snapshot.temporalProvenanceGraph.productModelId ||
+      snapshot.productModel.productModelHash !== snapshot.temporalProvenanceGraph.productModelHash)
+  ) {
     fail("World Model product canon and temporal graph disagree.", "PRODUCT_TEMPORAL_IDENTITY_MISMATCH");
   }
   if (snapshot.gitDecisionHistory) verifyGitDecisionHistory(snapshot.gitDecisionHistory);
   if (snapshot.externalRuntimeState) verifyExternalRuntimeState(snapshot.externalRuntimeState);
-  if (snapshot.protocol?.version === WORLD_MODEL_VERSION
-    && (!snapshot.analysisBasis || canonicalJson(snapshot.domainBases) !== canonicalJson(domainBasesFor(snapshot)))) {
+  if (
+    snapshot.protocol?.version === WORLD_MODEL_VERSION &&
+    (!snapshot.analysisBasis || canonicalJson(snapshot.domainBases) !== canonicalJson(domainBasesFor(snapshot)))
+  ) {
     fail("World Model domain bases disagree with retained evidence.", "WORLD_DOMAIN_BASIS_MISMATCH");
   }
   const identityBytes = Buffer.byteLength(`,"worldModelHash":${JSON.stringify(recordedHash)},"worldModelId":${JSON.stringify(recordedId)}`, "utf8");
@@ -526,38 +605,48 @@ function changesBetween(previous, current) {
 }
 
 const REVISION_KINDS = new Set([
-  "FileRevision", "SymbolRevision", "TestRevision", "FeatureGroupRevision",
-  "CapabilityRevision", "FeatureRevision", "RequirementRevision", "ConstraintRevision", "DecisionRevision",
+  "FileRevision",
+  "SymbolRevision",
+  "TestRevision",
+  "FeatureGroupRevision",
+  "CapabilityRevision",
+  "FeatureRevision",
+  "RequirementRevision",
+  "ConstraintRevision",
+  "DecisionRevision",
   "PolicyRevision",
 ]);
 
 function revisionSemantic(node, nodes) {
   const base = { kind: node.kind, logicalEntityId: node.logicalEntityId };
-  if (node.kind === "FileRevision") return {
-    ...base,
-    digest: node.digest,
-    language: node.language,
-    classification: node.classification,
-  };
-  if (node.kind === "SymbolRevision") return {
-    ...base,
-    path: node.path,
-    name: node.name,
-    symbolKind: node.symbolKind,
-    occurrence: node.occurrence,
-    line: node.line,
-    endLine: node.endLine,
-    scopePath: node.scopePath,
-    qualifiedName: node.qualifiedName,
-    signature: node.signature,
-    identityAmbiguous: node.identityAmbiguous,
-    fileDigest: nodes.get(node.fileRevisionId)?.digest || "",
-  };
-  if (node.kind === "TestRevision") return {
-    ...base,
-    path: node.path,
-    fileDigest: nodes.get(node.fileRevisionId)?.digest || "",
-  };
+  if (node.kind === "FileRevision")
+    return {
+      ...base,
+      digest: node.digest,
+      language: node.language,
+      classification: node.classification,
+    };
+  if (node.kind === "SymbolRevision")
+    return {
+      ...base,
+      path: node.path,
+      name: node.name,
+      symbolKind: node.symbolKind,
+      occurrence: node.occurrence,
+      line: node.line,
+      endLine: node.endLine,
+      scopePath: node.scopePath,
+      qualifiedName: node.qualifiedName,
+      signature: node.signature,
+      identityAmbiguous: node.identityAmbiguous,
+      fileDigest: nodes.get(node.fileRevisionId)?.digest || "",
+    };
+  if (node.kind === "TestRevision")
+    return {
+      ...base,
+      path: node.path,
+      fileDigest: nodes.get(node.fileRevisionId)?.digest || "",
+    };
   return { ...base, key: node.key, semantic: node.semantic };
 }
 
@@ -567,9 +656,9 @@ export function deriveIncrementalRevisionParents({ previousGraph, candidateGraph
   if (previousGraph.projectId !== candidateGraph.projectId) fail("Refresh graphs do not belong to the same project.", "REFRESH_GRAPH_SCOPE_MISMATCH");
   const previousNodes = new Map(previousGraph.nodes.map((node) => [node.nodeId, node]));
   const candidateNodes = new Map(candidateGraph.nodes.map((node) => [node.nodeId, node]));
-  const previousRevisions = new Map(previousGraph.nodes
-    .filter((node) => REVISION_KINDS.has(node.kind) && node.logicalEntityId)
-    .map((node) => [node.logicalEntityId, node]));
+  const previousRevisions = new Map(
+    previousGraph.nodes.filter((node) => REVISION_KINDS.has(node.kind) && node.logicalEntityId).map((node) => [node.logicalEntityId, node]),
+  );
   const parents = {};
   for (const candidate of candidateGraph.nodes.filter((node) => REVISION_KINDS.has(node.kind) && node.logicalEntityId)) {
     const previous = previousRevisions.get(candidate.logicalEntityId);
@@ -608,53 +697,75 @@ function indexerState() {
   };
 }
 
-function sourceDigestFor(files, sourceScope, productModel, onboardingProjection, productPolicyProjection, featureMappingProjection, changeSetProjection, documentChangeProjection, observationIntegration, productOperatingProjection, releaseObservationProjection, git, runtimeState, externalRuntimeState, indexer, sourceRelationEvidenceHash = null, parentSourceSnapshotIds = [], revisionParentIds = {}, logicalLineageState = {}) {
+function sourceDigestFor(
+  files,
+  sourceScope,
+  productModel,
+  onboardingProjection,
+  productPolicyProjection,
+  featureMappingProjection,
+  changeSetProjection,
+  documentChangeProjection,
+  observationIntegration,
+  productOperatingProjection,
+  releaseObservationProjection,
+  git,
+  runtimeState,
+  externalRuntimeState,
+  indexer,
+  sourceRelationEvidenceHash = null,
+  parentSourceSnapshotIds = [],
+  revisionParentIds = {},
+  logicalLineageState = {},
+) {
   const observationProjection = observationIntegration.projection;
-  return digest(canonicalJson({
-    files,
-    sourceScope: { sourceScopeId: sourceScope.sourceScopeId, sourceScopeHash: sourceScope.sourceScopeHash },
-    productModel: { productModelId: productModel.productModelId, productModelHash: productModel.productModelHash },
-    onboardingProjection: {
-      projectionInputId: onboardingProjection.projectionInputId,
-      projectionInputHash: onboardingProjection.projectionInputHash,
-    },
-    productPolicyProjection: {
-      projectionInputId: productPolicyProjection.projectionInputId,
-      projectionInputHash: productPolicyProjection.projectionInputHash,
-    },
-    featureMappingProjection: {
-      projectionInputId: featureMappingProjection.projectionInputId,
-      projectionInputHash: featureMappingProjection.projectionInputHash,
-    },
-    changeSetProjection: {
-      projectionInputId: changeSetProjection.projectionInputId,
-      projectionInputHash: changeSetProjection.projectionInputHash,
-    },
-    documentChangeProjection: {
-      projectionInputId: documentChangeProjection.projectionInputId,
-      projectionInputHash: documentChangeProjection.projectionInputHash,
-    },
-    observationProjection: {
-      projectionId: observationProjection.projectionId,
-      projectionHash: observationProjection.projectionHash,
-      status: observationIntegration.status,
-      reasonCode: observationIntegration.reasonCode,
-    },
-    productOperatingProjection: {
-      projectionInputId: productOperatingProjection.projectionInputId,
-      projectionInputHash: productOperatingProjection.projectionInputHash,
-    },
-    releaseObservationProjection: {
-      projectionInputId: releaseObservationProjection.projectionInputId,
-      projectionInputHash: releaseObservationProjection.projectionInputHash,
-    },
-    git,
-    runtimeState,
-    externalRuntimeState: externalRuntimeState.runtimeStateHash,
-    sourceRelationEvidenceHash,
-    indexer,
-    temporalParents: { parentSourceSnapshotIds, revisionParentIds, logicalLineageState },
-  }));
+  return digest(
+    canonicalJson({
+      files,
+      sourceScope: { sourceScopeId: sourceScope.sourceScopeId, sourceScopeHash: sourceScope.sourceScopeHash },
+      productModel: { productModelId: productModel.productModelId, productModelHash: productModel.productModelHash },
+      onboardingProjection: {
+        projectionInputId: onboardingProjection.projectionInputId,
+        projectionInputHash: onboardingProjection.projectionInputHash,
+      },
+      productPolicyProjection: {
+        projectionInputId: productPolicyProjection.projectionInputId,
+        projectionInputHash: productPolicyProjection.projectionInputHash,
+      },
+      featureMappingProjection: {
+        projectionInputId: featureMappingProjection.projectionInputId,
+        projectionInputHash: featureMappingProjection.projectionInputHash,
+      },
+      changeSetProjection: {
+        projectionInputId: changeSetProjection.projectionInputId,
+        projectionInputHash: changeSetProjection.projectionInputHash,
+      },
+      documentChangeProjection: {
+        projectionInputId: documentChangeProjection.projectionInputId,
+        projectionInputHash: documentChangeProjection.projectionInputHash,
+      },
+      observationProjection: {
+        projectionId: observationProjection.projectionId,
+        projectionHash: observationProjection.projectionHash,
+        status: observationIntegration.status,
+        reasonCode: observationIntegration.reasonCode,
+      },
+      productOperatingProjection: {
+        projectionInputId: productOperatingProjection.projectionInputId,
+        projectionInputHash: productOperatingProjection.projectionInputHash,
+      },
+      releaseObservationProjection: {
+        projectionInputId: releaseObservationProjection.projectionInputId,
+        projectionInputHash: releaseObservationProjection.projectionInputHash,
+      },
+      git,
+      runtimeState,
+      externalRuntimeState: externalRuntimeState.runtimeStateHash,
+      sourceRelationEvidenceHash,
+      indexer,
+      temporalParents: { parentSourceSnapshotIds, revisionParentIds, logicalLineageState },
+    }),
+  );
 }
 
 const WORLD_DOMAINS = Object.freeze(["code", "product", "git", "runtime", "observations"]);
@@ -674,42 +785,73 @@ function relationBasisFor(snapshot) {
   return { analysisBasis, rules: snapshot.rules, sourceScope: snapshot.repositoryScan?.sourceScope || null };
 }
 function codeAnalysisInputBasisFor({ projectId, files, sourceScope, analysisBasis, sourceRelationEvidence, managedRootFiles, dialect }) {
-  return digest(canonicalJson({ projectId, files, sourceScope, analysisBasis, sourceRelationEvidence,
-    rules: { defaults: REPOSITORY_SCAN_DEFAULTS, excludedDirectories: REPOSITORY_SCAN_EXCLUDED_DIRECTORIES,
-      managedRootFiles, dialect } }));
+  return digest(
+    canonicalJson({
+      projectId,
+      files,
+      sourceScope,
+      analysisBasis,
+      sourceRelationEvidence,
+      rules: { defaults: REPOSITORY_SCAN_DEFAULTS, excludedDirectories: REPOSITORY_SCAN_EXCLUDED_DIRECTORIES, managedRootFiles, dialect },
+    }),
+  );
 }
 function domainBasesFor(snapshot, domains = WORLD_DOMAINS) {
   const bases = {
-    code: () => digest(canonicalJson({
-      files: snapshot.files.map(({ path, digest, language, classification }) => ({ path, digest, language, classification })),
-      sourceScope: snapshot.repositoryScan?.sourceScope || null,
-      analysisBasis: snapshot.analysisBasis || null,
-      rules: snapshot.rules,
-    })),
-    product: () => digest(canonicalJson({
-      productModel: snapshot.productModel?.productModelHash || null,
-      projections: [snapshot.onboardingProjection, snapshot.productPolicyProjection, snapshot.featureMappingProjection,
-        snapshot.changeSetProjection, snapshot.documentChangeProjection].map(projectionBasis),
-    })),
+    code: () =>
+      digest(
+        canonicalJson({
+          files: snapshot.files.map(({ path, digest, language, classification }) => ({ path, digest, language, classification })),
+          sourceScope: snapshot.repositoryScan?.sourceScope || null,
+          analysisBasis: snapshot.analysisBasis || null,
+          rules: snapshot.rules,
+        }),
+      ),
+    product: () =>
+      digest(
+        canonicalJson({
+          productModel: snapshot.productModel?.productModelHash || null,
+          projections: [
+            snapshot.onboardingProjection,
+            snapshot.productPolicyProjection,
+            snapshot.featureMappingProjection,
+            snapshot.changeSetProjection,
+            snapshot.documentChangeProjection,
+          ].map(projectionBasis),
+        }),
+      ),
     git: () => digest(canonicalJson({ git: snapshot.git, release: projectionBasis(snapshot.releaseObservationProjection) })),
     runtime: () => digest(canonicalJson({ capturedSession: snapshot.runtimeState, external: snapshot.externalRuntimeState?.runtimeStateHash || null })),
-    observations: () => digest(canonicalJson({ observation: snapshot.observationProjection?.projectionHash || null,
-      status: snapshot.observationProjection?.status, reason: snapshot.observationProjection?.reasonCode,
-      operating: projectionBasis(snapshot.productOperatingProjection) })),
+    observations: () =>
+      digest(
+        canonicalJson({
+          observation: snapshot.observationProjection?.projectionHash || null,
+          status: snapshot.observationProjection?.status,
+          reason: snapshot.observationProjection?.reasonCode,
+          operating: projectionBasis(snapshot.productOperatingProjection),
+        }),
+      ),
   };
-  return Object.fromEntries(domains.map(domain => [domain, bases[domain]()]));
+  return Object.fromEntries(domains.map((domain) => [domain, bases[domain]()]));
 }
 
 // A scoped read validates retained bytes first, then ONLY the requested live
 // domains. Unrelated invalid Product/runtime records are not a code gate.
 // These are P4 observations, never a refreshed snapshot or P2 recovery source.
-export async function inspectWorldDomainFreshness({ root = ".", domains = WORLD_DOMAINS,
-  worldModelId = "", storeAdapter = null, runtimeStateAdapter = null, temporalVerificationScope = null } = {}) {
-  if (!Array.isArray(domains) || !domains.length || domains.some(domain => !WORLD_DOMAINS.includes(domain))) {
+export async function inspectWorldDomainFreshness({
+  root = ".",
+  domains = WORLD_DOMAINS,
+  worldModelId = "",
+  storeAdapter = null,
+  runtimeStateAdapter = null,
+  temporalVerificationScope = null,
+} = {}) {
+  if (!Array.isArray(domains) || !domains.length || domains.some((domain) => !WORLD_DOMAINS.includes(domain))) {
     fail("World freshness domains are invalid.", "INVALID_WORLD_FRESHNESS_DOMAINS");
   }
-  const stored = (await readWorldModelForDiscovery({ root, worldModelId, storeAdapter, temporalVerificationScope }));
-  const snapshot = stored.snapshot, projectRoot = stored.storage.projectRoot;
+  const stored = await readWorldModelForDiscovery({ root, worldModelId, storeAdapter, temporalVerificationScope });
+  const snapshot = stored.snapshot,
+    projectRoot = stored.storage.projectRoot;
   const { project, storage } = readGraphProject(projectRoot);
   const result = {};
   for (const domain of [...new Set(domains)]) {
@@ -721,28 +863,54 @@ export async function inspectWorldDomainFreshness({ root = ".", domains = WORLD_
       let current = { ...snapshot };
       if (domain === "code") {
         const sourceScope = readRepositorySourceScope({ storage, projectRoot }).sourceScope;
-        const scan = inspectRepositoryScanFreshness({ storage, projectRoot, sourceScope,
-          managedRootFiles: managedRootFilesForProject(project, storage), storedFiles: snapshot.files });
-        current = { ...current, files: scan.files, analysisBasis: codeAnalysisBasis(snapshot.semanticGraph),
+        const scan = inspectRepositoryScanFreshness({
+          storage,
+          projectRoot,
+          sourceScope,
+          managedRootFiles: managedRootFilesForProject(project, storage),
+          storedFiles: snapshot.files,
+        });
+        current = {
+          ...current,
+          files: scan.files,
+          analysisBasis: codeAnalysisBasis(snapshot.semanticGraph),
           repositoryScan: { ...snapshot.repositoryScan, sourceScope },
-          rules: { ...snapshot.rules, sourceScope, maxFileBytes: REPOSITORY_SCAN_DEFAULTS.maxFileBytes,
-            maxFiles: REPOSITORY_SCAN_DEFAULTS.maxFiles, maxTotalBytes: REPOSITORY_SCAN_DEFAULTS.maxTotalBytes,
+          rules: {
+            ...snapshot.rules,
+            sourceScope,
+            maxFileBytes: REPOSITORY_SCAN_DEFAULTS.maxFileBytes,
+            maxFiles: REPOSITORY_SCAN_DEFAULTS.maxFiles,
+            maxTotalBytes: REPOSITORY_SCAN_DEFAULTS.maxTotalBytes,
             maxSymbolsPerFile: REPOSITORY_SCAN_DEFAULTS.maxSymbolsPerFile,
-            excludedDirectories: REPOSITORY_SCAN_EXCLUDED_DIRECTORIES, managedRootProjectionsExcluded: managedRootFilesForProject(project, storage) } };
+            excludedDirectories: REPOSITORY_SCAN_EXCLUDED_DIRECTORIES,
+            managedRootProjectionsExcluded: managedRootFilesForProject(project, storage),
+          },
+        };
       } else if (domain === "product") {
         const model = readProductModelCanon({ storage, projectRoot }).model;
         const input = { projectRoot, storage, projectId: project.projectId, currentProductModelId: model.productModelId };
-        current = { ...current, productModel: model,
-          onboardingProjection: loadOnboardingGraphProjection(input), productPolicyProjection: loadProductPolicyGraphProjection(input),
-          featureMappingProjection: loadFeatureMappingProjection(input), changeSetProjection: loadChangeSetProjection(input),
-          documentChangeProjection: loadDocumentChangeProjection(input) };
+        current = {
+          ...current,
+          productModel: model,
+          onboardingProjection: loadOnboardingGraphProjection(input),
+          productPolicyProjection: loadProductPolicyGraphProjection(input),
+          featureMappingProjection: loadFeatureMappingProjection(input),
+          changeSetProjection: loadChangeSetProjection(input),
+          documentChangeProjection: loadDocumentChangeProjection(input),
+        };
       } else if (domain === "git") {
-        current = { ...current, git: gitHeadState(projectRoot),
-          releaseObservationProjection: loadReleaseObservationProjection({ storage, projectRoot, projectId: project.projectId }) };
+        current = {
+          ...current,
+          git: gitHeadState(projectRoot),
+          releaseObservationProjection: loadReleaseObservationProjection({ storage, projectRoot, projectId: project.projectId }),
+        };
       } else if (domain === "observations") {
         const observation = loadObservationProjectionForWorld({ storage, projectRoot, projectId: project.projectId });
-        current = { ...current, observationProjection: { ...observation.projection, status: observation.status, reasonCode: observation.reasonCode },
-          productOperatingProjection: loadProductOperatingProjection({ storage, projectRoot, projectId: project.projectId }) };
+        current = {
+          ...current,
+          observationProjection: { ...observation.projection, status: observation.status, reasonCode: observation.reasonCode },
+          productOperatingProjection: loadProductOperatingProjection({ storage, projectRoot, projectId: project.projectId }),
+        };
         if (observation.status === "unavailable") {
           result[domain] = { status: "unavailable", reasonCode: observation.reasonCode, fallback: "original-source" };
           continue;
@@ -752,36 +920,99 @@ export async function inspectWorldDomainFreshness({ root = ".", domains = WORLD_
         // transfer the captured observation's owner or rewrite its identity.
         const captured = withSessionRoute(projectRoot, snapshot.runtimeState.sessionId, () => readyProject(projectRoot));
         const selected = runtimeStateAdapter || runtimeStateAdapterFromDescriptor(stored.pointer?.sourceAdapters?.runtimeState);
-        current = { ...current, runtimeState: runtimeStateFor(captured.state),
-          externalRuntimeState: buildExternalRuntimeState({ storage, projectRoot, adapter: selected }).runtimeState };
+        current = {
+          ...current,
+          runtimeState: runtimeStateFor(captured.state),
+          externalRuntimeState: buildExternalRuntimeState({ storage, projectRoot, adapter: selected }).runtimeState,
+        };
       }
       const currentBasis = domainBasesFor(current, [domain])[domain];
-      result[domain] = { status: currentBasis === snapshot.domainBases[domain] ? "current" : "stale",
-        storedBasis: snapshot.domainBases[domain], currentBasis,
-        ...(domain === "runtime" ? { capturedSessionId: snapshot.runtimeState.sessionId } : {}) };
+      result[domain] = {
+        status: currentBasis === snapshot.domainBases[domain] ? "current" : "stale",
+        storedBasis: snapshot.domainBases[domain],
+        currentBasis,
+        ...(domain === "runtime" ? { capturedSessionId: snapshot.runtimeState.sessionId } : {}),
+      };
     } catch (error) {
       result[domain] = { status: "unavailable", reasonCode: error.code || "WORLD_DOMAIN_READER_UNAVAILABLE", fallback: "original-source" };
     }
   }
-  return { ...stored, status: Object.values(result).every(item => item.status === "current") ? "current" : "partial",
+  return {
+    ...stored,
+    status: Object.values(result).every((item) => item.status === "current") ? "current" : "partial",
     freshness: { domains: result, scope: "requested-domains-only", fullWorldCurrentClaim: false },
-    authority: "derived-observation-only", instructionAuthority: false, promotionAuthority: false, recoveryAuthority: false };
+    authority: "derived-observation-only",
+    instructionAuthority: false,
+    promotionAuthority: false,
+    recoveryAuthority: false,
+  };
 }
 
 const CODE_NODE_KINDS = new Set(["File", "FileRevision", "Symbol", "SymbolRevision", "Test", "TestRevision", "RevisionReference"]);
 const NEUTRAL_NODE_KINDS = new Set(["Repository", "SourceSnapshot", "SourceSnapshotReference"]);
-const PRODUCT_NODE_KINDS = new Set(["FeatureGroup", "FeatureGroupRevision", "Capability", "CapabilityRevision", "Feature", "FeatureRevision",
-  "Requirement", "RequirementRevision", "Constraint", "ConstraintRevision", "Decision", "DecisionRevision", "Policy", "PolicyRevision",
-  "OnboardingCandidateSet", "OnboardingProductCandidate", "OnboardingEvidence", "OnboardingUnknown", "OnboardingReviewDecision",
-  "ProductConceptReference", "ProductModelRevision", "FeatureMappingCandidateSet", "FeatureMappingCandidate", "FeatureMappingEvidence",
-  "FeatureMappingUnknown", "FeatureMappingReviewDecision", "ReviewedRelationship", "MappingEndpointReference", "ChangeSet", "ChangeRevisionReference",
-  "ChangeImpactCandidateSet", "ChangeImpactCandidate", "ChangeImpactUnknown", "ChangeImpactReviewDecision", "ReviewedImpact", "ChangeProductReference",
-  "DocumentChangeCandidateSet", "DocumentChangeCandidate", "DocumentChangeReviewDecision", "DocumentChangeApplication", "DocumentProductModelRevision",
-  "DocumentProjectionReference", "ProductModelRevisionReference", "ProductPolicyCandidate", "ProductPolicyEvidence", "ProductPolicyReviewDecision",
-  "HistoricalOnboardingCandidateReference"]);
-const OBSERVATION_NODE_KINDS = new Set(["ProductSignal", "ProductHypothesis", "ProductInitiativeCandidate", "ProductInitiativeReviewDecision",
-  "ReviewedProductInitiative", "ProductFeatureCandidate", "ProductFeatureReference", "OutcomeObservation", "ObservationTypeDescriptor",
-  "ObservationCollectionReceipt", "ObservationRecord", "DerivedObservationRecord"]);
+const PRODUCT_NODE_KINDS = new Set([
+  "FeatureGroup",
+  "FeatureGroupRevision",
+  "Capability",
+  "CapabilityRevision",
+  "Feature",
+  "FeatureRevision",
+  "Requirement",
+  "RequirementRevision",
+  "Constraint",
+  "ConstraintRevision",
+  "Decision",
+  "DecisionRevision",
+  "Policy",
+  "PolicyRevision",
+  "OnboardingCandidateSet",
+  "OnboardingProductCandidate",
+  "OnboardingEvidence",
+  "OnboardingUnknown",
+  "OnboardingReviewDecision",
+  "ProductConceptReference",
+  "ProductModelRevision",
+  "FeatureMappingCandidateSet",
+  "FeatureMappingCandidate",
+  "FeatureMappingEvidence",
+  "FeatureMappingUnknown",
+  "FeatureMappingReviewDecision",
+  "ReviewedRelationship",
+  "MappingEndpointReference",
+  "ChangeSet",
+  "ChangeRevisionReference",
+  "ChangeImpactCandidateSet",
+  "ChangeImpactCandidate",
+  "ChangeImpactUnknown",
+  "ChangeImpactReviewDecision",
+  "ReviewedImpact",
+  "ChangeProductReference",
+  "DocumentChangeCandidateSet",
+  "DocumentChangeCandidate",
+  "DocumentChangeReviewDecision",
+  "DocumentChangeApplication",
+  "DocumentProductModelRevision",
+  "DocumentProjectionReference",
+  "ProductModelRevisionReference",
+  "ProductPolicyCandidate",
+  "ProductPolicyEvidence",
+  "ProductPolicyReviewDecision",
+  "HistoricalOnboardingCandidateReference",
+]);
+const OBSERVATION_NODE_KINDS = new Set([
+  "ProductSignal",
+  "ProductHypothesis",
+  "ProductInitiativeCandidate",
+  "ProductInitiativeReviewDecision",
+  "ReviewedProductInitiative",
+  "ProductFeatureCandidate",
+  "ProductFeatureReference",
+  "OutcomeObservation",
+  "ObservationTypeDescriptor",
+  "ObservationCollectionReceipt",
+  "ObservationRecord",
+  "DerivedObservationRecord",
+]);
 const GIT_NODE_KINDS = new Set(["VcsEvidence", "GitCommit", "BranchStateObservation", "DeploymentResultObservation", "ReleaseObservation"]);
 function worldNodeDomains(node) {
   if (CODE_NODE_KINDS.has(node.kind)) return ["code"];
@@ -794,9 +1025,31 @@ function worldNodeDomains(node) {
 }
 const CODE_PRODUCT_RELATIONS = new Set(["REALIZES", "IMPLEMENTS", "VERIFIED_BY", "IMPACTS"]);
 const GIT_RELATIONS = new Set(["AT_REVISION", "OBSERVED_ON", "DEPLOYS"]);
-const NEUTRAL_RELATIONS = new Set(["CONTAINS", "GOVERNED_BY", "HAS_REVISION", "CURRENT_REVISION", "PARENT_OF", "DECLARES", "REFERENCES",
-    "PROPOSES_FROM", "PROPOSES_TO", "SUPPORTED_BY", "REVIEWED_BY", "ACCEPTED_BY", "REJECTED_BY", "PROMOTED_FROM",
-    "PRODUCES", "CHANGES", "SUPERSEDES", "MATERIALIZED_AS", "OBSERVES", "EVIDENCED_BY", "CONFORMS_TO", "DERIVED_FROM", "HISTORICALLY_FOLLOWS"]);
+const NEUTRAL_RELATIONS = new Set([
+  "CONTAINS",
+  "GOVERNED_BY",
+  "HAS_REVISION",
+  "CURRENT_REVISION",
+  "PARENT_OF",
+  "DECLARES",
+  "REFERENCES",
+  "PROPOSES_FROM",
+  "PROPOSES_TO",
+  "SUPPORTED_BY",
+  "REVIEWED_BY",
+  "ACCEPTED_BY",
+  "REJECTED_BY",
+  "PROMOTED_FROM",
+  "PRODUCES",
+  "CHANGES",
+  "SUPERSEDES",
+  "MATERIALIZED_AS",
+  "OBSERVES",
+  "EVIDENCED_BY",
+  "CONFORMS_TO",
+  "DERIVED_FROM",
+  "HISTORICALLY_FOLLOWS",
+]);
 function worldRelationDomains(edge) {
   if (CODE_PRODUCT_RELATIONS.has(edge.type)) return ["code", "product"];
   if (GIT_RELATIONS.has(edge.type)) return ["git"];
@@ -808,15 +1061,28 @@ function worldRelationDomains(edge) {
 export function buildWorldTraversalEligibility(snapshot, domainFreshness) {
   const graph = snapshot.temporalProvenanceGraph;
   verifyTemporalProvenanceGraph(graph);
-  const nodeDomains = new Map(graph.nodes.map(node => [node.nodeId, worldNodeDomains(node)]));
-  const eligible = (record, required) => required.every(domain => domain !== "unknown")
-    && (record.freshness !== "current" || required.every(domain => domainFreshness?.[domain]?.status === "current"));
-  const nodeIds = graph.nodes.filter(node => eligible(node, nodeDomains.get(node.nodeId))).map(node => node.nodeId);
+  const nodeDomains = new Map(graph.nodes.map((node) => [node.nodeId, worldNodeDomains(node)]));
+  const eligible = (record, required) =>
+    required.every((domain) => domain !== "unknown") &&
+    (record.freshness !== "current" || required.every((domain) => domainFreshness?.[domain]?.status === "current"));
+  const nodeIds = graph.nodes.filter((node) => eligible(node, nodeDomains.get(node.nodeId))).map((node) => node.nodeId);
   const allowed = new Set(nodeIds);
-  const edgeIds = graph.edges.filter(edge => allowed.has(edge.from) && allowed.has(edge.to)
-    && eligible(edge, [...new Set([...nodeDomains.get(edge.from), ...nodeDomains.get(edge.to), ...worldRelationDomains(edge)])])).map(edge => edge.edgeId);
-  return { graphSnapshotId: graph.graphSnapshotId, graphSnapshotHash: graph.graphSnapshotHash,
-    nodeIds, edgeIds, domains: domainFreshness, authority: "read-only-domain-eligibility-not-graph-snapshot" };
+  const edgeIds = graph.edges
+    .filter(
+      (edge) =>
+        allowed.has(edge.from) &&
+        allowed.has(edge.to) &&
+        eligible(edge, [...new Set([...nodeDomains.get(edge.from), ...nodeDomains.get(edge.to), ...worldRelationDomains(edge)])]),
+    )
+    .map((edge) => edge.edgeId);
+  return {
+    graphSnapshotId: graph.graphSnapshotId,
+    graphSnapshotHash: graph.graphSnapshotHash,
+    nodeIds,
+    edgeIds,
+    domains: domainFreshness,
+    authority: "read-only-domain-eligibility-not-graph-snapshot",
+  };
 }
 
 export async function readWorldModel({ root = ".", storeAdapter = null } = {}) {
@@ -828,10 +1094,11 @@ export async function readWorldModel({ root = ".", storeAdapter = null } = {}) {
   if (!pointerEntry) fail("Repository World Model has not been built.", "WORLD_MODEL_NOT_BUILT");
   const pointer = pointerEntry.document;
   verifyWorldModelPointerOriginal(pointer, inspected.project.projectId);
-  const snapshotEntry = (await adapter.readSnapshot(pointer.worldModelId));
+  const snapshotEntry = await adapter.readSnapshot(pointer.worldModelId);
   if (!snapshotEntry) fail("World Model snapshot is missing.", "WORLD_MODEL_SNAPSHOT_MISSING");
   const snapshot = verifyWorldModelSnapshotOriginal({ document: snapshotEntry.document, worldModelId: pointer.worldModelId, storage });
-  if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedSnapshot(storage, snapshot, snapshotEntry)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
+  if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedSnapshot(storage, snapshot, snapshotEntry))
+    fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   if (snapshot.worldModelHash !== pointer.worldModelHash) fail("World Model pointer hash does not match its snapshot.", "WORLD_MODEL_POINTER_MISMATCH");
   return {
     storage,
@@ -850,10 +1117,11 @@ export async function readWorldModelSnapshot({ root = ".", worldModelId, storeAd
   const storage = inspected.storage;
   if (!/^world-model-[a-f0-9]{24}$/.test(worldModelId || "")) fail("World Model snapshot id is invalid.", "INVALID_WORLD_MODEL_ID");
   const adapter = createWorldModelStoreAdapter({ storage, projectRoot: inspected.project.projectRoot, adapter: storeAdapter });
-  const snapshotEntry = (await adapter.readSnapshot(worldModelId));
+  const snapshotEntry = await adapter.readSnapshot(worldModelId);
   if (!snapshotEntry) fail(`World Model snapshot is missing: ${worldModelId}`, "WORLD_MODEL_SNAPSHOT_MISSING");
   const snapshot = verifyWorldModelSnapshotOriginal({ document: snapshotEntry.document, worldModelId, storage });
-  if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedSnapshot(storage, snapshot, snapshotEntry)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
+  if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedSnapshot(storage, snapshot, snapshotEntry))
+    fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   return {
     status: "verified",
     file: snapshotEntry.location,
@@ -874,10 +1142,18 @@ export async function readWorldModelForDiscovery({ root = ".", worldModelId = ""
   const adapter = createWorldModelStoreAdapter({ storage, projectRoot, adapter: storeAdapter });
   if (!storeAdapter) safeGraphFile(projectRoot, relativeProjectArtifact(storage, "world-model", "current.json"));
   let pointer = null;
-  try { pointer = adapter.readPointer()?.document || null; }
-  catch (error) { if (!worldModelId) throw error; }
-  if (pointer && (pointer.projectId !== project.projectId || pointer.schemaVersion !== SCHEMA_VERSION
-    || pointer.kind !== "WorldModelPointer" || !/^world-model-[a-f0-9]{24}$/.test(pointer.worldModelId || ""))) {
+  try {
+    pointer = adapter.readPointer()?.document || null;
+  } catch (error) {
+    if (!worldModelId) throw error;
+  }
+  if (
+    pointer &&
+    (pointer.projectId !== project.projectId ||
+      pointer.schemaVersion !== SCHEMA_VERSION ||
+      pointer.kind !== "WorldModelPointer" ||
+      !/^world-model-[a-f0-9]{24}$/.test(pointer.worldModelId || ""))
+  ) {
     if (!worldModelId) fail("World Model pointer identity is invalid.", "WORLD_MODEL_POINTER_MISMATCH");
     pointer = null;
   }
@@ -885,8 +1161,8 @@ export async function readWorldModelForDiscovery({ root = ".", worldModelId = ""
   if (!selectedId) fail("Repository World Model has not been built.", "WORLD_MODEL_NOT_BUILT");
   if (!storeAdapter) safeGraphFile(projectRoot, path.relative(projectRoot, adapter.snapshotLocation(selectedId)).replaceAll("\\", "/"));
   const pendingEntry = adapter.readSnapshot(selectedId);
-  const ownEntry = entry => !entry || temporalVerificationScope === null ? entry
-    : { ...entry, document: ownWorldSnapshotForTemporalScope(temporalVerificationScope, entry.document) };
+  const ownEntry = (entry) =>
+    !entry || temporalVerificationScope === null ? entry : { ...entry, document: ownWorldSnapshotForTemporalScope(temporalVerificationScope, entry.document) };
   // A synchronous adapter's returned value exists now: detach its aliases
   // before yielding. A Promise value is not observed until it resolves.
   const originalEntry = pendingEntry && typeof pendingEntry.then === "function" ? await pendingEntry : pendingEntry;
@@ -894,9 +1170,18 @@ export async function readWorldModelForDiscovery({ root = ".", worldModelId = ""
   if (!entry) fail("World Model snapshot is missing.", "WORLD_MODEL_SNAPSHOT_MISSING");
   const document = entry.document;
   const snapshot = verifiedSnapshot(document, selectedId, storage);
-  if (snapshot.projectId !== project.projectId || !projectOwnsRecordedSnapshot(storage, originalEntry.document, originalEntry)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
-  if (!worldModelId && pointer.worldModelHash !== snapshot.worldModelHash) fail("World pointer hash differs from retained bytes.", "WORLD_MODEL_POINTER_MISMATCH");
-  return { snapshot, pointer, storage, file: entry.location, ...(entry.snapshotStorage ? { snapshotStorage: entry.snapshotStorage } : {}), historical: !pointer || selectedId !== pointer.worldModelId };
+  if (snapshot.projectId !== project.projectId || !projectOwnsRecordedSnapshot(storage, originalEntry.document, originalEntry))
+    fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
+  if (!worldModelId && pointer.worldModelHash !== snapshot.worldModelHash)
+    fail("World pointer hash differs from retained bytes.", "WORLD_MODEL_POINTER_MISMATCH");
+  return {
+    snapshot,
+    pointer,
+    storage,
+    file: entry.location,
+    ...(entry.snapshotStorage ? { snapshotStorage: entry.snapshotStorage } : {}),
+    historical: !pointer || selectedId !== pointer.worldModelId,
+  };
 }
 
 export async function findWorldModelSnapshot({ root = ".", graphSnapshotId = "", sourceSnapshotId = "", storeAdapter = null } = {}) {
@@ -905,7 +1190,7 @@ export async function findWorldModelSnapshot({ root = ".", graphSnapshotId = "",
   if (!graphSnapshotId && !sourceSnapshotId) fail("A GraphSnapshot or SourceSnapshot identity is required.", "WORLD_MODEL_SNAPSHOT_QUERY_REQUIRED");
   const adapter = createWorldModelStoreAdapter({ storage, projectRoot: inspected.project.projectRoot, adapter: storeAdapter });
   const matches = [];
-  for (const worldModelId of (await adapter.listSnapshotIds())) {
+  for (const worldModelId of await adapter.listSnapshotIds()) {
     const snapshot = (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId, storeAdapter: adapter })).snapshot;
     if (graphSnapshotId && snapshot.temporalProvenanceGraph?.graphSnapshotId !== graphSnapshotId) continue;
     if (sourceSnapshotId && snapshot.temporalProvenanceGraph?.sourceSnapshotId !== sourceSnapshotId) continue;
@@ -917,59 +1202,63 @@ export async function findWorldModelSnapshot({ root = ".", graphSnapshotId = "",
 }
 
 export async function inspectWorldModel({ root = ".", storeAdapter = null, runtimeStateAdapter = null } = {}) {
-  const stored = (await readWorldModel({ root, storeAdapter }));
+  const stored = await readWorldModel({ root, storeAdapter });
   const inspected = readyProject(root);
   const storage = inspected.storage;
   const sourceScopeState = readRepositorySourceScope({ storage, projectRoot: inspected.project.projectRoot });
   const sourceScope = sourceScopeState.sourceScope;
   const storedSourceScope = stored.snapshot.repositoryScan?.sourceScope || buildRepositorySourceScope({ storage });
   const sourceScopeChanged = sourceScope.sourceScopeId !== storedSourceScope.sourceScopeId;
-  const { freshness, scan } = inspectRepositoryScanForWorld({ storage,
-    projectRoot: inspected.project.projectRoot,
-    managedRootFiles: managedRootFilesForProject(inspected.project, storage),
-    sourceScope,
-  }, { schemaVersion: 1, kind: "RepositoryScanResult", ...stored.snapshot.repositoryScan,
-    files: stored.snapshot.files, skipped: stored.snapshot.skipped }, { sourceScopeChanged });
+  const { freshness, scan } = inspectRepositoryScanForWorld(
+    { storage, projectRoot: inspected.project.projectRoot, managedRootFiles: managedRootFilesForProject(inspected.project, storage), sourceScope },
+    { schemaVersion: 1, kind: "RepositoryScanResult", ...stored.snapshot.repositoryScan, files: stored.snapshot.files, skipped: stored.snapshot.skipped },
+    { sourceScopeChanged },
+  );
   const productCanon = readProductModelCanon({ storage, projectRoot: inspected.project.projectRoot });
-  const onboardingProjection = loadOnboardingGraphProjection({ storage,
+  const onboardingProjection = loadOnboardingGraphProjection({
+    storage,
     projectRoot: inspected.project.projectRoot,
     projectId: inspected.project.projectId,
     currentProductModelId: productCanon.model.productModelId,
   });
-  const productPolicyProjection = loadProductPolicyGraphProjection({ storage,
+  const productPolicyProjection = loadProductPolicyGraphProjection({
+    storage,
     projectRoot: inspected.project.projectRoot,
     projectId: inspected.project.projectId,
     currentProductModelId: productCanon.model.productModelId,
   });
-  const featureMappingProjection = loadFeatureMappingProjection({ storage,
+  const featureMappingProjection = loadFeatureMappingProjection({
+    storage,
     projectRoot: inspected.project.projectRoot,
     projectId: inspected.project.projectId,
     currentProductModelId: productCanon.model.productModelId,
   });
-  const changeSetProjection = loadChangeSetProjection({ storage,
+  const changeSetProjection = loadChangeSetProjection({ storage, projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId });
+  const documentChangeProjection = loadDocumentChangeProjection({
+    storage,
     projectRoot: inspected.project.projectRoot,
     projectId: inspected.project.projectId,
   });
-  const documentChangeProjection = loadDocumentChangeProjection({ storage,
-    projectRoot: inspected.project.projectRoot,
-    projectId: inspected.project.projectId,
-  });
-  const observationIntegration = loadObservationProjectionForWorld({ storage,
+  const observationIntegration = loadObservationProjectionForWorld({
+    storage,
     projectRoot: inspected.project.projectRoot,
     projectId: inspected.project.projectId,
   });
   const observationProjection = observationIntegration.projection;
-  const productOperatingProjection = loadProductOperatingProjection({ storage,
+  const productOperatingProjection = loadProductOperatingProjection({
+    storage,
     projectRoot: inspected.project.projectRoot,
     projectId: inspected.project.projectId,
   });
-  const releaseObservationProjection = loadReleaseObservationProjection({ storage,
+  const releaseObservationProjection = loadReleaseObservationProjection({
+    storage,
     projectRoot: inspected.project.projectRoot,
     projectId: inspected.project.projectId,
   });
   const git = gitHeadState(inspected.project.projectRoot);
-  const runtimeState = withSessionRoute(inspected.project.projectRoot, stored.snapshot.runtimeState.sessionId,
-    () => runtimeStateFor(readyProject(inspected.project.projectRoot).state));
+  const runtimeState = withSessionRoute(inspected.project.projectRoot, stored.snapshot.runtimeState.sessionId, () =>
+    runtimeStateFor(readyProject(inspected.project.projectRoot).state),
+  );
   const selectedRuntimeAdapter = runtimeStateAdapter || runtimeStateAdapterFromDescriptor(stored.pointer.sourceAdapters?.runtimeState);
   const externalRuntimeResult = buildExternalRuntimeState({ storage, projectRoot: inspected.project.projectRoot, adapter: selectedRuntimeAdapter });
   const externalRuntimeState = externalRuntimeResult.runtimeState;
@@ -999,11 +1288,7 @@ export async function inspectWorldModel({ root = ".", storeAdapter = null, runti
   const storedByPath = new Map(stored.snapshot.files.map((item) => [item.path, item.digest]));
   const fileFreshness = stored.snapshot.files.map((item) => ({
     path: item.path,
-    status: !currentByPath.has(item.path)
-      ? "removed"
-      : currentByPath.get(item.path) === item.digest
-        ? "active"
-        : "stale",
+    status: !currentByPath.has(item.path) ? "removed" : currentByPath.get(item.path) === item.digest ? "active" : "stale",
   }));
   for (const item of scan.files) if (!storedByPath.has(item.path)) fileFreshness.push({ path: item.path, status: "unindexed" });
   fileFreshness.sort((left, right) => left.path.localeCompare(right.path));
@@ -1014,21 +1299,45 @@ export async function inspectWorldModel({ root = ".", storeAdapter = null, runti
   const featureMappingProjectionChanged = featureMappingProjection.projectionInputHash !== stored.snapshot.featureMappingProjection?.projectionInputHash;
   const changeSetProjectionChanged = changeSetProjection.projectionInputHash !== stored.snapshot.changeSetProjection?.projectionInputHash;
   const documentChangeProjectionChanged = documentChangeProjection.projectionInputHash !== stored.snapshot.documentChangeProjection?.projectionInputHash;
-  const observationProjectionChanged = observationProjection.projectionHash !== stored.snapshot.observationProjection?.projectionHash
-    || observationIntegration.status !== stored.snapshot.observationProjection?.status
-    || observationIntegration.reasonCode !== stored.snapshot.observationProjection?.reasonCode;
+  const observationProjectionChanged =
+    observationProjection.projectionHash !== stored.snapshot.observationProjection?.projectionHash ||
+    observationIntegration.status !== stored.snapshot.observationProjection?.status ||
+    observationIntegration.reasonCode !== stored.snapshot.observationProjection?.reasonCode;
   const productOperatingProjectionChanged = productOperatingProjection.projectionInputHash !== stored.snapshot.productOperatingProjection?.projectionInputHash;
-  const releaseObservationProjectionChanged = releaseObservationProjection.projectionInputHash !== stored.snapshot.releaseObservationProjection?.projectionInputHash;
-  const domainSnapshot = { ...stored.snapshot, files: scan.files, analysisBasis: codeAnalysisBasis(stored.snapshot.semanticGraph),
-    repositoryScan: { ...stored.snapshot.repositoryScan, sourceScope }, rules: { ...stored.snapshot.rules, sourceScope },
-    productModel: productCanon.model, onboardingProjection, productPolicyProjection, featureMappingProjection, changeSetProjection,
-    documentChangeProjection, observationProjection: { ...observationProjection, status: observationIntegration.status, reasonCode: observationIntegration.reasonCode },
-    productOperatingProjection, releaseObservationProjection, git, runtimeState, externalRuntimeState };
+  const releaseObservationProjectionChanged =
+    releaseObservationProjection.projectionInputHash !== stored.snapshot.releaseObservationProjection?.projectionInputHash;
+  const domainSnapshot = {
+    ...stored.snapshot,
+    files: scan.files,
+    analysisBasis: codeAnalysisBasis(stored.snapshot.semanticGraph),
+    repositoryScan: { ...stored.snapshot.repositoryScan, sourceScope },
+    rules: { ...stored.snapshot.rules, sourceScope },
+    productModel: productCanon.model,
+    onboardingProjection,
+    productPolicyProjection,
+    featureMappingProjection,
+    changeSetProjection,
+    documentChangeProjection,
+    observationProjection: { ...observationProjection, status: observationIntegration.status, reasonCode: observationIntegration.reasonCode },
+    productOperatingProjection,
+    releaseObservationProjection,
+    git,
+    runtimeState,
+    externalRuntimeState,
+  };
   const domainBases = domainBasesFor(domainSnapshot);
-  const domainFreshness = Object.fromEntries(WORLD_DOMAINS.map(domain => [domain, stored.snapshot.domainBases?.[domain]
-    ? { status: domainBases[domain] === stored.snapshot.domainBases[domain] ? "current" : "stale",
-      storedBasis: stored.snapshot.domainBases[domain], currentBasis: domainBases[domain] }
-    : { status: "unknown", reasonCode: "WORLD_DOMAIN_BASIS_UNRECORDED", fallback: "original-source" }]));
+  const domainFreshness = Object.fromEntries(
+    WORLD_DOMAINS.map((domain) => [
+      domain,
+      stored.snapshot.domainBases?.[domain]
+        ? {
+            status: domainBases[domain] === stored.snapshot.domainBases[domain] ? "current" : "stale",
+            storedBasis: stored.snapshot.domainBases[domain],
+            currentBasis: domainBases[domain],
+          }
+        : { status: "unknown", reasonCode: "WORLD_DOMAIN_BASIS_UNRECORDED", fallback: "original-source" },
+    ]),
+  );
   return {
     ...stored,
     status: currentSourceDigest === stored.snapshot.sourceDigest ? "current" : "stale",
@@ -1052,8 +1361,20 @@ export async function inspectWorldModel({ root = ".", storeAdapter = null, runti
       observationProjectionChanged,
       productOperatingProjectionChanged,
       releaseObservationProjectionChanged,
-      temporalProvenanceChanged: sourceScopeChanged || fileChanges.added.length > 0 || fileChanges.changed.length > 0 || fileChanges.removed.length > 0
-        || productModelChanged || onboardingProjectionChanged || productPolicyProjectionChanged || featureMappingProjectionChanged || changeSetProjectionChanged || documentChangeProjectionChanged || observationProjectionChanged || productOperatingProjectionChanged || releaseObservationProjectionChanged,
+      temporalProvenanceChanged:
+        sourceScopeChanged ||
+        fileChanges.added.length > 0 ||
+        fileChanges.changed.length > 0 ||
+        fileChanges.removed.length > 0 ||
+        productModelChanged ||
+        onboardingProjectionChanged ||
+        productPolicyProjectionChanged ||
+        featureMappingProjectionChanged ||
+        changeSetProjectionChanged ||
+        documentChangeProjectionChanged ||
+        observationProjectionChanged ||
+        productOperatingProjectionChanged ||
+        releaseObservationProjectionChanged,
     },
     fileFreshness,
     sourceAdapters: { runtimeState: externalRuntimeResult.adapter },
@@ -1062,8 +1383,7 @@ export async function inspectWorldModel({ root = ".", storeAdapter = null, runti
 }
 
 function boundedPathSummary(items, limit) {
-  const values = [...new Set((Array.isArray(items) ? items : []).filter((item) => typeof item === "string"))]
-    .sort((left, right) => left.localeCompare(right));
+  const values = [...new Set((Array.isArray(items) ? items : []).filter((item) => typeof item === "string"))].sort((left, right) => left.localeCompare(right));
   return {
     count: values.length,
     sample: values.slice(0, limit),
@@ -1073,9 +1393,7 @@ function boundedPathSummary(items, limit) {
 
 function snapshotSerializedByteLength(snapshot) {
   const verifiedLength = verifiedSnapshotByteLengths.get(snapshot);
-  return Number.isSafeInteger(verifiedLength)
-    ? verifiedLength
-    : Buffer.byteLength(JSON.stringify(snapshot), "utf8");
+  return Number.isSafeInteger(verifiedLength) ? verifiedLength : Buffer.byteLength(JSON.stringify(snapshot), "utf8");
 }
 
 export function buildWorldModelStatusProjection(inspection, { sampleLimit = WORLD_MODEL_STATUS_SAMPLE_LIMIT } = {}) {
@@ -1095,22 +1413,33 @@ export function buildWorldModelStatusProjection(inspection, { sampleLimit = WORL
   }
   nonActiveFiles.sort((left, right) => left.path.localeCompare(right.path) || left.status.localeCompare(right.status));
 
-  const changeFlags = Object.fromEntries(Object.entries(inspection.changes || {})
-    .filter(([, value]) => typeof value === "boolean")
-    .sort(([left], [right]) => left.localeCompare(right)));
-  const counts = Object.fromEntries(Object.entries(snapshot.summary || {})
-    .filter(([, value]) => Number.isSafeInteger(value) && value >= 0)
-    .sort(([left], [right]) => left.localeCompare(right)));
-  const skippedCounts = Object.fromEntries(Object.entries(snapshot.skipped || {})
-    .filter(([, value]) => Number.isSafeInteger(value) && value >= 0)
-    .sort(([left], [right]) => left.localeCompare(right)));
+  const changeFlags = Object.fromEntries(
+    Object.entries(inspection.changes || {})
+      .filter(([, value]) => typeof value === "boolean")
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+  const counts = Object.fromEntries(
+    Object.entries(snapshot.summary || {})
+      .filter(([, value]) => Number.isSafeInteger(value) && value >= 0)
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+  const skippedCounts = Object.fromEntries(
+    Object.entries(snapshot.skipped || {})
+      .filter(([, value]) => Number.isSafeInteger(value) && value >= 0)
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
   const storage = inspection.storeAdapter || {};
   const temporalGraph = snapshot.temporalProvenanceGraph || {};
 
   const payload = {
     schemaVersion: 1,
     kind: "WorldModelStatusProjection",
-    protocol: { name: (familyFormatForOriginal("head-agent-core-world-model", inspection.snapshot) || formatForVerifiedOwner(inspection.storage)).protocol("head-agent-core-world-model-status"), version: WORLD_MODEL_STATUS_PROJECTION_VERSION },
+    protocol: {
+      name: (familyFormatForOriginal("head-agent-core-world-model", inspection.snapshot) || formatForVerifiedOwner(inspection.storage)).protocol(
+        "head-agent-core-world-model-status",
+      ),
+      version: WORLD_MODEL_STATUS_PROJECTION_VERSION,
+    },
     status: inspection.status,
     verification: {
       completeSnapshotDigestVerified: true,
@@ -1196,7 +1525,7 @@ export function buildWorldModelStatusProjection(inspection, { sampleLimit = WORL
 }
 
 export async function inspectWorldModelStatus({ root = ".", storeAdapter = null, runtimeStateAdapter = null } = {}) {
-  return buildWorldModelStatusProjection((await inspectWorldModel({ root, storeAdapter, runtimeStateAdapter })));
+  return buildWorldModelStatusProjection(await inspectWorldModel({ root, storeAdapter, runtimeStateAdapter }));
 }
 
 async function buildWorldModelLocked({
@@ -1256,16 +1585,17 @@ async function buildWorldModelLocked({
       if (!new Set(["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"]).has(error.code)) throw error;
       previousWorldReadCode = error.code;
       const failedWorldPointer = worldStoreAdapter.readPointer()?.document || null;
-      previousTemporalGraph = (await readRecoverableTemporalGraphProjection({ storage,
+      previousTemporalGraph = await readRecoverableTemporalGraphProjection({
+        storage,
         projectRoot: project.projectRoot,
         projectId: project.projectId,
         adapter: graphProjectionAdapter,
         expectedPointer: failedWorldPointer,
-      }));
+      });
       if (error.code === "WORLD_MODEL_SNAPSHOT_MISSING") {
         if (!previousTemporalGraph) {
           const previousId = failedWorldPointer?.previousWorldModelId || "";
-          const previousEntry = /^world-model-[a-f0-9]{24}$/.test(previousId) ? (await worldStoreAdapter.readSnapshot(previousId)) : null;
+          const previousEntry = /^world-model-[a-f0-9]{24}$/.test(previousId) ? await worldStoreAdapter.readSnapshot(previousId) : null;
           if (previousEntry) previousTemporalGraph = verifiedSnapshot(previousEntry.document, previousId, storage).temporalProvenanceGraph;
           previousTemporalStateUnavailable = true;
         }
@@ -1284,75 +1614,96 @@ async function buildWorldModelLocked({
   // The existing incremental scanner still reads and hashes every current file.
   // An explicit compute adapter keeps its execution choice. Unknown or changed
   // scan settings use the existing full path, not mtime/size-based reuse.
-  const reusableScan = !computeAdapter && previousWorldSnapshot?.repositoryScan
-    && canonicalJson(previousWorldSnapshot.rules) === canonicalJson(snapshotRules)
-    && previousWorldSnapshot.repositoryScan.protocol?.version === REPOSITORY_SCAN_VERSION
-    && previousWorldSnapshot.repositoryScan.sourceAnalysisVersion === SOURCE_ANALYSIS_VERSION;
+  const reusableScan =
+    !computeAdapter &&
+    previousWorldSnapshot?.repositoryScan &&
+    canonicalJson(previousWorldSnapshot.rules) === canonicalJson(snapshotRules) &&
+    previousWorldSnapshot.repositoryScan.protocol?.version === REPOSITORY_SCAN_VERSION &&
+    previousWorldSnapshot.repositoryScan.sourceAnalysisVersion === SOURCE_ANALYSIS_VERSION;
   const selectedRepositoryScanExecution = repositoryScanExecution
     ? validateRepositoryScanExecution(repositoryScanExecution, { projectRoot: project.projectRoot, managedRootFiles, sourceScope, storage })
     : reusableScan
-      ? await executeIncrementalRepositoryScan({ storage, projectRoot: project.projectRoot, managedRootFiles, sourceScope, previousSnapshot: previousWorldSnapshot })
-      : await executeRepositoryScan({ storage,
-        adapter: computeAdapter || createRepositoryScanComputeAdapter({ storage }),
-        projectRoot: project.projectRoot, managedRootFiles, sourceScope,
-      });
+      ? await executeIncrementalRepositoryScan({
+          storage,
+          projectRoot: project.projectRoot,
+          managedRootFiles,
+          sourceScope,
+          previousSnapshot: previousWorldSnapshot,
+        })
+      : await executeRepositoryScan({
+          storage,
+          adapter: computeAdapter || createRepositoryScanComputeAdapter({ storage }),
+          projectRoot: project.projectRoot,
+          managedRootFiles,
+          sourceScope,
+        });
   const scan = validateRepositoryScanResult(selectedRepositoryScanExecution.result, { storage });
   // Omission preserves verified ancestry. An explicit [] / {} still means exactly
   // that, including explicit merge inputs. Removed current entities do not inherit
   // revision-parent entries; their historical originals remain untouched.
   if (parentSourceSnapshotIds === undefined) parentSourceSnapshotIds = previousTemporalGraph?.parentSourceSnapshotIds || [];
-  if (revisionParentIds === undefined) revisionParentIds = filterRevisionParentsForCurrentTemporalEntities({
-    projectId: project.projectId, files: scan.files, productModel: productCanon.model,
-    revisionParentIds: previousTemporalGraph?.revisionParentIds || {},
-  });
-  const onboardingProjection = onboardingProjectionInput || loadOnboardingGraphProjection({ storage,
-    projectRoot: project.projectRoot,
-    projectId: project.projectId,
-    currentProductModelId: productCanon.model.productModelId,
-  });
-  const productPolicyProjection = productPolicyProjectionInput || loadProductPolicyGraphProjection({ storage,
-    projectRoot: project.projectRoot,
-    projectId: project.projectId,
-    currentProductModelId: productCanon.model.productModelId,
-  });
-  const featureMappingProjection = featureMappingProjectionInput || loadFeatureMappingProjection({ storage,
-    projectRoot: project.projectRoot,
-    projectId: project.projectId,
-    currentProductModelId: productCanon.model.productModelId,
-  });
-  const changeSetProjection = changeSetProjectionInput || loadChangeSetProjection({ storage,
-    projectRoot: project.projectRoot,
-    projectId: project.projectId,
-  });
-  const documentChangeProjection = documentChangeProjectionInput || loadDocumentChangeProjection({ storage,
-    projectRoot: project.projectRoot,
-    projectId: project.projectId,
-  });
-  if (logicalLineageState == null && previousWorldReadCode === "WORLD_MODEL_NOT_BUILT" && !previousTemporalGraph
-    && ((await worldStoreAdapter.listSnapshotIds()).length > 0 || projectionProvesEarlierWorld({
-      productPolicyProjection,
-      featureMappingProjection,
-      changeSetProjection,
-      documentChangeProjection,
-    }))) previousTemporalStateUnavailable = true;
+  if (revisionParentIds === undefined)
+    revisionParentIds = filterRevisionParentsForCurrentTemporalEntities({
+      projectId: project.projectId,
+      files: scan.files,
+      productModel: productCanon.model,
+      revisionParentIds: previousTemporalGraph?.revisionParentIds || {},
+    });
+  const onboardingProjection =
+    onboardingProjectionInput ||
+    loadOnboardingGraphProjection({
+      storage,
+      projectRoot: project.projectRoot,
+      projectId: project.projectId,
+      currentProductModelId: productCanon.model.productModelId,
+    });
+  const productPolicyProjection =
+    productPolicyProjectionInput ||
+    loadProductPolicyGraphProjection({
+      storage,
+      projectRoot: project.projectRoot,
+      projectId: project.projectId,
+      currentProductModelId: productCanon.model.productModelId,
+    });
+  const featureMappingProjection =
+    featureMappingProjectionInput ||
+    loadFeatureMappingProjection({
+      storage,
+      projectRoot: project.projectRoot,
+      projectId: project.projectId,
+      currentProductModelId: productCanon.model.productModelId,
+    });
+  const changeSetProjection = changeSetProjectionInput || loadChangeSetProjection({ storage, projectRoot: project.projectRoot, projectId: project.projectId });
+  const documentChangeProjection =
+    documentChangeProjectionInput || loadDocumentChangeProjection({ storage, projectRoot: project.projectRoot, projectId: project.projectId });
+  if (
+    logicalLineageState == null &&
+    previousWorldReadCode === "WORLD_MODEL_NOT_BUILT" &&
+    !previousTemporalGraph &&
+    ((await worldStoreAdapter.listSnapshotIds()).length > 0 ||
+      projectionProvesEarlierWorld({
+        productPolicyProjection,
+        featureMappingProjection,
+        changeSetProjection,
+        documentChangeProjection,
+      }))
+  )
+    previousTemporalStateUnavailable = true;
   const observationIntegration = observationProjectionInput
     ? { projection: observationProjectionInput, status: "projected", reasonCode: "" }
     : loadObservationProjectionForWorld({ storage, projectRoot: project.projectRoot, projectId: project.projectId });
   const observationProjection = observationIntegration.projection;
-  const productOperatingProjection = productOperatingProjectionInput || loadProductOperatingProjection({ storage,
-    projectRoot: project.projectRoot,
-    projectId: project.projectId,
-  });
-  const releaseObservationProjection = releaseObservationProjectionInput || loadReleaseObservationProjection({ storage,
-    projectRoot: project.projectRoot,
-    projectId: project.projectId,
-  });
+  const productOperatingProjection =
+    productOperatingProjectionInput || loadProductOperatingProjection({ storage, projectRoot: project.projectRoot, projectId: project.projectId });
+  const releaseObservationProjection =
+    releaseObservationProjectionInput || loadReleaseObservationProjection({ storage, projectRoot: project.projectRoot, projectId: project.projectId });
   const git = gitHeadState(project.projectRoot);
   const runtimeState = runtimeStateFor(inspected.state);
   const indexer = indexerState();
   const externalRuntimeResult = buildExternalRuntimeState({ storage, projectRoot: project.projectRoot, adapter: runtimeStateAdapter });
   const externalRuntimeState = externalRuntimeResult.runtimeState;
-  const sourceRelationResult = await collectSourceRelationEvidence({ storage,
+  const sourceRelationResult = await collectSourceRelationEvidence({
+    storage,
     projectId: project.projectId,
     projectRoot: project.projectRoot,
     files: scan.files.map((file) => ({ path: file.path, digest: file.digest, language: file.language })),
@@ -1362,49 +1713,65 @@ async function buildWorldModelLocked({
   // Include every scanner fact and relation input consumed by semantic analysis,
   // not only mtime/size/digest. A verified previous result is request-local reuse.
   const codeAnalysisInputBasis = codeAnalysisInputBasisFor({
-    projectId: project.projectId, files: scan.files, sourceScope, managedRootFiles, dialect: formatForVerifiedOwner(storage).dialect,
+    projectId: project.projectId,
+    files: scan.files,
+    sourceScope,
+    managedRootFiles,
+    dialect: formatForVerifiedOwner(storage).dialect,
     analysisBasis: codeAnalysisBasis({ sourceRelationEvidence: sourceRelationResult.evidence }),
     sourceRelationEvidence: sourceRelationResult.evidence,
   });
   // The collector verified the complete current evidence set. It can stand for
   // the retained set only when both retained metadata and analysis identity match
   // it exactly; a claimed hash alone never bypasses current evidence validation.
-  const retainedAnalysisMatches = previousWorldSnapshot?.semanticGraph && previousWorldSnapshot.repositoryScan
-    && Array.isArray(previousWorldSnapshot.rules?.managedRootProjectionsExcluded)
-    && canonicalJson(previousWorldSnapshot.analysisBasis) === canonicalJson(codeAnalysisBasis(previousWorldSnapshot.semanticGraph))
-    && canonicalJson(previousWorldSnapshot.analysisBasis) === canonicalJson(codeAnalysisBasis({ sourceRelationEvidence: sourceRelationResult.evidence }));
+  const retainedAnalysisMatches =
+    previousWorldSnapshot?.semanticGraph &&
+    previousWorldSnapshot.repositoryScan &&
+    Array.isArray(previousWorldSnapshot.rules?.managedRootProjectionsExcluded) &&
+    canonicalJson(previousWorldSnapshot.analysisBasis) === canonicalJson(codeAnalysisBasis(previousWorldSnapshot.semanticGraph)) &&
+    canonicalJson(previousWorldSnapshot.analysisBasis) === canonicalJson(codeAnalysisBasis({ sourceRelationEvidence: sourceRelationResult.evidence }));
   const previousCodeAnalysisInputBasis = retainedAnalysisMatches
-    ? codeAnalysisInputBasisFor({ projectId: previousWorldSnapshot.projectId, files: previousWorldSnapshot.files,
-      sourceScope: previousWorldSnapshot.repositoryScan.sourceScope, managedRootFiles: previousWorldSnapshot.rules.managedRootProjectionsExcluded,
-      dialect: formatForVerifiedOwner(storage).dialect, analysisBasis: previousWorldSnapshot.analysisBasis,
-      sourceRelationEvidence: sourceRelationResult.evidence }) : null;
-  const codeAnalysisReused = previousCodeAnalysisInputBasis === codeAnalysisInputBasis
-    && (previousWorldSnapshot.codeAnalysisInputBasis === undefined || previousWorldSnapshot.codeAnalysisInputBasis === previousCodeAnalysisInputBasis);
-  const semanticGraph = codeAnalysisReused ? previousWorldSnapshot.semanticGraph
+    ? codeAnalysisInputBasisFor({
+        projectId: previousWorldSnapshot.projectId,
+        files: previousWorldSnapshot.files,
+        sourceScope: previousWorldSnapshot.repositoryScan.sourceScope,
+        managedRootFiles: previousWorldSnapshot.rules.managedRootProjectionsExcluded,
+        dialect: formatForVerifiedOwner(storage).dialect,
+        analysisBasis: previousWorldSnapshot.analysisBasis,
+        sourceRelationEvidence: sourceRelationResult.evidence,
+      })
+    : null;
+  const codeAnalysisReused =
+    previousCodeAnalysisInputBasis === codeAnalysisInputBasis &&
+    (previousWorldSnapshot.codeAnalysisInputBasis === undefined || previousWorldSnapshot.codeAnalysisInputBasis === previousCodeAnalysisInputBasis);
+  const semanticGraph = codeAnalysisReused
+    ? previousWorldSnapshot.semanticGraph
     : buildSemanticGraph({ storage, files: scan.files, sourceRelationEvidence: sourceRelationResult.evidence });
   const selectedRevisionParentIds = filterRevisionParentsToCurrentEntities
     ? filterRevisionParentsForCurrentTemporalEntities({
-      projectId: project.projectId,
-      files: scan.files,
-      productModel: productCanon.model,
-      revisionParentIds,
-    })
-    : revisionParentIds;
-  const selectedLogicalLineageState = logicalLineageState == null
-    ? deriveIncrementalLogicalLineageState({
-      previousGraph: previousTemporalGraph,
-      currentLogicalEntityIds: currentTemporalLogicalEntityIds({ projectId: project.projectId, files: scan.files, productModel: productCanon.model }),
-      previousStateUnavailable: previousTemporalStateUnavailable,
-    })
-    : filterRevisionParentsToCurrentEntities
-      ? filterLogicalLineageStateForCurrentTemporalEntities({
         projectId: project.projectId,
         files: scan.files,
         productModel: productCanon.model,
-        logicalLineageState,
+        revisionParentIds,
       })
-      : logicalLineageState;
-  let temporalProvenanceGraph = buildTemporalProvenanceGraph({ storage,
+    : revisionParentIds;
+  const selectedLogicalLineageState =
+    logicalLineageState == null
+      ? deriveIncrementalLogicalLineageState({
+          previousGraph: previousTemporalGraph,
+          currentLogicalEntityIds: currentTemporalLogicalEntityIds({ projectId: project.projectId, files: scan.files, productModel: productCanon.model }),
+          previousStateUnavailable: previousTemporalStateUnavailable,
+        })
+      : filterRevisionParentsToCurrentEntities
+        ? filterLogicalLineageStateForCurrentTemporalEntities({
+            projectId: project.projectId,
+            files: scan.files,
+            productModel: productCanon.model,
+            logicalLineageState,
+          })
+        : logicalLineageState;
+  let temporalProvenanceGraph = buildTemporalProvenanceGraph({
+    storage,
     projectId: project.projectId,
     files: scan.files,
     productModel: productCanon.model,
@@ -1423,7 +1790,9 @@ async function buildWorldModelLocked({
   });
   // New relation identity is a producer contract, independent of physical layout.
   // Historical snapshots keep their original protocol, IDs, hashes and bytes.
-  temporalProvenanceGraph = stabilizeTemporalRelationIdentities(temporalProvenanceGraph, { relationAnalysisBasis: relationBasisFor({ analysisBasis: codeAnalysisBasis(semanticGraph), rules: snapshotRules, repositoryScan: { sourceScope } }) });
+  temporalProvenanceGraph = stabilizeTemporalRelationIdentities(temporalProvenanceGraph, {
+    relationAnalysisBasis: relationBasisFor({ analysisBasis: codeAnalysisBasis(semanticGraph), rules: snapshotRules, repositoryScan: { sourceScope } }),
+  });
   verifyTemporalProvenanceGraph(temporalProvenanceGraph);
   const sourceDigest = sourceDigestFor(
     scan.files,
@@ -1446,7 +1815,8 @@ async function buildWorldModelLocked({
     temporalProvenanceGraph.revisionParentIds,
     temporalProvenanceGraph.logicalLineageState,
   );
-  const gitHistoryResult = await buildGitDecisionHistory({ storage,
+  const gitHistoryResult = await buildGitDecisionHistory({
+    storage,
     projectRoot: project.projectRoot,
     adapter: gitHistoryAdapter,
     referenceCommits: git.referenceCommits || [],
@@ -1474,12 +1844,15 @@ async function buildWorldModelLocked({
       temporalProvenanceGraph: "content-addressed-file-symbol-test-revisions-with-multiple-parent-dag",
       productModel: "user-owned-feature-capability-requirement-constraint-decision-policy-canon-projected-into-temporal-graph",
       onboardingProjection: "immutable-candidates-evidence-unknowns-reviews-and-product-model-revision-receipts-projected-without-authority-escalation",
-      productPolicyProjection: "immutable-policy-candidates-explicit-review-decisions-exact-product-model-revisions-and-evidence-traces-projected-without-authority-escalation",
+      productPolicyProjection:
+        "immutable-policy-candidates-explicit-review-decisions-exact-product-model-revisions-and-evidence-traces-projected-without-authority-escalation",
       featureMappingProjection: "immutable-feature-mapping-candidates-and-explicit-review-decisions-with-separate-reviewed-relationship-promotion",
       changeSetProjection: "reviewed-provider-neutral-changesets-with-review-gated-feature-impact-and-optional-vcs-evidence-relations",
-      documentChangeProjection: "immutable-document-edit-candidates-reviews-product-revisions-and-application-receipts-projected-as-non-authoritative-audit-lineage",
+      documentChangeProjection:
+        "immutable-document-edit-candidates-reviews-product-revisions-and-application-receipts-projected-as-non-authoritative-audit-lineage",
       observationProjection: "provider-neutral-observation-descriptors-records-receipts-and-derived-lineage-as-p3-evidence-and-p4-graph",
-      productOperatingProjection: "epistemically-typed-signals-hypotheses-human-reviewed-initiatives-feature-links-and-outcome-observations-as-derived-product-graph",
+      productOperatingProjection:
+        "epistemically-typed-signals-hypotheses-human-reviewed-initiatives-feature-links-and-outcome-observations-as-derived-product-graph",
       releaseObservationProjection: "provider-neutral-git-ref-deployment-result-and-release-observations-as-p3-evidence-and-p4-graph",
       gitHistory: gitDecisionHistory.coverage,
       runtimeState: formatForVerifiedOwner(storage).value("canonical-head-lifecycle-state"),
@@ -1536,7 +1909,9 @@ async function buildWorldModelLocked({
       projectionInputHash: documentChangeProjection.projectionInputHash,
       candidateSetIds: documentChangeProjection.candidateSets.map((item) => item.candidateSetId),
       reviewDecisionIds: documentChangeProjection.reviewDecisions.map((item) => item.reviewDecisionId),
-      productModelRevisionIds: documentChangeProjection.productModelRevisions.map((item) => `document-product-model-revision-${item.revisionHash.slice(0, 24)}`),
+      productModelRevisionIds: documentChangeProjection.productModelRevisions.map(
+        (item) => `document-product-model-revision-${item.revisionHash.slice(0, 24)}`,
+      ),
       applicationReceiptIds: documentChangeProjection.applicationReceipts.map((item) => item.applicationReceiptId),
       authority: "derived-projection-manifest-not-document-authority",
       instructionAuthority: false,
@@ -1645,12 +2020,21 @@ async function buildWorldModelLocked({
   const worldModelHash = digest(canonicalJson(payload));
   const worldModelId = `world-model-${worldModelHash.slice(0, 24)}`;
   const snapshot = { ...payload, worldModelId, worldModelHash };
-  if (!persist) return {
-    status: "preview",
-    snapshot,
-    sourceAdapters: { compute: selectedRepositoryScanExecution.diagnostics, sourceRelationEvidence: sourceRelationResult.diagnostics, codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis } },
-    sourceDiagnostics: { compute: selectedRepositoryScanExecution.diagnostics, sourceRelationEvidence: sourceRelationResult.diagnostics, codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis } },
-  };
+  if (!persist)
+    return {
+      status: "preview",
+      snapshot,
+      sourceAdapters: {
+        compute: selectedRepositoryScanExecution.diagnostics,
+        sourceRelationEvidence: sourceRelationResult.diagnostics,
+        codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis },
+      },
+      sourceDiagnostics: {
+        compute: selectedRepositoryScanExecution.diagnostics,
+        sourceRelationEvidence: sourceRelationResult.diagnostics,
+        codeAnalysis: { reused: codeAnalysisReused, inputBasis: codeAnalysisInputBasis },
+      },
+    };
 
   if (expectedWorldModelId && worldModelId !== expectedWorldModelId) {
     fail("World Model changed after refresh preview; current pointer was not advanced.", "REFRESH_PREVIEW_DRIFT");
@@ -1665,7 +2049,7 @@ async function buildWorldModelLocked({
   }
   if (currentPointerEntry) {
     try {
-      const current = (await readWorldModel({ root: project.projectRoot, storeAdapter: adapter }));
+      const current = await readWorldModel({ root: project.projectRoot, storeAdapter: adapter });
       previous = current.snapshot;
       previousPointer = current.pointer;
     } catch (error) {
@@ -1675,20 +2059,33 @@ async function buildWorldModelLocked({
       if (error.code !== "WORLD_MODEL_SNAPSHOT_MISSING") throw error;
     }
   }
-  const existingSnapshot = (await adapter.readSnapshot(worldModelId));
+  const existingSnapshot = await adapter.readSnapshot(worldModelId);
   let snapshotEntry;
   if (existingSnapshot) {
     verifiedSnapshot(existingSnapshot.document, worldModelId);
     snapshotEntry = existingSnapshot;
   } else {
-    snapshotEntry = (await adapter.writeSnapshot(worldModelId, snapshot));
+    snapshotEntry = await adapter.writeSnapshot(worldModelId, snapshot);
   }
   verifiedSnapshot(snapshotEntry.document, worldModelId);
   let preparedGraph;
   try {
-    preparedGraph = await prepareGraphProjection({ storage, projectRoot: project.projectRoot, graph: temporalProvenanceGraph, adapter: graphProjectionAdapter });
-  } catch (error) { throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis); }
-  const graphProjection = { adapter: { ...preparedGraph.selected.describe(), ...(typeof preparedGraph.selected.diagnostics === "function" ? preparedGraph.selected.diagnostics() : {}) }, pointer: preparedGraph.pointer };
+    preparedGraph = await prepareGraphProjection({
+      storage,
+      projectRoot: project.projectRoot,
+      graph: temporalProvenanceGraph,
+      adapter: graphProjectionAdapter,
+    });
+  } catch (error) {
+    throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis);
+  }
+  const graphProjection = {
+    adapter: {
+      ...preparedGraph.selected.describe(),
+      ...(typeof preparedGraph.selected.diagnostics === "function" ? preparedGraph.selected.diagnostics() : {}),
+    },
+    pointer: preparedGraph.pointer,
+  };
   const changed = !previous || previous.worldModelId !== worldModelId;
   const fileChanges = changed ? changesBetween(previous, snapshot) : { added: [], changed: [], removed: [] };
   const changes = {
@@ -1700,11 +2097,14 @@ async function buildWorldModelLocked({
     productModelChanged: changed && previous?.productModel?.productModelHash !== snapshot.productModel.productModelHash,
     onboardingProjectionChanged: changed && previous?.onboardingProjection?.projectionInputHash !== snapshot.onboardingProjection.projectionInputHash,
     productPolicyProjectionChanged: changed && previous?.productPolicyProjection?.projectionInputHash !== snapshot.productPolicyProjection.projectionInputHash,
-    featureMappingProjectionChanged: changed && previous?.featureMappingProjection?.projectionInputHash !== snapshot.featureMappingProjection.projectionInputHash,
+    featureMappingProjectionChanged:
+      changed && previous?.featureMappingProjection?.projectionInputHash !== snapshot.featureMappingProjection.projectionInputHash,
     changeSetProjectionChanged: changed && previous?.changeSetProjection?.projectionInputHash !== snapshot.changeSetProjection.projectionInputHash,
     observationProjectionChanged: changed && previous?.observationProjection?.projectionHash !== snapshot.observationProjection.projectionHash,
-    productOperatingProjectionChanged: changed && previous?.productOperatingProjection?.projectionInputHash !== snapshot.productOperatingProjection.projectionInputHash,
-    releaseObservationProjectionChanged: changed && previous?.releaseObservationProjection?.projectionInputHash !== snapshot.releaseObservationProjection.projectionInputHash,
+    productOperatingProjectionChanged:
+      changed && previous?.productOperatingProjection?.projectionInputHash !== snapshot.productOperatingProjection.projectionInputHash,
+    releaseObservationProjectionChanged:
+      changed && previous?.releaseObservationProjection?.projectionInputHash !== snapshot.releaseObservationProjection.projectionInputHash,
     temporalProvenanceChanged: changed && previous?.temporalProvenanceGraph?.graphSnapshotHash !== snapshot.temporalProvenanceGraph.graphSnapshotHash,
   };
   const pointer = {
@@ -1746,7 +2146,8 @@ async function buildWorldModelLocked({
   };
   let pointerEntry;
   let publishedGraph;
-  let graphPointerAttempted = false, worldPointerAttempted = false;
+  let graphPointerAttempted = false,
+    worldPointerAttempted = false;
   try {
     withProjectMutation({ root: project.projectRoot, storage, scope: "session-recovery" }, () => {
       const currentOwner = readyProject(project.projectRoot);
@@ -1760,7 +2161,8 @@ async function buildWorldModelLocked({
       assertCanonBasis(project.projectRoot, storage, productCanonBasis);
       worldPointerAttempted = true;
       pointerEntry = adapter.writePointer(pointer);
-      if (pointerEntry && typeof pointerEntry.then === "function") fail("Current pointer publication must be synchronous within the short Canon commit scope.", "WORLD_MODEL_STORE_WRITE_MISMATCH");
+      if (pointerEntry && typeof pointerEntry.then === "function")
+        fail("Current pointer publication must be synchronous within the short Canon commit scope.", "WORLD_MODEL_STORE_WRITE_MISMATCH");
       if (canonicalJson(pointerEntry.document) !== canonicalJson(pointer)) {
         fail("World Model store adapter changed the pointer during persistence.", "WORLD_MODEL_STORE_WRITE_MISMATCH");
       }
@@ -1768,7 +2170,11 @@ async function buildWorldModelLocked({
     });
   } catch (error) {
     if (graphPointerAttempted) {
-      error.worldPublication = { world: worldPointerAttempted ? "failed-or-uncertain" : "not-attempted", graphLocal: publishedGraph ? "published" : "failed-or-uncertain", worldModelId };
+      error.worldPublication = {
+        world: worldPointerAttempted ? "failed-or-uncertain" : "not-attempted",
+        graphLocal: publishedGraph ? "published" : "failed-or-uncertain",
+        worldModelId,
+      };
       error.message += ` Local Graph publication: ${error.worldPublication.graphLocal}; World pointer publication: ${error.worldPublication.world}. Current pointers were not rolled back.`;
     }
     throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis);
@@ -1781,7 +2187,11 @@ async function buildWorldModelLocked({
       fail("World current changed while external projection was completing; preserve the newer current.", "REFRESH_POINTER_CONFLICT");
     }
   } catch (error) {
-    error.worldPublication = { world: "published", graphLocal: error.graphPublication?.local === "superseded" ? "published-then-superseded" : "published", worldModelId };
+    error.worldPublication = {
+      world: "published",
+      graphLocal: error.graphPublication?.local === "superseded" ? "published-then-superseded" : "published",
+      worldModelId,
+    };
     error.message += ` Local World pointer was published (${worldModelId}); local Graph publication: ${error.worldPublication.graphLocal}; dependent projection did not complete against the same current basis. Current pointers were not rolled back.`;
     throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis);
   }
@@ -1813,23 +2223,28 @@ async function buildWorldModelLocked({
 
 export async function buildWorldModel(options = {}) {
   const persist = options.persist ?? true;
-  if (!persist) return (await buildWorldModelLocked(options));
+  if (!persist) return await buildWorldModelLocked(options);
   const inspected = readyProject(options.root ?? ".");
   const storage = inspected.storage;
-  return (await withRefreshWriterLease({ storage,
-    projectRoot: inspected.project.projectRoot,
-    projectId: inspected.project.projectId,
-    lease: options.writerLease || null,
-  }, async (writerLease) => (await buildWorldModelLocked({ ...options, writerLease }))));
+  return await withRefreshWriterLease(
+    { storage, projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, lease: options.writerLease || null },
+    async (writerLease) => await buildWorldModelLocked({ ...options, writerLease }),
+  );
 }
 
 export async function queryWorldModel({ root = ".", query, depth = 1, maxResults = 100, storeAdapter = null } = {}) {
-  const inspected = (await inspectWorldDomainFreshness({ root, storeAdapter, domains: ["code"] }));
-  if (inspected.freshness.domains.code.status !== "current") return {
-    status: inspected.freshness.domains.code.status, worldModelId: inspected.snapshot.worldModelId,
-    freshness: inspected.freshness, nodes: [], edges: [], fallback: "original-source",
-    reasonCode: "WORLD_CODE_EVIDENCE_NOT_CURRENT", instructionAuthority: false,
-  };
+  const inspected = await inspectWorldDomainFreshness({ root, storeAdapter, domains: ["code"] });
+  if (inspected.freshness.domains.code.status !== "current")
+    return {
+      status: inspected.freshness.domains.code.status,
+      worldModelId: inspected.snapshot.worldModelId,
+      freshness: inspected.freshness,
+      nodes: [],
+      edges: [],
+      fallback: "original-source",
+      reasonCode: "WORLD_CODE_EVIDENCE_NOT_CURRENT",
+      instructionAuthority: false,
+    };
   if (!inspected.snapshot.semanticGraph) fail("Repository World Model has no semantic graph.", "SEMANTIC_GRAPH_NOT_BUILT");
   return {
     status: "current",
@@ -1856,12 +2271,12 @@ export async function queryWorldTemporalGraph({
   storeAdapter = null,
   graphProjectionAdapter = null,
 } = {}) {
-  const inspected = (await inspectWorldDomainFreshness({ root, storeAdapter }));
+  const inspected = await inspectWorldDomainFreshness({ root, storeAdapter });
   if (!inspected.snapshot.temporalProvenanceGraph) fail("Repository World Model has no temporal provenance graph.", "TEMPORAL_PROVENANCE_NOT_BUILT");
   const graph = inspected.snapshot.temporalProvenanceGraph;
   const eligibility = buildWorldTraversalEligibility(inspected.snapshot, inspected.freshness.domains);
   const needsMask = eligibility.nodeIds.length !== graph.nodes.length || eligibility.edgeIds.length !== graph.edges.length;
-  const projected = (await queryGraphProjection({
+  const projected = await queryGraphProjection({
     storage: inspected.storage,
     projectRoot: inspected.storage.projectRoot,
     graph: inspected.snapshot.temporalProvenanceGraph,
@@ -1881,7 +2296,7 @@ export async function queryWorldTemporalGraph({
       maxEdges,
       ...(needsMask ? { eligibility } : {}),
     },
-  }));
+  });
   return {
     status: inspected.status === "current" ? "current" : "domain-scoped",
     freshness: inspected.freshness,
@@ -1892,13 +2307,13 @@ export async function queryWorldTemporalGraph({
 }
 
 export async function inspectWorldGraphProjection({ root = ".", storeAdapter = null, graphProjectionAdapter = null } = {}) {
-  const inspected = (await inspectWorldModel({ root, storeAdapter }));
-  const projection = (await inspectGraphProjection({
+  const inspected = await inspectWorldModel({ root, storeAdapter });
+  const projection = await inspectGraphProjection({
     storage: inspected.storage,
     projectRoot: inspected.storage.projectRoot,
     graph: inspected.snapshot.temporalProvenanceGraph,
     adapter: graphProjectionAdapter,
-  }));
+  });
   return {
     status: projection.status,
     worldModelStatus: inspected.status,
@@ -1910,7 +2325,7 @@ export async function inspectWorldGraphProjection({ root = ".", storeAdapter = n
 }
 
 export async function materializeWorldMarkdownProjection({ root = ".", storeAdapter = null, documentProjectionAdapter = null } = {}) {
-  const inspected = (await inspectWorldModel({ root, storeAdapter }));
+  const inspected = await inspectWorldModel({ root, storeAdapter });
   if (inspected.status !== "current") fail("Repository World Model is stale and cannot regenerate document projections.", "WORLD_MODEL_STALE");
   const materialized = materializeMarkdownProjection({
     storage: inspected.storage,
@@ -1930,7 +2345,7 @@ export async function materializeWorldMarkdownProjection({ root = ".", storeAdap
 }
 
 export async function inspectWorldMarkdownProjection({ root = ".", storeAdapter = null, documentProjectionAdapter = null } = {}) {
-  const inspected = (await inspectWorldModel({ root, storeAdapter }));
+  const inspected = await inspectWorldModel({ root, storeAdapter });
   const projection = inspectMarkdownProjection({
     storage: inspected.storage,
     projectRoot: inspected.storage.projectRoot,
@@ -1938,8 +2353,9 @@ export async function inspectWorldMarkdownProjection({ root = ".", storeAdapter 
     adapter: documentProjectionAdapter,
   });
   const documentOnlyDriftKeys = new Set(["documentChangeProjectionChanged", "temporalProvenanceChanged"]);
-  const hasNonDocumentDrift = Object.entries(inspected.changes || {}).some(([key, value]) => !documentOnlyDriftKeys.has(key)
-    && (Array.isArray(value) ? value.length > 0 : value === true));
+  const hasNonDocumentDrift = Object.entries(inspected.changes || {}).some(
+    ([key, value]) => !documentOnlyDriftKeys.has(key) && (Array.isArray(value) ? value.length > 0 : value === true),
+  );
   const status = inspected.status !== "current" && hasNonDocumentDrift && projection.status === "current" ? "source-stale" : projection.status;
   return {
     status,
@@ -1952,10 +2368,11 @@ export async function inspectWorldMarkdownProjection({ root = ".", storeAdapter 
 }
 
 export async function captureWorldMarkdownChanges({ root = ".", storeAdapter = null, documentProjectionAdapter = null, persist = true } = {}) {
-  const inspected = (await inspectWorldModel({ root, storeAdapter }));
+  const inspected = await inspectWorldModel({ root, storeAdapter });
   const documentOnlyDriftKeys = new Set(["documentChangeProjectionChanged", "temporalProvenanceChanged"]);
-  const nonDocumentDrift = Object.entries(inspected.changes || {}).some(([key, value]) => !documentOnlyDriftKeys.has(key)
-    && (Array.isArray(value) ? value.length > 0 : value === true));
+  const nonDocumentDrift = Object.entries(inspected.changes || {}).some(
+    ([key, value]) => !documentOnlyDriftKeys.has(key) && (Array.isArray(value) ? value.length > 0 : value === true),
+  );
   if (inspected.status !== "current" && (!inspected.changes?.documentChangeProjectionChanged || nonDocumentDrift)) {
     fail("Repository World Model has non-document drift and cannot anchor document change candidates.", "WORLD_MODEL_STALE");
   }
@@ -1982,8 +2399,9 @@ export function readWorldDocumentChangeCandidateSet({ root = ".", candidateSetId
 }
 
 export async function queryWorldHistory({ root = ".", query = "", limit = 50, storeAdapter = null } = {}) {
-  const inspected = (await inspectWorldDomainFreshness({ root, storeAdapter, domains: ["git"] }));
-  if (inspected.freshness.domains.git.status !== "current") fail("Captured Git evidence is not current; unrelated code/runtime domains are not a gate.", "WORLD_MODEL_STALE");
+  const inspected = await inspectWorldDomainFreshness({ root, storeAdapter, domains: ["git"] });
+  if (inspected.freshness.domains.git.status !== "current")
+    fail("Captured Git evidence is not current; unrelated code/runtime domains are not a gate.", "WORLD_MODEL_STALE");
   if (!inspected.snapshot.gitDecisionHistory) fail("Repository World Model has no Git decision history.", "GIT_DECISION_HISTORY_NOT_BUILT");
   return {
     status: "current",
@@ -1993,9 +2411,19 @@ export async function queryWorldHistory({ root = ".", query = "", limit = 50, st
   };
 }
 
-export async function queryWorldRuntimeState({ root = ".", query = "", runtime = "", state = "", kind = "", limit = 50, storeAdapter = null, runtimeStateAdapter = null } = {}) {
-  const inspected = (await inspectWorldDomainFreshness({ root, storeAdapter, runtimeStateAdapter, domains: ["runtime"] }));
-  if (inspected.freshness.domains.runtime.status !== "current") fail("Captured runtime evidence is not current; unrelated code/Product domains are not a gate.", "WORLD_MODEL_STALE");
+export async function queryWorldRuntimeState({
+  root = ".",
+  query = "",
+  runtime = "",
+  state = "",
+  kind = "",
+  limit = 50,
+  storeAdapter = null,
+  runtimeStateAdapter = null,
+} = {}) {
+  const inspected = await inspectWorldDomainFreshness({ root, storeAdapter, runtimeStateAdapter, domains: ["runtime"] });
+  if (inspected.freshness.domains.runtime.status !== "current")
+    fail("Captured runtime evidence is not current; unrelated code/Product domains are not a gate.", "WORLD_MODEL_STALE");
   if (!inspected.snapshot.externalRuntimeState) fail("Repository World Model has no external runtime state.", "EXTERNAL_RUNTIME_STATE_NOT_BUILT");
   return {
     status: "current",
@@ -2007,10 +2435,14 @@ export async function queryWorldRuntimeState({ root = ".", query = "", runtime =
 
 // Shared pure original verification for bounded maintenance readers.
 export function verifyWorldModelPointerOriginal(pointer, projectId) {
-  if (pointer.schemaVersion !== SCHEMA_VERSION || pointer.kind !== "WorldModelPointer"
-    || pointer.projectId !== projectId || !/^world-model-[a-f0-9]{24}$/.test(pointer.worldModelId || "")
-    || (pointer.previousWorldModelId != null && !/^world-model-[a-f0-9]{24}$/.test(pointer.previousWorldModelId || ""))
-    || (pointer.previousWorldModelId && pointer.previousWorldModelId === pointer.worldModelId)) {
+  if (
+    pointer.schemaVersion !== SCHEMA_VERSION ||
+    pointer.kind !== "WorldModelPointer" ||
+    pointer.projectId !== projectId ||
+    !/^world-model-[a-f0-9]{24}$/.test(pointer.worldModelId || "") ||
+    (pointer.previousWorldModelId != null && !/^world-model-[a-f0-9]{24}$/.test(pointer.previousWorldModelId || "")) ||
+    (pointer.previousWorldModelId && pointer.previousWorldModelId === pointer.worldModelId)
+  ) {
     fail("World Model pointer does not match this project.", "WORLD_MODEL_IDENTITY_MISMATCH");
   }
   if (!/^[a-f0-9]{64}$/.test(pointer.worldModelHash || "") || pointer.worldModelId !== `world-model-${pointer.worldModelHash.slice(0, 24)}`) {
@@ -2020,6 +2452,7 @@ export function verifyWorldModelPointerOriginal(pointer, projectId) {
 }
 export function verifyWorldModelSnapshotOriginal({ document, worldModelId, storage }) {
   const snapshot = verifiedSnapshot(document, worldModelId, storage);
-  if (snapshot.projectId !== storage.projectId || !projectOwnsRecordedSnapshot(storage, snapshot)) fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
+  if (snapshot.projectId !== storage.projectId || !projectOwnsRecordedSnapshot(storage, snapshot))
+    fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");
   return snapshot;
 }

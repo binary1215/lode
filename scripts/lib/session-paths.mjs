@@ -2,7 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { formatForVerifiedOwner } from "./project-storage-format.mjs";
 
-const fail = (message, code) => { throw Object.assign(new Error(message), { code }); };
+const fail = (message, code) => {
+  throw Object.assign(new Error(message), { code });
+};
 
 // Effect-free path confinement shared by Session routing and common direction.
 export function safeSessionPath(root, ...parts) {
@@ -18,4 +20,6 @@ export function safeSessionPath(root, ...parts) {
   return file;
 }
 
-export function defaultSessionStatePath(root, storage) { return safeSessionPath(root, formatForVerifiedOwner(storage).directory, "sessions", "current.json"); }
+export function defaultSessionStatePath(root, storage) {
+  return safeSessionPath(root, formatForVerifiedOwner(storage).directory, "sessions", "current.json");
+}

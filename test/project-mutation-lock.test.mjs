@@ -33,7 +33,10 @@ for (const [mode, run] of Object.entries(runners)) {
         test(`${mode} ${site} enumeration ${code}: ${sustained ? "sustained denial" : "transient read"}`, async (t) => {
           const { root, parent, directory } = fixture(t);
           let target = parent;
-          if (site === "lock") { target = directory; fs.mkdirSync(target); }
+          if (site === "lock") {
+            target = directory;
+            fs.mkdirSync(target);
+          }
           if (site === "staging") {
             target = path.join(parent, `.session-recovery.lock-${nameFor(deadPid)}.staging`);
             fs.mkdirSync(target);
@@ -60,7 +63,10 @@ for (const [mode, run] of Object.entries(runners)) {
           };
           try {
             if (sustained) {
-              await assert.rejects(async () => run(root, () => ++effects), (error) => error === denied && error.code === code && error.cause === "fixture");
+              await assert.rejects(
+                async () => run(root, () => ++effects),
+                (error) => error === denied && error.code === code && error.cause === "fixture",
+              );
               assert.equal(reads, 6, "Read retries must be finite, not a busy-loop until success.");
               assert.equal(effects, 0);
             } else {
@@ -69,7 +75,10 @@ for (const [mode, run] of Object.entries(runners)) {
               assert.ok(reads >= 2);
               assert.deepEqual(originalRead(parent), []);
             }
-          } finally { fs.readdirSync = originalRead; process.kill = originalKill; }
+          } finally {
+            fs.readdirSync = originalRead;
+            process.kill = originalKill;
+          }
         });
       }
     }
@@ -88,33 +97,55 @@ for (const [mode, run] of Object.entries(runners)) {
         }
         return originalRead(entry, ...args);
       };
-      fs.lstatSync = (entry, ...args) => entry === directory && denied
-        ? { isDirectory: () => false, isSymbolicLink: () => false }
-        : originalStat(entry, ...args);
+      fs.lstatSync = (entry, ...args) =>
+        entry === directory && denied ? { isDirectory: () => false, isSymbolicLink: () => false } : originalStat(entry, ...args);
       try {
         await assert.rejects(async () => run(root, () => ++effects), { code: "INVALID_PROJECT_MUTATION_LOCK" });
         assert.equal(effects, 0);
-      } finally { fs.readdirSync = originalRead; fs.lstatSync = originalStat; }
+      } finally {
+        fs.readdirSync = originalRead;
+        fs.lstatSync = originalStat;
+      }
     });
 
     test(`${mode} ${code} thrown after effect is never retried`, async (t) => {
       const { root, parent } = fixture(t);
       const error = Object.assign(new Error("effect already happened"), { code });
       let effects = 0;
-      await assert.rejects(async () => run(root, () => { effects += 1; throw error; }), (observed) => observed === error);
+      await assert.rejects(
+        async () =>
+          run(root, () => {
+            effects += 1;
+            throw error;
+          }),
+        (observed) => observed === error,
+      );
       assert.equal(effects, 1);
       assert.deepEqual(fs.readdirSync(parent), []);
     });
   }
 
   test(`${mode} unsafe paths and unexpected entries fail without invoking effect`, async (t) => {
-    for (const layout of [{ dialect: "head", directory: ".head" }, { dialect: "lode", directory: ".lode" }]) {
+    for (const layout of [
+      { dialect: "head", directory: ".head" },
+      { dialect: "lode", directory: ".lode" },
+    ]) {
       for (const site of ["head", "parent", "lock", "entry"]) {
         const { root, parent, directory } = fixture(t, layout);
-        if (site === "head") { fs.rmdirSync(parent); fs.rmdirSync(path.dirname(parent)); fs.writeFileSync(path.dirname(parent), "unsafe"); }
-        if (site === "parent") { fs.rmdirSync(parent); fs.writeFileSync(parent, "unsafe"); }
+        if (site === "head") {
+          fs.rmdirSync(parent);
+          fs.rmdirSync(path.dirname(parent));
+          fs.writeFileSync(path.dirname(parent), "unsafe");
+        }
+        if (site === "parent") {
+          fs.rmdirSync(parent);
+          fs.writeFileSync(parent, "unsafe");
+        }
         if (site === "lock") fs.writeFileSync(directory, "unsafe");
-        if (site === "entry") { fs.mkdirSync(directory); fs.writeFileSync(path.join(directory, "unexpected"), "must survive"); }
+        if (site === "entry") {
+          fs.mkdirSync(directory);
+          fs.writeFileSync(path.join(directory, "unexpected"), "must survive");
+        }
         let effects = 0;
         // This lower path test already owns its format; damaged storage must not
         // be reselected through the separate Project marker boundary.
@@ -146,23 +177,40 @@ for (const [mode, run] of Object.entries(runners)) {
         await assert.rejects(async () => run(root, () => ++effects), { code: "PROJECT_MUTATION_BUSY" });
         assert.equal(effects, 0);
         assert.equal(fs.readFileSync(file, "utf8"), "owner must survive");
-      } finally { Date.now = originalNow; process.kill = originalKill; }
+      } finally {
+        Date.now = originalNow;
+        process.kill = originalKill;
+      }
     }
   });
 }
 
 test("sync/async nesting reuses exact ownership and unrelated sync calls cannot deadlock an async owner", async (t) => {
   const { root, parent } = fixture(t);
-  assert.equal(withProjectMutation({ root, scope: "session-recovery" }, () => withProjectMutation({ root, scope: "session-recovery" }, () => "sync nested")), "sync nested");
-  assert.equal(await withProjectMutationAsync({ root, scope: "session-recovery" }, async () => {
-    assert.equal(withProjectMutation({ root, scope: "session-recovery" }, () => "mixed nested"), "mixed nested");
-    return withProjectMutationAsync({ root, scope: "session-recovery" }, async () => "async nested");
-  }), "async nested");
+  assert.equal(
+    withProjectMutation({ root, scope: "session-recovery" }, () => withProjectMutation({ root, scope: "session-recovery" }, () => "sync nested")),
+    "sync nested",
+  );
+  assert.equal(
+    await withProjectMutationAsync({ root, scope: "session-recovery" }, async () => {
+      assert.equal(
+        withProjectMutation({ root, scope: "session-recovery" }, () => "mixed nested"),
+        "mixed nested",
+      );
+      return withProjectMutationAsync({ root, scope: "session-recovery" }, async () => "async nested");
+    }),
+    "async nested",
+  );
   let finish;
-  const pending = new Promise((resolve) => { finish = resolve; });
+  const pending = new Promise((resolve) => {
+    finish = resolve;
+  });
   const owner = withProjectMutationAsync({ root, scope: "session-recovery" }, () => pending);
   try {
     assert.throws(() => withProjectMutation({ root, scope: "session-recovery" }, () => assert.fail("must not run")), { code: "PROJECT_MUTATION_BUSY" });
-  } finally { finish(); await owner; }
+  } finally {
+    finish();
+    await owner;
+  }
   assert.deepEqual(fs.readdirSync(parent), []);
 });

@@ -67,9 +67,15 @@ try {
     input: WORKER_HEALTH_INPUT,
     semanticProducer: WORKER_HEALTH_SEMANTIC_PRODUCER,
   });
-  if (execution.diagnostics.backend !== "go-worker" || execution.diagnostics.fallbackUsed !== false) throw new Error("verification used fallback instead of the Go worker");
-  if (execution.result.status !== "ready" || execution.result.instructionAuthority !== false
-    || execution.result.promotionAuthority !== false || execution.result.controlAuthority !== false) throw new Error("Go worker health result violates its authority contract");
+  if (execution.diagnostics.backend !== "go-worker" || execution.diagnostics.fallbackUsed !== false)
+    throw new Error("verification used fallback instead of the Go worker");
+  if (
+    execution.result.status !== "ready" ||
+    execution.result.instructionAuthority !== false ||
+    execution.result.promotionAuthority !== false ||
+    execution.result.controlAuthority !== false
+  )
+    throw new Error("Go worker health result violates its authority contract");
   if (processExists(execution.diagnostics.workerPid)) throw new Error(`Go worker PID ${execution.diagnostics.workerPid} remained alive after response`);
   let repositoryConformance = null;
   let repositoryExecution = null;
@@ -86,12 +92,40 @@ try {
       candidateAdapter,
       fixtures: [
         { name: "repository-scan-basic", operation: REPOSITORY_SCAN_OPERATION, input, semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER },
-        { name: "repository-scan-file-limit", operation: REPOSITORY_SCAN_OPERATION, input, semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER, limits: { maxFiles: 1 } },
-        { name: "repository-scan-managed-projection", operation: REPOSITORY_SCAN_OPERATION, input: managedInput, semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER },
+        {
+          name: "repository-scan-file-limit",
+          operation: REPOSITORY_SCAN_OPERATION,
+          input,
+          semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER,
+          limits: { maxFiles: 1 },
+        },
+        {
+          name: "repository-scan-managed-projection",
+          operation: REPOSITORY_SCAN_OPERATION,
+          input: managedInput,
+          semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER,
+        },
         { name: "repository-scan-source-scope", operation: REPOSITORY_SCAN_OPERATION, input: scopedInput, semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER },
-        { name: "repository-scan-missing-root", operation: REPOSITORY_SCAN_OPERATION, input: missingInput, semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER },
-        { name: "repository-scan-total-byte-limit", operation: REPOSITORY_SCAN_OPERATION, input, semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER, limits: { maxTotalBytes: 1 } },
-        { name: "repository-scan-skip-large", operation: REPOSITORY_SCAN_OPERATION, input, semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER, limits: { maxFileBytes: 1 } },
+        {
+          name: "repository-scan-missing-root",
+          operation: REPOSITORY_SCAN_OPERATION,
+          input: missingInput,
+          semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER,
+        },
+        {
+          name: "repository-scan-total-byte-limit",
+          operation: REPOSITORY_SCAN_OPERATION,
+          input,
+          semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER,
+          limits: { maxTotalBytes: 1 },
+        },
+        {
+          name: "repository-scan-skip-large",
+          operation: REPOSITORY_SCAN_OPERATION,
+          input,
+          semanticProducer: REPOSITORY_SCAN_SEMANTIC_PRODUCER,
+          limits: { maxFileBytes: 1 },
+        },
       ],
     });
     repositoryExecution = await executeComputeOperation({
@@ -104,7 +138,8 @@ try {
       throw new Error("repository scan verification used fallback instead of the Go worker");
     }
     validateRepositoryScanResult(repositoryExecution.result);
-    if (processExists(repositoryExecution.diagnostics.workerPid)) throw new Error(`Go worker PID ${repositoryExecution.diagnostics.workerPid} remained alive after repository scan`);
+    if (processExists(repositoryExecution.diagnostics.workerPid))
+      throw new Error(`Go worker PID ${repositoryExecution.diagnostics.workerPid} remained alive after repository scan`);
   }
   let cancellation = "not-advertised";
   if (candidateAdapter.describe().supportedOperations.includes(WORKER_LIFECYCLE_OPERATION)) {
@@ -123,24 +158,32 @@ try {
     await waitForNoOwnedProcesses(candidateAdapter);
     cancellation = "verified-timeout-and-pid-exit";
   }
-  process.stdout.write(`${JSON.stringify({
-    status: "verified",
-    operation: WORKER_HEALTH_OPERATION,
-    conformanceReportId: conformance.conformanceReportId,
-    resultDigest: execution.response.resultDigest,
-    repositoryScan: repositoryExecution ? {
-      conformanceReportId: repositoryConformance.conformanceReportId,
-      fixtureCount: repositoryConformance.fixtures.length,
-      scanId: repositoryExecution.result.scanId,
-      resultDigest: repositoryExecution.response.resultDigest,
-      backend: repositoryExecution.diagnostics.backend,
-    } : { status: "not-advertised" },
-    workerRelativePath: execution.diagnostics.workerRelativePath,
-    workerSha256: execution.diagnostics.workerSha256,
-    processCleanup: "verified-exited",
-    cancellation,
-    authorityEffect: "none",
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        status: "verified",
+        operation: WORKER_HEALTH_OPERATION,
+        conformanceReportId: conformance.conformanceReportId,
+        resultDigest: execution.response.resultDigest,
+        repositoryScan: repositoryExecution
+          ? {
+              conformanceReportId: repositoryConformance.conformanceReportId,
+              fixtureCount: repositoryConformance.fixtures.length,
+              scanId: repositoryExecution.result.scanId,
+              resultDigest: repositoryExecution.response.resultDigest,
+              backend: repositoryExecution.diagnostics.backend,
+            }
+          : { status: "not-advertised" },
+        workerRelativePath: execution.diagnostics.workerRelativePath,
+        workerSha256: execution.diagnostics.workerSha256,
+        processCleanup: "verified-exited",
+        cancellation,
+        authorityEffect: "none",
+      },
+      null,
+      2,
+    )}\n`,
+  );
 } catch (error) {
   process.stderr.write(`${error.message}\n`);
   process.exitCode = 1;

@@ -1,9 +1,6 @@
 import { inspectCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { decodeSqliteCell } from "./native-sqlite-values.mjs";
-import {
-  codexNativePortabilityProfile,
-  verifySelectedCodexHistory,
-} from "./codex-native-portability.mjs";
+import { codexNativePortabilityProfile, verifySelectedCodexHistory } from "./codex-native-portability.mjs";
 
 const profile = codexNativePortabilityProfile();
 const fail = (code) => {
@@ -31,11 +28,7 @@ function selectedRows(history, threadId) {
     history.tables.map((table) => [
       table.name,
       table.rows
-        .map((row) =>
-          Object.fromEntries(
-            table.columns.map((column, index) => [column, decodeSqliteCell(row[index])]),
-          ),
-        )
+        .map((row) => Object.fromEntries(table.columns.map((column, index) => [column, decodeSqliteCell(row[index])])))
         .filter((row) => row.thread_id === threadId),
     ]),
   );
@@ -62,8 +55,7 @@ export function createCodexRolloutVerifier({ threadId, history }) {
   };
   for (const row of rows.get("thread_turns")) {
     address(starts, row.rollout_ordinal, row.rollout_byte_offset);
-    if (row.rollout_end_ordinal !== null || row.rollout_end_byte_offset !== null)
-      address(ends, row.rollout_end_ordinal, row.rollout_end_byte_offset);
+    if (row.rollout_end_ordinal !== null || row.rollout_end_byte_offset !== null) address(ends, row.rollout_end_ordinal, row.rollout_end_byte_offset);
   }
   for (const row of [...rows.get("thread_items"), ...rows.get("thread_realtime_items")]) {
     requireOrdinal(row.rollout_ordinal);
@@ -72,11 +64,7 @@ export function createCodexRolloutVerifier({ threadId, history }) {
   const projections = rows.get("thread_history_projection_state");
   if (projections.length !== 1) fail("NATIVE_CODEX_CUTOFF_UNAVAILABLE");
   const projection = projections[0];
-  if (
-    !nonnegative(projection.next_rollout_byte_offset) ||
-    !nonnegative(projection.next_rollout_ordinal)
-  )
-    fail("NATIVE_CODEX_HISTORY_OFFSET_INVALID");
+  if (!nonnegative(projection.next_rollout_byte_offset) || !nonnegative(projection.next_rollout_ordinal)) fail("NATIVE_CODEX_HISTORY_OFFSET_INVALID");
   let pending = [],
     pendingBytes = 0,
     consumed = 0n,
@@ -88,9 +76,7 @@ export function createCodexRolloutVerifier({ threadId, history }) {
     if (!bytes.length) fail("NATIVE_CODEX_ROLLOUT_FRAME_INVALID");
     let document;
     try {
-      document = JSON.parse(
-        new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes),
-      );
+      document = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
     } catch {
       fail("NATIVE_CODEX_ROLLOUT_FRAME_INVALID");
     }
@@ -115,19 +101,11 @@ export function createCodexRolloutVerifier({ threadId, history }) {
       historyMode = document.payload.history_mode;
       if (historyMode !== "paginated") fail("NATIVE_CODEX_ROLLOUT_PROFILE_UNSUPPORTED");
     }
-    for (const key of [
-      "forked_from_id",
-      "forked_from",
-      "parent_thread_id",
-      "history_base",
-      "history_base_path",
-    ])
+    for (const key of ["forked_from_id", "forked_from", "parent_thread_id", "history_base", "history_base_path"])
       if (document.payload?.[key] != null) unresolvedClosure.add(key);
-    if (starts.has(ordinal.toString()) && starts.get(ordinal.toString()) !== consumed)
-      fail("NATIVE_CODEX_CUTOFF_MISMATCH");
+    if (starts.has(ordinal.toString()) && starts.get(ordinal.toString()) !== consumed) fail("NATIVE_CODEX_CUTOFF_MISMATCH");
     consumed += BigInt(bytes.length + 1);
-    if (ends.has(ordinal.toString()) && ends.get(ordinal.toString()) !== consumed)
-      fail("NATIVE_CODEX_CUTOFF_MISMATCH");
+    if (ends.has(ordinal.toString()) && ends.get(ordinal.toString()) !== consumed) fail("NATIVE_CODEX_CUTOFF_MISMATCH");
     requiredOrdinals.delete(ordinal.toString());
     ordinal++;
   };
@@ -156,19 +134,10 @@ export function createCodexRolloutVerifier({ threadId, history }) {
       if (finished) fail("NATIVE_CODEX_ROLLOUT_STREAM_INVALID");
       finished = true;
       if (pendingBytes || ordinal === 0n) fail("NATIVE_CODEX_ROLLOUT_INCOMPLETE");
-      if (
-        requiredOrdinals.size ||
-        projection.next_rollout_byte_offset !== consumed ||
-        projection.next_rollout_ordinal !== ordinal
-      )
+      if (requiredOrdinals.size || projection.next_rollout_byte_offset !== consumed || projection.next_rollout_ordinal !== ordinal)
         fail("NATIVE_CODEX_CUTOFF_MISMATCH");
       const turnIds = new Set(rows.get("thread_turns").map((row) => row.turn_id));
-      if (
-        rows
-          .get("thread_turns")
-          .some((row) => row.root_turn_id !== null && !turnIds.has(row.root_turn_id))
-      )
-        unresolvedClosure.add("root_turn_id");
+      if (rows.get("thread_turns").some((row) => row.root_turn_id !== null && !turnIds.has(row.root_turn_id))) unresolvedClosure.add("root_turn_id");
       return {
         profileId: profile.profileId,
         threadId,
@@ -188,16 +157,8 @@ export function createCodexRolloutVerifier({ threadId, history }) {
   };
 }
 
-export function verifyCodexRollout({
-  root,
-  relative,
-  threadId,
-  history,
-  signal,
-  assertCurrentAuthority,
-}) {
-  if (typeof relative !== "string" || !/^(?:sessions|archived_sessions)\/.+\.jsonl$/.test(relative))
-    fail("NATIVE_CODEX_ROLLOUT_PROFILE_UNSUPPORTED");
+export function verifyCodexRollout({ root, relative, threadId, history, signal, assertCurrentAuthority }) {
+  if (typeof relative !== "string" || !/^(?:sessions|archived_sessions)\/.+\.jsonl$/.test(relative)) fail("NATIVE_CODEX_ROLLOUT_PROFILE_UNSUPPORTED");
   const verifier = createCodexRolloutVerifier({ threadId, history });
   const raw = inspectCopiedProjectFile(root, relative, {
     signal,
@@ -211,14 +172,7 @@ export function verifyCodexRollout({
 // limit. All other errors (including permission, identity, malformed input and
 // cutoff mismatch) retain their primary failure. A branded decoder error is
 // required: a Host callback cannot be mistaken for a resource-limit fallback.
-export function inspectCodexRolloutOriginal({
-  root,
-  relative,
-  threadId,
-  history,
-  signal,
-  assertCurrentAuthority,
-} = {}) {
+export function inspectCodexRolloutOriginal({ root, relative, threadId, history, signal, assertCurrentAuthority } = {}) {
   const verifier = createCodexRolloutVerifier({ threadId, history });
   try {
     const raw = inspectCopiedProjectFile(root, relative, {
@@ -228,8 +182,7 @@ export function inspectCodexRolloutOriginal({
     });
     return { ...verifier.finish(), raw };
   } catch (error) {
-    if (error.code !== "NATIVE_CODEX_FRAME_TOO_LARGE" || !decoderLimitErrors.has(error))
-      throw error;
+    if (error.code !== "NATIVE_CODEX_FRAME_TOO_LARGE" || !decoderLimitErrors.has(error)) throw error;
     let lastByte = null;
     const raw = inspectCopiedProjectFile(root, relative, {
       signal,
@@ -241,12 +194,9 @@ export function inspectCodexRolloutOriginal({
     if (lastByte !== 10) fail("NATIVE_CODEX_ROLLOUT_INCOMPLETE");
     const table = history.tables.find((item) => item.name === "thread_history_projection_state");
     const projections = table.rows
-      .map((row) =>
-        Object.fromEntries(table.columns.map((key, index) => [key, decodeSqliteCell(row[index])])),
-      )
+      .map((row) => Object.fromEntries(table.columns.map((key, index) => [key, decodeSqliteCell(row[index])])))
       .filter((row) => row.thread_id === threadId);
-    if (projections.length !== 1 || projections[0].next_rollout_byte_offset !== BigInt(raw.bytes))
-      fail("NATIVE_CODEX_CUTOFF_MISMATCH");
+    if (projections.length !== 1 || projections[0].next_rollout_byte_offset !== BigInt(raw.bytes)) fail("NATIVE_CODEX_CUTOFF_MISMATCH");
     return {
       profileId: profile.profileId,
       threadId,
@@ -254,11 +204,7 @@ export function inspectCodexRolloutOriginal({
       bytes: String(raw.bytes),
       formatAndAddressReady: false,
       cutoff: "raw-byte-length-matches-selected-cutoff; remaining-frame-boundaries-unverified",
-      unresolvedClosure: [
-        "frame-decoder-limit",
-        "following-frame-boundaries-unverified",
-        "following-native-dependencies-unverified",
-      ],
+      unresolvedClosure: ["frame-decoder-limit", "following-frame-boundaries-unverified", "following-native-dependencies-unverified"],
       nativePublicationReady: false,
       nativeWriteAuthorized: false,
       authorityPlane: "P3",

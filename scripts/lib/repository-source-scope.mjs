@@ -15,7 +15,12 @@ const fail = (message, code = "REPOSITORY_SOURCE_SCOPE_ERROR") => {
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
   return value;
 }
 
@@ -72,13 +77,26 @@ export function buildRepositorySourceScope({ includeRoots = [], excludeRoots = [
 }
 
 export function verifyRepositorySourceScope(document, { storage } = {}) {
-  assertFields(document, [
-    "schemaVersion", "kind", "protocol", "includeRoots", "excludeRoots", "authority",
-    "instructionAuthority", "promotionAuthority", "sourceScopeId", "sourceScopeHash",
-  ], "Repository source scope");
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocol",
+      "includeRoots",
+      "excludeRoots",
+      "authority",
+      "instructionAuthority",
+      "promotionAuthority",
+      "sourceScopeId",
+      "sourceScopeHash",
+    ],
+    "Repository source scope",
+  );
   const format = familyFormatForOriginal("head-agent-core-repository-source-scope", document, storage);
   const rebuilt = buildRepositorySourceScope({ includeRoots: document.includeRoots, excludeRoots: document.excludeRoots, storage: format });
-  if (!format || canonicalJson(rebuilt) !== canonicalJson(document)) fail("Repository source scope digest verification failed.", "REPOSITORY_SOURCE_SCOPE_DIGEST_MISMATCH");
+  if (!format || canonicalJson(rebuilt) !== canonicalJson(document))
+    fail("Repository source scope digest verification failed.", "REPOSITORY_SOURCE_SCOPE_DIGEST_MISMATCH");
   verifiedScopes.add(document);
   return document;
 }
@@ -97,8 +115,11 @@ export function readRepositorySourceScope({ projectRoot, storage } = {}) {
   const file = path.join(path.resolve(projectRoot), relativeProjectArtifact(storage, "context", "repository-source-scope.json"));
   if (!fs.existsSync(file)) return { status: "default", file: null, sourceScope: buildRepositorySourceScope({ storage }) };
   let document;
-  try { document = JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`Repository source scope is invalid JSON: ${error.message}`, "INVALID_REPOSITORY_SOURCE_SCOPE"); }
+  try {
+    document = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(`Repository source scope is invalid JSON: ${error.message}`, "INVALID_REPOSITORY_SOURCE_SCOPE");
+  }
   return { status: "configured", file, sourceScope: verifyRepositorySourceScope(document, { storage }) };
 }
 

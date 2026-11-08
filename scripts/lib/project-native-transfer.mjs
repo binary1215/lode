@@ -4,17 +4,14 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { inspectProjectBundle } from "./project-portability.mjs";
 import { inspectCodexNativePayload, codexNativePayloadSummary } from "./codex-native-payload.mjs";
-import {
-  copiedProjectFile,
-  inspectCopiedProjectFile,
-  copyOriginal,
-} from "./project-copy-evidence.mjs";
+import { copiedProjectFile, inspectCopiedProjectFile, copyOriginal } from "./project-copy-evidence.mjs";
 import { atomicCreateArtifact } from "./artifact-storage.mjs";
 import { readSnapshotFile } from "./snapshot-storage-codec.mjs";
 
 const providers = new Set(["codex", "claude", "opencode"]);
-const relativeFor = provider => providers.has(provider) ? "native/" + provider + "/history" : null;
-const inspectNative = (provider, options) => provider === "codex" ? inspectCodexNativePayload(options) : inspectProviderNativePayload({ ...options, expectedProvider: provider });
+const relativeFor = (provider) => (providers.has(provider) ? "native/" + provider + "/history" : null);
+const inspectNative = (provider, options) =>
+  provider === "codex" ? inspectCodexNativePayload(options) : inspectProviderNativePayload({ ...options, expectedProvider: provider });
 const linkPath = "native-history.json";
 const bytes = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -48,8 +45,7 @@ function linkFor(common, native, provider = "codex") {
 function readLink(root) {
   const file = copiedProjectFile(root, linkPath),
     stat = fs.lstatSync(file);
-  if (!stat.isFile() || stat.nlink !== 1 || stat.size > 65536)
-    fail("PROJECT_NATIVE_TRANSFER_LINK_INVALID");
+  if (!stat.isFile() || stat.nlink !== 1 || stat.size > 65536) fail("PROJECT_NATIVE_TRANSFER_LINK_INVALID");
   return readSnapshotFile(file, { decodedBytes: 65536 });
 }
 
@@ -62,7 +58,7 @@ export function readProjectNativeTransfer({ bundleRoot, expectedBundleId = null,
   cancelled(signal);
   if (!fs.existsSync(copiedProjectFile(root, linkPath)))
     return {
-      status: [...providers].some(provider => fs.existsSync(copiedProjectFile(root, "native/" + provider)))
+      status: [...providers].some((provider) => fs.existsSync(copiedProjectFile(root, "native/" + provider)))
         ? "native-transfer-incomplete-without-link"
         : "native-history-not-attached",
       bundleId: common.bundleId,
@@ -78,19 +74,19 @@ export function readProjectNativeTransfer({ bundleRoot, expectedBundleId = null,
     };
   const original = readLink(root),
     link = original.document;
-  if (!link || !providers.has(link.provider) || link.path !== relativeFor(link.provider))
-    fail("PROJECT_NATIVE_TRANSFER_LINK_INVALID");
+  if (!link || !providers.has(link.provider) || link.path !== relativeFor(link.provider)) fail("PROJECT_NATIVE_TRANSFER_LINK_INVALID");
   const native = inspectNative(link.provider, {
     directory: copiedProjectFile(root, relativeFor(link.provider)),
     expectedPayloadId: link.payloadId,
     signal,
   });
-  if (!original.bytes.equals(bytes(linkFor(common, native, link.provider))))
-    fail("PROJECT_NATIVE_TRANSFER_LINK_MISMATCH");
+  if (!original.bytes.equals(bytes(linkFor(common, native, link.provider)))) fail("PROJECT_NATIVE_TRANSFER_LINK_MISMATCH");
   return {
-    status: native.provider ? "verified-native-raw-transfer" : native.mechanicalOriginalsReady
-      ? "verified-native-transfer"
-      : "verified-native-transfer-partial",
+    status: native.provider
+      ? "verified-native-raw-transfer"
+      : native.mechanicalOriginalsReady
+        ? "verified-native-transfer"
+        : "verified-native-transfer-partial",
     bundleId: common.bundleId,
     commonManifestDigest: common.manifestSha256,
     projectId: common.manifest.projectId,
@@ -111,18 +107,13 @@ export function readProjectNativeTransfer({ bundleRoot, expectedBundleId = null,
 
 export function projectNativeTransferSummary(result) {
   const { native, ...summary } = result;
-  return { ...summary, native: native ? native.provider ? providerNativePayloadSummary(native) : codexNativePayloadSummary(native) : null };
+  return { ...summary, native: native ? (native.provider ? providerNativePayloadSummary(native) : codexNativePayloadSummary(native)) : null };
 }
 
 // Recheck the exact already-verified selection headers at effect boundaries.
 // This does not reload P2, infer native ownership or turn transfer data into
 // authorization. Native payload/raw verification remains in its own adapter.
-export function assertProjectNativeTransferCurrent({
-  bundleRoot,
-  commonManifestDigest,
-  linkDigest,
-  signal,
-}) {
+export function assertProjectNativeTransferCurrent({ bundleRoot, commonManifestDigest, linkDigest, signal }) {
   cancelled(signal);
   const root = fs.realpathSync(path.resolve(bundleRoot));
   if (
@@ -162,9 +153,7 @@ export function attachProjectNativeTransfer({
     existing = copiedProjectFile(root, linkPath);
   if (fs.existsSync(existing)) {
     if (!readLink(root).bytes.equals(encoded)) fail("PROJECT_NATIVE_TRANSFER_LINK_CONFLICT");
-    return projectNativeTransferSummary(
-      readProjectNativeTransfer({ bundleRoot: root, expectedBundleId: common.bundleId, signal }),
-    );
+    return projectNativeTransferSummary(readProjectNativeTransfer({ bundleRoot: root, expectedBundleId: common.bundleId, signal }));
   }
   check();
   const target = copiedProjectFile(root, relative);
@@ -190,8 +179,7 @@ export function attachProjectNativeTransfer({
   // The capture intent and immutable raw objects precede its manifest; the link
   // is last. A stopped copy remains identifiable without claiming completion.
   copy("capture-intent.json");
-  for (const sha256 of new Set(native.payload.files.map((file) => file.sha256)))
-    copy("objects/" + sha256 + ".bin");
+  for (const sha256 of new Set(native.payload.files.map((file) => file.sha256))) copy("objects/" + sha256 + ".bin");
   copy("manifest.json");
   check();
   const copied = inspectNative(provider, {
@@ -209,11 +197,7 @@ export function attachProjectNativeTransfer({
     expectedBundleId: common.bundleId,
     signal,
   });
-  if (
-    current.payloadDigest !== native.payloadDigest ||
-    copied.payloadDigest !== native.payloadDigest ||
-    currentCommon.manifestSha256 !== common.manifestSha256
-  )
+  if (current.payloadDigest !== native.payloadDigest || copied.payloadDigest !== native.payloadDigest || currentCommon.manifestSha256 !== common.manifestSha256)
     fail("PROJECT_NATIVE_TRANSFER_SOURCE_CHANGED");
   check();
   try {
@@ -223,19 +207,12 @@ export function attachProjectNativeTransfer({
     if (!readLink(root).bytes.equals(encoded)) fail("PROJECT_NATIVE_TRANSFER_LINK_CONFLICT");
   }
   return {
-    ...projectNativeTransferSummary(
-      readProjectNativeTransfer({ bundleRoot: root, expectedBundleId: common.bundleId, signal }),
-    ),
+    ...projectNativeTransferSummary(readProjectNativeTransfer({ bundleRoot: root, expectedBundleId: common.bundleId, signal })),
     persisted: true,
   };
 }
 
-export function projectNativeCaptureDirectory({
-  provider = "codex",
-  bundleRoot,
-  expectedBundleId = null,
-  assertCurrentAuthority = () => {},
-} = {}) {
+export function projectNativeCaptureDirectory({ provider = "codex", bundleRoot, expectedBundleId = null, assertCurrentAuthority = () => {} } = {}) {
   const check = () => {
     if (typeof assertCurrentAuthority !== "function") fail("NATIVE_CODEX_AUTHORITY_CHECK_REQUIRED");
     const result = assertCurrentAuthority();

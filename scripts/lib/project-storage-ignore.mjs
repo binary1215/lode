@@ -22,18 +22,22 @@ export const GENERATED_STORAGE_IGNORE_RULES = Object.freeze([
 // Retained, exact local storage is excluded from new accidental tracking, not
 // discarded. Canonical records and pointers remain outside this list.
 export const RETAINED_STORAGE_IGNORE_RULES = Object.freeze([
-  "/world-model/snapshots/", "/graph-projection/snapshots/",
-  "/snapshot-bundles/", "/snapshot-objects.git/",
+  "/world-model/snapshots/",
+  "/graph-projection/snapshots/",
+  "/snapshot-bundles/",
+  "/snapshot-objects.git/",
 ]);
 const HISTORY_BEGIN = "# BEGIN Lode retained local snapshot history rules";
 const HISTORY_END = "# END Lode retained local snapshot history rules";
-const BEGIN = "# BEGIN Lode generated disposable storage rules", END = "# END Lode generated disposable storage rules";
+const BEGIN = "# BEGIN Lode generated disposable storage rules",
+  END = "# END Lode generated disposable storage rules";
 
 // This is a conservative disjointness proof, not a second Git pattern engine.
 // Literal basenames can prove disjointness for an exact file and its parents,
 // including a directory exception. Unknown directory descendants stay unknown.
 function exceptionMayReach(pattern, targets, exactFile = false) {
-  const body = pattern.replace(/ +$/, "").replace(/\/$/, ""), marker = body.search(/[*?\[\]\\]/);
+  const body = pattern.replace(/ +$/, "").replace(/\/$/, ""),
+    marker = body.search(/[*?\[\]\\]/);
   const literal = marker < 0 ? body : body.slice(0, marker);
   // Directory rules are published in the descendant .lode/.gitignore. Git will
   // not re-include a file whose parent directory is excluded there, so a root
@@ -42,12 +46,12 @@ function exceptionMayReach(pattern, targets, exactFile = false) {
   if (!exactFile) return false;
   if (!body.startsWith("/") && !literal.includes("/")) {
     if (marker < 0) {
-      return targets.some(target => target.toLowerCase().split("/").includes(body.toLowerCase()));
+      return targets.some((target) => target.toLowerCase().split("/").includes(body.toLowerCase()));
     }
     return true;
   }
   const prefix = literal.replace(/^\//, "").toLowerCase();
-  return targets.some(target => {
+  return targets.some((target) => {
     const common = Math.min(prefix.length, target.length);
     return prefix.slice(0, common) === target.toLowerCase().slice(0, common);
   });
@@ -60,9 +64,10 @@ function readIgnorePolicy(root, file, targets, collectExceptions = false) {
   if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1 || before.size > 1024 * 1024) {
     throw Object.assign(new Error("User ignore cannot be safely inspected."), { code: "USER_IGNORE_UNAVAILABLE" });
   }
-  const bytes = fs.readFileSync(file), after = fs.lstatSync(file);
-  if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs
-    || bytes.length !== before.size) throw Object.assign(new Error("User ignore changed during inspection."), { code: "USER_IGNORE_CHANGED_CONCURRENTLY" });
+  const bytes = fs.readFileSync(file),
+    after = fs.lstatSync(file);
+  if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs || bytes.length !== before.size)
+    throw Object.assign(new Error("User ignore changed during inspection."), { code: "USER_IGNORE_CHANGED_CONCURRENTLY" });
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   if (text.includes("\0")) throw Object.assign(new Error("User ignore contains NUL."), { code: "USER_IGNORE_UNAVAILABLE" });
   const exceptions = [];
@@ -71,7 +76,11 @@ function readIgnorePolicy(root, file, targets, collectExceptions = false) {
     // literal patterns, not exceptions. Retaining spaces is conservative.
     if (line.startsWith("!")) exceptions.push(line.slice(1));
     const explicitPrefix = line.startsWith("!") && /^!?\/?[^*?\[\]\\]+\/\*\*$/.test(line) ? line.slice(1).replace(/^\//, "").slice(0, -2) : null;
-    if (!collectExceptions && line.startsWith("!") && (explicitPrefix && targets.some(target => target.startsWith(explicitPrefix)) || exceptionMayReach(line.slice(1), targets))) {
+    if (
+      !collectExceptions &&
+      line.startsWith("!") &&
+      ((explicitPrefix && targets.some((target) => target.startsWith(explicitPrefix))) || exceptionMayReach(line.slice(1), targets))
+    ) {
       throw Object.assign(new Error("User exception may reach generated paths."), { code: "USER_IGNORE_RULES_TAKE_PRECEDENCE" });
     }
   }
@@ -81,9 +90,17 @@ function readIgnorePolicy(root, file, targets, collectExceptions = false) {
 function assertIgnorePoliciesUnchanged(policies) {
   for (const policy of policies) {
     const stat = fs.lstatSync(policy.file, { throwIfNoEntry: false });
-    if (policy.bytes === null ? Boolean(stat) : !stat?.isFile() || stat.isSymbolicLink() || stat.nlink !== 1
-      || stat.dev !== policy.dev || stat.ino !== policy.ino || stat.size !== policy.bytes.length
-      || !fs.readFileSync(policy.file).equals(policy.bytes)) {
+    if (
+      policy.bytes === null
+        ? Boolean(stat)
+        : !stat?.isFile() ||
+          stat.isSymbolicLink() ||
+          stat.nlink !== 1 ||
+          stat.dev !== policy.dev ||
+          stat.ino !== policy.ino ||
+          stat.size !== policy.bytes.length ||
+          !fs.readFileSync(policy.file).equals(policy.bytes)
+    ) {
       throw Object.assign(new Error("User ignore changed before publication."), { code: "USER_IGNORE_CHANGED_CONCURRENTLY" });
     }
   }
@@ -101,11 +118,16 @@ function gitTracksFile(root, file) {
     const git = absoluteSystemExecutable("git") || absoluteSystemExecutable("git.exe");
     if (!git) return "unknown";
     const result = spawnSync(git, ["-C", root, "ls-files", "-z", "--", relative], {
-      encoding: "utf8", timeout: 2000, shell: false, stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf8",
+      timeout: 2000,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
     });
     if (result?.status !== 0 || result.error || result.signal) return "unknown";
     return result.stdout ? "tracked" : "untracked";
-  } catch { return "unknown"; }
+  } catch {
+    return "unknown";
+  }
 }
 
 export function ensureMessagingDirectoryIgnore({ root, directory, mailboxStorage = null }) {
@@ -127,8 +149,14 @@ export function ensureMessagingDirectoryIgnore({ root, directory, mailboxStorage
       if (current === MESSAGING_IGNORE) return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
       if (current !== PREVIOUS_MESSAGING_IGNORE) return { status: "preserved", reasonCode: "EXISTING_MESSAGING_IGNORE" };
       const tracking = gitTracksFile(root, file);
-      if (tracking !== "untracked") return { status: "preserved", reasonCode: tracking === "tracked" ? "TRACKED_MESSAGING_IGNORE" : "MESSAGING_IGNORE_TRACKING_UNKNOWN" };
-      io.atomicWrite(file, MESSAGING_IGNORE, { beforePublish: () => { if (io.readFileSync(file, "utf8") !== current || gitTracksFile(root, file) !== "untracked") throw Object.assign(new Error("Messaging ignore changed."), { code: "USER_IGNORE_CHANGED_CONCURRENTLY" }); } });
+      if (tracking !== "untracked")
+        return { status: "preserved", reasonCode: tracking === "tracked" ? "TRACKED_MESSAGING_IGNORE" : "MESSAGING_IGNORE_TRACKING_UNKNOWN" };
+      io.atomicWrite(file, MESSAGING_IGNORE, {
+        beforePublish: () => {
+          if (io.readFileSync(file, "utf8") !== current || gitTracksFile(root, file) !== "untracked")
+            throw Object.assign(new Error("Messaging ignore changed."), { code: "USER_IGNORE_CHANGED_CONCURRENTLY" });
+        },
+      });
       return { status: "updated", trackingChanged: false };
     }
     io.atomicCreate(file, MESSAGING_IGNORE);
@@ -151,30 +179,61 @@ export function ensureProjectStorageIgnore({ root, storage }) {
       const existing = readIgnorePolicy(root, file, [], true);
       // Only the entire exact legacy-generated body identifies an upgrade. A
       // marker inside a user file, extra comment or reordered rule grants none.
-      const legacy = [BEGIN, "/graph-discovery/index.json", "/.operations/", "/.snapshot-gc/", "/refresh/writer.lock/", "/refresh/writer.lock.*.staging/", END, ""].join("\n");
-      if (existing.bytes !== null && ![legacy, legacy.replaceAll("\n", "\r\n")].some(text => existing.bytes.equals(Buffer.from(text)))) {
+      const legacy = [
+        BEGIN,
+        "/graph-discovery/index.json",
+        "/.operations/",
+        "/.snapshot-gc/",
+        "/refresh/writer.lock/",
+        "/refresh/writer.lock.*.staging/",
+        END,
+        "",
+      ].join("\n");
+      if (existing.bytes !== null && ![legacy, legacy.replaceAll("\n", "\r\n")].some((text) => existing.bytes.equals(Buffer.from(text)))) {
         return { status: "preserved", reasonCode: "EXISTING_STORAGE_IGNORE", ordinaryWorkBlocked: false };
       }
-      const included = [], skipped = [];
-      for (const rule of [...GENERATED_STORAGE_IGNORE_RULES, ...RETAINED_STORAGE_IGNORE_RULES.map(pattern => ({ pattern }))]) {
+      const included = [],
+        skipped = [];
+      for (const rule of [...GENERATED_STORAGE_IGNORE_RULES, ...RETAINED_STORAGE_IGNORE_RULES.map((pattern) => ({ pattern }))]) {
         const target = directory + rule.pattern.split(/[*?\[]/, 1)[0];
         const exactFile = !rule.pattern.endsWith("/") && !/[*?\[\]\\]/.test(rule.pattern);
-        const explicitStorageChoice = policy.exceptions.some(pattern => pattern.replace(/^\//, "") === directory + "/**");
-        if (explicitStorageChoice || policy.exceptions.some(pattern => exceptionMayReach(pattern, [target], exactFile))) {
+        const explicitStorageChoice = policy.exceptions.some((pattern) => pattern.replace(/^\//, "") === directory + "/**");
+        if (explicitStorageChoice || policy.exceptions.some((pattern) => exceptionMayReach(pattern, [target], exactFile))) {
           skipped.push({ pattern: rule.pattern, reasonCode: "USER_IGNORE_RULES_TAKE_PRECEDENCE" });
         } else included.push(rule.pattern);
       }
-      if (!included.length) return { status: "preserved", reasonCode: "USER_IGNORE_RULES_TAKE_PRECEDENCE", rules: { included, skipped }, ordinaryWorkBlocked: false };
-      const disposable = included.filter(pattern => !RETAINED_STORAGE_IGNORE_RULES.includes(pattern));
-      const retained = included.filter(pattern => RETAINED_STORAGE_IGNORE_RULES.includes(pattern));
-      const block = [BEGIN, ...disposable, END, ...(retained.length ? [HISTORY_BEGIN, "# Retained history, not disposable cache. Existing tracked files are unchanged.", ...retained, HISTORY_END] : []), ""].join("\n");
+      if (!included.length)
+        return { status: "preserved", reasonCode: "USER_IGNORE_RULES_TAKE_PRECEDENCE", rules: { included, skipped }, ordinaryWorkBlocked: false };
+      const disposable = included.filter((pattern) => !RETAINED_STORAGE_IGNORE_RULES.includes(pattern));
+      const retained = included.filter((pattern) => RETAINED_STORAGE_IGNORE_RULES.includes(pattern));
+      const block = [
+        BEGIN,
+        ...disposable,
+        END,
+        ...(retained.length
+          ? [HISTORY_BEGIN, "# Retained history, not disposable cache. Existing tracked files are unchanged.", ...retained, HISTORY_END]
+          : []),
+        "",
+      ].join("\n");
       assertProjectStorageUnchanged(storage);
       assertIgnorePoliciesUnchanged([policy, existing]);
-      try { if (existing.bytes !== null) atomicWriteArtifact(file, block, { beforePublish: () => assertIgnorePoliciesUnchanged([policy, existing]) }); else atomicCreateArtifact(file, block); }
-      catch (error) { if (error.code === "EEXIST") return { status: "preserved", reasonCode: "USER_IGNORE_CREATED_CONCURRENTLY", ordinaryWorkBlocked: false }; throw error; }
-      return { status: existing.bytes === null ? "created" : "updated", path: path.relative(root, file).replaceAll("\\", "/"), rules: { included, skipped }, ordinaryWorkBlocked: false };
+      try {
+        if (existing.bytes !== null) atomicWriteArtifact(file, block, { beforePublish: () => assertIgnorePoliciesUnchanged([policy, existing]) });
+        else atomicCreateArtifact(file, block);
+      } catch (error) {
+        if (error.code === "EEXIST") return { status: "preserved", reasonCode: "USER_IGNORE_CREATED_CONCURRENTLY", ordinaryWorkBlocked: false };
+        throw error;
+      }
+      return {
+        status: existing.bytes === null ? "created" : "updated",
+        path: path.relative(root, file).replaceAll("\\", "/"),
+        rules: { included, skipped },
+        ordinaryWorkBlocked: false,
+      };
     });
-  } catch (error) { return { status: "preserved", reasonCode: error.code || "USER_IGNORE_UNAVAILABLE", ordinaryWorkBlocked: false }; }
+  } catch (error) {
+    return { status: "preserved", reasonCode: error.code || "USER_IGNORE_UNAVAILABLE", ordinaryWorkBlocked: false };
+  }
 }
 
 // Retained private snapshots are recovery material, not disposable cache.
@@ -183,13 +242,21 @@ export function ensureOwnedSnapshotStoreIgnore({ root, storage, directory }) {
   try {
     assertProjectStorageUnchanged(storage);
     const parent = path.join(root, formatForVerifiedOwner(storage).directory);
-    if (path.dirname(directory) !== parent || !/^snapshot-objects\.git(?:\.[a-f0-9-]{36}\.staging)?$/.test(path.basename(directory))) return { status: "preserved", reasonCode: "NOT_OWNED_SNAPSHOT_AREA" };
-    const policies = [root, parent].map(base => readIgnorePolicy(root, path.join(base, ".gitignore"), [path.relative(base, directory).replaceAll("\\", "/") + "/"]));
+    if (path.dirname(directory) !== parent || !/^snapshot-objects\.git(?:\.[a-f0-9-]{36}\.staging)?$/.test(path.basename(directory)))
+      return { status: "preserved", reasonCode: "NOT_OWNED_SNAPSHOT_AREA" };
+    const policies = [root, parent].map((base) =>
+      readIgnorePolicy(root, path.join(base, ".gitignore"), [path.relative(base, directory).replaceAll("\\", "/") + "/"]),
+    );
     const file = safeSnapshotPath(root, path.join(directory, ".gitignore"));
     if (fs.existsSync(file)) return { status: "preserved", reasonCode: "EXISTING_OWNED_IGNORE" };
     assertIgnorePoliciesUnchanged(policies);
-    try { atomicCreateArtifact(file, "# Retained local snapshot objects; not disposable cache.\n*\n!.gitignore\n"); }
-    catch (error) { if (error.code !== "EEXIST") throw error; }
+    try {
+      atomicCreateArtifact(file, "# Retained local snapshot objects; not disposable cache.\n*\n!.gitignore\n");
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
     return { status: "created", trackingChanged: false };
-  } catch (error) { return { status: "preserved", reasonCode: error.code || "USER_IGNORE_UNAVAILABLE" }; }
+  } catch (error) {
+    return { status: "preserved", reasonCode: error.code || "USER_IGNORE_UNAVAILABLE" };
+  }
 }

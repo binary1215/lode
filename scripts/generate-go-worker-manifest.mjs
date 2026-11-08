@@ -11,7 +11,8 @@ function parseArguments(values) {
     const value = values[index + 1];
     if (!key?.startsWith("--") || value == null) throw new Error("Arguments must be --name value pairs.");
     const name = key.slice(2);
-    if (!["platform", "arch", "binary", "output", "operations"].includes(name) || result[name] != null) throw new Error(`Unsupported or duplicate argument: ${key}`);
+    if (!["platform", "arch", "binary", "output", "operations"].includes(name) || result[name] != null)
+      throw new Error(`Unsupported or duplicate argument: ${key}`);
     result[name] = value;
   }
   for (const name of ["platform", "arch", "binary", "output"]) if (!result[name]) throw new Error(`--${name} is required.`);

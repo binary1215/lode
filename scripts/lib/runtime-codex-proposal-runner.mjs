@@ -6,8 +6,17 @@ import { createCodexFreshProposalFixtureCapability } from "./runtime-codex-app-s
 // The detached owner recreates a fixed concrete backend, not a caller-selected
 // module or a serialized claim of enforcement. Current policy/workspace/config
 // checks and the at-most-once lease stay inside the invocation implementation.
-export default async function runCodexProposal({ root, executionRoot, authorization, policy, workspaceBinding,
-  hostModuleFile = null, supervisorSelection = null, signal, onProcess = () => {} }) {
+export default async function runCodexProposal({
+  root,
+  executionRoot,
+  authorization,
+  policy,
+  workspaceBinding,
+  hostModuleFile = null,
+  supervisorSelection = null,
+  signal,
+  onProcess = () => {},
+}) {
   const prefix = policy?.kind === "CodexNativePrefixPolicyPlan";
   const fixed = (prefix ? verifyCodexNativePrefixPolicyPlan : verifyCodexFreshProposalPolicyPlan)(policy);
   if (hostModuleFile !== null || executionRoot !== workspaceBinding?.executionRoot || root !== workspaceBinding?.canonicalRoot) {
@@ -15,8 +24,10 @@ export default async function runCodexProposal({ root, executionRoot, authorizat
   }
   // This branch is explicitly synthetic and cannot issue an actual-provider
   // receipt. Neither fixture scenario nor executable/argv are caller inputs.
-  const protocolFixtureCapability = fixed.evidenceMode === "protocol-fixture"
-    ? createCodexFreshProposalFixtureCapability({ scenario: prefix ? "prefix-normal" : "normal" }) : null;
-  return await (prefix ? executeCodexNativePrefixProposalInvocation : executeCodexFreshProposalInvocation)({ root, authorization, policy: fixed, workspaceBinding,
-    supervisorSelection, signal, onProcessEvent: onProcess, persist: true }, { protocolFixtureCapability });
+  const protocolFixtureCapability =
+    fixed.evidenceMode === "protocol-fixture" ? createCodexFreshProposalFixtureCapability({ scenario: prefix ? "prefix-normal" : "normal" }) : null;
+  return await (prefix ? executeCodexNativePrefixProposalInvocation : executeCodexFreshProposalInvocation)(
+    { root, authorization, policy: fixed, workspaceBinding, supervisorSelection, signal, onProcessEvent: onProcess, persist: true },
+    { protocolFixtureCapability },
+  );
 }

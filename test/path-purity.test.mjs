@@ -43,7 +43,10 @@ test("synthetic home installs stay out of Claude, Codex, and OpenCode launch doc
 test("only explicit local Claude installation projection names the selected package; portable clients remain path-free", async (t) => {
   const root = tempProject(t);
   initializeProject({ root, pluginRoot, runtimes: clients });
-  assert.deepEqual(findHomePathFindings({ root, allowlist: [".lode/project.json", ".lode/generated/manifest.json", ".mcp.json", ".lode/generated/claude.mcp.json"] }), []);
+  assert.deepEqual(
+    findHomePathFindings({ root, allowlist: [".lode/project.json", ".lode/generated/manifest.json", ".mcp.json", ".lode/generated/claude.mcp.json"] }),
+    [],
+  );
   const claude = JSON.parse(fs.readFileSync(path.join(root, ".mcp.json"), "utf8"));
   const opencode = JSON.parse(fs.readFileSync(path.join(root, "opencode.json"), "utf8"));
   const generatedClaude = JSON.parse(fs.readFileSync(path.join(root, ".lode", "generated", "claude.mcp.json"), "utf8"));
@@ -72,8 +75,10 @@ test("only explicit local Claude installation projection names the selected pack
   assert.equal(JSON.stringify(shared).includes(fs.realpathSync(root)), false);
 });
 
-test("installed Claude roots with spaces work without Host environment or cwd/PATH fallbacks", t => {
-  const base = tempProject(t), selected = path.join(base, "selected package with spaces"), replacement = path.join(base, "replacement package");
+test("installed Claude roots with spaces work without Host environment or cwd/PATH fallbacks", (t) => {
+  const base = tempProject(t),
+    selected = path.join(base, "selected package with spaces"),
+    replacement = path.join(base, "replacement package");
   for (const root of [selected, replacement]) {
     fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
     fs.writeFileSync(path.join(root, "scripts", "mcp-server.mjs"), "// synthetic MCP entry\n");
@@ -81,13 +86,22 @@ test("installed Claude roots with spaces work without Host environment or cwd/PA
   for (const pluginRoot of [selected, replacement]) {
     const { document, pathForm } = portableMcpDocument({ client: "claude", pluginRoot, projection: "installed-project" });
     assert.equal(pathForm, "installed-project");
-    assert.deepEqual(document, { command: "node", args: [path.join(fs.realpathSync(pluginRoot), "scripts", "mcp-server.mjs")], cwd: fs.realpathSync(pluginRoot), env: {} });
+    assert.deepEqual(document, {
+      command: "node",
+      args: [path.join(fs.realpathSync(pluginRoot), "scripts", "mcp-server.mjs")],
+      cwd: fs.realpathSync(pluginRoot),
+      env: {},
+    });
   }
   for (const pluginRoot of [undefined, "", ".", "relative/package"]) {
     assert.throws(() => portableMcpDocument({ client: "claude", pluginRoot, projection: "installed-project" }), { code: "INVALID_INSTALLED_MCP_ROOT" });
   }
   assert.throws(() => portableMcpDocument({ client: "claude", pluginRoot: path.join(base, "absent"), projection: "installed-project" }), { code: "ENOENT" });
-  assert.equal(portableMcpDocument({ client: "claude", pluginRoot: selected }).document.args[0], "${CLAUDE_PLUGIN_ROOT}/scripts/mcp-server.mjs", "Marketplace/portable contract is unchanged.");
+  assert.equal(
+    portableMcpDocument({ client: "claude", pluginRoot: selected }).document.args[0],
+    "${CLAUDE_PLUGIN_ROOT}/scripts/mcp-server.mjs",
+    "Marketplace/portable contract is unchanged.",
+  );
   const hangul = path.join(base, "한글 café (team)'s project");
   fs.mkdirSync(hangul);
   const projected = portableMcpDocument({ client: "claude", pluginRoot: selected, projectRoot: hangul, projection: "project-file" });
@@ -96,8 +110,10 @@ test("installed Claude roots with spaces work without Host environment or cwd/PA
   assert.equal(JSON.stringify(projected.document).includes(selected), false);
 });
 
-test("Claude initialization preserves existing user-owned MCP bytes", t => {
-  const root = tempProject(t), file = path.join(root, ".mcp.json"), content = '{"mcpServers":{"user_owned":{"command":"preserve-me"}}}\n';
+test("Claude initialization preserves existing user-owned MCP bytes", (t) => {
+  const root = tempProject(t),
+    file = path.join(root, ".mcp.json"),
+    content = '{"mcpServers":{"user_owned":{"command":"preserve-me"}}}\n';
   fs.writeFileSync(file, content);
   initializeProject({ root, pluginRoot, runtimes: ["claude"] });
   assert.equal(fs.readFileSync(file, "utf8"), content);

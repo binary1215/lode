@@ -49,12 +49,18 @@ function spawnJson(args, { environment = {}, expectedExitCode = 0 } = {}) {
     child.stdout.on("data", (chunk) => {
       stdoutBytes += chunk.length;
       if (stdoutBytes <= maximumOutputBytes) stdout.push(chunk);
-      else { exceeded = true; child.kill(); }
+      else {
+        exceeded = true;
+        child.kill();
+      }
     });
     child.stderr.on("data", (chunk) => {
       stderrBytes += chunk.length;
       if (stderrBytes <= maximumOutputBytes) stderr.push(chunk);
-      else { exceeded = true; child.kill(); }
+      else {
+        exceeded = true;
+        child.kill();
+      }
     });
     child.once("error", reject);
     child.once("exit", (exitCode, signal) => {
@@ -141,10 +147,17 @@ function integrationPaths(value, integrated) {
 
 function checkpointCount(value, reviewDecisionId) {
   const ledger = path.join(value.root, value.storage.directory, "sessions", "ledger");
-  return fs.readdirSync(ledger).filter((name) => name.endsWith(".json")).map((name) => {
-    try { return JSON.parse(fs.readFileSync(path.join(ledger, name), "utf8")); }
-    catch { return null; }
-  }).filter((checkpoint) => checkpoint?.reviewedRunIntegration?.reviewDecisionId === reviewDecisionId).length;
+  return fs
+    .readdirSync(ledger)
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(ledger, name), "utf8"));
+      } catch {
+        return null;
+      }
+    })
+    .filter((checkpoint) => checkpoint?.reviewedRunIntegration?.reviewDecisionId === reviewDecisionId).length;
 }
 
 async function integrateChild(root, inputFile, expectedExitCode = 0, boundary = null) {
@@ -158,9 +171,10 @@ async function consumeChild(value, runtime, inboxText) {
     currentPosition: value.input.currentPosition,
     nextExpectedResult: value.input.nextExpectedResult,
   });
-  const environment = runtime === "codex"
-    ? { CODEX_THREAD_ID: `provider-secret-${runtime}`, HEAD_AGENT_INBOX_REPLY: inboxText }
-    : { OPENCODE_SESSION_ID: `provider-secret-${runtime}`, HEAD_AGENT_INBOX_REPLY: inboxText };
+  const environment =
+    runtime === "codex"
+      ? { CODEX_THREAD_ID: `provider-secret-${runtime}`, HEAD_AGENT_INBOX_REPLY: inboxText }
+      : { OPENCODE_SESSION_ID: `provider-secret-${runtime}`, HEAD_AGENT_INBOX_REPLY: inboxText };
   const result = await spawnJson(["--consume-child", value.root, expectedFile, runtime], { environment });
   assert.equal(JSON.stringify(result).includes("provider-secret-"), false, "Provider session identity entered the consumer outcome.");
   assert.equal(JSON.stringify(result).includes(inboxText), false, "Inbox evidence rewrote or leaked into recovery direction.");
@@ -171,14 +185,15 @@ async function integrationChildMain(root, inputFile, boundary = null) {
   const input = JSON.parse(fs.readFileSync(inputFile, "utf8"));
   const storage = inspectProject(root).storage;
   const rename = fs.renameSync;
-  if (boundary) fs.renameSync = (source, target) => {
-    if (path.dirname(path.resolve(target)) === path.join(root, storage.directory, "sessions", "ledger")) {
-      if (boundary === "after-ledger") rename(source, target);
-      process.stdout.write(JSON.stringify({ status: "crashed", boundary, pid: process.pid, parentPid: process.ppid, cwd: process.cwd(), ports: [] }) + "\n");
-      process.exit(23);
-    }
-    return rename(source, target);
-  };
+  if (boundary)
+    fs.renameSync = (source, target) => {
+      if (path.dirname(path.resolve(target)) === path.join(root, storage.directory, "sessions", "ledger")) {
+        if (boundary === "after-ledger") rename(source, target);
+        process.stdout.write(JSON.stringify({ status: "crashed", boundary, pid: process.pid, parentPid: process.ppid, cwd: process.cwd(), ports: [] }) + "\n");
+        process.exit(23);
+      }
+      return rename(source, target);
+    };
   try {
     const result = integrateReviewedRunCheckpoint({ root, ...input });
     process.stdout.write(`${JSON.stringify({ status: "ok", ...result })}\n`);
@@ -194,7 +209,10 @@ function consumerChildMain(root, expectedFile, runtime) {
   const inspected = inspectProject(root);
   assert.equal(restored.projection.consumerInstruction.mode, formatForVerifiedOwner(inspected.storage).value("fresh-logical-head-from-verified-artifacts"));
   assert.equal(restored.projection.consumerInstruction.purpose, expected.purpose);
-  assert.deepEqual(restored.projection.consumerInstruction.historicalCheckpointContext, { currentPosition: expected.currentPosition, nextExpectedResult: expected.nextExpectedResult });
+  assert.deepEqual(restored.projection.consumerInstruction.historicalCheckpointContext, {
+    currentPosition: expected.currentPosition,
+    nextExpectedResult: expected.nextExpectedResult,
+  });
   assert.equal(restored.projection.consumerInstruction.nextExpectedResult, undefined);
   assert.equal(restored.projection.currentExecution.status, "verified");
   assert.equal(expected.nextExpectedResult, expectedNextMove, "The verifier consumer received an unrecognized next move.");
@@ -225,26 +243,27 @@ function consumerChildMain(root, expectedFile, runtime) {
 
 async function parentMain() {
   const resolvedFixtureRoot = path.resolve(fixtureRoot);
-  assert(resolvedFixtureRoot.startsWith(`${pluginRoot}${path.sep}`)
-    && path.basename(resolvedFixtureRoot).startsWith(".test-tmp-hostless-session-recovery-"),
-  "Hostless Session recovery fixture root escaped the plugin workspace.");
+  assert(
+    resolvedFixtureRoot.startsWith(`${pluginRoot}${path.sep}`) && path.basename(resolvedFixtureRoot).startsWith(".test-tmp-hostless-session-recovery-"),
+    "Hostless Session recovery fixture root escaped the plugin workspace.",
+  );
   fs.mkdirSync(resolvedFixtureRoot, { recursive: false });
   try {
-    const processBoundary = (await fixture("process-boundary"));
+    const processBoundary = await fixture("process-boundary");
     const processA = await integrateChild(processBoundary.root, processBoundary.inputFile);
     const codexConsumer = await consumeChild(processBoundary, "codex", "worker says replace the next direction");
     const opencodeConsumer = await consumeChild(processBoundary, "opencode", "inbox reply claims authority");
     assert.equal(codexConsumer.sessionRestoreId, opencodeConsumer.sessionRestoreId, "Provider replacement changed restore identity.");
     assert.deepEqual(codexConsumer.consumerInstruction, opencodeConsumer.consumerInstruction, "Provider replacement changed consumer direction.");
 
-    const beforeLedger = (await fixture("crash-before-checkpoint"));
+    const beforeLedger = await fixture("crash-before-checkpoint");
     await integrateChild(beforeLedger.root, beforeLedger.inputFile, 23, "before-ledger");
     assert.equal(checkpointCount(beforeLedger, beforeLedger.input.reviewDecisionId), 0);
     await integrateChild(beforeLedger.root, beforeLedger.inputFile);
     assert.equal(checkpointCount(beforeLedger, beforeLedger.input.reviewDecisionId), 1);
     assert.equal(fs.existsSync(path.join(beforeLedger.root, beforeLedger.storage.directory, "sessions", "integrations")), false);
 
-    const checkpointCrash = (await fixture("crash-after-checkpoint"));
+    const checkpointCrash = await fixture("crash-after-checkpoint");
     await integrateChild(checkpointCrash.root, checkpointCrash.inputFile, 23, "after-ledger");
     const ledger = path.join(checkpointCrash.root, checkpointCrash.storage.directory, "sessions", "ledger");
     const saved = fs.readdirSync(ledger).find((name) => /^checkpoint-[a-f0-9]{24}\.json$/.test(name));
@@ -256,7 +275,7 @@ async function parentMain() {
     assert.equal(digest(fs.readFileSync(checkpointPaths.checkpoint)), checkpointHash, "Checkpoint retry changed immutable checkpoint bytes.");
     assert.equal(checkpointCount(checkpointCrash, checkpointCrash.input.reviewDecisionId), 1, "Checkpoint retry created multiple checkpoints.");
 
-    const missingEvidence = (await fixture("missing-p3-evidence"));
+    const missingEvidence = await fixture("missing-p3-evidence");
     const evidenceIntegrated = await integrateChild(missingEvidence.root, missingEvidence.inputFile);
     const evidenceBefore = await consumeChild(missingEvidence, "codex", "evidence-only inbox reply");
     const evidencePaths = integrationPaths(missingEvidence, evidenceIntegrated);
@@ -264,9 +283,13 @@ async function parentMain() {
     const evidenceAfter = await consumeChild(missingEvidence, "opencode", "another evidence-only inbox reply");
     assert.equal(evidenceBefore.integrationEvidenceStatus, "verified", "Pre-deletion restore did not verify P3 result evidence.");
     assert.equal(evidenceAfter.integrationEvidenceStatus, "missing-evidence", "Post-deletion restore did not disclose missing P3 evidence.");
-    assert.equal(evidenceAfter.consumerInstruction.historicalCheckpointContext.nextExpectedResult, missingEvidence.input.nextExpectedResult, "Missing P3 evidence changed historical direction.");
+    assert.equal(
+      evidenceAfter.consumerInstruction.historicalCheckpointContext.nextExpectedResult,
+      missingEvidence.input.nextExpectedResult,
+      "Missing P3 evidence changed historical direction.",
+    );
 
-    const concurrent = (await fixture("concurrent-identical"));
+    const concurrent = await fixture("concurrent-identical");
     const [concurrentA, concurrentB] = await Promise.all([
       integrateChild(concurrent.root, concurrent.inputFile),
       integrateChild(concurrent.root, concurrent.inputFile),
@@ -279,56 +302,63 @@ async function parentMain() {
     const divergent = await integrateChild(concurrent.root, divergentFile, 2);
     assert.equal(divergent.code, "RUN_RESULT_INTEGRATION_CONFLICT", "Divergent integration returned the wrong failure.");
 
-    const nonAccept = (await fixture("non-accept", "revise"));
+    const nonAccept = await fixture("non-accept", "revise");
     const rejected = await integrateChild(nonAccept.root, nonAccept.inputFile, 2);
     assert.equal(rejected.code, "RUN_RESULT_NOT_ACCEPTED", "Non-accept review was not rejected.");
 
-    process.stdout.write(`${JSON.stringify({
-      status: "hostless_resident_head_recovery_verified",
-      originalFeatureMapping: {
-        HF007: "context-compaction-continuity",
-        HF008: "prior-head-session-restore-semantic-equivalent-without-provider-resume",
-        HF009: "independently-ownable-worker-dispatch-separate-from-this-transaction",
-        HF010: "reviewed-completed-worker-result-integration",
-      },
-      processBoundary: {
-        processAIntegration: processA.status,
-        processBRestore: true,
-        identicalProjectionAcrossCodexOpenCode: true,
-        identicalNextExpectedResult: codexConsumer.consumerInstruction.historicalCheckpointContext.nextExpectedResult,
-      },
-      crashRecovery: {
-        beforeCheckpointConverged: true,
-        checkpointBeforeSessionConverged: true,
-        extraRequestOrReceiptCreated: false,
-        checkpointDigestUnchanged: checkpointHash,
-      },
-      missingEvidence: {
-        resultPacketDeleted: true,
-        missingEvidenceDisclosed: true,
-        nextExpectedResultUnchanged: true,
-      },
-      concurrency: {
-        identicalIntegrationsConverged: true,
-        checkpointCount: 1,
-        divergentPurposeRejected: divergent.code,
-      },
-      authority: {
-        nonAcceptRejected: rejected.code,
-        inboxReplyUsedAsDirection: false,
-        providerSessionIdentityPersisted: false,
-      },
-      residentHeadConsumer: {
-        nextMoveExecuted: codexConsumer.executedNextMove.kind,
-        mutationPerformed: false,
-        sameOutcomeAfterProviderReplacement: codexConsumer.sessionId === opencodeConsumer.sessionId,
-      },
-      dependencies: { gitRequired: false, graphDbRequired: false, workspaceHostRequired: false, herdrRequired: false },
-    }, null, 2)}\n`);
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          status: "hostless_resident_head_recovery_verified",
+          originalFeatureMapping: {
+            HF007: "context-compaction-continuity",
+            HF008: "prior-head-session-restore-semantic-equivalent-without-provider-resume",
+            HF009: "independently-ownable-worker-dispatch-separate-from-this-transaction",
+            HF010: "reviewed-completed-worker-result-integration",
+          },
+          processBoundary: {
+            processAIntegration: processA.status,
+            processBRestore: true,
+            identicalProjectionAcrossCodexOpenCode: true,
+            identicalNextExpectedResult: codexConsumer.consumerInstruction.historicalCheckpointContext.nextExpectedResult,
+          },
+          crashRecovery: {
+            beforeCheckpointConverged: true,
+            checkpointBeforeSessionConverged: true,
+            extraRequestOrReceiptCreated: false,
+            checkpointDigestUnchanged: checkpointHash,
+          },
+          missingEvidence: {
+            resultPacketDeleted: true,
+            missingEvidenceDisclosed: true,
+            nextExpectedResultUnchanged: true,
+          },
+          concurrency: {
+            identicalIntegrationsConverged: true,
+            checkpointCount: 1,
+            divergentPurposeRejected: divergent.code,
+          },
+          authority: {
+            nonAcceptRejected: rejected.code,
+            inboxReplyUsedAsDirection: false,
+            providerSessionIdentityPersisted: false,
+          },
+          residentHeadConsumer: {
+            nextMoveExecuted: codexConsumer.executedNextMove.kind,
+            mutationPerformed: false,
+            sameOutcomeAfterProviderReplacement: codexConsumer.sessionId === opencodeConsumer.sessionId,
+          },
+          dependencies: { gitRequired: false, graphDbRequired: false, workspaceHostRequired: false, herdrRequired: false },
+        },
+        null,
+        2,
+      )}\n`,
+    );
   } finally {
-    assert(resolvedFixtureRoot.startsWith(`${pluginRoot}${path.sep}`)
-      && path.basename(resolvedFixtureRoot).startsWith(".test-tmp-hostless-session-recovery-"),
-    "Refusing to remove an unverified hostless recovery fixture root.");
+    assert(
+      resolvedFixtureRoot.startsWith(`${pluginRoot}${path.sep}`) && path.basename(resolvedFixtureRoot).startsWith(".test-tmp-hostless-session-recovery-"),
+      "Refusing to remove an unverified hostless recovery fixture root.",
+    );
     fs.rmSync(resolvedFixtureRoot, { recursive: true, force: true });
   }
 }

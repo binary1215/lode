@@ -1,9 +1,9 @@
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
-const sessionIdOf = record => {
+const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
   return format ? record?.[format.sessionIdField] : undefined;
 };
-const originalFormat = record => familyFormatForOriginal({ kind: record?.kind }, record);
+const originalFormat = (record) => familyFormatForOriginal({ kind: record?.kind }, record);
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -21,10 +21,7 @@ import { verifyWorkerExecutionBoundary } from "./worker-workspace.mjs";
 import { captureWorkerWriteBasis, requireCurrentWorkerWriteBasis } from "./worker-patch-basis.mjs";
 import { isWorkerPatchProposalMode, verifyWorkerPatchProposalExecutionBoundary, verifyWorkerPatchProposal } from "./worker-patch-proposal-contract.mjs";
 import { workerMemberFile, readWorkerMemberChain, requireCurrentWorkerMember } from "./worker-member-registry.mjs";
-import {
-  verifyRuntimeProjectBinding,
-  verifyRuntimeProtocolEvidence,
-} from "./runtime-protocol-evidence.mjs";
+import { verifyRuntimeProjectBinding, verifyRuntimeProtocolEvidence } from "./runtime-protocol-evidence.mjs";
 import {
   inspectRuntimeExecutionLease,
   verifyRuntimeExecutionLeaseOwnership,
@@ -74,13 +71,17 @@ const fail = (message, code = "RUNTIME_INVOCATION_LIFECYCLE_ERROR") => {
   throw error;
 };
 
-const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
 function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compareText).map((key) => [key, canonicalValue(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort(compareText)
+        .map((key) => [key, canonicalValue(value[key])]),
+    );
   }
   return value;
 }
@@ -117,13 +118,17 @@ function requiredText(value, label, code = "INVALID_RUNTIME_INVOCATION_INPUT") {
 }
 
 function normalizeRuntime(value) {
-  const runtime = String(value || "").trim().toLowerCase();
+  const runtime = String(value || "")
+    .trim()
+    .toLowerCase();
   if (!RUNTIMES.includes(runtime)) fail(`Unsupported runtime: ${runtime || "(empty)"}.`, "UNSUPPORTED_RUNTIME_INVOCATION");
   return runtime;
 }
 
 function normalizeWorkspaceMode(value) {
-  const mode = String(value || "read-only").trim().toLowerCase();
+  const mode = String(value || "read-only")
+    .trim()
+    .toLowerCase();
   if (!WORKSPACE_MODES.includes(mode)) fail(`Unsupported workspace mode: ${mode || "(empty)"}.`, "INVALID_RUNTIME_WORKSPACE_MODE");
   return mode;
 }
@@ -135,8 +140,10 @@ function normalizeRuntimeSelection(value = {}) {
   const unexpected = Object.keys(value).filter((field) => field !== "model");
   if (unexpected.length) fail(`Runtime selection contains unsupported fields: ${unexpected.sort().join(", ")}.`, "INVALID_RUNTIME_SELECTION");
   const model = value.model == null || value.model === "" ? null : String(value.model).trim();
-  if (model !== null && (!/^[a-z0-9][a-z0-9._-]{0,63}\/[A-Za-z0-9][A-Za-z0-9._:/-]{0,191}$/.test(model)
-    || model.includes("..") || Buffer.byteLength(model) > 256)) {
+  if (
+    model !== null &&
+    (!/^[a-z0-9][a-z0-9._-]{0,63}\/[A-Za-z0-9][A-Za-z0-9._:/-]{0,191}$/.test(model) || model.includes("..") || Buffer.byteLength(model) > 256)
+  ) {
     fail("Runtime model selection must use a bounded provider/model identifier.", "INVALID_RUNTIME_SELECTION");
   }
   return { model };
@@ -147,8 +154,7 @@ function normalizeLimits(value = {}) {
   const unexpected = Object.keys(value).filter((key) => !(key in DEFAULT_LIMITS));
   if (unexpected.length) fail(`Invocation limits contain unsupported fields: ${unexpected.sort().join(", ")}.`, "INVALID_RUNTIME_INVOCATION_LIMITS");
   const limits = { ...DEFAULT_LIMITS, ...value };
-  if (!Object.prototype.hasOwnProperty.call(value, "maxEventBytes")
-    && Object.prototype.hasOwnProperty.call(value, "maxStdoutBytes")) {
+  if (!Object.prototype.hasOwnProperty.call(value, "maxEventBytes") && Object.prototype.hasOwnProperty.call(value, "maxStdoutBytes")) {
     limits.maxEventBytes = Math.min(DEFAULT_LIMITS.maxEventBytes, limits.maxStdoutBytes);
   }
   const ranges = {
@@ -179,8 +185,11 @@ function boundedResultText(value, label, { empty = false, maximum = 16_384 } = {
 }
 
 function boundedResultList(value, label, { maximumItems = 64, maximumItemBytes = 8_192 } = {}) {
-  if (!Array.isArray(value) || value.length > maximumItems
-    || value.some((item) => typeof item !== "string" || !item.trim() || Buffer.byteLength(item) > maximumItemBytes)) {
+  if (
+    !Array.isArray(value) ||
+    value.length > maximumItems ||
+    value.some((item) => typeof item !== "string" || !item.trim() || Buffer.byteLength(item) > maximumItemBytes)
+  ) {
     fail(`${label} is invalid or exceeds its bound.`, "INVALID_RUNTIME_STRUCTURED_RESULT");
   }
   return [...value];
@@ -188,14 +197,31 @@ function boundedResultList(value, label, { maximumItems = 64, maximumItemBytes =
 
 export function verifyRuntimeStructuredResult(document, { scopeKind = null, authorization = null } = {}) {
   const proposalResult = document?.protocolVersion === RUNTIME_PATCH_PROPOSAL_RESULT_VERSION;
-  assertFields(document, [
-    "schemaVersion", "kind", "protocolVersion", "outcome", "evidence", "planDelta", "impactRadius", "verification", "unknowns",
-    ...(proposalResult ? ["patchProposal"] : []),
-  ], "Runtime structured result", "INVALID_RUNTIME_STRUCTURED_RESULT");
-  if (Buffer.byteLength(canonicalJson(document)) > 128 * 1024) fail("Runtime structured result exceeds its total-byte boundary.", "INVALID_RUNTIME_STRUCTURED_RESULT");
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocolVersion",
+      "outcome",
+      "evidence",
+      "planDelta",
+      "impactRadius",
+      "verification",
+      "unknowns",
+      ...(proposalResult ? ["patchProposal"] : []),
+    ],
+    "Runtime structured result",
+    "INVALID_RUNTIME_STRUCTURED_RESULT",
+  );
+  if (Buffer.byteLength(canonicalJson(document)) > 128 * 1024)
+    fail("Runtime structured result exceeds its total-byte boundary.", "INVALID_RUNTIME_STRUCTURED_RESULT");
   const verifiedAuthorization = authorization === null ? null : verifyRuntimeInvocationAuthorization(authorization);
-  if (verifiedAuthorization && ((verifiedAuthorization.protocolVersion === PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION) !== proposalResult
-    || scopeKind !== null && scopeKind !== verifiedAuthorization.scope.kind)) {
+  if (
+    verifiedAuthorization &&
+    ((verifiedAuthorization.protocolVersion === PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION) !== proposalResult ||
+      (scopeKind !== null && scopeKind !== verifiedAuthorization.scope.kind))
+  ) {
     fail("Runtime result version or scope differs from its exact authorization.", "INVALID_RUNTIME_STRUCTURED_RESULT");
   }
   scopeKind = verifiedAuthorization?.scope.kind ?? scopeKind;
@@ -209,18 +235,25 @@ export function verifyRuntimeStructuredResult(document, { scopeKind = null, auth
     impactRadius: boundedResultList(document.impactRadius, "Runtime structured result impactRadius"),
     verification: boundedResultList(document.verification, "Runtime structured result verification"),
     unknowns: boundedResultList(document.unknowns, "Runtime structured result unknowns"),
-    ...(proposalResult ? { patchProposal: verifyWorkerPatchProposal(document.patchProposal, {
-      basis: verifiedAuthorization?.workerInput.proposalBasis ?? null,
-      basisDigest: verifiedAuthorization?.workerInput.executionBoundary.proposalBasisDigest ?? null,
-      maxBytes: verifiedAuthorization?.limits.maxInputBytes ?? 128 * 1024,
-      storage: verifiedAuthorization ? originalFormat(verifiedAuthorization) : undefined,
-    }) } : {}),
+    ...(proposalResult
+      ? {
+          patchProposal: verifyWorkerPatchProposal(document.patchProposal, {
+            basis: verifiedAuthorization?.workerInput.proposalBasis ?? null,
+            basisDigest: verifiedAuthorization?.workerInput.executionBoundary.proposalBasisDigest ?? null,
+            maxBytes: verifiedAuthorization?.limits.maxInputBytes ?? 128 * 1024,
+            storage: verifiedAuthorization ? originalFormat(verifiedAuthorization) : undefined,
+          }),
+        }
+      : {}),
   };
-  if (result.schemaVersion !== 1 || result.kind !== "RuntimeStructuredResult"
-    || ![RUNTIME_STRUCTURED_RESULT_VERSION, RUNTIME_PATCH_PROPOSAL_RESULT_VERSION].includes(result.protocolVersion)
-    || ![null, ...EXECUTION_SCOPE_KINDS].includes(scopeKind)
-    || scopeKind === "session" && (result.planDelta !== "" || result.impactRadius.length !== 0)
-    || Buffer.byteLength(canonicalJson(result)) > 128 * 1024) {
+  if (
+    result.schemaVersion !== 1 ||
+    result.kind !== "RuntimeStructuredResult" ||
+    ![RUNTIME_STRUCTURED_RESULT_VERSION, RUNTIME_PATCH_PROPOSAL_RESULT_VERSION].includes(result.protocolVersion) ||
+    ![null, ...EXECUTION_SCOPE_KINDS].includes(scopeKind) ||
+    (scopeKind === "session" && (result.planDelta !== "" || result.impactRadius.length !== 0)) ||
+    Buffer.byteLength(canonicalJson(result)) > 128 * 1024
+  ) {
     fail("Runtime structured result violates its scope or total-byte boundary.", "INVALID_RUNTIME_STRUCTURED_RESULT");
   }
   return result;
@@ -242,8 +275,11 @@ function atomicWrite(file, content) {
 }
 
 function readJson(file, label) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch (error) { fail(`${label} is invalid JSON: ${error.message}`, "INVALID_RUNTIME_INVOCATION_ARTIFACT"); }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    fail(`${label} is invalid JSON: ${error.message}`, "INVALID_RUNTIME_INVOCATION_ARTIFACT");
+  }
 }
 
 function runCanon(projectRoot, runId, storage) {
@@ -260,10 +296,13 @@ function runCanon(projectRoot, runId, storage) {
   if (run.sessionTransition != null) {
     if (run.sessionTransition.kind === "start") {
       let storage;
-      try { storage = inspectRunStorageTransition({ root: projectRoot }); }
-      catch (error) {
-        throw Object.assign(new Error(`Run start storage lineage cannot authorize execution: ${error.message}`, { cause: error }),
-          { code: "RUNTIME_INVOCATION_LINEAGE_CONFLICT", causeCode: error.code });
+      try {
+        storage = inspectRunStorageTransition({ root: projectRoot });
+      } catch (error) {
+        throw Object.assign(new Error(`Run start storage lineage cannot authorize execution: ${error.message}`, { cause: error }), {
+          code: "RUNTIME_INVOCATION_LINEAGE_CONFLICT",
+          causeCode: error.code,
+        });
       }
       if (storage.runId === runId && storage.status === "committed") return run;
       fail("Run start Session storage is not verified committed.", "RUNTIME_INVOCATION_RUN_TRANSITION_PENDING");
@@ -342,7 +381,8 @@ function sessionInvocationInput({ request, capsule, requiredActions }) {
       requiredSections: ["outcome", "evidence", "planDelta", "impactRadius", "verification", "unknowns"],
       responseFormat: "single-json-object-only-no-markdown",
       fixedFields: { planDelta: "", impactRadius: [] },
-      scopeInstruction: "This is a Session result, not a Run result. planDelta must be exactly the empty string and impactRadius must be exactly the empty array; these are fixed values, not examples. Describe local changes and their effects in outcome and evidence, and proposed file changes in patchProposal when present. Do not populate Run-only fields or create a Run to report this result.",
+      scopeInstruction:
+        "This is a Session result, not a Run result. planDelta must be exactly the empty string and impactRadius must be exactly the empty array; these are fixed values, not examples. Describe local changes and their effects in outcome and evidence, and proposed file changes in patchProposal when present. Do not populate Run-only fields or create a Run to report this result.",
       wireResultShape: {
         schemaVersion: 1,
         kind: "RuntimeStructuredResult",
@@ -365,14 +405,18 @@ function normalizeScopeInput(value = { kind: "run" }) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     fail("Execution authorization scope must be an object.", "INVALID_EXECUTION_AUTHORIZATION_SCOPE");
   }
-  const kind = String(value.kind || "").trim().toLowerCase();
+  const kind = String(value.kind || "")
+    .trim()
+    .toLowerCase();
   if (!EXECUTION_SCOPE_KINDS.includes(kind)) fail(`Unsupported execution scope: ${kind || "(empty)"}.`, "INVALID_EXECUTION_AUTHORIZATION_SCOPE");
   const allowed = kind === "session" ? new Set(["kind", "request", "contextCapsuleId"]) : new Set(["kind"]);
   const unexpected = Object.keys(value).filter((key) => !allowed.has(key));
-  if (unexpected.length) fail(`Execution authorization scope contains unsupported fields: ${unexpected.sort().join(", ")}.`, "INVALID_EXECUTION_AUTHORIZATION_SCOPE");
+  if (unexpected.length)
+    fail(`Execution authorization scope contains unsupported fields: ${unexpected.sort().join(", ")}.`, "INVALID_EXECUTION_AUTHORIZATION_SCOPE");
   if (kind === "run") return { kind };
   const request = requiredText(value.request, "Session execution request", "INVALID_EXECUTION_AUTHORIZATION_SCOPE");
-  const contextCapsuleId = value.contextCapsuleId == null ? null : requiredText(value.contextCapsuleId, "Session context capsule id", "INVALID_EXECUTION_AUTHORIZATION_SCOPE");
+  const contextCapsuleId =
+    value.contextCapsuleId == null ? null : requiredText(value.contextCapsuleId, "Session context capsule id", "INVALID_EXECUTION_AUTHORIZATION_SCOPE");
   if (contextCapsuleId !== null && !/^capsule-[a-f0-9]{24}$/.test(contextCapsuleId)) {
     fail("Session context capsule id is invalid.", "INVALID_EXECUTION_AUTHORIZATION_SCOPE");
   }
@@ -384,13 +428,32 @@ function authorizationFile(root, authorizationId, storage) {
 }
 
 function verifyWorkerInput(worker, storage) {
-  assertFields(worker, ["taskKey", "role", "outcome", "selectedContext", "sessionRequest", "sourceBasis", "previousAuthorizationId", ...(Object.hasOwn(worker || {}, "executionBoundary") ? ["executionBoundary"] : []), ...(Object.hasOwn(worker || {}, "writeBasis") ? ["writeBasis"] : []), ...(Object.hasOwn(worker || {}, "proposalBasis") ? ["proposalBasis"] : [])], "Worker execution input");
-  if (!/^[a-z][a-z0-9-]{0,95}$/.test(worker.taskKey || "")
-    || !/^[a-z][a-z0-9-]{0,63}$/.test(worker.role || "") || worker.role === formatForVerifiedOwner(storage).roleField
-    || typeof worker.outcome !== "string" || !worker.outcome.trim()
-    || typeof worker.selectedContext !== "string"
-    || worker.previousAuthorizationId !== null && !/^execution-authorization-[a-f0-9]{24}$/.test(worker.previousAuthorizationId)
-    || worker.sessionRequest !== null && (typeof worker.sessionRequest !== "string" || !worker.sessionRequest.trim())) {
+  assertFields(
+    worker,
+    [
+      "taskKey",
+      "role",
+      "outcome",
+      "selectedContext",
+      "sessionRequest",
+      "sourceBasis",
+      "previousAuthorizationId",
+      ...(Object.hasOwn(worker || {}, "executionBoundary") ? ["executionBoundary"] : []),
+      ...(Object.hasOwn(worker || {}, "writeBasis") ? ["writeBasis"] : []),
+      ...(Object.hasOwn(worker || {}, "proposalBasis") ? ["proposalBasis"] : []),
+    ],
+    "Worker execution input",
+  );
+  if (
+    !/^[a-z][a-z0-9-]{0,95}$/.test(worker.taskKey || "") ||
+    !/^[a-z][a-z0-9-]{0,63}$/.test(worker.role || "") ||
+    worker.role === formatForVerifiedOwner(storage).roleField ||
+    typeof worker.outcome !== "string" ||
+    !worker.outcome.trim() ||
+    typeof worker.selectedContext !== "string" ||
+    (worker.previousAuthorizationId !== null && !/^execution-authorization-[a-f0-9]{24}$/.test(worker.previousAuthorizationId)) ||
+    (worker.sessionRequest !== null && (typeof worker.sessionRequest !== "string" || !worker.sessionRequest.trim()))
+  ) {
     fail("Worker input requires a stable task key, non-HEAD role and bounded outcome.", "INVALID_WORKER_EXECUTION_INPUT");
   }
   return worker;
@@ -398,23 +461,54 @@ function verifyWorkerInput(worker, storage) {
 
 function attachWorkerInput(input, worker) {
   if (!worker) return input;
-  return { ...input, protocolVersion: worker.proposalBasis ? PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION : worker.writeBasis ? WRITE_BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION : worker.executionBoundary ? BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION : WORKER_EXECUTION_AUTHORIZATION_VERSION,
-    ...(worker.proposalBasis ? { returnContract: { ...input.returnContract,
-      requiredSections: [...input.returnContract.requiredSections, "patchProposal"],
-      wireResultShape: { ...input.returnContract.wireResultShape, protocolVersion: RUNTIME_PATCH_PROPOSAL_RESULT_VERSION,
-        patchProposal: { proposalBasisDigest: worker.executionBoundary.proposalBasisDigest,
-          changes: [{ path: "exact relative path from boundedWorker.proposalBasis",
-            after: "null for deletion, or an object with exactly contentBase64 (canonical base64) and mode (integer 0 through 511)" }] } },
-      proposalOnly: true, applyFiles: false, proposalTargetsGrantWriteAuthority: false,
-      emptyChangesAllowed: true, coreComputesCandidateDigests: true,
-    } } : {}),
-    boundedWorker: { taskKey: worker.taskKey, role: worker.role, outcome: worker.outcome,
-      selectedContext: worker.selectedContext, expandsExecutionContract: false,
+  return {
+    ...input,
+    protocolVersion: worker.proposalBasis
+      ? PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION
+      : worker.writeBasis
+        ? WRITE_BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION
+        : worker.executionBoundary
+          ? BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION
+          : WORKER_EXECUTION_AUTHORIZATION_VERSION,
+    ...(worker.proposalBasis
+      ? {
+          returnContract: {
+            ...input.returnContract,
+            requiredSections: [...input.returnContract.requiredSections, "patchProposal"],
+            wireResultShape: {
+              ...input.returnContract.wireResultShape,
+              protocolVersion: RUNTIME_PATCH_PROPOSAL_RESULT_VERSION,
+              patchProposal: {
+                proposalBasisDigest: worker.executionBoundary.proposalBasisDigest,
+                changes: [
+                  {
+                    path: "exact relative path from boundedWorker.proposalBasis",
+                    after: "null for deletion, or an object with exactly contentBase64 (canonical base64) and mode (integer 0 through 511)",
+                  },
+                ],
+              },
+            },
+            proposalOnly: true,
+            applyFiles: false,
+            proposalTargetsGrantWriteAuthority: false,
+            emptyChangesAllowed: true,
+            coreComputesCandidateDigests: true,
+          },
+        }
+      : {}),
+    boundedWorker: {
+      taskKey: worker.taskKey,
+      role: worker.role,
+      outcome: worker.outcome,
+      selectedContext: worker.selectedContext,
+      expandsExecutionContract: false,
       sourceBasis: worker.sourceBasis,
       ...(worker.executionBoundary ? { executionBoundary: worker.executionBoundary } : {}),
       ...(worker.writeBasis ? { writeBasis: worker.writeBasis } : {}),
       ...(worker.proposalBasis ? { proposalBasis: worker.proposalBasis } : {}),
-      effectivePermissionEvidence: false } };
+      effectivePermissionEvidence: false,
+    },
+  };
 }
 
 function persistWorkerAuthorization(root, authorization, retry, storage) {
@@ -424,28 +518,38 @@ function persistWorkerAuthorization(root, authorization, retry, storage) {
     for (const record of chain) {
       const published = authorizationFile(root, record.authorizationId, originalFormat(record));
       if (!fs.existsSync(published)) writeRuntimeInvocationArtifactExclusive(published, json(record));
-      else if (readRuntimeInvocationAuthorization({ root, authorizationId: record.authorizationId }).authorization.authorizationHash !== record.authorizationHash) {
+      else if (
+        readRuntimeInvocationAuthorization({ root, authorizationId: record.authorizationId }).authorization.authorizationHash !== record.authorizationHash
+      ) {
         fail("Worker authorization lookup conflicts with its frozen input.", "WORKER_MEMBER_AUTHORIZATION_CONFLICT");
       }
     }
     const current = chain.at(-1);
     if (current) {
       const payload = { ...authorization, workerInput: { ...authorization.workerInput, previousAuthorizationId: current.workerInput.previousAuthorizationId } };
-      delete payload.authorizationId; delete payload.authorizationHash;
+      delete payload.authorizationId;
+      delete payload.authorizationHash;
       const comparable = identify(payload, "execution-authorization", "authorizationId", "authorizationHash");
-      if (comparable.authorizationHash === current.authorizationHash && !retry) return { status: "existing", file: authorizationFile(root, current.authorizationId, originalFormat(current)), authorization: current };
-      let lease = inspectRuntimeExecutionLease({ projectRoot: root, projectId: current.projectId, authorizationId: current.authorizationId, storage: originalFormat(current) });
+      if (comparable.authorizationHash === current.authorizationHash && !retry)
+        return { status: "existing", file: authorizationFile(root, current.authorizationId, originalFormat(current)), authorization: current };
+      let lease = inspectRuntimeExecutionLease({
+        projectRoot: root,
+        projectId: current.projectId,
+        authorizationId: current.authorizationId,
+        storage: originalFormat(current),
+      });
       if (!lease.singleUseConsumed && comparable.authorizationHash === current.authorizationHash) {
         return { status: "existing", file: authorizationFile(root, current.authorizationId, originalFormat(current)), authorization: current };
       }
       if (lease.status === "claimed") {
-        try { lease = reconcileUnconsumedWorkerLease({ projectRoot: root, authorization: current }); }
-        catch (error) {
+        try {
+          lease = reconcileUnconsumedWorkerLease({ projectRoot: root, authorization: current });
+        } catch (error) {
           if (error.code !== "RUNTIME_EXECUTION_LEASE_BUSY") throw error;
           fail("Worker owner is active or cannot be proven absent; reprepare is not safe yet.", "WORKER_MEMBER_AUTHORIZATION_CONFLICT");
         }
       }
-      if (lease.singleUseConsumed && !verifyRuntimeInvocationNeverStarted({ projectRoot: root, authorization: current }) || lease.status === "claimed") {
+      if ((lease.singleUseConsumed && !verifyRuntimeInvocationNeverStarted({ projectRoot: root, authorization: current })) || lease.status === "claimed") {
         fail("An active or consumed attempt requires verified terminal reconciliation before retry.", "WORKER_MEMBER_AUTHORIZATION_CONFLICT");
       }
       payload.workerInput.previousAuthorizationId = current.authorizationId;
@@ -467,21 +571,29 @@ export function reconcileWorkerMember({ root = ".", taskKey } = {}) {
   const inspected = inspectProject(root);
   if (inspected.status !== "ready") fail("Worker member reconciliation requires a ready project.", "PROJECT_NOT_READY");
   if (!/^[a-z][a-z0-9-]{0,95}$/.test(taskKey || "")) fail("Worker task key is invalid.", "INVALID_WORKER_EXECUTION_INPUT");
-  const basis = { kind: "ExecutionAuthorization", projectId: inspected.project.projectId, [formatForVerifiedOwner(inspected).sessionIdField]: inspected.state.sessionId,
-    scope: { runId: inspected.state.activeRunId || null }, workerInput: { taskKey } };
+  const basis = {
+    kind: "ExecutionAuthorization",
+    projectId: inspected.project.projectId,
+    [formatForVerifiedOwner(inspected).sessionIdField]: inspected.state.sessionId,
+    scope: { runId: inspected.state.activeRunId || null },
+    workerInput: { taskKey },
+  };
   return withProjectMutation({ root, scope: "worker-member-authorization" }, () => {
     const records = readWorkerMemberChain(root, basis).map(verifyRuntimeInvocationAuthorization);
     if (!records.length) fail("No frozen input exists for this worker member.", "WORKER_MEMBER_NOT_FOUND");
     const recovered = [];
     for (const record of records) {
       const file = authorizationFile(root, record.authorizationId, originalFormat(record));
-      if (!fs.existsSync(file)) { writeRuntimeInvocationArtifactExclusive(file, json(record)); recovered.push(record.authorizationId); }
-      else if (readRuntimeInvocationAuthorization({ root, authorizationId: record.authorizationId }).authorization.authorizationHash !== record.authorizationHash) {
+      if (!fs.existsSync(file)) {
+        writeRuntimeInvocationArtifactExclusive(file, json(record));
+        recovered.push(record.authorizationId);
+      } else if (
+        readRuntimeInvocationAuthorization({ root, authorizationId: record.authorizationId }).authorization.authorizationHash !== record.authorizationHash
+      ) {
         fail("Published worker input conflicts with frozen member input.", "WORKER_MEMBER_AUTHORIZATION_CONFLICT");
       }
     }
-    return { status: recovered.length ? "reconciled" : "existing", authorization: records.at(-1), recovered,
-      providerInvoked: false, recoveryAuthority: false };
+    return { status: recovered.length ? "reconciled" : "existing", authorization: records.at(-1), recovered, providerInvoked: false, recoveryAuthority: false };
   });
 }
 
@@ -499,8 +611,9 @@ export function buildRuntimeInvocationAuthorization({
   persist = true,
 } = {}) {
   const inspected = inspectProject(root);
-  if (typeof retry !== "boolean" || retry && worker === null) fail("Worker retry must target a logical worker member.", "INVALID_WORKER_EXECUTION_INPUT");
-  if (inspected.status !== "ready") fail(`Project must be ready for runtime invocation authorization; current status: ${inspected.status}.`, "PROJECT_NOT_READY");
+  if (typeof retry !== "boolean" || (retry && worker === null)) fail("Worker retry must target a logical worker member.", "INVALID_WORKER_EXECUTION_INPUT");
+  if (inspected.status !== "ready")
+    fail(`Project must be ready for runtime invocation authorization; current status: ${inspected.status}.`, "PROJECT_NOT_READY");
   const selectedRuntime = normalizeRuntime(runtime);
   const selectedWorkspaceMode = normalizeWorkspaceMode(workspaceMode);
   const selectedRuntimeSelection = normalizeRuntimeSelection(runtimeSelection);
@@ -541,8 +654,8 @@ export function buildRuntimeInvocationAuthorization({
     if (inspected.state.mode !== "session" || inspected.state.activeRunId || inspected.state.activeExecutionContractId || inspected.state.pendingReview) {
       fail("Session execution authorization requires an idle HEAD Session with no active Run or pending review.", "SESSION_EXECUTION_STATE_CONFLICT");
     }
-    const capsule = selectedScope.contextCapsuleId === null
-      ? null : readContextCapsule({ root: projectRoot, capsuleId: selectedScope.contextCapsuleId }).capsule;
+    const capsule =
+      selectedScope.contextCapsuleId === null ? null : readContextCapsule({ root: projectRoot, capsuleId: selectedScope.contextCapsuleId }).capsule;
     executionScope = {
       kind: "session",
       userRequestDigest: digest(selectedScope.request),
@@ -569,22 +682,77 @@ export function buildRuntimeInvocationAuthorization({
     !runtimeObservation?.protocolNegotiationObserved ? "runtime-observation" : null,
   ].filter(Boolean);
   if (bindingMismatches.length > 0) {
-    fail(`Runtime capability evidence is not an exact verified binding for this project, Session, and runtime (${bindingMismatches.join(", ")}).`, "RUNTIME_INVOCATION_CAPABILITY_BINDING_INVALID");
+    fail(
+      `Runtime capability evidence is not an exact verified binding for this project, Session, and runtime (${bindingMismatches.join(", ")}).`,
+      "RUNTIME_INVOCATION_CAPABILITY_BINDING_INVALID",
+    );
   }
   const normalizedLimits = normalizeLimits(limits);
   let workerInput = null;
   if (worker !== null) {
     const selection = { sourcePaths: [], ...worker };
     const proposalWorker = isWorkerPatchProposalMode(selection.executionBoundary?.mode);
-    assertFields(selection, ["taskKey", "role", "outcome", "selectedContext", "sourcePaths", ...(Object.hasOwn(selection, "executionBoundary") ? ["executionBoundary"] : []), ...(proposalWorker ? ["proposalPaths"] : [])], "Worker selection");
+    assertFields(
+      selection,
+      [
+        "taskKey",
+        "role",
+        "outcome",
+        "selectedContext",
+        "sourcePaths",
+        ...(Object.hasOwn(selection, "executionBoundary") ? ["executionBoundary"] : []),
+        ...(proposalWorker ? ["proposalPaths"] : []),
+      ],
+      "Worker selection",
+    );
     const { sourcePaths, proposalPaths, ...brief } = selection;
-    const sourceBasis = captureWorkerSourceBasis({ root: projectRoot, paths: sourcePaths, maxBytes: normalizedLimits.maxInputBytes, storage: inspected.storage });
-    const writeBasis = brief.executionBoundary?.writeBasisDigest === undefined ? null
-      : captureWorkerWriteBasis({ root: projectRoot, paths: brief.executionBoundary.ownedPaths, maxBytes: normalizedLimits.maxInputBytes, storage: inspected.storage });
-    const proposalBasis = proposalWorker ? captureWorkerWriteBasis({ root: projectRoot, paths: proposalPaths, maxBytes: normalizedLimits.maxInputBytes, storage: inspected.storage }) : null;
-    workerInput = verifyWorkerInput({ ...brief, sourceBasis, ...(writeBasis !== null ? { writeBasis } : {}), ...(proposalBasis !== null ? { proposalBasis } : {}), sessionRequest: selectedScope.kind === "session" ? selectedScope.request : null, previousAuthorizationId: null }, inspected.storage);
-    if (proposalWorker) verifyWorkerPatchProposalExecutionBoundary(workerInput.executionBoundary, sourceBasis, selectedWorkspaceMode, proposalBasis, normalizedLimits.maxInputBytes, inspected.storage);
-    else if (Object.hasOwn(workerInput, "executionBoundary")) verifyWorkerExecutionBoundary(workerInput.executionBoundary, sourceBasis, selectedWorkspaceMode, writeBasis, normalizedLimits.maxInputBytes, inspected.storage);
+    const sourceBasis = captureWorkerSourceBasis({
+      root: projectRoot,
+      paths: sourcePaths,
+      maxBytes: normalizedLimits.maxInputBytes,
+      storage: inspected.storage,
+    });
+    const writeBasis =
+      brief.executionBoundary?.writeBasisDigest === undefined
+        ? null
+        : captureWorkerWriteBasis({
+            root: projectRoot,
+            paths: brief.executionBoundary.ownedPaths,
+            maxBytes: normalizedLimits.maxInputBytes,
+            storage: inspected.storage,
+          });
+    const proposalBasis = proposalWorker
+      ? captureWorkerWriteBasis({ root: projectRoot, paths: proposalPaths, maxBytes: normalizedLimits.maxInputBytes, storage: inspected.storage })
+      : null;
+    workerInput = verifyWorkerInput(
+      {
+        ...brief,
+        sourceBasis,
+        ...(writeBasis !== null ? { writeBasis } : {}),
+        ...(proposalBasis !== null ? { proposalBasis } : {}),
+        sessionRequest: selectedScope.kind === "session" ? selectedScope.request : null,
+        previousAuthorizationId: null,
+      },
+      inspected.storage,
+    );
+    if (proposalWorker)
+      verifyWorkerPatchProposalExecutionBoundary(
+        workerInput.executionBoundary,
+        sourceBasis,
+        selectedWorkspaceMode,
+        proposalBasis,
+        normalizedLimits.maxInputBytes,
+        inspected.storage,
+      );
+    else if (Object.hasOwn(workerInput, "executionBoundary"))
+      verifyWorkerExecutionBoundary(
+        workerInput.executionBoundary,
+        sourceBasis,
+        selectedWorkspaceMode,
+        writeBasis,
+        normalizedLimits.maxInputBytes,
+        inspected.storage,
+      );
     const roleFile = path.join(projectRoot, formatForVerifiedOwner(inspected).directory, "roles", `${workerInput.role}.md`);
     if (!fs.existsSync(roleFile) || !fs.lstatSync(roleFile).isFile() || fs.lstatSync(roleFile).isSymbolicLink()) {
       fail("Worker role must be registered before input authorization.", "INVALID_BOUNDED_WORKER_ROLE");
@@ -601,7 +769,15 @@ export function buildRuntimeInvocationAuthorization({
     // Absence is not a new direction or grant. Keep the original payload/ID so
     // an already-consumed authorization cannot be replayed under a null field.
     ...(currentProjectDirection ? { currentProjectDirectionId: currentProjectDirection.directionId } : {}),
-    protocolVersion: workerInput?.proposalBasis ? PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION : workerInput?.writeBasis ? WRITE_BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION : workerInput?.executionBoundary ? BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION : workerInput ? WORKER_EXECUTION_AUTHORIZATION_VERSION : RUNTIME_INVOCATION_AUTHORIZATION_VERSION,
+    protocolVersion: workerInput?.proposalBasis
+      ? PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION
+      : workerInput?.writeBasis
+        ? WRITE_BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION
+        : workerInput?.executionBoundary
+          ? BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION
+          : workerInput
+            ? WORKER_EXECUTION_AUTHORIZATION_VERSION
+            : RUNTIME_INVOCATION_AUTHORIZATION_VERSION,
     ...(workerInput ? { workerInput } : {}),
     projectId: inspected.project.projectId,
     [formatForVerifiedOwner(inspected).sessionIdField]: inspected.state.sessionId,
@@ -644,17 +820,16 @@ export function buildRuntimeInvocationAuthorization({
     promotionAuthority: false,
     mutatesCanon: false,
   };
-  const authorization = verifyRuntimeInvocationAuthorization(identify(
-    payload,
-    "execution-authorization",
-    "authorizationId",
-    "authorizationHash",
-  ));
+  const authorization = verifyRuntimeInvocationAuthorization(identify(payload, "execution-authorization", "authorizationId", "authorizationHash"));
   if (!persist) return { status: "preview", authorization };
   if (workerInput) return persistWorkerAuthorization(projectRoot, authorization, retry, inspected.storage);
   const file = authorizationFile(projectRoot, authorization.authorizationId, inspected.storage);
   if (fs.existsSync(file)) {
-    return { status: "existing", file, authorization: readRuntimeInvocationAuthorization({ root: projectRoot, authorizationId: authorization.authorizationId }).authorization };
+    return {
+      status: "existing",
+      file,
+      authorization: readRuntimeInvocationAuthorization({ root: projectRoot, authorizationId: authorization.authorizationId }).authorization,
+    };
   }
   atomicWrite(file, json(authorization));
   return { status: "recorded", file, authorization };
@@ -667,51 +842,117 @@ export function verifyRuntimeInvocationAuthorization(document) {
   const writeBoundWorker = document?.protocolVersion === WRITE_BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION;
   const boundWorker = proposalWorker || writeBoundWorker || document?.protocolVersion === BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION;
   const workerAuthorization = boundWorker || document?.protocolVersion === WORKER_EXECUTION_AUTHORIZATION_VERSION;
-  assertFields(document, [
-    "schemaVersion", "kind", "protocolVersion", "projectId", (format?.sessionIdField || "headSessionId"), "scope", "runtime", "workspaceMode", "requiredAllowedActions",
-    "projectRootDigest", "runtimeProjectBindingId", "runtimeProtocolEvidenceId", "runtimeProtocolObservationId",
-    "executionInput", "limits", "authorizationBoundary", "authority", "instructionAuthority", "promotionAuthority",
-    "mutatesCanon", "authorizationId", "authorizationHash", ...(legacyAuthorization ? [] : ["runtimeSelection"]),
-    ...(Object.hasOwn(document || {}, "currentProjectDirectionId") ? ["currentProjectDirectionId"] : []),
-    ...(workerAuthorization ? ["workerInput"] : []),
-  ], "Runtime invocation authorization");
-  assertFields(document.scope, [
-    "kind", "userRequestDigest", "userRequestBytes", "runId", "wholePlanId", "executionContractId", "contextCapsuleId",
-  ], "Execution authorization scope");
-  assertFields(document.executionInput, [
-    "digest", "bytes", "transport", "retention", "includesContextCapsule", "rawContentPersisted",
-  ], "Runtime invocation execution input");
-  assertFields(document.authorizationBoundary, [
-    "acceptedContractDerived", "exactActiveRunRequired", "idleSessionRequired", "contextCapsuleRequired", "projectFenceRequired", "callerFenceRequiredAtExecution",
-    "exactChildOwnershipRequired", "descendantTreeOwnershipRequiredForProviderControl", "providerEventValidationRequired",
-    "freshHeadReviewRequired", "capabilityDoesNotGrantAuthorization", "singleInvocationExecutionLeaseRequired",
-    "executionLeaseActivated", "providerControlEnabled",
-  ], "Runtime invocation authorization boundary");
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocolVersion",
+      "projectId",
+      format?.sessionIdField || "headSessionId",
+      "scope",
+      "runtime",
+      "workspaceMode",
+      "requiredAllowedActions",
+      "projectRootDigest",
+      "runtimeProjectBindingId",
+      "runtimeProtocolEvidenceId",
+      "runtimeProtocolObservationId",
+      "executionInput",
+      "limits",
+      "authorizationBoundary",
+      "authority",
+      "instructionAuthority",
+      "promotionAuthority",
+      "mutatesCanon",
+      "authorizationId",
+      "authorizationHash",
+      ...(legacyAuthorization ? [] : ["runtimeSelection"]),
+      ...(Object.hasOwn(document || {}, "currentProjectDirectionId") ? ["currentProjectDirectionId"] : []),
+      ...(workerAuthorization ? ["workerInput"] : []),
+    ],
+    "Runtime invocation authorization",
+  );
+  assertFields(
+    document.scope,
+    ["kind", "userRequestDigest", "userRequestBytes", "runId", "wholePlanId", "executionContractId", "contextCapsuleId"],
+    "Execution authorization scope",
+  );
+  assertFields(
+    document.executionInput,
+    ["digest", "bytes", "transport", "retention", "includesContextCapsule", "rawContentPersisted"],
+    "Runtime invocation execution input",
+  );
+  assertFields(
+    document.authorizationBoundary,
+    [
+      "acceptedContractDerived",
+      "exactActiveRunRequired",
+      "idleSessionRequired",
+      "contextCapsuleRequired",
+      "projectFenceRequired",
+      "callerFenceRequiredAtExecution",
+      "exactChildOwnershipRequired",
+      "descendantTreeOwnershipRequiredForProviderControl",
+      "providerEventValidationRequired",
+      "freshHeadReviewRequired",
+      "capabilityDoesNotGrantAuthorization",
+      "singleInvocationExecutionLeaseRequired",
+      "executionLeaseActivated",
+      "providerControlEnabled",
+    ],
+    "Runtime invocation authorization boundary",
+  );
   const runtime = normalizeRuntime(document.runtime);
-  if (Object.hasOwn(document, "currentProjectDirectionId") && document.currentProjectDirectionId !== null
-    && !/^direction-[a-f0-9]{24}$/.test(document.currentProjectDirectionId || "")) fail("Invalid common Project direction basis.", "INVALID_RUNTIME_INVOCATION_AUTHORIZATION");
+  if (
+    Object.hasOwn(document, "currentProjectDirectionId") &&
+    document.currentProjectDirectionId !== null &&
+    !/^direction-[a-f0-9]{24}$/.test(document.currentProjectDirectionId || "")
+  )
+    fail("Invalid common Project direction basis.", "INVALID_RUNTIME_INVOCATION_AUTHORIZATION");
   const workspaceMode = normalizeWorkspaceMode(document.workspaceMode);
   const runtimeSelection = legacyAuthorization ? { model: null } : normalizeRuntimeSelection(document.runtimeSelection);
   const expectedActions = [REQUIRED_INVOKE_ACTION, WORKSPACE_ACTION[workspaceMode]];
-  const scopeKind = String(document.scope.kind || "").trim().toLowerCase();
+  const scopeKind = String(document.scope.kind || "")
+    .trim()
+    .toLowerCase();
   if (!EXECUTION_SCOPE_KINDS.includes(scopeKind)) fail("Execution authorization scope is invalid.", "INVALID_RUNTIME_INVOCATION_AUTHORIZATION");
   const runScope = scopeKind === "run";
   if (workerAuthorization) {
     const worker = verifyWorkerInput(document.workerInput, format);
     verifyWorkerSourceBasis(worker.sourceBasis, normalizeLimits(document.limits).maxInputBytes, format);
     if (boundWorker !== Object.hasOwn(worker, "executionBoundary")) fail("Worker execution boundary version differs.", "INVALID_WORKER_EXECUTION_INPUT");
-    if (writeBoundWorker !== Object.hasOwn(worker, "writeBasis")
-      || writeBoundWorker !== Object.hasOwn(worker.executionBoundary || {}, "writeBasisDigest")) fail("Worker write basis version differs.", "INVALID_WORKER_EXECUTION_INPUT");
-    if (proposalWorker !== Object.hasOwn(worker, "proposalBasis")
-      || proposalWorker !== isWorkerPatchProposalMode(worker.executionBoundary?.mode)) fail("Worker proposal basis version differs.", "INVALID_WORKER_EXECUTION_INPUT");
-    if (proposalWorker) verifyWorkerPatchProposalExecutionBoundary(worker.executionBoundary, worker.sourceBasis, workspaceMode, worker.proposalBasis, normalizeLimits(document.limits).maxInputBytes, format);
-    else if (boundWorker) verifyWorkerExecutionBoundary(worker.executionBoundary, worker.sourceBasis, workspaceMode, worker.writeBasis ?? null, normalizeLimits(document.limits).maxInputBytes, format);
+    if (writeBoundWorker !== Object.hasOwn(worker, "writeBasis") || writeBoundWorker !== Object.hasOwn(worker.executionBoundary || {}, "writeBasisDigest"))
+      fail("Worker write basis version differs.", "INVALID_WORKER_EXECUTION_INPUT");
+    if (proposalWorker !== Object.hasOwn(worker, "proposalBasis") || proposalWorker !== isWorkerPatchProposalMode(worker.executionBoundary?.mode))
+      fail("Worker proposal basis version differs.", "INVALID_WORKER_EXECUTION_INPUT");
+    if (proposalWorker)
+      verifyWorkerPatchProposalExecutionBoundary(
+        worker.executionBoundary,
+        worker.sourceBasis,
+        workspaceMode,
+        worker.proposalBasis,
+        normalizeLimits(document.limits).maxInputBytes,
+        format,
+      );
+    else if (boundWorker)
+      verifyWorkerExecutionBoundary(
+        worker.executionBoundary,
+        worker.sourceBasis,
+        workspaceMode,
+        worker.writeBasis ?? null,
+        normalizeLimits(document.limits).maxInputBytes,
+        format,
+      );
     if (Buffer.byteLength(canonicalJson(worker)) > normalizeLimits(document.limits).maxInputBytes) {
       fail("Retained worker input exceeds its authorization bound.", "RUNTIME_INVOCATION_INPUT_LIMIT");
     }
-    if (runScope ? worker.sessionRequest !== null
-      : digest(worker.sessionRequest || "") !== document.scope.userRequestDigest
-        || Buffer.byteLength(worker.sessionRequest || "") !== document.scope.userRequestBytes) {
+    if (
+      runScope
+        ? worker.sessionRequest !== null
+        : digest(worker.sessionRequest || "") !== document.scope.userRequestDigest ||
+          Buffer.byteLength(worker.sessionRequest || "") !== document.scope.userRequestBytes
+    ) {
       fail("Retained worker request differs from its authorized scope.", "RUNTIME_INVOCATION_INPUT_DRIFT");
     }
   }
@@ -731,35 +972,57 @@ export function verifyRuntimeInvocationAuthorization(document) {
     executionLeaseActivated: false,
     providerControlEnabled: false,
   };
-  if (document.schemaVersion !== 1 || document.kind !== "ExecutionAuthorization"
-    || !new Set([RUNTIME_INVOCATION_AUTHORIZATION_VERSION, LEGACY_EXECUTION_AUTHORIZATION_VERSION, WORKER_EXECUTION_AUTHORIZATION_VERSION, BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION, WRITE_BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION, PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION]).has(document.protocolVersion)
-    || document.runtime !== runtime
-    || document.workspaceMode !== workspaceMode || canonicalJson(document.requiredAllowedActions) !== canonicalJson(expectedActions)
-    || !legacyAuthorization && canonicalJson(document.runtimeSelection) !== canonicalJson(runtimeSelection)
-    || (!format || !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || ""))
-    || !/^session-[A-Fa-f0-9-]{36}$/.test(sessionIdOf(document) || "")
-    || (runScope && (!/^run-[0-9]+-[a-f0-9]{6}$/.test(document.scope.runId || "")
-      || !/^whole-plan-[a-f0-9]{24}$/.test(document.scope.wholePlanId || "")
-      || !/^execution-contract-[a-f0-9]{24}$/.test(document.scope.executionContractId || "")
-      || !/^capsule-[a-f0-9]{24}$/.test(document.scope.contextCapsuleId || "")
-      || document.scope.userRequestDigest !== null || document.scope.userRequestBytes !== null))
-    || (!runScope && (!/^[a-f0-9]{64}$/.test(document.scope.userRequestDigest || "")
-      || !Number.isSafeInteger(document.scope.userRequestBytes) || document.scope.userRequestBytes < 1
-      || document.scope.runId !== null || document.scope.wholePlanId !== null || document.scope.executionContractId !== null
-      || document.scope.contextCapsuleId !== null && !/^capsule-[a-f0-9]{24}$/.test(document.scope.contextCapsuleId || "")))
-    || !/^[a-f0-9]{64}$/.test(document.projectRootDigest || "")
-    || !/^runtime-project-binding-[a-f0-9]{24}$/.test(document.runtimeProjectBindingId || "")
-    || !/^runtime-protocol-evidence-[a-f0-9]{24}$/.test(document.runtimeProtocolEvidenceId || "")
-    || !/^runtime-protocol-observation-[a-f0-9]{24}$/.test(document.runtimeProtocolObservationId || "")
-    || !/^[a-f0-9]{64}$/.test(document.executionInput.digest || "")
-    || !Number.isSafeInteger(document.executionInput.bytes) || document.executionInput.bytes < 1
-    || document.executionInput.transport !== "bounded-stdin-required"
-    || document.executionInput.retention !== (workerAuthorization ? "authorization-selected-input" : "ephemeral-only")
-    || document.executionInput.includesContextCapsule !== (document.scope.contextCapsuleId !== null) || document.executionInput.rawContentPersisted !== workerAuthorization
-    || canonicalJson(document.limits) !== canonicalJson(normalizeLimits(document.limits))
-    || canonicalJson(document.authorizationBoundary) !== canonicalJson(expectedBoundary)
-    || document.authority !== "scope-bounded-single-invocation-authorization"
-    || document.instructionAuthority !== false || document.promotionAuthority !== false || document.mutatesCanon !== false) {
+  if (
+    document.schemaVersion !== 1 ||
+    document.kind !== "ExecutionAuthorization" ||
+    !new Set([
+      RUNTIME_INVOCATION_AUTHORIZATION_VERSION,
+      LEGACY_EXECUTION_AUTHORIZATION_VERSION,
+      WORKER_EXECUTION_AUTHORIZATION_VERSION,
+      BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION,
+      WRITE_BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION,
+      PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION,
+    ]).has(document.protocolVersion) ||
+    document.runtime !== runtime ||
+    document.workspaceMode !== workspaceMode ||
+    canonicalJson(document.requiredAllowedActions) !== canonicalJson(expectedActions) ||
+    (!legacyAuthorization && canonicalJson(document.runtimeSelection) !== canonicalJson(runtimeSelection)) ||
+    !format ||
+    !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || "") ||
+    !/^session-[A-Fa-f0-9-]{36}$/.test(sessionIdOf(document) || "") ||
+    (runScope &&
+      (!/^run-[0-9]+-[a-f0-9]{6}$/.test(document.scope.runId || "") ||
+        !/^whole-plan-[a-f0-9]{24}$/.test(document.scope.wholePlanId || "") ||
+        !/^execution-contract-[a-f0-9]{24}$/.test(document.scope.executionContractId || "") ||
+        !/^capsule-[a-f0-9]{24}$/.test(document.scope.contextCapsuleId || "") ||
+        document.scope.userRequestDigest !== null ||
+        document.scope.userRequestBytes !== null)) ||
+    (!runScope &&
+      (!/^[a-f0-9]{64}$/.test(document.scope.userRequestDigest || "") ||
+        !Number.isSafeInteger(document.scope.userRequestBytes) ||
+        document.scope.userRequestBytes < 1 ||
+        document.scope.runId !== null ||
+        document.scope.wholePlanId !== null ||
+        document.scope.executionContractId !== null ||
+        (document.scope.contextCapsuleId !== null && !/^capsule-[a-f0-9]{24}$/.test(document.scope.contextCapsuleId || "")))) ||
+    !/^[a-f0-9]{64}$/.test(document.projectRootDigest || "") ||
+    !/^runtime-project-binding-[a-f0-9]{24}$/.test(document.runtimeProjectBindingId || "") ||
+    !/^runtime-protocol-evidence-[a-f0-9]{24}$/.test(document.runtimeProtocolEvidenceId || "") ||
+    !/^runtime-protocol-observation-[a-f0-9]{24}$/.test(document.runtimeProtocolObservationId || "") ||
+    !/^[a-f0-9]{64}$/.test(document.executionInput.digest || "") ||
+    !Number.isSafeInteger(document.executionInput.bytes) ||
+    document.executionInput.bytes < 1 ||
+    document.executionInput.transport !== "bounded-stdin-required" ||
+    document.executionInput.retention !== (workerAuthorization ? "authorization-selected-input" : "ephemeral-only") ||
+    document.executionInput.includesContextCapsule !== (document.scope.contextCapsuleId !== null) ||
+    document.executionInput.rawContentPersisted !== workerAuthorization ||
+    canonicalJson(document.limits) !== canonicalJson(normalizeLimits(document.limits)) ||
+    canonicalJson(document.authorizationBoundary) !== canonicalJson(expectedBoundary) ||
+    document.authority !== "scope-bounded-single-invocation-authorization" ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false ||
+    document.mutatesCanon !== false
+  ) {
     fail("Runtime invocation authorization is invalid.", "INVALID_RUNTIME_INVOCATION_AUTHORIZATION");
   }
   verifyIdentity(document, {
@@ -777,8 +1040,10 @@ export function verifyRuntimeInvocationAuthorization(document) {
 export function runtimeInvocationInputFromOriginals({ authorization, plan, contract, capsule = null, direction = null } = {}) {
   const verified = verifyRuntimeInvocationAuthorization(authorization);
   if (verified.scope.kind === "session" && !verified.workerInput) return null;
-  let input = verified.scope.kind === "run" ? runInvocationInput({ plan, contract, capsule })
-    : sessionInvocationInput({ request: verified.workerInput.sessionRequest, capsule, requiredActions: verified.requiredAllowedActions });
+  let input =
+    verified.scope.kind === "run"
+      ? runInvocationInput({ plan, contract, capsule })
+      : sessionInvocationInput({ request: verified.workerInput.sessionRequest, capsule, requiredActions: verified.requiredAllowedActions });
   input = attachWorkerInput(input, verified.workerInput);
   if (direction) input = { ...input, currentProjectDirection: direction };
   return Buffer.from(canonicalJson(input), "utf8");
@@ -793,7 +1058,8 @@ export function readRuntimeInvocationAuthorization({ root = ".", authorizationId
   const file = authorizationFile(inspected.project.projectRoot, authorizationId, inspected.storage);
   if (!fs.existsSync(file)) fail(`Runtime invocation authorization not found: ${authorizationId}.`, "RUNTIME_INVOCATION_AUTHORIZATION_NOT_FOUND");
   const authorization = verifyRuntimeInvocationAuthorization(readJson(file, "Runtime invocation authorization"));
-  if (authorization.projectId !== inspected.project.projectId) fail("Runtime invocation authorization belongs to another project.", "RUNTIME_INVOCATION_PROJECT_MISMATCH");
+  if (authorization.projectId !== inspected.project.projectId)
+    fail("Runtime invocation authorization belongs to another project.", "RUNTIME_INVOCATION_PROJECT_MISMATCH");
   return { status: "verified", file, authorization };
 }
 
@@ -803,7 +1069,11 @@ export function inspectRuntimeInvocationExecutionLease({ root = ".", authorizati
   const authorization = readRuntimeInvocationAuthorization({ root: inspected.project.projectRoot, authorizationId }).authorization;
   const recordedReceiptFile = path.join(
     inspected.project.projectRoot,
-    formatForVerifiedOwner(inspected).directory, "runtime", "invocations", authorization.authorizationId, "receipt.json",
+    formatForVerifiedOwner(inspected).directory,
+    "runtime",
+    "invocations",
+    authorization.authorizationId,
+    "receipt.json",
   );
   const recordedReceipt = fs.existsSync(recordedReceiptFile)
     ? verifyRuntimeInvocationLifecycleReceipt(readJson(recordedReceiptFile, "Runtime invocation lifecycle receipt"))
@@ -849,26 +1119,50 @@ function prepareRuntimeInvocationInput({ root = ".", authorization, sessionReque
   if (inspected.status !== "ready" || inspected.project.projectId !== verified.projectId || inspected.state.sessionId !== sessionIdOf(verified)) {
     fail("Runtime execution requires the authorization's exact project and HEAD Session.", "RUNTIME_INVOCATION_FENCE_MISMATCH");
   }
-  if (verified.scope.kind === "run" && (inspected.state.activeRunId !== verified.scope.runId
-    || inspected.state.activeExecutionContractId !== verified.scope.executionContractId
-    || inspected.state.currentWholePlanId !== verified.scope.wholePlanId
-    || inspected.state.mode !== "run" || inspected.state.pendingReview)) {
+  if (
+    verified.scope.kind === "run" &&
+    (inspected.state.activeRunId !== verified.scope.runId ||
+      inspected.state.activeExecutionContractId !== verified.scope.executionContractId ||
+      inspected.state.currentWholePlanId !== verified.scope.wholePlanId ||
+      inspected.state.mode !== "run" ||
+      inspected.state.pendingReview)
+  ) {
     fail("Run execution requires the authorization's exact active Run, WholePlan and ExecutionContract.", "RUNTIME_INVOCATION_FENCE_MISMATCH");
   }
-  if (verified.scope.kind === "session" && (inspected.state.mode !== "session" || inspected.state.activeRunId
-    || inspected.state.activeExecutionContractId || inspected.state.pendingReview)) {
+  if (
+    verified.scope.kind === "session" &&
+    (inspected.state.mode !== "session" || inspected.state.activeRunId || inspected.state.activeExecutionContractId || inspected.state.pendingReview)
+  ) {
     fail("Session execution requires the authorization's idle HEAD Session.", "RUNTIME_INVOCATION_FENCE_MISMATCH");
   }
   const projectRoot = inspected.project.projectRoot;
-  if (digest(realRoot(projectRoot)) !== verified.projectRootDigest) fail("Runtime invocation project root changed after authorization.", "RUNTIME_INVOCATION_PROJECT_DRIFT");
+  if (digest(realRoot(projectRoot)) !== verified.projectRootDigest)
+    fail("Runtime invocation project root changed after authorization.", "RUNTIME_INVOCATION_PROJECT_DRIFT");
   const currentProjectDirection = assertAuthorizationProjectDirection(projectRoot, verified);
   assertProjectActionsCurrent({ root: projectRoot, actions: verified.requiredAllowedActions });
   if (verified.workerInput) {
     requireCurrentWorkerMember(projectRoot, verified);
     if (verifyCurrentSources) {
-      requireCurrentWorkerSourceBasis({ root: projectRoot, basis: verified.workerInput.sourceBasis, maxBytes: verified.limits.maxInputBytes, storage: inspected.storage });
-      if (verified.workerInput.writeBasis) requireCurrentWorkerWriteBasis({ root: projectRoot, basis: verified.workerInput.writeBasis, maxBytes: verified.limits.maxInputBytes, storage: inspected.storage });
-      if (verified.workerInput.proposalBasis) requireCurrentWorkerWriteBasis({ root: projectRoot, basis: verified.workerInput.proposalBasis, maxBytes: verified.limits.maxInputBytes, storage: inspected.storage });
+      requireCurrentWorkerSourceBasis({
+        root: projectRoot,
+        basis: verified.workerInput.sourceBasis,
+        maxBytes: verified.limits.maxInputBytes,
+        storage: inspected.storage,
+      });
+      if (verified.workerInput.writeBasis)
+        requireCurrentWorkerWriteBasis({
+          root: projectRoot,
+          basis: verified.workerInput.writeBasis,
+          maxBytes: verified.limits.maxInputBytes,
+          storage: inspected.storage,
+        });
+      if (verified.workerInput.proposalBasis)
+        requireCurrentWorkerWriteBasis({
+          root: projectRoot,
+          basis: verified.workerInput.proposalBasis,
+          maxBytes: verified.limits.maxInputBytes,
+          storage: inspected.storage,
+        });
     }
     if (sessionRequest && sessionRequest !== verified.workerInput.sessionRequest) fail("Worker Session request changed.", "RUNTIME_INVOCATION_INPUT_DRIFT");
     sessionRequest = verified.workerInput.sessionRequest || "";
@@ -880,9 +1174,13 @@ function prepareRuntimeInvocationInput({ root = ".", authorization, sessionReque
     assertProjectActionsCurrent({ root: projectRoot, actions: contract.allowedActions || [] });
     const plan = lineage(projectRoot, verified.scope.wholePlanId, "WholePlanSnapshot");
     const capsule = readContextCapsule({ root: projectRoot, capsuleId: verified.scope.contextCapsuleId }).capsule;
-    if (run.executionContractId !== contract.executionContractId || run.wholePlanId !== plan.wholePlanId
-      || run.capsuleId !== capsule.capsuleId || contract.wholePlanId !== plan.wholePlanId
-      || contract.capsuleId !== capsule.capsuleId) {
+    if (
+      run.executionContractId !== contract.executionContractId ||
+      run.wholePlanId !== plan.wholePlanId ||
+      run.capsuleId !== capsule.capsuleId ||
+      contract.wholePlanId !== plan.wholePlanId ||
+      contract.capsuleId !== capsule.capsuleId
+    ) {
       fail("Current Run, ExecutionContract, WholePlanSnapshot and ContextCapsule do not compose.", "RUNTIME_INVOCATION_LINEAGE_CONFLICT");
     }
     executionInput = runInvocationInput({ plan, contract, capsule });
@@ -891,8 +1189,8 @@ function prepareRuntimeInvocationInput({ root = ".", authorization, sessionReque
     if (digest(request) !== verified.scope.userRequestDigest || Buffer.byteLength(request) !== verified.scope.userRequestBytes) {
       fail("Session execution request changed after authorization.", "RUNTIME_INVOCATION_INPUT_DRIFT");
     }
-    const capsule = verified.scope.contextCapsuleId === null
-      ? null : readContextCapsule({ root: projectRoot, capsuleId: verified.scope.contextCapsuleId }).capsule;
+    const capsule =
+      verified.scope.contextCapsuleId === null ? null : readContextCapsule({ root: projectRoot, capsuleId: verified.scope.contextCapsuleId }).capsule;
     executionInput = sessionInvocationInput({ request, capsule, requiredActions: verified.requiredAllowedActions });
   }
   executionInput = attachWorkerInput(executionInput, verified.workerInput);
@@ -928,8 +1226,7 @@ function sessionReferences(record) {
     if (Array.isArray(value)) return value.slice(0, 64).forEach((item) => visit(item, depth + 1));
     if (typeof value !== "object") return;
     for (const [key, item] of Object.entries(value)) {
-      if (["thread_id", "session_id", "sessionid", "threadid"].includes(key.toLowerCase())
-        && typeof item === "string" && item.trim()) found.push(item.trim());
+      if (["thread_id", "session_id", "sessionid", "threadid"].includes(key.toLowerCase()) && typeof item === "string" && item.trim()) found.push(item.trim());
       else visit(item, depth + 1);
     }
   };
@@ -946,8 +1243,11 @@ export function normalizeRuntimeEvent({ authorization, sequence, line } = {}) {
   const bytes = Buffer.byteLength(line);
   if (bytes > verified.limits.maxEventBytes) fail("Runtime event exceeds the per-event bound.", "RUNTIME_EVENT_OUTPUT_LIMIT");
   let record;
-  try { record = JSON.parse(line); }
-  catch { fail("Runtime emitted non-JSON event output.", "INVALID_RUNTIME_EVENT_JSON"); }
+  try {
+    record = JSON.parse(line);
+  } catch {
+    fail("Runtime emitted non-JSON event output.", "INVALID_RUNTIME_EVENT_JSON");
+  }
   if (!record || typeof record !== "object" || Array.isArray(record)) fail("Runtime event must be one JSON object.", "INVALID_RUNTIME_EVENT");
   const canonical = canonicalJson(record);
   const type = eventType(record);
@@ -973,26 +1273,54 @@ export function normalizeRuntimeEvent({ authorization, sequence, line } = {}) {
 }
 
 export function verifyRuntimeEventEnvelope(document) {
-  assertFields(document, [
-    "schemaVersion", "kind", "protocolVersion", "authorizationId", "runtime", "sequence", "eventType",
-    "eventClass", "payloadDigest", "payloadBytes", "providerSessionReferenceDigests", "rawPayloadPersisted",
-    "transcriptAuthority", "instructionAuthority", "promotionAuthority", "eventId", "eventHash",
-  ], "Runtime event envelope");
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocolVersion",
+      "authorizationId",
+      "runtime",
+      "sequence",
+      "eventType",
+      "eventClass",
+      "payloadDigest",
+      "payloadBytes",
+      "providerSessionReferenceDigests",
+      "rawPayloadPersisted",
+      "transcriptAuthority",
+      "instructionAuthority",
+      "promotionAuthority",
+      "eventId",
+      "eventHash",
+    ],
+    "Runtime event envelope",
+  );
   const allowedClasses = new Set(["error", "lifecycle", "assistant-output", "tool-observation", "usage", "unknown"]);
-  if (document.schemaVersion !== 1 || document.kind !== "RuntimeEventEnvelope"
-    || document.protocolVersion !== RUNTIME_EVENT_ENVELOPE_VERSION
-    || !/^execution-authorization-[a-f0-9]{24}$/.test(document.authorizationId || "")
-    || document.runtime !== normalizeRuntime(document.runtime)
-    || !Number.isSafeInteger(document.sequence) || document.sequence < 0
-    || typeof document.eventType !== "string" || !document.eventType || document.eventType.length > 128
-    || !allowedClasses.has(document.eventClass) || document.eventClass !== eventClass(document.eventType)
-    || !/^[a-f0-9]{64}$/.test(document.payloadDigest || "")
-    || !Number.isSafeInteger(document.payloadBytes) || document.payloadBytes < 2
-    || !Array.isArray(document.providerSessionReferenceDigests)
-    || canonicalJson(document.providerSessionReferenceDigests) !== canonicalJson([...new Set(document.providerSessionReferenceDigests)].sort(compareText))
-    || document.providerSessionReferenceDigests.some((item) => !/^[a-f0-9]{64}$/.test(item))
-    || document.rawPayloadPersisted !== false || document.transcriptAuthority !== "none"
-    || document.instructionAuthority !== false || document.promotionAuthority !== false) {
+  if (
+    document.schemaVersion !== 1 ||
+    document.kind !== "RuntimeEventEnvelope" ||
+    document.protocolVersion !== RUNTIME_EVENT_ENVELOPE_VERSION ||
+    !/^execution-authorization-[a-f0-9]{24}$/.test(document.authorizationId || "") ||
+    document.runtime !== normalizeRuntime(document.runtime) ||
+    !Number.isSafeInteger(document.sequence) ||
+    document.sequence < 0 ||
+    typeof document.eventType !== "string" ||
+    !document.eventType ||
+    document.eventType.length > 128 ||
+    !allowedClasses.has(document.eventClass) ||
+    document.eventClass !== eventClass(document.eventType) ||
+    !/^[a-f0-9]{64}$/.test(document.payloadDigest || "") ||
+    !Number.isSafeInteger(document.payloadBytes) ||
+    document.payloadBytes < 2 ||
+    !Array.isArray(document.providerSessionReferenceDigests) ||
+    canonicalJson(document.providerSessionReferenceDigests) !== canonicalJson([...new Set(document.providerSessionReferenceDigests)].sort(compareText)) ||
+    document.providerSessionReferenceDigests.some((item) => !/^[a-f0-9]{64}$/.test(item)) ||
+    document.rawPayloadPersisted !== false ||
+    document.transcriptAuthority !== "none" ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false
+  ) {
     fail("Runtime event envelope is invalid.", "INVALID_RUNTIME_EVENT_ENVELOPE");
   }
   verifyIdentity(document, { prefix: "runtime-event", idKey: "eventId", hashKey: "eventHash", code: "RUNTIME_EVENT_DIGEST_MISMATCH" });
@@ -1000,51 +1328,80 @@ export function verifyRuntimeEventEnvelope(document) {
 }
 
 function providerModeProfile(runtime, providerMode) {
-  const selectedRuntime = String(runtime || "").trim().toLowerCase();
+  const selectedRuntime = String(runtime || "")
+    .trim()
+    .toLowerCase();
   const fixtureMode = providerMode === "conformance-fixture" || providerMode === `${selectedRuntime}-protocol-fixture`;
   const actualProvider = providerMode === `actual-${selectedRuntime}`;
   return { fixtureMode, actualProvider, valid: fixtureMode || actualProvider };
 }
 
-function lifecycleSummary({ authorization, events, status, exitCode, signal, stdoutBytes, stderrBytes, stdoutDigest, stderrDigest,
-  callerFenceDigest, childFenceDigest, childStarted, childExitObserved, terminationRequested, projectFenceValidated,
-  inputDigestObserved, noDescendantFixture, descendantTreeOwnershipValidated = false, consumption,
-  providerMode = "conformance-fixture", providerSessionCreated = false, providerDiagnosticCodes = [], structuredResult = null,
-  supervision = null }) {
+function lifecycleSummary({
+  authorization,
+  events,
+  status,
+  exitCode,
+  signal,
+  stdoutBytes,
+  stderrBytes,
+  stdoutDigest,
+  stderrDigest,
+  callerFenceDigest,
+  childFenceDigest,
+  childStarted,
+  childExitObserved,
+  terminationRequested,
+  projectFenceValidated,
+  inputDigestObserved,
+  noDescendantFixture,
+  descendantTreeOwnershipValidated = false,
+  consumption,
+  providerMode = "conformance-fixture",
+  providerSessionCreated = false,
+  providerDiagnosticCodes = [],
+  structuredResult = null,
+  supervision = null,
+}) {
   const eventIds = events.map((item) => item.eventId);
   const eventTypes = [...new Set(events.map((item) => item.eventType))].sort(compareText);
   const unknownEventTypes = [...new Set(events.filter((item) => item.eventClass === "unknown").map((item) => item.eventType))].sort(compareText);
   const providerSessionReferenceDigests = [...new Set(events.flatMap((item) => item.providerSessionReferenceDigests))].sort(compareText);
   const normalizedProviderDiagnosticCodes = [...new Set(providerDiagnosticCodes)].sort(compareText);
-  if (normalizedProviderDiagnosticCodes.length > 32
-    || normalizedProviderDiagnosticCodes.some((item) => typeof item !== "string" || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(item))) {
+  if (
+    normalizedProviderDiagnosticCodes.length > 32 ||
+    normalizedProviderDiagnosticCodes.some((item) => typeof item !== "string" || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(item))
+  ) {
     fail("Runtime provider diagnostic codes are invalid.", "INVALID_RUNTIME_PROVIDER_DIAGNOSTICS");
   }
   const { fixtureMode, actualProvider, valid } = providerModeProfile(authorization.runtime, providerMode);
   if (!valid) fail("Runtime provider mode is invalid.", "INVALID_RUNTIME_PROVIDER_MODE");
-  const verifiedResult = structuredResult === null ? null : verifyRuntimeStructuredResult(structuredResult, { scopeKind: authorization.scope.kind, authorization });
+  const verifiedResult =
+    structuredResult === null ? null : verifyRuntimeStructuredResult(structuredResult, { scopeKind: authorization.scope.kind, authorization });
   if (authorization.protocolVersion === PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION && status === "completed" && verifiedResult === null) {
     fail("Completed proposal execution requires its typed patch proposal.", "INVALID_RUNTIME_STRUCTURED_RESULT");
   }
-  const processSupervision = supervision === null ? {
-    supervisionMode: "no-descendant-fixture",
-    supervisionStrategy: "exact-child-only",
-    supervisorManifestDigest: "",
-    ownershipEstablished: childStarted && childExitObserved,
-    providerChildStarted: false,
-    providerChildExitObserved: false,
-    treeCleanupAttempted: false,
-    treeCleanupVerified: childStarted && childExitObserved,
-  } : {
-    supervisionMode: supervision.supervisionMode,
-    supervisionStrategy: supervision.supervisionStrategy,
-    supervisorManifestDigest: supervision.supervisorManifestDigest,
-    ownershipEstablished: supervision.ownershipEstablished,
-    providerChildStarted: supervision.providerChildStarted,
-    providerChildExitObserved: supervision.providerChildExitObserved,
-    treeCleanupAttempted: supervision.treeCleanupAttempted,
-    treeCleanupVerified: supervision.treeCleanupVerified,
-  };
+  const processSupervision =
+    supervision === null
+      ? {
+          supervisionMode: "no-descendant-fixture",
+          supervisionStrategy: "exact-child-only",
+          supervisorManifestDigest: "",
+          ownershipEstablished: childStarted && childExitObserved,
+          providerChildStarted: false,
+          providerChildExitObserved: false,
+          treeCleanupAttempted: false,
+          treeCleanupVerified: childStarted && childExitObserved,
+        }
+      : {
+          supervisionMode: supervision.supervisionMode,
+          supervisionStrategy: supervision.supervisionStrategy,
+          supervisorManifestDigest: supervision.supervisorManifestDigest,
+          ownershipEstablished: supervision.ownershipEstablished,
+          providerChildStarted: supervision.providerChildStarted,
+          providerChildExitObserved: supervision.providerChildExitObserved,
+          treeCleanupAttempted: supervision.treeCleanupAttempted,
+          treeCleanupVerified: supervision.treeCleanupVerified,
+        };
   return {
     schemaVersion: 1,
     kind: "RuntimeInvocationLifecycleReceipt",
@@ -1113,39 +1470,99 @@ function lifecycleSummary({ authorization, events, status, exitCode, signal, std
 }
 
 export function buildRuntimeInvocationLifecycleReceipt(input = {}) {
-  return verifyRuntimeInvocationLifecycleReceipt(identify(
-    lifecycleSummary(input),
-    "runtime-lifecycle-receipt",
-    "receiptId",
-    "receiptHash",
-  ));
+  return verifyRuntimeInvocationLifecycleReceipt(identify(lifecycleSummary(input), "runtime-lifecycle-receipt", "receiptId", "receiptHash"));
 }
 
 export function verifyRuntimeInvocationLifecycleReceipt(document) {
   const format = originalFormat(document);
   const legacyReceipt = document?.protocolVersion === LEGACY_RUNTIME_LIFECYCLE_RECEIPT_VERSION;
-  assertFields(document, [
-    "schemaVersion", "kind", "protocolVersion", "authorizationId", "projectId", (format?.sessionIdField || "headSessionId"), "scopeKind", "runId",
-    "executionContractId", "executionLeaseConsumptionId", "runtime", "status", "exitCode", "signal", "eventIds", "eventTypes",
-    "unknownEventTypes", "providerSessionReferenceDigests", "eventCount", "stdoutBytes", "stderrBytes",
-    "stdoutDigest", "stderrDigest", "inputDigestObserved", "processBoundary", "providerBoundary", "executionLeaseBoundary", "authority",
-    "instructionAuthority", "promotionAuthority", "mutatesCanon", "receiptId", "receiptHash",
-  ], "Runtime invocation lifecycle receipt");
-  assertFields(document.processBoundary, [
-    "callerFenceDigest", "childFenceDigest", "exactChildStarted", "exactChildExitObserved", "terminationRequested",
-    "projectFenceValidated", "shellInterpretation", "rawCommandPersisted", "rawOutputPersisted", "childPidPersisted",
-    "noDescendantFixture", "descendantTreeOwnershipValidated", "supervisionMode", "supervisionStrategy",
-    "supervisorManifestDigest", "ownershipEstablished", "providerChildStarted", "providerChildExitObserved",
-    "treeCleanupAttempted", "treeCleanupVerified",
-  ], "Runtime invocation process boundary");
-  assertFields(document.providerBoundary, [
-    "mode", "conformanceFixtureOnly", "actualProviderInvoked", "actualProviderSessionCreated",
-    "boundedOneShotInvocationEnabled", "generalProviderControlEnabled", "lifecycleConformanceEvidenceOnly",
-    ...(legacyReceipt ? [] : ["diagnosticCodes"]), "structuredResultObserved", "structuredResultDigest", "structuredResultBytes",
-  ], "Runtime invocation provider boundary");
-  assertFields(document.executionLeaseBoundary, [
-    "authorizationConsumedBeforeInvocation", "atMostOnce", "replayAllowed", "providerInvokedAtConsumption", "crashRecovery",
-  ], "Runtime invocation execution lease boundary");
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocolVersion",
+      "authorizationId",
+      "projectId",
+      format?.sessionIdField || "headSessionId",
+      "scopeKind",
+      "runId",
+      "executionContractId",
+      "executionLeaseConsumptionId",
+      "runtime",
+      "status",
+      "exitCode",
+      "signal",
+      "eventIds",
+      "eventTypes",
+      "unknownEventTypes",
+      "providerSessionReferenceDigests",
+      "eventCount",
+      "stdoutBytes",
+      "stderrBytes",
+      "stdoutDigest",
+      "stderrDigest",
+      "inputDigestObserved",
+      "processBoundary",
+      "providerBoundary",
+      "executionLeaseBoundary",
+      "authority",
+      "instructionAuthority",
+      "promotionAuthority",
+      "mutatesCanon",
+      "receiptId",
+      "receiptHash",
+    ],
+    "Runtime invocation lifecycle receipt",
+  );
+  assertFields(
+    document.processBoundary,
+    [
+      "callerFenceDigest",
+      "childFenceDigest",
+      "exactChildStarted",
+      "exactChildExitObserved",
+      "terminationRequested",
+      "projectFenceValidated",
+      "shellInterpretation",
+      "rawCommandPersisted",
+      "rawOutputPersisted",
+      "childPidPersisted",
+      "noDescendantFixture",
+      "descendantTreeOwnershipValidated",
+      "supervisionMode",
+      "supervisionStrategy",
+      "supervisorManifestDigest",
+      "ownershipEstablished",
+      "providerChildStarted",
+      "providerChildExitObserved",
+      "treeCleanupAttempted",
+      "treeCleanupVerified",
+    ],
+    "Runtime invocation process boundary",
+  );
+  assertFields(
+    document.providerBoundary,
+    [
+      "mode",
+      "conformanceFixtureOnly",
+      "actualProviderInvoked",
+      "actualProviderSessionCreated",
+      "boundedOneShotInvocationEnabled",
+      "generalProviderControlEnabled",
+      "lifecycleConformanceEvidenceOnly",
+      ...(legacyReceipt ? [] : ["diagnosticCodes"]),
+      "structuredResultObserved",
+      "structuredResultDigest",
+      "structuredResultBytes",
+    ],
+    "Runtime invocation provider boundary",
+  );
+  assertFields(
+    document.executionLeaseBoundary,
+    ["authorizationConsumedBeforeInvocation", "atMostOnce", "replayAllowed", "providerInvokedAtConsumption", "crashRecovery"],
+    "Runtime invocation execution lease boundary",
+  );
   const statuses = new Set(["completed", "failed", "cancelled", "timed-out", "output-limited", "invalid-event"]);
   const sortedUnique = (items) => Array.isArray(items) && canonicalJson(items) === canonicalJson([...new Set(items)].sort(compareText));
   const completed = document.status === "completed";
@@ -1166,86 +1583,114 @@ export function verifyRuntimeInvocationLifecycleReceipt(document) {
     structuredResultDigest: document.providerBoundary.structuredResultDigest,
     structuredResultBytes: document.providerBoundary.structuredResultBytes,
   };
-  if (document.schemaVersion !== 1 || document.kind !== "RuntimeInvocationLifecycleReceipt"
-    || !new Set([LEGACY_RUNTIME_LIFECYCLE_RECEIPT_VERSION, RUNTIME_LIFECYCLE_RECEIPT_VERSION]).has(document.protocolVersion)
-    || !statuses.has(document.status)
-    || document.runtime !== normalizeRuntime(document.runtime)
-    || !/^execution-authorization-[a-f0-9]{24}$/.test(document.authorizationId || "")
-    || (!format || !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || ""))
-    || !/^session-[A-Fa-f0-9-]{36}$/.test(sessionIdOf(document) || "")
-    || !EXECUTION_SCOPE_KINDS.includes(document.scopeKind)
-    || (document.scopeKind === "run" && (!/^run-[0-9]+-[a-f0-9]{6}$/.test(document.runId || "")
-      || !/^execution-contract-[a-f0-9]{24}$/.test(document.executionContractId || "")))
-    || (document.scopeKind === "session" && (document.runId !== null || document.executionContractId !== null))
-    || !/^runtime-execution-consumption-[a-f0-9]{24}$/.test(document.executionLeaseConsumptionId || "")
-    || !Number.isInteger(document.exitCode) && document.exitCode !== null
-    || typeof document.signal !== "string" || document.signal.length > 32
-    || !sortedUnique(document.eventIds) || document.eventIds.some((item) => !/^runtime-event-[a-f0-9]{24}$/.test(item))
-    || !sortedUnique(document.eventTypes) || !sortedUnique(document.unknownEventTypes) || !sortedUnique(document.providerSessionReferenceDigests)
-    || document.eventCount !== document.eventIds.length
-    || !Number.isSafeInteger(document.stdoutBytes) || document.stdoutBytes < 0
-    || !Number.isSafeInteger(document.stderrBytes) || document.stderrBytes < 0
-    || !/^[a-f0-9]{64}$/.test(document.stdoutDigest || "") || !/^[a-f0-9]{64}$/.test(document.stderrDigest || "")
-    || !/^[a-f0-9]{64}$/.test(document.inputDigestObserved || "")
-    || !/^[a-f0-9]{64}$/.test(document.processBoundary.callerFenceDigest || "")
-    || !/^[a-f0-9]{64}$/.test(document.processBoundary.childFenceDigest || "")
-    || document.processBoundary.exactChildStarted !== document.processBoundary.exactChildExitObserved
-    || document.processBoundary.projectFenceValidated !== true || document.processBoundary.shellInterpretation !== false
-    || document.processBoundary.rawCommandPersisted !== false || document.processBoundary.rawOutputPersisted !== false
-    || document.processBoundary.childPidPersisted !== false || typeof document.processBoundary.noDescendantFixture !== "boolean"
-    || typeof document.processBoundary.descendantTreeOwnershipValidated !== "boolean"
-    || !nativeSupervision && !fixtureSupervision
-    || !new Set(["exact-child-only", "windows-job-object", "posix-process-group"]).has(document.processBoundary.supervisionStrategy)
-    || typeof document.processBoundary.ownershipEstablished !== "boolean"
-    || typeof document.processBoundary.providerChildStarted !== "boolean"
-    || typeof document.processBoundary.providerChildExitObserved !== "boolean"
-    || typeof document.processBoundary.treeCleanupAttempted !== "boolean"
-    || typeof document.processBoundary.treeCleanupVerified !== "boolean"
-    || document.processBoundary.descendantTreeOwnershipValidated
-      && (!document.processBoundary.exactChildStarted || !document.processBoundary.exactChildExitObserved)
-    || document.processBoundary.noDescendantFixture
-      && document.processBoundary.descendantTreeOwnershipValidated !== document.processBoundary.exactChildStarted
-    || fixtureSupervision && (!document.processBoundary.noDescendantFixture
-      || document.processBoundary.supervisionStrategy !== "exact-child-only"
-      || document.processBoundary.supervisorManifestDigest !== ""
-      || document.processBoundary.providerChildStarted || document.processBoundary.providerChildExitObserved
-      || document.processBoundary.treeCleanupAttempted
-      || document.processBoundary.ownershipEstablished !== document.processBoundary.exactChildStarted
-      || document.processBoundary.treeCleanupVerified !== document.processBoundary.exactChildStarted)
-    || nativeSupervision && (document.processBoundary.noDescendantFixture
-      || !new Set(["windows-job-object", "posix-process-group"]).has(document.processBoundary.supervisionStrategy)
-      || !/^[a-f0-9]{64}$/.test(document.processBoundary.supervisorManifestDigest || "")
-      || !document.processBoundary.providerChildStarted
-      || document.processBoundary.descendantTreeOwnershipValidated !== (document.processBoundary.ownershipEstablished && document.processBoundary.treeCleanupVerified))
-    || (completed && (document.exitCode !== 0 || document.processBoundary.terminationRequested !== false))
-    || (completed && nativeSupervision && !document.processBoundary.providerChildExitObserved)
-    || (terminated && document.processBoundary.terminationRequested !== true)
-    || !validProviderMode
-    || actualProvider && completed && (!document.providerBoundary.actualProviderSessionCreated || !document.providerBoundary.structuredResultObserved)
-    || actualProvider && completed && !document.processBoundary.descendantTreeOwnershipValidated
-    || fixtureMode && document.providerBoundary.actualProviderInvoked
-    || typeof document.providerBoundary.actualProviderSessionCreated !== "boolean"
-    || !legacyReceipt && (!sortedUnique(document.providerBoundary.diagnosticCodes)
-      || document.providerBoundary.diagnosticCodes.length > 32
-      || document.providerBoundary.diagnosticCodes.some((item) => typeof item !== "string" || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(item)))
-    || typeof document.providerBoundary.structuredResultObserved !== "boolean"
-    || (document.providerBoundary.structuredResultObserved
-      ? (!/^[a-f0-9]{64}$/.test(document.providerBoundary.structuredResultDigest || "")
-        || !Number.isSafeInteger(document.providerBoundary.structuredResultBytes) || document.providerBoundary.structuredResultBytes < 1)
-      : document.providerBoundary.structuredResultDigest !== "" || document.providerBoundary.structuredResultBytes !== 0)
-    || canonicalJson(document.providerBoundary) !== canonicalJson(expectedProviderBoundary)
-    || canonicalJson(document.executionLeaseBoundary) !== canonicalJson({
-      authorizationConsumedBeforeInvocation: true,
-      atMostOnce: true,
-      replayAllowed: false,
-      providerInvokedAtConsumption: false,
-      crashRecovery: "authorization-remains-consumed-new-head-decision-required",
-    })
-    || document.authority !== "execution-evidence-not-canon" || document.instructionAuthority !== false
-    || document.promotionAuthority !== false || document.mutatesCanon !== false) {
+  if (
+    document.schemaVersion !== 1 ||
+    document.kind !== "RuntimeInvocationLifecycleReceipt" ||
+    !new Set([LEGACY_RUNTIME_LIFECYCLE_RECEIPT_VERSION, RUNTIME_LIFECYCLE_RECEIPT_VERSION]).has(document.protocolVersion) ||
+    !statuses.has(document.status) ||
+    document.runtime !== normalizeRuntime(document.runtime) ||
+    !/^execution-authorization-[a-f0-9]{24}$/.test(document.authorizationId || "") ||
+    !format ||
+    !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || "") ||
+    !/^session-[A-Fa-f0-9-]{36}$/.test(sessionIdOf(document) || "") ||
+    !EXECUTION_SCOPE_KINDS.includes(document.scopeKind) ||
+    (document.scopeKind === "run" &&
+      (!/^run-[0-9]+-[a-f0-9]{6}$/.test(document.runId || "") || !/^execution-contract-[a-f0-9]{24}$/.test(document.executionContractId || ""))) ||
+    (document.scopeKind === "session" && (document.runId !== null || document.executionContractId !== null)) ||
+    !/^runtime-execution-consumption-[a-f0-9]{24}$/.test(document.executionLeaseConsumptionId || "") ||
+    (!Number.isInteger(document.exitCode) && document.exitCode !== null) ||
+    typeof document.signal !== "string" ||
+    document.signal.length > 32 ||
+    !sortedUnique(document.eventIds) ||
+    document.eventIds.some((item) => !/^runtime-event-[a-f0-9]{24}$/.test(item)) ||
+    !sortedUnique(document.eventTypes) ||
+    !sortedUnique(document.unknownEventTypes) ||
+    !sortedUnique(document.providerSessionReferenceDigests) ||
+    document.eventCount !== document.eventIds.length ||
+    !Number.isSafeInteger(document.stdoutBytes) ||
+    document.stdoutBytes < 0 ||
+    !Number.isSafeInteger(document.stderrBytes) ||
+    document.stderrBytes < 0 ||
+    !/^[a-f0-9]{64}$/.test(document.stdoutDigest || "") ||
+    !/^[a-f0-9]{64}$/.test(document.stderrDigest || "") ||
+    !/^[a-f0-9]{64}$/.test(document.inputDigestObserved || "") ||
+    !/^[a-f0-9]{64}$/.test(document.processBoundary.callerFenceDigest || "") ||
+    !/^[a-f0-9]{64}$/.test(document.processBoundary.childFenceDigest || "") ||
+    document.processBoundary.exactChildStarted !== document.processBoundary.exactChildExitObserved ||
+    document.processBoundary.projectFenceValidated !== true ||
+    document.processBoundary.shellInterpretation !== false ||
+    document.processBoundary.rawCommandPersisted !== false ||
+    document.processBoundary.rawOutputPersisted !== false ||
+    document.processBoundary.childPidPersisted !== false ||
+    typeof document.processBoundary.noDescendantFixture !== "boolean" ||
+    typeof document.processBoundary.descendantTreeOwnershipValidated !== "boolean" ||
+    (!nativeSupervision && !fixtureSupervision) ||
+    !new Set(["exact-child-only", "windows-job-object", "posix-process-group"]).has(document.processBoundary.supervisionStrategy) ||
+    typeof document.processBoundary.ownershipEstablished !== "boolean" ||
+    typeof document.processBoundary.providerChildStarted !== "boolean" ||
+    typeof document.processBoundary.providerChildExitObserved !== "boolean" ||
+    typeof document.processBoundary.treeCleanupAttempted !== "boolean" ||
+    typeof document.processBoundary.treeCleanupVerified !== "boolean" ||
+    (document.processBoundary.descendantTreeOwnershipValidated &&
+      (!document.processBoundary.exactChildStarted || !document.processBoundary.exactChildExitObserved)) ||
+    (document.processBoundary.noDescendantFixture &&
+      document.processBoundary.descendantTreeOwnershipValidated !== document.processBoundary.exactChildStarted) ||
+    (fixtureSupervision &&
+      (!document.processBoundary.noDescendantFixture ||
+        document.processBoundary.supervisionStrategy !== "exact-child-only" ||
+        document.processBoundary.supervisorManifestDigest !== "" ||
+        document.processBoundary.providerChildStarted ||
+        document.processBoundary.providerChildExitObserved ||
+        document.processBoundary.treeCleanupAttempted ||
+        document.processBoundary.ownershipEstablished !== document.processBoundary.exactChildStarted ||
+        document.processBoundary.treeCleanupVerified !== document.processBoundary.exactChildStarted)) ||
+    (nativeSupervision &&
+      (document.processBoundary.noDescendantFixture ||
+        !new Set(["windows-job-object", "posix-process-group"]).has(document.processBoundary.supervisionStrategy) ||
+        !/^[a-f0-9]{64}$/.test(document.processBoundary.supervisorManifestDigest || "") ||
+        !document.processBoundary.providerChildStarted ||
+        document.processBoundary.descendantTreeOwnershipValidated !==
+          (document.processBoundary.ownershipEstablished && document.processBoundary.treeCleanupVerified))) ||
+    (completed && (document.exitCode !== 0 || document.processBoundary.terminationRequested !== false)) ||
+    (completed && nativeSupervision && !document.processBoundary.providerChildExitObserved) ||
+    (terminated && document.processBoundary.terminationRequested !== true) ||
+    !validProviderMode ||
+    (actualProvider && completed && (!document.providerBoundary.actualProviderSessionCreated || !document.providerBoundary.structuredResultObserved)) ||
+    (actualProvider && completed && !document.processBoundary.descendantTreeOwnershipValidated) ||
+    (fixtureMode && document.providerBoundary.actualProviderInvoked) ||
+    typeof document.providerBoundary.actualProviderSessionCreated !== "boolean" ||
+    (!legacyReceipt &&
+      (!sortedUnique(document.providerBoundary.diagnosticCodes) ||
+        document.providerBoundary.diagnosticCodes.length > 32 ||
+        document.providerBoundary.diagnosticCodes.some((item) => typeof item !== "string" || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(item)))) ||
+    typeof document.providerBoundary.structuredResultObserved !== "boolean" ||
+    (document.providerBoundary.structuredResultObserved
+      ? !/^[a-f0-9]{64}$/.test(document.providerBoundary.structuredResultDigest || "") ||
+        !Number.isSafeInteger(document.providerBoundary.structuredResultBytes) ||
+        document.providerBoundary.structuredResultBytes < 1
+      : document.providerBoundary.structuredResultDigest !== "" || document.providerBoundary.structuredResultBytes !== 0) ||
+    canonicalJson(document.providerBoundary) !== canonicalJson(expectedProviderBoundary) ||
+    canonicalJson(document.executionLeaseBoundary) !==
+      canonicalJson({
+        authorizationConsumedBeforeInvocation: true,
+        atMostOnce: true,
+        replayAllowed: false,
+        providerInvokedAtConsumption: false,
+        crashRecovery: "authorization-remains-consumed-new-head-decision-required",
+      }) ||
+    document.authority !== "execution-evidence-not-canon" ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false ||
+    document.mutatesCanon !== false
+  ) {
     fail("Runtime invocation lifecycle receipt is invalid.", "INVALID_RUNTIME_LIFECYCLE_RECEIPT");
   }
-  verifyIdentity(document, { prefix: "runtime-lifecycle-receipt", idKey: "receiptId", hashKey: "receiptHash", code: "RUNTIME_LIFECYCLE_RECEIPT_DIGEST_MISMATCH" });
+  verifyIdentity(document, {
+    prefix: "runtime-lifecycle-receipt",
+    idKey: "receiptId",
+    hashKey: "receiptHash",
+    code: "RUNTIME_LIFECYCLE_RECEIPT_DIGEST_MISMATCH",
+  });
   return document;
 }
 
@@ -1283,13 +1728,15 @@ function minimalEnvironment(environment) {
 }
 
 function callerFence(root, authorizationId) {
-  return digest(canonicalJson({
-    authorizationId,
-    pid: process.pid,
-    parentPid: process.ppid,
-    executable: process.execPath,
-    projectRoot: realRoot(root),
-  }));
+  return digest(
+    canonicalJson({
+      authorizationId,
+      pid: process.pid,
+      parentPid: process.ppid,
+      executable: process.execPath,
+      projectRoot: realRoot(root),
+    }),
+  );
 }
 
 export function buildRuntimeInvocationCallerFence(root, authorizationId) {
@@ -1306,149 +1753,168 @@ export async function runRuntimeLifecycleConformance({
   onProcessEvent = () => {},
 } = {}) {
   const verified = verifyRuntimeInvocationAuthorization(authorization);
-  if (!new Set(["success", "wait", "invalid-event", "output-limit"]).has(mode)) fail("Unsupported lifecycle conformance mode.", "INVALID_RUNTIME_CONFORMANCE_MODE");
+  if (!new Set(["success", "wait", "invalid-event", "output-limit"]).has(mode))
+    fail("Unsupported lifecycle conformance mode.", "INVALID_RUNTIME_CONFORMANCE_MODE");
   const { projectRoot, input } = prepareRuntimeInvocationExecution({ root, authorization: verified, sessionRequest });
   const callerFenceDigest = callerFence(projectRoot, verified.authorizationId);
-  const leased = await withRuntimeExecutionLease({
-    projectRoot,
-    authorization: verified,
-    ownerFenceDigest: callerFenceDigest,
-  }, async ({ lease, consumption, operationalStateRoot }) => {
-    verifyRuntimeExecutionLeaseOwnership({ projectRoot, operationalStateRoot, authorization: verified, lease, consumption });
-  const ownershipNonce = crypto.randomBytes(32).toString("hex");
-  let child;
-  let timer;
-  let abortHandler;
-  let terminationRequested = false;
-  let timedOut = false;
-  let cancelled = false;
-  let outputLimited = false;
-  let invalidEvent = false;
-  let stdout = Buffer.alloc(0);
-  let stderr = Buffer.alloc(0);
-  let lineBuffer = "";
-  const events = [];
+  const leased = await withRuntimeExecutionLease(
+    {
+      projectRoot,
+      authorization: verified,
+      ownerFenceDigest: callerFenceDigest,
+    },
+    async ({ lease, consumption, operationalStateRoot }) => {
+      verifyRuntimeExecutionLeaseOwnership({ projectRoot, operationalStateRoot, authorization: verified, lease, consumption });
+      const ownershipNonce = crypto.randomBytes(32).toString("hex");
+      let child;
+      let timer;
+      let abortHandler;
+      let terminationRequested = false;
+      let timedOut = false;
+      let cancelled = false;
+      let outputLimited = false;
+      let invalidEvent = false;
+      let stdout = Buffer.alloc(0);
+      let stderr = Buffer.alloc(0);
+      let lineBuffer = "";
+      const events = [];
 
-  const receipt = await new Promise((resolve, reject) => {
-    try {
-      child = spawnImplementation(process.execPath, ["-e", FIXTURE_SOURCE, verified.runtime, mode], {
-        cwd: projectRoot,
-        env: minimalEnvironment(process.env),
-        shell: false,
-        windowsHide: true,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-    } catch (error) {
-      const code = "RUNTIME_CONFORMANCE_SPAWN_FAILED";
-      recordRuntimeInvocationStartFailure({ projectRoot, authorization: verified, lease, consumption, errorCode: code });
-      reject(Object.assign(new Error(`Lifecycle conformance child could not start: ${error.message}`), { code }));
-      return;
-    }
-    let childStarted = false;
-    let childExitObserved = false;
-    let childFenceDigest = digest(`${callerFenceDigest}\nnot-started\n${ownershipNonce}`);
-    let inputDigestObserved = digest(Buffer.alloc(0));
-    const terminate = (reason) => {
-      if (!childStarted || childExitObserved || terminationRequested) return;
-      terminationRequested = true;
-      if (reason === "timeout") timedOut = true;
-      if (reason === "cancel") cancelled = true;
-      child.kill("SIGTERM");
-      setTimeout(() => {
-        if (!childExitObserved) child.kill("SIGKILL");
-      }, verified.limits.terminationGraceMs).unref();
-    };
-    timer = setTimeout(() => terminate("timeout"), verified.limits.timeoutMs);
-    if (signal) {
-      if (signal.aborted) terminate("cancel");
-      else {
-        abortHandler = () => terminate("cancel");
-        signal.addEventListener("abort", abortHandler, { once: true });
-      }
-    }
-    child.once("spawn", () => {
-      childStarted = true;
-      childFenceDigest = digest(`${callerFenceDigest}\n${child.pid}\n${ownershipNonce}`);
-      onProcessEvent({ type: "spawn", pid: child.pid, parentPid: process.pid, command: process.execPath, cwd: projectRoot, ports: "none" });
-      child.stdin.end(input);
-    });
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      if (signal && abortHandler) signal.removeEventListener("abort", abortHandler);
-      reject(Object.assign(new Error(`Lifecycle conformance child failed: ${error.message}`), { code: "RUNTIME_CONFORMANCE_SPAWN_FAILED" }));
-    });
-    child.stdout.on("data", (chunk) => {
-      stdout = Buffer.concat([stdout, chunk]);
-      if (stdout.length > verified.limits.maxStdoutBytes) {
-        outputLimited = true;
-        terminate("output-limit");
-        return;
-      }
-      lineBuffer += chunk.toString("utf8");
-      const lines = lineBuffer.split(/\r?\n/);
-      lineBuffer = lines.pop() || "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        if (events.length >= verified.limits.maxEvents) {
-          outputLimited = true;
-          terminate("output-limit");
-          break;
-        }
+      const receipt = await new Promise((resolve, reject) => {
         try {
-          const envelope = normalizeRuntimeEvent({ authorization: verified, sequence: events.length, line });
-          events.push(envelope);
-          const raw = JSON.parse(line);
-          if (typeof raw.inputDigest === "string" && /^[a-f0-9]{64}$/.test(raw.inputDigest)) inputDigestObserved = raw.inputDigest;
+          child = spawnImplementation(process.execPath, ["-e", FIXTURE_SOURCE, verified.runtime, mode], {
+            cwd: projectRoot,
+            env: minimalEnvironment(process.env),
+            shell: false,
+            windowsHide: true,
+            stdio: ["pipe", "pipe", "pipe"],
+          });
         } catch (error) {
-          invalidEvent = true;
-          terminate("invalid-event");
-          break;
+          const code = "RUNTIME_CONFORMANCE_SPAWN_FAILED";
+          recordRuntimeInvocationStartFailure({ projectRoot, authorization: verified, lease, consumption, errorCode: code });
+          reject(Object.assign(new Error(`Lifecycle conformance child could not start: ${error.message}`), { code }));
+          return;
         }
-      }
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr = Buffer.concat([stderr, chunk]);
-      if (stderr.length > verified.limits.maxStderrBytes) {
-        outputLimited = true;
-        terminate("output-limit");
-      }
-    });
-    child.once("exit", (code, childSignal) => {
-      childExitObserved = true;
-      onProcessEvent({ type: "exit", pid: child.pid, parentPid: process.pid, exitCode: Number.isInteger(code) ? code : null, signal: childSignal || "none" });
-      clearTimeout(timer);
-      if (signal && abortHandler) signal.removeEventListener("abort", abortHandler);
-      const status = cancelled ? "cancelled" : timedOut ? "timed-out" : outputLimited ? "output-limited"
-        : invalidEvent ? "invalid-event" : code === 0 ? "completed" : "failed";
-      const payload = lifecycleSummary({
-        authorization: verified,
-        events: events.sort((left, right) => compareText(left.eventId, right.eventId)),
-        status,
-        exitCode: Number.isInteger(code) ? code : null,
-        signal: childSignal || "",
-        stdoutBytes: stdout.length,
-        stderrBytes: stderr.length,
-        stdoutDigest: digest(stdout),
-        stderrDigest: digest(stderr),
-        callerFenceDigest,
-        childFenceDigest,
-        childStarted,
-        childExitObserved,
-        terminationRequested,
-        projectFenceValidated: true,
-        inputDigestObserved,
-        noDescendantFixture: true,
-        descendantTreeOwnershipValidated: childStarted && childExitObserved,
-        consumption,
+        let childStarted = false;
+        let childExitObserved = false;
+        let childFenceDigest = digest(`${callerFenceDigest}\nnot-started\n${ownershipNonce}`);
+        let inputDigestObserved = digest(Buffer.alloc(0));
+        const terminate = (reason) => {
+          if (!childStarted || childExitObserved || terminationRequested) return;
+          terminationRequested = true;
+          if (reason === "timeout") timedOut = true;
+          if (reason === "cancel") cancelled = true;
+          child.kill("SIGTERM");
+          setTimeout(() => {
+            if (!childExitObserved) child.kill("SIGKILL");
+          }, verified.limits.terminationGraceMs).unref();
+        };
+        timer = setTimeout(() => terminate("timeout"), verified.limits.timeoutMs);
+        if (signal) {
+          if (signal.aborted) terminate("cancel");
+          else {
+            abortHandler = () => terminate("cancel");
+            signal.addEventListener("abort", abortHandler, { once: true });
+          }
+        }
+        child.once("spawn", () => {
+          childStarted = true;
+          childFenceDigest = digest(`${callerFenceDigest}\n${child.pid}\n${ownershipNonce}`);
+          onProcessEvent({ type: "spawn", pid: child.pid, parentPid: process.pid, command: process.execPath, cwd: projectRoot, ports: "none" });
+          child.stdin.end(input);
+        });
+        child.once("error", (error) => {
+          clearTimeout(timer);
+          if (signal && abortHandler) signal.removeEventListener("abort", abortHandler);
+          reject(Object.assign(new Error(`Lifecycle conformance child failed: ${error.message}`), { code: "RUNTIME_CONFORMANCE_SPAWN_FAILED" }));
+        });
+        child.stdout.on("data", (chunk) => {
+          stdout = Buffer.concat([stdout, chunk]);
+          if (stdout.length > verified.limits.maxStdoutBytes) {
+            outputLimited = true;
+            terminate("output-limit");
+            return;
+          }
+          lineBuffer += chunk.toString("utf8");
+          const lines = lineBuffer.split(/\r?\n/);
+          lineBuffer = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            if (events.length >= verified.limits.maxEvents) {
+              outputLimited = true;
+              terminate("output-limit");
+              break;
+            }
+            try {
+              const envelope = normalizeRuntimeEvent({ authorization: verified, sequence: events.length, line });
+              events.push(envelope);
+              const raw = JSON.parse(line);
+              if (typeof raw.inputDigest === "string" && /^[a-f0-9]{64}$/.test(raw.inputDigest)) inputDigestObserved = raw.inputDigest;
+            } catch (error) {
+              invalidEvent = true;
+              terminate("invalid-event");
+              break;
+            }
+          }
+        });
+        child.stderr.on("data", (chunk) => {
+          stderr = Buffer.concat([stderr, chunk]);
+          if (stderr.length > verified.limits.maxStderrBytes) {
+            outputLimited = true;
+            terminate("output-limit");
+          }
+        });
+        child.once("exit", (code, childSignal) => {
+          childExitObserved = true;
+          onProcessEvent({
+            type: "exit",
+            pid: child.pid,
+            parentPid: process.pid,
+            exitCode: Number.isInteger(code) ? code : null,
+            signal: childSignal || "none",
+          });
+          clearTimeout(timer);
+          if (signal && abortHandler) signal.removeEventListener("abort", abortHandler);
+          const status = cancelled
+            ? "cancelled"
+            : timedOut
+              ? "timed-out"
+              : outputLimited
+                ? "output-limited"
+                : invalidEvent
+                  ? "invalid-event"
+                  : code === 0
+                    ? "completed"
+                    : "failed";
+          const payload = lifecycleSummary({
+            authorization: verified,
+            events: events.sort((left, right) => compareText(left.eventId, right.eventId)),
+            status,
+            exitCode: Number.isInteger(code) ? code : null,
+            signal: childSignal || "",
+            stdoutBytes: stdout.length,
+            stderrBytes: stderr.length,
+            stdoutDigest: digest(stdout),
+            stderrDigest: digest(stderr),
+            callerFenceDigest,
+            childFenceDigest,
+            childStarted,
+            childExitObserved,
+            terminationRequested,
+            projectFenceValidated: true,
+            inputDigestObserved,
+            noDescendantFixture: true,
+            descendantTreeOwnershipValidated: childStarted && childExitObserved,
+            consumption,
+          });
+          resolve(verifyRuntimeInvocationLifecycleReceipt(identify(payload, "runtime-lifecycle-receipt", "receiptId", "receiptHash")));
+        });
       });
-      resolve(verifyRuntimeInvocationLifecycleReceipt(identify(payload, "runtime-lifecycle-receipt", "receiptId", "receiptHash")));
-    });
-  });
-  if (receipt.inputDigestObserved !== verified.executionInput.digest && receipt.status === "completed") {
-    fail("Lifecycle conformance fixture did not observe the authorized execution input.", "RUNTIME_INVOCATION_INPUT_NOT_OBSERVED");
-  }
-  return { status: "lifecycle_conformance_recorded", receipt, events };
-  });
+      if (receipt.inputDigestObserved !== verified.executionInput.digest && receipt.status === "completed") {
+        fail("Lifecycle conformance fixture did not observe the authorized execution input.", "RUNTIME_INVOCATION_INPUT_NOT_OBSERVED");
+      }
+      return { status: "lifecycle_conformance_recorded", receipt, events };
+    },
+  );
   return {
     ...leased.result,
     executionLease: {
@@ -1462,31 +1928,42 @@ export function buildRuntimeResultPacketDraft({ authorization, receipt, leaseRel
   const verifiedAuthorization = verifyRuntimeInvocationAuthorization(authorization);
   const verifiedReceipt = verifyRuntimeInvocationLifecycleReceipt(receipt);
   const verifiedRelease = verifyRuntimeExecutionLeaseRelease(leaseRelease);
-  const verifiedProviderResult = providerResult === null
-    ? null : verifyRuntimeStructuredResult(providerResult, { scopeKind: verifiedAuthorization.scope.kind, authorization: verifiedAuthorization });
-  if (verifiedAuthorization.protocolVersion === PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION
-    && verifiedReceipt.status === "completed" && verifiedProviderResult === null) {
+  const verifiedProviderResult =
+    providerResult === null
+      ? null
+      : verifyRuntimeStructuredResult(providerResult, { scopeKind: verifiedAuthorization.scope.kind, authorization: verifiedAuthorization });
+  if (
+    verifiedAuthorization.protocolVersion === PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION &&
+    verifiedReceipt.status === "completed" &&
+    verifiedProviderResult === null
+  ) {
     fail("Completed proposal execution requires its typed patch proposal.", "INVALID_RUNTIME_STRUCTURED_RESULT");
   }
-  if (verifiedReceipt.authorizationId !== verifiedAuthorization.authorizationId
-    || verifiedReceipt.scopeKind !== verifiedAuthorization.scope.kind
-    || verifiedReceipt.executionContractId !== verifiedAuthorization.scope.executionContractId
-    || verifiedReceipt.runId !== verifiedAuthorization.scope.runId
-    || verifiedRelease.authorizationId !== verifiedAuthorization.authorizationId
-    || verifiedRelease.consumptionId !== verifiedReceipt.executionLeaseConsumptionId
-    || verifiedRelease.lifecycleReceiptId !== verifiedReceipt.receiptId) {
+  if (
+    verifiedReceipt.authorizationId !== verifiedAuthorization.authorizationId ||
+    verifiedReceipt.scopeKind !== verifiedAuthorization.scope.kind ||
+    verifiedReceipt.executionContractId !== verifiedAuthorization.scope.executionContractId ||
+    verifiedReceipt.runId !== verifiedAuthorization.scope.runId ||
+    verifiedRelease.authorizationId !== verifiedAuthorization.authorizationId ||
+    verifiedRelease.consumptionId !== verifiedReceipt.executionLeaseConsumptionId ||
+    verifiedRelease.lifecycleReceiptId !== verifiedReceipt.receiptId
+  ) {
     fail("Runtime receipt does not belong to the authorized execution scope.", "RUNTIME_RESULT_DRAFT_LINEAGE_CONFLICT");
   }
   const actualProvider = verifiedReceipt.providerBoundary.actualProviderInvoked;
   const providerResultDigest = verifiedProviderResult === null ? "" : digest(canonicalJson(verifiedProviderResult));
-  if (verifiedReceipt.providerBoundary.structuredResultObserved !== (verifiedProviderResult !== null)
-    || verifiedReceipt.providerBoundary.structuredResultDigest !== providerResultDigest
-    || verifiedReceipt.providerBoundary.structuredResultBytes !== (verifiedProviderResult === null ? 0 : Buffer.byteLength(canonicalJson(verifiedProviderResult)))) {
+  if (
+    verifiedReceipt.providerBoundary.structuredResultObserved !== (verifiedProviderResult !== null) ||
+    verifiedReceipt.providerBoundary.structuredResultDigest !== providerResultDigest ||
+    verifiedReceipt.providerBoundary.structuredResultBytes !== (verifiedProviderResult === null ? 0 : Buffer.byteLength(canonicalJson(verifiedProviderResult)))
+  ) {
     fail("Runtime structured result does not match the lifecycle receipt.", "RUNTIME_RESULT_DRAFT_STRUCTURED_RESULT_CONFLICT");
   }
-  const successful = verifiedReceipt.status === "completed" && verifiedReceipt.exitCode === 0
-    && verifiedReceipt.inputDigestObserved === verifiedAuthorization.executionInput.digest
-    && (!actualProvider || verifiedReceipt.processBoundary.descendantTreeOwnershipValidated);
+  const successful =
+    verifiedReceipt.status === "completed" &&
+    verifiedReceipt.exitCode === 0 &&
+    verifiedReceipt.inputDigestObserved === verifiedAuthorization.executionInput.digest &&
+    (!actualProvider || verifiedReceipt.processBoundary.descendantTreeOwnershipValidated);
   const providerDiagnosticCodes = verifiedReceipt.providerBoundary.diagnosticCodes || [];
   const lifecycleUnknowns = verifiedReceipt.unknownEventTypes.map((type) => `Unrecognized provider event type: ${type}`);
   lifecycleUnknowns.push(...providerDiagnosticCodes.map((code) => `Provider diagnostic: ${code}`));
@@ -1504,32 +1981,37 @@ export function buildRuntimeResultPacketDraft({ authorization, receipt, leaseRel
     scopeKind: verifiedAuthorization.scope.kind,
     executionContractId: verifiedAuthorization.scope.executionContractId,
     runId: verifiedAuthorization.scope.runId,
-    outcome: verifiedProviderResult?.outcome
-      || (successful ? "Provider lifecycle conformance completed." : `Provider lifecycle conformance ended with ${verifiedReceipt.status}.`),
-    evidence: [{
-      kind: "RuntimeLifecycleEvidence",
-      lifecycleReceiptId: verifiedReceipt.receiptId,
-      executionLeaseConsumptionId: verifiedReceipt.executionLeaseConsumptionId,
-      executionLeaseReleaseId: verifiedRelease.releaseId,
-      eventIds: verifiedReceipt.eventIds,
-      eventTypes: verifiedReceipt.eventTypes,
-      providerDiagnosticCodes,
-      providerSessionReferenceDigests: verifiedReceipt.providerSessionReferenceDigests,
-      actualProviderInvoked: actualProvider,
-      structuredResultDigest: providerResultDigest,
-      instructionAuthority: false,
-    }],
+    outcome:
+      verifiedProviderResult?.outcome ||
+      (successful ? "Provider lifecycle conformance completed." : `Provider lifecycle conformance ended with ${verifiedReceipt.status}.`),
+    evidence: [
+      {
+        kind: "RuntimeLifecycleEvidence",
+        lifecycleReceiptId: verifiedReceipt.receiptId,
+        executionLeaseConsumptionId: verifiedReceipt.executionLeaseConsumptionId,
+        executionLeaseReleaseId: verifiedRelease.releaseId,
+        eventIds: verifiedReceipt.eventIds,
+        eventTypes: verifiedReceipt.eventTypes,
+        providerDiagnosticCodes,
+        providerSessionReferenceDigests: verifiedReceipt.providerSessionReferenceDigests,
+        actualProviderInvoked: actualProvider,
+        structuredResultDigest: providerResultDigest,
+        instructionAuthority: false,
+      },
+    ],
     providerResult: verifiedProviderResult,
     planDelta: verifiedProviderResult?.planDelta || "",
     impactRadius: verifiedProviderResult?.impactRadius || [],
-    verification: [{
-      kind: "RuntimeLifecycleVerification",
-      status: successful ? "passed" : "failed",
-      projectFenceValidated: verifiedReceipt.processBoundary.projectFenceValidated,
-      exactChildExitObserved: verifiedReceipt.processBoundary.exactChildExitObserved,
-      descendantTreeOwnershipValidated: verifiedReceipt.processBoundary.descendantTreeOwnershipValidated,
-      inputDigestMatched: verifiedReceipt.inputDigestObserved === verifiedAuthorization.executionInput.digest,
-    }],
+    verification: [
+      {
+        kind: "RuntimeLifecycleVerification",
+        status: successful ? "passed" : "failed",
+        projectFenceValidated: verifiedReceipt.processBoundary.projectFenceValidated,
+        exactChildExitObserved: verifiedReceipt.processBoundary.exactChildExitObserved,
+        descendantTreeOwnershipValidated: verifiedReceipt.processBoundary.descendantTreeOwnershipValidated,
+        inputDigestMatched: verifiedReceipt.inputDigestObserved === verifiedAuthorization.executionInput.digest,
+      },
+    ],
     unknowns: [...new Set([...lifecycleUnknowns, ...(verifiedProviderResult?.unknowns || [])])].sort(compareText),
     finalResultPacketPersisted: false,
     freshHeadReviewRequired: verifiedAuthorization.scope.kind === "run",
@@ -1544,70 +2026,133 @@ export function buildRuntimeResultPacketDraft({ authorization, receipt, leaseRel
 
 export function verifyRuntimeResultPacketDraft(document, { authorization = null } = {}) {
   const legacyDraft = document?.protocolVersion === LEGACY_RUNTIME_RESULT_DRAFT_VERSION;
-  assertFields(document, [
-    "schemaVersion", "kind", "protocolVersion", "authorizationId", "lifecycleReceiptId", "executionLeaseConsumptionId",
-    "executionLeaseReleaseId", "scopeKind", "executionContractId",
-    "runId", "outcome", "evidence", "providerResult", "planDelta", "impactRadius", "verification", "unknowns",
-    "finalResultPacketPersisted", "freshHeadReviewRequired", "rawTranscriptIncluded", "authority",
-    "instructionAuthority", "promotionAuthority", "mutatesCanon", "draftId", "draftHash",
-  ], "Runtime ResultPacket draft");
-  if (!Array.isArray(document.evidence) || document.evidence.length !== 1
-    || !Array.isArray(document.verification) || document.verification.length !== 1) {
+  assertFields(
+    document,
+    [
+      "schemaVersion",
+      "kind",
+      "protocolVersion",
+      "authorizationId",
+      "lifecycleReceiptId",
+      "executionLeaseConsumptionId",
+      "executionLeaseReleaseId",
+      "scopeKind",
+      "executionContractId",
+      "runId",
+      "outcome",
+      "evidence",
+      "providerResult",
+      "planDelta",
+      "impactRadius",
+      "verification",
+      "unknowns",
+      "finalResultPacketPersisted",
+      "freshHeadReviewRequired",
+      "rawTranscriptIncluded",
+      "authority",
+      "instructionAuthority",
+      "promotionAuthority",
+      "mutatesCanon",
+      "draftId",
+      "draftHash",
+    ],
+    "Runtime ResultPacket draft",
+  );
+  if (!Array.isArray(document.evidence) || document.evidence.length !== 1 || !Array.isArray(document.verification) || document.verification.length !== 1) {
     fail("Runtime ResultPacket draft evidence and verification cardinality are invalid.", "INVALID_RUNTIME_RESULT_PACKET_DRAFT");
   }
   const evidence = document.evidence[0];
   const verification = document.verification[0];
-  assertFields(evidence, [
-    "kind", "lifecycleReceiptId", "executionLeaseConsumptionId", "executionLeaseReleaseId", "eventIds", "eventTypes",
-    ...(legacyDraft ? [] : ["providerDiagnosticCodes"]), "providerSessionReferenceDigests", "actualProviderInvoked",
-    "structuredResultDigest", "instructionAuthority",
-  ], "Runtime ResultPacket draft evidence");
-  assertFields(verification, [
-    "kind", "status", "projectFenceValidated", "exactChildExitObserved", "descendantTreeOwnershipValidated", "inputDigestMatched",
-  ], "Runtime ResultPacket draft verification");
+  assertFields(
+    evidence,
+    [
+      "kind",
+      "lifecycleReceiptId",
+      "executionLeaseConsumptionId",
+      "executionLeaseReleaseId",
+      "eventIds",
+      "eventTypes",
+      ...(legacyDraft ? [] : ["providerDiagnosticCodes"]),
+      "providerSessionReferenceDigests",
+      "actualProviderInvoked",
+      "structuredResultDigest",
+      "instructionAuthority",
+    ],
+    "Runtime ResultPacket draft evidence",
+  );
+  assertFields(
+    verification,
+    ["kind", "status", "projectFenceValidated", "exactChildExitObserved", "descendantTreeOwnershipValidated", "inputDigestMatched"],
+    "Runtime ResultPacket draft verification",
+  );
   const sortedUnique = (items) => Array.isArray(items) && canonicalJson(items) === canonicalJson([...new Set(items)].sort(compareText));
-  const providerResult = document.providerResult === null
-    ? null : verifyRuntimeStructuredResult(document.providerResult, { scopeKind: document.scopeKind, authorization });
+  const providerResult =
+    document.providerResult === null ? null : verifyRuntimeStructuredResult(document.providerResult, { scopeKind: document.scopeKind, authorization });
   if (authorization !== null) {
     const verified = verifyRuntimeInvocationAuthorization(authorization);
-    if (document.authorizationId !== verified.authorizationId || document.scopeKind !== verified.scope.kind
-      || document.runId !== verified.scope.runId || document.executionContractId !== verified.scope.executionContractId
-      || verified.protocolVersion === PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION && verification.status === "passed" && providerResult === null) {
+    if (
+      document.authorizationId !== verified.authorizationId ||
+      document.scopeKind !== verified.scope.kind ||
+      document.runId !== verified.scope.runId ||
+      document.executionContractId !== verified.scope.executionContractId ||
+      (verified.protocolVersion === PROPOSAL_WORKER_EXECUTION_AUTHORIZATION_VERSION && verification.status === "passed" && providerResult === null)
+    ) {
       fail("Runtime draft differs from its exact authorization or required proposal.", "RUNTIME_RESULT_DRAFT_LINEAGE_CONFLICT");
     }
   }
   const providerResultDigest = providerResult === null ? "" : digest(canonicalJson(providerResult));
-  if (document.schemaVersion !== 1 || document.kind !== "RuntimeResultPacketDraft"
-    || !new Set([LEGACY_RUNTIME_RESULT_DRAFT_VERSION, RUNTIME_RESULT_DRAFT_VERSION]).has(document.protocolVersion)
-    || !/^execution-authorization-[a-f0-9]{24}$/.test(document.authorizationId || "")
-    || !/^runtime-lifecycle-receipt-[a-f0-9]{24}$/.test(document.lifecycleReceiptId || "")
-    || !/^runtime-execution-consumption-[a-f0-9]{24}$/.test(document.executionLeaseConsumptionId || "")
-    || !/^runtime-execution-release-[a-f0-9]{24}$/.test(document.executionLeaseReleaseId || "")
-    || !EXECUTION_SCOPE_KINDS.includes(document.scopeKind)
-    || (document.scopeKind === "run" && (!/^execution-contract-[a-f0-9]{24}$/.test(document.executionContractId || "")
-      || !/^run-[0-9]+-[a-f0-9]{6}$/.test(document.runId || "")))
-    || (document.scopeKind === "session" && (document.executionContractId !== null || document.runId !== null))
-    || typeof document.outcome !== "string" || !document.outcome
-    || evidence.kind !== "RuntimeLifecycleEvidence" || evidence.lifecycleReceiptId !== document.lifecycleReceiptId
-    || evidence.executionLeaseConsumptionId !== document.executionLeaseConsumptionId
-    || evidence.executionLeaseReleaseId !== document.executionLeaseReleaseId
-    || !sortedUnique(evidence.eventIds) || evidence.eventIds.some((item) => !/^runtime-event-[a-f0-9]{24}$/.test(item))
-    || !sortedUnique(evidence.eventTypes)
-    || !legacyDraft && (!sortedUnique(evidence.providerDiagnosticCodes)
-      || evidence.providerDiagnosticCodes.length > 32
-      || evidence.providerDiagnosticCodes.some((item) => typeof item !== "string" || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(item)))
-    || !sortedUnique(evidence.providerSessionReferenceDigests)
-    || evidence.providerSessionReferenceDigests.some((item) => !/^[a-f0-9]{64}$/.test(item))
-    || typeof evidence.actualProviderInvoked !== "boolean" || evidence.structuredResultDigest !== providerResultDigest
-    || evidence.instructionAuthority !== false
-    || verification.kind !== "RuntimeLifecycleVerification" || !new Set(["passed", "failed"]).has(verification.status)
-    || [verification.projectFenceValidated, verification.exactChildExitObserved, verification.descendantTreeOwnershipValidated, verification.inputDigestMatched].some((item) => typeof item !== "boolean")
-    || typeof document.planDelta !== "string" || document.planDelta !== (providerResult?.planDelta || "")
-    || !Array.isArray(document.impactRadius) || canonicalJson(document.impactRadius) !== canonicalJson(providerResult?.impactRadius || [])
-    || !Array.isArray(document.unknowns) || document.unknowns.some((item) => typeof item !== "string" || !item)
-    || document.finalResultPacketPersisted !== false || document.freshHeadReviewRequired !== (document.scopeKind === "run")
-    || document.rawTranscriptIncluded !== false || document.authority !== "draft-evidence-not-reviewed-result"
-    || document.instructionAuthority !== false || document.promotionAuthority !== false || document.mutatesCanon !== false) {
+  if (
+    document.schemaVersion !== 1 ||
+    document.kind !== "RuntimeResultPacketDraft" ||
+    !new Set([LEGACY_RUNTIME_RESULT_DRAFT_VERSION, RUNTIME_RESULT_DRAFT_VERSION]).has(document.protocolVersion) ||
+    !/^execution-authorization-[a-f0-9]{24}$/.test(document.authorizationId || "") ||
+    !/^runtime-lifecycle-receipt-[a-f0-9]{24}$/.test(document.lifecycleReceiptId || "") ||
+    !/^runtime-execution-consumption-[a-f0-9]{24}$/.test(document.executionLeaseConsumptionId || "") ||
+    !/^runtime-execution-release-[a-f0-9]{24}$/.test(document.executionLeaseReleaseId || "") ||
+    !EXECUTION_SCOPE_KINDS.includes(document.scopeKind) ||
+    (document.scopeKind === "run" &&
+      (!/^execution-contract-[a-f0-9]{24}$/.test(document.executionContractId || "") || !/^run-[0-9]+-[a-f0-9]{6}$/.test(document.runId || ""))) ||
+    (document.scopeKind === "session" && (document.executionContractId !== null || document.runId !== null)) ||
+    typeof document.outcome !== "string" ||
+    !document.outcome ||
+    evidence.kind !== "RuntimeLifecycleEvidence" ||
+    evidence.lifecycleReceiptId !== document.lifecycleReceiptId ||
+    evidence.executionLeaseConsumptionId !== document.executionLeaseConsumptionId ||
+    evidence.executionLeaseReleaseId !== document.executionLeaseReleaseId ||
+    !sortedUnique(evidence.eventIds) ||
+    evidence.eventIds.some((item) => !/^runtime-event-[a-f0-9]{24}$/.test(item)) ||
+    !sortedUnique(evidence.eventTypes) ||
+    (!legacyDraft &&
+      (!sortedUnique(evidence.providerDiagnosticCodes) ||
+        evidence.providerDiagnosticCodes.length > 32 ||
+        evidence.providerDiagnosticCodes.some((item) => typeof item !== "string" || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(item)))) ||
+    !sortedUnique(evidence.providerSessionReferenceDigests) ||
+    evidence.providerSessionReferenceDigests.some((item) => !/^[a-f0-9]{64}$/.test(item)) ||
+    typeof evidence.actualProviderInvoked !== "boolean" ||
+    evidence.structuredResultDigest !== providerResultDigest ||
+    evidence.instructionAuthority !== false ||
+    verification.kind !== "RuntimeLifecycleVerification" ||
+    !new Set(["passed", "failed"]).has(verification.status) ||
+    [
+      verification.projectFenceValidated,
+      verification.exactChildExitObserved,
+      verification.descendantTreeOwnershipValidated,
+      verification.inputDigestMatched,
+    ].some((item) => typeof item !== "boolean") ||
+    typeof document.planDelta !== "string" ||
+    document.planDelta !== (providerResult?.planDelta || "") ||
+    !Array.isArray(document.impactRadius) ||
+    canonicalJson(document.impactRadius) !== canonicalJson(providerResult?.impactRadius || []) ||
+    !Array.isArray(document.unknowns) ||
+    document.unknowns.some((item) => typeof item !== "string" || !item) ||
+    document.finalResultPacketPersisted !== false ||
+    document.freshHeadReviewRequired !== (document.scopeKind === "run") ||
+    document.rawTranscriptIncluded !== false ||
+    document.authority !== "draft-evidence-not-reviewed-result" ||
+    document.instructionAuthority !== false ||
+    document.promotionAuthority !== false ||
+    document.mutatesCanon !== false
+  ) {
     fail("Runtime ResultPacket draft is invalid.", "INVALID_RUNTIME_RESULT_PACKET_DRAFT");
   }
   verifyIdentity(document, { prefix: "runtime-result-draft", idKey: "draftId", hashKey: "draftHash", code: "RUNTIME_RESULT_DRAFT_DIGEST_MISMATCH" });

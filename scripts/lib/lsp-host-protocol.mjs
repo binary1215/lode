@@ -46,35 +46,64 @@ export const LSP_HOST_REAL_GATE = Object.freeze({
   authority: "ephemeral-host-evidence-only",
 });
 
-export const LSP_HOST_STATUSES = Object.freeze([
-  "not-configured", "unsupported", "completed", "failed", "contaminated",
-]);
-export const LSP_HOST_STAGES = Object.freeze([
-  "discovery", "launch", "initialize", "open", "prepare", "hierarchy", "closing", "closed",
-]);
+export const LSP_HOST_STATUSES = Object.freeze(["not-configured", "unsupported", "completed", "failed", "contaminated"]);
+export const LSP_HOST_STAGES = Object.freeze(["discovery", "launch", "initialize", "open", "prepare", "hierarchy", "closing", "closed"]);
 export const LSP_HOST_REASONS = Object.freeze([
-  "no-profile", "unsupported-profile", "no-prepared-item", "empty", "candidates",
-  "invalid-input", "launch-failed", "request-timeout", "cancelled", "frame-oversize",
-  "stdout-limit", "stderr-limit", "frame-limit", "notification-limit", "invalid-framing",
-  "invalid-json", "invalid-message", "unsupported-server-request", "unsupported-server-notification",
-  "unknown-response-id", "duplicate-response-id", "late-response", "ambiguous-prepared-item",
-  "invalid-prepare-result", "invalid-hierarchy-result", "process-crash", "cleanup-failed",
-  "limit-exceeded", "mapping-mismatch", "project-mismatch", "generation-mismatch",
-  "manifest-mismatch", "producer-mismatch", "uri-outside-snapshot", "invalid-range",
-  "source-drift", "config-drift", "profile-drift",
+  "no-profile",
+  "unsupported-profile",
+  "no-prepared-item",
+  "empty",
+  "candidates",
+  "invalid-input",
+  "launch-failed",
+  "request-timeout",
+  "cancelled",
+  "frame-oversize",
+  "stdout-limit",
+  "stderr-limit",
+  "frame-limit",
+  "notification-limit",
+  "invalid-framing",
+  "invalid-json",
+  "invalid-message",
+  "unsupported-server-request",
+  "unsupported-server-notification",
+  "unknown-response-id",
+  "duplicate-response-id",
+  "late-response",
+  "ambiguous-prepared-item",
+  "invalid-prepare-result",
+  "invalid-hierarchy-result",
+  "process-crash",
+  "cleanup-failed",
+  "limit-exceeded",
+  "mapping-mismatch",
+  "project-mismatch",
+  "generation-mismatch",
+  "manifest-mismatch",
+  "producer-mismatch",
+  "uri-outside-snapshot",
+  "invalid-range",
+  "source-drift",
+  "config-drift",
+  "profile-drift",
 ]);
 
 const statusSet = new Set(LSP_HOST_STATUSES);
 const stageSet = new Set(LSP_HOST_STAGES);
 const reasonSet = new Set(LSP_HOST_REASONS);
-const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const fatalUtf8 = new TextDecoder("utf-8", { fatal: true });
 export const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
 export function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compareText).map((key) => [key, canonicalValue(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort(compareText)
+        .map((key) => [key, canonicalValue(value[key])]),
+    );
   }
   return value;
 }
@@ -145,7 +174,8 @@ export class LspFrameParser {
         const match = /^content-length\s*:\s*([0-9]+)$/i.exec(lengths[0]);
         if (!match) throw protocolError("invalid-framing", "LSP Content-Length is invalid.");
         this.expected = Number(match[1]);
-        if (!Number.isSafeInteger(this.expected) || this.expected < 0) throw protocolError("invalid-framing", "LSP Content-Length is outside its numeric bound.");
+        if (!Number.isSafeInteger(this.expected) || this.expected < 0)
+          throw protocolError("invalid-framing", "LSP Content-Length is outside its numeric bound.");
         if (this.expected > this.limits.maxFrameBytes) throw protocolError("frame-oversize", "LSP frame exceeds its byte bound.");
         this.buffer = this.buffer.subarray(boundary + 4);
       }
@@ -154,8 +184,11 @@ export class LspFrameParser {
       this.buffer = this.buffer.subarray(this.expected);
       this.expected = null;
       let message;
-      try { message = JSON.parse(fatalUtf8.decode(bytes)); }
-      catch { throw protocolError("invalid-json", "LSP payload is not valid UTF-8 JSON."); }
+      try {
+        message = JSON.parse(fatalUtf8.decode(bytes));
+      } catch {
+        throw protocolError("invalid-json", "LSP payload is not valid UTF-8 JSON.");
+      }
       if (!message || typeof message !== "object" || Array.isArray(message) || jsonDepth(message) > this.limits.maxJsonDepth) {
         throw protocolError("invalid-message", "LSP payload is not a bounded JSON object.");
       }
@@ -194,9 +227,18 @@ export function createSnapshotDescriptor({ projectId, generationDigest, sources,
   if (!Array.isArray(sources) || sources.length !== 3) {
     throw protocolError("invalid-input", "Exactly 3 source documents are required for the selected profile kind.");
   }
-  const fixedTsconfig = tsconfigText ?? canonicalJson({ compilerOptions: { module: "NodeNext", moduleResolution: "NodeNext", strict: true, target: "ES2022" }, files: sources.map((item) => normalizeRelativePath(item.path)) });
+  const fixedTsconfig =
+    tsconfigText ??
+    canonicalJson({
+      compilerOptions: { module: "NodeNext", moduleResolution: "NodeNext", strict: true, target: "ES2022" },
+      files: sources.map((item) => normalizeRelativePath(item.path)),
+    });
   const documents = [
-    ...sources.map((item) => ({ path: normalizeRelativePath(item.path), languageId: "typescript", text: requireText(item.text, "source text", LSP_HOST_LIMITS.maxDocumentBytes) })),
+    ...sources.map((item) => ({
+      path: normalizeRelativePath(item.path),
+      languageId: "typescript",
+      text: requireText(item.text, "source text", LSP_HOST_LIMITS.maxDocumentBytes),
+    })),
     { path: "tsconfig.json", languageId: "json", text: requireText(fixedTsconfig, "tsconfig", LSP_HOST_LIMITS.maxDocumentBytes) },
   ];
   if (new Set(documents.map((item) => item.path)).size !== documents.length) throw protocolError("invalid-input", "Snapshot paths must be unique.");
@@ -221,7 +263,11 @@ export function createSnapshotDescriptor({ projectId, generationDigest, sources,
     documents: manifestDocuments,
   };
   const snapshotManifestDigest = sha256(canonicalJson(manifestPayload));
-  return Object.freeze({ ...manifestPayload, snapshotManifestDigest, documents: documents.map((item, index) => Object.freeze({ ...item, ...manifestDocuments[index] })) });
+  return Object.freeze({
+    ...manifestPayload,
+    snapshotManifestDigest,
+    documents: documents.map((item, index) => Object.freeze({ ...item, ...manifestDocuments[index] })),
+  });
 }
 
 export function snapshotUri(collectionId, relativePath) {
@@ -231,14 +277,28 @@ export function snapshotUri(collectionId, relativePath) {
 export function relativePathFromUri(uri, collectionId, allowedPaths) {
   if (typeof uri !== "string") throw protocolError("uri-outside-snapshot", "LSP URI is missing.");
   let parsed;
-  try { parsed = new URL(uri); } catch { throw protocolError("uri-outside-snapshot", "LSP URI is invalid."); }
-  if (parsed.protocol !== "head-lsp:" || parsed.hostname !== encodeURIComponent(collectionId).toLowerCase()
-    || parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash) {
+  try {
+    parsed = new URL(uri);
+  } catch {
+    throw protocolError("uri-outside-snapshot", "LSP URI is invalid.");
+  }
+  if (
+    parsed.protocol !== "head-lsp:" ||
+    parsed.hostname !== encodeURIComponent(collectionId).toLowerCase() ||
+    parsed.username ||
+    parsed.password ||
+    parsed.port ||
+    parsed.search ||
+    parsed.hash
+  ) {
     throw protocolError("uri-outside-snapshot", "LSP URI escaped the owned snapshot.");
   }
   let relative;
-  try { relative = parsed.pathname.slice(1).split("/").map(decodeURIComponent).join("/"); }
-  catch { throw protocolError("uri-outside-snapshot", "LSP URI encoding is invalid."); }
+  try {
+    relative = parsed.pathname.slice(1).split("/").map(decodeURIComponent).join("/");
+  } catch {
+    throw protocolError("uri-outside-snapshot", "LSP URI encoding is invalid.");
+  }
   relative = normalizeRelativePath(relative);
   if (!allowedPaths.has(relative)) throw protocolError("uri-outside-snapshot", "LSP URI does not name an admitted snapshot document.");
   if (uri !== snapshotUri(collectionId, relative)) throw protocolError("uri-outside-snapshot", "LSP URI is a non-canonical alias of an admitted endpoint.");
@@ -251,13 +311,21 @@ function isWindowsReservedSegment(segment) {
 }
 
 export function serializePinnedTlsWindowsFixtureUri(nativeRealPath) {
-  if (typeof nativeRealPath !== "string" || nativeRealPath.includes("/") || nativeRealPath.includes("\0")
-    || !/^[A-Z]:\\[A-Za-z0-9._-]+(?:\\[A-Za-z0-9._-]+)*$/.test(nativeRealPath)) {
+  if (
+    typeof nativeRealPath !== "string" ||
+    nativeRealPath.includes("/") ||
+    nativeRealPath.includes("\0") ||
+    !/^[A-Z]:\\[A-Za-z0-9._-]+(?:\\[A-Za-z0-9._-]+)*$/.test(nativeRealPath)
+  ) {
     throw protocolError("unsupported-profile", "Real LSP fixture path is outside the pinned Windows path grammar.");
   }
   const segments = nativeRealPath.slice(3).split("\\");
-  if (segments.some((segment) => segment === "." || segment === ".." || segment.endsWith(".") || segment.endsWith(" ")
-    || segment.includes(":") || isWindowsReservedSegment(segment))) {
+  if (
+    segments.some(
+      (segment) =>
+        segment === "." || segment === ".." || segment.endsWith(".") || segment.endsWith(" ") || segment.includes(":") || isWindowsReservedSegment(segment),
+    )
+  ) {
     throw protocolError("unsupported-profile", "Real LSP fixture path contains an unsupported Windows segment.");
   }
   return `file:///${nativeRealPath[0].toLowerCase()}%3A/${segments.join("/")}`;
@@ -267,8 +335,10 @@ export function admittedRealDocumentFromUri(uri, documents) {
   if (typeof uri !== "string" || Buffer.byteLength(uri, "utf8") > 4096 || !Array.isArray(documents)) {
     throw protocolError("uri-outside-snapshot", "Real LSP URI is not a bounded admitted endpoint.");
   }
-  const matches = documents.filter((document) => document?.languageId === "typescript"
-    && Array.isArray(document.allowedUris) && document.allowedUris.length === 2 && document.allowedUris.includes(uri));
+  const matches = documents.filter(
+    (document) =>
+      document?.languageId === "typescript" && Array.isArray(document.allowedUris) && document.allowedUris.length === 2 && document.allowedUris.includes(uri),
+  );
   if (matches.length !== 1) throw protocolError("uri-outside-snapshot", "Real LSP URI is outside the finite admission manifest.");
   return matches[0];
 }
@@ -312,18 +382,32 @@ function codeMask(text) {
       if (current === "\n") mode = "code";
       else chars[index] = " ";
     } else if (mode === "block") {
-      if (current === "*" && next === "/") { chars[index] = chars[index + 1] = " "; index += 1; mode = "code"; }
-      else if (current !== "\n" && current !== "\r") chars[index] = " ";
+      if (current === "*" && next === "/") {
+        chars[index] = chars[index + 1] = " ";
+        index += 1;
+        mode = "code";
+      } else if (current !== "\n" && current !== "\r") chars[index] = " ";
     } else if (mode === "string") {
-      if (current === "\\") { chars[index] = " "; if (index + 1 < chars.length) chars[++index] = " "; }
-      else if (current === quote) { chars[index] = " "; mode = "code"; quote = null; }
-      else if (current !== "\n" && current !== "\r") chars[index] = " ";
+      if (current === "\\") {
+        chars[index] = " ";
+        if (index + 1 < chars.length) chars[++index] = " ";
+      } else if (current === quote) {
+        chars[index] = " ";
+        mode = "code";
+        quote = null;
+      } else if (current !== "\n" && current !== "\r") chars[index] = " ";
     } else if (current === "/" && next === "/") {
-      chars[index] = chars[index + 1] = " "; index += 1; mode = "line";
+      chars[index] = chars[index + 1] = " ";
+      index += 1;
+      mode = "line";
     } else if (current === "/" && next === "*") {
-      chars[index] = chars[index + 1] = " "; index += 1; mode = "block";
-    } else if (current === "\"" || current === "'" || current === "`") {
-      chars[index] = " "; mode = "string"; quote = current;
+      chars[index] = chars[index + 1] = " ";
+      index += 1;
+      mode = "block";
+    } else if (current === '"' || current === "'" || current === "`") {
+      chars[index] = " ";
+      mode = "string";
+      quote = current;
     }
   }
   return chars.join("");
@@ -340,17 +424,28 @@ function commentMask(text) {
       if (current === "\n") mode = "code";
       else chars[index] = " ";
     } else if (mode === "block") {
-      if (current === "*" && next === "/") { chars[index] = chars[index + 1] = " "; index += 1; mode = "code"; }
-      else if (current !== "\n" && current !== "\r") chars[index] = " ";
+      if (current === "*" && next === "/") {
+        chars[index] = chars[index + 1] = " ";
+        index += 1;
+        mode = "code";
+      } else if (current !== "\n" && current !== "\r") chars[index] = " ";
     } else if (mode === "string") {
       if (current === "\\") index += 1;
-      else if (current === quote) { mode = "code"; quote = null; }
+      else if (current === quote) {
+        mode = "code";
+        quote = null;
+      }
     } else if (current === "/" && next === "/") {
-      chars[index] = chars[index + 1] = " "; index += 1; mode = "line";
+      chars[index] = chars[index + 1] = " ";
+      index += 1;
+      mode = "line";
     } else if (current === "/" && next === "*") {
-      chars[index] = chars[index + 1] = " "; index += 1; mode = "block";
-    } else if (current === "\"" || current === "'") {
-      mode = "string"; quote = current;
+      chars[index] = chars[index + 1] = " ";
+      index += 1;
+      mode = "block";
+    } else if (current === '"' || current === "'") {
+      mode = "string";
+      quote = current;
     }
   }
   return chars.join("");
@@ -366,10 +461,16 @@ function hasUnsupportedFixtureLexeme(text) {
     if (mode === "line") {
       if (current === "\n") mode = "code";
     } else if (mode === "block") {
-      if (current === "*" && next === "/") { index += 1; mode = "code"; }
+      if (current === "*" && next === "/") {
+        index += 1;
+        mode = "code";
+      }
     } else if (mode === "string") {
       if (current === "\\") index += 1;
-      else if (current === quote) { mode = "code"; quote = null; }
+      else if (current === quote) {
+        mode = "code";
+        quote = null;
+      }
     } else if (current === "/" && next === "/") {
       index += 1;
       mode = "line";
@@ -378,7 +479,7 @@ function hasUnsupportedFixtureLexeme(text) {
       mode = "block";
     } else if (current === "/") {
       return true;
-    } else if (current === "\"" || current === "'") {
+    } else if (current === '"' || current === "'") {
       mode = "string";
       quote = current;
     }
@@ -390,15 +491,17 @@ export function boundedFixtureModuleRoute(callerText, barrelText) {
   if (hasUnsupportedFixtureLexeme(callerText) || hasUnsupportedFixtureLexeme(barrelText)) return null;
   const caller = commentMask(callerText);
   const callerCode = codeMask(callerText);
-  const imports = [...caller.matchAll(/^\s*import\s*\{\s*target\s*\}\s*from\s*["']\.\/(target|barrel)["']\s*;/gm)]
-    .filter((match) => callerCode.slice(match.index + match[0].indexOf("import"), match.index + match[0].indexOf("import") + 6) === "import");
+  const imports = [...caller.matchAll(/^\s*import\s*\{\s*target\s*\}\s*from\s*["']\.\/(target|barrel)["']\s*;/gm)].filter(
+    (match) => callerCode.slice(match.index + match[0].indexOf("import"), match.index + match[0].indexOf("import") + 6) === "import",
+  );
   if (imports.length !== 1) return null;
   const route = imports[0][1];
   if (route === "target") return "direct";
   const barrel = commentMask(barrelText);
   const barrelCode = codeMask(barrelText);
-  const exports = [...barrel.matchAll(/^\s*export\s*\{\s*target\s*\}\s*from\s*["']\.\/target["']\s*;/gm)]
-    .filter((match) => barrelCode.slice(match.index + match[0].indexOf("export"), match.index + match[0].indexOf("export") + 6) === "export");
+  const exports = [...barrel.matchAll(/^\s*export\s*\{\s*target\s*\}\s*from\s*["']\.\/target["']\s*;/gm)].filter(
+    (match) => barrelCode.slice(match.index + match[0].indexOf("export"), match.index + match[0].indexOf("export") + 6) === "export",
+  );
   return exports.length === 1 ? "barrel" : null;
 }
 
@@ -416,7 +519,10 @@ export function boundedFixtureFunctionIdentity(text, name) {
   let close = -1;
   for (let index = open; index < masked.length; index += 1) {
     if (masked[index] === "{") depth += 1;
-    if (masked[index] === "}" && --depth === 0) { close = index; break; }
+    if (masked[index] === "}" && --depth === 0) {
+      close = index;
+      break;
+    }
   }
   if (selectionStart < 0 || open < 0 || close < 0) return null;
   return {
@@ -455,8 +561,9 @@ export function createPendingTable(binding) {
       return id;
     },
     consume(message, currentBinding = binding) {
-      if (!("id" in message) || ("result" in message) === ("error" in message)) throw protocolError("invalid-message", "LSP response shape is invalid.");
-      if (completed.has(message.id)) throw protocolError("duplicate-response-id", "LSP response ID was already completed.", { method: completed.get(message.id).method });
+      if (!("id" in message) || "result" in message === "error" in message) throw protocolError("invalid-message", "LSP response shape is invalid.");
+      if (completed.has(message.id))
+        throw protocolError("duplicate-response-id", "LSP response ID was already completed.", { method: completed.get(message.id).method });
       const entry = pending.get(message.id);
       if (!entry) throw protocolError("unknown-response-id", "LSP response ID is not outstanding.");
       if (entry.binding !== canonicalJson(currentBinding)) throw protocolError("mapping-mismatch", "Host response ownership mapping changed.");
@@ -464,8 +571,12 @@ export function createPendingTable(binding) {
       completed.set(message.id, entry);
       return entry;
     },
-    outstanding() { return [...pending.keys()]; },
-    has(id) { return pending.has(id); },
+    outstanding() {
+      return [...pending.keys()];
+    },
+    has(id) {
+      return pending.has(id);
+    },
   });
 }
 
@@ -488,22 +599,34 @@ export function verifyOwnershipBinding(expected, observed) {
   return true;
 }
 
-export function relationSemanticDigest({ projectId, generationDigest, snapshotManifestDigest, producerDigest, direction, callerPath, callerRange, targetPath, targetRange }) {
-  return sha256(canonicalJson({
-    schemaVersion: 1,
-    normalizerVersion: LSP_HOST_NORMALIZER_VERSION,
-    projectId,
-    generationDigest,
-    snapshotManifestDigest,
-    producerDigest,
-    direction,
-    caller: { path: callerPath, range: callerRange },
-    target: { path: targetPath, range: targetRange },
-  }));
+export function relationSemanticDigest({
+  projectId,
+  generationDigest,
+  snapshotManifestDigest,
+  producerDigest,
+  direction,
+  callerPath,
+  callerRange,
+  targetPath,
+  targetRange,
+}) {
+  return sha256(
+    canonicalJson({
+      schemaVersion: 1,
+      normalizerVersion: LSP_HOST_NORMALIZER_VERSION,
+      projectId,
+      generationDigest,
+      snapshotManifestDigest,
+      producerDigest,
+      direction,
+      caller: { path: callerPath, range: callerRange },
+      target: { path: targetPath, range: targetRange },
+    }),
+  );
 }
 
 export function terminalResult({ status, reason, stage, failureStage = null, provenance = {}, candidates = [], cleanup = {} } = {}) {
-  if (!statusSet.has(status) || !reasonSet.has(reason) || !stageSet.has(stage) || failureStage !== null && !stageSet.has(failureStage)) {
+  if (!statusSet.has(status) || !reasonSet.has(reason) || !stageSet.has(stage) || (failureStage !== null && !stageSet.has(failureStage))) {
     throw protocolError("invalid-input", "Terminal LSP Host result uses an open-ended status, reason, or stage.");
   }
   const published = status === "completed" && reason === "candidates" ? candidates : [];

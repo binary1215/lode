@@ -83,21 +83,27 @@ try {
 
   const javascriptMedianMs = median(javascriptElapsedMs);
   const goMedianMs = median(goElapsedMs);
-  process.stdout.write(`${JSON.stringify({
-    schemaVersion: 1,
-    kind: "GoRepositoryScanBenchmarkReport",
-    conformanceReportId: conformance.conformanceReportId,
-    semanticIdentity,
-    corpus: path.relative(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."), repositoryRoot).replaceAll("\\", "/") || ".",
-    iterations,
-    diagnostics: {
-      javascriptMedianMs,
-      goMedianMs,
-      speedupRatio: javascriptMedianMs / goMedianMs,
-      measuredImprovement: goMedianMs < javascriptMedianMs,
-    },
-    authorityEffect: "none",
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        kind: "GoRepositoryScanBenchmarkReport",
+        conformanceReportId: conformance.conformanceReportId,
+        semanticIdentity,
+        corpus: path.relative(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."), repositoryRoot).replaceAll("\\", "/") || ".",
+        iterations,
+        diagnostics: {
+          javascriptMedianMs,
+          goMedianMs,
+          speedupRatio: javascriptMedianMs / goMedianMs,
+          measuredImprovement: goMedianMs < javascriptMedianMs,
+        },
+        authorityEffect: "none",
+      },
+      null,
+      2,
+    )}\n`,
+  );
 } catch (error) {
   process.stderr.write(`${error.message}\n`);
   process.exitCode = 1;

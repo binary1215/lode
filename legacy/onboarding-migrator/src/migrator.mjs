@@ -20,13 +20,14 @@ function completedCandidateProtocol(application) {
 
 export function inspectMigration(options = {}) {
   const completed = completedApplication(options.root ?? ".");
-  if (completed?.commit) return {
-    status: "already-applied",
-    writes: 0,
-    boundaryId: completed.boundary.boundaryId,
-    boundaryHash: completed.boundary.boundaryHash,
-    coverage: completed.coverage,
-  };
+  if (completed?.commit)
+    return {
+      status: "already-applied",
+      writes: 0,
+      boundaryId: completed.boundary.boundaryId,
+      boundaryHash: completed.boundary.boundaryHash,
+      coverage: completed.coverage,
+    };
   const inspected = inspectLegacyOnboarding(options);
   const { capability, ...projection } = inspected;
   return projection;
@@ -34,16 +35,30 @@ export function inspectMigration(options = {}) {
 
 export function applyMigration(options = {}) {
   const completed = completedApplication(options.root ?? ".");
-  if (completed?.commit) return {
-    status: "already-applied",
-    writes: 0,
-    boundary: completed.boundary,
-    receipt: completed.receipt,
-    commit: completed.commit,
-    coverage: completed.coverage,
-    migration: { candidateProtocolVersion: completedCandidateProtocol(completed), source: "standalone-pinned-one-shot", instructionAuthority: false, promotionAuthority: false },
-  };
+  if (completed?.commit)
+    return {
+      status: "already-applied",
+      writes: 0,
+      boundary: completed.boundary,
+      receipt: completed.receipt,
+      commit: completed.commit,
+      coverage: completed.coverage,
+      migration: {
+        candidateProtocolVersion: completedCandidateProtocol(completed),
+        source: "standalone-pinned-one-shot",
+        instructionAuthority: false,
+        promotionAuthority: false,
+      },
+    };
   const inspected = inspectLegacyOnboarding(options);
   const result = applyHistoricalArtifactBoundary({ root: inspected.projectRoot, verifiedInventory: inspected.capability, hostMode: "explicit-one-shot" });
-  return { ...result, migration: { candidateProtocolVersion: inspected.candidateProtocolVersion, source: "standalone-pinned-one-shot", instructionAuthority: false, promotionAuthority: false } };
+  return {
+    ...result,
+    migration: {
+      candidateProtocolVersion: inspected.candidateProtocolVersion,
+      source: "standalone-pinned-one-shot",
+      instructionAuthority: false,
+      promotionAuthority: false,
+    },
+  };
 }

@@ -4,23 +4,49 @@ import test from "node:test";
 import { buildWorkerPatchCandidate } from "../scripts/lib/worker-patch-basis.mjs";
 import { composeWorkerPatchCandidates } from "../scripts/lib/worker-patch-composition.mjs";
 
-console.log(JSON.stringify({ event: "owned-worker-composition-test", pid: process.pid, parentPid: process.ppid,
-  command: process.execPath, args: process.argv.slice(1), cwd: process.cwd(), ports: [], actualProviderInvoked: false }));
+console.log(
+  JSON.stringify({
+    event: "owned-worker-composition-test",
+    pid: process.pid,
+    parentPid: process.ppid,
+    command: process.execPath,
+    args: process.argv.slice(1),
+    cwd: process.cwd(),
+    ports: [],
+    actualProviderInvoked: false,
+  }),
+);
 function candidate(relative, before, after) {
   const bytes = before === null ? null : Buffer.from(before);
-  const basis = [bytes === null ? { path: relative, kind: "absent" } : { path: relative, kind: "file", mode: 0o644,
-    digest: crypto.createHash("sha256").update(bytes).digest("hex"), bytes: bytes.length, contentBase64: bytes.toString("base64") }];
-  return buildWorkerPatchCandidate({ basis, changes: [{ path: relative, after: after === null ? null
-    : { mode: 0o644, contentBase64: Buffer.from(after).toString("base64") } }], maxBytes: 4096 });
+  const basis = [
+    bytes === null
+      ? { path: relative, kind: "absent" }
+      : {
+          path: relative,
+          kind: "file",
+          mode: 0o644,
+          digest: crypto.createHash("sha256").update(bytes).digest("hex"),
+          bytes: bytes.length,
+          contentBase64: bytes.toString("base64"),
+        },
+  ];
+  return buildWorkerPatchCandidate({
+    basis,
+    changes: [{ path: relative, after: after === null ? null : { mode: 0o644, contentBase64: Buffer.from(after).toString("base64") } }],
+    maxBytes: 4096,
+  });
 }
-const compose = candidates => composeWorkerPatchCandidates({ candidates, maxBytes: 8192 });
+const compose = (candidates) => composeWorkerPatchCandidates({ candidates, maxBytes: 8192 });
 
 test("disjoint worker effects compose without implying authority or semantic success", () => {
   const a = candidate("a.txt", "a", "aa");
   const b = candidate("b.txt", null, "bb");
   const result = compose([b, a]);
   assert.equal(result.status, "compatible-file-effects");
-  assert.deepEqual(result.patches.map(patch => patch.memberIndices), [[1], [0]]);
+  assert.deepEqual(
+    result.patches.map((patch) => patch.memberIndices),
+    [[1], [0]],
+  );
   assert.equal(result.applied, false);
   assert.equal(result.lineageVerified, false);
   assert.equal(result.currentBasisVerified, false);

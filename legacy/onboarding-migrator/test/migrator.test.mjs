@@ -12,11 +12,15 @@ import { applyHistoricalArtifactBoundary } from "../../../scripts/lib/historical
 import { runCommand } from "../../../scripts/head.mjs";
 import { legacyReadyFixture, legacyRevisedReadyFixture, pluginRoot, snapshotFiles } from "./fixture.mjs";
 
-const protectedPath = (name) => name === ".head/project.json" || name.startsWith(".head/sessions/")
-  || name.startsWith(".head/world-model/")
-  || name === ".head/context/product-model.json" || name === ".head/onboarding/current.json"
-  || name.startsWith(".head/onboarding/candidate-sets/") || name.startsWith(".head/onboarding/review-decisions/")
-  || name.startsWith(".head/onboarding/product-model-revisions/");
+const protectedPath = (name) =>
+  name === ".head/project.json" ||
+  name.startsWith(".head/sessions/") ||
+  name.startsWith(".head/world-model/") ||
+  name === ".head/context/product-model.json" ||
+  name === ".head/onboarding/current.json" ||
+  name.startsWith(".head/onboarding/candidate-sets/") ||
+  name.startsWith(".head/onboarding/review-decisions/") ||
+  name.startsWith(".head/onboarding/product-model-revisions/");
 
 function subset(value, predicate) {
   return Object.fromEntries(Object.entries(value).filter(([name]) => predicate(name)));
@@ -25,36 +29,47 @@ function subset(value, predicate) {
 function proposal(root, suffix) {
   const world = inspectWorldModel({ root }).snapshot;
   const file = world.files.find((item) => item.path === "src/delivery.mjs");
-  return { schemaVersion: 1, sourceSnapshotId: world.temporalProvenanceGraph.sourceSnapshotId, candidates: [{
-    productKind: "Capability",
-    proposedEntity: { key: `delivery-${suffix.toLowerCase()}`, name: `Delivery ${suffix}`, description: `Current ${suffix} delivery.` },
-    evidence: [{ path: file.path, line: 1, contentDigest: file.digest, symbol: null }],
-    explanation: `Fresh current ${suffix} meaning.`, confidence: 0.9,
-  }] };
+  return {
+    schemaVersion: 1,
+    sourceSnapshotId: world.temporalProvenanceGraph.sourceSnapshotId,
+    candidates: [
+      {
+        productKind: "Capability",
+        proposedEntity: { key: `delivery-${suffix.toLowerCase()}`, name: `Delivery ${suffix}`, description: `Current ${suffix} delivery.` },
+        evidence: [{ path: file.path, line: 1, contentDigest: file.digest, symbol: null }],
+        explanation: `Fresh current ${suffix} meaning.`,
+        confidence: 0.9,
+      },
+    ],
+  };
 }
 
-for (const version of ["0.1.0", "0.2.0", "0.3.0"]) test(`standalone migrator applies complete ${version} ready history without authority mutation`, async (t) => {
-  const { root } = await legacyReadyFixture({ version, opaquePreviousRevision: true });
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const before = snapshotFiles(root);
-  const inspected = inspectMigration({ root });
-  assert.equal(inspected.candidateProtocolVersion, version);
-  assert.equal(inspected.entries.some((entry) => entry.interpretationMode === "opaque-legacy-revision"), true);
-  assert.deepEqual(snapshotFiles(root), before, "inspect is read-only");
-  const applied = applyMigration({ root });
-  assert.equal(applied.status, "applied");
-  assert.equal(applied.boundary.instructionAuthority, false);
-  assert.equal(applied.boundary.promotionAuthority, false);
-  assert.deepEqual(subset(snapshotFiles(root), protectedPath), subset(before, protectedPath), "P1/P2 and historical bytes are unchanged");
-  const retryBefore = snapshotFiles(root);
-  const retry = applyMigration({ root });
-  assert.equal(retry.status, "already-applied");
-  assert.equal(retry.writes, 0);
-  assert.deepEqual(snapshotFiles(root), retryBefore);
-  const status = inspectOnboarding({ root });
-  assert.equal(status.status, "ready_world_changed");
-  assert.equal(status.historical.boundaryIntegrity, "verified");
-});
+for (const version of ["0.1.0", "0.2.0", "0.3.0"])
+  test(`standalone migrator applies complete ${version} ready history without authority mutation`, async (t) => {
+    const { root } = await legacyReadyFixture({ version, opaquePreviousRevision: true });
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const before = snapshotFiles(root);
+    const inspected = inspectMigration({ root });
+    assert.equal(inspected.candidateProtocolVersion, version);
+    assert.equal(
+      inspected.entries.some((entry) => entry.interpretationMode === "opaque-legacy-revision"),
+      true,
+    );
+    assert.deepEqual(snapshotFiles(root), before, "inspect is read-only");
+    const applied = applyMigration({ root });
+    assert.equal(applied.status, "applied");
+    assert.equal(applied.boundary.instructionAuthority, false);
+    assert.equal(applied.boundary.promotionAuthority, false);
+    assert.deepEqual(subset(snapshotFiles(root), protectedPath), subset(before, protectedPath), "P1/P2 and historical bytes are unchanged");
+    const retryBefore = snapshotFiles(root);
+    const retry = applyMigration({ root });
+    assert.equal(retry.status, "already-applied");
+    assert.equal(retry.writes, 0);
+    assert.deepEqual(snapshotFiles(root), retryBefore);
+    const status = inspectOnboarding({ root });
+    assert.equal(status.status, "ready_world_changed");
+    assert.equal(status.historical.boundaryIntegrity, "verified");
+  });
 
 test("standalone migrator accepts a closed legacy revise-to-successor-to-accept chain", async (t) => {
   const fixture = await legacyRevisedReadyFixture();
@@ -74,7 +89,10 @@ test("distribution without migrator supports fresh B to C, cold status/World/Con
   const { root } = await legacyReadyFixture({ version: "0.3.0", opaquePreviousRevision: true });
   const stageParent = fs.mkdtempSync(path.join(os.tmpdir(), "head-mig-runtime-"));
   const stage = path.join(stageParent, "plugin");
-  t.after(() => { fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(stageParent, { recursive: true, force: true }); });
+  t.after(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(stageParent, { recursive: true, force: true });
+  });
   const historicalPaths = (name) => name.startsWith(".head/onboarding/candidate-sets/") || name.startsWith(".head/onboarding/review-decisions/");
   const historicalBefore = subset(snapshotFiles(root), historicalPaths);
   const historicalNames = new Set(Object.keys(historicalBefore));
@@ -87,15 +105,30 @@ test("distribution without migrator supports fresh B to C, cold status/World/Con
   assert.deepEqual(first.candidateSet.parentCandidateSetIds, []);
   assert.equal(first.candidateSet.producerReviewDecisionId, null);
   assert.ok(first.continuityReceipt);
-  assert.equal((await reviewOnboarding({ root, candidateSetId: first.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Fixture-only C approval." })).status, "onboarding_ready");
+  assert.equal(
+    (await reviewOnboarding({ root, candidateSetId: first.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Fixture-only C approval." }))
+      .status,
+    "onboarding_ready",
+  );
   const continuityGraph = inspectWorldModel({ root }).snapshot.temporalProvenanceGraph;
-  assert.equal(continuityGraph.nodes.some((node) => node.kind === "HistoricalOnboardingCandidateReference"
-    && node.nodeId === first.continuityReceipt.historicalCandidateSetId), true);
-  assert.equal(continuityGraph.edges.some((edge) => edge.type === "HISTORICALLY_FOLLOWS"
-    && edge.from === first.continuityReceipt.historicalCandidateSetId
-    && edge.to === first.candidateSet.candidateSetId), true);
+  assert.equal(
+    continuityGraph.nodes.some(
+      (node) => node.kind === "HistoricalOnboardingCandidateReference" && node.nodeId === first.continuityReceipt.historicalCandidateSetId,
+    ),
+    true,
+  );
+  assert.equal(
+    continuityGraph.edges.some(
+      (edge) =>
+        edge.type === "HISTORICALLY_FOLLOWS" && edge.from === first.continuityReceipt.historicalCandidateSetId && edge.to === first.candidateSet.candidateSetId,
+    ),
+    true,
+  );
   const manifest = stageDistributionRelease({ sourceRoot: pluginRoot, destinationRoot: stage });
-  assert.equal(manifest.files.some((item) => item.path.startsWith("legacy/")), false);
+  assert.equal(
+    manifest.files.some((item) => item.path.startsWith("legacy/")),
+    false,
+  );
   assert.equal(fs.existsSync(path.join(stage, "legacy")), false, "standalone helper is physically absent from runtime payload");
   const onboardingUrl = new URL(`file:///${path.join(stage, "scripts/lib/onboarding.mjs").replaceAll("\\", "/")}`).href;
   const worldUrl = new URL(`file:///${path.join(stage, "scripts/lib/world-model.mjs").replaceAll("\\", "/")}`).href;
@@ -122,8 +155,10 @@ test("distribution without migrator supports fresh B to C, cold status/World/Con
   assert.equal(child.error, undefined, child.error?.message);
   assert.equal(child.status, 0, child.stderr);
   const result = JSON.parse(child.stdout);
-  assert.deepEqual({ status: result.status, world: result.world, context: result.context, accepted: result.accepted },
-    { status: "ready", world: "current", context: "preview", accepted: "onboarding_ready" });
+  assert.deepEqual(
+    { status: result.status, world: result.world, context: result.context, accepted: result.accepted },
+    { status: "ready", world: "current", context: "preview", accepted: "onboarding_ready" },
+  );
   assert.equal(result.parentIds.length, 1, "current-to-current semantic refresh keeps current ancestry only");
   const retrySnapshot = snapshotFiles(root);
   const retryAfterCurrentEvolution = applyMigration({ root });
@@ -141,7 +176,9 @@ test("unsupported and forged inputs fail without writes", async (t) => {
   const { root } = await legacyReadyFixture({ version: "0.3.0" });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const before = snapshotFiles(root);
-  assert.throws(() => applyHistoricalArtifactBoundary({ root, verifiedInventory: { validated: true }, hostMode: "explicit-one-shot" }), { code: "HISTORICAL_BOUNDARY_CAPABILITY_REQUIRED" });
+  assert.throws(() => applyHistoricalArtifactBoundary({ root, verifiedInventory: { validated: true }, hostMode: "explicit-one-shot" }), {
+    code: "HISTORICAL_BOUNDARY_CAPABILITY_REQUIRED",
+  });
   assert.deepEqual(snapshotFiles(root), before);
 });
 
@@ -151,16 +188,23 @@ test("historical A to B may be bounded after current Canon has already advanced 
   const firstBoundary = applyMigration({ root });
   await buildWorldModel({ root, persist: true });
   const currentC = await proposeOnboardingSemanticRefresh({ root, semanticProposal: proposal(root, "C") });
-  const acceptedC = await reviewOnboarding({ root, candidateSetId: currentC.candidateSet.candidateSetId,
-    disposition: "accept-all", rationale: "Fixture-only C approval before migration replay." });
+  const acceptedC = await reviewOnboarding({
+    root,
+    candidateSetId: currentC.candidateSet.candidateSetId,
+    disposition: "accept-all",
+    rationale: "Fixture-only C approval before migration replay.",
+  });
   const canonBefore = fs.readFileSync(path.join(root, ".head", "context", "product-model.json"));
   const stateBefore = fs.readFileSync(path.join(root, ".head", "onboarding", "current.json"));
   fs.rmSync(path.join(root, ".head", "onboarding", "historical-boundaries"), { recursive: true, force: true });
   fs.rmSync(path.join(root, ".head", "onboarding", "historical-continuity"), { recursive: true, force: true });
   const migratedAfterC = applyMigration({ root });
   assert.equal(migratedAfterC.status, "applied");
-  assert.notEqual(migratedAfterC.boundary.boundaryHash, firstBoundary.boundary.boundaryHash,
-    "application basis records the later current state while inventory identity stays historical");
+  assert.notEqual(
+    migratedAfterC.boundary.boundaryHash,
+    firstBoundary.boundary.boundaryHash,
+    "application basis records the later current state while inventory identity stays historical",
+  );
   assert.equal(migratedAfterC.boundary.inventoryHash, firstBoundary.boundary.inventoryHash);
   assert.equal(fs.readFileSync(path.join(root, ".head", "context", "product-model.json")).equals(canonBefore), true);
   assert.equal(fs.readFileSync(path.join(root, ".head", "onboarding", "current.json")).equals(stateBefore), true);

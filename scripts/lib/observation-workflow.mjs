@@ -4,7 +4,11 @@ import { OBSERVATION_PROTOCOL_VERSION, observationDigest } from "./observation-c
 import { queryObservations } from "./observation-projection.mjs";
 import { SCHEMA_VERSION } from "./lode-core.mjs";
 
-const fail = (message, code = "OBSERVATION_PREPARATION_ERROR") => { const error = new Error(message); error.code = code; throw error; };
+const fail = (message, code = "OBSERVATION_PREPARATION_ERROR") => {
+  const error = new Error(message);
+  error.code = code;
+  throw error;
+};
 
 export function prepareObservationEvidence({
   root = ".",
@@ -23,7 +27,8 @@ export function prepareObservationEvidence({
 } = {}) {
   const exactTypeKey = String(typeKey || "").trim();
   if (!exactTypeKey) fail("Observation preparation requires one exact HEAD-selected typeKey.", "OBSERVATION_PREPARATION_TYPE_REQUIRED");
-  if (registry != null && !(registry instanceof ObservationAdapterRegistry)) fail("Host Observation adapter registry is invalid.", "INVALID_OBSERVATION_ADAPTER_REGISTRY");
+  if (registry != null && !(registry instanceof ObservationAdapterRegistry))
+    fail("Host Observation adapter registry is invalid.", "INVALID_OBSERVATION_ADAPTER_REGISTRY");
   const existing = queryObservations({
     root,
     typeKey: exactTypeKey,
@@ -36,22 +41,26 @@ export function prepareObservationEvidence({
     limit: existingLimit,
   });
   const storage = familyFormatForOriginal("head-agent-core-observation-query", existing);
-  const configured = inspectObservationSources({
-    root,
-    registry,
-    typeKey: exactTypeKey,
-    adapterKey,
-    availabilityState: sourceAvailability,
-    limit: sourceLimit,
-    projectionId: sourceProjectionId,
-    cursor: sourceCursor,
-  }, storage);
+  const configured = inspectObservationSources(
+    {
+      root,
+      registry,
+      typeKey: exactTypeKey,
+      adapterKey,
+      availabilityState: sourceAvailability,
+      limit: sourceLimit,
+      projectionId: sourceProjectionId,
+      cursor: sourceCursor,
+    },
+    storage,
+  );
   const sourceCount = configured.registry.matchingSourceCount ?? 0;
-  const nextAction = existing.returned > 0
-    ? "head-assess-existing-observations"
-    : sourceCount > 0
-      ? "head-may-collect-one-source-if-durable-current-evidence-is-required"
-      : "continue-without-persisted-observation-or-disclose-required-adapter-gap";
+  const nextAction =
+    existing.returned > 0
+      ? "head-assess-existing-observations"
+      : sourceCount > 0
+        ? "head-may-collect-one-source-if-durable-current-evidence-is-required"
+        : "continue-without-persisted-observation-or-disclose-required-adapter-gap";
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ObservationPreparationProjection",

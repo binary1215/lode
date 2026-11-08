@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import {
-  ArcadeDbGraphProjectionAdapter,
-  ArcadeDbHttpTransport,
-  buildGraphProjectionPointer,
-} from "./lib/graph-projection-adapter.mjs";
+import { ArcadeDbGraphProjectionAdapter, ArcadeDbHttpTransport, buildGraphProjectionPointer } from "./lib/graph-projection-adapter.mjs";
 import { buildArcadeDbIncrementalSyncManifest, buildArcadeDbIncrementalSyncReceipt, executeArcadeDbIncrementalSync } from "./lib/arcadedb-incremental-sync.mjs";
 import { buildStorageSelection } from "./lib/onboarding-contract.mjs";
 import { buildTemporalProvenanceGraph } from "./lib/temporal-provenance.mjs";
@@ -26,19 +22,27 @@ class MemorySyncTransport {
     this.batchCalls = new Map();
   }
 
-  describe() { return { protocol: "arcadedb-http-json", credentialsPersisted: false }; }
+  describe() {
+    return { protocol: "arcadedb-http-json", credentialsPersisted: false };
+  }
   ensureSchema() {}
   ensureTopologySchema() {}
   ensureSyncSchema() {}
-  readPointer(projectId) { return this.pointers.get(projectId) ?? null; }
-  readSnapshot(projectId, graphSnapshotId) { return this.snapshots.get(`${projectId}:${graphSnapshotId}`) ?? null; }
+  readPointer(projectId) {
+    return this.pointers.get(projectId) ?? null;
+  }
+  readSnapshot(projectId, graphSnapshotId) {
+    return this.snapshots.get(`${projectId}:${graphSnapshotId}`) ?? null;
+  }
   writeSnapshot(projectId, graphSnapshotId, documentJson) {
     const key = `${projectId}:${graphSnapshotId}`;
     const created = !this.snapshots.has(key);
     if (created) this.snapshots.set(key, documentJson);
     return created;
   }
-  writePointer(projectId, pointerJson) { this.pointers.set(projectId, pointerJson); }
+  writePointer(projectId, pointerJson) {
+    this.pointers.set(projectId, pointerJson);
+  }
   writePointerCompareAndSwap(projectId, expectedPointerJson, pointerJson) {
     const current = this.pointers.get(projectId) ?? null;
     if (current !== expectedPointerJson) return false;
@@ -46,8 +50,10 @@ class MemorySyncTransport {
     return true;
   }
   listSnapshotIds(projectId) {
-    return [...this.snapshots.keys()].filter((key) => key.startsWith(`${projectId}:`))
-      .map((key) => key.slice(projectId.length + 1)).sort();
+    return [...this.snapshots.keys()]
+      .filter((key) => key.startsWith(`${projectId}:`))
+      .map((key) => key.slice(projectId.length + 1))
+      .sort();
   }
   readTopology(projectId, graphSnapshotId) {
     const value = this.topologies.get(`${projectId}:${graphSnapshotId}`);
@@ -63,7 +69,9 @@ class MemorySyncTransport {
     value.topologyJson = JSON.stringify(topology);
     this.topologies.set(key, value);
   }
-  readSyncManifest(projectId, syncId) { return this.manifests.get(`${projectId}:${syncId}`) ?? null; }
+  readSyncManifest(projectId, syncId) {
+    return this.manifests.get(`${projectId}:${syncId}`) ?? null;
+  }
   writeSyncManifest(projectId, syncId, syncJson) {
     const key = `${projectId}:${syncId}`;
     const existing = this.manifests.get(key);
@@ -73,17 +81,20 @@ class MemorySyncTransport {
   }
   readSyncCheckpoints(projectId, syncId) {
     const prefix = `${projectId}:${syncId}:`;
-    return [...this.checkpoints.entries()].filter(([key]) => key.startsWith(prefix)).map(([, value]) => value).sort();
+    return [...this.checkpoints.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([, value]) => value)
+      .sort();
   }
   writeSyncCheckpoint(projectId, syncId, batchId, checkpointJson) {
-    if (!this.checkpointFailureUsed && this.failCheckpointAfter >= 0
-      && this.successfulCheckpointWrites >= this.failCheckpointAfter) {
+    if (!this.checkpointFailureUsed && this.failCheckpointAfter >= 0 && this.successfulCheckpointWrites >= this.failCheckpointAfter) {
       this.checkpointFailureUsed = true;
       throw Object.assign(new Error("checkpoint interruption"), { code: "ARCADEDB_TRANSPORT_UNAVAILABLE" });
     }
     const key = `${projectId}:${syncId}:${batchId}`;
     const existing = this.checkpoints.get(key);
-    if (existing != null && existing !== checkpointJson) throw Object.assign(new Error("checkpoint conflict"), { code: "ARCADEDB_INCREMENTAL_SYNC_CHECKPOINT_CONFLICT" });
+    if (existing != null && existing !== checkpointJson)
+      throw Object.assign(new Error("checkpoint conflict"), { code: "ARCADEDB_INCREMENTAL_SYNC_CHECKPOINT_CONFLICT" });
     this.checkpoints.set(key, checkpointJson);
     if (existing == null) this.successfulCheckpointWrites += 1;
     return existing == null;
@@ -92,33 +103,38 @@ class MemorySyncTransport {
     this.batchCalls.set(batch.batchId, (this.batchCalls.get(batch.batchId) || 0) + 1);
     const targetKey = `${projectId}:${manifest.targetGraphSnapshotId}`;
     const target = this.topologies.get(targetKey) || { topologyJson: null, nodeJsons: [], edgeJsons: [] };
-    const base = manifest.baseGraphSnapshotId == null
-      ? { nodeJsons: [], edgeJsons: [] }
-      : this.topologies.get(`${projectId}:${manifest.baseGraphSnapshotId}`) || { nodeJsons: [], edgeJsons: [] };
+    const base =
+      manifest.baseGraphSnapshotId == null
+        ? { nodeJsons: [], edgeJsons: [] }
+        : this.topologies.get(`${projectId}:${manifest.baseGraphSnapshotId}`) || { nodeJsons: [], edgeJsons: [] };
     const field = batch.recordKind === "node" ? "nodeJsons" : "edgeJsons";
     const idField = batch.recordKind === "node" ? "nodeId" : "edgeId";
-    const baseById = new Map(base[field].map((json) => {
-      const record = JSON.parse(json);
-      return [record[idField], record];
-    }));
-    const targetById = new Map(target[field].map((json) => {
-      const record = JSON.parse(json);
-      return [record[idField], record];
-    }));
+    const baseById = new Map(
+      base[field].map((json) => {
+        const record = JSON.parse(json);
+        return [record[idField], record];
+      }),
+    );
+    const targetById = new Map(
+      target[field].map((json) => {
+        const record = JSON.parse(json);
+        return [record[idField], record];
+      }),
+    );
     for (const record of batch.records) {
       const sourceId = batch.recordKind === "node" ? record.sourceNodeId : record.sourceEdgeId;
       const source = baseById.get(sourceId || record[idField]);
-      const value = batch.operation === "carry-forward"
-        ? source
-        : batch.operation === "rebase"
-          ? { ...source, [idField]: record[idField], sourceSnapshotId: manifest.sourceSnapshotId }
-          : record;
+      const value =
+        batch.operation === "carry-forward"
+          ? source
+          : batch.operation === "rebase"
+            ? { ...source, [idField]: record[idField], sourceSnapshotId: manifest.sourceSnapshotId }
+            : record;
       if (!value) throw Object.assign(new Error("missing source"), { code: "ARCADEDB_INCREMENTAL_SYNC_BASE_MISSING" });
       if (targetById.has(record[idField])) throw Object.assign(new Error("create-only conflict"), { code: "ARCADEDB_WRITE_OUTCOME_UNKNOWN" });
       targetById.set(record[idField], clone(value));
     }
-    target[field] = [...targetById.values()].sort((left, right) => left[idField].localeCompare(right[idField]))
-      .map((value) => JSON.stringify(value));
+    target[field] = [...targetById.values()].sort((left, right) => left[idField].localeCompare(right[idField])).map((value) => JSON.stringify(value));
     this.topologies.set(targetKey, target);
     return true;
   }
@@ -163,20 +179,20 @@ function adapter(transport, baseGraphValue = null) {
 
 const transport = new MemorySyncTransport();
 const initial = adapter(transport);
-(await initial.writeSnapshot(baseGraph.graphSnapshotId, baseGraph));
+await initial.writeSnapshot(baseGraph.graphSnapshotId, baseGraph);
 await initial.writePointer(buildGraphProjectionPointer(baseGraph));
 const initialState = initial.takeCompletedIncrementalSync();
 assert.equal(initialState.manifest.batchCount > 0, true);
 
 const unchanged = adapter(transport, baseGraph);
-(await unchanged.writeSnapshot(baseGraph.graphSnapshotId, baseGraph));
+await unchanged.writeSnapshot(baseGraph.graphSnapshotId, baseGraph);
 await unchanged.writePointer(buildGraphProjectionPointer(baseGraph));
 const unchangedState = unchanged.takeCompletedIncrementalSync();
 assert.equal(unchangedState.manifest.noChange, true);
 assert.equal(unchangedState.manifest.batchCount, 0);
 
 const delta = adapter(transport, baseGraph);
-(await delta.writeSnapshot(targetGraph.graphSnapshotId, targetGraph));
+await delta.writeSnapshot(targetGraph.graphSnapshotId, targetGraph);
 await delta.writePointer(buildGraphProjectionPointer(targetGraph));
 const deltaState = delta.takeCompletedIncrementalSync();
 assert.equal(deltaState.manifest.nodeDelta.rebased.count > 0, true);
@@ -195,16 +211,16 @@ assert.equal(receipt.atomicPointerTransitionVerified, true);
 
 const interruptedTransport = new MemorySyncTransport({ failCheckpointAfter: 1 });
 const interrupted = adapter(interruptedTransport);
-(await assert.rejects(async () => (await interrupted.writeSnapshot(targetGraph.graphSnapshotId, targetGraph)), { code: "ARCADEDB_WRITE_OUTCOME_UNKNOWN" }));
+await assert.rejects(async () => await interrupted.writeSnapshot(targetGraph.graphSnapshotId, targetGraph), { code: "ARCADEDB_WRITE_OUTCOME_UNKNOWN" });
 assert.equal(interruptedTransport.readPointer(projectId), null);
 const resumed = adapter(interruptedTransport);
-(await resumed.writeSnapshot(targetGraph.graphSnapshotId, targetGraph));
+await resumed.writeSnapshot(targetGraph.graphSnapshotId, targetGraph);
 await resumed.writePointer(buildGraphProjectionPointer(targetGraph));
 assert.equal(resumed.takeCompletedIncrementalSync().syncState.resumedBatchCount > 0, true);
 
 const conflictTransport = new MemorySyncTransport();
 const conflict = adapter(conflictTransport);
-(await conflict.writeSnapshot(baseGraph.graphSnapshotId, baseGraph));
+await conflict.writeSnapshot(baseGraph.graphSnapshotId, baseGraph);
 const externalPointer = buildGraphProjectionPointer(baseGraph);
 conflictTransport.pointers.set(projectId, JSON.stringify(externalPointer));
 await assert.rejects(() => conflict.writePointer(externalPointer), { code: "ARCADEDB_INCREMENTAL_SYNC_POINTER_CONFLICT" });
@@ -218,17 +234,17 @@ class HttpCommandContractTransport extends ArcadeDbHttpTransport {
 
   invoke(operation, input = {}) {
     this.commands.push({ operation, ...input });
-    if (operation === "query") return {
-      ok: true,
-      status: 200,
-      body: { result: this.pointerJson == null ? [] : [{ pointerJson: this.pointerJson }] },
-    };
+    if (operation === "query")
+      return {
+        ok: true,
+        status: 200,
+        body: { result: this.pointerJson == null ? [] : [{ pointerJson: this.pointerJson }] },
+      };
     if (input.command?.startsWith("INSERT INTO HeadAgentGraphPointer")) {
       if (this.pointerJson != null) throw Object.assign(new Error("duplicate pointer"), { code: "ARCADEDB_REQUEST_REJECTED" });
       this.pointerJson = input.params.pointerJson;
     }
-    if (input.command?.startsWith("UPDATE HeadAgentGraphPointer")
-      && this.pointerJson === input.params.expectedPointerJson) {
+    if (input.command?.startsWith("UPDATE HeadAgentGraphPointer") && this.pointerJson === input.params.expectedPointerJson) {
       this.pointerJson = input.params.pointerJson;
     }
     return { ok: true, status: 200, body: { result: [] } };
@@ -244,7 +260,10 @@ assert.equal(await httpContract.writePointerCompareAndSwap(projectId, firstPoint
 const pointerMutationCommands = httpContract.commands.filter((call) => call.operation === "command");
 assert.match(pointerMutationCommands[0].command, /^INSERT INTO HeadAgentGraphPointer/);
 assert.match(pointerMutationCommands[1].command, /^UPDATE HeadAgentGraphPointer/);
-assert.equal(pointerMutationCommands.some((call) => call.language === "sqlscript" || call.command.includes("LET current")), false);
+assert.equal(
+  pointerMutationCommands.some((call) => call.language === "sqlscript" || call.command.includes("LET current")),
+  false,
+);
 
 const initialManifest = buildArcadeDbIncrementalSyncManifest({ targetGraph: baseGraph });
 // Public call retry after a lost checkpoint must not reapply exact effects or
@@ -261,15 +280,21 @@ for (const fault of ["exact", "foreign", "partial", "race"]) {
       return original(project, manifest, requested);
     };
   }
-  assert.throws(() => executeArcadeDbIncrementalSync({ transport: remote, manifest: initialManifest, targetGraph: baseGraph }), { code: "ARCADEDB_WRITE_OUTCOME_UNKNOWN" });
+  assert.throws(() => executeArcadeDbIncrementalSync({ transport: remote, manifest: initialManifest, targetGraph: baseGraph }), {
+    code: "ARCADEDB_WRITE_OUTCOME_UNKNOWN",
+  });
   const topology = remote.topologies.get(key);
   if (fault === "foreign") topology[field][0] = JSON.stringify({ ...JSON.parse(topology[field][0]), foreign: true });
-  if (fault === "partial") { assert.ok(topology[field].length > 1); topology[field].pop(); }
+  if (fault === "partial") {
+    assert.ok(topology[field].length > 1);
+    topology[field].pop();
+  }
   const before = JSON.stringify(topology[field]);
   if (fault === "exact") executeArcadeDbIncrementalSync({ transport: remote, manifest: initialManifest, targetGraph: baseGraph });
-  else assert.throws(() => executeArcadeDbIncrementalSync({ transport: remote, manifest: initialManifest, targetGraph: baseGraph }), {
-    code: fault === "partial" ? "ARCADEDB_WRITE_OUTCOME_UNKNOWN" : "ARCADEDB_INCREMENTAL_SYNC_BATCH_CONTENT_MISMATCH",
-  });
+  else
+    assert.throws(() => executeArcadeDbIncrementalSync({ transport: remote, manifest: initialManifest, targetGraph: baseGraph }), {
+      code: fault === "partial" ? "ARCADEDB_WRITE_OUTCOME_UNKNOWN" : "ARCADEDB_INCREMENTAL_SYNC_BATCH_CONTENT_MISMATCH",
+    });
   assert.equal(remote.batchCalls.get(batch.batchId), 1);
   assert.equal(JSON.stringify(remote.topologies.get(key)[field]), before);
 }
@@ -285,7 +310,10 @@ for (const edge of baseGraph.edges) {
   const key = `${edge.from}:${edge.to}`;
   parallelPairs.set(key, (parallelPairs.get(key) || 0) + 1);
 }
-assert.equal([...parallelPairs.values()].some((count) => count > 1), true);
+assert.equal(
+  [...parallelPairs.values()].some((count) => count > 1),
+  true,
+);
 const edgeBatch = initialManifest.batches.find((batch) => batch.recordKind === "edge" && batch.operation === "create");
 assert.ok(edgeBatch);
 httpContract.applySyncBatch(projectId, initialManifest, edgeBatch);
@@ -297,13 +325,33 @@ const bridgeSource = fs.readFileSync(new URL("./lib/arcadedb-http-bridge.mjs", i
 assert.equal(bridgeSource.includes("process.exit(response.ok ? 0 : 3)"), false);
 assert.equal(bridgeSource.includes("process.exitCode = response.ok ? 0 : 3"), true);
 
-process.stdout.write(`${JSON.stringify({
-  status: "arcadedb_incremental_sync_verified",
-  scenarios: ["initial-upload", "no-change", "semantic-rebase-delta", "checkpoint-resume", "pointer-conflict", "receipt", "http-cas-contract", "parallel-edge-command-contract", "bridge-graceful-exit-contract", "exact-no-reapply", "foreign-preserved", "partial-unknown", "post-read-race-create-only"],
-  initialBatchCount: initialState.manifest.batchCount,
-  deltaBatchCount: deltaState.manifest.batchCount,
-  rebasedNodeCount: deltaState.manifest.nodeDelta.rebased.count,
-  rebasedEdgeCount: deltaState.manifest.edgeDelta.rebased.count,
-  credentialValuesPersisted: false,
-  authorityEffect: "none",
-}, null, 2)}\n`);
+process.stdout.write(
+  `${JSON.stringify(
+    {
+      status: "arcadedb_incremental_sync_verified",
+      scenarios: [
+        "initial-upload",
+        "no-change",
+        "semantic-rebase-delta",
+        "checkpoint-resume",
+        "pointer-conflict",
+        "receipt",
+        "http-cas-contract",
+        "parallel-edge-command-contract",
+        "bridge-graceful-exit-contract",
+        "exact-no-reapply",
+        "foreign-preserved",
+        "partial-unknown",
+        "post-read-race-create-only",
+      ],
+      initialBatchCount: initialState.manifest.batchCount,
+      deltaBatchCount: deltaState.manifest.batchCount,
+      rebasedNodeCount: deltaState.manifest.nodeDelta.rebased.count,
+      rebasedEdgeCount: deltaState.manifest.edgeDelta.rebased.count,
+      credentialValuesPersisted: false,
+      authorityEffect: "none",
+    },
+    null,
+    2,
+  )}\n`,
+);

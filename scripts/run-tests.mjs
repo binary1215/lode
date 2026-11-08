@@ -15,8 +15,11 @@ function ready(directory) {
   if (!directory) return false;
   const binary = path.join(directory, "dist", `${goos}-${process.arch}`, executableName);
   const manifest = path.join(path.dirname(binary), "SUPERVISOR-MANIFEST.json");
-  try { return fs.statSync(binary).isFile() && fs.statSync(manifest).isFile(); }
-  catch { return false; }
+  try {
+    return fs.statSync(binary).isFile() && fs.statSync(manifest).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function buildFixture() {
@@ -27,12 +30,17 @@ function buildFixture() {
   // Always let Go validate its incremental build cache against current sources,
   // toolchain and flags. File existence cannot establish fixture freshness.
   fs.mkdirSync(binaryDir, { recursive: true });
-  const go = spawnSync("go", ["build", "-trimpath", "-buildvcs=false", `-ldflags=-s -w -X main.version=${version} -X main.commit=local`, "-o", binary, "./cmd/lode-agent-supervisor"], {
-    cwd: path.join(root, "native", "lode-agent-worker"),
-    env: { ...process.env, CGO_ENABLED: "0" },
-    stdio: "inherit",
-    shell: false, windowsHide: true,
-  });
+  const go = spawnSync(
+    "go",
+    ["build", "-trimpath", "-buildvcs=false", `-ldflags=-s -w -X main.version=${version} -X main.commit=local`, "-o", binary, "./cmd/lode-agent-supervisor"],
+    {
+      cwd: path.join(root, "native", "lode-agent-worker"),
+      env: { ...process.env, CGO_ENABLED: "0" },
+      stdio: "inherit",
+      shell: false,
+      windowsHide: true,
+    },
+  );
   if (go.error || go.status !== 0) {
     console.error("npm test builds the process-supervisor fixture itself. Install Go and retry. The suite does not skip those tests.");
     process.exit(go.status || 1);
@@ -42,15 +50,29 @@ function buildFixture() {
   return directory;
 }
 
-const fixture = ready(process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT)
-  ? process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT
-  : buildFixture();
+const fixture = ready(process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT) ? process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT : buildFixture();
 const patterns = process.argv.slice(2);
-const files = patterns.length ? patterns : fs.readdirSync(path.join(root, "test")).filter(name => name.endsWith(".test.mjs")).sort().map(name => path.join("test", name));
+const files = patterns.length
+  ? patterns
+  : fs
+      .readdirSync(path.join(root, "test"))
+      .filter((name) => name.endsWith(".test.mjs"))
+      .sort()
+      .map((name) => path.join("test", name));
 const child = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "--test-isolation=none", "--test-concurrency=1", ...files], {
   cwd: root,
-  env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null", GIT_TERMINAL_PROMPT: "0", TMPDIR: fs.realpathSync.native(os.tmpdir()), TEMP: fs.realpathSync.native(os.tmpdir()), TMP: fs.realpathSync.native(os.tmpdir()), LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT: fixture },
+  env: {
+    ...process.env,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+    GIT_TERMINAL_PROMPT: "0",
+    TMPDIR: fs.realpathSync.native(os.tmpdir()),
+    TEMP: fs.realpathSync.native(os.tmpdir()),
+    TMP: fs.realpathSync.native(os.tmpdir()),
+    LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT: fixture,
+  },
   stdio: "inherit",
-  shell: false, windowsHide: true,
+  shell: false,
+  windowsHide: true,
 });
 process.exit(child.status ?? 1);

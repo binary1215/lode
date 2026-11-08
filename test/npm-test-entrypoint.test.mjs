@@ -23,8 +23,7 @@ test("npm test builds the supervisor fixture instead of requiring a CI-only envi
   assert.doesNotMatch(host, /native-smoke-cleanup\.test\.mjs/);
 });
 
-
-test("automatic fixture rebuilds changed Go sources while explicit CI fixture remains caller-owned", t => {
+test("automatic fixture rebuilds changed Go sources while explicit CI fixture remains caller-owned", (t) => {
   const probe = spawnSync("go", ["version"], { encoding: "utf8", windowsHide: true, timeout: 10_000 });
   if (probe.error?.code === "ENOENT") return t.skip("Local Go toolchain unavailable; required Go-equipped CI executes this regression.");
   assert.equal(probe.status, 0, probe.stderr);
@@ -39,20 +38,47 @@ test("automatic fixture rebuilds changed Go sources while explicit CI fixture re
   fs.mkdirSync(path.join(sandbox, "test"));
   fs.writeFileSync(path.join(sandbox, "test/synthetic.test.mjs"), 'import test from "node:test"; test("fixture admitted", () => {});\n');
   const source = path.join(sandbox, "native/lode-agent-worker/cmd/lode-agent-supervisor");
-  const input = path.join(source, "main.go"), originalSource = fs.readFileSync(input, "utf8");
-  const env = { ...process.env }; delete env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
-  const run = environment => {
-    t.diagnostic(JSON.stringify({ event: "planned-synthetic-fixture-run", command: process.execPath, args: ["scripts/run-tests.mjs"], cwd: sandbox, ports: [], windowsHide: true }));
-    const result = spawnSync(process.execPath, ["scripts/run-tests.mjs"], { cwd: sandbox, env: environment, encoding: "utf8", windowsHide: true, timeout: 120_000 });
+  const input = path.join(source, "main.go"),
+    originalSource = fs.readFileSync(input, "utf8");
+  const env = { ...process.env };
+  delete env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
+  const run = (environment) => {
+    t.diagnostic(
+      JSON.stringify({
+        event: "planned-synthetic-fixture-run",
+        command: process.execPath,
+        args: ["scripts/run-tests.mjs"],
+        cwd: sandbox,
+        ports: [],
+        windowsHide: true,
+      }),
+    );
+    const result = spawnSync(process.execPath, ["scripts/run-tests.mjs"], {
+      cwd: sandbox,
+      env: environment,
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 120_000,
+    });
     t.diagnostic(JSON.stringify({ event: "synthetic-fixture-run-exited", pid: result.pid, status: result.status, cwd: sandbox, ports: [] }));
     if (result.status !== 0) t.diagnostic((result.stderr + result.stdout).slice(0, 12000));
-    assert.equal(result.status, 0, result.stderr + result.stdout); return result;
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    return result;
   };
   run(env);
-  const binary = path.join(sandbox, ".cache/lode-supervisor-fixture/dist", (process.platform === "win32" ? "windows" : process.platform) + "-" + process.arch, "lode-agent-supervisor" + (process.platform === "win32" ? ".exe" : ""));
+  const binary = path.join(
+    sandbox,
+    ".cache/lode-supervisor-fixture/dist",
+    (process.platform === "win32" ? "windows" : process.platform) + "-" + process.arch,
+    "lode-agent-supervisor" + (process.platform === "win32" ? ".exe" : ""),
+  );
   const digest = () => crypto.createHash("sha256").update(fs.readFileSync(binary)).digest("hex");
-  const first = digest(); fs.writeFileSync(input, originalSource + "\nfunc init() { version += \"-fixture-source-changed\" }\n"); run(env); assert.notEqual(digest(), first);
-  const second = digest(); fs.writeFileSync(input, "invalid Go source");
+  const first = digest();
+  fs.writeFileSync(input, originalSource + '\nfunc init() { version += "-fixture-source-changed" }\n');
+  run(env);
+  assert.notEqual(digest(), first);
+  const second = digest();
+  fs.writeFileSync(input, "invalid Go source");
   run({ ...env, LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT: path.join(sandbox, ".cache/lode-supervisor-fixture") });
   assert.equal(digest(), second);
 });

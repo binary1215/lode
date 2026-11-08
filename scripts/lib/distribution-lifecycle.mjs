@@ -47,10 +47,7 @@ function developmentOnlyFiles() {
 }
 
 function runtimeForbiddenMarkers() {
-  return [
-    ["ultimate", "goal"].join("_"),
-    ["neo", "pick"].join(""),
-  ];
+  return [["ultimate", "goal"].join("_"), ["neo", "pick"].join("")];
 }
 
 function fail(code, message) {
@@ -62,7 +59,10 @@ function fail(code, message) {
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -118,8 +118,7 @@ function normalizeRelative(file) {
 
 function walkRegularFiles(root, relative = "") {
   const directory = path.join(root, relative);
-  const entries = fs.readdirSync(directory, { withFileTypes: true })
-    .sort((left, right) => left.name.localeCompare(right.name, "en"));
+  const entries = fs.readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name, "en"));
   const files = [];
   for (const entry of entries) {
     if (entry.isDirectory() && [".agent-work", ".lode"].includes(entry.name.toLowerCase())) continue;
@@ -239,13 +238,14 @@ function stageArtifactComposition(stageRoot, identity) {
   atomicWriteJson(packageFile, pkg);
   mcp.mcpServers = { [target.serverName]: mcp.mcpServers[source.serverName] };
   atomicWriteJson(mcpFile, mcp);
-  const replaceVocabulary = (text) => text
-    .replaceAll(`mcp__plugin_${source.pluginName}_${source.serverName}__`, `mcp__plugin_${target.pluginName}_${target.serverName}__`)
-    .replaceAll(`plugin:${source.pluginName}:${source.serverName}`, `plugin:${target.pluginName}:${target.serverName}`)
-    .replaceAll(`mcp__${source.serverName}__`, `mcp__${target.serverName}__`)
-    .replaceAll(source.serverName, target.serverName)
-    .replace(/\blode_[a-z][a-z0-9_]*/g, (token) => resolveOperation(token)?.legacyName || token)
-    .replaceAll("scripts/lode.mjs", "scripts/head.mjs");
+  const replaceVocabulary = (text) =>
+    text
+      .replaceAll(`mcp__plugin_${source.pluginName}_${source.serverName}__`, `mcp__plugin_${target.pluginName}_${target.serverName}__`)
+      .replaceAll(`plugin:${source.pluginName}:${source.serverName}`, `plugin:${target.pluginName}:${target.serverName}`)
+      .replaceAll(`mcp__${source.serverName}__`, `mcp__${target.serverName}__`)
+      .replaceAll(source.serverName, target.serverName)
+      .replace(/\blode_[a-z][a-z0-9_]*/g, (token) => resolveOperation(token)?.legacyName || token)
+      .replaceAll("scripts/lode.mjs", "scripts/head.mjs");
   for (const name of ["claude.json", "codex.json"]) {
     const file = path.join(stageRoot, "hooks", name);
     if (fs.existsSync(file)) fs.writeFileSync(file, replaceVocabulary(fs.readFileSync(file, "utf8")));
@@ -364,7 +364,8 @@ function verifyRelease(releaseRoot, expectedReleaseId = null) {
     const stat = fs.lstatSync(absolute);
     if (!stat.isFile() || stat.isSymbolicLink()) fail("HEAD_DISTRIBUTION_FILE_INVALID", `Release entry is not a regular file: ${file.path}`);
     const bytes = fs.readFileSync(absolute);
-    if (bytes.byteLength !== file.bytes || sha256(bytes) !== file.sha256) fail("HEAD_DISTRIBUTION_FILE_DRIFT", `Release file failed integrity verification: ${file.path}`);
+    if (bytes.byteLength !== file.bytes || sha256(bytes) !== file.sha256)
+      fail("HEAD_DISTRIBUTION_FILE_DRIFT", `Release file failed integrity verification: ${file.path}`);
   }
   const plugin = readJson(path.join(releaseRoot, ".codex-plugin", "plugin.json"), "HEAD_DISTRIBUTION_RELEASE_INVALID");
   const pkg = readJson(path.join(releaseRoot, "package.json"), "HEAD_DISTRIBUTION_RELEASE_INVALID");
@@ -382,8 +383,11 @@ function verifyRelease(releaseRoot, expectedReleaseId = null) {
     const mcp = readJson(path.join(releaseRoot, ".mcp.json"), "HEAD_DISTRIBUTION_RELEASE_INVALID");
     const skills = fs.readdirSync(path.join(releaseRoot, "skills")).sort();
     const verifiedServerName = historicalArtifactServerName(composition.identity, descriptorEntry.sha256) || composition.serverName;
-    if (Object.keys(mcp.mcpServers || {}).length !== 1 || !mcp.mcpServers[verifiedServerName]
-      || canonical(skills) !== canonical(Object.values(composition.skills).sort())) {
+    if (
+      Object.keys(mcp.mcpServers || {}).length !== 1 ||
+      !mcp.mcpServers[verifiedServerName] ||
+      canonical(skills) !== canonical(Object.values(composition.skills).sort())
+    ) {
       fail("HEAD_DISTRIBUTION_RELEASE_INVALID", "Verified artifact must advertise one matching MCP server and Skill vocabulary.");
     }
   } else if (composition.identity !== "head") {
@@ -400,11 +404,22 @@ function verifiedCliEntry(manifest) {
 }
 
 function existingPath(file) {
-  try { fs.lstatSync(file); return true; }
-  catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  try {
+    fs.lstatSync(file);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
 }
 
-export function stageDistributionRelease({ sourceRoot, destinationRoot, includeNativeDist = false, nativeOverlayRoot = null, artifactIdentity = ARTIFACT_COMPOSITION.identity } = {}) {
+export function stageDistributionRelease({
+  sourceRoot,
+  destinationRoot,
+  includeNativeDist = false,
+  nativeOverlayRoot = null,
+  artifactIdentity = ARTIFACT_COMPOSITION.identity,
+} = {}) {
   if (!sourceRoot || !destinationRoot) {
     fail("HEAD_DISTRIBUTION_STAGE_ARGUMENTS", "Source and destination roots are required.");
   }
@@ -461,14 +476,16 @@ function explicitDirectoryAlias(canonicalName, legacyName) {
 function defaultInstallRoot() {
   const explicit = explicitDirectoryAlias("LODE_AGENT_INSTALL_ROOT", "HEAD_AGENT_INSTALL_ROOT");
   if (explicit) return explicit;
-  const base = process.platform === "win32"
-    ? process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local")
-    : process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+  const base =
+    process.platform === "win32"
+      ? process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local")
+      : process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
   const legacy = path.join(base, "head-agent-core");
   const canonicalRoot = path.join(base, "lode-agent-core");
   const present = [legacy, canonicalRoot].filter((root) => existingPath(root));
   for (const root of present) verifyInstallRootOwnership(root);
-  if (present.length > 1) fail("HEAD_DISTRIBUTION_INSTALL_ROOT_CONFLICT", "Both default installation roots are owned; select the existing installation explicitly.");
+  if (present.length > 1)
+    fail("HEAD_DISTRIBUTION_INSTALL_ROOT_CONFLICT", "Both default installation roots are owned; select the existing installation explicitly.");
   return present[0] || canonicalRoot;
 }
 
@@ -544,35 +561,43 @@ function launcherSource(installRoot) {
   // Embed the trusted verifier; never import code from an unverified release to
   // decide which entrypoint to execute. Both command names share this pointer.
   return [
-    '#!/usr/bin/env node',
+    "#!/usr/bin/env node",
     'import crypto from "node:crypto";',
     'import fs from "node:fs";',
     'import path from "node:path";',
     'import { spawnSync } from "node:child_process";',
     `const root = Buffer.from("${encodedRoot}", "base64").toString("utf8");`,
     `const DISTRIBUTION_PROTOCOL = ${JSON.stringify(DISTRIBUTION_PROTOCOL)};`,
-    fail.toString(), canonical.toString(), sha256.toString(), readJson.toString(),
+    fail.toString(),
+    canonical.toString(),
+    sha256.toString(),
+    readJson.toString(),
     `const compositions = ${JSON.stringify(["lode", "head"].map((identity) => artifactCompositionForIdentity(identity)))};`,
     'function artifactCompositionForIdentity(identity) { const value = compositions.find(item => item.identity === identity); if (!value) throw new Error("Unknown package artifact composition."); return value; }',
     compositionForMetadata.toString(),
-    ownershipFile.toString(), verifyInstallRootOwnership.toString(),
-    pointerFile.toString(), readPointer.toString(), releaseRoot.toString(),
-    historicalArtifactServerName.toString(), verifiedCliEntry.toString(), verifyRelease.toString(),
-    'verifyInstallRootOwnership(root);',
-    'const pointer = readPointer(root);',
-    'const target = releaseRoot(root, pointer.activeReleaseId);',
-    'const manifest = verifyRelease(target, pointer.activeReleaseId);',
-    'const args = process.argv.slice(2);',
+    ownershipFile.toString(),
+    verifyInstallRootOwnership.toString(),
+    pointerFile.toString(),
+    readPointer.toString(),
+    releaseRoot.toString(),
+    historicalArtifactServerName.toString(),
+    verifiedCliEntry.toString(),
+    verifyRelease.toString(),
+    "verifyInstallRootOwnership(root);",
+    "const pointer = readPointer(root);",
+    "const target = releaseRoot(root, pointer.activeReleaseId);",
+    "const manifest = verifyRelease(target, pointer.activeReleaseId);",
+    "const args = process.argv.slice(2);",
     'const mcp = args[0] === "--mcp-stdio";',
     'if (mcp && (args.length !== 1 || !manifest.files.some(file => file.path === "scripts/mcp-server.mjs"))) throw new Error("Verified release does not support the selected internal MCP entry.");',
     'const entry = mcp ? "scripts/mcp-server.mjs" : verifiedCliEntry(manifest);',
     'const executable = path.join(target, ...entry.split("/"));',
     'if (mcp && fs.realpathSync(executable) !== path.join(fs.realpathSync(target), ...entry.split("/"))) throw new Error("Verified MCP entry must remain inside its selected release.");',
     'const child = spawnSync(process.execPath, [executable, ...(mcp ? [] : args)], { stdio: "inherit", shell: false, windowsHide: true });',
-    'if (child.error) throw child.error;',
-    'if (child.signal) process.kill(process.pid, child.signal);',
-    'process.exitCode = child.status == null ? 1 : child.status;',
-    '',
+    "if (child.error) throw child.error;",
+    "if (child.signal) process.kill(process.pid, child.signal);",
+    "process.exitCode = child.status == null ? 1 : child.status;",
+    "",
   ].join("\n");
 }
 
@@ -596,8 +621,11 @@ function verifyLauncherOwnership(installRoot, binDirectory) {
         if (!stat.isFile() || stat.isSymbolicLink()) fail("HEAD_DISTRIBUTION_COMMAND_CONFLICT", `Launcher ownership requires a regular file: ${file}`);
       }
       const marker = readJson(markerFile, "HEAD_DISTRIBUTION_COMMAND_OWNERSHIP_INVALID");
-      if (!["head-agent-core", "lode-agent-core"].includes(marker.product) || marker.installRoot !== installRoot
-        || marker.protocolVersion !== DISTRIBUTION_PROTOCOL) {
+      if (
+        !["head-agent-core", "lode-agent-core"].includes(marker.product) ||
+        marker.installRoot !== installRoot ||
+        marker.protocolVersion !== DISTRIBUTION_PROTOCOL
+      ) {
         fail("HEAD_DISTRIBUTION_COMMAND_CONFLICT", "Command directory belongs to another agent installation.");
       }
     }
@@ -611,7 +639,11 @@ function writeLaunchers(installRoot, binDirectory) {
   for (const identity of ["head", "lode"]) {
     const { launcher, shellLauncher, cmdLauncher, markerFile } = launcherPaths(binDirectory, identity);
     atomicWriteFile(launcher, launcherSource(installRoot));
-    atomicWriteFile(shellLauncher, `#!/bin/sh\nscript_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec node "$script_dir/${identity}-agent-launcher.mjs" "$@"\n`, { mode: 0o755 });
+    atomicWriteFile(
+      shellLauncher,
+      `#!/bin/sh\nscript_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec node "$script_dir/${identity}-agent-launcher.mjs" "$@"\n`,
+      { mode: 0o755 },
+    );
     if (process.platform !== "win32") fs.chmodSync(shellLauncher, 0o755);
     atomicWriteFile(cmdLauncher, `@echo off\r\nnode "%~dp0${identity}-agent-launcher.mjs" %*\r\n`);
     if (!fs.existsSync(markerFile)) atomicWriteJson(markerFile, { product: "lode-agent-core", protocolVersion: DISTRIBUTION_PROTOCOL, installRoot });
@@ -623,17 +655,20 @@ function writeLaunchers(installRoot, binDirectory) {
 // A selected owned release can name its already installed stable command. This
 // is a local address verifier, not PATH/default-install/latest-release discovery.
 export function verifiedInstalledMcpLaunch({ pluginRoot, projectRoot } = {}) {
-  const selected = fs.realpathSync(pluginRoot), releases = path.dirname(selected);
+  const selected = fs.realpathSync(pluginRoot),
+    releases = path.dirname(selected);
   if (path.basename(releases) !== "releases" || !/^release-[a-f0-9]{24}$/.test(path.basename(selected))) return null;
-  const installRoot = path.dirname(releases), markerFile = ownershipFile(installRoot);
+  const installRoot = path.dirname(releases),
+    markerFile = ownershipFile(installRoot);
   if (!existingPath(markerFile)) return null;
-  const regular = file => {
+  const regular = (file) => {
     const stat = fs.lstatSync(file);
     if (!stat.isFile() || stat.isSymbolicLink() || fs.realpathSync(file) !== path.resolve(file)) {
       fail("HEAD_DISTRIBUTION_COMMAND_OWNERSHIP_INVALID", "Selected MCP launch path must be a canonical owned regular file.");
     }
   };
-  regular(markerFile); verifyInstallRootOwnership(installRoot);
+  regular(markerFile);
+  verifyInstallRootOwnership(installRoot);
   const marker = readJson(markerFile, "HEAD_DISTRIBUTION_OWNERSHIP_INVALID");
   // Earlier markers carry no verified command address. Keep their exact
   // selected-package entry, without writing metadata or guessing another bin.
@@ -653,19 +688,38 @@ export function verifiedInstalledMcpLaunch({ pluginRoot, projectRoot } = {}) {
   verifyRelease(activeRoot, pointer.activeReleaseId);
   regular(path.join(activeRoot, "scripts", "mcp-server.mjs"));
   const identity = compositionForMetadata(selectedManifest.name, selectedManifest.packageName).identity;
-  const binDirectory = fs.realpathSync(marker.binDirectory), launch = launcherPaths(binDirectory, identity);
-  regular(launch.markerFile); regular(launch.launcher);
+  const binDirectory = fs.realpathSync(marker.binDirectory),
+    launch = launcherPaths(binDirectory, identity);
+  regular(launch.markerFile);
+  regular(launch.launcher);
   const owner = readJson(launch.markerFile, "HEAD_DISTRIBUTION_COMMAND_OWNERSHIP_INVALID");
-  if (!["head-agent-core", "lode-agent-core"].includes(owner.product) || owner.protocolVersion !== DISTRIBUTION_PROTOCOL
-    || typeof owner.installRoot !== "string" || !path.isAbsolute(owner.installRoot) || fs.realpathSync(owner.installRoot) !== installRoot
-    || fs.readFileSync(launch.launcher, "utf8") !== launcherSource(owner.installRoot)) {
+  if (
+    !["head-agent-core", "lode-agent-core"].includes(owner.product) ||
+    owner.protocolVersion !== DISTRIBUTION_PROTOCOL ||
+    typeof owner.installRoot !== "string" ||
+    !path.isAbsolute(owner.installRoot) ||
+    fs.realpathSync(owner.installRoot) !== installRoot ||
+    fs.readFileSync(launch.launcher, "utf8") !== launcherSource(owner.installRoot)
+  ) {
     fail("HEAD_DISTRIBUTION_COMMAND_OWNERSHIP_INVALID", "Selected MCP launcher does not match its owned installation.");
   }
-  return { command: "node", args: [launch.launcher, "--mcp-stdio"],
-    cwd: typeof projectRoot === "string" && projectRoot ? fs.realpathSync(projectRoot) : selected, env: {}, pathForm: "owned-install-launcher" };
+  return {
+    command: "node",
+    args: [launch.launcher, "--mcp-stdio"],
+    cwd: typeof projectRoot === "string" && projectRoot ? fs.realpathSync(projectRoot) : selected,
+    env: {},
+    pathForm: "owned-install-launcher",
+  };
 }
 
-export function installDistribution({ sourceRoot, installRoot, binDirectory, nativeOverlayRoot = null, platform = process.platform, arch = process.arch } = {}) {
+export function installDistribution({
+  sourceRoot,
+  installRoot,
+  binDirectory,
+  nativeOverlayRoot = null,
+  platform = process.platform,
+  arch = process.arch,
+} = {}) {
   const locations = resolveLocations({ installRoot, binDirectory });
   const source = path.resolve(sourceRoot || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".."));
   const sourceManifest = buildManifest(source);
@@ -715,10 +769,12 @@ export function installDistribution({ sourceRoot, installRoot, binDirectory, nat
     else fs.rmSync(pointerFile(locations.installRoot), { force: true });
     throw error;
   }
-  const launchers = { commands: ["head", "lode"].flatMap((identity) => {
-    const paths = launcherPaths(locations.binDirectory, identity);
-    return [paths.shellLauncher, paths.cmdLauncher];
-  }) };
+  const launchers = {
+    commands: ["head", "lode"].flatMap((identity) => {
+      const paths = launcherPaths(locations.binDirectory, identity);
+      return [paths.shellLauncher, paths.cmdLauncher];
+    }),
+  };
   return {
     status: previous?.activeReleaseId === manifest.releaseId ? "already-current" : previous ? "upgraded" : "installed",
     version: manifest.version,
