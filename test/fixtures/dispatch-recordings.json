@@ -1394,7 +1394,9 @@
      "args": [
       {
        "root": "<root>",
-       "hostAdapter": null,
+       "hostAdapter": {
+        "lodeRecordingPlaceholder": "compactionLifecycleHost"
+       },
        "direction": null
       }
      ]
@@ -1428,7 +1430,9 @@
      "args": [
       {
        "root": "<root>",
-       "hostAdapter": null,
+       "hostAdapter": {
+        "lodeRecordingPlaceholder": "compactionLifecycleHost"
+       },
        "direction": {
         "purpose": "sample-purpose",
         "approvedDecisions": [
@@ -1462,7 +1466,9 @@
      "args": [
       {
        "root": "<root>",
-       "hostAdapter": null,
+       "hostAdapter": {
+        "lodeRecordingPlaceholder": "compactionLifecycleHost"
+       },
        "direction": {
         "purpose": "$undefined",
         "approvedDecisions": "$undefined",
@@ -2337,7 +2343,9 @@
      "args": [
       {
        "root": "<root>",
-       "readRelatedNativeContext": null
+       "readRelatedNativeContext": {
+        "lodeRecordingPlaceholder": "readRelatedNativeContext"
+       }
       }
      ]
     }
@@ -3556,7 +3564,9 @@
      "args": [
       {
        "root": "<root>",
-       "transport": null,
+       "transport": {
+        "lodeRecordingPlaceholder": "graphDbTransport"
+       },
        "storage": "$undefined"
       }
      ]
@@ -3588,7 +3598,9 @@
        "storage": "$undefined",
        "resetIncompatible": false,
        "confirmDatabase": "",
-       "transport": null
+       "transport": {
+        "lodeRecordingPlaceholder": "graphDbTransport"
+       }
       }
      ]
     }
@@ -3621,7 +3633,9 @@
        "storage": "$undefined",
        "resetIncompatible": true,
        "confirmDatabase": "sample-confirm_database",
-       "transport": null
+       "transport": {
+        "lodeRecordingPlaceholder": "graphDbTransport"
+       }
       }
      ]
     }
@@ -3654,7 +3668,9 @@
        "storage": "$undefined",
        "resetIncompatible": false,
        "confirmDatabase": "",
-       "transport": null
+       "transport": {
+        "lodeRecordingPlaceholder": "graphDbTransport"
+       }
       }
      ]
     }
@@ -3694,7 +3710,9 @@
      "args": [
       {
        "root": "<root>",
-       "transport": null,
+       "transport": {
+        "lodeRecordingPlaceholder": "graphDbTransport"
+       },
        "storage": "$undefined"
       }
      ]
@@ -3717,7 +3735,9 @@
      "args": [
       {
        "root": "<root>",
-       "transport": null
+       "transport": {
+        "lodeRecordingPlaceholder": "graphDbTransport"
+       }
       }
      ]
     }
@@ -3751,7 +3771,9 @@
      "args": [
       {
        "root": "<root>",
-       "transport": null
+       "transport": {
+        "lodeRecordingPlaceholder": "graphDbTransport"
+       }
       }
      ]
     }
@@ -12235,7 +12257,9 @@
      "args": [
       {
        "root": "<root>",
-       "hostAdapter": null,
+       "hostAdapter": {
+        "lodeRecordingPlaceholder": "compactionLifecycleHost"
+       },
        "direction": null
       }
      ]
@@ -12260,7 +12284,9 @@
      "args": [
       {
        "root": "<root>",
-       "hostAdapter": null,
+       "hostAdapter": {
+        "lodeRecordingPlaceholder": "compactionLifecycleHost"
+       },
        "direction": {}
       }
      ]
@@ -12285,7 +12311,9 @@
      "args": [
       {
        "root": "<root>",
-       "hostAdapter": null,
+       "hostAdapter": {
+        "lodeRecordingPlaceholder": "compactionLifecycleHost"
+       },
        "direction": {
         "lodeRecordingUnsupportedField": true
        }
@@ -12739,6 +12767,35 @@
   },
   {
    "surface": "cli",
+   "command": "context-compile",
+   "argv": [
+    "context-compile",
+    "<root>",
+    "--budget",
+    "3",
+    "--task",
+    "sample-task"
+   ],
+   "calls": [
+    {
+     "fn": "context-compiler#compileContext",
+     "args": [
+      {
+       "root": "<root>",
+       "task": "sample-task",
+       "budget": 3,
+       "evidenceNeeds": [],
+       "persist": true
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "context-prepare",
    "argv": [
     "context-prepare",
@@ -12865,6 +12922,34 @@
        "evidenceNeeds": {
         "lodeRecordingUnsupportedField": true
        }
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "context-preview",
+   "argv": [
+    "context-preview",
+    "<root>",
+    "--budget",
+    "3",
+    "--task",
+    "sample-task"
+   ],
+   "calls": [
+    {
+     "fn": "context-workflow#previewContextWorkflow",
+     "args": [
+      {
+       "root": "<root>",
+       "task": "sample-task",
+       "budget": 3,
+       "evidenceNeeds": []
       }
      ]
     }
@@ -13306,6 +13391,31 @@
        "semanticProposal": {
         "lodeRecordingUnsupportedField": true
        },
+       "expectedCandidateSetId": "sample-expected-candidate-set"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "feature-mapping-start",
+   "argv": [
+    "feature-mapping-start",
+    "<root>",
+    "--expected-candidate-set",
+    "sample-expected-candidate-set"
+   ],
+   "calls": [
+    {
+     "fn": "feature-mapping#startFeatureMapping",
+     "args": [
+      {
+       "root": "<root>",
+       "semanticProposal": null,
        "expectedCandidateSetId": "sample-expected-candidate-set"
       }
      ]
@@ -13885,6 +13995,46 @@
        "onboarding": {
         "lodeRecordingUnsupportedField": true
        }
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "init",
+   "argv": [
+    "init",
+    "<root>",
+    "--copied-project",
+    "sample-copied-project",
+    "--instruction-integration",
+    "sample-instruction-integration",
+    "--profile",
+    "sample-profile",
+    "--runtime",
+    "sample-runtime",
+    "--write-root-instructions"
+   ],
+   "calls": [
+    {
+     "fn": "project-bootstrap#initializeOrResumeProject",
+     "args": [
+      {
+       "root": "<root>",
+       "projectSessionRoute": null,
+       "pluginRoot": "<plugin>",
+       "runtimes": [
+        "sample-runtime"
+       ],
+       "profile": "sample-profile",
+       "copiedProject": "sample-copied-project",
+       "instructionIntegration": "sample-instruction-integration",
+       "writeRootInstructionFiles": true,
+       "onboarding": null
       }
      ]
     }
@@ -16078,6 +16228,21 @@
   },
   {
    "surface": "cli",
+   "command": "project-direction-update",
+   "argv": [
+    "project-direction-update",
+    "<root>",
+    "--expected-direction",
+    "sample-expected-direction"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Current user Project direction requires --input <json-file>."
+   }
+  },
+  {
+   "surface": "cli",
    "command": "project-document-status",
    "argv": [
     "project-document-status",
@@ -16488,6 +16653,46 @@
        "onboarding": {
         "lodeRecordingUnsupportedField": true
        }
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "resume",
+   "argv": [
+    "resume",
+    "<root>",
+    "--copied-project",
+    "sample-copied-project",
+    "--instruction-integration",
+    "sample-instruction-integration",
+    "--profile",
+    "sample-profile",
+    "--runtime",
+    "sample-runtime",
+    "--write-root-instructions"
+   ],
+   "calls": [
+    {
+     "fn": "project-bootstrap#initializeOrResumeProject",
+     "args": [
+      {
+       "root": "<root>",
+       "projectSessionRoute": null,
+       "pluginRoot": "<plugin>",
+       "runtimes": [
+        "sample-runtime"
+       ],
+       "profile": "sample-profile",
+       "copiedProject": "sample-copied-project",
+       "instructionIntegration": "sample-instruction-integration",
+       "writeRootInstructionFiles": true,
+       "onboarding": null
       }
      ]
     }
@@ -16989,6 +17194,31 @@
   },
   {
    "surface": "cli",
+   "command": "runtime-invocation-execute",
+   "argv": [
+    "runtime-invocation-execute",
+    "<root>",
+    "--authorization",
+    "sample-authorization"
+   ],
+   "calls": [
+    {
+     "fn": "runtime-invocation-lifecycle#readRuntimeInvocationAuthorization",
+     "args": [
+      {
+       "root": "<root>",
+       "authorizationId": "sample-authorization"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "error": "TypeError",
+    "message": "Cannot read properties of undefined (reading 'authorization')"
+   }
+  },
+  {
+   "surface": "cli",
    "command": "runtime-invocation-lease-status",
    "argv": [
     "runtime-invocation-lease-status",
@@ -17422,6 +17652,33 @@
   },
   {
    "surface": "cli",
+   "command": "session-work-read",
+   "argv": [
+    "session-work-read",
+    "<root>",
+    "--after-evidence-id",
+    "sample-after-evidence-id",
+    "--scan-evidence",
+    "true"
+   ],
+   "calls": [
+    {
+     "fn": "session-work-context#readSessionWorkContext",
+     "args": [
+      {
+       "scanEvidence": true,
+       "afterEvidenceId": "sample-after-evidence-id",
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "session-work-record",
    "argv": [
     "session-work-record",
@@ -17493,6 +17750,21 @@
   },
   {
    "surface": "cli",
+   "command": "session-work-record",
+   "argv": [
+    "session-work-record",
+    "<root>",
+    "--document-selection",
+    "sample-document-selection"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Selected Session work evidence requires --input <json-file>."
+   }
+  },
+  {
+   "surface": "cli",
    "command": "source-context",
    "argv": [
     "source-context",
@@ -17534,7 +17806,7 @@
     "--required",
     "sample-required",
     "--retain",
-    "sample-retain",
+    "true",
     "--source",
     "sample-source",
     "--symbol",
@@ -17552,7 +17824,7 @@
        "root": "<root>",
        "task": "sample-task",
        "needs": "$undefined",
-       "retain": false,
+       "retain": true,
        "budget": 3,
        "signal": "$undefined",
        "onProcess": "$undefined",
@@ -17580,7 +17852,7 @@
     "--required",
     "sample-required",
     "--retain",
-    "sample-retain",
+    "true",
     "--source",
     "sample-source",
     "--symbol",
@@ -17598,7 +17870,58 @@
        "root": "<root>",
        "task": "sample-task",
        "needs": "$undefined",
-       "retain": false,
+       "retain": true,
+       "budget": 3,
+       "signal": "$undefined",
+       "onProcess": "$undefined",
+       "timeoutMs": 3
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "source-context",
+   "argv": [
+    "source-context",
+    "<root>",
+    "--budget",
+    "3",
+    "--kind",
+    "sample-kind",
+    "--required",
+    "sample-required",
+    "--retain",
+    "true",
+    "--source",
+    "sample-source",
+    "--symbol",
+    "sample-symbol",
+    "--task",
+    "sample-task",
+    "--timeout",
+    "3"
+   ],
+   "calls": [
+    {
+     "fn": "source-context-workflow#prepareSourceContext",
+     "args": [
+      {
+       "root": "<root>",
+       "task": "sample-task",
+       "needs": [
+        {
+         "kind": "sample-kind",
+         "path": "sample-source",
+         "symbol": "sample-symbol",
+         "required": true
+        }
+       ],
+       "retain": true,
        "budget": 3,
        "signal": "$undefined",
        "onProcess": "$undefined",
@@ -18111,6 +18434,31 @@
   },
   {
    "surface": "cli",
+   "command": "worker-execute",
+   "argv": [
+    "managed-maintenance",
+    "worker-execute",
+    "<root>",
+    "--authorization",
+    "sample-authorization",
+    "--role",
+    "sample-role"
+   ],
+   "calls": [
+    {
+     "fn": "lode-core#inspectRuntimeAdapters",
+     "args": [
+      "<root>"
+     ]
+    }
+   ],
+   "outcome": {
+    "error": "TypeError",
+    "message": "Cannot read properties of undefined (reading 'then')"
+   }
+  },
+  {
+   "surface": "cli",
    "command": "worker-integrate",
    "argv": [
     "managed-maintenance",
@@ -18564,6 +18912,74 @@
    "outcome": {
     "error": "Error",
     "message": "Worker preparation accepts one bounded task description, not Host configuration."
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "worker-prepare",
+   "argv": [
+    "managed-maintenance",
+    "worker-prepare",
+    "<root>",
+    "--context",
+    "sample-context",
+    "--context-mode",
+    "sample-context-mode",
+    "--instruction-scope",
+    "sample-instruction-scope",
+    "--model",
+    "sample-model",
+    "--outcome",
+    "sample-outcome",
+    "--propose",
+    "sample-propose",
+    "--role",
+    "sample-role",
+    "--runtime",
+    "sample-runtime",
+    "--source",
+    "sample-source",
+    "--task",
+    "sample-task",
+    "--task-key",
+    "sample-task-key",
+    "--timeout-ms",
+    "sample-timeout-ms"
+   ],
+   "calls": [
+    {
+     "fn": "local-worker-host#prepareLocalBoundedWorker",
+     "args": [
+      {
+       "task": "sample-task",
+       "taskKey": "sample-task-key",
+       "role": "sample-role",
+       "outcome": "sample-outcome",
+       "selectedContext": "sample-context",
+       "contextMode": "sample-context-mode",
+       "sourcePaths": [
+        "sample-source"
+       ],
+       "proposalPaths": [
+        "sample-propose"
+       ],
+       "model": "sample-model",
+       "runtime": "sample-runtime",
+       "timeoutMs": null,
+       "instructionScope": "sample-instruction-scope"
+      },
+      {
+       "root": "<root>",
+       "supervisorSelection": null,
+       "protocolFixtureBackend": null,
+       "signal": "$undefined",
+       "onProcess": "$undefined"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
    }
   },
   {
@@ -20333,7 +20749,7 @@
     "--graph-snapshot",
     "sample-graph-snapshot",
     "--include-candidates",
-    "sample-include-candidates",
+    "true",
     "--kind",
     "sample-kind",
     "--limit",
@@ -20362,7 +20778,7 @@
        "relations": [
         "sample-relations"
        ],
-       "includeUnreviewedCandidates": false,
+       "includeUnreviewedCandidates": true,
        "minConfidence": 3,
        "depth": 3,
        "maxNodes": 3,
