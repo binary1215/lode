@@ -24,21 +24,19 @@ import {
 } from "./lib/worker-integration-workflow.mjs";
 import { resolveProjectStorage } from "./lib/project-storage-format.mjs";
 import { validateRuntimeInvocationRecordIdentity } from "./lib/runtime-invocation-record.mjs";
-import { prepareLocalBoundedWorker, startLocalBoundedWorker } from "./lib/local-worker-host.mjs";
 import { compileContext, DEFAULT_CONTEXT_BUDGET } from "./lib/context-compiler.mjs";
 import { prepareContextWorkflow, previewContextWorkflow } from "./lib/context-workflow.mjs";
 import { prepareSourceContext, inspectSourceObservation } from "./lib/source-context-workflow.mjs";
 import { createExecutionContract, createNextWholePlanSnapshot, createWholePlanSnapshot } from "./lib/execution-lineage.mjs";
 import { GitLogFileHistoryAdapter } from "./lib/git-history.mjs";
 import { RuntimeStateFileAdapter } from "./lib/runtime-state.mjs";
-import { finishRun, reviewRun, startRun } from "./lib/run-lineage.mjs";
+import { finishRun, reviewRun } from "./lib/run-lineage.mjs";
 import {
   buildWorldModel,
   captureWorldMarkdownChanges,
   inspectWorldGraphProjection,
   inspectWorldMarkdownProjection,
   inspectWorldModel,
-  materializeWorldMarkdownProjection,
   queryWorldHistory,
   queryWorldModel,
   queryWorldRuntimeState,
@@ -51,16 +49,9 @@ import {
   readOnboardingCandidateSet,
   readOnboardingReviewDecision,
   restoreOnboardingCandidate,
-  reviewOnboarding,
   startOnboarding,
 } from "./lib/onboarding.mjs";
-import {
-  inspectFeatureMapping,
-  readFeatureMappingCandidateSet,
-  readFeatureMappingReviewDecision,
-  reviewFeatureMapping,
-  startFeatureMapping,
-} from "./lib/feature-mapping.mjs";
+import { readFeatureMappingCandidateSet, readFeatureMappingReviewDecision } from "./lib/feature-mapping.mjs";
 import {
   attachVcsEvidence,
   readChangeImpactCandidateSet,
@@ -94,10 +85,8 @@ import {
   buildLodeContinuitySnapshot,
   inspectProductOperatingLoop,
   observeProductOutcome,
-  proposeProductInitiative,
   recordProductHypothesis,
   recordProductSignal,
-  reviewProductInitiative,
 } from "./lib/product-operating-loop.mjs";
 import {
   inspectProductPolicyStatus,
@@ -106,15 +95,11 @@ import {
   readProductPolicyReviewDecision,
   reviewProductPolicy,
 } from "./lib/product-policy.mjs";
-import { observeReleaseState } from "./lib/release-observation.mjs";
-import { collectRegisteredObservation, ingestJsonObservationEventFile, ingestStructuredObservation } from "./lib/observation-adapter.mjs";
-import { recordDerivedObservation } from "./lib/observation-store.mjs";
+import { collectRegisteredObservation, ingestJsonObservationEventFile } from "./lib/observation-adapter.mjs";
 import { prepareObservationEvidence } from "./lib/observation-workflow.mjs";
 import {
   inspectConformanceQueue,
   prepareConformanceAssessment,
-  proposeConformanceFindings,
-  proposeConformanceResolution,
   readConformanceFinding,
   recordConformanceDisposition,
 } from "./lib/conformance-reconciliation.mjs";
@@ -438,27 +423,6 @@ function requireRuntimeSurface(command, surface, root, authorization) {
   requireOperationSurface(command, surface, { workerBound });
 }
 
-async function preparedRuntimeRead(root, value) {
-  try {
-    return (await import("./lib/runtime-prepared-input-view.mjs")).withPreparedRuntimeInputView({ root, value });
-  } catch {
-    return {
-      ...value,
-      preparedInput: {
-        kind: "PreparedRuntimeInputProjection",
-        authorityPlane: "P4",
-        status: "unavailable",
-        reasonCode: "PREPARED_INPUT_VIEW_UNAVAILABLE",
-        persisted: false,
-        instructionAuthority: false,
-        recoveryAuthority: false,
-        executionAuthorization: false,
-        modelUse: "unknown",
-      },
-    };
-  }
-}
-
 export async function runCommand(
   argv = process.argv.slice(2),
   {
@@ -572,7 +536,17 @@ async function runRoutedCommand(
   requireOperationSurface(command, surface);
   const registered = registeredCommand(command);
   if (registered)
-    return await callRegistered(registered, registered.cli.args({ root, options, inputJson, onProcess, workerJobSupervisor, observationRegistry }));
+    return await callRegistered(registered, "cli", {
+      root,
+      options,
+      inputJson,
+      onProcess,
+      signal,
+      workerJobHost,
+      workerJobSupervisor,
+      workerPreparationBackend,
+      observationRegistry,
+    });
   if (command === "help" || command === "--help" || command === "-h") return usage({ surface });
   if (command === "help-all") return usage({ all: true, surface });
   if (command === "--version" || command === "version") return { name: ARTIFACT_COMPOSITION.pluginName, version: packageMetadata.version };
@@ -713,54 +687,6 @@ async function runRoutedCommand(
       }),
     );
   }
-  if (command === "runtime-invocation-read")
-    return await preparedRuntimeRead(root, readRuntimeInvocationAuthorization({ root, authorizationId: options.authorization }));
-  if (command === "worker-prepare") {
-    const allowed = new Set([
-      "input",
-      "task",
-      "task-key",
-      "role",
-      "outcome",
-      "context",
-      "source",
-      "propose",
-      "model",
-      "runtime",
-      "timeout-ms",
-      "instruction-scope",
-      "context-mode",
-    ]);
-    if (Object.keys(options).some((key) => !allowed.has(key)) || (options.input && Object.keys(options).length > 1))
-      throw new Error("Worker preparation accepts one bounded task description, not Host configuration.");
-    return await prepareLocalBoundedWorker(
-      options.input
-        ? inputJson(options, "Worker preparation")
-        : {
-            task: options.task,
-            taskKey: options["task-key"],
-            role: options.role,
-            outcome: options.outcome,
-            selectedContext: options.context,
-            contextMode: options["context-mode"],
-            sourcePaths: options.source ? options.source.split(",") : [],
-            proposalPaths: options.propose ? options.propose.split(",") : [],
-            model: options.model,
-            runtime: options.runtime,
-            timeoutMs: options["timeout-ms"] == null ? undefined : Number(options["timeout-ms"]),
-            instructionScope: options["instruction-scope"],
-          },
-      { root, supervisorSelection: workerJobSupervisor, protocolFixtureBackend: workerPreparationBackend, signal, onProcess },
-    );
-  }
-  if (command === "worker-start") {
-    if (Object.keys(options).some((key) => !["task-key", "authorization", "role"].includes(key)))
-      throw new Error("Worker start does not accept Host configuration.");
-    return await startLocalBoundedWorker(
-      { root, authorizationId: options.authorization, taskKey: options["task-key"], role: options.role },
-      { host: workerJobHost, supervisorSelection: workerJobSupervisor, onProcess },
-    );
-  }
   if (command === "worker-integrate") {
     const input = validateWorkerIntegrationRequest(inputJson(options, "Worker integration"));
     return await operateWorkerIntegration(input, { root, onProcess, storage: resolveProjectStorage(root) });
@@ -802,7 +728,6 @@ async function runRoutedCommand(
     requireRuntimeSurface(command, surface, root, authorization);
     return applyRuntimeRunResult({ root, authorizationId: options.authorization, storage: resolveProjectStorage(root) });
   }
-  if (command === "worker-read") return readBoundedWorkerDispatch({ root, authorizationId: options.authorization });
   if (command === "worker-execute") {
     const input = options.input ? inputJson(options, "Bounded worker execution") : {};
     const unexpected = Object.keys(input).filter((key) => key !== "sessionRequest");
@@ -830,7 +755,6 @@ async function runRoutedCommand(
   }
   if (command === "onboarding-candidate-restore") return restoreOnboardingCandidate({ ...inputJson(options, "Exact candidate restoration"), root });
   if (command === "onboarding-status") return await inspectOnboarding({ root });
-  if (command === "onboarding-review") return await reviewOnboarding({ ...inputJson(options, "Onboarding ReviewDecision"), root });
   if (command === "onboarding-candidates") return readOnboardingCandidateSet({ root, candidateSetId: options["candidate-set"] });
   if (command === "onboarding-review-read") return readOnboardingReviewDecision({ root, reviewDecisionId: options.review });
   if (command === "source-scope-set") {
@@ -847,14 +771,6 @@ async function runRoutedCommand(
     if (inspected.status === "not_initialized") throw new Error("Lode Agent Core is not initialized.");
     return readRepositorySourceScope({ projectRoot: inspected.project.projectRoot, storage: inspected.storage });
   }
-  if (command === "feature-mapping-start")
-    return await startFeatureMapping({
-      root,
-      semanticProposal: options.input ? inputJson(options, "Feature mapping semantic proposal") : null,
-      expectedCandidateSetId: options["expected-candidate-set"] ?? null,
-    });
-  if (command === "feature-mapping-status") return await inspectFeatureMapping({ root });
-  if (command === "feature-mapping-review") return await reviewFeatureMapping({ ...inputJson(options, "Feature mapping ReviewDecision"), root });
   if (command === "feature-mapping-candidates") return readFeatureMappingCandidateSet({ root, candidateSetId: options["candidate-set"] });
   if (command === "feature-mapping-review-read") return readFeatureMappingReviewDecision({ root, reviewDecisionId: options.review });
   if (command === "change-set-record") return await recordChangeSet({ ...inputJson(options, "ChangeSet"), root });
@@ -870,7 +786,6 @@ async function runRoutedCommand(
       projectionId: options.projection || "",
       cursor: options.cursor || "",
     });
-  if (command === "conformance-propose") return await proposeConformanceFindings({ ...inputJson(options, "Conformance provider-Lode proposal"), root });
   if (command === "conformance-queue")
     return await inspectConformanceQueue({
       root,
@@ -884,8 +799,6 @@ async function runRoutedCommand(
     });
   if (command === "conformance-read") return readConformanceFinding({ root, findingId: options.finding });
   if (command === "conformance-disposition") return await recordConformanceDisposition({ ...inputJson(options, "Conformance user disposition"), root });
-  if (command === "conformance-resolution-propose")
-    return await proposeConformanceResolution({ ...inputJson(options, "Conformance provider-Lode resolution"), root });
   if (command === "product-policy-propose") return await proposeProductPolicy({ ...inputJson(options, "Product Policy proposal"), root });
   if (command === "product-policy-review") return await reviewProductPolicy({ ...inputJson(options, "Product Policy ReviewDecision"), root });
   if (command === "product-policy-status") return inspectProductPolicyStatus({ root, candidateId: options.candidate });
@@ -893,11 +806,8 @@ async function runRoutedCommand(
   if (command === "product-policy-review-read") return readProductPolicyReviewDecision({ root, reviewDecisionId: options.review });
   if (command === "product-signal-record") return await recordProductSignal({ ...inputJson(options, "ProductSignal"), root });
   if (command === "product-hypothesis-record") return await recordProductHypothesis({ ...inputJson(options, "ProductHypothesis"), root });
-  if (command === "product-initiative-propose") return await proposeProductInitiative({ ...inputJson(options, "ProductInitiativeCandidate"), root });
-  if (command === "product-initiative-review") return await reviewProductInitiative({ ...inputJson(options, "Product Initiative ReviewDecision"), root });
   if (command === "product-outcome-observe") return await observeProductOutcome({ ...inputJson(options, "OutcomeObservation"), root });
   if (command === "product-operating-status") return inspectProductOperatingLoop({ root, fresh: options.fresh === true });
-  if (command === "release-observe") return await observeReleaseState({ root, input: inputJson(options, "DeploymentResultObservation") });
   if (command === "observation-prepare")
     return prepareObservationEvidence({
       root,
@@ -915,10 +825,6 @@ async function runRoutedCommand(
       sourceCursor: options["source-cursor"] || "",
     });
   if (command === "observation-source-collect") return await collectRegisteredObservation({ root, registry: observationRegistry, sourceId: options.source });
-  if (command === "observation-ingest") {
-    const value = inputJson(options, "Observation collection");
-    return await ingestStructuredObservation({ root, binding: value.binding, descriptor: value.descriptor, input: value.input });
-  }
   if (command === "observation-file-ingest") {
     const value = inputJson(options, "Host JSON Observation source");
     return await ingestJsonObservationEventFile({
@@ -929,10 +835,6 @@ async function runRoutedCommand(
       eventFile: value.eventFile,
       maxBytes: value.maxBytes,
     });
-  }
-  if (command === "observation-derive") {
-    const value = inputJson(options, "Derived Observation");
-    return recordDerivedObservation({ root, descriptor: value.descriptor, input: value.input });
   }
   if (command === "head-continuity") return buildLodeContinuitySnapshot({ root, fresh: options.fresh === true });
   if (command === "world-index")
@@ -1008,7 +910,6 @@ async function runRoutedCommand(
     });
   if (command === "world-graph-remote-activate") return await activateArcadeDbGraphProjection({ root });
   if (command === "world-graph-remote-status") return await inspectArcadeDbGraphProjectionStatus({ root });
-  if (command === "world-docs-build") return await materializeWorldMarkdownProjection({ root });
   if (command === "world-docs-status") return await inspectWorldMarkdownProjection({ root });
   if (command === "world-docs-capture") return await captureWorldMarkdownChanges({ root, persist: true });
   if (command === "world-docs-candidates") return readWorldDocumentChangeCandidateSet({ root, candidateSetId: options["candidate-set"] });
@@ -1150,7 +1051,6 @@ async function runRoutedCommand(
   if (command === "lineage-plan") return createWholePlanSnapshot({ ...inputJson(options, "Whole plan"), root, persist: true });
   if (command === "lineage-next-plan") return createNextWholePlanSnapshot({ ...inputJson(options, "Next whole plan"), root, persist: true });
   if (command === "lineage-contract") return createExecutionContract({ ...inputJson(options, "Execution Contract"), root, persist: true });
-  if (command === "run-start") return startRun({ root, executionContractId: options.contract, startRequestId: options["start-request"] });
   if (command === "run-finish") return finishRun({ ...inputJson(options, "Result Packet"), root });
   if (command === "run-review") return reviewRun({ ...inputJson(options, "ReviewDecision"), root });
   if (command === "run-integrate-checkpoint") return integrateReviewedRunCheckpoint({ ...inputJson(options, "Run result integration"), root });

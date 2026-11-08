@@ -9,6 +9,18 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.95 — 게시 결과는 별도 확인
+
+- operation registry 항목이 표면별 `before`/`after` 어댑터를 선언할 수 있습니다.
+  MCP의 명시적 확인, 압축 결과, 준비 입력 뷰가 이전과 같은 순서로 어댑터를 통해
+  실행되며 동작 변경은 없습니다.
+- run 시작, release 관찰, feature mapping, onboarding 검토, Markdown 투영 빌드,
+  bounded-worker 상태·준비·시작, runtime 승인 읽기, product initiative, observation
+  ingest/derive, conformance 제안을 레지스트리로 디스패치합니다(144개 중 67개). 공용
+  어댑터 헬퍼는 `scripts/lib/dispatch-adapters.mjs`에 있습니다.
+- 거부된 MCP 확인을 디스패치 녹화에 기록하고, 파생 Observation 확인 거부를 직접
+  단언합니다.
+
 ## 0.3.0-beta.94 — 게시 결과는 별도 확인
 
 - measurement, delivery, release 상태, refresh 영수증·상태, observation

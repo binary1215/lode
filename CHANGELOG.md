@@ -11,6 +11,19 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.95 — publication tracked separately
+
+- Let operation registry entries declare per-surface `before`/`after` adapters.
+  The explicit MCP confirmations, the compact MCP results and the prepared-input
+  view now run through them, in the same order as before, with no behavior change.
+- Dispatch run start, release observation, feature mapping, onboarding review,
+  Markdown projection build, bounded-worker status/prepare/start, runtime
+  authorization read, product initiatives, observation ingest/derive and
+  conformance proposals through the registry (67 of 144). The shared adapter
+  helpers live in `scripts/lib/dispatch-adapters.mjs`.
+- Record each refused MCP confirmation in the dispatch recordings and assert the
+  derived-Observation confirmation refusal directly.
+
 ## 0.3.0-beta.94 — publication tracked separately
 
 - Dispatch the measurement, delivery, release status, refresh receipt/status and

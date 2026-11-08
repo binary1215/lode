@@ -1355,6 +1355,35 @@
   },
   {
    "surface": "mcp",
+   "tool": "lode_compact_verify",
+   "input": {
+    "project_root": "<root>",
+    "epoch_id": "sample-epoch_id",
+    "checkpoint_digest": "sample-checkpoint_digest",
+    "current_user_turn_id": 0,
+    "provider_compacted": false
+   },
+   "calls": [
+    {
+     "fn": "compaction-recovery#verifyCompaction",
+     "args": [
+      {
+       "root": "<root>",
+       "epochId": "sample-epoch_id",
+       "checkpointDigest": "sample-checkpoint_digest",
+       "currentUserTurnId": 0,
+       "providerCompacted": false,
+       "recoverySource": "canonical-checkpoint"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
    "tool": "lode_compaction_lifecycle_step",
    "input": {
     "project_root": "<root>"
@@ -3066,6 +3095,22 @@
   },
   {
    "surface": "mcp",
+   "tool": "lode_feature_mapping_review",
+   "input": {
+    "project_root": "<root>",
+    "candidate_set_id": "sample-candidate_set_id",
+    "disposition": "accept-all",
+    "rationale": "sample-rationale",
+    "confirm_user_review": false
+   },
+   "calls": [],
+   "outcome": {
+    "error": "FEATURE_MAPPING_REVIEW_CONFIRMATION_REQUIRED",
+    "message": "Feature mapping review requires explicit user confirmation."
+   }
+  },
+  {
+   "surface": "mcp",
    "tool": "lode_feature_mapping_status",
    "input": {
     "project_root": "<root>"
@@ -3620,6 +3665,19 @@
   },
   {
    "surface": "mcp",
+   "tool": "lode_graphdb_database_initialize",
+   "input": {
+    "project_root": "<root>",
+    "confirm_initialize": false
+   },
+   "calls": [],
+   "outcome": {
+    "error": "ARCADEDB_DATABASE_INITIALIZE_CONFIRMATION_REQUIRED",
+    "message": "ArcadeDB database initialization requires explicit user confirmation."
+   }
+  },
+  {
+   "surface": "mcp",
    "tool": "lode_graphdb_database_status",
    "input": {
     "project_root": "<root>"
@@ -3666,6 +3724,19 @@
    ],
    "outcome": {
     "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_graphdb_projection_activate",
+   "input": {
+    "project_root": "<root>",
+    "confirm_remote_write": false
+   },
+   "calls": [],
+   "outcome": {
+    "error": "ARCADEDB_PROJECTION_ACTIVATION_CONFIRMATION_REQUIRED",
+    "message": "ArcadeDB graph projection activation requires explicit user confirmation."
    }
   },
   {
@@ -4281,7 +4352,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "sourceId": "sample-source_id"
       }
      ]
@@ -4398,6 +4471,60 @@
    ],
    "outcome": {
     "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_observation_derive",
+   "input": {
+    "project_root": "<root>",
+    "descriptor": {
+     "type_key": "sample-type_key",
+     "type_version": "sample-type_version",
+     "forms": [
+      "event"
+     ],
+     "payload_schema": {
+      "fields": [
+       {}
+      ],
+      "additional_fields": false
+     }
+    },
+    "subject": {
+     "type": "sample-type",
+     "key": "sample-key"
+    },
+    "temporal_scope": {
+     "observed_at": "sample-observed_at",
+     "start": "sample-start",
+     "end": "sample-end"
+    },
+    "input_observation_ids": [
+     "sample-input_observation_ids"
+    ],
+    "algorithm": {
+     "key": "sample-key",
+     "version": "sample-version",
+     "digest": "sample-digest"
+    },
+    "coverage": {
+     "state": "complete",
+     "basis": "sample-basis",
+     "query_digest": "sample-query_digest",
+     "examined_count": 0,
+     "source_reported_total": 0,
+     "omitted_count": 0,
+     "cursor_start_digest": "sample-cursor_start_digest",
+     "cursor_end_digest": "sample-cursor_end_digest"
+    },
+    "payload": {},
+    "confirm_host_derivation": false
+   },
+   "calls": [],
+   "outcome": {
+    "error": "OBSERVATION_DERIVATION_CONFIRMATION_REQUIRED",
+    "message": "Derived Observation recording requires explicit confirmation that the payload came from the named deterministic algorithm."
    }
   },
   {
@@ -4519,6 +4646,65 @@
   },
   {
    "surface": "mcp",
+   "tool": "lode_observation_ingest",
+   "input": {
+    "project_root": "<root>",
+    "binding": {
+     "adapter_key": "head.structured-host-observation",
+     "adapter_version": "0.1.0",
+     "source_scope_digest": "sample-source_scope_digest",
+     "credential_reference_names": [
+      "sample-credential_reference_names"
+     ]
+    },
+    "descriptor": {
+     "type_key": "sample-type_key",
+     "type_version": "sample-type_version",
+     "forms": [
+      "event"
+     ],
+     "payload_schema": {
+      "fields": [
+       {}
+      ],
+      "additional_fields": false
+     }
+    },
+    "observation": {
+     "subject": {
+      "type": "sample-type",
+      "key": "sample-key"
+     },
+     "form": "event",
+     "temporal_scope": {
+      "observed_at": "sample-observed_at",
+      "start": "sample-start",
+      "end": "sample-end"
+     },
+     "source_event_key_digest": "sample-source_event_key_digest",
+     "source_evidence_digest": "sample-source_evidence_digest",
+     "coverage": {
+      "state": "complete",
+      "basis": "sample-basis",
+      "query_digest": "sample-query_digest",
+      "examined_count": 0,
+      "source_reported_total": 0,
+      "omitted_count": 0,
+      "cursor_start_digest": "sample-cursor_start_digest",
+      "cursor_end_digest": "sample-cursor_end_digest"
+     },
+     "payload": {}
+    },
+    "confirm_host_observation": false
+   },
+   "calls": [],
+   "outcome": {
+    "error": "OBSERVATION_HOST_CONFIRMATION_REQUIRED",
+    "message": "Observation collection requires explicit confirmation that the payload came from the exact Host source binding."
+   }
+  },
+  {
+   "surface": "mcp",
    "tool": "lode_observation_prepare",
    "input": {
     "project_root": "<root>",
@@ -4530,7 +4716,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type_key",
        "subjectType": "",
        "subjectKey": "",
@@ -4573,7 +4761,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type_key",
        "subjectType": "sample-subject_type",
        "subjectKey": "sample-subject_key",
@@ -4616,7 +4806,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type_key",
        "subjectType": "",
        "subjectKey": "",
@@ -4780,7 +4972,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "",
        "adapterKey": "",
        "availabilityState": "",
@@ -4813,7 +5007,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type_key",
        "adapterKey": "sample-adapter_key",
        "availabilityState": "unknown",
@@ -4846,7 +5042,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "",
        "adapterKey": "",
        "availabilityState": "",
@@ -5593,6 +5791,22 @@
    ],
    "outcome": {
     "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_initiative_review",
+   "input": {
+    "project_root": "<root>",
+    "initiative_candidate_id": "sample-initiative_candidate_id",
+    "disposition": "accept",
+    "rationale": "sample-rationale",
+    "confirm_user_review": false
+   },
+   "calls": [],
+   "outcome": {
+    "error": "PRODUCT_INITIATIVE_REVIEW_CONFIRMATION_REQUIRED",
+    "message": "Product Initiative review requires explicit user confirmation."
    }
   },
   {
@@ -7383,6 +7597,29 @@
    ],
    "outcome": {
     "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_release_observe",
+   "input": {
+    "project_root": "<root>",
+    "environment_key": "sample-environment_key",
+    "status": "succeeded",
+    "commit": "sample-commit",
+    "observed_at": "sample-observed_at",
+    "source_event_key_digest": "sample-source_event_key_digest",
+    "deployment_evidence_digest": "sample-deployment_evidence_digest",
+    "approved": false,
+    "approval_evidence_digest": "sample-approval_evidence_digest",
+    "change_set_id": "sample-change_set_id",
+    "vcs_evidence_id": "sample-vcs_evidence_id",
+    "confirm_host_observation": false
+   },
+   "calls": [],
+   "outcome": {
+    "error": "RELEASE_HOST_OBSERVATION_CONFIRMATION_REQUIRED",
+    "message": "Release observation requires explicit confirmation that the payload came from a host deployment observer."
    }
   },
   {
@@ -14417,7 +14654,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "$undefined",
        "subjectType": "",
        "subjectKey": "",
@@ -14472,7 +14711,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type-key",
        "subjectType": "sample-subject-type",
        "subjectKey": "sample-subject-key",
@@ -14633,7 +14874,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "sourceId": "$undefined"
       }
      ]
@@ -14658,7 +14901,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "sourceId": "sample-source"
       }
      ]
@@ -14681,7 +14926,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "",
        "adapterKey": "",
        "availabilityState": "",
@@ -14721,7 +14968,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type-key",
        "adapterKey": "sample-adapter-key",
        "availabilityState": "sample-availability",

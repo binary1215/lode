@@ -1006,3 +1006,24 @@ test("keeps divergent Observation replay process-safe across independent Node wr
   assert.equal(queryObservations({ root }).inventorySummary.counts.observations, 1);
   assert.deepEqual(observationAuthorityDigests(root, layout), before);
 });
+
+test("MCP derived Observation recording refuses a missing or non-true host confirmation before any write", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lode-observation-derive-confirmation-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const base = { project_root: root, descriptor: {}, subject: {}, temporal_scope: {}, input_observation_ids: [], algorithm: {}, coverage: {}, payload: {} };
+  for (const [id, confirmation] of [
+    [1, {}],
+    [2, { confirm_host_derivation: false }],
+    [3, { confirm_host_derivation: "yes" }],
+  ]) {
+    const response = await dispatchMcp({
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name: "lode_observation_derive", arguments: { ...base, ...confirmation } },
+    });
+    assert.equal(response.error?.data?.reasonCode, "OBSERVATION_DERIVATION_CONFIRMATION_REQUIRED", JSON.stringify(confirmation));
+    assert.match(response.error.message, /named deterministic algorithm/);
+  }
+  assert.deepEqual(fs.readdirSync(root), []);
+});
