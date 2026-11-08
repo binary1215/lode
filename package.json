@@ -36,6 +36,8 @@
     "verify:codex-marketplace": "node scripts/verify-codex-marketplace.mjs",
     "build:claude-marketplace": "node scripts/build-claude-marketplace.mjs",
     "verify:claude-marketplace": "node scripts/verify-claude-marketplace.mjs",
-    "distribution:status": "node scripts/distribution.mjs status"
+    "distribution:status": "node scripts/distribution.mjs status",
+    "format": "npx --yes prettier@3.9.10 --write .",
+    "format:check": "npx --yes prettier@3.9.10 --check ."
   }
 }

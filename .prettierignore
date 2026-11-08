@@ -1,0 +1,11 @@
+# Prettier formats only the JavaScript sources below (pinned: npx prettier@3.9.10).
+# JSON (hooks/claude.json, marketplace snapshots), Markdown, text and test fixtures
+# keep their committed bytes.
+*
+!*/
+!scripts/**/*.mjs
+!compat/**/*.mjs
+!legacy/**/*.mjs
+!test/**/*.test.mjs
+test/fixtures/**
+node_modules/
