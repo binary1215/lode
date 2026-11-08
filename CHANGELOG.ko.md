@@ -9,7 +9,40 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
-## 0.3.0-beta.87 — 게시 결과는 별도 확인
+## 0.3.0-beta.90 — 게시 결과는 별도 확인
+
+- 모든 JavaScript 소스를 Prettier 3.9.10(`printWidth` 160, 나머지 기본값)으로 한
+  번 포맷합니다. JSON·Markdown·텍스트·테스트 픽스처의 바이트는 그대로입니다.
+  `.prettierrc`, `.prettierignore`, `.editorconfig`가 스타일을 기록하고,
+  `npm run format` / `format:check`는 의존성 없이 npx로 버전을 고정하며,
+  JavaScript CI 잡이 포맷을 검사하고 `.git-blame-ignore-revs`가 포맷 커밋을
+  blame에서 숨깁니다.
+- 두 TAP 실행의 실패 테스트 집합 차이를 보여 주는
+  `scripts/compare-test-baseline.mjs`를 추가합니다. 일부 스위트가 항상 실패하는
+  머신에서도 절대 개수가 아니라 기준 대비 새 실패로 브랜치를 판정합니다.
+
+## 0.3.0-beta.89 — 게시 결과는 별도 확인
+
+- Lode Skill을 진입 절차로 바꿉니다. core Skill은 진입 상태(`conversation_ready`,
+  `session_selection_unresolved`, `NOT_INITIALIZED` 또는 `PROJECT_RELOCATION_*`를
+  동반한 `conversation_recovery_unavailable`, MCP `error.data.reasonCode`)에서
+  호출할 도구와 결과 사용법으로 이어지는 표로 시작하고, 권한 독트린은
+  `docs/lode-constitution.md`를 링크하는 한 줄 규칙만 남깁니다. conversation
+  Skill은 결과 필드를 문장으로 대응시키는 표가 되고, onboarding Skill은 모든
+  `nextAction` 값을 나열합니다.
+- 모든 설치에 존재하는 진입점 `node <plugin-root>/scripts/lode.mjs …`를
+  `nextAction.entrypoint.cli`와 준비 안내에 사용합니다. CLI 도움말은 선택적인
+  `lode-agent` 런처 철자를 설명합니다.
+- `hooks/claude.json`의 PreToolUse matcher를 도구 목록에서 생성하고
+  (`scripts/generate-claude-hooks.mjs`, `--check`) 테스트가 바이트 단위로
+  확인합니다. 전체 목록에서 만들므로 Hook이 `lode_tools_read` / `lode_tools_call`과
+  나머지 라우터·탐색 도구에도 실행됩니다.
+- `docs/glossary.md`(한국어 포함)를 추가하고, README를 무엇·왜, 두 가지 설치,
+  첫 요청, 용어집으로 시작하도록 바꾸며, `session-create --new-session`,
+  `checkpoint-sync`, `session-work-record --input`의 필수 키와 형식을 문서화합니다.
+  검증 오류는 문제가 된 키나 기대 형식을 이름하며 이유 코드는 그대로입니다.
+
+## 0.3.0-beta.88 — 게시 결과는 별도 확인
 
 - 모든 MCP 도구가 선언한 `project_root` 인자를 디스패치 전에 강제합니다. 없거나
   비었거나 문자열이 아닌 루트는 서버의 현재 디렉터리로 조용히 해석되거나 Node
@@ -30,6 +63,8 @@ GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 �
 - 지침 연결이 없는 CLAUDE.md/AGENTS.md를 링크 블록만으로 새로 만든다는 점과,
   기록이 출처를 증명하는 사본은 명시적 resume에서 이동으로 받아들인다는 점을
   문서에 명시합니다.
+## 0.3.0-beta.87 — 게시 결과는 별도 확인
+
 - 의미 검증인데 실제 OS의 짧은 종료 시간을 가정하던 나머지 두 시험에 기존
   정리 시계 제어를 적용합니다. 실제 EOF·종료·트리·PID 증명과 제품 정리 정책,
   강제 종료·불확실·비정상 종료 부정 시험은 유지합니다.
