@@ -14,6 +14,8 @@ import { skipCode } from "../../scripts/codemods/js-scan.mjs";
 import { OPERATIONS } from "../../scripts/lib/operation-registry.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+// An identifiable stand-in, so a recording shows where the host registry is passed on.
+const OBSERVATION_REGISTRY = Object.freeze({ lodeRecordingPlaceholder: "observationRegistry" });
 export const FIXTURE_ROOT = "/lode-dispatch-fixture/project";
 
 // Dispatch infrastructure that must run for real for a call to reach its
@@ -248,7 +250,7 @@ export async function recordDispatch() {
       const surface = isManagedMutation(tool.name) ? "managed-maintenance" : "ordinary";
       for (const input of mcpInputs(tool)) {
         const request = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool.name, arguments: input } };
-        const result = await capture(() => mcp.dispatch(request, { surface, hostEnvironment: {} }));
+        const result = await capture(() => mcp.dispatch(request, { surface, hostEnvironment: {}, observationRegistry: OBSERVATION_REGISTRY }));
         entries.push({ surface: "mcp", tool: tool.name, input: normalize(input), ...result });
       }
     }
@@ -257,7 +259,7 @@ export async function recordDispatch() {
       const managed = isManagedMutation(command);
       for (const argv of cliArgvs(command, flags, jsonFile, extraFieldJsonFile)) {
         const full = managed ? ["managed-maintenance", ...argv] : argv;
-        const result = await capture(() => cli.runCommand(full));
+        const result = await capture(() => cli.runCommand(full, { observationRegistry: OBSERVATION_REGISTRY }));
         entries.push({ surface: "cli", command, argv: normalize(full), ...result });
       }
     }

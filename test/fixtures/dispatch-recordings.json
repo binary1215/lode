@@ -4281,7 +4281,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "sourceId": "sample-source_id"
       }
      ]
@@ -4530,7 +4532,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type_key",
        "subjectType": "",
        "subjectKey": "",
@@ -4573,7 +4577,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type_key",
        "subjectType": "sample-subject_type",
        "subjectKey": "sample-subject_key",
@@ -4616,7 +4622,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type_key",
        "subjectType": "",
        "subjectKey": "",
@@ -4780,7 +4788,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "",
        "adapterKey": "",
        "availabilityState": "",
@@ -4813,7 +4823,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type_key",
        "adapterKey": "sample-adapter_key",
        "availabilityState": "unknown",
@@ -4846,7 +4858,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "",
        "adapterKey": "",
        "availabilityState": "",
@@ -14417,7 +14431,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "$undefined",
        "subjectType": "",
        "subjectKey": "",
@@ -14472,7 +14488,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type-key",
        "subjectType": "sample-subject-type",
        "subjectKey": "sample-subject-key",
@@ -14633,7 +14651,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "sourceId": "$undefined"
       }
      ]
@@ -14658,7 +14678,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "sourceId": "sample-source"
       }
      ]
@@ -14681,7 +14703,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "",
        "adapterKey": "",
        "availabilityState": "",
@@ -14721,7 +14745,9 @@
      "args": [
       {
        "root": "<root>",
-       "registry": null,
+       "registry": {
+        "lodeRecordingPlaceholder": "observationRegistry"
+       },
        "typeKey": "sample-type-key",
        "adapterKey": "sample-adapter-key",
        "availabilityState": "sample-availability",
