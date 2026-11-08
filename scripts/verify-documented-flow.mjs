@@ -184,7 +184,7 @@ export async function verifyDocumentedFlow() {
     for (const [id, expected] of Object.entries(DOCUMENTED_ENTRY)) {
       const values = Object.values(expected);
       assert.ok(
-        entryRows.some((row) => values.every((value) => row.includes(value))),
+        entryRows.some((row) => values.every((value) => new RegExp(`(?<![\\w-])${escapeRegExp(value)}(?![\\w-])`).test(row))),
         `${id}: no core Skill entry-table row names ${values.join(" + ")}`,
       );
     }

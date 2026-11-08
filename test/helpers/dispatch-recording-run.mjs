@@ -130,8 +130,10 @@ export function cliCommands() {
   return commands;
 }
 
-const NUMERIC_FLAGS = /^(budget|depth|limit|offset|timeout|max-[\w-]+|min-[\w-]+|candidate-limit|iterations|wait-ms|wait-timeout-ms|ttl[\w-]*)$/;
+const NUMERIC_FLAGS = /^(budget|depth|limit|offset|timeout|max-[\w-]+|min-[\w-]+|candidate-limit|iterations|wait-ms|wait-timeout-ms|edge-limit|ttl[\w-]*)$/;
 const BOOLEAN_FLAGS = new Set(["details", "fresh", "scan-evidence", "inventory-page", "apply", "diagnostics", "history", "share", "write-root-instructions"]);
+// Options whose non-default branch needs a specific text value.
+const SAMPLE_VALUES = { "include-execution": "false" };
 const isJsonFlag = (flag) => ["input", "evidence-needs"].includes(flag) || /-file$|-json$/.test(flag);
 
 // No options; every option it reads; and, for JSON input, the same with one
@@ -144,7 +146,7 @@ export function cliArgvs(command, flags, jsonFile, extraFieldJsonFile) {
       if (flag === "session") continue;
       if (BOOLEAN_FLAGS.has(flag)) argv.push(`--${flag}`, ...(["details", "scan-evidence", "inventory-page"].includes(flag) ? ["true"] : []));
       else if (isJsonFlag(flag)) argv.push(`--${flag}`, file);
-      else argv.push(`--${flag}`, NUMERIC_FLAGS.test(flag) ? "3" : `sample-${flag}`);
+      else argv.push(`--${flag}`, SAMPLE_VALUES[flag] ?? (NUMERIC_FLAGS.test(flag) ? "3" : `sample-${flag}`));
     }
     return argv;
   };

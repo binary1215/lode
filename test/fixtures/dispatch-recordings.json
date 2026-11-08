@@ -13345,9 +13345,9 @@
     "--depth",
     "3",
     "--edge-limit",
-    "sample-edge-limit",
+    "3",
     "--include-execution",
-    "sample-include-execution",
+    "false",
     "--limit",
     "3",
     "--query",
@@ -13366,8 +13366,8 @@
        "query": "sample-query",
        "depth": 3,
        "maxNodes": 3,
-       "maxEdges": null,
-       "includeExecution": true
+       "maxEdges": 3,
+       "includeExecution": false
       }
      ]
     }
@@ -20080,7 +20080,7 @@
     "--depth",
     "3",
     "--edge-limit",
-    "sample-edge-limit",
+    "3",
     "--graph-snapshot",
     "sample-graph-snapshot",
     "--include-candidates",
@@ -20117,7 +20117,7 @@
        "minConfidence": 3,
        "depth": 3,
        "maxNodes": 3,
-       "maxEdges": null
+       "maxEdges": 3
       }
      ]
     }
