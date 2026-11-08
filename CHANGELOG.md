@@ -11,6 +11,17 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.93 — publication tracked separately
+
+- Dispatch the checkpoint, compaction, graph-lineage, change-set and
+  lineage-read operations through the operation registry (32 of 144), with no
+  behavior change on either surface.
+- Keep the shared session work evidence schema fragments in
+  `scripts/lib/tool-schemas.mjs`, used by both the MCP server and the registry.
+- Record numeric wait timeouts and an unsupported JSON input field in the
+  dispatch recordings, drop the CLI imports the registry made unused, and match
+  entry states against the core Skill's entry table in the documented-flow check.
+
 ## 0.3.0-beta.92 — publication tracked separately
 
 - Add `scripts/lib/operation-registry.mjs`, one registry that the MCP server and

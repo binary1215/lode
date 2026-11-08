@@ -130,21 +130,26 @@ export function cliCommands() {
   return commands;
 }
 
-const NUMERIC_FLAGS = /^(budget|depth|limit|offset|timeout|max-[\w-]+|min-[\w-]+|candidate-limit|iterations|wait-ms|ttl[\w-]*)$/;
+const NUMERIC_FLAGS = /^(budget|depth|limit|offset|timeout|max-[\w-]+|min-[\w-]+|candidate-limit|iterations|wait-ms|wait-timeout-ms|ttl[\w-]*)$/;
 const BOOLEAN_FLAGS = new Set(["details", "fresh", "scan-evidence", "inventory-page", "apply", "diagnostics", "history", "share", "write-root-instructions"]);
+const isJsonFlag = (flag) => ["input", "evidence-needs"].includes(flag) || /-file$|-json$/.test(flag);
 
-export function cliArgvs(command, flags, jsonFile) {
+// No options; every option it reads; and, for JSON input, the same with one
+// unsupported field so per-command field checks are recorded too.
+export function cliArgvs(command, flags, jsonFile, extraFieldJsonFile) {
   const argvs = [[command, FIXTURE_ROOT]];
-  if (flags.length) {
+  const withOptions = (file) => {
     const argv = [command, FIXTURE_ROOT];
     for (const flag of flags) {
       if (flag === "session") continue;
       if (BOOLEAN_FLAGS.has(flag)) argv.push(`--${flag}`, ...(["details", "scan-evidence", "inventory-page"].includes(flag) ? ["true"] : []));
-      else if (["input", "evidence-needs"].includes(flag) || /-file$|-json$/.test(flag)) argv.push(`--${flag}`, jsonFile);
+      else if (isJsonFlag(flag)) argv.push(`--${flag}`, file);
       else argv.push(`--${flag}`, NUMERIC_FLAGS.test(flag) ? "3" : `sample-${flag}`);
     }
-    argvs.push(argv);
-  }
+    return argv;
+  };
+  if (flags.length) argvs.push(withOptions(jsonFile));
+  if (flags.some(isJsonFlag)) argvs.push(withOptions(extraFieldJsonFile));
   return argvs;
 }
 
@@ -215,6 +220,8 @@ export async function recordDispatch() {
   process.chdir(workDirectory);
   const jsonFile = path.join(workDirectory, "input.json");
   fs.writeFileSync(jsonFile, "{}\n");
+  const extraFieldJsonFile = path.join(workDirectory, "input-extra-field.json");
+  fs.writeFileSync(extraFieldJsonFile, `${JSON.stringify({ lodeRecordingUnsupportedField: true })}\n`);
   const normalize = normalizer(workDirectory);
   try {
     const mcp = await import("../../scripts/mcp-server.mjs");
@@ -246,7 +253,7 @@ export async function recordDispatch() {
     const commands = cliCommands();
     for (const [command, flags] of [...commands].sort((a, b) => a[0].localeCompare(b[0], "en"))) {
       const managed = isManagedMutation(command);
-      for (const argv of cliArgvs(command, flags, jsonFile)) {
+      for (const argv of cliArgvs(command, flags, jsonFile, extraFieldJsonFile)) {
         const full = managed ? ["managed-maintenance", ...argv] : argv;
         const result = await capture(() => cli.runCommand(full));
         entries.push({ surface: "cli", command, argv: normalize(full), ...result });
