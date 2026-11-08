@@ -5,6 +5,10 @@
 //
 // Every rewrite matches an exact, normalized shape and replaces it with a core
 // helper that has the same behavior; anything else is reported and left alone.
+// One-shot: it was run once on the stage 3-A tree. Running it again on the result
+// would turn the inline sha256() that distribution-lifecycle.mjs keeps for its
+// toString()-serialized launcher into a core import and break the launcher
+// (test/lib-core-helpers.test.mjs catches it).
 import fs from "node:fs";
 import path from "node:path";
 import { callArguments, codeMask, normalize, skipCode, topLevelDefinitions } from "./js-scan.mjs";

@@ -66,7 +66,7 @@ test("scripts/lib outside core uses the core digest, rename and digest-helper pr
   assert.match(lifecycleRuntime, /const inputDigest = crypto\.createHash\('sha256'\)\.update\(input\)\.digest\('hex'\);/);
 });
 
-test("REASON_CODES lists exactly the reason codes the shipped JavaScript uses", () => {
+test("REASON_CODES lists exactly the codes used as code/reasonCode values or fail/error call arguments", () => {
   assert.ok(Object.isFrozen(REASON_CODES));
   assert.deepEqual([...REASON_CODES], [...new Set(REASON_CODES)].sort(), "sorted and unique");
   const used = collectReasonCodes();
