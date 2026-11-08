@@ -421,18 +421,18 @@ export async function continueSessionFromMcp(args, coordinationWorkspaceHost) {
 
 export async function projectBundleFromMcp(name, args, signal, onExportScope = null) {
   const fields =
-    name === "head_project_bundle_export"
+    name === "lode_project_bundle_export"
       ? ["project_root", "destination", "provenance_scope", "source_mode"]
-      : name === "head_project_bundle_read"
+      : name === "lode_project_bundle_read"
         ? ["bundle_root", "expected_bundle_id", "include_native_history", "handoff_file", "handoff_offset", "handoff_max_bytes"]
         : ["target_root", "bundle_root", "expected_bundle_id"];
   if (!args || typeof args !== "object" || Array.isArray(args) || Object.keys(args).some((key) => !fields.includes(key)))
     throw new Error("Unsupported Project bundle arguments.");
   const required =
-    name === "head_project_bundle_export" ? ["project_root", "destination"] : name === "head_project_bundle_read" ? [] : ["target_root", "bundle_root"];
+    name === "lode_project_bundle_export" ? ["project_root", "destination"] : name === "lode_project_bundle_read" ? [] : ["target_root", "bundle_root"];
   if (required.some((key) => typeof args[key] !== "string" || !args[key].trim())) throw new Error("Project bundle locations must be non-empty text.");
   const core = await import("./project-portability.mjs");
-  if (name === "head_project_bundle_read") {
+  if (name === "lode_project_bundle_read") {
     const handoffOptions = { offset: args.handoff_offset ?? 0, maxBytes: args.handoff_max_bytes ?? 65536 };
     if (args.handoff_file !== undefined) {
       if (args.bundle_root !== undefined || args.expected_bundle_id !== undefined || args.include_native_history !== undefined)
@@ -466,7 +466,7 @@ export async function projectBundleFromMcp(name, args, signal, onExportScope = n
       };
     }
   }
-  if (name === "head_project_bundle_export")
+  if (name === "lode_project_bundle_export")
     return core.exportProjectBundle({
       root: args.project_root,
       destination: args.destination,
@@ -484,7 +484,7 @@ export async function projectBundleFromMcp(name, args, signal, onExportScope = n
   });
   return {
     ...result,
-    nextRead: { tool: publicToolName("head_conversation_enter"), arguments: { project_root: result.targetRoot, session_id: result.selectedSessionId } },
+    nextRead: { tool: publicToolName("lode_conversation_enter"), arguments: { project_root: result.targetRoot, session_id: result.selectedSessionId } },
     selectionScope: "exact-current-request-no-default-change",
   };
 }

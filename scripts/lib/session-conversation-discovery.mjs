@@ -12,7 +12,7 @@ const same = (a, b) => a.status === b.status && a.sessionId === b.sessionId && a
 const responseBytes = (value) =>
   Buffer.byteLength(
     JSON.stringify({
-      content: [{ type: "text", text: formatMcpToolContent("head_session_list", value) }],
+      content: [{ type: "text", text: formatMcpToolContent("lode_session_list", value) }],
       structuredContent: value,
     }),
   );

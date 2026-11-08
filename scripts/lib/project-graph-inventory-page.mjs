@@ -68,7 +68,7 @@ function exactRead(root, relative, storage) {
   if (selector?.layer === "lineage")
     return {
       supported: true,
-      tool: publicToolName("head_lineage_artifact"),
+      tool: publicToolName("lode_lineage_artifact"),
       arguments: { project_root: root, artifact_id: selector.recordId },
       scope:
         "Retained artifact verifier also inspects selected Session, managed manifest and managed-file digests; currentness, parent existence and execution permission are not proved.",
@@ -76,7 +76,7 @@ function exactRead(root, relative, storage) {
   if (selector)
     return {
       supported: true,
-      tool: publicToolName("head_project_graph"),
+      tool: publicToolName("lode_project_graph"),
       arguments: { project_root: root, paths: [relative], details: true },
       scope:
         selector.layer === "direction"
@@ -223,19 +223,19 @@ export function readProjectGraphInventoryPage(options, normalized) {
     ...(token ? { inventory_cursor: token } : {}),
   });
   const nextFor = (frontier) => ({
-    tool: publicToolName("head_project_graph"),
+    tool: publicToolName("lode_project_graph"),
     arguments: argumentsFor(Buffer.from(JSON.stringify({ v: 1, binding, frontier })).toString("base64url")),
   });
   const envelopeBytes = (value) =>
-    Buffer.byteLength(JSON.stringify({ content: [{ type: "text", text: formatMcpToolContent("head_project_graph", value) }], structuredContent: value }));
+    Buffer.byteLength(JSON.stringify({ content: [{ type: "text", text: formatMcpToolContent("lode_project_graph", value) }], structuredContent: value }));
   // Reserve the complete continuation + largest bounded diagnostic/counters,
   // before touching a body. This is a fitting check, not a semantic exclusion.
   const fits = (row) => {
     const probe = structuredClone(page);
     probe.inventoryPage.rows.push(row);
-    probe.inventoryPage.next = { tool: publicToolName("head_project_graph"), arguments: { ...argumentsFor("x".repeat(MAX_CURSOR)) } };
+    probe.inventoryPage.next = { tool: publicToolName("lode_project_graph"), arguments: { ...argumentsFor("x".repeat(MAX_CURSOR)) } };
     probe.inventoryPage.narrowing = Array.from({ length: 8 }, () => ({
-      tool: publicToolName("head_project_graph"),
+      tool: publicToolName("lode_project_graph"),
       arguments: { project_root: root, inventory_page: true, inventory_paths: ["x".repeat(512)] },
     }));
     probe.inventoryPage.warnings = [{ reasonCode: "PROJECT_GRAPH_INVENTORY_METADATA_BOUND", path: "x".repeat(512) }];
@@ -266,7 +266,7 @@ export function readProjectGraphInventoryPage(options, normalized) {
       out.coverage.status = "changed-scope";
       out.warnings.push({ reasonCode: "PROJECT_GRAPH_INVENTORY_FRONTIER_CHANGED", path: cursor.frontier.path });
       out.narrowing.push({
-        tool: publicToolName("head_project_graph"),
+        tool: publicToolName("lode_project_graph"),
         arguments: { project_root: root, inventory_page: true, inventory_paths: [scopes[cursor.frontier.scope]] },
       });
       return page;
@@ -284,7 +284,7 @@ export function readProjectGraphInventoryPage(options, normalized) {
       out.coverage.status = "changed-scope";
       out.warnings.push({ reasonCode: "PROJECT_GRAPH_INVENTORY_FRONTIER_UNAVAILABLE", path: relative });
       out.narrowing = [
-        { tool: publicToolName("head_project_graph"), arguments: { project_root: root, inventory_page: true, inventory_paths: [scopes[scope]] } },
+        { tool: publicToolName("lode_project_graph"), arguments: { project_root: root, inventory_page: true, inventory_paths: [scopes[scope]] } },
       ];
     }
   };
@@ -296,7 +296,7 @@ export function readProjectGraphInventoryPage(options, normalized) {
       .filter((entry) => relativePath(entry.path) && allowed(entry.path))
       .slice(0, 8)
       .map((entry) => ({
-        tool: publicToolName("head_project_graph"),
+        tool: publicToolName("lode_project_graph"),
         arguments: { project_root: root, inventory_page: true, inventory_paths: [entry.path] },
       }));
   };

@@ -176,7 +176,7 @@ function excerptOf(entry, fields) {
       fullOriginalIncluded: false,
     },
     expansion: {
-      operation: publicToolName("head_session_work_read"),
+      operation: publicToolName("lode_session_work_read"),
       sameVerifiedProjectRoot: true,
       arguments: { session_id: entry.source.sessionId, evidence_ids: [entry.source.evidenceId], max_records: 1, max_characters: SESSION_WORK_MAX_CHARACTERS },
     },

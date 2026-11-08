@@ -828,7 +828,7 @@ async function main() {
       id: "codex-protocol-result",
       method: "tools/call",
       params: {
-        name: publicToolName("head_runtime_invocation_result"),
+        name: publicToolName("lode_runtime_invocation_result"),
         arguments: { project_root: resolvedRoot, authorization_id: codexProtocolAuthorization.authorizationId },
       },
     });
@@ -1057,7 +1057,7 @@ async function main() {
         id: runtime,
         method: "tools/call",
         params: {
-          name: publicToolName("head_runtime_invocation_authorization"),
+          name: publicToolName("lode_runtime_invocation_authorization"),
           arguments: { project_root: resolvedRoot, authorization_id: authorization.authorizationId },
         },
       });
@@ -1126,7 +1126,7 @@ async function main() {
         id: `${runtime}-lease`,
         method: "tools/call",
         params: {
-          name: publicToolName("head_runtime_invocation_lease_status"),
+          name: publicToolName("lode_runtime_invocation_lease_status"),
           arguments: { project_root: resolvedRoot, authorization_id: authorization.authorizationId },
         },
       });
@@ -1631,7 +1631,7 @@ async function main() {
       jsonrpc: "2.0",
       id: 8_801,
       method: "tools/call",
-      params: { name: publicToolName("head_bounded_worker_wave_status"), arguments: { project_root: resolvedRoot, wave_id: createdWave.wave.waveId } },
+      params: { name: publicToolName("lode_bounded_worker_wave_status"), arguments: { project_root: resolvedRoot, wave_id: createdWave.wave.waveId } },
     });
     assert(
       mcpWaveStatus.result.structuredContent.projection.statusProjectionId === failedWave.statusProjectionId,

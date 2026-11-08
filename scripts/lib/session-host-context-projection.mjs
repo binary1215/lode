@@ -107,20 +107,20 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
     if (entry.status === "session_selection_unresolved") {
       // Common P2 expansion stays prior to optional Session discovery. Missing
       // selection cannot turn a common-direction read into a Session list.
-      context.expansion = context.requiredSourceExpansion ? publicToolName("head_project_direction_read") + "(project_root:" + rootSource + ")" : "";
+      context.expansion = context.requiredSourceExpansion ? publicToolName("lode_project_direction_read") + "(project_root:" + rootSource + ")" : "";
     } else if (compactExpansion) {
       const route = "(project_root:" + rootSource + ", ...route)";
       context.expansion =
-        (context.requiredSourceExpansion ? "When needed: " + publicToolName("head_conversation_enter") + route : "") +
-        (omittedWork ? (context.requiredSourceExpansion ? "; " : "") + "Omitted work: " + publicToolName("head_session_work_read") + route : "");
+        (context.requiredSourceExpansion ? "When needed: " + publicToolName("lode_conversation_enter") + route : "") +
+        (omittedWork ? (context.requiredSourceExpansion ? "; " : "") + "Omitted work: " + publicToolName("lode_session_work_read") + route : "");
     } else {
       context.expansion =
         "When needed, " +
-        publicToolName("head_conversation_enter") +
+        publicToolName("lode_conversation_enter") +
         " with project_root:" +
         rootSource +
         " and the exact route above reads originals (workContext.sessionPurpose, common direction, checkpoint).";
-      if (omittedWork) context.expansion += " Omitted work: " + publicToolName("head_session_work_read") + " with the same root/route.";
+      if (omittedWork) context.expansion += " Omitted work: " + publicToolName("lode_session_work_read") + " with the same root/route.";
     }
     return JSON.stringify(context);
   };

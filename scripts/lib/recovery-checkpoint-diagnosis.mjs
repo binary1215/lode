@@ -585,7 +585,7 @@ export function inspectRecoveryCheckpointDiagnosis({ root = ".", includeRestore 
       }),
       nextHeadAction: {
         id: "continue-or-assess-checkpoint-need",
-        summary: `Continue ordinary work. Only if durable recovery is useful, read a fresh ${publicToolName("head_checkpoint_basis")}, then let the current provider Lode derive direction before sync.`,
+        summary: `Continue ordinary work. Only if durable recovery is useful, read a fresh ${publicToolName("lode_checkpoint_basis")}, then let the current provider Lode derive direction before sync.`,
       },
       headActionRequired: false,
       recoveryDependentWorkBlocked: false,

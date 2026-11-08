@@ -1503,7 +1503,7 @@ export function buildWorldModelStatusProjection(inspection, { sampleLimit = WORL
       worldModelId: snapshot.worldModelId,
       worldModelHash: snapshot.worldModelHash,
       localInspectionCommand: `${ARTIFACT_COMPOSITION.identity === "lode" ? "lode-agent" : "head-agent"} world-status <project>`,
-      boundedDetailTools: ["head_world_query", "head_temporal_graph", "head_git_history", "head_runtime_state"].map(publicToolName),
+      boundedDetailTools: ["lode_world_query", "lode_temporal_graph", "lode_git_history", "lode_runtime_state"].map(publicToolName),
     },
   };
   const statusProjectionHash = digest(canonicalJson(payload));

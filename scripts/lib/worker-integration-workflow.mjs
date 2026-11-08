@@ -116,7 +116,7 @@ function resultSummary(result) {
           resultPacketId: packet.resultPacketId,
           artifactHash: packet.artifactHash,
           published: Boolean(result.resultPacket),
-          read: result.resultPacket ? { tool: publicToolName("head_lineage_artifact"), artifactId: packet.resultPacketId } : null,
+          read: result.resultPacket ? { tool: publicToolName("lode_lineage_artifact"), artifactId: packet.resultPacketId } : null,
         }
       : null,
   };

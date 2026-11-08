@@ -212,6 +212,7 @@ export default {
               item.command = ["node", packagedServer];
             if (!samePath(path.resolve(directory, item.command[1]), packagedServer)) continue;
             serverPrefixes.push(sanitize(name) + "_");
+            // Raw OpenCode tool ids keep the historical spelling these aliases have always matched.
             for (const tool of ["head_project_status", "head_tools_read", "head_tools_call"]) aliases.set(sanitize(name) + "_" + tool, tool);
           } catch {
             /* Unsupported config shape is not a user setup gate. */
@@ -365,10 +366,10 @@ export default {
           const prefixed = serverPrefixes.find((prefix) => typeof input?.tool === "string" && input.tool.startsWith(prefix));
           const tool = aliased || (prefixed ? input.tool.slice(prefixed.length) : input?.tool);
           const semantic = resolveOperation(tool)?.semanticName || tool;
-          const routed = ["head_tools_read", "head_tools_call"].includes(semantic);
+          const routed = ["lode_tools_read", "lode_tools_call"].includes(semantic);
           const inner = routed ? resolveOperation(output?.args?.name)?.semanticName : semantic;
           const targetArgs = routed ? output?.args?.arguments : output?.args;
-          if (["head_conversation_list", "head_conversation_send"].includes(inner) && object(targetArgs) && nativeId(input?.sessionID)) {
+          if (["lode_conversation_list", "lode_conversation_send"].includes(inner) && object(targetArgs) && nativeId(input?.sessionID)) {
             const session = await exactSession(input.sessionID);
             if (session) registerOpenCodePresence({ root: directory, session, client, environment });
             const ticket = session && writeOpenCodeCallerTicket({ root: directory, session, args: targetArgs, environment });
@@ -397,7 +398,7 @@ export default {
           const raw = object(output?.args) ? output.args : null;
           if (!raw) return;
           const resolved = resolveOperation(tool);
-          const routed = ["head_tools_read", "head_tools_call"].includes(resolved?.semanticName || tool);
+          const routed = ["lode_tools_read", "lode_tools_call"].includes(resolved?.semanticName || tool);
           const inner = routed ? raw.name : tool;
           const args = routed ? raw.arguments : raw;
           const semantic = resolveOperation(inner)?.semanticName;

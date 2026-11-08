@@ -29,12 +29,12 @@ async function directToolResponse(name, args) {
 async function discoverTool(name) {
   name = publicToolName(name);
   if (!discoveredTools.has(name)) {
-    const discovery = (await directToolResponse("head_tools_discover", { name })).structuredContent;
+    const discovery = (await directToolResponse("lode_tools_discover", { name })).structuredContent;
     assert.equal(discovery.persisted, false);
     assert.equal(discovery.grantsAuthorization, false);
     assert.equal(discovery.total, 1);
     assert.equal(discovery.tools[0].name, name);
-    assert.equal(discovery.tools[0].invokeWith, publicToolName(discovery.tools[0].annotations.readOnlyHint === true ? "head_tools_read" : "head_tools_call"));
+    assert.equal(discovery.tools[0].invokeWith, publicToolName(discovery.tools[0].annotations.readOnlyHint === true ? "lode_tools_read" : "lode_tools_call"));
     discoveredTools.set(name, discovery.tools[0]);
   }
   return discoveredTools.get(name);
@@ -67,24 +67,24 @@ try {
 
   const listed = await dispatch({ jsonrpc: "2.0", id: "tools", method: "tools/list", params: {} });
   for (const entry of listed.result.tools) defaultToolNames.add(entry.name);
-  for (const name of ["head_tools_discover", "head_tools_read", "head_tools_call", "head_project_initialize_or_resume"].map(publicToolName)) {
+  for (const name of ["lode_tools_discover", "lode_tools_read", "lode_tools_call", "lode_project_initialize_or_resume"].map(publicToolName)) {
     assert(defaultToolNames.has(name), `Missing default MCP entry: ${name}`);
   }
   for (const name of [
-    "head_onboarding_guide",
-    "head_project_initialize_or_resume",
-    "head_onboarding_review",
-    "head_markdown_projection_build",
-    "head_graphdb_connection_preflight",
-    "head_graphdb_database_initialize",
-    "head_graphdb_projection_activate",
+    "lode_onboarding_guide",
+    "lode_project_initialize_or_resume",
+    "lode_onboarding_review",
+    "lode_markdown_projection_build",
+    "lode_graphdb_connection_preflight",
+    "lode_graphdb_database_initialize",
+    "lode_graphdb_projection_activate",
   ].map(publicToolName)) {
     if (!defaultToolNames.has(name)) await discoverTool(name);
   }
-  assert.equal(defaultToolNames.has(publicToolName("head_onboarding_guide")), false);
+  assert.equal(defaultToolNames.has(publicToolName("lode_onboarding_guide")), false);
   assert.equal(fs.existsSync(path.join(projectRoot, ".head")), false);
   assert.equal(fs.existsSync(path.join(projectRoot, ".lode")), false);
-  const graphDbActivateTool = await discoverTool("head_graphdb_projection_activate");
+  const graphDbActivateTool = await discoverTool("lode_graphdb_projection_activate");
   assert.deepEqual(graphDbActivateTool.inputSchema.required, ["project_root", "confirm_remote_write"]);
   assert.equal(graphDbActivateTool.inputSchema.additionalProperties, false);
   assert.equal(
@@ -94,7 +94,7 @@ try {
 
   fs.mkdirSync(coreProjectRoot, { recursive: true });
   fs.writeFileSync(path.join(coreProjectRoot, "core.mjs"), "export const coordinated = true;\n");
-  const coreInitializationResponse = await toolResponse("head_project_initialize_or_resume", {
+  const coreInitializationResponse = await toolResponse("lode_project_initialize_or_resume", {
     project_root: coreProjectRoot,
     runtimes: ["codex"],
   });
@@ -110,7 +110,7 @@ try {
   assert.match(coreInitializationResponse.content[0].text, /Continue the user's original task in this conversation/u);
   assert.doesNotMatch(coreInitializationResponse.content[0].text, /MCP:|Command:|candidateSetId|sessionId/u);
   assert.equal(coreInitialized.capabilities.find((item) => item.id === "product-governance").availability, "available-not-activated");
-  const coreStatus = await tool("head_project_status", { project_root: coreProjectRoot });
+  const coreStatus = await tool("lode_project_status", { project_root: coreProjectRoot });
   assert.equal(coreStatus.status, "core_ready");
   assert.equal(coreStatus.readiness.product.state, "not_activated");
   assert.equal(coreStatus.authority.mutatesProject, false);
@@ -119,7 +119,7 @@ try {
 
   fs.mkdirSync(graphProjectRoot, { recursive: true });
   fs.writeFileSync(path.join(graphProjectRoot, "service.mjs"), "export function serve() { return true; }\n");
-  await tool("head_project_initialize_or_resume", {
+  await tool("lode_project_initialize_or_resume", {
     project_root: graphProjectRoot,
     profile: "product",
     runtimes: ["codex"],
@@ -133,7 +133,7 @@ try {
       password_secret_reference: "HEAD_FIXTURE_GRAPHDB_PASSWORD_MISSING",
     },
   });
-  const graphDbPreflight = await tool("head_graphdb_connection_preflight", { project_root: graphProjectRoot });
+  const graphDbPreflight = await tool("lode_graphdb_connection_preflight", { project_root: graphProjectRoot });
   assert.equal(graphDbPreflight.status, "credential-references-unavailable");
   assert.equal(graphDbPreflight.allReferencesPresent, false);
   assert.equal(graphDbPreflight.hostRestartMayBeRequired, true);
@@ -147,7 +147,7 @@ try {
   assert.equal(JSON.stringify(graphDbPreflight).includes("fixture-target-database"), false);
   await assert.rejects(
     () =>
-      tool("head_graphdb_projection_activate", {
+      tool("lode_graphdb_projection_activate", {
         project_root: graphProjectRoot,
         confirm_remote_write: false,
       }),
@@ -160,7 +160,7 @@ try {
   try {
     process.env[fixtureUsernameReference] = "fixture-username-value-not-a-secret";
     process.env[fixturePasswordReference] = "fixture-password-value-not-a-secret";
-    const availablePreflight = await tool("head_graphdb_connection_preflight", { project_root: graphProjectRoot });
+    const availablePreflight = await tool("lode_graphdb_connection_preflight", { project_root: graphProjectRoot });
     assert.equal(availablePreflight.status, "credential-references-available");
     assert.equal(availablePreflight.allReferencesPresent, true);
     assert.equal(availablePreflight.hostRestartMayBeRequired, false);
@@ -176,11 +176,11 @@ try {
     else process.env[fixturePasswordReference] = previousFixturePassword;
   }
 
-  const before = await tool("head_onboarding_guide", { project_root: projectRoot });
+  const before = await tool("lode_onboarding_guide", { project_root: projectRoot });
   assert.equal(before.status, "not_initialized");
   assert.equal(before.nextAction, "initialize_or_resume");
 
-  const initialized = await tool("head_project_initialize_or_resume", {
+  const initialized = await tool("lode_project_initialize_or_resume", {
     project_root: projectRoot,
     profile: "product",
     runtimes: ["claude", "codex", "opencode"],
@@ -192,11 +192,11 @@ try {
   assert.equal(initialized.nextAction.id, "provide_product_evidence");
   assert.equal(initialized.onboarding.candidateCount, 0);
 
-  const evidenceGuide = await tool("head_onboarding_guide", { project_root: projectRoot });
+  const evidenceGuide = await tool("lode_onboarding_guide", { project_root: projectRoot });
   assert.equal(evidenceGuide.status, "awaiting_evidence");
   assert.deepEqual(evidenceGuide.materialChoicesRequired, ["fresh_head_semantic_proposal_or_user_brief"]);
 
-  const proposed = await tool("head_project_initialize_or_resume", {
+  const proposed = await tool("lode_project_initialize_or_resume", {
     project_root: projectRoot,
     profile: "product",
     semantic_proposal: {
@@ -221,7 +221,7 @@ try {
   assert.equal(proposed.nextAction.id, "review_product_candidates");
   assert.equal(proposed.onboarding.candidateCount, 1);
 
-  const reviewGuide = await tool("head_onboarding_guide", { project_root: projectRoot, candidate_limit: 200 });
+  const reviewGuide = await tool("lode_onboarding_guide", { project_root: projectRoot, candidate_limit: 200 });
   assert.equal(reviewGuide.status, "awaiting_review");
   assert.equal(reviewGuide.nextAction, "review_candidates");
   assert.equal(reviewGuide.review.truncated, false);
@@ -229,12 +229,12 @@ try {
     reviewGuide.review.candidates.every((candidate) => candidate.authority === "candidate-only-until-explicit-review"),
     true,
   );
-  const reviewGuideResponse = await toolResponse("head_onboarding_guide", { project_root: projectRoot, candidate_limit: 200 });
+  const reviewGuideResponse = await toolResponse("lode_onboarding_guide", { project_root: projectRoot, candidate_limit: 200 });
   assert.match(reviewGuideResponse.content[0].text, /Core supplies no automatic disposition/u);
   assert.match(reviewGuideResponse.content[0].text, /Reply in natural language/u);
   assert.doesNotMatch(reviewGuideResponse.content[0].text, /candidateSetId|candidate-/u);
 
-  const revised = await tool("head_onboarding_review", {
+  const revised = await tool("lode_onboarding_review", {
     project_root: projectRoot,
     candidate_set_id: reviewGuide.review.candidateSetId,
     disposition: "revise",
@@ -253,11 +253,11 @@ try {
   assert.equal(revised.status, "onboarding_revision_awaiting_review");
   assert.equal(revised.state.latestReviewDecisionId, revised.reviewDecision.reviewDecisionId);
 
-  const successorGuide = await tool("head_onboarding_guide", { project_root: projectRoot, candidate_limit: 200 });
+  const successorGuide = await tool("lode_onboarding_guide", { project_root: projectRoot, candidate_limit: 200 });
   assert.equal(successorGuide.status, "awaiting_review");
   assert.notEqual(successorGuide.review.candidateSetId, reviewGuide.review.candidateSetId);
 
-  const reviewed = await tool("head_onboarding_review", {
+  const reviewed = await tool("lode_onboarding_review", {
     project_root: projectRoot,
     candidate_set_id: successorGuide.review.candidateSetId,
     disposition: "accept-all",
@@ -267,12 +267,12 @@ try {
   assert.equal(reviewed.authorityEffect, "explicit-product-canon-transition");
   assert.notEqual(reviewed.state.latestReviewDecisionId, revised.reviewDecision.reviewDecisionId);
 
-  const documents = await tool("head_markdown_projection_build", { project_root: projectRoot });
+  const documents = await tool("lode_markdown_projection_build", { project_root: projectRoot });
   assert.equal(documents.status, "projected");
   assert.equal(documents.authority, "rebuildable-derived-human-view-not-project-canon");
 
   const contextTask = "Locate request acceptance and validation evidence";
-  const preparation = await tool("head_context_prepare", {
+  const preparation = await tool("lode_context_prepare", {
     project_root: projectRoot,
     task: contextTask,
     budget: 32_768,
@@ -284,7 +284,7 @@ try {
   assert.equal(preparation.preparation.authority.selectsEvidenceNeeds, false);
   assert.equal(preparation.preparation.authority.writesRecoveryDirection, false);
 
-  const context = await tool("head_context_preview", {
+  const context = await tool("lode_context_preview", {
     project_root: projectRoot,
     task: contextTask,
     budget: 32_768,
@@ -293,7 +293,7 @@ try {
   assert.match(context.capsule.capsuleId, /^capsule-[a-f0-9]{24}$/);
   assert.equal(context.capsule.trustBoundary.temporalProvenance, "rebuildable-derived-evidence-not-project-canon");
 
-  const ready = await tool("head_onboarding_guide", { project_root: projectRoot });
+  const ready = await tool("lode_onboarding_guide", { project_root: projectRoot });
   assert.equal(ready.status, "ready");
   assert.equal(ready.nextAction, "ready");
   assert.equal(ready.readiness.world, "current");
@@ -301,7 +301,7 @@ try {
   assert.equal(ready.readiness.documents, "current");
   assert.equal(ready.readiness.documentProjectionId, documents.documentProjectionId);
 
-  const resumed = await tool("head_project_initialize_or_resume", {
+  const resumed = await tool("lode_project_initialize_or_resume", {
     project_root: projectRoot,
     profile: "product",
     runtimes: ["claude", "codex", "opencode"],

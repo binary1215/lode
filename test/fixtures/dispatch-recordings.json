@@ -6661,7 +6661,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_project_document_prepare",
+      "lode_project_document_prepare",
       {
        "project_root": "<root>"
       }
@@ -6712,7 +6712,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_project_document_prepare",
+      "lode_project_document_prepare",
       {
        "project_root": "<root>",
        "project_title": "sample-project_title",
@@ -6767,7 +6767,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_project_document_prepare",
+      "lode_project_document_prepare",
       {
        "project_root": "<root>",
        "project_title": "",
@@ -6796,7 +6796,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_project_document_publish",
+      "lode_project_document_publish",
       {
        "project_root": "<root>",
        "projection_id": "sample-projection_id",
@@ -6831,7 +6831,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_project_document_publish",
+      "lode_project_document_publish",
       {
        "project_root": "<root>",
        "projection_id": "sample-projection_id",
@@ -6867,7 +6867,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_project_document_publish",
+      "lode_project_document_publish",
       {
        "project_root": "<root>",
        "projection_id": "sample-projection_id",
@@ -6893,7 +6893,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_project_document_status",
+      "lode_project_document_status",
       {
        "project_root": "<root>"
       }
@@ -6917,7 +6917,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_project_document_status",
+      "lode_project_document_status",
       {
        "project_root": "<root>",
        "target_ids": [
@@ -6942,7 +6942,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_project_document_status",
+      "lode_project_document_status",
       {
        "project_root": "<root>",
        "target_ids": []
@@ -8230,7 +8230,7 @@
    "calls": [],
    "outcome": {
     "error": -32000,
-    "message": "Unknown tool: head_session_host_request_prepare"
+    "message": "Unknown tool: lode_session_host_request_prepare"
    }
   },
   {
@@ -8247,7 +8247,7 @@
    "calls": [],
    "outcome": {
     "error": -32000,
-    "message": "Unknown tool: head_session_host_request_prepare"
+    "message": "Unknown tool: lode_session_host_request_prepare"
    }
   },
   {
@@ -8264,7 +8264,7 @@
    "calls": [],
    "outcome": {
     "error": -32000,
-    "message": "Unknown tool: head_session_host_request_prepare"
+    "message": "Unknown tool: lode_session_host_request_prepare"
    }
   },
   {
@@ -9354,7 +9354,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_configure",
+      "lode_work_document_configure",
       {
        "project_root": "<root>",
        "targets": [
@@ -9400,7 +9400,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_configure",
+      "lode_work_document_configure",
       {
        "project_root": "<root>",
        "targets": [
@@ -9451,7 +9451,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_configure",
+      "lode_work_document_configure",
       {
        "project_root": "<root>",
        "targets": [
@@ -9491,7 +9491,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_prepare",
+      "lode_work_document_prepare",
       {
        "project_root": "<root>",
        "title": "sample-title",
@@ -9555,7 +9555,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_prepare",
+      "lode_work_document_prepare",
       {
        "project_root": "<root>",
        "title": "sample-title",
@@ -9625,7 +9625,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_prepare",
+      "lode_work_document_prepare",
       {
        "project_root": "<root>",
        "title": "sample-title",
@@ -9660,7 +9660,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_publish",
+      "lode_work_document_publish",
       {
        "project_root": "<root>",
        "projection_id": "sample-projection_id",
@@ -9695,7 +9695,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_publish",
+      "lode_work_document_publish",
       {
        "project_root": "<root>",
        "projection_id": "sample-projection_id",
@@ -9731,7 +9731,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_publish",
+      "lode_work_document_publish",
       {
        "project_root": "<root>",
        "projection_id": "sample-projection_id",
@@ -9757,7 +9757,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_status",
+      "lode_work_document_status",
       {
        "project_root": "<root>"
       }
@@ -9779,7 +9779,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_status",
+      "lode_work_document_status",
       {
        "project_root": "<root>",
        "logical_key": "sample-logical_key"
@@ -9802,7 +9802,7 @@
     {
      "fn": "work-document-surface#workDocumentFromMcp",
      "args": [
-      "head_work_document_status",
+      "lode_work_document_status",
       {
        "project_root": "<root>",
        "logical_key": ""

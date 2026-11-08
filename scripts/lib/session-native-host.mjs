@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveOperation } from "./lode-operation-contract.mjs";
 const semanticToolName = (name) => resolveOperation(name)?.semanticName ?? name;
-const helperName = (name) => semanticToolName(name) === "head_session_host_request_prepare";
-const routerName = (name) => ["head_tools_read", "head_tools_call"].includes(semanticToolName(name));
+const helperName = (name) => semanticToolName(name) === "lode_session_host_request_prepare";
+const routerName = (name) => ["lode_tools_read", "lode_tools_call"].includes(semanticToolName(name));
 const hasProjectMarker = (root) => [".head", ".lode"].some((directory) => fs.existsSync(path.join(root, directory, "project.json")));
 import { sessionCallRequiresBinding } from "./session-routing.mjs";
 import { createSessionHostRequestRegistry, parseClaudeNativeToolName } from "./session-host-request.mjs";
@@ -137,7 +137,7 @@ export function createNativeSessionHostBridge({
       const routed = routerName(match.name);
       const name = semanticToolName(routed ? original.name : match.name);
       if (helperName(name)) throw Object.assign(new Error(), { code: "NATIVE_HOOK_RECURSION" });
-      if (name === "head_conversation_list" || name === "head_conversation_send") {
+      if (name === "lode_conversation_list" || name === "lode_conversation_send") {
         requestRegistry.prepare({
           key: value.tool_use_id,
           name: match.name,
@@ -210,13 +210,13 @@ export function createNativeSessionHostBridge({
     });
     if (helperName(name)) return reply(request, Object.assign(new Error(), { code: "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED" }));
     if (typeof args?.project_root !== "string" || !args.project_root) return handler(request, route());
-    if (name === "head_session_list") return handler(request, route());
+    if (name === "lode_session_list") return handler(request, route());
     if (caller.status === "legacy") return handler(request, route());
     if (!sessionCallRequiresBinding(name) && !Object.hasOwn(args, "session_id")) return handler(request, route());
     if (caller.status !== "known") {
       // Creating a new Project has no existing Session to guess or lose.
       // Keep that original Core setup usable, but never claim native linkage.
-      if (name === "head_project_initialize_or_resume" && !Object.hasOwn(args, "session_id") && !hasProjectMarker(args.project_root)) {
+      if (name === "lode_project_initialize_or_resume" && !Object.hasOwn(args, "session_id") && !hasProjectMarker(args.project_root)) {
         const response = await handler(request, route());
         if (response?.result)
           response.result._meta = {
@@ -249,8 +249,8 @@ export function createNativeSessionHostBridge({
     }
     const initialized = hasProjectMarker(args.project_root);
     const selecting =
-      name === "head_project_initialize_or_resume" &&
-      semanticToolName(request.params?.name) !== "head_tools_read" &&
+      name === "lode_project_initialize_or_resume" &&
+      semanticToolName(request.params?.name) !== "lode_tools_read" &&
       (args.profile === undefined || ["core", "product"].includes(args.profile));
     let prepared = null,
       preparationFailure = null,
@@ -284,7 +284,7 @@ export function createNativeSessionHostBridge({
       : null;
     let response;
     const readRelatedNativeContext =
-      name === "head_conversation_enter"
+      name === "lode_conversation_enter"
         ? ({ childSessionId }) => {
             // Internal trusted caller only; not a model-native-ID argument. Entry
             // invokes this synchronously before its final child basis recheck.
@@ -309,8 +309,8 @@ export function createNativeSessionHostBridge({
       // Only enrich a successful entry. Caller observations cannot soften a
       // primary recovery/selection failure or stand in for logical work state.
       const successfulEntry =
-        name === "head_conversation_enter" && ["conversation_ready", "conversation_direction_restored"].includes(response?.result?.structuredContent?.status);
-      if ((name === "head_project_status" || successfulEntry) && response?.result && !response.error && !response.result.isError) {
+        name === "lode_conversation_enter" && ["conversation_ready", "conversation_direction_restored"].includes(response?.result?.structuredContent?.status);
+      if ((name === "lode_project_status" || successfulEntry) && response?.result && !response.error && !response.result.isError) {
         try {
           const { projectNativeObservations, appendNativeStatus } = await import("./native-session-observations.mjs");
           const projection = await projectNativeObservations({ root: args.project_root, caller, environment });

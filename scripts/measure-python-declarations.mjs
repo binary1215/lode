@@ -209,7 +209,7 @@ export async function runTrial(trial, output) {
         ["known-selected", "selected-source", "target"],
         ["outline", "declarations", ""],
       ]) {
-        const result = await call(`large.${label}.${pass}`, "head_source_context", { task: "Read target declaration", needs: [need(kind, symbol)] }, (v) =>
+        const result = await call(`large.${label}.${pass}`, "lode_source_context", { task: "Read target declaration", needs: [need(kind, symbol)] }, (v) =>
           verifySourceResult(v, kind, kind === "source" ? large : selected),
         );
         if (kind === "declarations") {
@@ -218,7 +218,7 @@ export async function runTrial(trial, output) {
           collectionProfile = details.collectionProfile;
           await call(
             `large.outline-selected.${pass}`,
-            "head_source_context",
+            "lode_source_context",
             { task: "Read target declaration", needs: [need("selected-source", "target", chosen.selection)] },
             (v) => verifySourceResult(v, "selected-source", selected),
           );
@@ -251,7 +251,7 @@ export async function runTrial(trial, output) {
         ["known", "target", 2],
         ["outline", "module.py", 500],
       ]) {
-        const graph = await call(`world.${label}-query.${pass}`, "head_world_query", { query, depth: 0, limit }, (g) => {
+        const graph = await call(`world.${label}-query.${pass}`, "lode_world_query", { query, depth: 0, limit }, (g) => {
           assert.equal(g.status, "current");
           assert.equal(g.truncated, false);
           assert.equal(g.nodes.filter((n) => n.kind === "Symbol" && n.qualifiedName === "target" && n.path === "module.py").length, 1);
@@ -289,10 +289,10 @@ export async function runTrial(trial, output) {
     }
     fs.writeFileSync(path.join(root, "module.py"), small);
     for (const pass of ["initial", "repeated"]) {
-      await call(`small.source.${pass}`, "head_source_context", { task: "Read small function", needs: [need("source")] }, (v) =>
+      await call(`small.source.${pass}`, "lode_source_context", { task: "Read small function", needs: [need("source")] }, (v) =>
         verifySourceResult(v, "source", small),
       );
-      await call(`small.selected.${pass}`, "head_source_context", { task: "Read small function", needs: [need("selected-source", "small")] }, (v) =>
+      await call(`small.selected.${pass}`, "lode_source_context", { task: "Read small function", needs: [need("selected-source", "small")] }, (v) =>
         verifySourceResult(v, "selected-source", small.trimEnd()),
       );
     }
