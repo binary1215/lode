@@ -923,6 +923,629 @@ export const OPERATIONS = Object.freeze([
     cli: { command: "run-integration-read", flags: ["review"], args: ({ root, options }) => [{ root, reviewDecisionId: options.review }] },
     impl: () => import("./session-recovery.mjs").then((module) => module.readRunResultIntegration),
   },
+  {
+    name: "head_metric_assess",
+    tool: {
+      name: "head_metric_assess",
+      description:
+        "Record a bounded P3 ProductHypothesis interpreting one exact metric comparison. Supports/contradicts/inconclusive are hypotheses, not causal findings or Canon changes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          comparison_observation_id: { type: "string", minLength: 1 },
+          assessment: { type: "string", enum: ["supports", "contradicts", "inconclusive"] },
+          statement: { type: "string", minLength: 1, maxLength: 4000 },
+          rationale: { type: "string", maxLength: 4000 },
+        },
+        required: ["project_root", "comparison_observation_id", "assessment", "statement"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: {
+      args: (args) => [
+        {
+          root: args.project_root,
+          comparisonObservationId: args.comparison_observation_id,
+          assessment: args.assessment,
+          statement: args.statement,
+          rationale: args.rationale || "",
+        },
+      ],
+    },
+    cli: { command: "metric-assess", flags: ["input"], args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Metric assessment"), root }] },
+    impl: () => import("./measurement-workflow.mjs").then((module) => module.assessMetricComparison),
+  },
+  {
+    name: "head_metric_compare",
+    tool: {
+      name: "head_metric_compare",
+      description:
+        "Create an exact P3 derived comparison between two compatible metric observations. The result preserves coverage disclosures and never claims causality.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          baseline_observation_id: { type: "string", minLength: 1 },
+          current_observation_id: { type: "string", minLength: 1 },
+        },
+        required: ["project_root", "baseline_observation_id", "current_observation_id"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: {
+      args: (args) => [{ root: args.project_root, baselineObservationId: args.baseline_observation_id, currentObservationId: args.current_observation_id }],
+    },
+    cli: { command: "metric-compare", flags: ["input"], args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Metric comparison"), root }] },
+    impl: () => import("./measurement-workflow.mjs").then((module) => module.compareMetricObservations),
+  },
+  {
+    name: "head_metric_define",
+    tool: {
+      name: "head_metric_define",
+      description: "Register a provider-neutral P3 metric data shape. This does not change Product Canon, execution authority, or recovery direction.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          metric_key: { type: "string", minLength: 1, maxLength: 128 },
+          unit: { type: "string", minLength: 1, maxLength: 64 },
+          direction: { type: "string", enum: ["increase", "decrease", "maintain"] },
+          type_version: { type: "string", minLength: 1, maxLength: 64, default: "1" },
+        },
+        required: ["project_root", "metric_key", "unit", "direction"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: {
+      args: (args) => [
+        { root: args.project_root, metricKey: args.metric_key, unit: args.unit, direction: args.direction, typeVersion: args.type_version || "1" },
+      ],
+    },
+    cli: { command: "metric-define", flags: ["input"], args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Metric definition"), root }] },
+    impl: () => import("./measurement-workflow.mjs").then((module) => module.defineMetric),
+  },
+  {
+    name: "head_metric_observe",
+    tool: {
+      name: "head_metric_observe",
+      description:
+        "Record one exact P3 metric observation through the common Observation contract. Partial coverage is disclosed and remains usable evidence; it is never upgraded to complete.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          metric_key: { type: "string", minLength: 1, maxLength: 128 },
+          type_version: { type: "string", minLength: 1, maxLength: 64 },
+          subject_type: { type: "string", minLength: 1, maxLength: 192 },
+          subject_key: { type: "string", minLength: 1, maxLength: 192 },
+          value: { type: "number" },
+          sample_size: { type: "integer", minimum: 0 },
+          form: { type: "string", enum: ["snapshot", "aggregate"], default: "snapshot" },
+          observed_at: { type: "string", minLength: 1 },
+          start: { type: ["string", "null"] },
+          end: { type: ["string", "null"] },
+          coverage: {
+            type: "object",
+            properties: {
+              state: { type: "string", enum: ["complete", "sampled", "partial", "unknown"] },
+              basis: { type: "string", minLength: 1, maxLength: 128 },
+              query_digest: { type: ["string", "null"], pattern: "^[a-f0-9]{64}$" },
+              examined_count: { type: "integer", minimum: 0 },
+              source_reported_total: { type: ["integer", "null"], minimum: 0 },
+              omitted_count: { type: ["integer", "null"], minimum: 0 },
+              cursor_start_digest: { type: ["string", "null"] },
+              cursor_end_digest: { type: ["string", "null"] },
+            },
+            additionalProperties: false,
+          },
+          adapter_key: { type: "string", minLength: 1, maxLength: 192 },
+          adapter_version: { type: "string", minLength: 1, maxLength: 64 },
+          source_scope_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          source_event_key_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          source_evidence_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        },
+        required: [
+          "project_root",
+          "metric_key",
+          "subject_type",
+          "subject_key",
+          "value",
+          "source_scope_digest",
+          "source_event_key_digest",
+          "source_evidence_digest",
+        ],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: {
+      args: (args) => [
+        {
+          root: args.project_root,
+          metricKey: args.metric_key,
+          typeVersion: args.type_version || "",
+          subjectType: args.subject_type,
+          subjectKey: args.subject_key,
+          value: args.value,
+          sampleSize: args.sample_size ?? null,
+          form: args.form || "snapshot",
+          observedAt: args.observed_at ?? null,
+          start: args.start ?? null,
+          end: args.end ?? null,
+          coverage: args.coverage
+            ? {
+                state: args.coverage.state,
+                basis: args.coverage.basis,
+                queryDigest: args.coverage.query_digest,
+                examinedCount: args.coverage.examined_count,
+                sourceReportedTotal: args.coverage.source_reported_total,
+                omittedCount: args.coverage.omitted_count,
+                cursorStartDigest: args.coverage.cursor_start_digest,
+                cursorEndDigest: args.coverage.cursor_end_digest,
+              }
+            : {},
+          adapterKey: args.adapter_key,
+          adapterVersion: args.adapter_version,
+          sourceScopeDigest: args.source_scope_digest,
+          sourceEventKeyDigest: args.source_event_key_digest,
+          sourceEvidenceDigest: args.source_evidence_digest,
+        },
+      ],
+    },
+    cli: { command: "metric-observe", flags: ["input"], args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Metric observation"), root }] },
+    impl: () => import("./measurement-workflow.mjs").then((module) => module.recordMetricObservation),
+  },
+  {
+    name: "head_metric_status",
+    tool: {
+      name: "head_metric_status",
+      description: "Read the nonblocking metric definitions, observation count, and comparison count. This creates no authority or state.",
+      inputSchema: { type: "object", properties: { project_root: { type: "string", minLength: 1 } }, required: ["project_root"], additionalProperties: false },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: { args: (args) => [{ root: args.project_root }] },
+    cli: { command: "metric-status", flags: [], args: ({ root }) => [{ root }] },
+    impl: () => import("./measurement-workflow.mjs").then((module) => module.inspectMeasurements),
+  },
+  {
+    name: "head_metric_trace",
+    tool: {
+      name: "head_metric_trace",
+      description:
+        "Read one bounded P4 measurement lineage from an exact graph anchor or metric key through the verified prepared-traversal path. This writes no Canon, decision, or recovery state.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          anchor_id: { type: "string", minLength: 1 },
+          metric_key: { type: "string", minLength: 1, maxLength: 128 },
+          type_version: { type: "string", minLength: 1, maxLength: 64 },
+          depth: { type: "integer", minimum: 0, maximum: 3, default: 3 },
+          max_nodes: { type: "integer", minimum: 1, maximum: 500, default: 128 },
+          max_edges: { type: "integer", minimum: 0, maximum: 1000, default: 256 },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: {
+      args: (args) => [
+        {
+          root: args.project_root,
+          anchorId: args.anchor_id || "",
+          metricKey: args.metric_key || "",
+          typeVersion: args.type_version || "",
+          depth: args.depth ?? 3,
+          maxNodes: args.max_nodes ?? 128,
+          maxEdges: args.max_edges ?? 256,
+        },
+      ],
+    },
+    cli: {
+      command: "metric-trace",
+      flags: ["anchor", "depth", "metric", "type-version"],
+      args: ({ root, options }) => [
+        {
+          root,
+          anchorId: options.anchor || "",
+          metricKey: options.metric || "",
+          typeVersion: options["type-version"] || "",
+          depth: options.depth == null ? 3 : Number(options.depth),
+        },
+      ],
+    },
+    impl: () => import("./measurement-workflow.mjs").then((module) => module.traceMeasurementLineage),
+  },
+  {
+    name: "head_delivery_observe",
+    tool: {
+      name: "head_delivery_observe",
+      description:
+        "Record one provider-neutral P3 delivery event for an exact environment and target. This adds no deployment action or approval gate; failures do not overwrite prior success, and an optional World revision binding is mechanically verified.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          environment_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+          target_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+          artifact_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
+          revision_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
+          revision_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          outcome: { type: "string", enum: ["applied", "failed", "cancelled", "rolled-back"] },
+          sequence: { type: "integer", minimum: 0 },
+          predecessor_observation_id: { anyOf: [{ type: "string", pattern: "^observation-[a-f0-9]{24}$" }, { type: "null" }] },
+          rollback_target_observation_id: { anyOf: [{ type: "string", pattern: "^observation-[a-f0-9]{24}$" }, { type: "null" }] },
+          observed_at: { type: "string", format: "date-time" },
+          source_scope_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          source_event_key_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          source_evidence_digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          adapter_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
+          adapter_version: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$" },
+          revision_reference: {
+            type: "object",
+            properties: {
+              world_model_id: { type: "string", pattern: "^world-model-[a-f0-9]{24}$" },
+              revision_id: { type: "string", pattern: "^file-revision-[a-f0-9]{24}$" },
+              source_path: { type: "string", minLength: 1, maxLength: 4096 },
+              digest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+            },
+            required: ["world_model_id", "revision_id", "source_path", "digest"],
+            additionalProperties: false,
+          },
+        },
+        required: [
+          "project_root",
+          "environment_key",
+          "target_key",
+          "artifact_key",
+          "revision_key",
+          "revision_digest",
+          "outcome",
+          "sequence",
+          "source_scope_digest",
+          "source_event_key_digest",
+          "source_evidence_digest",
+        ],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    mcp: {
+      args: (args) => [
+        {
+          root: args.project_root,
+          environmentKey: args.environment_key,
+          targetKey: args.target_key,
+          artifactKey: args.artifact_key,
+          revisionKey: args.revision_key,
+          revisionDigest: args.revision_digest,
+          outcome: args.outcome,
+          sequence: args.sequence,
+          predecessorObservationId: args.predecessor_observation_id ?? null,
+          rollbackTargetObservationId: args.rollback_target_observation_id ?? null,
+          observedAt: args.observed_at ?? null,
+          sourceScopeDigest: args.source_scope_digest,
+          sourceEventKeyDigest: args.source_event_key_digest,
+          sourceEvidenceDigest: args.source_evidence_digest,
+          adapterKey: args.adapter_key,
+          adapterVersion: args.adapter_version,
+          revisionReference: args.revision_reference
+            ? {
+                worldModelId: args.revision_reference.world_model_id,
+                revisionId: args.revision_reference.revision_id,
+                sourcePath: args.revision_reference.source_path,
+                digest: args.revision_reference.digest,
+              }
+            : null,
+        },
+      ],
+    },
+    cli: { command: "delivery-observe", flags: ["input"], args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Delivery observation"), root }] },
+    impl: () => import("./delivery-observation.mjs").then((module) => module.recordDeliveryObservation),
+  },
+  {
+    name: "head_delivery_status",
+    tool: {
+      name: "head_delivery_status",
+      description:
+        "Read a bounded non-persisted P4 current-and-history delivery projection. Explicit sequence and predecessor evidence determine current state; receipt time, failed attempts, and unobserved targets never imply success.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          environment_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+          target_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+          history_limit: { type: "integer", minimum: 1, maximum: 4096, default: 100 },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: {
+      args: (args) => [
+        { root: args.project_root, environmentKey: args.environment_key || "", targetKey: args.target_key || "", historyLimit: args.history_limit ?? 100 },
+      ],
+    },
+    cli: {
+      command: "delivery-status",
+      flags: ["environment", "history-limit", "target"],
+      args: ({ root, options }) => [
+        {
+          root,
+          environmentKey: options.environment || "",
+          targetKey: options.target || "",
+          historyLimit: options["history-limit"] == null ? 100 : Number(options["history-limit"]),
+        },
+      ],
+    },
+    impl: () => import("./delivery-observation.mjs").then((module) => module.inspectDeliveryState),
+  },
+  {
+    name: "head_release_status",
+    tool: {
+      name: "head_release_status",
+      description:
+        "Read digest-verified P3 BranchState, DeploymentResult, and Release observations. The projection is evidence-only and has no Product Canon, execution, or recovery authority.",
+      inputSchema: { type: "object", properties: { project_root: { type: "string", minLength: 1 } }, required: ["project_root"], additionalProperties: false },
+    },
+    mcp: { args: (args) => [{ root: args.project_root }] },
+    cli: { command: "release-status", flags: [], args: ({ root }) => [{ root }] },
+    impl: () => import("./release-observation.mjs").then((module) => module.inspectReleaseObservations),
+  },
+  {
+    name: "head_incremental_refresh_receipt",
+    tool: {
+      name: "head_incremental_refresh_receipt",
+      description: "Read and digest-verify one immutable incremental observed-state refresh receipt without advancing a pointer or changing Product Canon.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          refresh_receipt_id: { type: "string", pattern: "^incremental-refresh-receipt-[a-f0-9]{24}$" },
+        },
+        required: ["project_root", "refresh_receipt_id"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, refreshReceiptId: args.refresh_receipt_id }] },
+    cli: { command: "world-refresh-read", flags: ["receipt"], args: ({ root, options }) => [{ root, refreshReceiptId: options.receipt }] },
+    impl: () => import("./incremental-refresh.mjs").then((module) => module.readIncrementalRefreshReceipt),
+  },
+  {
+    name: "head_incremental_refresh_status",
+    tool: {
+      name: "head_incremental_refresh_status",
+      description:
+        "Read and digest-verify the latest explicit incremental refresh receipt, World Model binding, freshness, and active-execution drift without triggering refresh or changing authority.",
+      inputSchema: {
+        type: "object",
+        properties: { project_root: { type: "string", minLength: 1 } },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root }] },
+    cli: { command: "world-refresh-status", flags: [], args: ({ root }) => [{ root }] },
+    impl: () => import("./incremental-refresh.mjs").then((module) => module.inspectIncrementalRefresh),
+  },
+  {
+    name: "head_refresh_trigger_delivery",
+    tool: {
+      name: "head_refresh_trigger_delivery",
+      description:
+        "Read and digest-verify one immutable refresh trigger delivery and its linked incremental refresh evidence without mutating observed state or Product Canon.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          trigger_delivery_id: { type: "string", pattern: "^refresh-trigger-delivery-[a-f0-9]{24}$" },
+        },
+        required: ["project_root", "trigger_delivery_id"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, triggerDeliveryId: args.trigger_delivery_id }] },
+    cli: { command: "world-refresh-trigger-read", flags: ["delivery"], args: ({ root, options }) => [{ root, triggerDeliveryId: options.delivery }] },
+    impl: () => import("./refresh-trigger.mjs").then((module) => module.readRefreshTriggerDelivery),
+  },
+  {
+    name: "head_refresh_trigger_status",
+    tool: {
+      name: "head_refresh_trigger_status",
+      description:
+        "Read and digest-verify the latest debounced filesystem or CI trigger batch, serialized delivery receipt, World Model binding, and writer state without starting a watcher or triggering refresh.",
+      inputSchema: {
+        type: "object",
+        properties: { project_root: { type: "string", minLength: 1 } },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root }] },
+    cli: { command: "world-refresh-trigger-status", flags: [], args: ({ root }) => [{ root }] },
+    impl: () => import("./refresh-trigger.mjs").then((module) => module.inspectRefreshTriggers),
+  },
+  {
+    name: "head_post_refresh_projection_receipt",
+    tool: {
+      name: "head_post_refresh_projection_receipt",
+      description:
+        "Read and digest-verify one immutable post-refresh projection receipt with its linked incremental refresh, policy, DocumentProjection, or document-change candidate evidence.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          post_refresh_projection_receipt_id: { type: "string", pattern: "^post-refresh-projection-receipt-[a-f0-9]{24}$" },
+        },
+        required: ["project_root", "post_refresh_projection_receipt_id"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, postRefreshProjectionReceiptId: args.post_refresh_projection_receipt_id }] },
+    cli: { command: "world-docs-refresh-read", flags: ["receipt"], args: ({ root, options }) => [{ root, postRefreshProjectionReceiptId: options.receipt }] },
+    impl: () => import("./incremental-refresh.mjs").then((module) => module.readPostRefreshProjectionReceipt),
+  },
+  {
+    name: "head_post_refresh_projection_status",
+    tool: {
+      name: "head_post_refresh_projection_status",
+      description:
+        "Read the effective manual-or-automatic Markdown projection policy and verify the latest post-refresh outcome without changing policy, documents, Product Canon, or active Run inputs.",
+      inputSchema: {
+        type: "object",
+        properties: { project_root: { type: "string", minLength: 1 } },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root }] },
+    cli: { command: "world-docs-refresh-status", flags: [], args: ({ root }) => [{ root }] },
+    impl: () => import("./incremental-refresh.mjs").then((module) => module.inspectPostRefreshProjectionStatus),
+  },
+  {
+    name: "head_observation_read",
+    tool: {
+      name: "head_observation_read",
+      description: "Read one exact digest-verified observed or derived Observation by ID with its descriptor and bounded receipt or derivation lineage.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          observation_id: { type: "string", pattern: "^(?:observation|derived-observation)-[a-f0-9]{24}$" },
+        },
+        required: ["project_root", "observation_id"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, observationId: args.observation_id }] },
+    cli: { command: "observation-read", flags: ["observation"], args: ({ root, options }) => [{ root, observationId: options.observation }] },
+    impl: () => import("./observation-store.mjs").then((module) => module.readObservation),
+  },
+  {
+    name: "head_observation_query",
+    tool: {
+      name: "head_observation_query",
+      description:
+        "Read global retained inventory counts and query a bounded P4 page of current Observation identities by exact type, subject, source, time, and record-kind filters. This is discovery only; it does not select semantic relevance or make records Context-eligible.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          type_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
+          subject_type: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
+          subject_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
+          adapter_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
+          observed_after: { type: "string", format: "date-time" },
+          observed_before: { type: "string", format: "date-time" },
+          record_kind: { type: "string", enum: ["all", "observed", "derived"], default: "all" },
+          limit: { type: "integer", minimum: 1, maximum: 100, default: 25 },
+          projection_id: { type: "string", pattern: "^observation-projection-[a-f0-9]{24}$" },
+          cursor: { type: "string", pattern: "^(?:observation|derived-observation)-[a-f0-9]{24}$" },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: {
+      args: (args) => [
+        {
+          root: args.project_root,
+          typeKey: args.type_key || "",
+          subjectType: args.subject_type || "",
+          subjectKey: args.subject_key || "",
+          adapterKey: args.adapter_key || "",
+          observedAfter: args.observed_after || "",
+          observedBefore: args.observed_before || "",
+          recordKind: args.record_kind || "all",
+          limit: args.limit ?? 25,
+          projectionId: args.projection_id || "",
+          cursor: args.cursor || "",
+        },
+      ],
+    },
+    cli: {
+      command: "observation-query",
+      flags: ["adapter-key", "cursor", "limit", "observed-after", "observed-before", "projection", "record-kind", "subject-key", "subject-type", "type-key"],
+      args: ({ root, options }) => [
+        {
+          root,
+          typeKey: options["type-key"] || "",
+          subjectType: options["subject-type"] || "",
+          subjectKey: options["subject-key"] || "",
+          adapterKey: options["adapter-key"] || "",
+          observedAfter: options["observed-after"] || "",
+          observedBefore: options["observed-before"] || "",
+          recordKind: options["record-kind"] || "all",
+          limit: options.limit == null ? 25 : Number(options.limit),
+          projectionId: options.projection || "",
+          cursor: options.cursor || "",
+        },
+      ],
+    },
+    impl: () => import("./observation-projection.mjs").then((module) => module.queryObservations),
+  },
+  {
+    name: "head_observation_sources",
+    tool: {
+      name: "head_observation_sources",
+      description:
+        "Page and exactly filter provider-neutral Host-injected Observation source IDs with bounded descriptor shape and Host-local availability hints. Stale read-only cursors restart at the first page with disclosure; no external source is read.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          type_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
+          adapter_key: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$" },
+          availability: { type: "string", enum: ["unknown", "ready", "auth-missing", "rate-limited", "unavailable"] },
+          limit: { type: "integer", minimum: 1, maximum: 64 },
+          projection_id: { type: "string", pattern: "^observation-source-projection-[a-f0-9]{24}$" },
+          cursor: { type: "string", pattern: "^observation-source-[a-f0-9]{24}$" },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    mcp: {
+      args: (args, { observationRegistry }) => [
+        {
+          root: args.project_root,
+          registry: observationRegistry,
+          typeKey: args.type_key || "",
+          adapterKey: args.adapter_key || "",
+          availabilityState: args.availability || "",
+          limit: args.limit ?? 64,
+          projectionId: args.projection_id || "",
+          cursor: args.cursor || "",
+        },
+      ],
+    },
+    cli: {
+      command: "observation-sources",
+      flags: ["adapter-key", "availability", "cursor", "limit", "projection", "type-key"],
+      args: ({ root, options, observationRegistry }) => [
+        {
+          root,
+          registry: observationRegistry,
+          typeKey: options["type-key"] || "",
+          adapterKey: options["adapter-key"] || "",
+          availabilityState: options.availability || "",
+          limit: options.limit == null ? undefined : Number(options.limit),
+          projectionId: options.projection || "",
+          cursor: options.cursor || "",
+        },
+      ],
+    },
+    impl: () => import("./observation-adapter.mjs").then((module) => module.inspectObservationSources),
+  },
 ]);
 
 const byName = new Map(OPERATIONS.map((entry) => [entry.name, entry]));

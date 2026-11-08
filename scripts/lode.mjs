@@ -69,14 +69,8 @@ import {
   recordChangeSet,
   reviewChangeImpact,
 } from "./lib/change-set.mjs";
-import {
-  inspectIncrementalRefresh,
-  inspectPostRefreshProjectionStatus,
-  readIncrementalRefreshReceipt,
-  readPostRefreshProjectionReceipt,
-  refreshWorldModel,
-} from "./lib/incremental-refresh.mjs";
-import { inspectRefreshTriggers, processRefreshTriggerBatch, readRefreshTriggerDelivery, runFileSystemRefreshWatcher } from "./lib/refresh-trigger.mjs";
+import { refreshWorldModel } from "./lib/incremental-refresh.mjs";
+import { processRefreshTriggerBatch, runFileSystemRefreshWatcher } from "./lib/refresh-trigger.mjs";
 import { inspectPostRefreshProjectionPolicy, setPostRefreshProjectionPolicy } from "./lib/post-refresh-projection.mjs";
 import {
   applyDocumentChangeReview,
@@ -112,24 +106,9 @@ import {
   readProductPolicyReviewDecision,
   reviewProductPolicy,
 } from "./lib/product-policy.mjs";
-import {
-  assessMetricComparison,
-  compareMetricObservations,
-  defineMetric,
-  inspectMeasurements,
-  recordMetricObservation,
-  traceMeasurementLineage,
-} from "./lib/measurement-workflow.mjs";
-import { inspectReleaseObservations, observeReleaseState } from "./lib/release-observation.mjs";
-import { inspectDeliveryState, recordDeliveryObservation } from "./lib/delivery-observation.mjs";
-import {
-  collectRegisteredObservation,
-  ingestJsonObservationEventFile,
-  ingestStructuredObservation,
-  inspectObservationSources,
-} from "./lib/observation-adapter.mjs";
-import { queryObservations } from "./lib/observation-projection.mjs";
-import { readObservation, recordDerivedObservation } from "./lib/observation-store.mjs";
+import { observeReleaseState } from "./lib/release-observation.mjs";
+import { collectRegisteredObservation, ingestJsonObservationEventFile, ingestStructuredObservation } from "./lib/observation-adapter.mjs";
+import { recordDerivedObservation } from "./lib/observation-store.mjs";
 import { prepareObservationEvidence } from "./lib/observation-workflow.mjs";
 import {
   inspectConformanceQueue,
@@ -592,7 +571,8 @@ async function runRoutedCommand(
   const { command, root, options } = parse(entry.argv);
   requireOperationSurface(command, surface);
   const registered = registeredCommand(command);
-  if (registered) return await callRegistered(registered, registered.cli.args({ root, options, inputJson, onProcess, workerJobSupervisor }));
+  if (registered)
+    return await callRegistered(registered, registered.cli.args({ root, options, inputJson, onProcess, workerJobSupervisor, observationRegistry }));
   if (command === "help" || command === "--help" || command === "-h") return usage({ surface });
   if (command === "help-all") return usage({ all: true, surface });
   if (command === "--version" || command === "version") return { name: ARTIFACT_COMPOSITION.pluginName, version: packageMetadata.version };
@@ -911,19 +891,6 @@ async function runRoutedCommand(
   if (command === "product-policy-status") return inspectProductPolicyStatus({ root, candidateId: options.candidate });
   if (command === "product-policy-candidate-read") return readProductPolicyCandidate({ root, candidateId: options.candidate });
   if (command === "product-policy-review-read") return readProductPolicyReviewDecision({ root, reviewDecisionId: options.review });
-  if (command === "metric-define") return await defineMetric({ ...inputJson(options, "Metric definition"), root });
-  if (command === "metric-observe") return await recordMetricObservation({ ...inputJson(options, "Metric observation"), root });
-  if (command === "metric-compare") return await compareMetricObservations({ ...inputJson(options, "Metric comparison"), root });
-  if (command === "metric-assess") return await assessMetricComparison({ ...inputJson(options, "Metric assessment"), root });
-  if (command === "metric-status") return inspectMeasurements({ root });
-  if (command === "metric-trace")
-    return await traceMeasurementLineage({
-      root,
-      anchorId: options.anchor || "",
-      metricKey: options.metric || "",
-      typeVersion: options["type-version"] || "",
-      depth: options.depth == null ? 3 : Number(options.depth),
-    });
   if (command === "product-signal-record") return await recordProductSignal({ ...inputJson(options, "ProductSignal"), root });
   if (command === "product-hypothesis-record") return await recordProductHypothesis({ ...inputJson(options, "ProductHypothesis"), root });
   if (command === "product-initiative-propose") return await proposeProductInitiative({ ...inputJson(options, "ProductInitiativeCandidate"), root });
@@ -931,26 +898,6 @@ async function runRoutedCommand(
   if (command === "product-outcome-observe") return await observeProductOutcome({ ...inputJson(options, "OutcomeObservation"), root });
   if (command === "product-operating-status") return inspectProductOperatingLoop({ root, fresh: options.fresh === true });
   if (command === "release-observe") return await observeReleaseState({ root, input: inputJson(options, "DeploymentResultObservation") });
-  if (command === "release-status") return inspectReleaseObservations({ root });
-  if (command === "delivery-observe") return await recordDeliveryObservation({ ...inputJson(options, "Delivery observation"), root });
-  if (command === "delivery-status")
-    return inspectDeliveryState({
-      root,
-      environmentKey: options.environment || "",
-      targetKey: options.target || "",
-      historyLimit: options["history-limit"] == null ? 100 : Number(options["history-limit"]),
-    });
-  if (command === "observation-sources")
-    return inspectObservationSources({
-      root,
-      registry: observationRegistry,
-      typeKey: options["type-key"] || "",
-      adapterKey: options["adapter-key"] || "",
-      availabilityState: options.availability || "",
-      limit: options.limit == null ? undefined : Number(options.limit),
-      projectionId: options.projection || "",
-      cursor: options.cursor || "",
-    });
   if (command === "observation-prepare")
     return prepareObservationEvidence({
       root,
@@ -987,21 +934,6 @@ async function runRoutedCommand(
     const value = inputJson(options, "Derived Observation");
     return recordDerivedObservation({ root, descriptor: value.descriptor, input: value.input });
   }
-  if (command === "observation-read") return readObservation({ root, observationId: options.observation });
-  if (command === "observation-query")
-    return queryObservations({
-      root,
-      typeKey: options["type-key"] || "",
-      subjectType: options["subject-type"] || "",
-      subjectKey: options["subject-key"] || "",
-      adapterKey: options["adapter-key"] || "",
-      observedAfter: options["observed-after"] || "",
-      observedBefore: options["observed-before"] || "",
-      recordKind: options["record-kind"] || "all",
-      limit: options.limit == null ? 25 : Number(options.limit),
-      projectionId: options.projection || "",
-      cursor: options.cursor || "",
-    });
   if (command === "head-continuity") return buildLodeContinuitySnapshot({ root, fresh: options.fresh === true });
   if (command === "world-index")
     return await buildWorldModel({
@@ -1052,8 +984,6 @@ async function runRoutedCommand(
             .filter(Boolean)
         : [],
     });
-  if (command === "world-refresh-status") return await inspectIncrementalRefresh({ root });
-  if (command === "world-refresh-read") return await readIncrementalRefreshReceipt({ root, refreshReceiptId: options.receipt });
   if (command === "world-refresh-events") {
     const input = inputJson(options, "Refresh trigger event ingestion");
     const unexpected = Object.keys(input).filter((key) => !["sourceKind", "events", "maxEvents"].includes(key));
@@ -1067,8 +997,6 @@ async function runRoutedCommand(
       debounceMs: options["debounce-ms"] == null ? undefined : Number(options["debounce-ms"]),
       maxEvents: options["max-events"] == null ? undefined : Number(options["max-events"]),
     });
-  if (command === "world-refresh-trigger-status") return await inspectRefreshTriggers({ root });
-  if (command === "world-refresh-trigger-read") return await readRefreshTriggerDelivery({ root, triggerDeliveryId: options.delivery });
   if (command === "world-graph-status") return await inspectWorldGraphProjection({ root });
   if (command === "world-graph-remote-database-status") return inspectArcadeDbDatabaseCompatibility({ root, storage: resolveProjectStorage(root) });
   if (command === "world-graph-remote-database-initialize")
@@ -1102,8 +1030,6 @@ async function runRoutedCommand(
     return setPostRefreshProjectionPolicy({ root, mode: input.mode });
   }
   if (command === "world-docs-policy-status") return inspectPostRefreshProjectionPolicy({ root });
-  if (command === "world-docs-refresh-status") return await inspectPostRefreshProjectionStatus({ root });
-  if (command === "world-docs-refresh-read") return await readPostRefreshProjectionReceipt({ root, postRefreshProjectionReceiptId: options.receipt });
   if (command === "world-query")
     return await queryWorldModel({
       root,
