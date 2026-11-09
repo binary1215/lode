@@ -11,6 +11,19 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.100 — publication tracked separately
+
+- Reason codes no longer spell the old product name: `HEAD_X` is now `X`, and
+  the inner `_HEAD_` segment is dropped from nine more codes. For one version,
+  MCP `error.data` and CLI JSON failures also carry the old code as
+  `legacyReasonCode`. `UNSUPPORTED_GC_GIT_HEAD` (Git HEAD) and the `HEAD_*`
+  environment variables are unchanged.
+- These values now use the Lode name: compaction status `lode_direction_required`,
+  context-workflow next action `lode_assess_semantic_sufficiency`, and context
+  workflow and preparation status `ready_for_lode_semantic_assessment`.
+- Docs and Skills use the Lode names; the historical comparison marks HEAD as the
+  old name. Hook matchers still cover the legacy `head_*` aliases.
+
 ## 0.3.0-beta.99 — publication tracked separately
 
 - Make the canonical `lode_*` name the internal operation name. The 147
