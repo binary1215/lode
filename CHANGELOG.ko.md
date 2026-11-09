@@ -9,6 +9,16 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.101 — 게시 결과는 별도 확인
+
+- 런타임 오류·안내 문구가 에이전트를 HEAD 대신 Lode라고 부릅니다. `.head`
+  프로젝트의 문서 제목 "HEAD Agent derived knowledge graph"와 고정된 Codex 제안
+  지시문은 그대로입니다.
+- 보고되는 상태·행동·안내 값은 Lode 이름을 씁니다(예: `lode-selection-required`,
+  `refresh-lode-assessment`, `Lode-owned`). CLI 표시는 옛 상태 철자도 계속
+  받아들입니다.
+- CLI 명령은 `lode-continuity`이며 `head-continuity`는 별칭으로 남습니다.
+
 ## 0.3.0-beta.100 — 게시 결과는 별도 확인
 
 - 이유 코드에서 옛 제품 이름을 뺍니다. `HEAD_X`는 `X`가 되고, 아홉 개 코드의
