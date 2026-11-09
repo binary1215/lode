@@ -119,7 +119,7 @@ async function semanticProductProposal(root, relativePath, document = productDoc
         productKind,
         proposedEntity,
         evidence: [evidence],
-        explanation: "Fresh HEAD proposes this product concept from current repository evidence; Core only validates and gates it.",
+        explanation: "Fresh Lode proposes this product concept from current repository evidence; Core only validates and gates it.",
         confidence: 0.8,
       })),
     ),

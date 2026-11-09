@@ -329,7 +329,7 @@ function impactCandidateSet(changeSet, afterSnapshot, storage) {
   if (historicalOnlyChangeIds.length)
     addUnknown(
       "historical-mapping-only",
-      `${historicalOnlyChangeIds.length} changed revision(s) connect only to historical or stale mapping evidence and require fresh HEAD assessment.`,
+      `${historicalOnlyChangeIds.length} changed revision(s) connect only to historical or stale mapping evidence and require fresh Lode assessment.`,
       historicalOnlyChangeIds,
     );
   const payload = {
@@ -569,7 +569,7 @@ async function recordChangeSetUncoordinated({ root = ".", resultPacketId, review
   const inspected = readyProject(root, "ChangeSet recording");
   const storage = inspected.storage;
   if (inspected.state.activeRunId || inspected.state.pendingReview)
-    fail("ChangeSet recording requires the execution Run and Fresh HEAD review to be complete.", "CHANGE_SET_RUN_CONFLICT");
+    fail("ChangeSet recording requires the execution Run and Fresh Lode review to be complete.", "CHANGE_SET_RUN_CONFLICT");
   const projectRoot = inspected.project.projectRoot;
   const existingStateFile = stateFile(projectRoot, storage);
   if (fs.existsSync(existingStateFile)) {

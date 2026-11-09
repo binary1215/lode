@@ -207,7 +207,7 @@ export function readProjectDocumentBasis({ root, sessionId, projectTitle, workEv
       Object.keys(proposal).some((key) => !allowed.includes(key)) ||
       ["purpose", "useFlow", "currentBehavior", "notes"].some((key) => proposal[key] != null && typeof proposal[key] !== "string")
     )
-      documentFailure("Invalid HEAD reading narrative.");
+      documentFailure("Invalid Lode reading narrative.");
     if (node.narrative) documentFailure("Duplicate reading narrative.");
     const sourceKeys = proposal.sourceKeys.map((key) => {
       const frozen = proposal.sourceBindings?.[key];

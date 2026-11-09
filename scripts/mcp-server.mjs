@@ -449,7 +449,7 @@ async function dispatchRouted(
         Array.isArray(args.arguments) ||
         Object.keys(args).some((key) => !["name", "arguments", ...(name === "lode_tools_call" ? ["execution_mode"] : [])].includes(key))
       )
-        throw new Error("An exact HEAD tool name and arguments object are required; routing cannot be nested.");
+        throw new Error("An exact Lode tool name and arguments object are required; routing cannot be nested.");
       if (args.execution_mode != null && !["ordinary", "managed"].includes(args.execution_mode)) throw new Error("Unknown execution mode.");
       if (name === "lode_tools_call" && args.execution_mode === "managed") surface = "managed-maintenance";
       if (name === "lode_tools_read" && selected.annotations?.readOnlyHint !== true)

@@ -108,7 +108,7 @@ function validateEvent(event, identity) {
   if (!/^compaction-event-[A-Za-z0-9._:-]{1,128}$/u.test(event.eventId || "")) fail("Lifecycle eventId is invalid.", "INVALID_COMPACTION_LIFECYCLE_EVENT");
   if (!EVENT_KINDS.has(event.kind)) fail("Lifecycle event kind is invalid.", "INVALID_COMPACTION_LIFECYCLE_EVENT");
   if (event.projectId !== identity.projectId) fail("Lifecycle event belongs to another Project.", "COMPACTION_LIFECYCLE_PROJECT_MISMATCH");
-  if (event.sessionId !== identity.sessionId) fail("Lifecycle event belongs to another HEAD Session.", "COMPACTION_LIFECYCLE_SESSION_MISMATCH");
+  if (event.sessionId !== identity.sessionId) fail("Lifecycle event belongs to another Lode Session.", "COMPACTION_LIFECYCLE_SESSION_MISMATCH");
   if (!RUNTIMES.has(event.runtime)) fail("Lifecycle runtime is invalid.", "INVALID_COMPACTION_LIFECYCLE_EVENT");
   validateTurn(event.userTurnId);
   if (event.kind === "after-compaction") {
@@ -122,7 +122,7 @@ function validateEvent(event, identity) {
 }
 
 function validateDirection(direction) {
-  exactKeys(direction, ["purpose", "approvedDecisions", "currentPosition", "nextExpectedResult", "openReviewIds"], "HEAD recovery direction");
+  exactKeys(direction, ["purpose", "approvedDecisions", "currentPosition", "nextExpectedResult", "openReviewIds"], "Lode recovery direction");
   return {
     purpose: requiredText(direction.purpose, "Recovery purpose"),
     approvedDecisions: direction.approvedDecisions,

@@ -300,7 +300,7 @@ function readArtifacts(projectRoot, projectId, storage) {
         disposition.authority === formatForVerifiedOwner(storage).value(CONFORMANCE_MAINTENANCE_AUTHORITY) &&
         previous.authority !== formatForVerifiedOwner(storage).value(CONFORMANCE_MAINTENANCE_AUTHORITY)
       )
-        fail("HEAD maintenance cannot supersede a user disposition.", "INVALID_CONFORMANCE_DISPOSITION_CHAIN");
+        fail("Lode maintenance cannot supersede a user disposition.", "INVALID_CONFORMANCE_DISPOSITION_CHAIN");
     }
     if (disposition.resolutionId) {
       const resolution = resolutionMap.get(disposition.resolutionId);
@@ -519,7 +519,7 @@ async function proposeConformanceFindingsUncoordinated({ root = ".", baseline, f
   const current = await currentBaseline(inspected.project.projectRoot, inspected.storage);
   assertCurrentBaseline(baseline, current);
   if (!productEntities(current.canon.model).length)
-    fail("Conformance assessment requires an existing Product Canon, but ordinary HEAD work remains available.", "CONFORMANCE_PRODUCT_CANON_UNAVAILABLE");
+    fail("Conformance assessment requires an existing Product Canon, but ordinary Lode work remains available.", "CONFORMANCE_PRODUCT_CANON_UNAVAILABLE");
   const existingArtifacts = readArtifacts(inspected.project.projectRoot, inspected.project.projectId, inspected.storage);
   const existingByFingerprint = new Map(existingArtifacts.findings.map((item) => [item.fingerprintId, item]));
   const candidates = findings.map((input) => {
@@ -726,9 +726,9 @@ async function recordConformanceDispositionLocked({
 } = {}) {
   if (!["user", "head", "lode"].includes(actor)) fail("Conformance disposition actor is invalid.", "INVALID_CONFORMANCE_DISPOSITION");
   if (actor === "user" && confirmUserDisposition !== true)
-    fail("User disposition requires explicit user confirmation; HEAD may acknowledge/defer honestly as maintenance.", "CONFORMANCE_USER_CONFIRMATION_REQUIRED");
+    fail("User disposition requires explicit user confirmation; Lode may acknowledge/defer honestly as maintenance.", "CONFORMANCE_USER_CONFIRMATION_REQUIRED");
   if (actor !== "user" && (confirmUserDisposition !== false || !["acknowledge", "defer"].includes(disposition) || resolutionId !== null))
-    fail("HEAD maintenance is acknowledge/defer only and must not claim user confirmation.", "CONFORMANCE_MAINTENANCE_ONLY");
+    fail("Lode maintenance is acknowledge/defer only and must not claim user confirmation.", "CONFORMANCE_MAINTENANCE_ONLY");
   const inspected = readyProject(root, "Conformance disposition");
   const authority =
     actor !== "user" ? formatForVerifiedOwner(inspected.storage).value(CONFORMANCE_MAINTENANCE_AUTHORITY) : USER_CONFORMANCE_DISPOSITION_AUTHORITY;
@@ -768,7 +768,7 @@ async function recordConformanceDispositionLocked({
     } catch (error) {
       if (new Set(["CONFORMANCE_SOURCE_DRIFT", "CONFORMANCE_SOURCE_TOO_LARGE", "CONFORMANCE_EVIDENCE_NOT_FOUND", "CONFORMANCE_BASELINE_DRIFT"]).has(error.code))
         fail(
-          "Conformance resolution evidence changed; ask HEAD to reassess the exact current evidence before accepting it. Ordinary work remains available.",
+          "Conformance resolution evidence changed; ask Lode to reassess the exact current evidence before accepting it. Ordinary work remains available.",
           "CONFORMANCE_RESOLUTION_STALE",
         );
       throw error;

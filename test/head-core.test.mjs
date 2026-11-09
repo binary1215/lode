@@ -294,7 +294,7 @@ async function semanticCapabilityProposal(root, relativePath, suffix = "current"
     candidates: [
       {
         productKind: "Capability",
-        proposedEntity: { key: `capability:${suffix}`, name: `Capability ${suffix}`, description: "Fresh HEAD semantic proposal fixture." },
+        proposedEntity: { key: `capability:${suffix}`, name: `Capability ${suffix}`, description: "Fresh Lode semantic proposal fixture." },
         evidence: [
           {
             path: relativePath,
@@ -303,7 +303,7 @@ async function semanticCapabilityProposal(root, relativePath, suffix = "current"
             ...(symbol ? { symbol: { name: symbol.name, kind: symbol.kind, line: symbol.line } } : {}),
           },
         ],
-        explanation: "Fresh HEAD proposes product meaning; Core verifies only current evidence and review gates.",
+        explanation: "Fresh Lode proposes product meaning; Core verifies only current evidence and review gates.",
         confidence: 0.8,
       },
     ],

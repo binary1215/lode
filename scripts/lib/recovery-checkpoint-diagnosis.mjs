@@ -351,7 +351,7 @@ function classifyFailure(error, project) {
       summary: "The checkpoint no longer matches the exact current Session or verified lineage.",
       nextHeadAction: {
         id: "inspect-exact-session-lineage",
-        summary: "Inspect the current Session and lineage, then let the current provider HEAD assess a fresh direction only if a new checkpoint is useful.",
+        summary: "Inspect the current Session and lineage, then let the current provider Lode assess a fresh direction only if a new checkpoint is useful.",
       },
     };
   }

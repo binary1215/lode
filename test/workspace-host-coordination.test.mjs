@@ -260,7 +260,7 @@ test("public MCP rejects wrong project, current Session and runtime while Host s
   assert.match((await call()).error?.message || "", /Invalid requested attachment boundary/u);
   adapter.attach = originalAttach;
   host.state.endpoints[0] = { ...endpoint(fx), runtime: "opencode" };
-  assert.match((await call()).error?.message || "", /exact HEAD runtime/u);
+  assert.match((await call()).error?.message || "", /exact Lode runtime/u);
   host.snapshot = () => { throw new Error("Optional Host snapshot unavailable"); };
   const unavailable = (await call()).result?.structuredContent;
   assert.equal(unavailable?.status, "session_continued_with_fresh_logical_head");

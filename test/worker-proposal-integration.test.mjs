@@ -168,7 +168,7 @@ async function fixture(t, { allowWrite = true, forbidWrite = false, noOp = false
     planDelta: "Proposal returned",
     impactRadius: ["sum.mjs"],
     verification: ["Proposal schema only; no provider executed"],
-    unknowns: ["HEAD must apply and verify behavior"],
+    unknowns: ["Lode must apply and verify behavior"],
     patchProposal: {
       proposalBasisDigest: boundary.proposalBasisDigest,
       changes: noOp

@@ -277,7 +277,7 @@ process.stdin.on('end', () => {
     protocolVersion: '0.1.0',
     outcome: 'Bounded worker completed the exact authorized Run scope.',
     evidence: ['The exact Run input reached one native-supervised worker process.'],
-    planDelta: 'The bounded worker result is ready for Fresh HEAD review.',
+    planDelta: 'The bounded worker result is ready for Fresh Lode review.',
     impactRadius: ['runtime lifecycle fixture'],
     verification: ['Structured result and owned process cleanup were verified.'],
     unknowns: [],
@@ -322,7 +322,7 @@ async function main() {
   );
   assert(
     configuredProviderOverlay.provider === undefined,
-    "HEAD replaced the user's OpenCode provider configuration instead of preserving OpenCode authority.",
+    "Lode replaced the user's OpenCode provider configuration instead of preserving OpenCode authority.",
   );
   const nativeProviderEnvironment = buildOpenCodeProviderEnvironment(
     {
@@ -341,7 +341,7 @@ async function main() {
       nativeProviderEnvironment.FIXTURE_CUSTOM_API_KEY === undefined,
     "OpenCode native provider environment did not remain scoped to the selected provider.",
   );
-  assert(nativeProviderOverlay.provider === undefined, "HEAD injected a provider preset into the OpenCode configuration overlay.");
+  assert(nativeProviderOverlay.provider === undefined, "Lode injected a provider preset into the OpenCode configuration overlay.");
   const resolvedRoot = path.resolve(temporaryRoot);
   const resolvedOperationalRoot = path.resolve(temporaryOperationalRoot);
   assert(
@@ -747,7 +747,7 @@ async function main() {
       assert(sessionSuccess.receipt.scopeKind === "session", `${runtime} Session receipt lost its scope.`);
       assert(
         sessionDraft.scopeKind === "session" && sessionDraft.freshHeadReviewRequired === false,
-        `${runtime} Session result incorrectly requires Fresh HEAD review.`,
+        `${runtime} Session result incorrectly requires Fresh Lode review.`,
       );
       const sessionPublicArtifacts = JSON.stringify({
         authorization: sessionAuthorization,
@@ -805,7 +805,7 @@ async function main() {
       codexProtocolExecution.draft.providerResult?.outcome === "Codex protocol fixture completed.",
       "Codex structured result was not carried into the draft.",
     );
-    assert(codexProtocolExecution.draft.freshHeadReviewRequired === false, "Codex Session protocol fixture incorrectly required Fresh HEAD review.");
+    assert(codexProtocolExecution.draft.freshHeadReviewRequired === false, "Codex Session protocol fixture incorrectly required Fresh Lode review.");
     const recordedCodexProtocolExecution = readRuntimeInvocationResult({
       root: resolvedRoot,
       storage: initializedProject.storage,
@@ -870,7 +870,7 @@ async function main() {
       opencodeProtocolExecution.draft.providerResult?.outcome === "OpenCode protocol fixture completed.",
       "OpenCode structured result was not carried into the draft.",
     );
-    assert(opencodeProtocolExecution.draft.freshHeadReviewRequired === false, "OpenCode Session protocol fixture incorrectly required Fresh HEAD review.");
+    assert(opencodeProtocolExecution.draft.freshHeadReviewRequired === false, "OpenCode Session protocol fixture incorrectly required Fresh Lode review.");
     const recordedOpenCodeProtocolExecution = readRuntimeInvocationResult({
       root: resolvedRoot,
       storage: initializedProject.storage,
@@ -1360,7 +1360,7 @@ async function main() {
       workerDispatch.status === "dispatched" &&
         workerDispatch.dispatch.authorityBoundary.planeId === "P3" &&
         workerDispatch.dispatch.ownershipBoundary.wholeOutcomeOwner === formatForVerifiedOwner(initializedProject.storage).roleField,
-      "Bounded worker dispatch did not preserve P3 scope/result ownership beneath HEAD.",
+      "Bounded worker dispatch did not preserve P3 scope/result ownership beneath Lode.",
     );
     const sameDispatch = createBoundedWorkerDispatch({
       root: resolvedRoot,

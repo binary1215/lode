@@ -17,7 +17,7 @@ const pluginRoot = path.resolve(path.dirname(scriptPath), "..");
 const nonce = `${process.pid}-${Date.now()}`;
 const fixtureRoot = path.join(pluginRoot, `.test-tmp-hostless-session-recovery-${nonce}`);
 const maximumOutputBytes = 1024 * 1024;
-const expectedNextMove = "Inspect the canonical HEAD Session identity and report it without mutation";
+const expectedNextMove = "Inspect the canonical Lode Session identity and report it without mutation";
 
 function digest(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
@@ -93,14 +93,14 @@ async function fixture(name, disposition = "accept") {
     root,
     objective: `Complete hostless recovery scenario ${name}`,
     plan: [{ id: "execute", outcome: "Return one bounded worker result" }],
-    invariants: ["Only HEAD and explicit user direction may author recovery direction"],
+    invariants: ["Only Lode and explicit user direction may author recovery direction"],
   }).artifact;
   const contract = createExecutionContract({
     root,
     wholePlanId: plan.wholePlanId,
     capsuleId: capsule.capsuleId,
     scope: `Produce the bounded ${name} result`,
-    acceptanceCriteria: ["Fresh HEAD verifies the exact ResultPacket"],
+    acceptanceCriteria: ["Fresh Lode verifies the exact ResultPacket"],
   }).artifact;
   const run = startRun({ root, executionContractId: contract.executionContractId }).run;
   const finished = finishRun({
@@ -123,8 +123,8 @@ async function fixture(name, disposition = "accept") {
   const input = {
     runId: run.runId,
     reviewDecisionId: reviewed.reviewDecision.reviewDecisionId,
-    purpose: "Preserve whole-outcome HEAD ownership across provider loss",
-    approvedDecisions: ["Fresh HEAD accepted the exact bounded ResultPacket"],
+    purpose: "Preserve whole-outcome Lode ownership across provider loss",
+    approvedDecisions: ["Fresh Lode accepted the exact bounded ResultPacket"],
     currentPosition: "The bounded worker result is reviewed and integrated",
     nextExpectedResult: expectedNextMove,
     openReviewIds: [],
@@ -216,7 +216,7 @@ function consumerChildMain(root, expectedFile, runtime) {
   assert.equal(restored.projection.consumerInstruction.nextExpectedResult, undefined);
   assert.equal(restored.projection.currentExecution.status, "verified");
   assert.equal(expected.nextExpectedResult, expectedNextMove, "The verifier consumer received an unrecognized next move.");
-  assert.equal(inspected.status, "ready", "The next read-only HEAD move did not recover a ready Project.");
+  assert.equal(inspected.status, "ready", "The next read-only Lode move did not recover a ready Project.");
   const result = {
     kind: "ResidentHeadConsumerOutcome",
     runtime,

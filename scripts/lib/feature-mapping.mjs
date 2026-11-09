@@ -316,7 +316,7 @@ function candidatesFromSemanticProposal(proposal, worldModel, storage) {
         unknownArtifact(
           graph.sourceSnapshotId,
           "semantic-mapping-proposal-required",
-          "Fresh HEAD semantic implementation-mapping candidates are required. Core intentionally does not infer product-to-code meaning from names or lexical overlap.",
+          "Fresh Lode semantic implementation-mapping candidates are required. Core intentionally does not infer product-to-code meaning from names or lexical overlap.",
         ),
       ],
     };
@@ -369,7 +369,7 @@ function candidatesFromSemanticProposal(proposal, worldModel, storage) {
       path: sourceNode.path || sourceRevision.path || "",
       line: sourceRevision.line || null,
       contentDigest,
-      statement: `Fresh HEAD cites current ${sourceNode.kind} ${sourceNode.name || sourceNode.path} as evidence for a proposed ${relationshipType} relation with authoritative ${productNode.kind} ${productRevision.semantic.name || productNode.key}.`,
+      statement: `Fresh Lode cites current ${sourceNode.kind} ${sourceNode.name || sourceNode.path} as evidence for a proposed ${relationshipType} relation with authoritative ${productNode.kind} ${productRevision.semantic.name || productNode.key}.`,
     });
     evidenceById.set(evidence.evidenceId, evidence);
     const productEndpoint = endpointFor(productNode, productRevision, {
@@ -489,7 +489,7 @@ async function startFeatureMappingLocked({ root = ".", semanticProposal = null, 
     }
   } else if (previousState?.phase === "awaiting-review") {
     fail(
-      `Inspect pending evidence ${previousState.candidateSetId}; HEAD may explicitly replace it with an exact expected candidate-set ID and fresh proposal, or present it for user review when promotion is needed.`,
+      `Inspect pending evidence ${previousState.candidateSetId}; Lode may explicitly replace it with an exact expected candidate-set ID and fresh proposal, or present it for user review when promotion is needed.`,
       "FEATURE_MAPPING_REVIEW_REQUIRED",
     );
   }
@@ -617,7 +617,7 @@ function recordedCandidateReview({ projectRoot, projectId, candidateSet }, stora
   if (!matches.length) return null;
   const review = readFeatureMappingReviewDecision({ root: projectRoot, reviewDecisionId: matches[0].reviewDecisionId }).reviewDecision;
   if (review.sessionId !== candidateSet.sessionId) {
-    fail("Feature mapping ReviewDecision belongs to a different HEAD Session.", "FEATURE_MAPPING_REVIEW_IDENTITY_MISMATCH");
+    fail("Feature mapping ReviewDecision belongs to a different Lode Session.", "FEATURE_MAPPING_REVIEW_IDENTITY_MISMATCH");
   }
   return review;
 }
@@ -713,7 +713,7 @@ async function reviewFeatureMappingLocked({ root = ".", candidateSetId, disposit
   }
   const candidateSet = readFeatureMappingCandidateSet({ root: projectRoot, candidateSetId }).candidateSet;
   if (candidateSet.sessionId !== state.sessionId) {
-    fail("Feature mapping candidate set belongs to a different HEAD Session.", "FEATURE_MAPPING_CANDIDATE_SET_IDENTITY_MISMATCH");
+    fail("Feature mapping candidate set belongs to a different Lode Session.", "FEATURE_MAPPING_CANDIDATE_SET_IDENTITY_MISMATCH");
   }
   const normalizedDisposition = requiredText(disposition, "Review disposition").toLocaleLowerCase();
   if (!["accept-all", "accept-selection", "reject"].includes(normalizedDisposition)) {
@@ -810,7 +810,7 @@ async function reviewFeatureMappingLocked({ root = ".", candidateSetId, disposit
     );
   if (normalizedDisposition !== "reject" && !currentCandidateEvidence && !repairableOrphanProjection) {
     fail(
-      `Repository evidence or Product Canon changed after mapping proposal. Explicitly reject the outdated candidate set ${candidateSetId}, then have HEAD propose fresh evidence; stale candidates cannot be accepted.`,
+      `Repository evidence or Product Canon changed after mapping proposal. Explicitly reject the outdated candidate set ${candidateSetId}, then have Lode propose fresh evidence; stale candidates cannot be accepted.`,
       "FEATURE_MAPPING_SOURCE_DRIFT",
     );
   }
@@ -986,7 +986,7 @@ export async function inspectFeatureMapping({ root = "." } = {}) {
       status: "not_started",
       projectId: inspected.project.projectId,
       sessionId: inspected.state.sessionId,
-      nextAction: "Have fresh HEAD inspect the current graph, then run feature-mapping-start with a semantic proposal.",
+      nextAction: "Have fresh Lode inspect the current graph, then run feature-mapping-start with a semantic proposal.",
     };
   }
   const state = verifyState(
@@ -998,7 +998,7 @@ export async function inspectFeatureMapping({ root = "." } = {}) {
     ? readFeatureMappingCandidateSet({ root: inspected.project.projectRoot, candidateSetId: state.candidateSetId }).candidateSet
     : null;
   if (candidateSet && candidateSet.sessionId !== state.sessionId) {
-    fail("Feature mapping candidate set belongs to a different HEAD Session.", "FEATURE_MAPPING_CANDIDATE_SET_IDENTITY_MISMATCH");
+    fail("Feature mapping candidate set belongs to a different Lode Session.", "FEATURE_MAPPING_CANDIDATE_SET_IDENTITY_MISMATCH");
   }
   const savedReview = candidateSet
     ? recordedCandidateReview({ projectRoot: inspected.project.projectRoot, projectId: inspected.project.projectId, candidateSet }, storage)
@@ -1032,7 +1032,7 @@ export async function inspectFeatureMapping({ root = "." } = {}) {
               ? "Retry the unchanged saved ReviewDecision to finish its pending state update; no new user decision is needed."
               : currentEvidence
                 ? "Ask the user to review this exact candidate set; only explicit acceptance promotes mappings."
-                : "Ask whether the user wants to reject this exact outdated candidate set, then have HEAD propose fresh evidence. Rejection preserves earlier approved mappings.",
+                : "Ask whether the user wants to reject this exact outdated candidate set, then have Lode propose fresh evidence. Rejection preserves earlier approved mappings.",
         }
       : null,
     worldModel: {

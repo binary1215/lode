@@ -155,7 +155,7 @@ test("diagnosis distinguishes no pointer, missing ledger artifact, corruption, a
   const { root: optionalRoot, storage: optionalStorage } = fixture(t);
   (await startFixtureRun(optionalRoot, "optional result evidence loss"));
   const finished = finishFixtureRun(optionalRoot);
-  checkpoint(optionalRoot, { currentPosition: "One result is awaiting Fresh HEAD review" });
+  checkpoint(optionalRoot, { currentPosition: "One result is awaiting Fresh Lode review" });
   fs.unlinkSync(path.join(optionalRoot, optionalStorage.directory, "lineage", "result-packets", `${finished.resultPacket.resultPacketId}.json`));
   const optional = inspectRecoveryCheckpointDiagnosis({ root: optionalRoot });
   assert.equal(optional.diagnosis.state, "verified-checkpoint-with-missing-result-evidence");

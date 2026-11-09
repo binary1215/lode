@@ -211,7 +211,7 @@ try {
             description: "Accept current user requests and produce acknowledgements.",
           },
           evidence: [{ path: "request-service.mjs", line: 1 }],
-          explanation: "Fresh HEAD interpreted current behavior; Core binds the current digest and keeps this proposal non-authoritative.",
+          explanation: "Fresh Lode interpreted current behavior; Core binds the current digest and keeps this proposal non-authoritative.",
           confidence: 0.8,
         },
       ],

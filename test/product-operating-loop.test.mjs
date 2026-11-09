@@ -90,7 +90,7 @@ function fixture({ legacy = false } = {}) {
     features: [
       {
         key: "head-continuity",
-        name: "HEAD continuity",
+        name: "Lode continuity",
         description: "Portable exact-reference continuity",
         featureGroupKeys: ["coordination"],
         capabilityKeys: ["continuity"],
@@ -130,7 +130,7 @@ test("connects the minimal Product Operating Loop while keeping Product Canon an
 
   const proposed = await proposeProductInitiative({
     root,
-    title: "Portable HEAD continuity",
+    title: "Portable Lode continuity",
     description: "Expose exact current identities without creating new recovery canon.",
     hypothesisIds: [hypothesis.hypothesis.hypothesisId],
     featureResolution: { kind: "existing-feature", featureKey: "head-continuity" },

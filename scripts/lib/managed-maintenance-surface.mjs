@@ -18,7 +18,7 @@ const mutations = Object.freeze(
 );
 
 export function requireSurface(surface) {
-  if (surface !== "ordinary" && surface !== "managed-maintenance") throw new Error("Unknown HEAD command surface.");
+  if (surface !== "ordinary" && surface !== "managed-maintenance") throw new Error("Unknown Lode command surface.");
   return surface;
 }
 

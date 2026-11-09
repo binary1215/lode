@@ -48,7 +48,7 @@ function requireCurrentEffectAuthority(root, integrationId, storage) {
     !contract.allowedActions?.includes("project.write") ||
     contract.forbiddenActions?.includes("project.write")
   ) {
-    fail("The exact current ExecutionContract must allow project.write before HEAD applies worker patches.");
+    fail("The exact current ExecutionContract must allow project.write before Lode applies worker patches.");
   }
   return intent;
 }
@@ -378,13 +378,13 @@ export function readWorkerPatchApplication({ root = ".", integrationId, storage 
       unavailable,
       unresolvedEffectPaths: unresolved.map((effect) => effect.path),
       nextStep: terminal
-        ? "HEAD assesses the whole result and remaining uncertainty; applied effects are not replayed."
+        ? "Lode assesses the whole result and remaining uncertainty; applied effects are not replayed."
         : unresolved.length
           ? "Reconcile exact started effects and owner quiescence first; do not replay or bypass unknown effects through direct work."
           : unavailable.length
-            ? "HEAD inspects the named dependency and current evidence. A fresh digest alone cannot make unreadable evidence usable. Preserve the original result; unrelated work can continue."
+            ? "Lode inspects the named dependency and current evidence. A fresh digest alone cannot make unreadable evidence usable. Preserve the original result; unrelated work can continue."
             : currentBasis.headReassessmentRequired
-              ? "HEAD reassesses the current evidence without replaying effects or overwriting user changes; no routine user approval is added."
+              ? "Lode reassesses the current evidence without replaying effects or overwriting user changes; no routine user approval is added."
               : "Inspect the retained integration and current files. This status does not select application or a maintenance mutation and grants no permission.",
       persisted: false,
       grantsPermission: false,
@@ -491,13 +491,13 @@ export async function applyWorkerPatchIntegration(input = {}, host = {}) {
   const nextSteps = {
     "inspect-unverifiable-basis": view.guidance.nextStep,
     "reconcile-overlapping-effects":
-      "HEAD reconciles the overlapping prior effects first. Preserve all outcomes and do not bypass their uncertainty through another execution path.",
+      "Lode reconciles the overlapping prior effects first. Preserve all outcomes and do not bypass their uncertainty through another execution path.",
     "refresh-head-assessment":
-      "HEAD rereads the current basis and reassesses the proposal before applying remaining effects; preserve completed effects and user edits.",
+      "Lode rereads the current basis and reassesses the proposal before applying remaining effects; preserve completed effects and user edits.",
     "head-reassess-current-basis":
-      "HEAD assesses the current evidence and supplies its current basis only if this proposal remains valid; no routine user approval is added.",
+      "Lode assesses the current evidence and supplies its current basis only if this proposal remains valid; no routine user approval is added.",
     "unsupported-file-effects":
-      "The native backend cannot apply the listed effects. HEAD inspects those paths and chooses a supported approach within existing authority; unrelated work can continue.",
+      "The native backend cannot apply the listed effects. Lode inspects those paths and chooses a supported approach within existing authority; unrelated work can continue.",
   };
   return {
     ...view,
@@ -507,7 +507,7 @@ export async function applyWorkerPatchIntegration(input = {}, host = {}) {
       automaticApplicationBlocked: true,
       nextStep:
         nextSteps[view.action] ||
-        "HEAD inspects the exact effect history, current basis and owned process state before any retry. Missing or unknown effect evidence is not permission to replay or overwrite.",
+        "Lode inspects the exact effect history, current basis and owned process state before any retry. Missing or unknown effect evidence is not permission to replay or overwrite.",
     },
   };
 }

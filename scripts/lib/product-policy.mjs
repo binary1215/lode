@@ -323,7 +323,7 @@ export async function reviewProductPolicy({ root = ".", candidateId, disposition
     return withProjectMutation({ root: outer.project.projectRoot, scope: "session-recovery" }, () => {
       const inspected = readyProject(outer.project.projectRoot, "Product Policy review");
       const candidate = readProductPolicyCandidate({ root: inspected.project.projectRoot, candidateId }).candidate;
-      if (candidate.sessionId !== inspected.state.sessionId) fail("Product Policy candidate belongs to another HEAD Session.", "PRODUCT_POLICY_SESSION_DRIFT");
+      if (candidate.sessionId !== inspected.state.sessionId) fail("Product Policy candidate belongs to another Lode Session.", "PRODUCT_POLICY_SESSION_DRIFT");
       const intended = verifyProductPolicyReviewDecision(
         buildReview({ candidate, disposition: normalizedDisposition, rationale: normalizedRationale, storage: inspected.storage }),
         candidate,

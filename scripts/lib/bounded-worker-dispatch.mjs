@@ -467,7 +467,7 @@ export function applyBoundedWorkerDispatchResult({ root = ".", authorizationId }
   const { dispatch, authorization } = readBoundedWorkerDispatch({ root, authorizationId });
   if (authorization.scope.kind !== "run")
     fail(
-      "Session worker results are evidence for HEAD consumption through worker-wait or runtime-invocation-result; Run application is not applicable.",
+      "Session worker results are evidence for Lode consumption through worker-wait or runtime-invocation-result; Run application is not applicable.",
       "BOUNDED_WORKER_APPLY_RUN_REQUIRED",
     );
   const applied = applyRuntimeRunResult({ root, authorizationId, storage: originalFormat(authorization) });

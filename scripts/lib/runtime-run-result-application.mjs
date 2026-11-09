@@ -124,7 +124,7 @@ function canonicalRunResultFields(record) {
   const { authorization, receipt, draft } = record;
   if (authorization.protocolVersion === "0.7.0" && isWorkerPatchProposalMode(authorization.workerInput?.executionBoundary?.mode)) {
     fail(
-      "A read-only patch proposal is not an applied Run result; use worker-integrate for HEAD application and whole-result verification.",
+      "A read-only patch proposal is not an applied Run result; use worker-integrate for Lode application and whole-result verification.",
       "RUNTIME_PATCH_PROPOSAL_INTEGRATION_REQUIRED",
     );
   }
@@ -244,7 +244,7 @@ function readRuntimeRunResultApplication(record) {
     runId: authorization.scope.runId,
   }).review;
   if (expectedReview.reviewContextId !== application.reviewContextId) {
-    fail("Runtime Run result application does not match the deterministic Fresh HEAD context.", "RUNTIME_RUN_RESULT_APPLICATION_CONFLICT");
+    fail("Runtime Run result application does not match the deterministic Fresh Lode context.", "RUNTIME_RUN_RESULT_APPLICATION_CONFLICT");
   }
   return application;
 }
@@ -278,7 +278,7 @@ function verifyApplicationProjectSession(record) {
     inspected.state.sessionId !== sessionIdOf(authorization) ||
     digest(fs.realpathSync(inspected.project.projectRoot)) !== authorization.projectRootDigest
   ) {
-    fail("Runtime result application requires its exact current Project and HEAD Session.", "RUNTIME_RUN_RESULT_APPLICATION_CONFLICT");
+    fail("Runtime result application requires its exact current Project and Lode Session.", "RUNTIME_RUN_RESULT_APPLICATION_CONFLICT");
   }
   return inspected;
 }
@@ -357,7 +357,7 @@ function applyRuntimeRunResultLocked({ root, authorizationId, storage }) {
     freshHead.pendingReview.resultPacketId !== resultPacket.resultPacketId ||
     freshHead.review.reviewContextId === ""
   ) {
-    fail("Fresh HEAD review does not match the applied runtime Run result.", "RUNTIME_RUN_RESULT_APPLICATION_CONFLICT");
+    fail("Fresh Lode review does not match the applied runtime Run result.", "RUNTIME_RUN_RESULT_APPLICATION_CONFLICT");
   }
   const application = verifyRuntimeRunResultApplication(
     identifyApplication({

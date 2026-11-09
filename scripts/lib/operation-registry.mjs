@@ -5720,7 +5720,7 @@ export const OPERATIONS = Object.freeze([
       handle: async (context) => {
         const { root, options, command, inputJson } = context;
         const api = await import("./project-document-publication.mjs");
-        const input = inputJson(options, "HEAD-selected Project documents");
+        const input = inputJson(options, "Lode-selected Project documents");
         return api[command === "project-document-prepare" ? "prepareProjectDocuments" : "publishProjectDocuments"]({ ...input, root });
       },
     },
@@ -5734,7 +5734,7 @@ export const OPERATIONS = Object.freeze([
       handle: async (context) => {
         const { root, options, command, inputJson } = context;
         const api = await import("./work-document-publication.mjs");
-        const input = inputJson(options, "HEAD-selected work document operation");
+        const input = inputJson(options, "Lode-selected work document operation");
         const method = {
           "work-document-prepare": "prepareWorkDocuments",
           "work-document-configure": "configureWorkDocuments",

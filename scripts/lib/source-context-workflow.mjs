@@ -246,7 +246,7 @@ async function prepareSourceContextUnderLifetime({ root = ".", task, needs = [],
               retained: Boolean(failureKey),
               storageIssues,
               scope: "this-need-only",
-              fallback: "HEAD may inspect current source separately or reselect an exact declaration; missing evidence does not block independent work",
+              fallback: "Lode may inspect current source separately or reselect an exact declaration; missing evidence does not block independent work",
             });
             continue;
           }
@@ -355,7 +355,7 @@ async function prepareSourceContextUnderLifetime({ root = ".", task, needs = [],
     id: need.id,
     kind: "observation",
     observationIds: [bundle.observation.observationId],
-    rationale: `HEAD-selected ${need.kind}; source-linked context for HEAD assessment`,
+    rationale: `Lode-selected ${need.kind}; source-linked context for Lode assessment`,
   }));
   const context = current.length
     ? await previewContextWorkflow({

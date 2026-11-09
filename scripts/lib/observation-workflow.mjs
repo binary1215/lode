@@ -23,7 +23,7 @@ export function prepareObservationEvidence({
   sourceCursor = "",
 } = {}) {
   const exactTypeKey = String(typeKey || "").trim();
-  if (!exactTypeKey) fail("Observation preparation requires one exact HEAD-selected typeKey.", "OBSERVATION_PREPARATION_TYPE_REQUIRED");
+  if (!exactTypeKey) fail("Observation preparation requires one exact Lode-selected typeKey.", "OBSERVATION_PREPARATION_TYPE_REQUIRED");
   if (registry != null && !(registry instanceof ObservationAdapterRegistry))
     fail("Host Observation adapter registry is invalid.", "INVALID_OBSERVATION_ADAPTER_REGISTRY");
   const existing = queryObservations({

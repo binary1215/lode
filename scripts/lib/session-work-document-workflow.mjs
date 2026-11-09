@@ -7,7 +7,7 @@ import { prepareProjectDocuments, publishProjectDocuments } from "./project-docu
 function authoredSelection(selection, record) {
   const allowed = ["title", "evidenceIds", "related", "diffs", "excerpts", "graphAnchors", "featureKeys"];
   if (!selection || typeof selection !== "object" || Array.isArray(selection) || Object.keys(selection).some((key) => !allowed.includes(key)))
-    throw Object.assign(new Error("Invalid HEAD document selection."), { code: "WORK_DOCUMENT_SELECTION_INVALID" });
+    throw Object.assign(new Error("Invalid Lode document selection."), { code: "WORK_DOCUMENT_SELECTION_INVALID" });
   const id = (value) => (value === "recorded" ? record.evidenceId : value);
   const source = (value) => ({ ...value, evidenceId: id(value.evidenceId) });
   const evidenceIds = (selection.evidenceIds || ["recorded"]).map(id);
@@ -30,7 +30,7 @@ export async function recordSessionWorkAndProjectDocuments({ root, input, docume
   const result = recordSessionWorkEvidence({ root, input });
   let documentProjection;
   try {
-    if (documentSelectionError) throw Object.assign(new Error("The optional HEAD document selection could not be read."), { code: documentSelectionError });
+    if (documentSelectionError) throw Object.assign(new Error("The optional Lode document selection could not be read."), { code: documentSelectionError });
     const record = result.evidence,
       store = workDocumentStore({ root, sessionId: record.sessionId });
     const targets = store.read("configuration.json")?.targets || [];
@@ -86,7 +86,7 @@ export async function recordSessionWorkAndProjectDocuments({ root, input, docume
                 ? published.map((item) => ({ projectionId: item.projectionId, title: item.title, selection: item.sourceSelection }))
                 : [{ projectionId: prior.draft.projectionId, title: prior.draft.title, selection: prior.draft.sourceSelection }],
               guidance:
-                "HEAD reads the result and authors explicit selection, then uses work-document-prepare and publish. No user JSON, new approval, P3 save or task-effect replay.",
+                "Lode reads the result and authors explicit selection, then uses work-document-prepare and publish. No user JSON, new approval, P3 save or task-effect replay.",
             },
           };
         } else selection = { evidenceIds: [record.evidenceId] };

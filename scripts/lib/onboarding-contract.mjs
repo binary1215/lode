@@ -232,13 +232,13 @@ export function verifySessionRecord(document, { projectId = "", sessionId = "", 
     prefix: "session-record",
     idField: "sessionRecordId",
     hashField: "sessionRecordHash",
-    label: "HEAD Session record",
+    label: "Lode Session record",
   });
   if ((projectId && verified.projectId !== projectId) || (sessionId && verified.sessionId !== sessionId)) {
-    fail("HEAD Session record identity does not match current project state.", "ONBOARDING_SESSION_MISMATCH");
+    fail("Lode Session record identity does not match current project state.", "ONBOARDING_SESSION_MISMATCH");
   }
   const format = familyFormatForOriginal("head-agent-core-session", verified, storage);
-  if (!format) fail("HEAD Session record fields are invalid.", "INVALID_ONBOARDING_SESSION");
+  if (!format) fail("Lode Session record fields are invalid.", "INVALID_ONBOARDING_SESSION");
   const rebuilt = buildSessionRecord(
     {
       project: { projectId: verified.projectId, createdAt: verified.createdAt },
@@ -247,7 +247,7 @@ export function verifySessionRecord(document, { projectId = "", sessionId = "", 
     format,
   );
   if (onboardingCanonicalJson(rebuilt) !== onboardingCanonicalJson(verified)) {
-    fail("HEAD Session record fields are invalid.", "INVALID_ONBOARDING_SESSION");
+    fail("Lode Session record fields are invalid.", "INVALID_ONBOARDING_SESSION");
   }
   return verified;
 }

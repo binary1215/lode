@@ -162,7 +162,7 @@ function removeOperationalControlState(operationalStateRoot, authorization, stat
 }
 
 function opencodeArguments({ projectRoot, model }) {
-  return ["run", "--format", "json", "--pure", "--dir", projectRoot, ...(model ? ["--model", model] : []), "--title", "HEAD Agent invocation"];
+  return ["run", "--format", "json", "--pure", "--dir", projectRoot, ...(model ? ["--model", model] : []), "--title", "Lode Agent invocation"];
 }
 
 function parseStructuredText(value, scopeKind) {

@@ -247,7 +247,7 @@ export class ObservationAdapterRegistry {
     const normalizedSourceKey = stableKey(sourceKey, "Observation adapter source key", 192);
     const storageKey = `${inspected.project.projectId}:${normalizedSourceKey}`;
     if (this.#sources.has(storageKey))
-      fail("Observation adapter source key is already registered for this HEAD Project.", "DUPLICATE_OBSERVATION_ADAPTER_SOURCE");
+      fail("Observation adapter source key is already registered for this Lode Project.", "DUPLICATE_OBSERVATION_ADAPTER_SOURCE");
     const asserted = assertObservationAdapter(adapter, binding, descriptor, inspected.storage);
     const sourceId = `observation-source-${observationDigest({
       projectId: inspected.project.projectId,
@@ -380,7 +380,7 @@ export class ObservationAdapterRegistry {
     const entry = this.#sources.get(storageKey);
     if (!entry) fail("Observation adapter source is not registered in this Host process.", "OBSERVATION_ADAPTER_SOURCE_NOT_FOUND");
     if (entry.projectId !== inspected.project.projectId || entry.projectRoot !== inspected.project.projectRoot)
-      fail("Observation adapter source belongs to another HEAD Project.", "OBSERVATION_ADAPTER_SOURCE_PROJECT_MISMATCH");
+      fail("Observation adapter source belongs to another Lode Project.", "OBSERVATION_ADAPTER_SOURCE_PROJECT_MISMATCH");
     const result = await collectObservation({
       root: inspected.project.projectRoot,
       binding: entry.binding,

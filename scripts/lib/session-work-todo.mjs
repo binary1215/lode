@@ -31,7 +31,7 @@ export function readSessionWorkTodos(
     executionReplayAllowed: false,
     ordinaryWorkBlocked: false,
     scope:
-      "Explicit HEAD-recorded P3 task revisions, not live activity, user approval or P2 direction. Current constraints/cancellations take precedence. Indexed absence is not completeness.",
+      "Explicit Lode-recorded P3 task revisions, not live activity, user approval or P2 direction. Current constraints/cancellations take precedence. Indexed absence is not completeness.",
   };
   try {
     const directory = safeSessionPath(owner.root, owner.workDirectory);

@@ -788,7 +788,7 @@ export function inspectProductOperatingLoop({ root = ".", fresh = false } = {}) 
 }
 
 export async function buildHeadContinuitySnapshot({ root = ".", fresh = false } = {}) {
-  const inspected = readyProject(root, "HEAD continuity is read");
+  const inspected = readyProject(root, "Lode continuity is read");
   const productRead = readProductOperatingProjection(inspected, { fresh });
   const projection = productRead.projection;
   let worldRead;

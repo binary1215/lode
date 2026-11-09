@@ -27,7 +27,7 @@ function productModelDocument() {
     capabilities: [{ key: "continuity", name: "Continuity", description: "Preserve verified lineage." }],
     features: [{
       key: "head-continuity",
-      name: "HEAD continuity",
+      name: "Lode continuity",
       description: "Continue from verified project artifacts.",
       featureGroupKeys: ["coordination"],
       capabilityKeys: ["continuity"],

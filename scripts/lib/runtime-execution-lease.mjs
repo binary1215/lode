@@ -98,7 +98,7 @@ function assertAuthorizationExecutable(projectRoot, authorization) {
   const storage = resolveProjectStorage(projectRoot);
   if (projectCopyContainsAuthorization(storage, authorization.authorizationId)) {
     fail(
-      "Imported authorization is historical evidence. Use the current HEAD direction to create a fresh bounded authorization; the original is preserved.",
+      "Imported authorization is historical evidence. Use the current Lode direction to create a fresh bounded authorization; the original is preserved.",
       "RUNTIME_IMPORTED_AUTHORIZATION_NOT_EXECUTABLE",
     );
   }
