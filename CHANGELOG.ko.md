@@ -9,6 +9,18 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.100 — 게시 결과는 별도 확인
+
+- 이유 코드에서 옛 제품 이름을 뺍니다. `HEAD_X`는 `X`가 되고, 아홉 개 코드의
+  안쪽 `_HEAD_` 구간도 빠집니다. 한 버전 동안 MCP `error.data`와 CLI JSON 실패
+  결과는 옛 코드를 `legacyReasonCode`로 함께 실어 보냅니다. Git HEAD를 뜻하는
+  `UNSUPPORTED_GC_GIT_HEAD`와 `HEAD_*` 환경 변수는 그대로입니다.
+- 다음 값은 Lode 이름을 씁니다: 압축 상태 `lode_direction_required`, 컨텍스트
+  워크플로 다음 행동 `lode_assess_semantic_sufficiency`, 컨텍스트 워크플로·준비
+  상태 `ready_for_lode_semantic_assessment`.
+- 문서와 스킬은 Lode 이름을 쓰고, 과거 비교 문서는 HEAD를 옛 이름으로 표시합니다.
+  Hook matcher는 구 `head_*` 별칭도 계속 포함합니다.
+
 ## 0.3.0-beta.99 — 게시 결과는 별도 확인
 
 - 정식 이름 `lode_*`를 내부 작업 이름으로 삼습니다. 147개 작업 descriptor는
