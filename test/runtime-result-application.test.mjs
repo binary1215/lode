@@ -1098,7 +1098,7 @@ test("frozen member publication recovers without re-reading deleted source", asy
   assert.equal(mcp.result.structuredContent.status, "existing");
   assert.deepEqual(mcp.result.structuredContent.authorization, recovered.authorization);
   const maintenanceTools = (await dispatchMcp({ id: 2, method: "tools/list" }, { surface: "managed-maintenance" })).result.tools;
-  assert.equal(maintenanceTools.find((tool) => tool.name === "lode_bounded_worker_reconcile").annotations.readOnlyHint, false);
+  assert.equal(maintenanceTools.find((tool) => tool.name === "lode_bounded_worker").annotations.readOnlyHint, false); // groups lode_bounded_worker_reconcile (stage 3-F)
   assert.equal(fs.existsSync(path.join(f.root, "selected.txt")), false);
   assert.throws(() => reconcileWorkerMember({ root: f.root, taskKey: "missing" }), { code: "WORKER_MEMBER_NOT_FOUND" });
 });

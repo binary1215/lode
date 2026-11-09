@@ -214,8 +214,11 @@ test("managed entry is optional discoverable execution with the existing authori
   const discovered = await call("head_tools_discover", { name: "head_bounded_worker_start" });
   assert.equal(discovered.persisted, false);
   assert.equal(discovered.grantsAuthorization, false);
-  assert.equal(discovered.tools[0].invokeWith, "lode_tools_call");
-  assert.equal(discovered.tools[0].executionMode, "managed");
+  // The deprecated name finds its grouped tool (stage 3-F); the action keeps the route.
+  assert.equal(discovered.tools[0].name, "lode_bounded_worker");
+  const start = discovered.tools[0].actions.find((entry) => entry.action === "start");
+  assert.equal(start.invokeWith, "lode_tools_call");
+  assert.equal(start.executionMode, "managed");
   const denied = await dispatch(
     request("head_tools_call", { name: "head_bounded_worker_start", execution_mode: "managed", arguments: { project_root: root } }),
   );

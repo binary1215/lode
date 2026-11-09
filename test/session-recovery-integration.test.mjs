@@ -12,7 +12,8 @@ import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib
 import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
 import { createRecoveryCheckpoint, readRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
 import { integrateReviewedRunCheckpoint, readRunResultIntegration, restoreSessionFromArtifacts } from "../scripts/lib/session-recovery.mjs";
-import { dispatch, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
+// Every operation, including the deprecated names grouped tools replaced (stage 3-F).
+import { dispatch, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
 
 import { seedLegacyProject } from "./helpers/legacy-project-fixture.mjs";
