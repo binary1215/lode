@@ -2,6 +2,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { legacyReasonCodeFields } from "./lib/core/errors.mjs";
 import { installDistribution, inspectDistribution, rollbackDistribution, uninstallDistribution } from "./lib/distribution-lifecycle.mjs";
 import { initializeOrResumeProject } from "./lib/project-bootstrap.mjs";
 import { acquireVerifiedNativeArtifact } from "./lib/native-artifact-delivery.mjs";
@@ -96,7 +97,9 @@ if (invokedDirectly) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     })
     .catch((error) => {
-      process.stdout.write(`${JSON.stringify({ status: "failed", code: error.code || "DISTRIBUTION_ERROR", error: error.message }, null, 2)}\n`);
+      const code = error.code || "DISTRIBUTION_ERROR";
+      // legacyReasonCode: the historical HEAD_* spelling, for one version (see LEGACY_REASON_CODES).
+      process.stdout.write(`${JSON.stringify({ status: "failed", code, ...legacyReasonCodeFields(code), error: error.message }, null, 2)}\n`);
       process.exitCode = 1;
     });
 }

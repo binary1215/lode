@@ -11,6 +11,7 @@ import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { noteProjectGraphChange } from "./discovery-index.mjs";
 import { safeSessionPath, defaultSessionStatePath } from "./session-paths.mjs";
 import { sha256Hex } from "./core/digest.mjs";
+import { legacyReasonCodeFields } from "./core/errors.mjs";
 export { safeSessionPath, defaultSessionStatePath } from "./session-paths.mjs";
 import { readProjectDirectionView } from "./project-direction-view.mjs";
 import { verifyImportedDefaultSession } from "./session-import-proof.mjs";
@@ -204,6 +205,7 @@ export function sessionSelectionUnresolved(root, { includeProjectFacts = false, 
   const unresolved = {
     status: "session_selection_unresolved",
     reasonCode,
+    ...legacyReasonCodeFields(reasonCode),
     projectId: project.projectId,
     sessionId: null,
     sessionSelection: { status: "lost" },
