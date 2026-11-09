@@ -182,7 +182,7 @@ function targetItem() {
 
 function verifyServerResponse(message) {
   if (message.id === "server-config") configurationChecked = Array.isArray(message.result) && message.result.length === 2 && message.result.every((item) => item === null);
-  if (message.id === "server-edit") applyEditChecked = message.result?.applied === false && message.result?.failureReason === "HEAD LSP Host profile is read-only";
+  if (message.id === "server-edit") applyEditChecked = message.result?.applied === false && message.result?.failureReason === "Lode LSP Host profile is read-only";
   if (message.id === "server-progress") progressChecked = message.result === null;
   if (["server-message-no-actions", "server-message-empty-actions", "server-message-action"].includes(message.id) && message.result === null) messageResponses.add(message.id);
 }

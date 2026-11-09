@@ -431,7 +431,7 @@ function verifyWorkerInput(worker, storage) {
     (worker.previousAuthorizationId !== null && !/^execution-authorization-[a-f0-9]{24}$/.test(worker.previousAuthorizationId)) ||
     (worker.sessionRequest !== null && (typeof worker.sessionRequest !== "string" || !worker.sessionRequest.trim()))
   ) {
-    fail("Worker input requires a stable task key, non-HEAD role and bounded outcome.", "INVALID_WORKER_EXECUTION_INPUT");
+    fail("Worker input requires a stable task key, non-Lode role and bounded outcome.", "INVALID_WORKER_EXECUTION_INPUT");
   }
   return worker;
 }
