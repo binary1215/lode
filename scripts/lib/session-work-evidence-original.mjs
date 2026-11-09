@@ -235,7 +235,7 @@ export function verifySessionWorkEvidenceOwner({ root, projectBytes, stateBytes,
     !/^session-[a-fA-F0-9-]{36}$/.test(state.sessionId || "") ||
     (state.projectId && state.projectId !== project.projectId)
   ) {
-    fail("Work evidence Project/Session identity differs.", "HEAD_SESSION_IDENTITY_MISMATCH");
+    fail("Work evidence Project/Session identity differs.", "SESSION_IDENTITY_MISMATCH");
   }
   return { root, storage, projectId: project.projectId, sessionId: state.sessionId, state, basis: sha(Buffer.concat([projectBytes, stateBytes])) };
 }

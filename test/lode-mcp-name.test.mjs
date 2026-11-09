@@ -104,7 +104,7 @@ for (const identity of ["lode", "head"]) {
     const wrong = { mcpServers: { [identity === "head" ? "head_core" : "lode_core"]: { command: "node" } } };
     write(path.join(releaseRoot, ".mcp.json"), JSON.stringify(wrong));
     rehashMcpManifest(releaseRoot, manifest);
-    assert.throws(() => verifyDistributionRelease({ releaseRoot }), { code: "HEAD_DISTRIBUTION_RELEASE_INVALID" });
+    assert.throws(() => verifyDistributionRelease({ releaseRoot }), { code: "DISTRIBUTION_RELEASE_INVALID" });
   });
 
   test(`historical ${identity} descriptor retains only its exact namespace and immutable rollback`, t => {
@@ -114,9 +114,9 @@ for (const identity of ["lode", "head"]) {
     const oldMcpBytes = fs.readFileSync(path.join(original, ".mcp.json"));
     assert.equal(verifyDistributionRelease({ releaseRoot: original, expectedReleaseId: old.releaseId }).releaseId, old.releaseId);
     write(path.join(original, ".mcp.json"), JSON.stringify({ mcpServers: { lode: { command: "node" } } }));
-    assert.throws(() => verifyDistributionRelease({ releaseRoot: original, expectedReleaseId: old.releaseId }), { code: "HEAD_DISTRIBUTION_FILE_DRIFT" });
+    assert.throws(() => verifyDistributionRelease({ releaseRoot: original, expectedReleaseId: old.releaseId }), { code: "DISTRIBUTION_FILE_DRIFT" });
     rehashMcpManifest(original, structuredClone(old));
-    assert.throws(() => verifyDistributionRelease({ releaseRoot: original }), { code: "HEAD_DISTRIBUTION_RELEASE_INVALID" });
+    assert.throws(() => verifyDistributionRelease({ releaseRoot: original }), { code: "DISTRIBUTION_RELEASE_INVALID" });
     write(path.join(original, ".mcp.json"), oldMcpBytes);
     write(path.join(original, "distribution-manifest.json"), oldManifestBytes);
     const installRoot = path.join(base, "owned-install"), binDirectory = path.join(base, "owned-bin");

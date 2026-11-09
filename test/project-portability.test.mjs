@@ -680,7 +680,7 @@ test("an exact default-format original maps to named without rewriting it; later
   delete current.projectId;
   fs.writeFileSync(namedA, JSON.stringify(current));
   assert.throws(() => withSessionRoute(root, sourceId, () => inspectProject(root)), {
-    code: "HEAD_SESSION_IDENTITY_MISMATCH",
+    code: "SESSION_IDENTITY_MISMATCH",
   });
   assert.deepEqual(fs.readFileSync(path.join(root, ".lode/sessions/current.json")), defaultBefore);
 });

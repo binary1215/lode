@@ -1565,7 +1565,7 @@ export function formatCliError(error) {
   return (
     "Lode could not complete that step.\n" +
     terminalBlock("Reason", error?.message || "Unknown error") +
-    terminalBlock("Code", error?.code || "HEAD_CLI_ERROR") +
+    terminalBlock("Code", error?.code || "CLI_ERROR") +
     "Failure is not proof of state change or approval. Details: --json\n"
   );
 }

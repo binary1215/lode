@@ -147,9 +147,9 @@ if (providedRoot) {
     legacyMarker.snapshotId = `codex-marketplace-${sha256(Buffer.from(canonical(legacyMarkerIdentity))).slice(0, 24)}`;
     fs.writeFileSync(legacyMarkerFile, `${JSON.stringify(legacyMarker, null, 2)}\n`, "utf8");
 
-    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: legacySnapshotRoot }), { code: "HEAD_CODEX_MARKETPLACE_DEFAULT_PROMPTS_INVALID" });
+    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: legacySnapshotRoot }), { code: "CODEX_MARKETPLACE_DEFAULT_PROMPTS_INVALID" });
     assert.throws(() => verifyCodexMarketplaceSnapshot({ root: legacySnapshotRoot, allowLegacyInterfaceForOwnership: true }), {
-      code: "HEAD_CODEX_MARKETPLACE_LEGACY_INTERFACE_SCOPE",
+      code: "CODEX_MARKETPLACE_LEGACY_INTERFACE_SCOPE",
     });
     const legacyOwnership = verifyCodexMarketplaceSnapshot({
       root: legacySnapshotRoot,
@@ -162,19 +162,19 @@ if (providedRoot) {
     const excessivePrompts = JSON.parse(pluginManifestBytes);
     excessivePrompts.interface.defaultPrompt.push("This fourth prompt must fail closed before Codex silently ignores it.");
     fs.writeFileSync(pluginManifestFile, `${JSON.stringify(excessivePrompts, null, 2)}\n`, "utf8");
-    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }), { code: "HEAD_CODEX_MARKETPLACE_DEFAULT_PROMPTS_INVALID" });
+    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }), { code: "CODEX_MARKETPLACE_DEFAULT_PROMPTS_INVALID" });
     fs.writeFileSync(pluginManifestFile, pluginManifestBytes, "utf8");
 
     const unexpectedDirectory = path.join(snapshotRoot, "plugins", built.pluginName, "unexpected-empty-directory");
     fs.mkdirSync(unexpectedDirectory);
-    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }), { code: "HEAD_CODEX_MARKETPLACE_TREE_MISMATCH" });
+    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }), { code: "CODEX_MARKETPLACE_TREE_MISMATCH" });
     fs.rmdirSync(unexpectedDirectory);
 
     const catalogFile = path.join(snapshotRoot, ".agents", "plugins", "marketplace.json");
     const catalog = JSON.parse(fs.readFileSync(catalogFile, "utf8"));
     catalog.plugins[0].source.path = "../outside";
     fs.writeFileSync(catalogFile, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
-    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }), { code: "HEAD_CODEX_MARKETPLACE_ENTRY_INVALID" });
+    assert.throws(() => verifyCodexMarketplaceSnapshot({ root: snapshotRoot }), { code: "CODEX_MARKETPLACE_ENTRY_INVALID" });
 
     process.stdout.write(
       `${JSON.stringify(

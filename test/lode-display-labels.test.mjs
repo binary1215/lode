@@ -115,7 +115,7 @@ test("context display note changes no serialized status, authority, Capsule iden
   assert(preview.workflow.nextAction.note.startsWith("Lode decides which evidence is needed"));
   assert.equal(preview.workflow.status, "ready_for_head_semantic_assessment");
   assert.equal(preview.workflow.evidenceNeeds.semanticAcceptance, "not-assessed-HEAD-owned");
-  assert.equal(preview.workflow.nextAction.id, "head_assess_semantic_sufficiency");
+  assert.equal(preview.workflow.nextAction.id, "lode_assess_semantic_sufficiency");
   assert.equal(preview.workflow.evidenceNeeds.owner, formatForVerifiedOwner(inspectProject(root)).value("HEAD"));
   assert.equal(preview.workflow.authority.advisoryOnly, true);
   assert.equal(preview.workflow.authority.judgesSemanticSufficiency, false);

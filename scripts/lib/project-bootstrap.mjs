@@ -929,7 +929,7 @@ export async function initializeOrResumeProject(options = {}) {
       route.context = await projectSessionRoute.resolveContext();
       return null;
     } catch (error) {
-      if (route.sessionId === undefined) return error.code || "HEAD_SESSION_CONTEXT_UNAVAILABLE";
+      if (route.sessionId === undefined) return error.code || "SESSION_CONTEXT_UNAVAILABLE";
       return null;
     }
   };
@@ -973,7 +973,7 @@ export async function initializeOrResumeProject(options = {}) {
   try {
     return await withSessionCallContext({ root, ...route }, operation);
   } catch (error) {
-    if (error.code === "HEAD_SESSION_SELECTION_LOST") return unresolved(error.code);
+    if (error.code === "SESSION_SELECTION_LOST") return unresolved(error.code);
     throw error;
   }
 }

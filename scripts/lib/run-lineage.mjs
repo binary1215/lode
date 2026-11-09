@@ -457,7 +457,7 @@ export function reviewRun(options = {}) {
 
 function reviewRunLocked({ root = ".", reviewContextId, disposition, rationale, nextActions = [], knowledgeProposalRecommendations = [] } = {}) {
   if (typeof reviewContextId !== "string" || !reviewContextId.trim()) {
-    fail("The current Fresh HEAD review context id is required.", "FRESH_HEAD_REVIEW_REQUIRED");
+    fail("The current Fresh HEAD review context id is required.", "FRESH_REVIEW_REQUIRED");
   }
   const beforeRepair = readyProject(root, "a Run is reviewed");
   // Only a verified existing finish artifact can complete its missing Session
@@ -493,7 +493,7 @@ function reviewRunLocked({ root = ".", reviewContextId, disposition, rationale, 
     runId: pending.runId,
   }).review;
   if (currentReview.reviewContextId !== reviewContextId.trim()) {
-    fail("ReviewDecision was prepared from a stale or different Fresh HEAD review context.", "STALE_FRESH_HEAD_REVIEW");
+    fail("ReviewDecision was prepared from a stale or different Fresh HEAD review context.", "STALE_FRESH_REVIEW");
   }
   const input = {
     root: projectRoot,

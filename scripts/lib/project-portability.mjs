@@ -124,7 +124,7 @@ function exportProjectBundleUncoordinated({
           ownerGlobalMetadata = true;
       },
     });
-    if (!valid) fail("HEAD_SESSION_IDENTITY_MISMATCH");
+    if (!valid) fail("SESSION_IDENTITY_MISMATCH");
   }
   const omittedOwnerProof = needsOwnerProof && (ownerGlobalMetadata || canon.runOwnerGlobalMetadata) && provenanceScope === "selected-only";
   if (!omittedOwnerProof) for (const entry of ownerOriginals.values()) filesByPath.set(entry.path, entry);
@@ -710,7 +710,7 @@ export function importProjectBundle({ bundleRoot, root, pluginRoot, expectedBund
             stateBytes: targetStateBytes,
           })
         )
-          fail("HEAD_SESSION_IDENTITY_MISMATCH");
+          fail("SESSION_IDENTITY_MISMATCH");
         check(signal);
         fs.unlinkSync(pendingFile);
         return withSnapshotReferences({ root: targetRoot }, () => {
@@ -813,7 +813,7 @@ function importSelectedSessionIntoExisting({ inspected, targetRoot, storage, sig
   const sourceStateEntry = manifest.files.find((entry) => entry.path === sourceSelectedPath);
   const state = boundedJson(bundleRoot, objectPath(sourceStateEntry)).value;
   const sourceDefaultFormat = sourceSelectedPath === storage.directory + "/sessions/current.json";
-  if (state.projectId != null && state.projectId !== storage.projectId) fail("HEAD_SESSION_IDENTITY_MISMATCH");
+  if (state.projectId != null && state.projectId !== storage.projectId) fail("SESSION_IDENTITY_MISMATCH");
   const ownerProofPaths = new Set();
   if (state.projectId == null && !sourceDefaultFormat) {
     verifyBundledDefaultOwner({
@@ -1045,7 +1045,7 @@ function importSelectedSessionIntoExisting({ inspected, targetRoot, storage, sig
         stateBytes: fs.readFileSync(stateFile),
       })
     )
-      fail("HEAD_SESSION_IDENTITY_MISMATCH");
+      fail("SESSION_IDENTITY_MISMATCH");
     fs.unlinkSync(pendingFile);
     return {
       status: needsAdmission ? "selected-session-imported" : "existing-project-originals-identical",
@@ -1153,7 +1153,7 @@ function verifyBundledDefaultOwner({ root, manifest, entries, allowed, sourceSta
       return { bytes: original.bytes, document: original.value };
     },
   });
-  if (!valid) fail("HEAD_SESSION_IDENTITY_MISMATCH");
+  if (!valid) fail("SESSION_IDENTITY_MISMATCH");
 }
 
 function verifyBundledRunOwner({ root, manifest, entries, allowed, runId, run }) {

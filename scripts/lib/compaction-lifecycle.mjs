@@ -423,7 +423,7 @@ export async function processCompactionLifecycle({ root = ".", hostAdapter = nul
     } catch (error) {
       if (direction == null && new Set(["SESSION_RESTORE_CHECKPOINT_REQUIRED", "SESSION_RESTORE_CURRENT_CHECKPOINT_REQUIRED"]).has(error.code)) {
         return {
-          status: "head_direction_required",
+          status: "lode_direction_required",
           eventKind: event.kind,
           recoveryDependentWorkBlocked: true,
           ordinaryWorkBlocked: false,

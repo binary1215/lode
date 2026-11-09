@@ -148,7 +148,7 @@ test("trusted caller contexts preserve A/B, sharing, explicit default and known 
   const independent = await call(root, "head_project_direction_read", {}, { sessionContext: first });
   assert.equal(independent.error, undefined);
   const brokenResolver = () => {
-    throw Object.assign(new Error("Host binding unavailable"), { code: "HEAD_SESSION_CONTEXT_UNAVAILABLE" });
+    throw Object.assign(new Error("Host binding unavailable"), { code: "SESSION_CONTEXT_UNAVAILABLE" });
   };
   assert.equal((await call(root, "head_project_status", {}, { resolveSessionContext: brokenResolver })).result.structuredContent.sessionId, null);
   const routed = await dispatch(
@@ -182,9 +182,9 @@ test("trusted caller contexts preserve A/B, sharing, explicit default and known 
         },
         () => {},
       ),
-    { code: "INVALID_HEAD_SESSION_CALL_CONTEXT" },
+    { code: "INVALID_SESSION_CALL_CONTEXT" },
   );
-  assert.throws(() => first.select(root, b.sessionId, 0), { code: "HEAD_SESSION_BINDING_CONFLICT" });
+  assert.throws(() => first.select(root, b.sessionId, 0), { code: "SESSION_BINDING_CONFLICT" });
 });
 
 test("CLI context and explicit routes agree; no checkpoint and unsupported binding remain nonblocking", async (t) => {

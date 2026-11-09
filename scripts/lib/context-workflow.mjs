@@ -63,7 +63,7 @@ function projection(capsule) {
       persisted: false,
     },
     nextAction: {
-      id: "head_assess_semantic_sufficiency",
+      id: "lode_assess_semantic_sufficiency",
       summary: "Use the selected context and inspect original sources or expand relevant graph anchors where evidence is missing.",
       note: "Lode decides which evidence is needed and whether it is sufficient; preparation does not require a World refresh, Product approval, Run or Capsule persistence.",
     },

@@ -12,7 +12,7 @@ import { readObservation } from "./observation-store.mjs";
 import { withProjectMutation, withProjectMutationAsync } from "./project-mutation-lock.mjs";
 import {
   CONFORMANCE_PROTOCOL_VERSION,
-  HEAD_CONFORMANCE_MAINTENANCE_AUTHORITY,
+  CONFORMANCE_MAINTENANCE_AUTHORITY,
   USER_CONFORMANCE_DISPOSITION_AUTHORITY,
   conformanceCanonicalJson,
   conformanceDigest,
@@ -297,8 +297,8 @@ function readArtifacts(projectRoot, projectId, storage) {
       if (!previous || previous.dispositionHash !== disposition.previousDispositionHash || previous.findingId !== disposition.findingId)
         fail("Conformance disposition chain is invalid.", "INVALID_CONFORMANCE_DISPOSITION_CHAIN");
       if (
-        disposition.authority === formatForVerifiedOwner(storage).value(HEAD_CONFORMANCE_MAINTENANCE_AUTHORITY) &&
-        previous.authority !== formatForVerifiedOwner(storage).value(HEAD_CONFORMANCE_MAINTENANCE_AUTHORITY)
+        disposition.authority === formatForVerifiedOwner(storage).value(CONFORMANCE_MAINTENANCE_AUTHORITY) &&
+        previous.authority !== formatForVerifiedOwner(storage).value(CONFORMANCE_MAINTENANCE_AUTHORITY)
       )
         fail("HEAD maintenance cannot supersede a user disposition.", "INVALID_CONFORMANCE_DISPOSITION_CHAIN");
     }
@@ -586,7 +586,7 @@ export function readConformanceFinding({ root = ".", findingId } = {}) {
       ? {
           ...tail,
           actor:
-            tail.authority === formatForVerifiedOwner(inspected.storage).value(HEAD_CONFORMANCE_MAINTENANCE_AUTHORITY)
+            tail.authority === formatForVerifiedOwner(inspected.storage).value(CONFORMANCE_MAINTENANCE_AUTHORITY)
               ? formatForVerifiedOwner(inspected.storage).roleField
               : "user",
         }
@@ -650,7 +650,7 @@ export async function inspectConformanceQueue({
               deferUntil: tail.deferUntil,
               authority: tail.authority,
               actor:
-                tail.authority === formatForVerifiedOwner(inspected.storage).value(HEAD_CONFORMANCE_MAINTENANCE_AUTHORITY)
+                tail.authority === formatForVerifiedOwner(inspected.storage).value(CONFORMANCE_MAINTENANCE_AUTHORITY)
                   ? formatForVerifiedOwner(inspected.storage).roleField
                   : "user",
             }
@@ -728,10 +728,10 @@ async function recordConformanceDispositionLocked({
   if (actor === "user" && confirmUserDisposition !== true)
     fail("User disposition requires explicit user confirmation; HEAD may acknowledge/defer honestly as maintenance.", "CONFORMANCE_USER_CONFIRMATION_REQUIRED");
   if (actor !== "user" && (confirmUserDisposition !== false || !["acknowledge", "defer"].includes(disposition) || resolutionId !== null))
-    fail("HEAD maintenance is acknowledge/defer only and must not claim user confirmation.", "CONFORMANCE_HEAD_MAINTENANCE_ONLY");
+    fail("HEAD maintenance is acknowledge/defer only and must not claim user confirmation.", "CONFORMANCE_MAINTENANCE_ONLY");
   const inspected = readyProject(root, "Conformance disposition");
   const authority =
-    actor !== "user" ? formatForVerifiedOwner(inspected.storage).value(HEAD_CONFORMANCE_MAINTENANCE_AUTHORITY) : USER_CONFORMANCE_DISPOSITION_AUTHORITY;
+    actor !== "user" ? formatForVerifiedOwner(inspected.storage).value(CONFORMANCE_MAINTENANCE_AUTHORITY) : USER_CONFORMANCE_DISPOSITION_AUTHORITY;
   const artifacts = readArtifacts(inspected.project.projectRoot, inspected.project.projectId, inspected.storage);
   const finding = artifacts.findingsById.get(findingId);
   if (!finding) fail(`Conformance Finding not found: ${findingId}`, "CONFORMANCE_FINDING_NOT_FOUND");

@@ -294,7 +294,7 @@ test("packaged Python is subject to existing development-context exclusion", (t)
   fs.writeFileSync(path.join(candidate, "scripts/lode.mjs"), "export const example = true;\n");
   fs.writeFileSync(path.join(candidate, "scripts/head.mjs"), 'export * from "./lode.mjs";\n');
   fs.writeFileSync(path.join(candidate, "scripts/worker.py"), `# ${["ultimate", "goal"].join("_")}\n`);
-  assert.throws(() => stageDistributionRelease({ sourceRoot: candidate, destinationRoot: path.join(parent, "release") }), { code: "HEAD_DISTRIBUTION_DEVELOPMENT_CONTEXT_LEAK" });
+  assert.throws(() => stageDistributionRelease({ sourceRoot: candidate, destinationRoot: path.join(parent, "release") }), { code: "DISTRIBUTION_DEVELOPMENT_CONTEXT_LEAK" });
 });
 
 test("common by-source-key null, shape and reference corruption cannot gate independent fresh source needs", async (t) => {

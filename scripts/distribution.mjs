@@ -96,7 +96,7 @@ if (invokedDirectly) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     })
     .catch((error) => {
-      process.stdout.write(`${JSON.stringify({ status: "failed", code: error.code || "HEAD_DISTRIBUTION_ERROR", error: error.message }, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({ status: "failed", code: error.code || "DISTRIBUTION_ERROR", error: error.message }, null, 2)}\n`);
       process.exitCode = 1;
     });
 }

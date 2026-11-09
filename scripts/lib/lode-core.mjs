@@ -24,7 +24,7 @@ import { failWith } from "./core/errors.mjs";
 import { escapesRoot } from "./core/path-safety.mjs";
 export { SCHEMA_VERSION, SUPPORTED_RUNTIMES, coreContract } from "./core-contract.mjs";
 
-const fail = failWith("HEAD_CORE_ERROR");
+const fail = failWith("CORE_ERROR");
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const now = () => new Date().toISOString();
@@ -676,12 +676,12 @@ function inspectProjectOwner(root, sessionScope) {
         stateBytes: original.bytes,
       })
     ) {
-      fail("Named Session has no verified Project owner.", "HEAD_SESSION_IDENTITY_MISMATCH");
+      fail("Named Session has no verified Project owner.", "SESSION_IDENTITY_MISMATCH");
     }
     if (!state || state.schemaVersion !== SCHEMA_VERSION || !/^session-[a-fA-F0-9-]{36}$/.test(state.sessionId || "")) {
       fail("Session canon has an invalid canonical identity.", "INVALID_SESSION_CANON");
     }
-    if (state.projectId && state.projectId !== project.projectId) fail("Session does not belong to this Project.", "HEAD_SESSION_IDENTITY_MISMATCH");
+    if (state.projectId && state.projectId !== project.projectId) fail("Session does not belong to this Project.", "SESSION_IDENTITY_MISMATCH");
   } catch (error) {
     // Operational error provenance, never persisted or used to grant authority.
     // Optional Product diagnostics can isolate their actual default dependency

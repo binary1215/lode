@@ -116,7 +116,7 @@ test("one decision binds the exact result and exact replay creates no additional
   await start(root);
   const finished = finishRun(resultInput(root));
   const input = reviewInput(root);
-  assert.throws(() => reviewRun({ ...input, reviewContextId: "fresh-head-review-000000000000000000000000" }), { code: "STALE_FRESH_HEAD_REVIEW" });
+  assert.throws(() => reviewRun({ ...input, reviewContextId: "fresh-head-review-000000000000000000000000" }), { code: "STALE_FRESH_REVIEW" });
   const accepted = reviewRun(input);
   assert.equal(accepted.reviewDecision.resultPacketId, finished.resultPacket.resultPacketId);
   assert.equal(accepted.run.sessionTransition, undefined, "internal Session patch is not repeated in wire output");

@@ -14,7 +14,7 @@ import { failWith } from "./core/errors.mjs";
 const projectStorage = new WeakMap();
 
 export const EXECUTION_LINEAGE_VERSION = "0.4.0";
-const FRESH_HEAD_REVIEW_VERSION = "0.1.0";
+const FRESH_REVIEW_VERSION = "0.1.0";
 
 const DEFINITIONS = Object.freeze({
   WholePlanSnapshot: { prefix: "whole-plan", directory: "whole-plans", idField: "wholePlanId" },
@@ -187,7 +187,7 @@ function verifiedFreshLodeReview(review, storage) {
     review.kind !== format.kind("FreshHeadReview") ||
     (format.dialect === "lode" && !familyFormatForOriginal("head-agent-core-fresh-head-review", review, storage))
   )
-    fail("Fresh HEAD review context is required.", "INVALID_FRESH_HEAD_REVIEW");
+    fail("Fresh HEAD review context is required.", "INVALID_FRESH_REVIEW");
   const recordedHash = review.reviewContextHash;
   const recordedId = review.reviewContextId;
   const payload = { ...review };
@@ -195,13 +195,13 @@ function verifiedFreshLodeReview(review, storage) {
   delete payload.reviewContextHash;
   const actualHash = digest(canonicalJson(payload));
   if (recordedHash !== actualHash || recordedId !== `${format.value("fresh-head-review")}-${actualHash.slice(0, 24)}`) {
-    fail("Fresh HEAD review context digest verification failed.", "FRESH_HEAD_REVIEW_DIGEST_MISMATCH");
+    fail("Fresh HEAD review context digest verification failed.", "FRESH_REVIEW_DIGEST_MISMATCH");
   }
   return review;
 }
 
 export function buildFreshLodeReview({ root = ".", wholePlanId, resultPacketId, sessionId = "", runId = "", historical = false } = {}) {
-  if (typeof historical !== "boolean") fail("Historical review projection mode must be explicit.", "INVALID_FRESH_HEAD_REVIEW");
+  if (typeof historical !== "boolean") fail("Historical review projection mode must be explicit.", "INVALID_FRESH_REVIEW");
   // Recompute immutable historical P4 evidence without requiring current role
   // projections or Session readiness. This never applies a ReviewDecision;
   // ordinary review/action callers retain the existing ready-project boundary.
@@ -218,7 +218,7 @@ export function buildFreshLodeReview({ root = ".", wholePlanId, resultPacketId, 
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: formatForVerifiedOwner(projectStorage.get(project)).kind("FreshHeadReview"),
-    protocol: { name: formatForVerifiedOwner(projectStorage.get(project)).protocol("head-agent-core-fresh-head-review"), version: FRESH_HEAD_REVIEW_VERSION },
+    protocol: { name: formatForVerifiedOwner(projectStorage.get(project)).protocol("head-agent-core-fresh-head-review"), version: FRESH_REVIEW_VERSION },
     projectId: project.projectId,
     sessionId: optionalText(sessionId),
     runId: optionalText(runId),
@@ -404,7 +404,7 @@ function createReviewDecisionUncoordinated({
   }
   const review = verifiedFreshLodeReview(reviewContext, projectStorage.get(project));
   if (review.projectId !== project.projectId || review.wholePlan?.wholePlanId !== planId || review.resultPacket?.resultPacketId !== resultId) {
-    fail("Fresh HEAD review context does not match this ReviewDecision.", "FRESH_HEAD_REVIEW_CONFLICT");
+    fail("Fresh HEAD review context does not match this ReviewDecision.", "FRESH_REVIEW_CONFLICT");
   }
   const normalizedDisposition = requiredText(disposition, "Review disposition").toLowerCase();
   const allowed = new Set(["accept", "revise", "expand", "rollback", "escalate"]);

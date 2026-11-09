@@ -469,7 +469,7 @@ test("C1 invalid named owner does not adopt another Session's source association
   const result = await readOnly(f, request(f));
   assert.equal(nodeFor(result, bad), undefined);
   assert.equal(original(result, f, good).sessionId, other.sessionId);
-  assert.ok(result.integrity.excluded.some((item) => item.path === relative(f, bad.file) && item.reasonCode === "HEAD_SESSION_IDENTITY_MISMATCH"));
+  assert.ok(result.integrity.excluded.some((item) => item.path === relative(f, bad.file) && item.reasonCode === "SESSION_IDENTITY_MISMATCH"));
 });
 
 test("C1 lexical source paths remain writer errors before any original is admitted", (t) => {
@@ -747,7 +747,7 @@ test("Lode path compatibility preserves literal legacy absolute owner bytes inst
       assert.equal(owner.root, f.root);
       assert.equal(owner.projectId, project.projectId);
       assert.equal(owner.sessionId, state.sessionId);
-      assert.throws(() => verifySessionWorkEvidenceOwner({ root: f.base, projectBytes, stateBytes }), { code: "HEAD_SESSION_IDENTITY_MISMATCH" });
+      assert.throws(() => verifySessionWorkEvidenceOwner({ root: f.base, projectBytes, stateBytes }), { code: "SESSION_IDENTITY_MISMATCH" });
     });
   } finally {
     process.chdir(previousCwd);

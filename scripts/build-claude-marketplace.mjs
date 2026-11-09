@@ -10,7 +10,7 @@ function option(name, fallback = "") {
 
 try {
   const output = option("--output");
-  if (!output) throw Object.assign(new Error("--output is required."), { code: "HEAD_CLAUDE_MARKETPLACE_OUTPUT_REQUIRED" });
+  if (!output) throw Object.assign(new Error("--output is required."), { code: "CLAUDE_MARKETPLACE_OUTPUT_REQUIRED" });
   const report = buildClaudeMarketplaceSnapshot({
     sourceRoot: path.resolve(option("--source", ".")),
     outputRoot: path.resolve(output),
@@ -21,6 +21,6 @@ try {
   });
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 } catch (error) {
-  process.stderr.write(`${JSON.stringify({ status: "error", code: error.code || "HEAD_CLAUDE_MARKETPLACE_BUILD_FAILED", message: error.message })}\n`);
+  process.stderr.write(`${JSON.stringify({ status: "error", code: error.code || "CLAUDE_MARKETPLACE_BUILD_FAILED", message: error.message })}\n`);
   process.exitCode = 1;
 }

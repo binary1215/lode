@@ -108,11 +108,11 @@ if (providedRoot) {
 
     const unexpectedDirectory = path.join(snapshotRoot, "plugins", built.pluginName, "unexpected-empty-directory");
     fs.mkdirSync(unexpectedDirectory);
-    assert.throws(() => verifyClaudeMarketplaceSnapshot({ root: snapshotRoot }), { code: "HEAD_CLAUDE_MARKETPLACE_TREE_MISMATCH" });
+    assert.throws(() => verifyClaudeMarketplaceSnapshot({ root: snapshotRoot }), { code: "CLAUDE_MARKETPLACE_TREE_MISMATCH" });
     fs.rmdirSync(unexpectedDirectory);
 
     assert.throws(() => verifyClaudeMarketplaceSnapshot({ root: snapshotRoot, expectedCommit: "0".repeat(40) }), {
-      code: "HEAD_CLAUDE_MARKETPLACE_COMMIT_MISMATCH",
+      code: "CLAUDE_MARKETPLACE_COMMIT_MISMATCH",
     });
 
     const mcpFile = path.join(snapshotRoot, "plugins", built.pluginName, ".mcp.json");
@@ -120,20 +120,20 @@ if (providedRoot) {
     const mcp = JSON.parse(mcpBytes.toString("utf8"));
     mcp.mcpServers[ARTIFACT_COMPOSITION.serverName].args[0] = "scripts/mcp-server.mjs";
     fs.writeFileSync(mcpFile, `${JSON.stringify(mcp, null, 2)}\n`, "utf8");
-    assert.throws(() => verifyClaudeMarketplaceSnapshot({ root: snapshotRoot }), { code: "HEAD_CLAUDE_MARKETPLACE_MCP_INVALID" });
+    assert.throws(() => verifyClaudeMarketplaceSnapshot({ root: snapshotRoot }), { code: "CLAUDE_MARKETPLACE_MCP_INVALID" });
     fs.writeFileSync(mcpFile, mcpBytes);
 
     const readmeFile = path.join(snapshotRoot, "plugins", built.pluginName, "README.md");
     const readmeBytes = fs.readFileSync(readmeFile);
     fs.appendFileSync(readmeFile, "tamper\n", "utf8");
-    assert.throws(() => verifyClaudeMarketplaceSnapshot({ root: snapshotRoot }), { code: "HEAD_CLAUDE_MARKETPLACE_SOURCE_FILE_DRIFT" });
+    assert.throws(() => verifyClaudeMarketplaceSnapshot({ root: snapshotRoot }), { code: "CLAUDE_MARKETPLACE_SOURCE_FILE_DRIFT" });
     fs.writeFileSync(readmeFile, readmeBytes);
 
     const catalogFile = path.join(snapshotRoot, ".claude-plugin", "marketplace.json");
     const catalog = JSON.parse(fs.readFileSync(catalogFile, "utf8"));
     catalog.plugins[0].source = "../outside";
     fs.writeFileSync(catalogFile, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
-    assert.throws(() => verifyClaudeMarketplaceSnapshot({ root: snapshotRoot }), { code: "HEAD_CLAUDE_MARKETPLACE_ENTRY_INVALID" });
+    assert.throws(() => verifyClaudeMarketplaceSnapshot({ root: snapshotRoot }), { code: "CLAUDE_MARKETPLACE_ENTRY_INVALID" });
 
     process.stdout.write(
       `${JSON.stringify(

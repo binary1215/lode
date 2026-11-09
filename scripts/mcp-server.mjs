@@ -3,6 +3,7 @@ import readline from "node:readline";
 import { resolveOperation } from "./lib/lode-operation-contract.mjs";
 import { callRegistered, registeredOperation, registryCatalog, WORLD_MODEL_STATUS_MCP_MAX_BYTES } from "./lib/operation-registry.mjs";
 import { assertProjectRootArgument } from "./lib/mcp-argument-validation.mjs";
+import { legacyReasonCode } from "./lib/core/errors.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
 import { DISCOVERY_PREFIX_PAIRS } from "../compat/head/public-names.mjs";
 const semanticToolName = (name) => resolveOperation(name)?.semanticName ?? name;
@@ -217,7 +218,14 @@ const success = (id, result) => ({ jsonrpc: "2.0", id, result });
 const failure = (id, message, reasonCode) => ({
   jsonrpc: "2.0",
   id,
-  error: { code: -32000, message, ...(typeof reasonCode === "string" && reasonCode ? { data: { reasonCode } } : {}) },
+  error: {
+    code: -32000,
+    message,
+    // legacyReasonCode: the historical HEAD_* spelling, for one version (see LEGACY_REASON_CODES).
+    ...(typeof reasonCode === "string" && reasonCode
+      ? { data: { reasonCode, ...(legacyReasonCode(reasonCode) ? { legacyReasonCode: legacyReasonCode(reasonCode) } : {}) } }
+      : {}),
+  },
 });
 export { WORLD_MODEL_STATUS_MCP_MAX_BYTES };
 
@@ -306,7 +314,7 @@ async function dispatchSessionRequest(request, options = {}) {
                 try {
                   return await options.resolveSessionContext(request);
                 } catch (error) {
-                  bindingFailure = error.code || "HEAD_SESSION_CONTEXT_UNAVAILABLE";
+                  bindingFailure = error.code || "SESSION_CONTEXT_UNAVAILABLE";
                   throw error;
                 }
               }
@@ -339,9 +347,9 @@ async function dispatchSessionRequest(request, options = {}) {
       if (hasSelection) {
         // Exact explicit routing is independent of optional Host persistence.
         // Existing route validation below still rejects invalid/foreign IDs.
-        bindingFailure = error.code || "HEAD_SESSION_CONTEXT_UNAVAILABLE";
+        bindingFailure = error.code || "SESSION_CONTEXT_UNAVAILABLE";
       } else {
-        return await unresolvedSessionResponse(request.id ?? null, requestedName, args.project_root, error.code || "HEAD_SESSION_CONTEXT_UNAVAILABLE");
+        return await unresolvedSessionResponse(request.id ?? null, requestedName, args.project_root, error.code || "SESSION_CONTEXT_UNAVAILABLE");
       }
     }
   }
@@ -374,7 +382,7 @@ async function dispatchSessionRequest(request, options = {}) {
         };
       return response;
     } catch (error) {
-      if (error.code === "HEAD_SESSION_SELECTION_LOST") {
+      if (error.code === "SESSION_SELECTION_LOST") {
         return await unresolvedSessionResponse(request.id ?? null, requestedName, args.project_root, error.code);
       }
       return failure(request.id ?? null, error.message, error?.code);

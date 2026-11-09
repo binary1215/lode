@@ -24,7 +24,7 @@ const freeze = (value) => {
   }
   return value;
 };
-export const CODEX_NATIVE_PREFIX_SEED_REPLY = "HEAD_NATIVE_PREFIX_SEED_READY";
+export const CODEX_NATIVE_PREFIX_SEED_REPLY = "NATIVE_PREFIX_SEED_READY";
 export const CODEX_NATIVE_PREFIX_SEED_SCHEMA = freeze({
   type: "object",
   additionalProperties: false,

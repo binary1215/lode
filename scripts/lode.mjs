@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
+import { legacyReasonCode } from "./lib/core/errors.mjs";
 import { callRegistered, registeredCommand } from "./lib/operation-registry.mjs";
 import { commandEntry, isManagedMutation, requireOperationSurface, requireSurface } from "./lib/managed-maintenance-surface.mjs";
 import { withSessionCallContext, sessionCallRequiresBinding, sessionSelectionUnresolved } from "./lib/session-routing.mjs";
@@ -398,7 +399,7 @@ export async function runCommand(
     try {
       return withSessionCallContext({ root: parsed.root, sessionId: index >= 0 ? parsed.options.session : undefined, context: sessionContext }, operation);
     } catch (error) {
-      if (error.code !== "HEAD_SESSION_SELECTION_LOST") throw error;
+      if (error.code !== "SESSION_SELECTION_LOST") throw error;
       return sessionSelectionUnresolved(parsed.root, { includeProjectFacts: ["status", "doctor", "conversation-enter"].includes(parsed.command) });
     }
   }
@@ -501,7 +502,9 @@ export function runCliMain(directArgs = process.argv.slice(2)) {
       );
     })
     .catch((error) => {
-      const failure = { status: "failed", code: error.code || "HEAD_CLI_ERROR", error: error.message };
+      const code = error.code || "CLI_ERROR";
+      // legacyReasonCode: the historical HEAD_* spelling, for one version (see LEGACY_REASON_CODES).
+      const failure = { status: "failed", code, ...(legacyReasonCode(code) ? { legacyReasonCode: legacyReasonCode(code) } : {}), error: error.message };
       process.stdout.write(jsonOutput ? `${JSON.stringify(failure, null, 2)}\n` : formatCliError(error));
       process.exitCode = 1;
     })

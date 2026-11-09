@@ -713,7 +713,7 @@ test("defaults to the constitutional core without activating Product or Graph go
     windowsHide: true,
   });
   assert.notEqual(jsonFailure.status, 0);
-  assert.equal(JSON.parse(jsonFailure.stdout).code, "HEAD_CLI_ERROR");
+  assert.equal(JSON.parse(jsonFailure.stdout).code, "CLI_ERROR");
 });
 
 test("reports loaded versus configured package state without blocking ordinary work", async (t) => {
@@ -1022,7 +1022,7 @@ test("binds a Run to an Execution Contract, Result Packet, and ReviewDecision", 
   assert.equal(reviewContext.review.contextReference.capsuleId, compiled.capsule.capsuleId);
   assert.equal(reviewContext.review.resultPacket.knowledgeProposals[0].instructionAuthority, false);
   assert.throws(() => reviewRun({ root, reviewContextId: "fresh-head-review-000000000000000000000000", disposition: "accept", rationale: "stale" }), {
-    code: "STALE_FRESH_HEAD_REVIEW",
+    code: "STALE_FRESH_REVIEW",
   });
   const reviewed = reviewRun({
     root,
