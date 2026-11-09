@@ -51,7 +51,7 @@ function workerRole(inspected, value) {
     .trim()
     .toLowerCase();
   if (role === formatForVerifiedOwner(inspected).roleField || !/^[a-z][a-z0-9-]{0,63}$/.test(role)) {
-    fail("Bounded worker role must be one registered non-HEAD project role.", "INVALID_BOUNDED_WORKER_ROLE");
+    fail("Bounded worker role must be one registered non-Lode project role.", "INVALID_BOUNDED_WORKER_ROLE");
   }
   const rolesRoot = path.join(inspected.project.projectRoot, formatForVerifiedOwner(inspected).directory, "roles");
   const file = path.join(rolesRoot, `${role}.md`);
@@ -60,7 +60,7 @@ function workerRole(inspected, value) {
     const stat = fs.lstatSync(file);
     if (!stat.isFile() || stat.isSymbolicLink() || fs.realpathSync(path.dirname(file)) !== rolesReal) throw new Error("unsafe role");
   } catch {
-    fail("Bounded worker role must be one registered non-HEAD project role.", "INVALID_BOUNDED_WORKER_ROLE");
+    fail("Bounded worker role must be one registered non-Lode project role.", "INVALID_BOUNDED_WORKER_ROLE");
   }
   return role;
 }
@@ -467,9 +467,9 @@ export function applyBoundedWorkerDispatchResult({ root = ".", authorizationId }
   const { dispatch, authorization } = readBoundedWorkerDispatch({ root, authorizationId });
   if (authorization.scope.kind !== "run")
     fail(
-      "Session worker results are evidence for HEAD consumption through worker-wait or runtime-invocation-result; Run application is not applicable.",
+      "Session worker results are evidence for Lode consumption through worker-wait or runtime-invocation-result; Run application is not applicable.",
       "BOUNDED_WORKER_APPLY_RUN_REQUIRED",
     );
   const applied = applyRuntimeRunResult({ root, authorizationId, storage: originalFormat(authorization) });
-  return { status: "bounded_worker_result_applied_for_fresh_head_review", dispatch, applied };
+  return { status: "bounded_worker_result_applied_for_fresh_lode_review", dispatch, applied };
 }

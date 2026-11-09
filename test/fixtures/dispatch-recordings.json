@@ -14289,6 +14289,51 @@
   },
   {
    "surface": "cli",
+   "command": "lode-continuity",
+   "argv": [
+    "lode-continuity",
+    "<root>"
+   ],
+   "calls": [
+    {
+     "fn": "product-operating-loop#buildLodeContinuitySnapshot",
+     "args": [
+      {
+       "root": "<root>",
+       "fresh": false
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "lode-continuity",
+   "argv": [
+    "lode-continuity",
+    "<root>",
+    "--fresh"
+   ],
+   "calls": [
+    {
+     "fn": "product-operating-loop#buildLodeContinuitySnapshot",
+     "args": [
+      {
+       "root": "<root>",
+       "fresh": true
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "metric-assess",
    "argv": [
     "metric-assess",
@@ -16263,7 +16308,7 @@
    "calls": [],
    "outcome": {
     "error": "Error",
-    "message": "HEAD-selected Project documents requires --input <json-file>."
+    "message": "Lode-selected Project documents requires --input <json-file>."
    }
   },
   {
@@ -16323,7 +16368,7 @@
    "calls": [],
    "outcome": {
     "error": "Error",
-    "message": "HEAD-selected Project documents requires --input <json-file>."
+    "message": "Lode-selected Project documents requires --input <json-file>."
    }
   },
   {
@@ -18306,7 +18351,7 @@
    "calls": [],
    "outcome": {
     "error": "Error",
-    "message": "HEAD-selected work document operation requires --input <json-file>."
+    "message": "Lode-selected work document operation requires --input <json-file>."
    }
   },
   {
@@ -18366,7 +18411,7 @@
    "calls": [],
    "outcome": {
     "error": "Error",
-    "message": "HEAD-selected work document operation requires --input <json-file>."
+    "message": "Lode-selected work document operation requires --input <json-file>."
    }
   },
   {
@@ -18426,7 +18471,7 @@
    "calls": [],
    "outcome": {
     "error": "Error",
-    "message": "HEAD-selected work document operation requires --input <json-file>."
+    "message": "Lode-selected work document operation requires --input <json-file>."
    }
   },
   {

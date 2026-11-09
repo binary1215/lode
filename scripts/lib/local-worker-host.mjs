@@ -93,7 +93,7 @@ function normalize(input) {
   if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some((key) => !fields.has(key)))
     fail("Worker preparation accepts task/member/context/source/proposal fields, not Host code, paths, environment or policy assertions.");
   if (typeof input.task !== "string" || !input.task.trim() || typeof input.model !== "string" || !/^gpt-[A-Za-z0-9._-]+$/.test(input.model))
-    fail("HEAD must supply the task and exact Codex model.");
+    fail("Lode must supply the task and exact Codex model.");
   if (input.contextMode !== undefined && !["fresh", "native-prefix"].includes(input.contextMode)) fail("Unsupported worker context mode.");
   if (
     input.contextMode === "native-prefix" &&
@@ -253,7 +253,7 @@ export async function prepareLocalBoundedWorker(input, options = {}) {
         ordinaryWorkBlocked: false,
         userActionRequired: false,
         nextStep:
-          "Continue direct HEAD work or ordinary Host delegation within its existing authorized scope. This managed proposal mode cannot exclude the current CLI global instructions using the audited provider recipe.",
+          "Continue direct Lode work or ordinary Host delegation within its existing authorized scope. This managed proposal mode cannot exclude the current CLI global instructions using the audited provider recipe.",
         scopeChange:
           "Do not switch instruction scope, copy authentication, change global settings, or retry automatically. Include global instructions only if their exact transmission is already covered by user authorization; otherwise obtain that specific authorization before a different preparation.",
         alternativeCapabilityVerified: false,
@@ -273,7 +273,7 @@ async function prepareLocalBoundedWorkerInternal(
   const request = normalize(input),
     inspected = inspectProject(root),
     projectRoot = fs.realpathSync(root);
-  if (inspected.status !== "ready") fail("Initialize or resume this HEAD Project before preparing its worker.", "PROJECT_NOT_READY");
+  if (inspected.status !== "ready") fail("Initialize or resume this Lode Project before preparing its worker.", "PROJECT_NOT_READY");
   const { projectId } = inspected.project,
     sessionId = inspected.state.sessionId,
     runId = inspected.state.activeRunId || null;

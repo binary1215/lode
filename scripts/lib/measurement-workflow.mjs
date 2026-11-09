@@ -69,7 +69,7 @@ function descriptorDefinition(descriptor) {
     field("desired_direction")?.type !== "enum" ||
     field("desired_direction").enum?.length !== 1
   ) {
-    fail("ObservationTypeDescriptor is not a HEAD metric definition.", "INVALID_METRIC_DEFINITION");
+    fail("ObservationTypeDescriptor is not a Lode metric definition.", "INVALID_METRIC_DEFINITION");
   }
   return {
     kind: "MetricDefinitionProjection",

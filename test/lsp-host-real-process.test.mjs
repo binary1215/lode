@@ -174,7 +174,7 @@ test("RQ V01-V04 replay validators fail closed without invoking a provider", () 
   assert.throws(() => pending.consume({ jsonrpc: "2.0", id: 991, result: [] }, binding), { code: "unknown-response-id" });
 
   const apply = __private.realServerRequestReply({ jsonrpc: "2.0", id: 1, method: "workspace/applyEdit", params: { edit: { changes: {} } } });
-  assert.deepEqual(apply, { response: { jsonrpc: "2.0", id: 1, result: { applied: false, failureReason: "HEAD real LSP fixture is read-only" } }, unsupported: false, sideEffect: "denied" });
+  assert.deepEqual(apply, { response: { jsonrpc: "2.0", id: 1, result: { applied: false, failureReason: "Lode real LSP fixture is read-only" } }, unsupported: false, sideEffect: "denied" });
   const formatting = __private.realServerRequestReply({ jsonrpc: "2.0", id: 3, method: "workspace/configuration", params: { items: [{ section: "formattingOptions" }, { section: "typescript" }] } });
   assert.deepEqual(formatting.response.result, [null, null]);
   assert.equal(formatting.sideEffect, "none");

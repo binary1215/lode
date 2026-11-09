@@ -104,7 +104,7 @@ deferred는 파생 갱신이 완료되지 않았다는 뜻이지 재시도 예�
 
 복구 권한은 `.lode/sessions/current.json`, Run 정본 및 Session/Run checkpoints에 계속 있습니다. 이 스냅샷은 Lode의 지속적인 전체 결과 판단을 대체할 수 없습니다.
 
-동일 프로세스에서 반복되는 `product-operating-status` 및 `head-continuity` 읽기는 Product Operating 프로젝션 식별자와 World Model 콘텐츠 식별자를 키로 하는, 공개되고 검증된 스냅샷 캐시를 사용합니다. Core 쓰기는 캐시를 무효화합니다. 전체 아티팩트 및 World Model 검증을 강제하려면 `--fresh` 또는 MCP `fresh: true`를 사용합니다. 캐시 상태는 운영 정보일 뿐이며 권한이나 복구 증거가 될 수 없습니다.
+동일 프로세스에서 반복되는 `product-operating-status` 및 `lode-continuity` 읽기는 Product Operating 프로젝션 식별자와 World Model 콘텐츠 식별자를 키로 하는, 공개되고 검증된 스냅샷 캐시를 사용합니다. Core 쓰기는 캐시를 무효화합니다. 전체 아티팩트 및 World Model 검증을 강제하려면 `--fresh` 또는 MCP `fresh: true`를 사용합니다. 캐시 상태는 운영 정보일 뿐이며 권한이나 복구 증거가 될 수 없습니다.
 
 ## CLI
 
@@ -120,8 +120,10 @@ lode-agent product-initiative-propose <project> --input <initiative.json>
 lode-agent product-initiative-review <project> --input <review.json>
 lode-agent product-outcome-observe <project> --input <outcome.json>
 lode-agent product-operating-status <project> [--fresh]
-lode-agent head-continuity <project> [--fresh]
+lode-agent lode-continuity <project> [--fresh]
 ```
+
+이전 명령 이름 `head-continuity`는 `lode-continuity`의 별칭으로 계속 동작합니다.
 
 record/review/observe 명령은 primary 저장 뒤 같은 작업에서 로컬 World Model과 Product Graph 재구축을 시도합니다. 파생 갱신 미완료는 저장 성공과 별도로 표시하며 원격 GraphDB를 활성화하지는 않습니다.
 

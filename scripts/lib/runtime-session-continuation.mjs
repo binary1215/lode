@@ -130,7 +130,7 @@ export function continueSessionFromArtifacts({
   if (hostAttachment !== null) {
     attachment = hostAttachment;
     if (attachment.role !== "head" || attachment.runtime !== selectedRuntime) {
-      fail("The live attachment is not the exact HEAD runtime requested for continuation.", "RUNTIME_CONTINUATION_ATTACHMENT_CONFLICT");
+      fail("The live attachment is not the exact Lode runtime requested for continuation.", "RUNTIME_CONTINUATION_ATTACHMENT_CONFLICT");
     }
     if (workspaceHostAdapter !== null) {
       const received = workspaceHostAdapter.receive({
@@ -188,7 +188,7 @@ export function continueSessionFromArtifacts({
     }),
   );
   return {
-    status: status === "attached" ? "session_continued_with_live_attachment" : "session_continued_with_fresh_logical_head",
+    status: status === "attached" ? "session_continued_with_live_attachment" : "session_continued_with_fresh_logical_lode",
     restore: before,
     continuationOutcome: outcome,
   };

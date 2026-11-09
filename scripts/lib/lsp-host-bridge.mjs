@@ -984,7 +984,7 @@ function realServerRequestReply(message) {
   }
   if (message?.method === "workspace/applyEdit") {
     return {
-      response: { jsonrpc: "2.0", id: message.id, result: { applied: false, failureReason: "HEAD real LSP fixture is read-only" } },
+      response: { jsonrpc: "2.0", id: message.id, result: { applied: false, failureReason: "Lode real LSP fixture is read-only" } },
       unsupported: false,
       sideEffect: "denied",
     };
@@ -1928,7 +1928,7 @@ async function runBridge(request) {
         throw protocolError("limit-exceeded", "workspace/configuration exceeded its item bound.", { stage });
       send({ jsonrpc: "2.0", id, result: message.params.items.map(() => null) });
     } else if (message.method === "workspace/applyEdit") {
-      send({ jsonrpc: "2.0", id, result: { applied: false, failureReason: "HEAD LSP Host profile is read-only" } });
+      send({ jsonrpc: "2.0", id, result: { applied: false, failureReason: "Lode LSP Host profile is read-only" } });
     } else if (message.method === "window/workDoneProgress/create") {
       const token = message.params?.token;
       if (!(typeof token === "string" || typeof token === "number") || String(token).length > 256)

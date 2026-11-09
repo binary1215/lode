@@ -87,7 +87,7 @@ function safe(result) {
     for (const field of ["instructionAuthority", "promotionAuthority", "recoveryAuthority", "executionAuthority"]) assert.equal(item[field], false);
   }
   assert.equal(result.authority.ordinaryWorkBlocked, false);
-  assert.equal(result.coverage.semanticSufficiency, "HEAD-owned");
+  assert.equal(result.coverage.semanticSufficiency, "Lode-owned");
 }
 
 test("natural questions rank domain evidence ahead of boilerplate, without a relevance gate", async (t) => {

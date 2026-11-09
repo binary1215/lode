@@ -455,7 +455,7 @@ function verifiedReviewedRunIntegration(inspected, input, checkpointInput) {
     review.resultPacketId !== run.resultPacketId ||
     review.wholePlanId !== run.wholePlanId
   ) {
-    fail("Only an accepted ResultPacket with exact Fresh HEAD review lineage may be integrated.", "RUN_RESULT_NOT_ACCEPTED");
+    fail("Only an accepted ResultPacket with exact Fresh Lode review lineage may be integrated.", "RUN_RESULT_NOT_ACCEPTED");
   }
   const contract = readLineageArtifact({ root: inspected.project.projectRoot, artifactId: result.executionContractId }).artifact;
   const plan = readLineageArtifact({ root: inspected.project.projectRoot, artifactId: review.wholePlanId }).artifact;
@@ -620,7 +620,7 @@ function createRecoveryCheckpointLocked({
     );
     if (fs.existsSync(requestFile)) {
       fail(
-        `Historical integration remains pending at ${requestFile}; read the original with readRunResultIntegration and transfer its verified direction through HEAD.`,
+        `Historical integration remains pending at ${requestFile}; read the original with readRunResultIntegration and transfer its verified direction through Lode.`,
         "RUN_RESULT_LEGACY_INTEGRATION_PENDING",
       );
     }
@@ -719,9 +719,9 @@ function checkpointSyncOutcome(outcome, { expectedBasisId, basis, resultingBasis
     ordinaryWorkBlocked: false,
     retryGuidance:
       outcome === "deferred"
-        ? "Recover or close the exact existing transition, inspect a fresh basis, and let HEAD re-derive direction before retrying."
+        ? "Recover or close the exact existing transition, inspect a fresh basis, and let Lode re-derive direction before retrying."
         : outcome === "conflict"
-          ? "Inspect a fresh basis and let HEAD re-derive direction; do not attach a new basis to an old direction."
+          ? "Inspect a fresh basis and let Lode re-derive direction; do not attach a new basis to an old direction."
           : null,
   };
 }

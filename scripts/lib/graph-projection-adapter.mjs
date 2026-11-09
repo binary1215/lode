@@ -889,7 +889,7 @@ export class ArcadeDbHttpTransport {
     for (const name of names) {
       const record = records.find((item) => item.name === name);
       if (!record || inspectRequiredIndex(record).status !== "compatible") {
-        fail("Required HEAD unique index was not verified after schema provisioning.", "ARCADEDB_SCHEMA_UNVERIFIED");
+        fail("Required Lode unique index was not verified after schema provisioning.", "ARCADEDB_SCHEMA_UNVERIFIED");
       }
     }
   }

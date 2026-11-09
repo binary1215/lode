@@ -64,15 +64,15 @@ function membersFor(intent) {
 function normalizedReport({ outcome, evidence, verification, planDelta = "", impactRadius = [], unknowns = [] }) {
   const records = (value, label) => {
     if (!Array.isArray(value) || !value.length || value.some((item) => !item || typeof item !== "object" || Array.isArray(item)))
-      fail(`HEAD ${label} must be nonempty records.`);
+      fail(`Lode ${label} must be nonempty records.`);
     // JSON is evidence data, never an executable instruction or approval.
     return JSON.parse(json(value));
   };
   const texts = (value) => {
-    if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) fail("HEAD report lists require nonempty text.");
+    if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) fail("Lode report lists require nonempty text.");
     return value.map((item) => item.trim());
   };
-  if (typeof outcome !== "string" || !outcome.trim() || typeof planDelta !== "string") fail("HEAD outcome and plan delta require text.");
+  if (typeof outcome !== "string" || !outcome.trim() || typeof planDelta !== "string") fail("Lode outcome and plan delta require text.");
   return {
     outcome: outcome.trim(),
     evidence: records(evidence, "evidence"),
@@ -221,7 +221,7 @@ export function verifyWorkerIntegrationVerification(document) {
         !["file", "absent", "unverifiable"].includes(entry.observed?.kind),
     )
   )
-    fail("Invalid frozen HEAD verification.");
+    fail("Invalid frozen Lode verification.");
   const packet = document.wholeResultPacket;
   if (
     !packet ||
@@ -230,7 +230,7 @@ export function verifyWorkerIntegrationVerification(document) {
     packet.executionContractId !== document.lineage.executionContractId ||
     !same(packetInput(packet), resultFields(document))
   )
-    fail("Frozen whole ResultPacket differs from HEAD verification.");
+    fail("Frozen whole ResultPacket differs from Lode verification.");
   verifyArtifactAuthorityBoundary("ResultPacket", packet.authorityBoundary);
   const { resultPacketId, artifactHash, ...payload } = packet;
   if (
@@ -254,7 +254,7 @@ function readVerification(root, intent, verificationId) {
     !same(document.lineage, intent.lineage) ||
     !same(document.memberProvenance, membersFor(intent))
   )
-    fail("HEAD verification belongs to different integration provenance.");
+    fail("Lode verification belongs to different integration provenance.");
   const application = readWorkerPatchApplicationEvidence({ root, integrationId: intent.integrationId, storage: lineageFormat(intent.lineage) });
   if (!same(document.effectEvidence, effectEvidence(application))) fail("Frozen verification differs from exact stored effect and settlement evidence.");
   return document;
@@ -273,7 +273,7 @@ function requireBasis(intent, basis, expectedDigest) {
     basis.basisDigest !== expectedDigest
   ) {
     fail(
-      "Current impact targets or observed basis changed; reassess the current basis and prepare a new HEAD verification.",
+      "Current impact targets or observed basis changed; reassess the current basis and prepare a new Lode verification.",
       "WORKER_INTEGRATION_REVERIFICATION_REQUIRED",
     );
   }
@@ -405,7 +405,7 @@ function readApplication(root, intent) {
     historical: true,
   }).review;
   if (historicalReview.reviewContextId !== application.reviewContextId || historicalReview.reviewContextHash !== application.reviewContextHash)
-    fail("Publication receipt references a different historical Fresh HEAD review.");
+    fail("Publication receipt references a different historical Fresh Lode review.");
   return { application, verification, resultPacket };
 }
 
@@ -416,7 +416,7 @@ export function readWorkerIntegrationResult({ root = ".", integrationId, verific
   const { intent } = readWorkerPatchIntegration({ root, integrationId, storage });
   const existing = readApplication(root, intent);
   if (existing) {
-    if (verificationId && verificationId !== existing.verification.verificationId) fail("Publication already selected a different exact HEAD verification.");
+    if (verificationId && verificationId !== existing.verification.verificationId) fail("Publication already selected a different exact Lode verification.");
     return { status: "published", intent, ...existing, ...flags };
   }
   return {
@@ -443,7 +443,7 @@ function currentTarget(root, intent, packet) {
     (state.activeRunId && (state.mode !== "run" || state.pendingReview || state.activeExecutionContractId !== lineage.executionContractId)) ||
     (!state.activeRunId && (state.mode !== "review" || state.activeExecutionContractId))
   )
-    fail("Whole result belongs to a different current Run or HEAD Session; current work was not changed.");
+    fail("Whole result belongs to a different current Run or Lode Session; current work was not changed.");
   const run = JSON.parse(
     readIntegrationBytes(path.join(inspected.project.projectRoot, formatForVerifiedOwner(inspected).directory, "sessions/runs", lineage.runId, "run.json")),
   );
@@ -491,20 +491,20 @@ export async function publishWorkerIntegrationResult({ root = ".", integrationId
         projectionUpdate: { status: "not-requested", ordinaryWorkBlocked: false },
       };
     const { intent, verification } = historical;
-    if (!verification) fail("An exact HEAD integration verification is required.");
+    if (!verification) fail("An exact Lode integration verification is required.");
     const packet = verification.wholeResultPacket;
     const target = currentTarget(root, intent, packet);
     if (!target.replay) {
       requireCurrentWorkerPatchIntegration({ root, integrationId, storage });
       const { effects, basis } = await requireSettledApplication(root, intent, verification.basisDigest, inspection);
-      if (!same(effects, verification.effectEvidence)) fail("Effect evidence changed after HEAD assessment; prepare a new verification.");
+      if (!same(effects, verification.effectEvidence)) fail("Effect evidence changed after Lode assessment; prepare a new verification.");
       if (
         verification.observedBasisDigest !== basis.observedBasisDigest ||
         !same(verification.dependencyObservations, dependencyObservations(basis)) ||
         !same(verification.basisObservation, basisObservation(basis))
       ) {
         fail(
-          "Frozen machine observations differ from the current verified basis; prepare a new HEAD verification.",
+          "Frozen machine observations differ from the current verified basis; prepare a new Lode verification.",
           "WORKER_INTEGRATION_REVERIFICATION_REQUIRED",
         );
       }
@@ -533,7 +533,7 @@ export async function publishWorkerIntegrationResult({ root = ".", integrationId
       fresh.pendingReview.resultPacketId !== packet.resultPacketId ||
       fresh.pendingReview.wholePlanId !== intent.lineage.wholePlanId
     )
-      fail("Fresh HEAD review differs from whole integration result.");
+      fail("Fresh Lode review differs from whole integration result.");
     const application = identify(
       {
         kind: "WorkerIntegrationResultApplication",

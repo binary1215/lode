@@ -37,13 +37,13 @@ const keysByName = Object.freeze({
 
 export function requiredIndexDdl(name) {
   const keys = keysByName[name];
-  if (!keys) throw new Error("Unknown HEAD reserved type");
+  if (!keys) throw new Error("Unknown Lode reserved type");
   return `CREATE INDEX IF NOT EXISTS ON ${name} (${keys.join(", ")}) UNIQUE`;
 }
 
 export function inspectRequiredIndex(record) {
   const keys = keysByName[record.name];
-  if (!keys) throw new Error("Unknown HEAD reserved type");
+  if (!keys) throw new Error("Unknown Lode reserved type");
   if (!Array.isArray(record.indexes)) return { status: "unverifiable", reason: "index-metadata-unavailable" };
   let matching = false;
   for (const index of record.indexes) {

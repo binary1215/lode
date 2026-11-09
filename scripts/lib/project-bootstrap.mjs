@@ -303,7 +303,7 @@ export function recoveryReadiness(projectInspection, { includeRestore = false } 
       ...actionability({
         headActionRequired: true,
         recoveryDependentWorkBlocked: Boolean(projectInspection.state?.latestCheckpoint),
-        blockedOperations: ["head-managed-mutation", ...(projectInspection.state?.latestCheckpoint ? ["checkpoint-dependent-work"] : [])],
+        blockedOperations: ["lode-managed-mutation", ...(projectInspection.state?.latestCheckpoint ? ["checkpoint-dependent-work"] : [])],
       }),
       reasonCode: "CORE_DRIFT",
       authority,
@@ -1089,7 +1089,7 @@ async function initializeOrResumeCurrentProject({
       const response = bootstrapResponse({
         root,
         profile,
-        onboardingAction: "fresh-head-semantic-reproposal-required",
+        onboardingAction: "fresh-lode-semantic-reproposal-required",
         inputDisposition: "semantic-proposal-required",
         before,
         installation,

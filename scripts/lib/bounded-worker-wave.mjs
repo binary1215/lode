@@ -662,7 +662,7 @@ function buildStatusProjection({ root, wave, seal = null, abandonment = null, ad
           : counts.failed > 0
             ? "Preserve useful results and inspect or cancel unfinished owned members. One failure does not mean every worker stopped; reconcile unknown effects before retry."
             : state === "completed"
-              ? "HEAD reviews the combined results and verifies owned process cleanup. Group success is not approval or P2 integration."
+              ? "Lode reviews the combined results and verifies owned process cleanup. Group success is not approval or P2 integration."
               : "Observe individual members or use bounded aggregate wait. Ending a wait does not cancel workers.",
       persisted: false,
       grantsPermission: false,
@@ -883,7 +883,7 @@ export function readBoundedWorkerWaveResults({ root = ".", waveId } = {}) {
   const read = readBoundedWorkerWave({ root, waveId });
   if (!read.seal || read.abandonment)
     fail(
-      "Aggregate results require a verified seal. Read individual jobs and wave status; HEAD may seal after every member started, or abandon a partial launch without cancelling its members.",
+      "Aggregate results require a verified seal. Read individual jobs and wave status; Lode may seal after every member started, or abandon a partial launch without cancelling its members.",
       "BOUNDED_WORKER_WAVE_NOT_SEALED",
     );
   const projection = buildStatusProjection({ root: path.resolve(root), wave: read.wave, seal: read.seal, abandonment: null });

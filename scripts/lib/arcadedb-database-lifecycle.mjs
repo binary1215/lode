@@ -417,7 +417,7 @@ export function initializeArcadeDbDatabase({ root = ".", resetIncompatible = fal
   const selectedTransport = assertLifecycleTransport(transport || new ArcadeDbHttpTransport({ storageSelection, storage }));
   const before = inspectArcadeDbDatabaseCompatibility({ root: projectRoot, transport: selectedTransport, storage });
   if (before.status === "unverifiable-reserved-schema")
-    fail("Inspect the required HEAD schema metadata; uncertainty does not justify database reset.", "ARCADEDB_SCHEMA_UNVERIFIED");
+    fail("Inspect the required Lode schema metadata; uncertainty does not justify database reset.", "ARCADEDB_SCHEMA_UNVERIFIED");
   let action = "reused-compatible-database";
   let invalidatedPointers = [];
   if (before.status === "database-missing") {
@@ -427,7 +427,7 @@ export function initializeArcadeDbDatabase({ root = ".", resetIncompatible = fal
   } else if (before.status === "incompatible-reserved-schema") {
     if (resetIncompatible !== true) {
       fail(
-        "Inspect or repair the conflicting HEAD reserved schema without changing unrelated data. A full reset requires a separate exact-target destructive request.",
+        "Inspect or repair the conflicting Lode reserved schema without changing unrelated data. A full reset requires a separate exact-target destructive request.",
         "ARCADEDB_DATABASE_RESET_CONFIRMATION_REQUIRED",
       );
     }

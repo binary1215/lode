@@ -11,6 +11,16 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.101 — publication tracked separately
+
+- Runtime error and guidance messages call the agent Lode instead of HEAD. The
+  `.head` project heading "HEAD Agent derived knowledge graph" and the fixed
+  Codex proposal instructions are unchanged.
+- Reported statuses, actions and guidance values use the Lode name (for example
+  `lode-selection-required`, `refresh-lode-assessment` and `Lode-owned`). The
+  CLI presentation still accepts the old status spellings.
+- The CLI command is `lode-continuity`; `head-continuity` remains an alias.
+
 ## 0.3.0-beta.100 — publication tracked separately
 
 - Reason codes no longer spell the old product name: `HEAD_X` is now `X`, and

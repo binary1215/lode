@@ -705,11 +705,11 @@ async function graphTraversalCandidates(worldModel, evidenceNeeds, graphProjecti
   const anchoredNeeds = evidenceNeeds.filter((need) => need.kind === "temporal-relation" && need.graphAnchor);
   if (!anchoredNeeds.length) return [];
   if (!worldModel?.snapshot) {
-    fail("HEAD graph anchors require a current digest-verified World Model.", "GRAPH_ANCHOR_WORLD_MODEL_STALE");
+    fail("Lode graph anchors require a current digest-verified World Model.", "GRAPH_ANCHOR_WORLD_MODEL_STALE");
   }
   const snapshot = worldModel.snapshot;
   const graph = snapshot.temporalProvenanceGraph;
-  if (!graph) fail("HEAD graph anchors require a current temporal GraphSnapshot.", "GRAPH_ANCHOR_GRAPH_NOT_BUILT");
+  if (!graph) fail("Lode graph anchors require a current temporal GraphSnapshot.", "GRAPH_ANCHOR_GRAPH_NOT_BUILT");
   return (
     await Promise.all(
       anchoredNeeds.map(async (need) => {
@@ -919,8 +919,8 @@ function observationCandidates(projectRoot, projectId, evidenceNeeds, sourceObse
 
 function normalizeEvidenceNeeds(evidenceNeeds) {
   if (evidenceNeeds == null) return [];
-  if (!Array.isArray(evidenceNeeds)) fail("HEAD evidence needs must be an array.", "INVALID_EVIDENCE_NEEDS");
-  if (evidenceNeeds.length > 32) fail("HEAD evidence needs may contain at most 32 items.", "INVALID_EVIDENCE_NEEDS");
+  if (!Array.isArray(evidenceNeeds)) fail("Lode evidence needs must be an array.", "INVALID_EVIDENCE_NEEDS");
+  if (evidenceNeeds.length > 32) fail("Lode evidence needs may contain at most 32 items.", "INVALID_EVIDENCE_NEEDS");
   const allowedKeys = new Set(["id", "kind", "paths", "entityKeys", "observationIds", "facets", "relationTypes", "graphAnchor", "minimumItems", "rationale"]);
   const knownKinds = new Set(EVIDENCE_NEED_KINDS);
   const seen = new Set();
@@ -1359,11 +1359,11 @@ async function compileContextUncoordinated({
       countsScope: "observed-candidates-and-bounded-representations; not-total-project-coverage",
     },
     uncertainty: [
-      "HEAD assesses semantic sufficiency; selection and lexical matching do not establish correctness or approval.",
+      "Lode assesses semantic sufficiency; selection and lexical matching do not establish correctness or approval.",
       ...(sources.worldModel?.status !== "current"
         ? ["Repository World evidence is absent, unavailable or stale; inspect task-relevant current source directly."]
         : []),
-      ...(selection.evidenceGaps.length ? ["Some HEAD-selected evidence is missing or outside this budget; dependent judgments need further inspection."] : []),
+      ...(selection.evidenceGaps.length ? ["Some Lode-selected evidence is missing or outside this budget; dependent judgments need further inspection."] : []),
       ...(selection.included.some((item) => item.kind === "RepositoryFile")
         ? ["Repository metadata is included; original source bodies have not been consumed."]
         : []),
@@ -1507,7 +1507,7 @@ export function verifyContextCapsuleOriginal({ capsule, capsuleId, projectId }) 
   if (recordedHash !== actualHash || capsuleId !== `capsule-${actualHash.slice(0, 24)}`)
     fail("Context Capsule digest verification failed.", "CAPSULE_DIGEST_MISMATCH");
   if (capsule.snapshot?.projectId !== projectId) {
-    fail("Context Capsule belongs to another HEAD Project.", "CONTEXT_CAPSULE_PROJECT_MISMATCH");
+    fail("Context Capsule belongs to another Lode Project.", "CONTEXT_CAPSULE_PROJECT_MISMATCH");
   }
   return capsule;
 }

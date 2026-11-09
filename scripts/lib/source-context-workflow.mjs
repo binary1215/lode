@@ -94,7 +94,7 @@ async function prepareSourceContextUnderLifetime({ root = ".", task, needs = [],
   if (!normalized.length)
     return {
       kind: "SourceContextResult",
-      status: "head-selection-needed",
+      status: "lode-selection-needed",
       task,
       authorityBoundary: artifactAuthorityBoundary("SourceContextResult"),
       instructionAuthority: false,
@@ -246,7 +246,7 @@ async function prepareSourceContextUnderLifetime({ root = ".", task, needs = [],
               retained: Boolean(failureKey),
               storageIssues,
               scope: "this-need-only",
-              fallback: "HEAD may inspect current source separately or reselect an exact declaration; missing evidence does not block independent work",
+              fallback: "Lode may inspect current source separately or reselect an exact declaration; missing evidence does not block independent work",
             });
             continue;
           }
@@ -355,7 +355,7 @@ async function prepareSourceContextUnderLifetime({ root = ".", task, needs = [],
     id: need.id,
     kind: "observation",
     observationIds: [bundle.observation.observationId],
-    rationale: `HEAD-selected ${need.kind}; source-linked context for HEAD assessment`,
+    rationale: `Lode-selected ${need.kind}; source-linked context for Lode assessment`,
   }));
   const context = current.length
     ? await previewContextWorkflow({
@@ -387,7 +387,7 @@ async function prepareSourceContextUnderLifetime({ root = ".", task, needs = [],
     headActionRequired: pendingNeeds.some((entry) => entry.need.required) || retentionPending.length > 0,
     userActionRequired: false,
     decisionScope: "hold-only-judgments-dependent-on-missing-required-evidence; independent-work-unaffected",
-    semanticSufficiency: "HEAD-assessment-required",
+    semanticSufficiency: "Lode-assessment-required",
     contextScope: "current-Core-instructions-and-HEAD-selected-source-observations; no-World-scan-or-full-index-required",
     authority: {
       observation: "P3",

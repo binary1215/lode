@@ -531,7 +531,7 @@ function claimInstallRoot(installRoot) {
 function verifyInstallRootOwnership(installRoot) {
   const marker = readJson(ownershipFile(installRoot), "DISTRIBUTION_OWNERSHIP_INVALID");
   if (!["head-agent-core", "lode-agent-core"].includes(marker.product) || marker.protocolVersion !== DISTRIBUTION_PROTOCOL) {
-    fail("DISTRIBUTION_OWNERSHIP_INVALID", "Installation root is not owned by this HEAD Agent distribution protocol.");
+    fail("DISTRIBUTION_OWNERSHIP_INVALID", "Installation root is not owned by this Lode Agent distribution protocol.");
   }
 }
 

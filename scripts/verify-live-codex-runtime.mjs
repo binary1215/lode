@@ -167,7 +167,7 @@ async function main() {
   fs.mkdirSync(operationalRoot, { recursive: false });
   try {
     const fixtureFile = path.join(projectRoot, "fixture.txt");
-    fs.writeFileSync(fixtureFile, "HEAD live Session marker: SESSION-READ-ONLY-OK\n", "utf8");
+    fs.writeFileSync(fixtureFile, "Lode live Session marker: SESSION-READ-ONLY-OK\n", "utf8");
     const fixtureDigest = digest(fs.readFileSync(fixtureFile));
     const initialized = initializeProject({ root: projectRoot, pluginRoot, runtimes: [providerRuntime] });
     assert(initialized.status === "ready", `Live ${providerName} fixture project did not initialize.`);
@@ -249,7 +249,7 @@ async function main() {
       root: projectRoot,
       objective: "Prove one consequential live Codex Run through canonical Execution Lineage.",
       plan: [
-        "Create run-output.txt containing exactly HEAD live Run verified followed by one newline.",
+        "Create run-output.txt containing exactly Lode live Run verified followed by one newline.",
         "Read the file back and report verification through the structured runtime result.",
         "Return a non-empty planDelta and include run-output.txt in impactRadius using only a relative path.",
       ],
@@ -264,7 +264,7 @@ async function main() {
       acceptanceCriteria: [
         "run-output.txt has the exact required content",
         "Structured result reports evidence and verification",
-        "Fresh HEAD receives a canonical ResultPacket",
+        "Fresh Lode receives a canonical ResultPacket",
       ],
       constraints: ["No Product Canon mutation", "No external write", "No absolute path in the provider result"],
       allowedActions: ["runtime.invoke", "project.write", "project.read"],
@@ -323,7 +323,7 @@ async function main() {
       `Live ${providerName} Run did not retain Run review semantics.`,
     );
     assert(
-      fs.readFileSync(path.join(projectRoot, "run-output.txt"), "utf8") === "HEAD live Run verified\n",
+      fs.readFileSync(path.join(projectRoot, "run-output.txt"), "utf8") === "Lode live Run verified\n",
       `Live ${providerName} Run did not create the exact accepted output.`,
     );
     assert(digest(fs.readFileSync(fixtureFile)) === fixtureDigest, `Live ${providerName} Run changed the protected fixture marker.`);
@@ -359,12 +359,12 @@ async function main() {
     assert(applied.status === "runtime_run_result_applied", "Live Codex Run draft was not applied to canonical Execution Lineage.");
     assert(
       applied.freshHeadReview?.resultPacket?.resultPacketId === applied.resultPacket.resultPacketId,
-      "Fresh HEAD did not receive the canonical ResultPacket.",
+      "Fresh Lode did not receive the canonical ResultPacket.",
     );
     const pending = getPendingReviewContext({ root: projectRoot });
     assert(
       pending.review.reviewContextId === applied.application.reviewContextId && pending.pendingReview.runId === run.runId,
-      "Fresh HEAD review identity does not match the live Run.",
+      "Fresh Lode review identity does not match the live Run.",
     );
     const reviewed = reviewRun({
       root: projectRoot,
@@ -377,9 +377,9 @@ async function main() {
       root: projectRoot,
       runId: run.runId,
       reviewDecisionId: reviewed.reviewDecision.reviewDecisionId,
-      purpose: `Preserve the accepted live ${providerName} bounded-worker result as the next provider-neutral HEAD direction.`,
+      purpose: `Preserve the accepted live ${providerName} bounded-worker result as the next provider-neutral Lode direction.`,
       approvedDecisions: ["Accept the exact isolated live bounded-worker output and preserve its provider-neutral lineage."],
-      currentPosition: `The actual ${providerName} bounded worker completed, a Fresh HEAD accepted its ResultPacket, and canonical recovery is ready.`,
+      currentPosition: `The actual ${providerName} bounded worker completed, a Fresh Lode accepted its ResultPacket, and canonical recovery is ready.`,
       nextExpectedResult: "Resume from this checkpoint without replaying the consumed worker authorization.",
       openReviewIds: [],
     });
@@ -388,7 +388,7 @@ async function main() {
     assert(recorded.application?.applicationId === applied.application.applicationId, "Runtime Run result application was not durably recoverable.");
     assert(
       completed.state.mode === "session" && completed.state.lastReviewDecisionId === reviewed.reviewDecision.reviewDecisionId,
-      "Live Run did not return to the reviewed HEAD Session state.",
+      "Live Run did not return to the reviewed Lode Session state.",
     );
 
     process.stdout.write(

@@ -429,7 +429,7 @@ function verifyWorkerInput(worker, storage) {
     (worker.previousAuthorizationId !== null && !/^execution-authorization-[a-f0-9]{24}$/.test(worker.previousAuthorizationId)) ||
     (worker.sessionRequest !== null && (typeof worker.sessionRequest !== "string" || !worker.sessionRequest.trim()))
   ) {
-    fail("Worker input requires a stable task key, non-HEAD role and bounded outcome.", "INVALID_WORKER_EXECUTION_INPUT");
+    fail("Worker input requires a stable task key, non-Lode role and bounded outcome.", "INVALID_WORKER_EXECUTION_INPUT");
   }
   return worker;
 }
@@ -593,7 +593,7 @@ export function buildRuntimeInvocationAuthorization({
   const selectedWorkspaceMode = normalizeWorkspaceMode(workspaceMode);
   const selectedRuntimeSelection = normalizeRuntimeSelection(runtimeSelection);
   const selectedScope = normalizeScopeInput(scope);
-  if (!inspected.project.runtimes.includes(selectedRuntime)) fail("Runtime is not enabled for this HEAD project.", "RUNTIME_NOT_ENABLED_FOR_PROJECT");
+  if (!inspected.project.runtimes.includes(selectedRuntime)) fail("Runtime is not enabled for this Lode project.", "RUNTIME_NOT_ENABLED_FOR_PROJECT");
   const projectRoot = inspected.project.projectRoot;
   const requiredActions = [REQUIRED_INVOKE_ACTION, WORKSPACE_ACTION[selectedWorkspaceMode]];
   let executionScope;
@@ -627,7 +627,7 @@ export function buildRuntimeInvocationAuthorization({
     input = runInvocationInput({ plan, contract, capsule });
   } else {
     if (inspected.state.mode !== "session" || inspected.state.activeRunId || inspected.state.activeExecutionContractId || inspected.state.pendingReview) {
-      fail("Session execution authorization requires an idle HEAD Session with no active Run or pending review.", "SESSION_EXECUTION_STATE_CONFLICT");
+      fail("Session execution authorization requires an idle Lode Session with no active Run or pending review.", "SESSION_EXECUTION_STATE_CONFLICT");
     }
     const capsule =
       selectedScope.contextCapsuleId === null ? null : readContextCapsule({ root: projectRoot, capsuleId: selectedScope.contextCapsuleId }).capsule;
@@ -1092,7 +1092,7 @@ function prepareRuntimeInvocationInput({ root = ".", authorization, sessionReque
   const verified = verifyRuntimeInvocationAuthorization(authorization);
   const inspected = inspectProject(root);
   if (inspected.status !== "ready" || inspected.project.projectId !== verified.projectId || inspected.state.sessionId !== sessionIdOf(verified)) {
-    fail("Runtime execution requires the authorization's exact project and HEAD Session.", "RUNTIME_INVOCATION_FENCE_MISMATCH");
+    fail("Runtime execution requires the authorization's exact project and Lode Session.", "RUNTIME_INVOCATION_FENCE_MISMATCH");
   }
   if (
     verified.scope.kind === "run" &&
@@ -1108,7 +1108,7 @@ function prepareRuntimeInvocationInput({ root = ".", authorization, sessionReque
     verified.scope.kind === "session" &&
     (inspected.state.mode !== "session" || inspected.state.activeRunId || inspected.state.activeExecutionContractId || inspected.state.pendingReview)
   ) {
-    fail("Session execution requires the authorization's idle HEAD Session.", "RUNTIME_INVOCATION_FENCE_MISMATCH");
+    fail("Session execution requires the authorization's idle Lode Session.", "RUNTIME_INVOCATION_FENCE_MISMATCH");
   }
   const projectRoot = inspected.project.projectRoot;
   if (digest(realRoot(projectRoot)) !== verified.projectRootDigest)

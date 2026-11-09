@@ -281,7 +281,7 @@ test("accepted Run integration is reused exactly but never copied into changed g
   const reviewed = reviewAccepted(root);
   const integrationDirection = direction({
     purpose: "Integrate the exact accepted Run",
-    approvedDecisions: ["Fresh HEAD accepted the exact ResultPacket"],
+    approvedDecisions: ["Fresh Lode accepted the exact ResultPacket"],
     currentPosition: "The accepted result is integrated",
     nextExpectedResult: "Continue with the next explicit bounded unit",
   });

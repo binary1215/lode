@@ -162,7 +162,7 @@ async function startWithSemanticProposal(root) {
   assert.equal(awaitingEvidence.status, "awaiting_feature_mapping_evidence");
   assert.equal(awaitingEvidence.candidateSet.candidates.length, 0);
   assert.equal(
-    awaitingEvidence.candidateSet.unknowns.some((item) => /Fresh HEAD semantic implementation-mapping candidates/.test(item.statement)),
+    awaitingEvidence.candidateSet.unknowns.some((item) => /Fresh Lode semantic implementation-mapping candidates/.test(item.statement)),
     true,
   );
   return startFeatureMapping({ root, semanticProposal: await semanticMappingProposal(root) });

@@ -233,7 +233,7 @@ test("invalid, missing and premature result inputs have the same CLI/MCP failure
   assert.deepEqual(snapshot(f.root), before);
 });
 
-test("typed and CLI no-effect integration publishes one whole result and still requires Fresh HEAD review", async (t) => {
+test("typed and CLI no-effect integration publishes one whole result and still requires Fresh Lode review", async (t) => {
   const f = await workerIntegrationFixture(t);
   const beforeSession = fs.readFileSync(f.sessionFile, "utf8");
   const apply = { action: "apply", integrationId: f.integrationId };

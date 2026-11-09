@@ -49,7 +49,7 @@ process.stdin.on('data', (chunk) => { input = Buffer.concat([input, chunk]); });
 process.stdin.on('end', () => {
   const result = {
     outcome: 'OpenCode replacement fixture completed.',
-    evidence: ['A fresh process recovered HEAD identity from project artifacts.'],
+    evidence: ['A fresh process recovered Lode identity from project artifacts.'],
     verification: ['No provider-session identity was supplied to the replacement process.'],
     unknowns: [],
   };
@@ -149,7 +149,7 @@ async function buildFreshRuntimeBoundary(root, fixtureBin) {
     spawnImplementation: evidenceFixtureSpawn,
   });
   const inspected = inspectProject(root);
-  assert(inspected.status === "ready", "Replacement process could not recover a ready HEAD project.");
+  assert(inspected.status === "ready", "Replacement process could not recover a ready Lode project.");
   return {
     inspected,
     protocolEvidence,
@@ -215,9 +215,9 @@ async function replacementChild(root, previousAuthorizationId, fixtureBin) {
   const format = formatForVerifiedOwner(boundary.inspected.storage);
   assert(
     boundary.inspected.state.sessionId === previousAuthorization[format.sessionIdField],
-    "Fresh replacement process did not recover the original canonical HEAD Session.",
+    "Fresh replacement process did not recover the original canonical Lode Session.",
   );
-  const request = "Continue from canonical HEAD artifacts using OpenCode after Codex provider loss.";
+  const request = "Continue from canonical Lode artifacts using OpenCode after Codex provider loss.";
   const authorization = buildRuntimeInvocationAuthorization({
     root,
     runtime: "opencode",
@@ -346,7 +346,7 @@ async function parentMain() {
       supervisorRoot,
     });
     assert(replacement.projectId === initialized.project.projectId, "Provider replacement changed canonical project identity.");
-    assert(replacement[format.sessionIdField] === codex.authorization[format.sessionIdField], "Provider replacement changed canonical HEAD Session identity.");
+    assert(replacement[format.sessionIdField] === codex.authorization[format.sessionIdField], "Provider replacement changed canonical Lode Session identity.");
     assert(replacement.replacementRuntime === "opencode", "Provider replacement did not select OpenCode.");
     assert(replacement.replacementAuthorizationId !== codex.authorization.authorizationId, "Provider replacement reused the consumed Codex authorization.");
     const recoveredReplacement = readRuntimeInvocationResult({

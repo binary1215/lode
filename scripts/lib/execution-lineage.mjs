@@ -187,7 +187,7 @@ function verifiedFreshLodeReview(review, storage) {
     review.kind !== format.kind("FreshHeadReview") ||
     (format.dialect === "lode" && !familyFormatForOriginal("head-agent-core-fresh-head-review", review, storage))
   )
-    fail("Fresh HEAD review context is required.", "INVALID_FRESH_REVIEW");
+    fail("Fresh Lode review context is required.", "INVALID_FRESH_REVIEW");
   const recordedHash = review.reviewContextHash;
   const recordedId = review.reviewContextId;
   const payload = { ...review };
@@ -195,7 +195,7 @@ function verifiedFreshLodeReview(review, storage) {
   delete payload.reviewContextHash;
   const actualHash = digest(canonicalJson(payload));
   if (recordedHash !== actualHash || recordedId !== `${format.value("fresh-head-review")}-${actualHash.slice(0, 24)}`) {
-    fail("Fresh HEAD review context digest verification failed.", "FRESH_REVIEW_DIGEST_MISMATCH");
+    fail("Fresh Lode review context digest verification failed.", "FRESH_REVIEW_DIGEST_MISMATCH");
   }
   return review;
 }
@@ -212,7 +212,7 @@ export function buildFreshLodeReview({ root = ".", wholePlanId, resultPacketId, 
   const result = requireArtifact(project.projectRoot, resultId, "ResultPacket");
   const contract = requireArtifact(project.projectRoot, result.executionContractId, "ExecutionContract");
   if (contract.wholePlanId !== planId) {
-    fail("Result Packet and Fresh HEAD review do not reference the same WholePlanSnapshot.", "LINEAGE_CONFLICT");
+    fail("Result Packet and Fresh Lode review do not reference the same WholePlanSnapshot.", "LINEAGE_CONFLICT");
   }
   const capsule = readContextCapsule({ root: project.projectRoot, capsuleId: contract.capsuleId }).capsule;
   const payload = {
@@ -246,7 +246,7 @@ export function buildFreshLodeReview({ root = ".", wholePlanId, resultPacketId, 
     reviewContextId: `${formatForVerifiedOwner(projectStorage.get(project)).value("fresh-head-review")}-${reviewContextHash.slice(0, 24)}`,
     reviewContextHash,
   };
-  return { status: "ready_for_fresh_head_review", review };
+  return { status: "ready_for_fresh_lode_review", review };
 }
 
 function createWholePlanSnapshotUncoordinated({ root = ".", objective, plan, invariants = [], sources = [], persist = true } = {}) {
@@ -404,7 +404,7 @@ function createReviewDecisionUncoordinated({
   }
   const review = verifiedFreshLodeReview(reviewContext, projectStorage.get(project));
   if (review.projectId !== project.projectId || review.wholePlan?.wholePlanId !== planId || review.resultPacket?.resultPacketId !== resultId) {
-    fail("Fresh HEAD review context does not match this ReviewDecision.", "FRESH_REVIEW_CONFLICT");
+    fail("Fresh Lode review context does not match this ReviewDecision.", "FRESH_REVIEW_CONFLICT");
   }
   const normalizedDisposition = requiredText(disposition, "Review disposition").toLowerCase();
   const allowed = new Set(["accept", "revise", "expand", "rollback", "escalate"]);

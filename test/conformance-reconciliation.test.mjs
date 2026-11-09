@@ -28,7 +28,7 @@ const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const testParent = process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
 const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
-test("HEAD maintenance stays visible, preserves user authority, and rejects forged author chains", async (t) => {
+test("Lode maintenance stays visible, preserves user authority, and rejects forged author chains", async (t) => {
   const { root, layout } = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, "source.mjs"), "export const value = 1;\n");

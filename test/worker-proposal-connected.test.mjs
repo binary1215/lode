@@ -400,7 +400,7 @@ test("two native-owned model-free proposals reach exact HEAD effects, combined b
     reviewContextId: getPendingReviewContext({ root: f.root }).review.reviewContextId,
     disposition: "accept",
     rationale: "Explicit synthetic user review accepts this exact connected fixture result only",
-    nextActions: ["Integrate the separately stated HEAD recovery direction"],
+    nextActions: ["Integrate the separately stated Lode recovery direction"],
   });
   assert.equal(inspectProject(f.root).state.latestCheckpoint, null);
   const recoveryInput = {

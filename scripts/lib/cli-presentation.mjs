@@ -871,7 +871,7 @@ function quietEmptyTodo(value, work) {
     expansion:
       "Use session-work-read todo_id for an exact item, after_todo_id for more open items, or scan_todos with after_evidence_id for bounded original pages when index coverage is unknown. Pages do not establish unseen successors are absent.",
     scope:
-      "Explicit HEAD-recorded P3 task revisions, not live activity, user approval or P2 direction. Current constraints/cancellations take precedence. Indexed absence is not completeness.",
+      "Explicit Lode-recorded P3 task revisions, not live activity, user approval or P2 direction. Current constraints/cancellations take precedence. Indexed absence is not completeness.",
   });
 }
 
@@ -1022,7 +1022,7 @@ No checkpoint, approval or original task effect was created or replayed.\n`;
   if (documents.projectDocuments) {
     text += "Project documents: " + inertTerminalText(documents.projectDocuments.status) + ". Publication is not task completion or approval.\n";
     if (documents.projectDocuments.status !== "published")
-      text += "The original save remains successful. HEAD continues the exact preparation or bounded publication; no user JSON or task replay is needed.\n";
+      text += "The original save remains successful. Lode continues the exact preparation or bounded publication; no user JSON or task replay is needed.\n";
     return text + originalField("documentProjection", documents);
   }
   text += `Work documents: ${inertTerminalText(documents.status)}. This reports publication, not task completion or approval.\n`;
@@ -1032,10 +1032,10 @@ No checkpoint, approval or original task effect was created or replayed.\n`;
     return text;
   }
   text += "The original work save remains successful. Do not replay its task effects.\n";
-  if (documents.status === "head-selection-required") {
+  if (documents.status === "lode-selection-required" || documents.status === "head-selection-required") {
     text +=
       `Latest recorded task state: ${inertTerminalText(documents.savedTaskStatus)}. Remote documents are not updated.\n` +
-      `HEAD action required; user action not required. Continue ${publicToolName("lode_work_document_prepare")} then ${publicToolName("lode_work_document_publish")} using the exact prior selection and saved result below. Do not ask for JSON, a repeated save, or another routine approval.\n`;
+      `Lode action required; user action not required. Continue ${publicToolName("lode_work_document_prepare")} then ${publicToolName("lode_work_document_publish")} using the exact prior selection and saved result below. Do not ask for JSON, a repeated save, or another routine approval.\n`;
     if (documents.taskStatusReason) text += originalField("documentProjection.taskStatusReason", documents.taskStatusReason);
     return text + originalField("documentProjection.followUp", documents.followUp);
   }
@@ -1764,7 +1764,7 @@ function formatWorkerGuidance(value) {
 }
 
 function formatSourceContext(value) {
-  if (["head-selection-needed", "lode-selection-needed"].includes(value.status)) return `${value.nextAction}\n`;
+  if (["lode-selection-needed", "head-selection-needed"].includes(value.status)) return `${value.nextAction}\n`;
   const ready = value.results.filter((item) => item.status === "ready" && item.includedInContext);
   const lines = [`Source context: ${ready.length}/${value.results.length} selected needs included.`];
   for (const item of value.results)

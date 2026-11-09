@@ -46,7 +46,7 @@ async function startFixtureRun(root, suffix = "artifact-only recovery") {
     wholePlanId: plan.wholePlanId,
     capsuleId: capsule.capsuleId,
     scope: `Produce ${suffix}`,
-    acceptanceCriteria: ["Fresh HEAD verifies the bounded result"],
+    acceptanceCriteria: ["Fresh Lode verifies the bounded result"],
   }).artifact;
   const run = startRun({ root, executionContractId: contract.executionContractId }).run;
   return { capsule, plan, contract, run };
@@ -79,8 +79,8 @@ function integrationInput(run, reviewDecision, overrides = {}) {
   return {
     runId: run.runId,
     reviewDecisionId: reviewDecision.reviewDecisionId,
-    purpose: "Advance recovery only after accepted Fresh HEAD review",
-    approvedDecisions: ["Fresh HEAD accepted the exact ResultPacket"],
+    purpose: "Advance recovery only after accepted Fresh Lode review",
+    approvedDecisions: ["Fresh Lode accepted the exact ResultPacket"],
     currentPosition: "The bounded worker result is reviewed and integrated",
     nextExpectedResult: "Start only the next explicitly authorized unit of work",
     openReviewIds: [],
@@ -226,7 +226,7 @@ test("legacy content-addressed checkpoints stay readable but cannot drive curren
   assert.throws(() => restoreSessionFromArtifacts({ root }), { code: "SESSION_RESTORE_CURRENT_CHECKPOINT_REQUIRED" });
 });
 
-test("checkpoint direction survives deletion of pending ResultPacket evidence without inventing a Fresh HEAD review", async (t) => {
+test("checkpoint direction survives deletion of pending ResultPacket evidence without inventing a Fresh Lode review", async (t) => {
   const { root, directory } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   await startFixtureRun(root, "pending review recovery");
@@ -236,7 +236,7 @@ test("checkpoint direction survives deletion of pending ResultPacket evidence wi
     root,
     purpose: "Preserve pending review recovery",
     approvedDecisions: [],
-    currentPosition: "One ResultPacket is awaiting Fresh HEAD review",
+    currentPosition: "One ResultPacket is awaiting Fresh Lode review",
     nextExpectedResult,
   });
   const resultFile = path.join(root, directory, "lineage", "result-packets", `${finished.resultPacket.resultPacketId}.json`);
@@ -452,13 +452,13 @@ test("CLI help and MCP expose artifact restore plus explicit integration without
     method: "tools/call",
     params: { name: "lode_session_continue", arguments: { project_root: root, runtime: "codex" } },
   });
-  assert.equal(continued.result.structuredContent.status, "session_continued_with_fresh_logical_head");
+  assert.equal(continued.result.structuredContent.status, "session_continued_with_fresh_logical_lode");
   assert.equal(continued.result.structuredContent.continuationOutcome.p2RestoredBeforeAttachment, true);
   assert.equal(continued.result.structuredContent.continuationOutcome.p2DirectionChanged, false);
   assert.equal(continued.result.structuredContent.continuationOutcome.providerSessionIdentityPersisted, false);
 });
 
-test("hostless resident HEAD recovery verifier closes crash, concurrency, provider-loss, and inbox-authority counterexamples", () => {
+test("hostless resident Lode recovery verifier closes crash, concurrency, provider-loss, and inbox-authority counterexamples", () => {
   const verifier = path.join(pluginRoot, "scripts", "verify-hostless-session-recovery.mjs");
   const result = spawnSync(process.execPath, [verifier], {
     cwd: pluginRoot,

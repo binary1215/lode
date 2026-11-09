@@ -110,7 +110,7 @@ It has all of these fixed properties:
 
 Recovery authority remains `.lode/sessions/current.json`, Run canon, and Session/Run checkpoints. The snapshot cannot replace continuous Lode whole-outcome judgment.
 
-Repeated `product-operating-status` and `head-continuity` reads in the same process use a disclosed verified-snapshot cache keyed by the Product Operating projection identity and World Model content identity. A Core write invalidates the cache. Use `--fresh` or MCP `fresh: true` to force full artifact and World Model verification. Cache state is operational only and is never authority or recovery evidence.
+Repeated `product-operating-status` and `lode-continuity` reads in the same process use a disclosed verified-snapshot cache keyed by the Product Operating projection identity and World Model content identity. A Core write invalidates the cache. Use `--fresh` or MCP `fresh: true` to force full artifact and World Model verification. Cache state is operational only and is never authority or recovery evidence.
 
 ## CLI
 
@@ -127,8 +127,10 @@ lode-agent product-initiative-propose <project> --input <initiative.json>
 lode-agent product-initiative-review <project> --input <review.json>
 lode-agent product-outcome-observe <project> --input <outcome.json>
 lode-agent product-operating-status <project> [--fresh]
-lode-agent head-continuity <project> [--fresh]
+lode-agent lode-continuity <project> [--fresh]
 ```
+
+The former command name `head-continuity` keeps working as an alias of `lode-continuity`.
 
 The record/review/observe commands attempt to rebuild the local World Model and Product Graph after primary storage in the same operation. A deferred projection is reported separately from the saved record. They do not activate a remote GraphDB.
 

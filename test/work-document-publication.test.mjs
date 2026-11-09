@@ -691,11 +691,11 @@ test("real async MCP/CLI retry retains rich selection; new cancellation requests
   };
   const cancelled = await call("lode_session_work_record", { evidence: cancelledInput });
   assert.equal(cancelled.writes, 1);
-  assert.equal(cancelled.documentProjection.status, "head-selection-required");
+  assert.equal(cancelled.documentProjection.status, "lode-selection-required");
   assert.equal(cancelled.documentProjection.userActionRequired, false);
   assert.equal(cancelled.documentProjection.savedTaskStatus, "cancelled");
   assert.equal(cancelled.documentProjection.remoteDocumentState, "previous-published-basis-not-updated");
-  assert.match(lastText, /head-selection-required/);
+  assert.match(lastText, /lode-selection-required/);
   assert.match(lastText, /cancelled/);
   assert.match(lastText, /user action not required/);
   assert.match(lastText, /lode_work_document_prepare/);

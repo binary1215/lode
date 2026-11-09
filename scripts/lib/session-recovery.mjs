@@ -504,7 +504,7 @@ function pendingHistoricalIntegration(root, reviewDecisionId, storage) {
     originalRole: "historical-P3-reference-evidence-not-restored-P2-direction",
     ...readProjectDirectionView({ root }),
     nextAction:
-      "HEAD may inspect the verified historical P3 input and current common direction, then independently derive current direction and manually transfer only still-applicable work. The request is not restored P2 direction and is never automatically adopted or completed.",
+      "Lode may inspect the verified historical P3 input and current common direction, then independently derive current direction and manually transfer only still-applicable work. The request is not restored P2 direction and is never automatically adopted or completed.",
     recoveryAuthority: false,
     instructionAuthority: false,
     promotionAuthority: false,

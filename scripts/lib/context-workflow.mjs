@@ -36,7 +36,7 @@ function projection(capsule) {
       owner: format.value("HEAD"),
       specifiedCount: capsule.evidenceNeedContract.needs.length,
       unmet: capsule.evidenceGaps,
-      semanticAcceptance: "not-assessed-HEAD-owned",
+      semanticAcceptance: "not-assessed-Lode-owned",
     },
     budget: { requestedApproxTokens: capsule.budget.maxApproxTokens, usedApproxTokens: capsule.budget.usedApproxTokens, providerFitVerified: false },
     capsule: { capsuleId: capsule.capsuleId, previewOnly: true, persisted: false },

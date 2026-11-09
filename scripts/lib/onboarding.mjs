@@ -213,7 +213,7 @@ function ensureOnboardingState(inspected) {
   const file = stateFile(projectRoot, storageOwner);
   if (!fs.existsSync(file)) {
     const migration = migrationPreview(inspected);
-    persistImmutable(sessionRecordFile(projectRoot, migration.sessionRecord.sessionId, storageOwner), migration.sessionRecord, "HEAD Session record");
+    persistImmutable(sessionRecordFile(projectRoot, migration.sessionRecord.sessionId, storageOwner), migration.sessionRecord, "Lode Session record");
     persistImmutable(
       storageSelectionFile(projectRoot, migration.storageSelection.storageSelectionId, storageOwner),
       migration.storageSelection,
@@ -228,8 +228,8 @@ function ensureOnboardingState(inspected) {
     storage: storageOwner,
   });
   const sessionFile = sessionRecordFile(projectRoot, state.sessionId, storageOwner);
-  if (!fs.existsSync(sessionFile)) fail("HEAD Session record is missing.", "ONBOARDING_SESSION_RECORD_MISSING");
-  verifySessionRecord(readJson(sessionFile, "HEAD Session record"), {
+  if (!fs.existsSync(sessionFile)) fail("Lode Session record is missing.", "ONBOARDING_SESSION_RECORD_MISSING");
+  verifySessionRecord(readJson(sessionFile, "Lode Session record"), {
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     storage: storageOwner,
@@ -748,7 +748,7 @@ async function proposeOnboardingSemanticRefreshLocked({ root = ".", semanticProp
     ),
   );
   if (!previousIsHistorical && previousState.candidateSetId) readOnboardingCandidateSet({ root: projectRoot, candidateSetId: previousState.candidateSetId });
-  if (semanticProposal == null) fail("A fresh current HEAD semantic proposal is required.", "ONBOARDING_SEMANTIC_REPROPOSAL_REQUIRED");
+  if (semanticProposal == null) fail("A fresh current Lode semantic proposal is required.", "ONBOARDING_SEMANTIC_REPROPOSAL_REQUIRED");
   const productCanon = readProductModelCanon({ storage: storageOwner, projectRoot });
   if (productCanon.status !== "present" || productCanon.model.productModelId !== previousState.productModelId)
     fail("Product Canon changed before semantic refresh.", "ONBOARDING_PRODUCT_CANON_DRIFT");
@@ -828,7 +828,7 @@ async function startOnboardingLocked({ root = ".", mode = "existing", storage = 
   }
   const projectRoot = inspected.project.projectRoot;
   if (brief != null && semanticProposal != null)
-    fail("Onboarding accepts either a user-owned brief or a fresh HEAD semantic proposal, not both.", "ONBOARDING_INPUT_CONFLICT");
+    fail("Onboarding accepts either a user-owned brief or a fresh Lode semantic proposal, not both.", "ONBOARDING_INPUT_CONFLICT");
   const previousState = ensureOnboardingState(inspected);
   if (new Set(["awaiting-review", "revision-required"]).has(previousState.phase)) {
     fail("The current onboarding candidate set requires review before onboarding can restart.", "ONBOARDING_REVIEW_REQUIRED");
@@ -999,7 +999,7 @@ async function refreshOnboardingCandidatesLocked({ root = ".", semanticProposal 
   let damagedBytes = null;
   if (recoveryBasis) {
     if (recoveryBasis.pointerHash !== state.pointerHash || !Object.hasOwn(recoveryBasis, "rawHash") || !semanticProposal) {
-      fail("Candidate recovery requires the current pointer basis and a HEAD semantic proposal.", "ONBOARDING_RECOVERY_CONFLICT");
+      fail("Candidate recovery requires the current pointer basis and a Lode semantic proposal.", "ONBOARDING_RECOVERY_CONFLICT");
     }
     damagedBytes = candidateBytes(projectRoot, state.candidateSetId, storageOwner);
     if (rawHash(damagedBytes) !== recoveryBasis.rawHash) fail("Damaged candidate changed.", "ONBOARDING_RECOVERY_CONFLICT");
@@ -2334,7 +2334,7 @@ async function inspectOnboardingRecords(root, inspectWorld) {
     sessionId: inspected.state.sessionId,
     storage: storageOwner,
   });
-  const sessionRecord = verifySessionRecord(readJson(sessionRecordFile(projectRoot, state.sessionId, storageOwner), "HEAD Session record"), {
+  const sessionRecord = verifySessionRecord(readJson(sessionRecordFile(projectRoot, state.sessionId, storageOwner), "Lode Session record"), {
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     storage: storageOwner,

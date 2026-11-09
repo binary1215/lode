@@ -91,7 +91,7 @@ function actionFor({ status, world, graph, documents }) {
 function choicesFor(status) {
   if (status === "not_initialized") return ["project_mode", "source_scope", "storage_mode", "runtimes"];
   if (new Set(["awaiting_review", "revision_required"]).has(status)) return ["review_disposition"];
-  if (status === "awaiting_evidence") return ["fresh_head_semantic_proposal_or_user_brief"];
+  if (status === "awaiting_evidence") return ["fresh_lode_semantic_proposal_or_user_brief"];
   return [];
 }
 

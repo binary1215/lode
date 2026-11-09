@@ -750,7 +750,7 @@ test("completed revise and reject replay disclose later source drift without reb
       assert.deepEqual(treeBytes(root), before, "historical disposition replay never refreshes current observations");
       if (disposition === "revise") {
         const resumed = await initializeOrResumeProject({ root, pluginRoot, profile: "product" });
-        assert.equal(resumed.onboardingAction, "fresh-head-semantic-reproposal-required");
+        assert.equal(resumed.onboardingAction, "fresh-lode-semantic-reproposal-required");
         assert.equal((await inspectConversationalOnboarding({ root })).nextAction, "refresh_or_reconcile_world");
       }
     } finally {

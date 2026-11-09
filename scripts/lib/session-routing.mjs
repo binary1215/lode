@@ -133,7 +133,7 @@ export function assertRunSession(root, run, state) {
     });
     owner = imported ? state.sessionId : read(defaultSessionStatePath(root, storage)).sessionId;
   }
-  if (owner !== state.sessionId) fail("Run belongs to another logical HEAD Session.", "RUN_SESSION_MISMATCH");
+  if (owner !== state.sessionId) fail("Run belongs to another logical Lode Session.", "RUN_SESSION_MISMATCH");
 }
 
 function selectedRoute(root) {
@@ -293,7 +293,7 @@ export function sessionDataPath(root, ...parts) {
 function resolveSessionRoute(base, sessionId, preflightOwner = null) {
   const storage = preflightOwner?.storage ?? resolveProjectStorage(base);
   const directory = formatForVerifiedOwner(storage).directory;
-  if (!validId(sessionId)) fail("Expected a logical HEAD Session id.", "INVALID_SESSION_ID");
+  if (!validId(sessionId)) fail("Expected a logical Lode Session id.", "INVALID_SESSION_ID");
   const project = read(safeSessionPath(base, directory, "project.json"));
   if (
     project.schemaVersion !== 1 ||
@@ -319,7 +319,7 @@ function resolveSessionRoute(base, sessionId, preflightOwner = null) {
   const pendingImport = safeSessionPath(base, path.relative(base, path.join(path.dirname(file), "import-pending.json")));
   if (fs.existsSync(pendingImport))
     fail("The selected Session import is incomplete; retry its exact bundle. Other Sessions remain available.", "SESSION_IMPORT_PENDING", file);
-  if (!fs.existsSync(file)) fail("Logical HEAD Session does not exist.", "SESSION_NOT_FOUND");
+  if (!fs.existsSync(file)) fail("Logical Lode Session does not exist.", "SESSION_NOT_FOUND");
   const { document: state, bytes } = readWithBytes(file);
   let importedDefault = false;
   if (named && state?.projectId == null && state?.sessionId === sessionId)

@@ -317,7 +317,7 @@ export function createConformanceDispositionReceipt(
     (!["acknowledge", "defer"].includes(disposition) ||
       (previousDisposition && previousDisposition.authority !== format.value(CONFORMANCE_MAINTENANCE_AUTHORITY)))
   )
-    fail("HEAD may only acknowledge/defer without superseding a user disposition.", "CONFORMANCE_MAINTENANCE_ONLY");
+    fail("Lode may only acknowledge/defer without superseding a user disposition.", "CONFORMANCE_MAINTENANCE_ONLY");
   const verified = verifyConformanceFindingCandidate(finding, projectId, storage);
   const normalizedDisposition = text(disposition, "Conformance disposition", 64);
   if (!CONFORMANCE_DISPOSITIONS.includes(normalizedDisposition)) fail("Conformance disposition is invalid.", "INVALID_CONFORMANCE_DISPOSITION");

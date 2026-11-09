@@ -76,7 +76,7 @@ function accept(root) {
   });
 }
 
-test("one whole packet retains two members and waits for explicit Fresh HEAD review and P2 checkpoint", async (t) => {
+test("one whole packet retains two members and waits for explicit Fresh Lode review and P2 checkpoint", async (t) => {
   const f = await workerIntegrationFixture(t);
   assert.equal(f.intent.composition.patches.length, 0);
   const unchanged = p2(f);
@@ -121,7 +121,7 @@ test("one whole packet retains two members and waits for explicit Fresh HEAD rev
   assert.equal(readWorkerIntegrationResult(input(f)).application.applicationId, published.application.applicationId);
 });
 
-test("stale dependency assessment requests fresh HEAD verification without permanently reserving publication", async (t) => {
+test("stale dependency assessment requests fresh Lode verification without permanently reserving publication", async (t) => {
   const f = await prepared(t, { readDependencies: ["settings.txt"] });
   const before = p2(f);
   fs.writeFileSync(path.join(f.root, "settings.txt"), "new relevant settings\n");
@@ -374,7 +374,7 @@ test("an existing corrupt target packet is rejected before preparing a P2 finish
   assert.equal(fs.existsSync(receiptFile(f)), false);
 });
 
-test("rehashing a receipt cannot substitute an unrelated Fresh HEAD review reference", async (t) => {
+test("rehashing a receipt cannot substitute an unrelated Fresh Lode review reference", async (t) => {
   const f = await prepared(t);
   const published = await publishWorkerIntegrationResult(f.publication);
   const { applicationId: ignoredId, applicationHash: ignoredHash, ...payload } = published.application;
@@ -433,7 +433,7 @@ async function partialFixture(t, { ownerQuiescent = true, failure = "not-started
     settleIncompleteWorkerPatchIntegration({
       ...input(f),
       basisDigest: f.readBasis().basisDigest,
-      reason: "HEAD reports the partial result; no effects will be retried.",
+      reason: "Lode reports the partial result; no effects will be retried.",
     });
   const failedReport = (extra) =>
     reportInput(f, {

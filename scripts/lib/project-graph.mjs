@@ -1608,7 +1608,7 @@ export async function queryProjectGraph(options = {}) {
         (previous.resultId === resultCache.get(queryKey).resultId &&
           canonicalGraphJson({ ...previous, reuse: null }) === canonicalGraphJson({ ...resultCache.get(queryKey), reuse: null })))
     ) {
-      return { ...clone(resultCache.get(queryKey)), reuse: { status: "same-basis-result-reused", semanticSufficiency: "HEAD-owned" } };
+      return { ...clone(resultCache.get(queryKey)), reuse: { status: "same-basis-result-reused", semanticSufficiency: "Lode-owned" } };
     }
     if (queryAdapter) adapter = await queryAdapter();
     const partialDirection = traversed.nodes.some((node) => node.directionContentCoverage?.partial);
@@ -1671,7 +1671,7 @@ export async function queryProjectGraph(options = {}) {
         verifiedNodeCount: allNodes.length,
         matchedNodeCount: traversed.nodes.length,
         emptyResultProvesAbsence: false,
-        semanticSufficiency: "HEAD-owned",
+        semanticSufficiency: "Lode-owned",
       },
       sourceFallback: {
         available: true,
@@ -1693,7 +1693,7 @@ export async function queryProjectGraph(options = {}) {
         excludedInputs: unavailable,
       },
       adapter,
-      reuse: { status: "fresh-read", semanticSufficiency: "HEAD-owned" },
+      reuse: { status: "fresh-read", semanticSufficiency: "Lode-owned" },
       authority,
     };
     const resultHash = projectGraphDigest(payload),
@@ -1735,7 +1735,7 @@ function fallbackProjection(query, reasonCode) {
     nodes: [],
     edges: [],
     summary: { nodeCount: 0, edgeCount: 0, reviewStates: {} },
-    coverage: { state: "unavailable", emptyResultProvesAbsence: false, semanticSufficiency: "HEAD-owned" },
+    coverage: { state: "unavailable", emptyResultProvesAbsence: false, semanticSufficiency: "Lode-owned" },
     integrity: { verifiedLayers: [], excluded: [{ reasonCode }] },
     freshness: { wholeWorldCurrentRequired: false },
     sourceFallback: { available: true, needed: true, action: "Continue from current original files and project records.", reasonCodes: [reasonCode] },

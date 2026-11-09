@@ -222,7 +222,7 @@ export async function measureContextDiagnostics({ project = null, task = null, i
       persistsCapsule: false,
       timingInCapsuleIdentity: false,
       headDiscoveryQuality: "not-measured",
-      semanticSufficiency: "not-measured-HEAD-owned",
+      semanticSufficiency: "not-measured-Lode-owned",
       taskResumeAndFinalEditCorrectness: "not-measured-requires-independent-end-to-end-evaluation",
       repositoryCoverage: "Mechanical inclusion of indexed source records is not proof of source body consumption by the executor.",
     },

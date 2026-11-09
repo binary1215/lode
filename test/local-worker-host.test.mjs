@@ -263,7 +263,7 @@ test("selected-only global instructions report a scoped limitation without provi
     assert.equal(card, formatMcpToolContent("head_bounded_worker_prepare", mcp));
     assert.match(card, /ordinary Host delegation/);
     assert.match(card, /existing authorized scope/);
-    assert.match(card, /not HEAD or the entire provider backend/);
+    assert.match(card, /not Lode or the entire provider backend/);
     assert.match(card, /otherwise obtain that specific authorization/);
   }
   assert.deepEqual(events, []);
@@ -853,7 +853,7 @@ async function twoRunMembers(t, secondKey = "second-member", fixtureOptions = {}
   const plan = createWholePlanSnapshot({
     root: f.root,
     objective: f.input.task,
-    plan: [{ id: "proposals", outcome: "HEAD inspects two independent proposals" }],
+    plan: [{ id: "proposals", outcome: "Lode inspects two independent proposals" }],
   }).artifact;
   const contract = createExecutionContract({
     root: f.root,
@@ -1054,7 +1054,7 @@ test("public partial launch stays open and can be abandoned without success or P
 
 test("fresh public frontends restore HEAD direction and rediscover completed and pending workers without relaunch", { skip }, async (t) => {
   const f = await twoRunMembers(t, "fixture-hold-until-cancel");
-  const direction = "HEAD inspects both proposals; worker status never supplies recovery direction";
+  const direction = "Lode inspects both proposals; worker status never supplies recovery direction";
   await f.publicCli(["checkpoint", "--summary", "Synthetic HEAD-owned recovery point", "--next", direction]);
   const before = f.pointers();
   await Promise.all(f.prepared.map((member) => f.publicCli(["worker-start", "--task-key", member.taskKey])));
