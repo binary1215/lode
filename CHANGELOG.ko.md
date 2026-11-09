@@ -9,6 +9,15 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.99 — 게시 결과는 별도 확인
+
+- 정식 이름 `lode_*`를 내부 작업 이름으로 삼습니다. 147개 작업 descriptor는
+  `scripts/lib/lode-operation-contract.mjs`에 있고, 도구 설명은 목록 시점에 치환하는
+  대신 소스에서 "Lode"라고 적습니다. `head_*` 이름은 MCP와 라우터에서 단방향 별칭으로
+  계속 받아들이며 `tools/list`, 탐색, Hook, CLI 출력은 바뀌지 않습니다.
+- `compat/head/public-names.mjs`를 단방향 구 별칭 규칙과 환경 변수·탐색 접두사 표만
+  남기도록 줄입니다. `.head/` 프로젝트 리더는 그대로입니다.
+
 ## 0.3.0-beta.98 — 게시 결과는 별도 확인
 
 - 모든 CLI 명령을 operation registry로 디스패치합니다. `scripts/lode.mjs`에는 더
