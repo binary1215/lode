@@ -3,7 +3,7 @@ import readline from "node:readline";
 import { resolveOperation } from "./lib/lode-operation-contract.mjs";
 import { callRegistered, registeredOperation, registryCatalog, WORLD_MODEL_STATUS_MCP_MAX_BYTES } from "./lib/operation-registry.mjs";
 import { assertProjectRootArgument } from "./lib/mcp-argument-validation.mjs";
-import { legacyReasonCode } from "./lib/core/errors.mjs";
+import { legacyReasonCodeFields } from "./lib/core/errors.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
 import { DISCOVERY_PREFIX_PAIRS } from "../compat/head/public-names.mjs";
 const semanticToolName = (name) => resolveOperation(name)?.semanticName ?? name;
@@ -222,9 +222,7 @@ const failure = (id, message, reasonCode) => ({
     code: -32000,
     message,
     // legacyReasonCode: the historical HEAD_* spelling, for one version (see LEGACY_REASON_CODES).
-    ...(typeof reasonCode === "string" && reasonCode
-      ? { data: { reasonCode, ...(legacyReasonCode(reasonCode) ? { legacyReasonCode: legacyReasonCode(reasonCode) } : {}) } }
-      : {}),
+    ...(typeof reasonCode === "string" && reasonCode ? { data: { reasonCode, ...legacyReasonCodeFields(reasonCode) } } : {}),
   },
 });
 export { WORLD_MODEL_STATUS_MCP_MAX_BYTES };
@@ -327,6 +325,7 @@ async function dispatchSessionRequest(request, options = {}) {
           headSessionBinding: {
             status: "unavailable",
             reasonCode: bindingFailure,
+            ...legacyReasonCodeFields(bindingFailure),
             scope: "current-explicit-request-only",
             retainedForSubsequentCalls: false,
             persisted: false,
@@ -375,6 +374,7 @@ async function dispatchSessionRequest(request, options = {}) {
           headSessionBinding: {
             status: "unavailable",
             reasonCode: bindingFailure,
+            ...legacyReasonCodeFields(bindingFailure),
             scope: "current-explicit-request-only",
             retainedForSubsequentCalls: false,
             persisted: false,
