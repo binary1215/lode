@@ -1317,7 +1317,7 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
   const repositoryCapsule = await compileContext({ root, task: "Find Worker and dependency-a", budget: 32_768, persist: false });
   assert.equal(
     repositoryCapsule.capsule.snapshot.coverage,
-    "curated-head-canon+repository-world-model-semantic+temporal-provenance-alpha+product-canon-projection-alpha+git-history-alpha",
+    "curated-lode-canon+repository-world-model-semantic+temporal-provenance-alpha+product-canon-projection-alpha+git-history-alpha",
   );
   assert.equal(
     repositoryCapsule.capsule.repositoryContext.some((item) => item.path === "src/service.mjs"),
@@ -4306,7 +4306,7 @@ test("materializes adapter-neutral Git decision evidence without promoting commi
   const capsule = await compileContext({ root, task: "Why was authentication policy centralized?", budget: 32_768, persist: false });
   assert.equal(
     capsule.capsule.snapshot.coverage,
-    "curated-head-canon+repository-world-model-semantic+temporal-provenance-alpha+product-canon-projection-alpha+git-history-alpha",
+    "curated-lode-canon+repository-world-model-semantic+temporal-provenance-alpha+product-canon-projection-alpha+git-history-alpha",
   );
   assert.equal(
     capsule.capsule.gitDecisionEvidence.some((item) => item.commit === "c".repeat(40)),
@@ -4402,7 +4402,7 @@ test("indexes adapter-neutral external runtime observations without granting con
   const capsule = await compileContext({ root, task: "Inspect the active codex runtime session", budget: 32_768, persist: false });
   assert.equal(
     capsule.capsule.snapshot.coverage,
-    "curated-head-canon+repository-world-model-semantic-alpha+temporal-provenance-alpha+product-canon-projection-alpha+external-runtime-state-alpha",
+    "curated-lode-canon+repository-world-model-semantic-alpha+temporal-provenance-alpha+product-canon-projection-alpha+external-runtime-state-alpha",
   );
   assert.equal(capsule.capsule.runtimeStateEvidence.length, 1);
   assert.equal(capsule.capsule.runtimeStateEvidence[0].controlAuthority, false);
@@ -4502,7 +4502,7 @@ test("persists and digest-verifies a Context Capsule", async (t) => {
   const compiled = await compileContext({ root, task: "Inspect current project context", budget: 32_768, persist: true });
   const verified = readContextCapsule({ root, capsuleId: compiled.capsule.capsuleId });
   assert.equal(verified.status, "verified");
-  assert.equal(verified.capsule.snapshot.coverage, "curated-head-canon-only");
+  assert.equal(verified.capsule.snapshot.coverage, "curated-lode-canon-only");
   assert.deepEqual(verified.capsule.selection.includedIds.includes("unknown-repository-index"), true);
 });
 

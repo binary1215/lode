@@ -99,7 +99,7 @@ test("one whole packet retains two members and waits for explicit Fresh Lode rev
   assert.equal(published.status, "published");
   assert.equal(published.resultPacket.resultPacketId, packet.resultPacketId);
   assert.equal(published.application.authorityBoundary.planeId, "P3");
-  assert.equal(published.application.freshHeadReviewRequired, true);
+  assert.equal(published.application.freshLodeReviewRequired, true);
   assert.equal(inspectProject(f.root).state.lastReviewDecisionId, null);
   assert.equal(inspectProject(f.root).state.pendingReview.runId, f.run.runId);
   assert.equal(fs.readdirSync(path.join(f.root, relativeProjectArtifact(f.storage, "lineage", "result-packets"))).length, 1);

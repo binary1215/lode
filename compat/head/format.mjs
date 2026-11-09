@@ -159,6 +159,10 @@ export const VALUE_PAIRS = Object.freeze({
   "fresh-logical-head-from-verified-artifacts": "fresh-logical-lode-from-verified-artifacts",
   "current-head-assessment-not-historical-checkpoint-replay": "current-lode-assessment-not-historical-checkpoint-replay",
   head: "lode",
+  freshHeadReviewRequired: "freshLodeReviewRequired",
+  "curated-head-canon": "curated-lode-canon",
+  "curated-head-canon-only": "curated-lode-canon-only",
+  "head-proposed": "lode-proposed",
 });
 // Source code names each wire value by its canonical Lode spelling. The head
 // dialect reads and writes the historical spelling through these inverses; a

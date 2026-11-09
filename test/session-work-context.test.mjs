@@ -471,7 +471,7 @@ test("Todo zero remains scoped knowledge while unavailable or undiscovered origi
   await withSessionRoute(root, session.sessionId, async () => {
     const read = options => readSessionWorkContext({ root, ...options }).todoContext;
     const empty = read(); assert.equal(empty.knownOpenCount, 0); assert.equal(empty.knownItemCount, 0);
-    const saved = recordSessionWorkEvidence({ root, input: { todos: [{ todoId: "todo-terminal", task: "Synthetic completed inspection", status: "completed", origin: "head-proposed" }] } });
+    const saved = recordSessionWorkEvidence({ root, input: { todos: [{ todoId: "todo-terminal", task: "Synthetic completed inspection", status: "completed", origin: "lode-proposed" }] } });
     const intact = fs.readFileSync(saved.file);
     for (let index = 0; index < 10; index++) recordSessionWorkEvidence({ root, input: { summary: "Synthetic unrelated later note " + index } });
     const indexFile = path.join(root, storage.directory, "graph-discovery/index.json"), healthyIndex = fs.readFileSync(indexFile);
@@ -511,7 +511,7 @@ test("Todo scan counts belong to the inspected original page before display limi
   const { root, storage } = project(t), session = createHeadSession({ root, purpose: "Synthetic bounded Todo pages" });
   await withSessionRoute(root, session.sessionId, async () => {
     const { normalizeSessionWorkEvidence, inputIdentity, encoded, verifySessionWorkEvidenceOriginal } = await import("../scripts/lib/session-work-evidence-original.mjs");
-    const seed = recordSessionWorkEvidence({ root, input: { todos: [{ todoId: "todo-scan-seed", task: "Synthetic terminal seed", status: "completed", origin: "head-proposed" }] } });
+    const seed = recordSessionWorkEvidence({ root, input: { todos: [{ todoId: "todo-scan-seed", task: "Synthetic terminal seed", status: "completed", origin: "lode-proposed" }] } });
     const { evidenceDigest: unusedDigest, ...template } = seed.evidence;
     const owner = { root, storage, projectId: seed.evidence.projectId, sessionId: session.sessionId };
     const states = new Map([[seed.evidence.evidenceId, "completed"]]);
@@ -520,7 +520,7 @@ test("Todo scan counts belong to the inspected original page before display limi
     for (let index = 0; index < 512; index++) {
       const status = index % 2 ? "completed" : "pending";
       const content = normalizeSessionWorkEvidence({ todos: [{ todoId: "todo-scan-" + String(index).padStart(3, "0"), task: "Synthetic page item " + index,
-        status, origin: "head-proposed", ...(status === "pending" ? { nextAction: "Inspect synthetic page" } : {}) }] });
+        status, origin: "lode-proposed", ...(status === "pending" ? { nextAction: "Inspect synthetic page" } : {}) }] });
       const evidenceId = "work-evidence-" + inputIdentity(owner, content).slice(0, 24), payload = { ...template, content, evidenceId };
       const record = { ...payload, evidenceDigest: sha(encoded(payload)) }, bytes = Buffer.from(JSON.stringify(record));
       verifySessionWorkEvidenceOriginal({ owner, evidenceId, bytes });

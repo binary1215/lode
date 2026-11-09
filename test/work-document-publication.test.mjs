@@ -796,7 +796,7 @@ test("answer-only completed result publishes without external refs; bare status 
   const bare = await route(() =>
     recordSessionWorkAndProjectDocuments({
       root,
-      input: { todos: [{ todoId: "todo-answer", task: "Explain the tradeoff", status: "completed", origin: "head-proposed" }] },
+      input: { todos: [{ todoId: "todo-answer", task: "Explain the tradeoff", status: "completed", origin: "lode-proposed" }] },
     }),
   );
   assert.equal(bare.documentProjection.status, "document-result-unconfirmed");
@@ -809,7 +809,7 @@ test("answer-only completed result publishes without external refs; bare status 
         todoId: "todo-answer",
         task: "Explain the tradeoff",
         status: "completed",
-        origin: "head-proposed",
+        origin: "lode-proposed",
         prior: { evidenceId: bare.evidence.evidenceId, evidenceDigest: bare.evidence.evidenceDigest },
       },
     ],

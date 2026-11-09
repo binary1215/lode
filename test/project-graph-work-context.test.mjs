@@ -400,7 +400,7 @@ test("A-D: Todo-only semantic terms reach actual graph, CLI/MCP and exact owner 
       todoId: "todo-discovery",
       task: "OnlyTodoTaskXvqn3821",
       status: "partial",
-      origin: "head-proposed",
+      origin: "lode-proposed",
       nextAction: "OnlyTodoNextZvjk9482",
       reason: "OnlyTodoReasonQcma1772",
       progress: "One bounded part",
@@ -458,9 +458,9 @@ test("A-D: two long Todo revisions retain sparse source indices, status, provena
     saved.push(
       f.save({
         todos: [
-          { todoId: "todo-large", task: "a".repeat(14000), reason: "b".repeat(14000), status: "pending", origin: "head-proposed", nextAction: "Inspect first" },
+          { todoId: "todo-large", task: "a".repeat(14000), reason: "b".repeat(14000), status: "pending", origin: "lode-proposed", nextAction: "Inspect first" },
           { todoId: "todo-small-one", task: "Separate first", status: "completed", origin: "user-directed" },
-          { todoId: "todo-small-two", task: "Separate second", status: "pending", origin: "head-proposed", nextAction: "Continue independently" },
+          { todoId: "todo-small-two", task: "Separate second", status: "pending", origin: "lode-proposed", nextAction: "Continue independently" },
           {
             todoId: "todo-sparse",
             task: "t".repeat(8000),
@@ -542,7 +542,7 @@ test("A-D: actual snapshot and HTML export render Todo-only task, cancellation a
           todoId: "todo-display",
           task: "ReadableTodoOnlyGvhx7712",
           status: "cancelled",
-          origin: "head-proposed",
+          origin: "lode-proposed",
           reason: "Cancelled because current scope changed",
           progress: "A partial attempt",
           priority: "Preserve original priority",
@@ -560,7 +560,7 @@ test("A-D: actual snapshot and HTML export render Todo-only task, cancellation a
   await ui.settle();
   const card = ui.ids.get("selection-cards").children.find((card) => card.textContent.includes("todo-display"));
   assert.ok(card, "Actual snapshot must expose Todo text through shipped card scripts");
-  for (const value of ["ReadableTodoOnlyGvhx7712", "cancelled", "head-proposed", "Cancelled because current scope changed", "Preserve original priority"])
+  for (const value of ["ReadableTodoOnlyGvhx7712", "cancelled", "lode-proposed", "Cancelled because current scope changed", "Preserve original priority"])
     assert.ok(card.textContent.includes(value));
   assert.ok(card.textContent.includes("unknown"));
   const output = path.join(f.base, "todo-view.html"),

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { verifyProjectLocation, safeLocationFile, locationJournalRelative } from "./project-location-proof.mjs";
-import { LEGACY_FORMAT, LEGACY_PROTOCOLS, PROTOCOL_PAIRS, KIND_PAIRS, VALUE_PAIRS } from "../../compat/head/format.mjs";
+import { LEGACY_FORMAT, LEGACY_PROTOCOLS, LEGACY_VALUES, PROTOCOL_PAIRS, KIND_PAIRS, VALUE_PAIRS } from "../../compat/head/format.mjs";
 import { verifyCopiedGitOwner, verifyCopiedGitRef } from "./project-copy-git-proof.mjs";
 import { verifyCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { sha256Hex as digest } from "./core/digest.mjs";
@@ -30,6 +30,14 @@ export function formatForVerifiedOwner(owner) {
   if (storage.dialect === "head" && storage.directory === ".head") return LEGACY_FORMAT;
   if (storage.dialect === "lode" && storage.directory === ".lode") return lodeFormat;
   fail("Project storage tuple is inconsistent.", "PROJECT_IDENTITY_MISMATCH");
+}
+
+// A record written before a field was renamed keeps its historical key. Returns
+// the key this record uses for the canonically named field; a record carrying
+// both keys gets the canonical one, so its strict field check still fails.
+export function recordedFieldName(record, canonical) {
+  const legacy = LEGACY_VALUES[canonical];
+  return record && typeof record === "object" && legacy && Object.hasOwn(record, legacy) && !Object.hasOwn(record, canonical) ? legacy : canonical;
 }
 
 export function relativeProjectArtifact(owner, ...neutralSegments) {

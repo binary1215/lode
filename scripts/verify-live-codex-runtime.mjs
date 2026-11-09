@@ -213,7 +213,7 @@ async function main() {
       );
       assert(sessionExecution.descendantTreeOwnershipValidated === true, `Live ${providerName} Session did not prove descendant-tree ownership.`);
       assert(
-        sessionExecution.draft.scopeKind === "session" && sessionExecution.draft.freshHeadReviewRequired === false,
+        sessionExecution.draft.scopeKind === "session" && sessionExecution.draft.freshLodeReviewRequired === false,
         `Live ${providerName} Session acquired Run review semantics.`,
       );
       assert(
@@ -232,7 +232,7 @@ async function main() {
         draftId: sessionExecution.draft.draftId,
         actualProviderInvoked: true,
         descendantTreeOwnershipValidated: true,
-        freshHeadReviewRequired: false,
+        freshLodeReviewRequired: false,
         projectMutationObserved: false,
       };
     }
@@ -319,7 +319,7 @@ async function main() {
     );
     assert(runExecution.descendantTreeOwnershipValidated === true, `Live ${providerName} Run did not prove descendant-tree ownership.`);
     assert(
-      runExecution.draft.scopeKind === "run" && runExecution.draft.freshHeadReviewRequired === true,
+      runExecution.draft.scopeKind === "run" && runExecution.draft.freshLodeReviewRequired === true,
       `Live ${providerName} Run did not retain Run review semantics.`,
     );
     assert(

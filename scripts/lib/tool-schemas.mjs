@@ -47,7 +47,11 @@ export const sessionWorkEvidenceSchema = {
           todoId: { type: "string", pattern: "^todo-[a-z0-9][a-z0-9-]{0,79}$" },
           task: workEvidenceText,
           status: { type: "string", enum: ["pending", "partial", "waiting", "completed", "cancelled"] },
-          origin: { type: "string", enum: ["user-directed", "head-proposed"], description: "Recorded attribution only; not proof of user approval." },
+          origin: {
+            type: "string",
+            enum: ["user-directed", "lode-proposed", "head-proposed"],
+            description: "Recorded attribution only; not proof of user approval. head-proposed is the old spelling of lode-proposed.",
+          },
           nextAction: workEvidenceText,
           reason: workEvidenceText,
           progress: workEvidenceText,

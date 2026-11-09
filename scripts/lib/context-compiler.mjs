@@ -296,10 +296,11 @@ async function loadSources(root, includeRepositoryWorld = true, worldDomains = n
 function contextSnapshot(inspected, sources) {
   const sourceDigests = Object.fromEntries(Object.entries(sources.raw).map(([name, value]) => [name, digest(value)]));
   if (sources.worldModel?.snapshot) sourceDigests.repositoryWorldModel = sources.worldModel.snapshot.worldModelHash;
-  let coverage = "curated-head-canon-only";
+  const format = formatForVerifiedOwner(inspected);
+  let coverage = format.value("curated-lode-canon-only");
   if (sources.worldModel?.snapshot) {
     const hasGitHistory = sources.worldModel.snapshot.gitDecisionHistory?.coverage === "all-reachable-commits";
-    const layers = ["curated-head-canon", hasGitHistory ? "repository-world-model-semantic" : "repository-world-model-semantic-alpha"];
+    const layers = [format.value("curated-lode-canon"), hasGitHistory ? "repository-world-model-semantic" : "repository-world-model-semantic-alpha"];
     if (sources.worldModel.snapshot.temporalProvenanceGraph) layers.push("temporal-provenance-alpha");
     if (domainCurrent(sources.worldModel, "product")) layers.push("product-canon-projection-alpha");
     if (hasGitHistory && domainCurrent(sources.worldModel, "git")) layers.push("git-history-alpha");
