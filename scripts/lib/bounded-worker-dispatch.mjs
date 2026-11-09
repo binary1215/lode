@@ -51,7 +51,7 @@ function workerRole(inspected, value) {
     .trim()
     .toLowerCase();
   if (role === formatForVerifiedOwner(inspected).roleField || !/^[a-z][a-z0-9-]{0,63}$/.test(role)) {
-    fail("Bounded worker role must be one registered non-HEAD project role.", "INVALID_BOUNDED_WORKER_ROLE");
+    fail("Bounded worker role must be one registered non-Lode project role.", "INVALID_BOUNDED_WORKER_ROLE");
   }
   const rolesRoot = path.join(inspected.project.projectRoot, formatForVerifiedOwner(inspected).directory, "roles");
   const file = path.join(rolesRoot, `${role}.md`);
@@ -60,7 +60,7 @@ function workerRole(inspected, value) {
     const stat = fs.lstatSync(file);
     if (!stat.isFile() || stat.isSymbolicLink() || fs.realpathSync(path.dirname(file)) !== rolesReal) throw new Error("unsafe role");
   } catch {
-    fail("Bounded worker role must be one registered non-HEAD project role.", "INVALID_BOUNDED_WORKER_ROLE");
+    fail("Bounded worker role must be one registered non-Lode project role.", "INVALID_BOUNDED_WORKER_ROLE");
   }
   return role;
 }

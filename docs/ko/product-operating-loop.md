@@ -123,6 +123,8 @@ lode-agent product-operating-status <project> [--fresh]
 lode-agent lode-continuity <project> [--fresh]
 ```
 
+이전 명령 이름 `head-continuity`는 `lode-continuity`의 별칭으로 계속 동작합니다.
+
 record/review/observe 명령은 primary 저장 뒤 같은 작업에서 로컬 World Model과 Product Graph 재구축을 시도합니다. 파생 갱신 미완료는 저장 성공과 별도로 표시하며 원격 GraphDB를 활성화하지는 않습니다.
 
 ## MCP

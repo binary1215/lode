@@ -490,7 +490,10 @@ test("partial availability: unresolved CLI consumers never invent recovery, chec
     const text = formatCliResult(command, value);
     assert.match(text, /independent work.*(?:available|continue)/iu);
     assert.match(text, /selected Session/iu);
-    assert.doesNotMatch(text, /recovered the current direction|unverified checkpoint|No recovery checkpoint|drift: 0|restart: not required|HEAD is ready/iu);
+    assert.doesNotMatch(
+      text,
+      /recovered the current direction|unverified checkpoint|No recovery checkpoint|drift: 0|restart: not required|(?:HEAD|Lode) is ready/iu,
+    );
     if (command === "doctor") {
       assert.match(text, /drift: not assessed/iu);
       assert.match(text, /restart: not assessed/iu);

@@ -263,7 +263,7 @@ test("selected-only global instructions report a scoped limitation without provi
     assert.equal(card, formatMcpToolContent("head_bounded_worker_prepare", mcp));
     assert.match(card, /ordinary Host delegation/);
     assert.match(card, /existing authorized scope/);
-    assert.match(card, /not HEAD or the entire provider backend/);
+    assert.match(card, /not Lode or the entire provider backend/);
     assert.match(card, /otherwise obtain that specific authorization/);
   }
   assert.deepEqual(events, []);

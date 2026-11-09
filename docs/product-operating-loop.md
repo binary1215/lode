@@ -130,6 +130,8 @@ lode-agent product-operating-status <project> [--fresh]
 lode-agent lode-continuity <project> [--fresh]
 ```
 
+The former command name `head-continuity` keeps working as an alias of `lode-continuity`.
+
 The record/review/observe commands attempt to rebuild the local World Model and Product Graph after primary storage in the same operation. A deferred projection is reported separately from the saved record. They do not activate a remote GraphDB.
 
 ## MCP
