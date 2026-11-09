@@ -235,7 +235,7 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
 
   const output = [];
   const indexLines = [
-    formatForVerifiedOwner(storage).dialect === "lode" ? "# Lode Agent derived knowledge graph" : "# HEAD Agent derived knowledge graph",
+    formatForVerifiedOwner(storage).dialect === "lode" ? "# Lode Agent derived knowledge graph" : "# LODE Agent derived knowledge graph",
     "",
     "> This is a deterministic, rebuildable projection of a verified GraphSnapshot. It is not project canon, an instruction source, or promotion authority.",
     "",
@@ -266,7 +266,7 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
   output.push(
     document(
       "index.md",
-      formatForVerifiedOwner(storage).dialect === "lode" ? "Lode Agent derived knowledge graph" : "HEAD Agent derived knowledge graph",
+      formatForVerifiedOwner(storage).dialect === "lode" ? "Lode Agent derived knowledge graph" : "LODE Agent derived knowledge graph",
       indexLines.join("\n"),
     ),
   );
