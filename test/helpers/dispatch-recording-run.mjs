@@ -10,7 +10,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { skipCode } from "../../scripts/codemods/js-scan.mjs";
 import { OPERATIONS } from "../../scripts/lib/operation-registry.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -116,26 +115,10 @@ export function mcpInputs(tool) {
 }
 
 // CLI flags each command branch of lode.mjs reads, found statically.
+// Every CLI command (and alias) with the option names it reads. Since stage 3-C
+// every command is a registry entry; lode.mjs has no per-command branches left.
 export function cliCommands() {
-  const src = fs.readFileSync(path.join(pluginRoot, "scripts/lode.mjs"), "utf8");
-  const start = src.indexOf("async function runRoutedCommand(");
-  const body = src.slice(start);
   const commands = new Map();
-  // `if (command === "a" || command === "b")` and `if (["a", "b"].includes(command))`.
-  const re = /if \((?:((?:command === "[^"]+"(?: \|\| )?)+)|\[((?:"[^"]+"(?:, )?)+)\]\.includes\(command\))\)/g;
-  for (let match; (match = re.exec(body)); ) {
-    const names = [...(match[1] ?? match[2]).matchAll(/"([^"]+)"/g)].map((item) => item[1]);
-    let at = match.index + match[0].length;
-    while (/\s/.test(body[at])) at += 1;
-    const end = body[at] === "{" ? skipCode(body, at + 1, "}") : skipCode(body, at, ";");
-    const block = body.slice(at, end);
-    const flags = new Set();
-    for (const flag of block.matchAll(/options\["([^"]+)"\]|options\.([A-Za-z_$][\w$]*)/g)) flags.add(flag[1] ?? flag[2]);
-    if (/\b(?:optional)?[iI]nputJson\(options/.test(block)) flags.add("input");
-    if (/evidenceNeedsInput\(options\)/.test(block)) flags.add("evidence-needs");
-    for (const name of names) if (!commands.has(name)) commands.set(name, [...flags].sort());
-  }
-  // Commands moved to the operation registry declare the options they read.
   for (const entry of OPERATIONS) {
     if (!entry.cli) continue;
     for (const name of [entry.cli.command, ...(entry.cli.aliases ?? [])]) if (!commands.has(name)) commands.set(name, [...entry.cli.flags].sort());

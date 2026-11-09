@@ -308,7 +308,7 @@ export const OPERATIONS = Object.freeze([
       command: "project-import",
       flags: ["bundle", "expected-bundle"],
       handle: async (context) => {
-        const { root, options, command, signal, pluginRoot } = context;
+        const { root, options, signal, pluginRoot } = context;
         const result = (await import("./project-portability.mjs")).importProjectBundle({
           root,
           bundleRoot: options.bundle,
