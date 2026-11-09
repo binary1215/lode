@@ -50,7 +50,7 @@ test("ordinary preparation preserves exact task and current direction without Wo
   const preview = await previewContextWorkflow({ root, task, evidenceNeeds: [{ id: "source", kind: "repository-source", paths: ["src/CacheRelay.mjs"] }] });
   assert.equal(preview.capsule.task, task);
   assert.deepEqual(preview.capsule.currentDirection, direction);
-  assert.equal(preview.workflow.status, "ready_for_head_semantic_assessment");
+  assert.equal(preview.workflow.status, "ready_for_lode_semantic_assessment");
   assert.equal(preview.workflow.world.state, "not-built");
   assert.equal(preview.workflow.authority.grantsExecutionAuthorization, false);
   assert.equal(preview.capsule.evidenceGaps[0].reason, "matching-evidence-unavailable");
@@ -60,7 +60,7 @@ test("ordinary preparation preserves exact task and current direction without Wo
   assert(!("proofDigest" in preview.capsule));
   assert(!("allowedTiers" in preview.workflow.budget));
   const prepared = await prepareContextWorkflow({ root, task });
-  assert.equal(prepared.preparation.status, "ready_for_head_semantic_assessment");
+  assert.equal(prepared.preparation.status, "ready_for_lode_semantic_assessment");
   assert.deepEqual(prepared.preparation.currentDirection, direction);
   assert.deepEqual(originalFiles(root, layout), before);
 });
@@ -77,7 +77,7 @@ test("positive budgets are caller bounds, without fixed tiers or automatic retri
     });
     assert.equal(preview.capsule.budget.maxApproxTokens, budget);
     assert(!("attemptedTiers" in preview.workflow.budget));
-    assert.equal(preview.workflow.status, "ready_for_head_semantic_assessment");
+    assert.equal(preview.workflow.status, "ready_for_lode_semantic_assessment");
     if (budget === 1) {
       assert.equal(preview.capsule.evidenceGaps[0].reason, "context-budget");
       assert(preview.capsule.omissions.byReason["context-budget"] > 0);
@@ -125,7 +125,7 @@ test("stale World excludes metadata but permits selected current original source
     evidenceNeeds: [{ id: "source", kind: "repository-source", paths: ["src/CacheRelay.mjs"] }],
   });
   assert.equal(stale.workflow.world.state, "stale-excluded");
-  assert.equal(stale.workflow.status, "ready_for_head_semantic_assessment");
+  assert.equal(stale.workflow.status, "ready_for_lode_semantic_assessment");
   assert.deepEqual(stale.capsule.repositoryContext, []);
   const source = await prepareSourceContext({
     root,

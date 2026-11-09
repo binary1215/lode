@@ -400,7 +400,7 @@ test("invalid profile/runtime/package/Session or lost binding refuses before loc
     context = createSessionCallContext();
   context.lose(root);
   const before = snapshot(root);
-  await assert.rejects(initializeOrResumeProject({ root, pluginRoot, projectSessionRoute: { context } }), { code: "HEAD_SESSION_SELECTION_LOST" });
+  await assert.rejects(initializeOrResumeProject({ root, pluginRoot, projectSessionRoute: { context } }), { code: "SESSION_SELECTION_LOST" });
   assert.deepEqual(snapshot(root), before);
 });
 
@@ -458,12 +458,12 @@ test("both publication-stage interruptions recover through an exact existing nam
     );
     const before = snapshot(root);
     await assert.rejects(initializeOrResumeProject({ root, pluginRoot, projectSessionRoute: { sessionId: "session-00000000-0000-0000-0000-000000000000" } }), {
-      code: "HEAD_SESSION_NOT_FOUND",
+      code: "SESSION_NOT_FOUND",
     });
     assert.deepEqual(snapshot(root), before);
     const context = createSessionCallContext();
     context.lose(root);
-    await assert.rejects(initializeOrResumeProject({ root, pluginRoot, projectSessionRoute: { context } }), { code: "HEAD_SESSION_SELECTION_LOST" });
+    await assert.rejects(initializeOrResumeProject({ root, pluginRoot, projectSessionRoute: { context } }), { code: "SESSION_SELECTION_LOST" });
     assert.deepEqual(snapshot(root), before);
     const resumed = await runCommand(["resume", root, "--session", f.session.sessionId]);
     assert.equal(resumed.projectLocation.status, "relocated");

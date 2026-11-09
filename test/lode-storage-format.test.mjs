@@ -415,7 +415,7 @@ test("two owned Project markers conflict before selected legacy Session validati
               assert.equal(error.constructor, SyntaxError); assert.equal(error.code, malformedError.code);
               assert.equal(error.message, malformedError.message);
             } else {
-              assert.equal(error.constructor, Error); assert.equal(error.code, "HEAD_SESSION_IDENTITY_MISMATCH");
+              assert.equal(error.constructor, Error); assert.equal(error.code, "SESSION_IDENTITY_MISMATCH");
               assert.equal(error.message, "Work evidence Project/Session identity differs.");
             }
             return true;

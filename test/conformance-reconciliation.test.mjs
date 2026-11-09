@@ -22,7 +22,7 @@ import { dispatch as dispatchMcp, catalogTools as mcpTools } from "../scripts/mc
 import { ingestStructuredObservation } from "../scripts/lib/observation-adapter.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { formatReviewOutcome, formatConformanceFinding, formatConformanceQueue } from "../scripts/lib/cli-presentation.mjs";
-import { conformanceCanonicalJson, createConformanceDispositionReceipt, HEAD_CONFORMANCE_MAINTENANCE_AUTHORITY } from "../scripts/lib/conformance-contract.mjs";
+import { conformanceCanonicalJson, createConformanceDispositionReceipt, CONFORMANCE_MAINTENANCE_AUTHORITY } from "../scripts/lib/conformance-contract.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testParent = process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
@@ -45,7 +45,7 @@ test("HEAD maintenance stays visible, preserves user authority, and rejects forg
   const input = path.join(root, "maintenance.json");
   fs.writeFileSync(input, JSON.stringify(request));
   const acknowledged = await runCommand(["conformance-disposition", root, "--input", input]);
-  assert.equal(acknowledged.disposition.authority, layout.value(HEAD_CONFORMANCE_MAINTENANCE_AUTHORITY));
+  assert.equal(acknowledged.disposition.authority, layout.value(CONFORMANCE_MAINTENANCE_AUTHORITY));
   assert.equal((await recordConformanceDisposition(request)).status, "existing");
   assert.match(formatReviewOutcome(acknowledged), /no user decision was claimed/);
   const deferred = await dispatchMcp({
@@ -64,13 +64,13 @@ test("HEAD maintenance stays visible, preserves user authority, and rejects forg
   assert.match(formatConformanceQueue(await inspectConformanceQueue({ root })), /\(lode\)/);
   assert.match(formatConformanceFinding(readConformanceFinding({ root, findingId: finding.findingId })), /without a user response/);
   for (const disposition of ["dismiss", "accept-resolution", "request-code-fix", "request-canon-revision"])
-    await assert.rejects(async () => await recordConformanceDisposition({ ...request, disposition }), { code: "CONFORMANCE_HEAD_MAINTENANCE_ONLY" });
+    await assert.rejects(async () => await recordConformanceDisposition({ ...request, disposition }), { code: "CONFORMANCE_MAINTENANCE_ONLY" });
   await assert.rejects(async () => await recordConformanceDisposition({ ...request, confirmUserDisposition: true }), {
-    code: "CONFORMANCE_HEAD_MAINTENANCE_ONLY",
+    code: "CONFORMANCE_MAINTENANCE_ONLY",
   });
   const user = await recordConformanceDisposition({ ...request, actor: "user", confirmUserDisposition: true });
   assert.notEqual(user.disposition.dispositionId, acknowledged.disposition.dispositionId);
-  await assert.rejects(async () => await recordConformanceDisposition(request), { code: "CONFORMANCE_HEAD_MAINTENANCE_ONLY" });
+  await assert.rejects(async () => await recordConformanceDisposition(request), { code: "CONFORMANCE_MAINTENANCE_ONLY" });
   protectedPaths.forEach((p, i) => assert.deepEqual(fs.readFileSync(path.join(root, p)), before[i]));
   const exactFinding = readConformanceFinding({ root, findingId: finding.findingId }).finding;
   const forged = createConformanceDispositionReceipt(
@@ -86,7 +86,7 @@ test("HEAD maintenance stays visible, preserves user authority, and rejects forg
   );
   delete forged.dispositionId;
   delete forged.dispositionHash;
-  forged.authority = layout.value(HEAD_CONFORMANCE_MAINTENANCE_AUTHORITY);
+  forged.authority = layout.value(CONFORMANCE_MAINTENANCE_AUTHORITY);
   forged.dispositionHash = sha(conformanceCanonicalJson(forged));
   forged.dispositionId = `conformance-disposition-${forged.dispositionHash.slice(0, 24)}`;
   fs.writeFileSync(path.join(root, layout.directory, "conformance/dispositions", `${forged.dispositionId}.json`), JSON.stringify(forged));

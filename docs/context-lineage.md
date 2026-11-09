@@ -30,7 +30,7 @@ control characters are displayed inertly, and embedded newlines cannot create
 outer status rows. Canon comparisons show changed descriptions, status and
 relationships even when the main statement stays the same.
 
-Work evidence is HEAD-authored P3 material, not automatically a verbatim user
+Work evidence is Lode-authored P3 material, not automatically a verbatim user
 message. ProjectDirection is caller-conveyed user direction, not proof of Host
 transcript capture. Titles, judgments, conditions, cancellations, pending work and
 unknowns retain that source. Work links, review references and source citations
@@ -102,7 +102,7 @@ A recorded bundle key, source path and digest can be read directly through the o
 
 ## Exact path-scoped historical diff
 
-`head_graph_lineage_diff` optionally accepts `scope_paths` and an opaque `cursor`; CLI `graph-lineage-diff --from <id> --to <id> --path <exact-relative-path>` exposes a single-path selection. Omit scope/cursor for the unchanged version0.2 whole-endpoint projection. Scoped/page projections use version0.3, keep exact from/to hashes and query/order in their cursor, and never follow a moving current pointer. Resend the same endpoints and scope on each page.
+`lode_graph_lineage_diff` optionally accepts `scope_paths` and an opaque `cursor`; CLI `graph-lineage-diff --from <id> --to <id> --path <exact-relative-path>` exposes a single-path selection. Omit scope/cursor for the unchanged version0.2 whole-endpoint projection. Scoped/page projections use version0.3, keep exact from/to hashes and query/order in their cursor, and never follow a moving current pointer. Resend the same endpoints and scope on each page.
 
 Every endpoint is still fully read and verified. Node changes select exact paths, including removed files. Edge changes include edges incident to a selected node in either endpoint or bearing that exact evidence path, including cross-path edges. Possible moves require both old and new paths in scope and remain evidence rather than identity proof. Root source context changes remain disclosed independently of selected records. Counts are exact within this scope; global counts are marked not-computed rather than zero. OmittedCount counts all items outside this page, while page.remaining counts only undisplayed subsequent items. No chunk-only verification or false unchanged/deletion claim is made. Locale-equivalent move keys preserve original removed-major/added-minor order; digest grouping and k-way merge avoid materializing or iterating all matching pairs for a bounded page.
 

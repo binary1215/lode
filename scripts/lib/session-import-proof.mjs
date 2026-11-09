@@ -9,7 +9,7 @@ import { sha256Hex as hash } from "./core/digest.mjs";
 const json = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const fail = () => {
   throw Object.assign(new Error("Imported default Session ownership proof is invalid."), {
-    code: "HEAD_SESSION_IMPORT_OWNER_INVALID",
+    code: "SESSION_IMPORT_OWNER_INVALID",
   });
 };
 const read = (root, relative) =>

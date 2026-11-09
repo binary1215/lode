@@ -37,7 +37,7 @@ export function projectSessionWorkLayer(inventory, { nodeFromRecord, relation, a
           owner.state.schemaVersion !== 1 ||
           owner.basis !== sha(Buffer.concat([context.read(relativeProjectArtifact(inventory.storage, "project.json"), MAX_REFERENCE_BYTES), stateBytes]))
         ) {
-          throw Object.assign(new Error("Work owner changed."), { code: "HEAD_SESSION_IDENTITY_MISMATCH" });
+          throw Object.assign(new Error("Work owner changed."), { code: "SESSION_IDENTITY_MISMATCH" });
         }
         owners.set(selector.statePath, { owner });
       } catch (error) {

@@ -230,7 +230,7 @@ test("independent default operations do not require optional Host binding; expli
   const options = {
     resolveSessionContext() {
       resolutions++;
-      throw Object.assign(new Error("Synthetic unavailable binding"), { code: "HEAD_SESSION_CONTEXT_UNAVAILABLE" });
+      throw Object.assign(new Error("Synthetic unavailable binding"), { code: "SESSION_CONTEXT_UNAVAILABLE" });
     },
   };
   const args = { project_root: root, new_session_id: "session-00000000-0000-4000-8000-000000000002", purpose: "Independent work" };

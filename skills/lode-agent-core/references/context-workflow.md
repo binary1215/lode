@@ -11,7 +11,7 @@ It is a single read-only preparation, not a prerequisite for every task.
 `lode_context_preview` optionally accepts Lode-authored EvidenceNeeds or exact
 current graph anchors. Users never fill JSON, select IDs or operate a budget ladder.
 
-Lode assesses relevance and sufficiency. `ready_for_head_semantic_assessment`
+Lode assesses relevance and sufficiency. `ready_for_lode_semantic_assessment`
 does not assert that requested evidence is present or complete.
 Read `evidenceGaps`, `omissions` and `uncertainty`, inspect original source
 bodies and expand only missing useful material. Budget is any positive safe integer,

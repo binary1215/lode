@@ -278,7 +278,7 @@ try {
     budget: 32_768,
   });
   assert.equal(preparation.status, "prepared");
-  assert.equal(preparation.preparation.status, "ready_for_head_semantic_assessment");
+  assert.equal(preparation.preparation.status, "ready_for_lode_semantic_assessment");
   assert.equal(preparation.preparation.task, contextTask);
   assert(preparation.preparation.selectedContext.repositoryFiles.length > 0);
   assert.equal(preparation.preparation.authority.selectsEvidenceNeeds, false);

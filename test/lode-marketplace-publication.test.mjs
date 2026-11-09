@@ -95,11 +95,11 @@ test("host-d: owned stable MCP address follows upgrade/rollback and refuses inva
   assert.equal(portableMcpLaunch({ client: "claude", pluginRoot: selected, projectRoot, projection: "installed-project" }).pathForm, "installed-project");
   fs.writeFileSync(markerFile, markerBytes);
   const launcherBytes = fs.readFileSync(launch.args[0]); fs.appendFileSync(launch.args[0], "\n// altered launcher\n");
-  assert.throws(() => portableMcpLaunch({ client: "claude", pluginRoot: selected, projectRoot, projection: "installed-project" }), { code: "HEAD_DISTRIBUTION_COMMAND_OWNERSHIP_INVALID" });
+  assert.throws(() => portableMcpLaunch({ client: "claude", pluginRoot: selected, projectRoot, projection: "installed-project" }), { code: "DISTRIBUTION_COMMAND_OWNERSHIP_INVALID" });
   fs.writeFileSync(launch.args[0], launcherBytes);
   const entry = path.join(selected, "scripts", "mcp-server.mjs"), entryBytes = fs.readFileSync(entry), executed = path.join(root, "unverified-entry-executed");
   fs.appendFileSync(entry, `\nimport hostDFixtureFs from 'node:fs';hostDFixtureFs.writeFileSync(${JSON.stringify(executed)},'must never execute');\n`);
-  await assert.rejects(version(), /HEAD_DISTRIBUTION_FILE_DRIFT/); assert.equal(fs.existsSync(executed), false);
+  await assert.rejects(version(), /DISTRIBUTION_FILE_DRIFT/); assert.equal(fs.existsSync(executed), false);
   fs.writeFileSync(entry, entryBytes);
   t.diagnostic("Owned source-only installation + real local stdio processes. No provider/installed Host/plugin update.");
 });
@@ -257,7 +257,7 @@ test("host-d: failed marker publication preserves selection; explicit bin/root c
   assert.deepEqual(inventory(firstBin), oldCommands); assert(!fs.readdirSync(installRoot).some(name => /\.(tmp|previous)$/.test(name)));
   const foreignBin = path.join(root, "foreign bin"); fs.mkdirSync(foreignBin);
   const foreign = path.join(foreignBin, "lode-agent-launcher.mjs"), foreignBytes = "// user-owned command\n"; fs.writeFileSync(foreign, foreignBytes);
-  assert.throws(() => installDistribution({ sourceRoot: nextSource, installRoot, binDirectory: foreignBin }), { code: "HEAD_DISTRIBUTION_COMMAND_CONFLICT" });
+  assert.throws(() => installDistribution({ sourceRoot: nextSource, installRoot, binDirectory: foreignBin }), { code: "DISTRIBUTION_COMMAND_CONFLICT" });
   assert.equal(fs.readFileSync(foreign, "utf8"), foreignBytes); assert.deepEqual(fs.readFileSync(markerFile), marker);
   const upgraded = installDistribution({ sourceRoot: nextSource, installRoot, binDirectory: secondBin });
   assert.notEqual(upgraded.releaseId, first.releaseId); assert.deepEqual(inventory(firstBin), oldCommands);

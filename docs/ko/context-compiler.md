@@ -10,7 +10,7 @@ Compiler는 선택된 증거를 묶고, Lode는 관련성·충분성·확대·�
 `lode_context_prepare`는 정확한 사용자 작업에 대한 출처 연결 맥락을 반환합니다.
 `lode_context_preview`는 Lode가 작성한 선택적 `EvidenceNeed[]` 안내를 받습니다.
 사용자는 JSON이나 anchor를 작성하지 않습니다. 두 호출은 읽기 전용이며
-`ready_for_head_semantic_assessment`를 반환합니다. 이는 Lode에 대한 안내이지,
+`ready_for_lode_semantic_assessment`를 반환합니다. 이는 Lode에 대한 안내이지,
 충분성 증명이나 실행 gate가 아닙니다.
 
 ```text
@@ -121,7 +121,7 @@ Core는 근거의 종류나 기준 노드를 고르지 않으며, 어휘 기반 
 관련 없는 자료로 단정하지 않습니다.
 
 Product/World가 활성화되지 않아도 준비 결과는
-`ready_for_head_semantic_assessment`입니다. 저장소 메타데이터가 없음을 알리고
+`ready_for_lode_semantic_assessment`입니다. 저장소 메타데이터가 없음을 알리고
 사용 가능한 정리된 맥락을 제공합니다. Lode는 현재 원본 소스를 직접 조사할 수
 있습니다. 준비 과정은 Product를 활성화하거나 저장소를 인덱싱하거나 복구 기록을
 만들지 않습니다. Product/World 작업은 해당 작업에 필요할 때만 선택합니다.
@@ -139,7 +139,7 @@ CLI는 기본적으로 결과를 짧게 보여줍니다. `--json`을 추가하�
 누락과 불확실성을 확인할 수 있습니다. 결과가 유용하면 준비 또는 미리보기 호출
 하나로 충분하며, 별도 미리보기는 선택 사항입니다.
 
-`ready_for_head_semantic_assessment`는 Lode가 선택한 맥락을 판단하라는 뜻이며,
+`ready_for_lode_semantic_assessment`는 Lode가 선택한 맥락을 판단하라는 뜻이며,
 도구가 완전성을 증명했다는 뜻은 아닙니다. Lode는 필요한 원본 본문을 읽고
 반환된 그래프 기준 노드를 `details: true`로 확대할 수 있습니다. World가 없거나
 오래됐음을 알리며 현재 소스는 직접 사용할 수 있습니다. 고정 예산 단계, 포함

@@ -273,7 +273,7 @@ test("S1-S6: CLI and direct/router MCP previews preserve bound/unselected/lost c
         assert.equal(b.result.structuredContent.sessions.length, 1);
         const bad = await dispatch(request("../invalid", router), options);
         assert.equal(bad.result.structuredContent.preview.status, "unavailable");
-        assert.equal(bad.result.structuredContent.preview.reasonCode, "INVALID_HEAD_SESSION_ID");
+        assert.equal(bad.result.structuredContent.preview.reasonCode, "INVALID_SESSION_ID");
         assert.deepEqual(context.read(f.root), selection);
         assert.equal(sessionStatePath(f.root, f.storage), aPath);
       }

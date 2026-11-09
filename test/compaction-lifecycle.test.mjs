@@ -297,7 +297,7 @@ test("HEAD authors missing recovery direction internally instead of asking the u
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const adapter = await enqueue(new InMemoryCompactionLifecycleHostAdapter(), event(root, "before-compaction"));
   const needsHead = await processCompactionLifecycle({ root, hostAdapter: adapter });
-  assert.equal(needsHead.status, "head_direction_required");
+  assert.equal(needsHead.status, "lode_direction_required");
   assert.equal(needsHead.headActionRequired, true);
   assert.equal(needsHead.userDecisionRequired, false);
   assert.equal(needsHead.ordinaryWorkBlocked, false);

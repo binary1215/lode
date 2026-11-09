@@ -8,6 +8,9 @@ Context preview expansion are not part of the reviewed source slice and must be
 evaluated from the current architecture and executable tests rather than inferred
 from this document.
 
+HEAD (old name) is what Lode was called before the rename. This historical
+comparison keeps HEAD wherever it names the original source or its behavior.
+
 This document compares the extracted `Won6314/head-agent-core` reference with
 this provider-neutral plugin. It records design lineage, adopted corrections,
 and the remaining limits of a claim that this plugin is preferable for

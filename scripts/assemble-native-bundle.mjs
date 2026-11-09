@@ -14,7 +14,7 @@ try {
   const version = option("--version");
   const commit = option("--commit");
   if (!artifactsRoot || !outputRoot || !version) {
-    throw Object.assign(new Error("--artifacts, --output, and --version are required."), { code: "HEAD_NATIVE_BUNDLE_ARGUMENTS" });
+    throw Object.assign(new Error("--artifacts, --output, and --version are required."), { code: "NATIVE_BUNDLE_ARGUMENTS" });
   }
   const result = assembleVerifiedNativeBundle({
     artifactsRoot: path.resolve(artifactsRoot),
@@ -24,6 +24,6 @@ try {
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } catch (error) {
-  process.stderr.write(`${JSON.stringify({ status: "error", code: error.code || "HEAD_NATIVE_BUNDLE_ASSEMBLY_FAILED", message: error.message })}\n`);
+  process.stderr.write(`${JSON.stringify({ status: "error", code: error.code || "NATIVE_BUNDLE_ASSEMBLY_FAILED", message: error.message })}\n`);
   process.exitCode = 1;
 }

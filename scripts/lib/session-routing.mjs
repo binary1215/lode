@@ -11,6 +11,7 @@ import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
 import { noteProjectGraphChange } from "./discovery-index.mjs";
 import { safeSessionPath, defaultSessionStatePath } from "./session-paths.mjs";
 import { sha256Hex } from "./core/digest.mjs";
+import { legacyReasonCodeFields } from "./core/errors.mjs";
 export { safeSessionPath, defaultSessionStatePath } from "./session-paths.mjs";
 import { readProjectDirectionView } from "./project-direction-view.mjs";
 import { verifyImportedDefaultSession } from "./session-import-proof.mjs";
@@ -153,7 +154,7 @@ export function createSessionCallContext() {
     select(root, sessionId, expectedRevision = null) {
       const base = canonicalRoot(root),
         before = this.read(base);
-      if (expectedRevision != null && before.revision !== expectedRevision) fail("Host Session binding changed.", "HEAD_SESSION_BINDING_CONFLICT");
+      if (expectedRevision != null && before.revision !== expectedRevision) fail("Host Session binding changed.", "SESSION_BINDING_CONFLICT");
       let selected = sessionId;
       if (sessionId == null || sessionId === "") {
         const file = defaultSessionStatePath(base, resolveProjectStorage(base)),
@@ -182,13 +183,13 @@ export function createSessionCallContext() {
 
 export function withSessionCallContext({ root, sessionId, context = null }, operation) {
   if (!context) return withSessionRoute(root, sessionId, operation);
-  if (!callContexts.has(context)) fail("Expected a trusted caller-scoped Host context.", "INVALID_HEAD_SESSION_CALL_CONTEXT");
+  if (!callContexts.has(context)) fail("Expected a trusted caller-scoped Host context.", "INVALID_SESSION_CALL_CONTEXT");
   const binding = sessionId !== undefined ? context.select(root, sessionId) : context.read(root);
-  if (binding.status === "lost") fail("Selected logical Session was lost; do not silently substitute default.", "HEAD_SESSION_SELECTION_LOST");
+  if (binding.status === "lost") fail("Selected logical Session was lost; do not silently substitute default.", "SESSION_SELECTION_LOST");
   return withSessionRoute(root, binding.sessionId, operation);
 }
 
-export function sessionSelectionUnresolved(root, { includeProjectFacts = false, reasonCode = "HEAD_SESSION_SELECTION_LOST" } = {}) {
+export function sessionSelectionUnresolved(root, { includeProjectFacts = false, reasonCode = "SESSION_SELECTION_LOST" } = {}) {
   // Do not inspect a default Session and redact it. These are the only original
   // records needed for the unavailable-selection response, including mixed reads.
   const storage = resolveProjectStorage(root);
@@ -204,6 +205,7 @@ export function sessionSelectionUnresolved(root, { includeProjectFacts = false, 
   const unresolved = {
     status: "session_selection_unresolved",
     reasonCode,
+    ...legacyReasonCodeFields(reasonCode),
     projectId: project.projectId,
     sessionId: null,
     sessionSelection: { status: "lost" },
@@ -271,9 +273,9 @@ export function sessionStatePath(root, storage) {
       stateBytes: bytes,
     })
   )
-    fail("Imported Session original changed.", "HEAD_SESSION_IDENTITY_MISMATCH", file);
+    fail("Imported Session original changed.", "SESSION_IDENTITY_MISMATCH", file);
   if (state.sessionId !== route.sessionId || project.projectId !== route.projectId || (state.projectId && state.projectId !== route.projectId))
-    fail("Selected logical Session identity changed during the request.", "HEAD_SESSION_IDENTITY_MISMATCH");
+    fail("Selected logical Session identity changed during the request.", "SESSION_IDENTITY_MISMATCH");
   return file;
 }
 
@@ -291,7 +293,7 @@ export function sessionDataPath(root, ...parts) {
 function resolveSessionRoute(base, sessionId, preflightOwner = null) {
   const storage = preflightOwner?.storage ?? resolveProjectStorage(base);
   const directory = formatForVerifiedOwner(storage).directory;
-  if (!validId(sessionId)) fail("Expected a logical HEAD Session id.", "INVALID_HEAD_SESSION_ID");
+  if (!validId(sessionId)) fail("Expected a logical HEAD Session id.", "INVALID_SESSION_ID");
   const project = read(safeSessionPath(base, directory, "project.json"));
   if (
     project.schemaVersion !== 1 ||
@@ -311,13 +313,13 @@ function resolveSessionRoute(base, sessionId, preflightOwner = null) {
     } catch (error) {
       if (error.code !== "INVALID_SESSION_CANON") throw error;
     }
-    if (defaultState?.sessionId === sessionId) fail("Default and named Session identities collide.", "HEAD_SESSION_IDENTITY_MISMATCH", defaultFile);
+    if (defaultState?.sessionId === sessionId) fail("Default and named Session identities collide.", "SESSION_IDENTITY_MISMATCH", defaultFile);
   } else defaultState = read(defaultFile);
   const file = named ? namedFile : defaultState?.sessionId === sessionId ? defaultFile : namedFile;
   const pendingImport = safeSessionPath(base, path.relative(base, path.join(path.dirname(file), "import-pending.json")));
   if (fs.existsSync(pendingImport))
-    fail("The selected Session import is incomplete; retry its exact bundle. Other Sessions remain available.", "HEAD_SESSION_IMPORT_PENDING", file);
-  if (!fs.existsSync(file)) fail("Logical HEAD Session does not exist.", "HEAD_SESSION_NOT_FOUND");
+    fail("The selected Session import is incomplete; retry its exact bundle. Other Sessions remain available.", "SESSION_IMPORT_PENDING", file);
+  if (!fs.existsSync(file)) fail("Logical HEAD Session does not exist.", "SESSION_NOT_FOUND");
   const { document: state, bytes } = readWithBytes(file);
   let importedDefault = false;
   if (named && state?.projectId == null && state?.sessionId === sessionId)
@@ -327,16 +329,16 @@ function resolveSessionRoute(base, sessionId, preflightOwner = null) {
     state.sessionId !== sessionId ||
     (named ? state.projectId !== project.projectId && !importedDefault : state.projectId && state.projectId !== project.projectId)
   )
-    fail("Session identity does not match this Project.", "HEAD_SESSION_IDENTITY_MISMATCH", file);
+    fail("Session identity does not match this Project.", "SESSION_IDENTITY_MISMATCH", file);
   return { sessionId, stateFile: file, projectId: project.projectId, storage, importedDefault };
 }
 
 // Read-only input preflight for the explicit resume transaction. This does not
 // establish a route, mutate a Host binding or make a copied Project current.
 export function validateRelocationSessionSelection({ root, storage, project }, { sessionId, context = null } = {}) {
-  if (context && !callContexts.has(context)) fail("Expected a trusted caller-scoped Host context.", "INVALID_HEAD_SESSION_CALL_CONTEXT");
+  if (context && !callContexts.has(context)) fail("Expected a trusted caller-scoped Host context.", "INVALID_SESSION_CALL_CONTEXT");
   const binding = context?.read(root);
-  if (sessionId === undefined && binding?.status === "lost") fail("Selected logical Session was lost.", "HEAD_SESSION_SELECTION_LOST");
+  if (sessionId === undefined && binding?.status === "lost") fail("Selected logical Session was lost.", "SESSION_SELECTION_LOST");
   const selected = sessionId === undefined ? (binding?.sessionId ?? selectedId(root)) : sessionId;
   if (selected == null || selected === "") {
     const file = defaultSessionStatePath(root, storage),
@@ -360,9 +362,9 @@ export function createLodeSession({ root = ".", sessionId = `session-${crypto.ra
   if (!validId(sessionId))
     fail(
       "Invalid logical Session input: the new Session id must match session-<36 hex digits and hyphens>, for example session-12345678-1234-1234-1234-123456789abc.",
-      "INVALID_HEAD_SESSION_INPUT",
+      "INVALID_SESSION_INPUT",
     );
-  if (typeof purpose !== "string") fail("Invalid logical Session input: purpose must be a string.", "INVALID_HEAD_SESSION_INPUT");
+  if (typeof purpose !== "string") fail("Invalid logical Session input: purpose must be a string.", "INVALID_SESSION_INPUT");
   const base = canonicalRoot(root);
   const storage = resolveProjectStorage(base);
   const directory = formatForVerifiedOwner(storage).directory;
@@ -377,7 +379,7 @@ export function createLodeSession({ root = ".", sessionId = `session-${crypto.ra
     if (fs.existsSync(file)) {
       const state = read(file);
       if (state.sessionId !== sessionId || (state.projectId && state.projectId !== project.projectId) || (purpose && state.purpose !== purpose))
-        fail("Session create retry differs from its existing identity or purpose.", "HEAD_SESSION_CREATE_CONFLICT");
+        fail("Session create retry differs from its existing identity or purpose.", "SESSION_CREATE_CONFLICT");
       return { status: "existing", projectId: project.projectId, sessionId, state };
     }
     const state = {
@@ -411,7 +413,7 @@ export function listLodeSessions({ root = ".", maxSessions = 16, afterSessionId 
     maxSessions > 64 ||
     (afterSessionId !== null && (typeof afterSessionId !== "string" || afterSessionId.length > 512))
   ) {
-    fail("Invalid bounded Session page.", "INVALID_HEAD_SESSION_INPUT");
+    fail("Invalid bounded Session page.", "INVALID_SESSION_INPUT");
   }
   const base = canonicalRoot(root);
   const storage = resolveProjectStorage(base);
@@ -430,7 +432,7 @@ export function listLodeSessions({ root = ".", maxSessions = 16, afterSessionId 
     reasonCode: error.code || "SESSION_READ_UNAVAILABLE",
   });
   const inspect = (key) => {
-    if (key !== "default" && !validId(key)) fail("Unexpected entry in logical Sessions.", "INVALID_HEAD_SESSION_ID");
+    if (key !== "default" && !validId(key)) fail("Unexpected entry in logical Sessions.", "INVALID_SESSION_ID");
     const file =
       key === "default" ? defaultSessionStatePath(base, storage) : safeSessionPath(base, managementDirectory, "sessions", "by-id", key, "current.json");
     const fd = fs.openSync(file, "r");
@@ -469,7 +471,7 @@ export function listLodeSessions({ root = ".", maxSessions = 16, afterSessionId 
             })
           ))
     ) {
-      fail("Session identity differs.", "HEAD_SESSION_IDENTITY_MISMATCH");
+      fail("Session identity differs.", "SESSION_IDENTITY_MISMATCH");
     }
     safeSessionPath(base, path.relative(base, file));
     return {
@@ -508,14 +510,14 @@ export function listLodeSessions({ root = ".", maxSessions = 16, afterSessionId 
   if (defaultIdentity) {
     try {
       const duplicate = safeSessionPath(base, managementDirectory, "sessions", "by-id", defaultIdentity, "current.json");
-      if (fs.existsSync(duplicate)) fail("Default and named Session identities collide.", "HEAD_SESSION_IDENTITY_MISMATCH");
+      if (fs.existsSync(duplicate)) fail("Default and named Session identities collide.", "SESSION_IDENTITY_MISMATCH");
     } catch (error) {
       defaultRow = null;
       defaultError = diagnostic("default", error);
     }
   }
   const cursor = afterSessionId === null ? -1 : entries.findIndex((entry) => entry.key === afterSessionId);
-  if (afterSessionId !== null && cursor < 0) fail("Session page cursor is no longer present; read the first page again.", "HEAD_SESSION_LIST_CURSOR_CHANGED");
+  if (afterSessionId !== null && cursor < 0) fail("Session page cursor is no longer present; read the first page again.", "SESSION_LIST_CURSOR_CHANGED");
   let inspected = 0,
     returned = 0,
     characters = 0,
@@ -528,9 +530,9 @@ export function listLodeSessions({ root = ".", maxSessions = 16, afterSessionId 
         row = defaultRow;
         error = defaultError;
       } else {
-        if (!validId(id)) fail("Unexpected entry in logical Sessions.", "INVALID_HEAD_SESSION_ID");
+        if (!validId(id)) fail("Unexpected entry in logical Sessions.", "INVALID_SESSION_ID");
         row = inspect(id);
-        if (row.sessionId === defaultIdentity) fail("Default and named Session identities collide.", "HEAD_SESSION_IDENTITY_MISMATCH");
+        if (row.sessionId === defaultIdentity) fail("Default and named Session identities collide.", "SESSION_IDENTITY_MISMATCH");
       }
     } catch (caught) {
       row = null;
@@ -593,7 +595,7 @@ export { createLodeSession as createHeadSession, listLodeSessions as listHeadSes
 export function sessionStateForWrite(root, state, storage) {
   const route = selectedRoute(root);
   if (!route || !route.importedDefault || state.projectId != null) return state;
-  if (state.sessionId !== route.sessionId) fail("Session write identity changed.", "HEAD_SESSION_IDENTITY_MISMATCH");
+  if (state.sessionId !== route.sessionId) fail("Session write identity changed.", "SESSION_IDENTITY_MISMATCH");
   sessionStatePath(root, storage);
   return { ...state, projectId: route.projectId };
 }

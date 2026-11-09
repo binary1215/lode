@@ -28,16 +28,16 @@ forced under one feature. Unconfirmed associations remain unclassified.
 
 Both audiences use the same facts. Humans see purpose, flow, conditions, results
 and useful links; agents also see exact IDs, sources and selected code/diff/graph
-evidence. HEAD explains exact selected sources; Core never invents prose or
+evidence. Lode explains exact selected sources; Core never invents prose or
 implementation mappings. Explanations retain their original source bindings:
-after a Canon change they are historical until HEAD deliberately updates them.
+after a Canon change they are historical until Lode deliberately updates them.
 Missing code, comparisons or execution evidence stays unknown.
 
 Enable optional projectDocuments scope through the existing connection
 conversation; upgrading does not expand a task-only connection. No extra user
 JSON, Todo or onboarding step is needed. Automatic Project scope can document
 meaningful saved analysis without a Todo. A rich prior selection is kept or
-deliberately revised by HEAD, never silently shrunk to the last note.
+deliberately revised by Lode, never silently shrunk to the last note.
 
 One Project home is shared across Sessions and aliases for the same actual Notion
 parent or physical vault. Different Projects with the same title remain separate.
@@ -48,7 +48,7 @@ Stable page identities survive renames; prior reading bodies remain linked
 history, and personal notes are never rewritten.
 
 Large hierarchies continue in bounded publication calls, including beyond the
-65th page. HEAD follows continuation-required without asking the user to run a
+65th page. Lode follows continuation-required without asking the user to run a
 script or resave work. Publication completion requires observing every selected
 page and required link. This is **not simultaneous remote CAS**: receipts state
 the last verified scope. Source/config changes and user edits preserve prior
@@ -68,7 +68,7 @@ parent observation is also not an atomic remote snapshot or authorship proof.
 
 Typed MCP: lode_project_document_prepare, lode_project_document_publish,
 lode_project_document_status. CLI: project-document-prepare,
-project-document-publish, project-document-status. HEAD supplies exact work
+project-document-publish, project-document-status. Lode supplies exact work
 references, optional feature reading associations, saved task reading selections
 and source-linked narrative. Project delivery records are P5 under
 document-projection/project/<Project>/; they never combine Session P2 direction.
@@ -106,12 +106,12 @@ result can use explicit preparation; Todo adoption is not a new paperwork gate.
 
 An exact result retry reuses its verified evidence/diff/quotation/related/graph
 selection. It never silently substitutes a smaller recent-only view. For a new
-revision, HEAD may supply optional `document_selection` in the same async record
+revision, Lode may supply optional `document_selection` in the same async record
 call (CLI `--document-selection`). Its local `recorded` alias resolves to that
 saved original; it does not change P3 schema or grant authority. If an existing
-rich selection cannot be carried safely without HEAD judgment, the response
+rich selection cannot be carried safely without Lode judgment, the response
 reports `head-selection-required`, the recorded reopen/cancellation and remote
-not-updated state. HEAD continues explicit preparation and publication in the same
+not-updated state. Lode continues explicit preparation and publication in the same
 turn, using the supplied exact prior scope, without asking the user for a form or
 re-saving work. Old before/after pairs remain historical unless explicitly
 selected for the new record; they are not automatically relabelled as a new change.
@@ -124,7 +124,7 @@ views with their exact failure codes; available retained bytes are distinguished
 from current files. Failed comparisons or quotations stay unknown. Original P3
 identity/digest failure rejects the basis, and a source permission denial is not
 retried through another reader. Text-only CLI/MCP results preserve publication
-status and HEAD's bounded preparation/publishing follow-up as well as structured
+status and Lode's bounded preparation/publishing follow-up as well as structured
 responses. Document effects are distinguished from original task effects.
 
 Every external effect has a prior durable attempt. Lost creates use the trusted
@@ -140,12 +140,12 @@ A normal, matching Notion `403` / `restricted_resource` error on page creation o
 exact Markdown update records a rejected write separately from unknown effects.
 Its cause is retained: this code can mean a workspace block limit as well as
 missing permission. Repair alone does not retry. Within current authorization,
-HEAD uses the returned exact attempt reference in `retry_rejected_writes`
+Lode uses the returned exact attempt reference in `retry_rejected_writes`
 (CLI input `retryRejectedWrites`) for one explicit same-request successor attempt.
 Prior attempts and outcomes remain create-only. Repeated refusal needs its new
 reference; repeated clicks cannot launch another successor. Parent, method,
 content, configuration, source basis and current managed text must still match.
-When sources change, HEAD prepares a fresh pair. An identical stable start/notes
+When sources change, Lode prepares a fresh pair. An identical stable start/notes
 creation can retain its rejected-attempt reference under that verified new basis;
 this does not reuse an old view, changed write body or stale prepared source.
 Users need not write JSON or re-run the original task. This never bypasses a Host

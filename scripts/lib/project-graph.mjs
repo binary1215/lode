@@ -654,7 +654,7 @@ async function verifiedLayer(inventory, layer, entries, model) {
           expectedId !== document.sessionId ||
           (document.projectId && document.projectId !== projectId)
         )
-          fail("HEAD_SESSION_IDENTITY_MISMATCH");
+          fail("SESSION_IDENTITY_MISMATCH");
         const node = add({ ...document, kind: formatForVerifiedOwner(storage).kind("HeadSessionStateReference") }, record.path, ["work"], {
           freshness: "current-session-record-bytes",
           reviewState: "session-progress-reference",

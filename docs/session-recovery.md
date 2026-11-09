@@ -490,8 +490,8 @@ history, not no history or complete recovery. Use the supplied exact-read
 expansion for missing dependent evidence; current P2 direction/cancellation and
 the independent Todo view continue to govern ordinary work.
 
-HEAD can record optional `todos` through the existing `lode_session_work_record`
-or checkpoint's optional work evidence. Users describe work normally. HEAD
+Lode can record optional `todos` through the existing `lode_session_work_record`
+or checkpoint's optional work evidence. Users describe work normally. Lode
 supplies stable `todoId`, task, recorded attribution, explicit status and a next
 action for unresolved work. `partial`, `waiting`, `completed` and `cancelled`
 are distinct; waiting/cancellation retain a reason. Progress and related exact

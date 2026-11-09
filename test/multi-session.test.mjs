@@ -108,7 +108,7 @@ test("S1-S6: bounded Session discovery isolates item failures and traverses inva
     fs.writeFileSync(bFile, JSON.stringify(state));
     const failed = listHeadSessions({ root });
     assert.ok(failed.sessions.some((row) => row.sessionId === a.sessionId));
-    assert.equal(failed.unavailable.find((row) => row.entry === b.sessionId).reasonCode, "HEAD_SESSION_IDENTITY_MISMATCH");
+    assert.equal(failed.unavailable.find((row) => row.entry === b.sessionId).reasonCode, "SESSION_IDENTITY_MISMATCH");
   }
   fs.unlinkSync(bFile);
   assert.equal(listHeadSessions({ root }).unavailable.find((row) => row.entry === b.sessionId).reasonCode, "ENOENT");
@@ -129,9 +129,9 @@ test("S1-S6: bounded Session discovery isolates item failures and traverses inva
     duplicatePage.sessions.some((row) => row.sessionId === legacyDefault.sessionId),
     false,
   );
-  assert.equal(duplicatePage.unavailable.filter((row) => row.reasonCode === "HEAD_SESSION_IDENTITY_MISMATCH").length, 2);
+  assert.equal(duplicatePage.unavailable.filter((row) => row.reasonCode === "SESSION_IDENTITY_MISMATCH").length, 2);
   assert.ok(duplicatePage.sessions.some((row) => row.sessionId === a.sessionId));
-  assert.throws(() => withSessionRoute(root, legacyDefault.sessionId, () => {}), { code: "HEAD_SESSION_IDENTITY_MISMATCH" });
+  assert.throws(() => withSessionRoute(root, legacyDefault.sessionId, () => {}), { code: "SESSION_IDENTITY_MISMATCH" });
   fs.unlinkSync(duplicateFile);
   fs.rmdirSync(duplicateDirectory);
   const before = allBytes(),
@@ -160,8 +160,8 @@ test("S1-S6: bounded Session discovery isolates item failures and traverses inva
   fs.writeFileSync(projectFile, JSON.stringify({ ...JSON.parse(projectBytes), projectRoot: root + "-foreign" }));
   assert.throws(() => listHeadSessions({ root }), { code: "PROJECT_IDENTITY_MISMATCH" });
   fs.writeFileSync(projectFile, projectBytes);
-  assert.throws(() => listHeadSessions({ root, afterSessionId: "removed-entry" }), { code: "HEAD_SESSION_LIST_CURSOR_CHANGED" });
-  assert.throws(() => listHeadSessions({ root, maxSessions: 65 }), { code: "INVALID_HEAD_SESSION_INPUT" });
+  assert.throws(() => listHeadSessions({ root, afterSessionId: "removed-entry" }), { code: "SESSION_LIST_CURSOR_CHANGED" });
+  assert.throws(() => listHeadSessions({ root, maxSessions: 65 }), { code: "INVALID_SESSION_INPUT" });
 });
 
 test("S1-S6: metadata size and unsafe paths remain bounded unavailable evidence", (t) => {
@@ -283,13 +283,13 @@ test("routing rejects escape, foreign identity and divergent create without defa
   const { root, storage, layout } = project(t);
   const { root: foreign } = project(t);
   const a = createHeadSession({ root, purpose: "A" });
-  assert.throws(() => withSessionRoute(root, "../../outside", () => {}), { code: "INVALID_HEAD_SESSION_ID" });
-  assert.throws(() => createHeadSession({ root, sessionId: a.sessionId, purpose: "B" }), { code: "HEAD_SESSION_CREATE_CONFLICT" });
+  assert.throws(() => withSessionRoute(root, "../../outside", () => {}), { code: "INVALID_SESSION_ID" });
+  assert.throws(() => createHeadSession({ root, sessionId: a.sessionId, purpose: "B" }), { code: "SESSION_CREATE_CONFLICT" });
   withSessionRoute(root, a.sessionId, () => assert.throws(() => sessionDataPath(root, "../../../../../escape"), { code: "SESSION_PATH_ESCAPE" }));
   withSessionRoute(root, a.sessionId, () => assert.notEqual(inspectProject(foreign).state.sessionId, a.sessionId));
   const file = withSessionRoute(root, a.sessionId, () => sessionStatePath(root, storage));
   fs.writeFileSync(file, JSON.stringify({ ...a.state, projectId: inspectProject(foreign).project.projectId }));
-  assert.throws(() => withSessionRoute(root, a.sessionId, () => {}), { code: "HEAD_SESSION_IDENTITY_MISMATCH" });
+  assert.throws(() => withSessionRoute(root, a.sessionId, () => {}), { code: "SESSION_IDENTITY_MISMATCH" });
 });
 
 test("default project onboarding remains readable within a new logical Session", async (t) => {
@@ -376,7 +376,7 @@ test("selected route remains bound to its original path despite default identity
     assert.equal(sessionStatePath(root, storage), selectedFile);
     assert.notEqual(sessionStatePath(root, storage), defaultFile);
     fs.writeFileSync(selectedFile, JSON.stringify({ ...a.state, sessionId: "session-00000000-0000-0000-0000-000000000000" }));
-    assert.throws(() => sessionStatePath(root, storage), { code: "HEAD_SESSION_IDENTITY_MISMATCH" });
+    assert.throws(() => sessionStatePath(root, storage), { code: "SESSION_IDENTITY_MISMATCH" });
   });
   fs.writeFileSync(defaultFile, original);
 });
@@ -622,7 +622,7 @@ test("historical migration separates common onboarding identity from selected re
     fs.writeFileSync(onboardingFile, onboardingBytes);
     const defaultBytes = fs.readFileSync(defaultFile);
     fs.writeFileSync(defaultFile, JSON.stringify({ ...read(defaultFile), projectId: "head-" + "a".repeat(20) }));
-    assert.throws(() => captureHistoricalBoundaryApplicationBasis({ root }), { code: "HEAD_SESSION_IDENTITY_MISMATCH" });
+    assert.throws(() => captureHistoricalBoundaryApplicationBasis({ root }), { code: "SESSION_IDENTITY_MISMATCH" });
     fs.writeFileSync(defaultFile, defaultBytes);
     assert.equal(inspectProject(root).state.sessionId, selected.sessionId);
     unchangedFiles.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), before[index]));

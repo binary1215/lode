@@ -74,7 +74,7 @@ function readOriginal(owner, evidenceId) {
 const reference = inspectSessionWorkReference;
 // Internal graph reader: explicit real owner, without Host selection persistence.
 export function readSessionWorkEvidenceOwner({ root, sessionId, storage }) {
-  if (!sessionId) fail("An exact logical owner is required.", "HEAD_SESSION_IDENTITY_MISMATCH");
+  if (!sessionId) fail("An exact logical owner is required.", "SESSION_IDENTITY_MISMATCH");
   return withSessionRoute(root, sessionId, () => identity(root, storage));
 }
 
@@ -126,7 +126,7 @@ function readSessionWorkListBase({ root = ".", sessionId = null, maxSessions = 1
   if (sessionId === null) return list;
   let preview;
   try {
-    if (!sessionId) fail("An exact preview Session is required.", "INVALID_HEAD_SESSION_ID");
+    if (!sessionId) fail("An exact preview Session is required.", "INVALID_SESSION_ID");
     preview = withSessionRoute(root, sessionId, () => {
       const workContext = readSessionWorkContext({ root, expectedSessionId: sessionId, maxRecords: 8, maxCharacters: 16384 });
       return {

@@ -29,8 +29,8 @@ test("the twelve accepted current display labels use Lode and keep compatibility
   const text = files.map(file => fs.readFileSync(path.join(source, file), "utf8")).join("\n");
   assert.doesNotMatch(text, /HEAD Agent Core/);
   assert.equal((text.match(/Lode Agent Core/g) || []).length, 12);
-  assert.match(text, /HEAD_DISTRIBUTION_INSTALL_ROOT_CONFLICT/);
-  assert.match(text, /HEAD_DISTRIBUTION_NOT_INSTALLED/);
+  assert.match(text, /DISTRIBUTION_INSTALL_ROOT_CONFLICT/);
+  assert.match(text, /DISTRIBUTION_NOT_INSTALLED/);
   assert.equal(catalogTools.find(tool => tool.name === "lode_core_contract").description, "Read the active Lode Agent Core roles, runtimes, and capability boundary.");
   const checkProse = value => {
     if (!value || typeof value !== "object") return;

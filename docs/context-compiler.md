@@ -9,7 +9,7 @@ require a Capsule, a Run, an inclusion proof or another approval.
 `lode_context_prepare` returns source-linked context for the exact user task.
 `lode_context_preview` accepts optional Lode-authored `EvidenceNeed[]` guidance.
 Users do not write JSON or choose anchors. Both calls are read-only and return
-`ready_for_head_semantic_assessment`, which is advice to Lode, not a proof of
+`ready_for_lode_semantic_assessment`, which is advice to Lode, not a proof of
 sufficiency or an execution gate.
 
 ```text
@@ -129,7 +129,7 @@ not select evidence kinds or anchors, and absence from the lexical candidate
 view never means irrelevance.
 
 If Product/World has not been activated, preparation still returns
-`ready_for_head_semantic_assessment`, discloses missing repository metadata and
+`ready_for_lode_semantic_assessment`, discloses missing repository metadata and
 provides available curated context. Lode may inspect current source directly.
 Preparation never activates Product, indexes the repository or creates recovery
 records. Optional Product/World work is chosen only when the task needs it.
@@ -148,7 +148,7 @@ CLI output is concise by default. Add `--json` for selected context, sources,
 omissions and uncertainty. One preparation or preview call is enough when its
 evidence is useful; a separate preview is optional, not a setup ritual.
 
-`ready_for_head_semantic_assessment` means Lode should assess the selected
+`ready_for_lode_semantic_assessment` means Lode should assess the selected
 context, not that the tool has proved completeness. Lode reads original bodies
 when needed and can expand a returned graph anchor with `details: true`.
 Missing/stale World is disclosed; direct current source remains available.

@@ -65,7 +65,7 @@ claude plugin install lode-agent-core@lode-agent-plugin
 
 The server name is `lode`, including in the HEAD compatibility package. Host
 permissions and automation bound to `mcp__head_core__...` or
-`mcp__lode_core__...` do not migrate through internal `head_*` operation aliases.
+`mcp__lode_core__...` do not migrate through legacy `head_*` operation aliases.
 When you choose to load an update, inspect the Host's connected MCP tool list
 and use the exact names it exposes for `lode` when updating your own rules.
 Preserve existing configuration and the running connection until then. Do not

@@ -158,6 +158,7 @@ Thumbs.db
 !test/lib-core-helpers.test.mjs
 !test/dispatch-recordings.test.mjs
 !test/legacy-operation-names.test.mjs
+!test/legacy-reason-codes.test.mjs
 !test/helpers/dispatch-recording-hooks.mjs
 !test/helpers/dispatch-recording-register.mjs
 !test/helpers/dispatch-recording-run.mjs

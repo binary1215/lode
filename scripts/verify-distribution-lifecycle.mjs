@@ -212,7 +212,7 @@ function verifyHistoricalEntrypointRollback() {
     windowsHide: true,
   });
   assert.notEqual(rejected.status, 0);
-  assert.match(rejected.stderr, /HEAD_DISTRIBUTION_FILE_DRIFT/);
+  assert.match(rejected.stderr, /DISTRIBUTION_FILE_DRIFT/);
   fs.writeFileSync(path.join(release, "scripts", "head.mjs"), oldHead);
   const aliases = ["HEAD_AGENT_INSTALL_ROOT", "LODE_AGENT_INSTALL_ROOT", "HEAD_AGENT_BIN_DIR", "LODE_AGENT_BIN_DIR"];
   const saved = aliases.map((name) => process.env[name]);
@@ -223,7 +223,7 @@ function verifyHistoricalEntrypointRollback() {
     process.env.LODE_AGENT_BIN_DIR = directory;
     assert.equal(inspectDistribution().activeReleaseId, releaseId);
     process.env.LODE_AGENT_INSTALL_ROOT = path.join(scratchRoot, "different-install");
-    assert.throws(() => inspectDistribution(), { code: "HEAD_DISTRIBUTION_INSTALL_ROOT_CONFLICT" });
+    assert.throws(() => inspectDistribution(), { code: "DISTRIBUTION_INSTALL_ROOT_CONFLICT" });
   } finally {
     aliases.forEach((name, index) => {
       if (saved[index] === undefined) delete process.env[name];
@@ -234,7 +234,7 @@ function verifyHistoricalEntrypointRollback() {
   fs.mkdirSync(conflictingBin);
   fs.writeFileSync(path.join(conflictingBin, "lode-agent.cmd"), "unowned\n");
   const pointerBefore = fs.readFileSync(path.join(root, "current.json"));
-  assert.throws(() => installDistribution({ sourceRoot, installRoot: root, binDirectory: conflictingBin }), { code: "HEAD_DISTRIBUTION_COMMAND_CONFLICT" });
+  assert.throws(() => installDistribution({ sourceRoot, installRoot: root, binDirectory: conflictingBin }), { code: "DISTRIBUTION_COMMAND_CONFLICT" });
   assert.deepEqual(fs.readFileSync(path.join(root, "current.json")), pointerBefore);
   assert.equal(fs.readFileSync(path.join(conflictingBin, "lode-agent.cmd"), "utf8"), "unowned\n");
 }
@@ -376,7 +376,7 @@ try {
   fs.writeFileSync(upgradedReadmeFile, `${upgradedReadme}\n${runtimeForbiddenMarkers[1]}\n`, "utf8");
   assert.throws(
     () => installDistribution({ sourceRoot: upgradedSource, installRoot, binDirectory }),
-    (error) => error.code === "HEAD_DISTRIBUTION_DEVELOPMENT_CONTEXT_LEAK",
+    (error) => error.code === "DISTRIBUTION_DEVELOPMENT_CONTEXT_LEAK",
   );
   assert.equal(inspectDistribution({ installRoot, binDirectory }).activeReleaseId, installed.releaseId);
   fs.writeFileSync(upgradedReadmeFile, upgradedReadme, "utf8");
@@ -385,7 +385,7 @@ try {
   fs.writeFileSync(upgradedPluginFile, `${JSON.stringify({ ...upgradedPlugin, version: "mismatched-e2e" }, null, 2)}\n`, "utf8");
   assert.throws(
     () => installDistribution({ sourceRoot: upgradedSource, installRoot, binDirectory }),
-    (error) => error.code === "HEAD_DISTRIBUTION_VERSION_MISMATCH",
+    (error) => error.code === "DISTRIBUTION_VERSION_MISMATCH",
   );
   assert.equal(inspectDistribution({ installRoot, binDirectory }).activeReleaseId, installed.releaseId);
   fs.writeFileSync(upgradedPluginFile, `${JSON.stringify(upgradedPlugin, null, 2)}\n`, "utf8");
@@ -394,7 +394,7 @@ try {
   fs.writeFileSync(upgradedPackageFile, `${JSON.stringify({ ...upgradedPackage, license: "Apache-2.0" }, null, 2)}\n`, "utf8");
   assert.throws(
     () => installDistribution({ sourceRoot: upgradedSource, installRoot, binDirectory }),
-    (error) => error.code === "HEAD_DISTRIBUTION_LICENSE_MISMATCH",
+    (error) => error.code === "DISTRIBUTION_LICENSE_MISMATCH",
   );
   assert.equal(inspectDistribution({ installRoot, binDirectory }).activeReleaseId, installed.releaseId);
   fs.writeFileSync(upgradedPackageFile, `${JSON.stringify(upgradedPackage, null, 2)}\n`, "utf8");

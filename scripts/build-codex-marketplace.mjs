@@ -10,7 +10,7 @@ function option(name, fallback = "") {
 
 try {
   const output = option("--output");
-  if (!output) throw Object.assign(new Error("--output is required."), { code: "HEAD_CODEX_MARKETPLACE_OUTPUT_REQUIRED" });
+  if (!output) throw Object.assign(new Error("--output is required."), { code: "CODEX_MARKETPLACE_OUTPUT_REQUIRED" });
   const report = buildCodexMarketplaceSnapshot({
     sourceRoot: path.resolve(option("--source", ".")),
     outputRoot: path.resolve(output),
@@ -22,6 +22,6 @@ try {
   });
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 } catch (error) {
-  process.stderr.write(`${JSON.stringify({ status: "error", code: error.code || "HEAD_CODEX_MARKETPLACE_BUILD_FAILED", message: error.message })}\n`);
+  process.stderr.write(`${JSON.stringify({ status: "error", code: error.code || "CODEX_MARKETPLACE_BUILD_FAILED", message: error.message })}\n`);
   process.exitCode = 1;
 }

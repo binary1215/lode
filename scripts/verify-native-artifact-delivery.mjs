@@ -214,7 +214,7 @@ try {
     const invalidArchive = fixtureArchive(target, { extraEntries: [[name, goNotices, 0o644]] });
     await assert.rejects(
       acquireVerifiedNativeArtifact({ version, mode: "required", fetchImplementation: fetchFixture(assetName, invalidArchive), temporaryParent: scratchRoot }),
-      (error) => error.code === "HEAD_NATIVE_ARCHIVE_CONTENT_INVALID",
+      (error) => error.code === "NATIVE_ARCHIVE_CONTENT_INVALID",
     );
   }
 
@@ -243,7 +243,7 @@ try {
     temporaryParent: scratchRoot,
   });
   assert.equal(unavailable.status, "unavailable");
-  assert.equal(unavailable.reasonCode, "HEAD_NATIVE_RELEASE_UNAVAILABLE");
+  assert.equal(unavailable.reasonCode, "NATIVE_RELEASE_UNAVAILABLE");
 
   const corruptedFetch = async (url) => {
     if (url.endsWith("/SHA256SUMS")) return new Response(`${"0".repeat(64)}  ${assetName}\n`, { status: 200 });
@@ -251,13 +251,13 @@ try {
   };
   await assert.rejects(
     acquireVerifiedNativeArtifact({ version, mode: "auto", fetchImplementation: corruptedFetch, temporaryParent: scratchRoot }),
-    (error) => error.code === "HEAD_NATIVE_ARCHIVE_DIGEST_MISMATCH",
+    (error) => error.code === "NATIVE_ARCHIVE_DIGEST_MISMATCH",
   );
 
   const unsafeArchive = archive([{ name: "../escape", bytes: Buffer.from("unsafe"), mode: 0o644 }]);
   await assert.rejects(
     acquireVerifiedNativeArtifact({ version, mode: "required", fetchImplementation: fetchFixture(assetName, unsafeArchive), temporaryParent: scratchRoot }),
-    (error) => error.code === "HEAD_NATIVE_ARCHIVE_PATH_UNSAFE",
+    (error) => error.code === "NATIVE_ARCHIVE_PATH_UNSAFE",
   );
 
   const artifactsRoot = path.join(scratchRoot, "all-platform-artifacts");
@@ -280,7 +280,7 @@ try {
   fs.rmSync(path.join(missingArtifactsRoot, `${target.package}.tar.gz`));
   assert.throws(
     () => assembleVerifiedNativeBundle({ artifactsRoot: missingArtifactsRoot, outputRoot: path.join(scratchRoot, "invalid-bundle"), version }),
-    (error) => error.code === "HEAD_NATIVE_BUNDLE_ARTIFACTS_INVALID",
+    (error) => error.code === "NATIVE_BUNDLE_ARTIFACTS_INVALID",
   );
 
   const codexMarketplaceRoot = path.join(scratchRoot, "codex-marketplace");
