@@ -49,7 +49,10 @@ same keys as `lode_session_work_record` `evidence`: at least one of `summary`,
 `executionObservation` and `occurrenceKey`. Unknown keys are refused with
 `INVALID_SESSION_WORK_EVIDENCE` and the error names them. A Todo needs `todoId`
 (`todo-<lowercase words>`), `task`, `status` and `origin`; unresolved ones also
-need `nextAction`.
+need `nextAction`. `origin` is recorded attribution, not approval: `user-directed`,
+`lode-proposed`, or its former spelling `head-proposed`. Either proposed spelling
+is stored in the project's own spelling: `lode-proposed` in `.lode` projects,
+`head-proposed` in `.head` projects.
 
 ```json
 {

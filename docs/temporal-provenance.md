@@ -92,7 +92,7 @@ The non-persisted graph-lineage trace may add a bounded currentness diagnostic f
 
 ## Deterministic bounded traversal
 
-`queryTemporalProvenanceGraph` first verifies the complete GraphSnapshot, then constructs temporal traversal protocol `0.3.0`. It has two mutually exclusive anchor modes: `lexical-discovery` for explicit search, and `exact-head-proposed` for semantic anchors supplied by Lode. Exact mode requires one to 32 unique node IDs plus the current `expectedGraphSnapshotId`; every anchor must exist and satisfy the requested kind, authority, freshness, confidence, and candidate policy. The query records:
+`queryTemporalProvenanceGraph` first verifies the complete GraphSnapshot, then constructs temporal traversal protocol `0.3.0`. It has two mutually exclusive anchor modes: `lexical-discovery` for explicit search, and `exact-lode-proposed` (`exact-head-proposed` in `.head` projects) for semantic anchors supplied by Lode. Exact mode requires one to 32 unique node IDs plus the current `expectedGraphSnapshotId`; every anchor must exist and satisfy the requested kind, authority, freshness, confidence, and candidate policy. The query records:
 
 - node-kind, relation, authority-class, and freshness allowlists;
 - minimum confidence;

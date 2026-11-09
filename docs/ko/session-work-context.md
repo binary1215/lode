@@ -79,7 +79,10 @@ startup은 실제로 출력에 담은 record의 index로 group을 만들고 Host
 `executionObservation`, `occurrenceKey`는 선택입니다. 알 수 없는 키는
 `INVALID_SESSION_WORK_EVIDENCE`로 거절되며 오류가 그 키를 이름합니다. Todo에는 `todoId`
 (`todo-<lowercase words>`), `task`, `status`, `origin`이 필요하고 미해결 항목은
-`nextAction`도 필요합니다.
+`nextAction`도 필요합니다. `origin`은 승인이 아닌 기록된 출처 표시로 `user-directed`,
+`lode-proposed`, 또는 그 이전 철자 `head-proposed`를 받습니다. 제안 출처는 어느 철자로
+입력해도 프로젝트의 철자로 저장됩니다(`.lode` 프로젝트는 `lode-proposed`, `.head`
+프로젝트는 `head-proposed`).
 
 ```json
 {

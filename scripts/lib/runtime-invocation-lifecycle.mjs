@@ -1,6 +1,4 @@
 import { formatForVerifiedOwner, familyFormatForOriginal, recordedFieldName } from "./project-storage-format.mjs";
-
-const FRESH_REVIEW_FIELD = "freshLodeReviewRequired";
 import { sha256Hex as digest } from "./core/digest.mjs";
 import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
 import { failWith } from "./core/errors.mjs";
@@ -37,6 +35,7 @@ import {
   verifyRuntimeInvocationNeverStarted,
   reconcileUnconsumedWorkerLease,
 } from "./runtime-execution-lease.mjs";
+const FRESH_REVIEW_FIELD = "freshLodeReviewRequired";
 
 export const EXECUTION_AUTHORIZATION_VERSION = "0.3.0";
 export const WORKER_EXECUTION_AUTHORIZATION_VERSION = "0.4.0";

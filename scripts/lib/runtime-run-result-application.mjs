@@ -1,6 +1,4 @@
 import { formatForVerifiedOwner, familyFormatForOriginal, recordedFieldName } from "./project-storage-format.mjs";
-
-const FRESH_REVIEW_FIELD = "freshLodeReviewRequired";
 import { sha256Hex as digest } from "./core/digest.mjs";
 import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
 import { failWith } from "./core/errors.mjs";
@@ -19,6 +17,7 @@ import { finishRun, getPendingReviewContext } from "./run-lineage.mjs";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
 import { isWorkerPatchProposalMode } from "./worker-patch-proposal.mjs";
 import { readRuntimeInvocationRecord, runtimeInvocationRecordDirectory, writeRuntimeInvocationArtifactExclusive } from "./runtime-invocation-record.mjs";
+const FRESH_REVIEW_FIELD = "freshLodeReviewRequired";
 
 export const RUNTIME_RUN_RESULT_APPLICATION_VERSION = "0.1.0";
 
