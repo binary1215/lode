@@ -58,7 +58,7 @@ const defaultToolNames = new Set([
   "lode_conversation_list",
   "lode_conversation_send",
   "lode_project_graph",
-  // The unresolved-Session entry names head_session_list as its discovery call, so
+  // The unresolved-Session entry names lode_session_list as its discovery call, so
   // it must be directly callable from the default surface, not only via routing.
   "lode_session_create",
   "lode_session_list",
@@ -449,7 +449,7 @@ async function dispatchRouted(
       name = semanticToolName(selected.name);
       args = args.arguments;
     }
-    requireOperationSurface(name, surface);
+    requireOperationSurface(publicToolName(name), surface);
     // A declared, required project_root is the contract: refuse its absence or a
     // wrong type after the surface, router and read-only checks and before any
     // handler reads it (otherwise a missing root meant the server's cwd). Other
@@ -459,7 +459,7 @@ async function dispatchRouted(
     const declaredSchema = (registeredOperation(name)?.tool ?? allTools.find((tool) => semanticToolName(tool.name) === name))?.inputSchema;
     if (declaredSchema) assertProjectRootArgument(publicToolName(name), declaredSchema, args);
     const registered = registeredOperation(name);
-    if (!registered) throw new Error(`Unknown tool: ${name}`);
+    if (!registered) throw new Error(`Unknown tool: ${publicToolName(name)}`);
     const value = await callRegistered(registered, "mcp", args, {
       packageVersion,
       graphDbTransport,
@@ -492,7 +492,7 @@ async function dispatchRouted(
     });
     const maxResponseBytes = registered?.mcp.maxResponseBytes;
     if (maxResponseBytes != null && Buffer.byteLength(JSON.stringify(response), "utf8") > maxResponseBytes) {
-      throw new Error(`${name} response exceeds ${maxResponseBytes} bytes.`);
+      throw new Error(`${publicToolName(name)} response exceeds ${maxResponseBytes} bytes.`);
     }
     return response;
   } catch (error) {

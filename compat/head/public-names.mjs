@@ -10,6 +10,7 @@ export function canonicalOperationName(name) {
 
 // The historical spelling, still presented by the head-agent carrier package.
 export function legacyOperationName(canonicalName) {
+  if (typeof canonicalName !== "string" || !canonicalName.startsWith(OPERATION_PREFIX)) throw new Error(`Not a canonical operation name: ${canonicalName}`);
   return LEGACY_OPERATION_PREFIX + canonicalName.slice(OPERATION_PREFIX.length);
 }
 

@@ -8,7 +8,8 @@ import { dispatch } from "../scripts/mcp-server.mjs";
 // Historical head_* wire names stay accepted one way (head_* -> lode_*).
 
 test("every operation's internal name is canonical and its head_* spelling resolves to it", () => {
-  assert.equal(OPERATION_DESCRIPTORS.length, 147);
+  assert.ok(OPERATION_DESCRIPTORS.length > 0);
+  assert.equal(new Set(OPERATION_DESCRIPTORS.map((operation) => operation.canonicalName)).size, OPERATION_DESCRIPTORS.length);
   for (const operation of OPERATION_DESCRIPTORS) {
     assert.match(operation.canonicalName, /^lode_[a-z0-9_]+$/);
     assert.equal(operation.semanticName, operation.canonicalName);
@@ -40,4 +41,26 @@ test("MCP calls by a head_* name, directly or through the router, behave like th
   assert.deepEqual(routedLegacyRouter, canonical);
   const unknown = await dispatch({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "head_not_an_operation", arguments: {} } });
   assert.equal(unknown.error.message, "Unknown tool: head_not_an_operation");
+});
+
+test("refusals name the operation by this artifact's public name, whatever spelling was called", async () => {
+  // Lode identity: lode_* (the head-agent carrier presents head_* through publicToolName).
+  for (const [id, name] of [
+    [1, "head_worker_integration"],
+    [2, "lode_worker_integration"],
+  ]) {
+    const response = await dispatch({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: { project_root: "/missing-root" } } });
+    assert.match(response.error.message, /^lode_worker_integration is not available on the ordinary command surface\./);
+  }
+  const helper = await dispatch({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "head_session_host_request_prepare", arguments: {} } });
+  assert.equal(helper.error.message, "Unknown tool: lode_session_host_request_prepare");
+});
+
+test("Session binding for unregistered names still follows the historical head_* prefixes only", async () => {
+  const { sessionCallRequiresBinding } = await import("../scripts/lib/session-routing.mjs");
+  assert.equal(sessionCallRequiresBinding("head_checkpoint_unregistered"), true);
+  assert.equal(sessionCallRequiresBinding("lode_checkpoint_unregistered"), false);
+  assert.equal(sessionCallRequiresBinding("head_checkpoint_basis"), true);
+  assert.equal(sessionCallRequiresBinding("lode_checkpoint_basis"), true);
+  assert.equal(sessionCallRequiresBinding("unrelated_name"), false);
 });

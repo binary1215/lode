@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveProjectStorage, formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { resolveOperation } from "./lode-operation-contract.mjs";
+import { canonicalOperationName, LEGACY_OPERATION_PREFIX } from "../../compat/head/public-names.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
 import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
@@ -86,9 +87,17 @@ export function sessionCallRequiresBinding(name, surface = "mcp") {
     const peer = cliProjectCalls.get(name);
     return peer ? sessionCallRequiresBinding(peer) : true;
   }
-  name = resolveOperation(name)?.semanticName ?? name;
+  const operation = resolveOperation(name);
+  // An unregistered name is judged by its spelling as before: only historical
+  // head_* prefixes (read through the one-way alias) select a Session binding.
+  const prefixed = operation
+    ? operation.semanticName
+    : typeof name === "string" && name.startsWith(LEGACY_OPERATION_PREFIX)
+      ? canonicalOperationName(name)
+      : "";
+  name = operation?.semanticName ?? name;
   return (
-    /^(lode_checkpoint_|lode_run_|lode_runtime_invocation_|lode_bounded_worker_|lode_worker_integration|lode_compact_)/u.test(name || "") ||
+    /^(lode_checkpoint_|lode_run_|lode_runtime_invocation_|lode_bounded_worker_|lode_worker_integration|lode_compact_)/u.test(prefixed) ||
     selectedSessionCalls.has(name)
   );
 }
