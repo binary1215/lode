@@ -31,13 +31,13 @@ export const workDocumentCompositionSchema = {
       featureKeys: {
         type: "array",
         items: text,
-        description: "HEAD-authored reading associations for the saved work, never Canon membership or implementation proof.",
+        description: "Lode-authored reading associations for the saved work, never Canon membership or implementation proof.",
       },
     },
     [],
   ),
   description:
-    "Optional HEAD-authored exact document selection, separate from the immutable P3 evidence. The local request alias recorded denotes only this saved original and resolves after saving. No user JSON/approval form. Existing selection is preserved on exact retry; a new rich scope must be authored, never inferred from old after bytes.",
+    "Optional Lode-authored exact document selection, separate from the immutable P3 evidence. The local request alias recorded denotes only this saved original and resolves after saving. No user JSON/approval form. Existing selection is preserved on exact retry; a new rich scope must be authored, never inferred from old after bytes.",
 };
 const target = object(
   {
@@ -56,16 +56,16 @@ const target = object(
   ["id", "kind", "automatic", "todoIds"],
 );
 const definition = (suffix, description, fields, required, annotations) => ({
-  name: `head_work_document_${suffix}`,
+  name: `lode_work_document_${suffix}`,
   description,
   inputSchema: object({ project_root: text, ...fields }, ["project_root", ...required]),
   annotations,
 });
 export const workDocumentTools = [
   {
-    name: "head_project_document_prepare",
+    name: "lode_project_document_prepare",
     description:
-      "Prepare linked human/agent Project reading views from actual Product membership DAG and exact selected work originals. HEAD authors feature reading links and source-linked narrative; Core does not infer Product meaning. Retains existing other-Session contributions. Canon-only and unclassified work need no Todo or onboarding. No external publication.",
+      "Prepare linked human/agent Project reading views from actual Product membership DAG and exact selected work originals. Lode authors feature reading links and source-linked narrative; Core does not infer Product meaning. Retains existing other-Session contributions. Canon-only and unclassified work need no Todo or onboarding. No external publication.",
     inputSchema: object(
       {
         project_root: text,
@@ -100,9 +100,9 @@ export const workDocumentTools = [
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
-    name: "head_project_document_publish",
+    name: "lode_project_document_publish",
     description:
-      "Publish the prepared Project hierarchy only to explicitly connected projectDocuments destinations. Bounded continuation is automatic HEAD work, not a user form. Same actual parent/vault shares Project journals across Session aliases. Exact parent, unknown-write, readback and user edits remain protected. Returned current means last scoped observations, not remote CAS or completed work.",
+      "Publish the prepared Project hierarchy only to explicitly connected projectDocuments destinations. Bounded continuation is automatic Lode work, not a user form. Same actual parent/vault shares Project journals across Session aliases. Exact parent, unknown-write, readback and user edits remain protected. Returned current means last scoped observations, not remote CAS or completed work.",
     inputSchema: object(
       {
         project_root: text,
@@ -115,7 +115,7 @@ export const workDocumentTools = [
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   {
-    name: "head_project_document_status",
+    name: "lode_project_document_status",
     description:
       "Read Project-scoped publication receipt and continuation progress. No network access, live freshness, P2 recovery or task completion inference.",
     inputSchema: object({ project_root: text, target_ids: { type: "array", maxItems: 8, items: text } }, ["project_root"]),
@@ -130,7 +130,7 @@ export const workDocumentTools = [
   ),
   definition(
     "prepare",
-    "Prepare human and agent Markdown from exact selected work originals and current common conditions. No Product, World, export, Run or Todo adoption required; use task_evidence_id for existing work without Todos. HEAD selects evidence, related proposals and exact source pairs. A completed label is not completion or approval proof. No external posting.",
+    "Prepare human and agent Markdown from exact selected work originals and current common conditions. No Product, World, export, Run or Todo adoption required; use task_evidence_id for existing work without Todos. Lode selects evidence, related proposals and exact source pairs. A completed label is not completion or approval proof. No external posting.",
     {
       title: text,
       evidence_ids: { type: "array", minItems: 1, maxItems: 16, items: evidenceId },
@@ -168,7 +168,7 @@ export const workDocumentTools = [
         maxItems: 8,
         items: object({ target_id: text, attempt_id: digest }, ["target_id", "attempt_id"]),
         description:
-          "Explicit retry of exact adapter-verified rejected attempts after their cause was repaired, within current authorization. HEAD supplies returned attempt references. Never automatic, never for uncertain effects or to bypass a Host denial.",
+          "Explicit retry of exact adapter-verified rejected attempts after their cause was repaired, within current authorization. Lode supplies returned attempt references. Never automatic, never for uncertain effects or to bypass a Host denial.",
       },
     },
     ["projection_id", "target_ids"],
@@ -183,10 +183,10 @@ export const workDocumentTools = [
   ),
 ];
 export async function workDocumentFromMcp(name, args) {
-  if (name.startsWith("head_project_document_")) {
+  if (name.startsWith("lode_project_document_")) {
     const api = await import("./project-document-publication.mjs"),
       root = args.project_root;
-    if (name === "head_project_document_prepare")
+    if (name === "lode_project_document_prepare")
       return api.prepareProjectDocuments({
         root,
         projectTitle: args.project_title,
@@ -194,21 +194,21 @@ export async function workDocumentFromMcp(name, args) {
         readings: args.readings || [],
         narratives: args.narratives || [],
       });
-    if (name === "head_project_document_publish")
+    if (name === "lode_project_document_publish")
       return api.publishProjectDocuments({
         root,
         projectionId: args.projection_id,
         targetIds: args.target_ids,
         retryRejectedWrites: (args.retry_rejected_writes || []).map((ref) => ({ targetId: ref.target_id, attemptId: ref.attempt_id })),
       });
-    if (name === "head_project_document_status") return api.projectDocumentStatus({ root, targetIds: args.target_ids });
+    if (name === "lode_project_document_status") return api.projectDocumentStatus({ root, targetIds: args.target_ids });
     throw new Error("Unknown Project document operation.");
   }
   const api = await import("./work-document-publication.mjs");
   const root = args.project_root;
-  if (name === "head_work_document_configure")
+  if (name === "lode_work_document_configure")
     return api.configureWorkDocuments({ root, targets: args.targets, expectedConfigurationDigest: args.expected_configuration_digest ?? null });
-  if (name === "head_work_document_prepare")
+  if (name === "lode_work_document_prepare")
     return api.prepareWorkDocuments({
       root,
       title: args.title,
@@ -220,13 +220,13 @@ export async function workDocumentFromMcp(name, args) {
       excerpts: args.excerpts || [],
       graphAnchors: args.graph_anchors || [],
     });
-  if (name === "head_work_document_publish")
+  if (name === "lode_work_document_publish")
     return api.publishWorkDocuments({
       root,
       projectionId: args.projection_id,
       targetIds: args.target_ids,
       retryRejectedWrites: (args.retry_rejected_writes || []).map((ref) => ({ targetId: ref.target_id, attemptId: ref.attempt_id })),
     });
-  if (name === "head_work_document_status") return api.workDocumentStatus({ root, logicalKey: args.logical_key });
+  if (name === "lode_work_document_status") return api.workDocumentStatus({ root, logicalKey: args.logical_key });
   throw new Error("Unknown document operation.");
 }

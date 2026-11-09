@@ -435,7 +435,7 @@ async function prepareLocalBoundedWorkerInternal(
     accountInspected: false,
     workersStarted: 0,
     recoveryAuthority: false,
-    nextAction: { tool: publicToolName("head_bounded_worker_start"), task_key: request.taskKey },
+    nextAction: { tool: publicToolName("lode_bounded_worker_start"), task_key: request.taskKey },
   };
 }
 function authorizationInput(record) {

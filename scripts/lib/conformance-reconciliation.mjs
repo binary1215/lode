@@ -507,7 +507,7 @@ export async function prepareConformanceAssessment({ root = ".", limit = 32, pro
 function assertCurrentBaseline(expected, current) {
   if (conformanceCanonicalJson(expected) !== conformanceCanonicalJson(current.baseline))
     fail(
-      `Conformance baseline changed; rerun ${publicToolName("head_conformance_prepare")} and retry the read-only semantic assessment. Ordinary work remains available.`,
+      `Conformance baseline changed; rerun ${publicToolName("lode_conformance_prepare")} and retry the read-only semantic assessment. Ordinary work remains available.`,
       "CONFORMANCE_BASELINE_DRIFT",
     );
 }

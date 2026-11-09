@@ -103,7 +103,7 @@ async function prepareSourceContextUnderLifetime({ root = ".", task, needs = [],
       mutatesCanon: false,
       headActionRequired: true,
       userActionRequired: false,
-      nextAction: `Lode: inspect task-relevant files, select exact source paths and qualified Python function names, then call ${publicToolName("head_source_context")} with needs. Do not ask the user for JSON, IDs, hashes or another request.`,
+      nextAction: `Lode: inspect task-relevant files, select exact source paths and qualified Python function names, then call ${publicToolName("lode_source_context")} with needs. Do not ask the user for JSON, IDs, hashes or another request.`,
       supportedCollector: "parse-only Python stdlib AST; positive lexical direct-name candidates; not LSP or runtime call truth",
     };
   const inspected = inspectProject(root);

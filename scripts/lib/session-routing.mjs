@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveProjectStorage, formatForVerifiedOwner } from "./project-storage-format.mjs";
 import { resolveOperation } from "./lode-operation-contract.mjs";
+import { canonicalOperationName, LEGACY_OPERATION_PREFIX } from "../../compat/head/public-names.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
 import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
@@ -31,54 +32,54 @@ const validId = (id) => typeof id === "string" && /^session-[a-fA-F0-9-]{36}$/.t
 const independentCliInfo = new Set(["help", "--help", "-h", "help-all", "version", "--version"]);
 const cliProjectCalls = new Map(
   Object.entries({
-    "project-native-history": "head_project_native_history",
-    "project-export": "head_project_bundle_export",
-    "project-bundle-inspect": "head_project_bundle_read",
-    "project-import": "head_project_bundle_import",
-    "graph-query": "head_project_graph",
-    "graph-index": "head_project_graph_index",
-    "graph-explorer": "head_project_graph",
-    "project-direction-read": "head_project_direction_read",
-    "project-direction-update": "head_project_direction_update",
-    "session-list": "head_session_list",
-    "session-create": "head_session_create",
-    "world-query": "head_world_query",
-    "world-history": "head_git_history",
-    "observation-sources": "head_observation_sources",
-    "observation-read": "head_observation_read",
-    "observation-query": "head_observation_query",
-    "source-context": "head_source_context",
-    "source-observation-read": "head_source_observation_read",
-    "context-read": "head_context_capsule",
-    "lineage-read": "head_lineage_artifact",
-    "metric-status": "head_metric_status",
+    "project-native-history": "lode_project_native_history",
+    "project-export": "lode_project_bundle_export",
+    "project-bundle-inspect": "lode_project_bundle_read",
+    "project-import": "lode_project_bundle_import",
+    "graph-query": "lode_project_graph",
+    "graph-index": "lode_project_graph_index",
+    "graph-explorer": "lode_project_graph",
+    "project-direction-read": "lode_project_direction_read",
+    "project-direction-update": "lode_project_direction_update",
+    "session-list": "lode_session_list",
+    "session-create": "lode_session_create",
+    "world-query": "lode_world_query",
+    "world-history": "lode_git_history",
+    "observation-sources": "lode_observation_sources",
+    "observation-read": "lode_observation_read",
+    "observation-query": "lode_observation_query",
+    "source-context": "lode_source_context",
+    "source-observation-read": "lode_source_observation_read",
+    "context-read": "lode_context_capsule",
+    "lineage-read": "lode_lineage_artifact",
+    "metric-status": "lode_metric_status",
   }),
 );
 const selectedSessionCalls = new Set([
-  "head_project_bundle_export",
-  "head_project_initialize_or_resume",
-  "head_project_status",
-  "head_conversation_enter",
-  "head_session_restore",
-  "head_session_continue",
-  "head_pending_review",
-  "head_runtime_adapters",
-  "head_runtime_state",
-  "head_world_model",
-  "head_context_prepare",
-  "head_context_preview",
-  "head_compaction_lifecycle_step",
-  "head_continuity_snapshot",
-  "head_product_operating_status",
-  "head_session_work_record",
-  "head_session_work_read",
-  "head_work_document_configure",
-  "head_work_document_prepare",
-  "head_work_document_publish",
-  "head_work_document_status",
-  "head_project_document_prepare",
-  "head_project_document_publish",
-  "head_project_document_status",
+  "lode_project_bundle_export",
+  "lode_project_initialize_or_resume",
+  "lode_project_status",
+  "lode_conversation_enter",
+  "lode_session_restore",
+  "lode_session_continue",
+  "lode_pending_review",
+  "lode_runtime_adapters",
+  "lode_runtime_state",
+  "lode_world_model",
+  "lode_context_prepare",
+  "lode_context_preview",
+  "lode_compaction_lifecycle_step",
+  "lode_continuity_snapshot",
+  "lode_product_operating_status",
+  "lode_session_work_record",
+  "lode_session_work_read",
+  "lode_work_document_configure",
+  "lode_work_document_prepare",
+  "lode_work_document_publish",
+  "lode_work_document_status",
+  "lode_project_document_prepare",
+  "lode_project_document_publish",
+  "lode_project_document_status",
 ]);
 export function sessionCallRequiresBinding(name, surface = "mcp") {
   if (surface === "cli") {
@@ -86,9 +87,17 @@ export function sessionCallRequiresBinding(name, surface = "mcp") {
     const peer = cliProjectCalls.get(name);
     return peer ? sessionCallRequiresBinding(peer) : true;
   }
-  name = resolveOperation(name)?.semanticName ?? name;
+  const operation = resolveOperation(name);
+  // An unregistered name is judged by its spelling as before: only historical
+  // head_* prefixes (read through the one-way alias) select a Session binding.
+  const prefixed = operation
+    ? operation.semanticName
+    : typeof name === "string" && name.startsWith(LEGACY_OPERATION_PREFIX)
+      ? canonicalOperationName(name)
+      : "";
+  name = operation?.semanticName ?? name;
   return (
-    /^(head_checkpoint_|head_run_|head_runtime_invocation_|head_bounded_worker_|head_worker_integration|head_compact_)/u.test(name || "") ||
+    /^(lode_checkpoint_|lode_run_|lode_runtime_invocation_|lode_bounded_worker_|lode_worker_integration|lode_compact_)/u.test(prefixed) ||
     selectedSessionCalls.has(name)
   );
 }
@@ -208,7 +217,7 @@ export function sessionSelectionUnresolved(root, { includeProjectFacts = false, 
       "Continue independent Project/source work. For missing dependent context, reuse verified same-Project candidates already supplied or use sessionDiscovery.call when needed; discovery never selects a Session. Ask only if a material selection remains ambiguous.",
     sessionDiscovery: {
       status: "not_queried",
-      call: { name: publicToolName("head_session_list"), arguments: { project_root: project.projectRoot } },
+      call: { name: publicToolName("lode_session_list"), arguments: { project_root: project.projectRoot } },
       automatic: false,
       selectsSession: false,
     },

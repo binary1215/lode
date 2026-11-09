@@ -6,23 +6,13 @@ import { assertProjectRootArgument } from "./lib/mcp-argument-validation.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
 import { DISCOVERY_PREFIX_PAIRS } from "../compat/head/public-names.mjs";
 const semanticToolName = (name) => resolveOperation(name)?.semanticName ?? name;
-const presentedSchemas = new WeakMap();
-const presentedSchema = (value) =>
-  Array.isArray(value)
-    ? value.map(presentedSchema)
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.entries(value).map(([key, entry]) => [
-            key,
-            ["description", "title"].includes(key) && typeof entry === "string" ? entry.replace(/\bHEAD\b/g, "Lode") : presentedSchema(entry),
-          ]),
-        )
-      : value;
+const presentedTools = new WeakMap();
 const presentedTool = (tool) => {
-  // Display prose only. Names, field keys, enums, defaults and wire identifiers
-  // retain the original contract, including in legacy carrier packages.
-  if (!presentedSchemas.has(tool)) presentedSchemas.set(tool, { ...presentedSchema(tool), name: publicToolName(tool.name) });
-  return presentedSchemas.get(tool);
+  // Tool prose already says Lode. Only the name is presented per artifact
+  // identity: canonical lode_* here, the historical head_* spelling in the
+  // head-agent carrier package.
+  if (!presentedTools.has(tool)) presentedTools.set(tool, { ...tool, name: publicToolName(tool.name) });
+  return presentedTools.get(tool);
 };
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,42 +52,42 @@ allTools.push({
 });
 const defaultToolNames = new Set([
   SESSION_HOST_REQUEST_HELPER,
-  "head_core_contract",
-  "head_project_initialize_or_resume",
-  "head_conversation_enter",
-  "head_conversation_list",
-  "head_conversation_send",
-  "head_project_graph",
-  // The unresolved-Session entry names head_session_list as its discovery call, so
+  "lode_core_contract",
+  "lode_project_initialize_or_resume",
+  "lode_conversation_enter",
+  "lode_conversation_list",
+  "lode_conversation_send",
+  "lode_project_graph",
+  // The unresolved-Session entry names lode_session_list as its discovery call, so
   // it must be directly callable from the default surface, not only via routing.
-  "head_session_create",
-  "head_session_list",
-  "head_project_direction_update",
-  "head_project_status",
-  "head_checkpoint_diagnose",
-  "head_checkpoint_basis",
-  "head_checkpoint_sync",
-  "head_session_restore",
-  "head_pending_review",
-  "head_runtime_invocation_lease_status",
-  "head_bounded_worker_job_status",
-  "head_bounded_worker_cancel",
-  "head_worker_integration_status",
+  "lode_session_create",
+  "lode_session_list",
+  "lode_project_direction_update",
+  "lode_project_status",
+  "lode_checkpoint_diagnose",
+  "lode_checkpoint_basis",
+  "lode_checkpoint_sync",
+  "lode_session_restore",
+  "lode_pending_review",
+  "lode_runtime_invocation_lease_status",
+  "lode_bounded_worker_job_status",
+  "lode_bounded_worker_cancel",
+  "lode_worker_integration_status",
 ]);
 const routedInputSchema = {
   type: "object",
   properties: {
-    name: { type: "string", description: "Exact tool name from discovery or a known HEAD contract." },
-    arguments: { type: "object", description: "Arguments following that tool's returned inputSchema; HEAD supplies them, not a user form." },
+    name: { type: "string", description: "Exact tool name from discovery or a known Lode contract." },
+    arguments: { type: "object", description: "Arguments following that tool's returned inputSchema; Lode supplies them, not a user form." },
   },
   required: ["name", "arguments"],
   additionalProperties: false,
 };
 const discoveryTools = [
   {
-    name: "head_tools_discover",
+    name: "lode_tools_discover",
     description:
-      "Read optional HEAD capability prefixes, or exact schemas by name/prefix. No Project, registration, activation or approval needed. Use only when the task needs Product, Graph, Observation, Context or retained-work diagnostics; page with nextOffset.",
+      "Read optional Lode capability prefixes, or exact schemas by name/prefix. No Project, registration, activation or approval needed. Use only when the task needs Product, Graph, Observation, Context or retained-work diagnostics; page with nextOffset.",
     inputSchema: {
       type: "object",
       properties: {
@@ -111,16 +101,16 @@ const discoveryTools = [
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
-    name: "head_tools_read",
+    name: "lode_tools_read",
     description:
-      "Call a discovered read-only HEAD tool using its exact inputSchema. Returns the original result and errors. No discovery prerequisite, Project activation or authority change; independent work remains available if an optional capability fails.",
+      "Call a discovered read-only Lode tool using its exact inputSchema. Returns the original result and errors. No discovery prerequisite, Project activation or authority change; independent work remains available if an optional capability fails.",
     inputSchema: routedInputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   {
-    name: "head_tools_call",
+    name: "lode_tools_call",
     description:
-      "Call a discovered HEAD operation using its exact inputSchema within existing user scope. Original authority, current-basis, ownership, replay and maintenance checks still apply. Discovery grants no authorization. Prefer head_tools_read for read-only operations.",
+      "Call a discovered Lode operation using its exact inputSchema within existing user scope. Original authority, current-basis, ownership, replay and maintenance checks still apply. Discovery grants no authorization. Prefer head_tools_read for read-only operations.",
     inputSchema: {
       ...routedInputSchema,
       properties: {
@@ -129,7 +119,7 @@ const discoveryTools = [
           type: "string",
           enum: ["ordinary", "managed"],
           default: "ordinary",
-          description: "HEAD selects managed only for needed durable ownership/recovery/effect guarantees. It grants no new authorization.",
+          description: "Lode selects managed only for needed durable ownership/recovery/effect guarantees. It grants no new authorization.",
         },
       },
     },
@@ -167,7 +157,7 @@ export function discoverTools({ name, prefix, offset = 0, limit = 8 } = {}, surf
     surface,
     persisted: false,
     grantsAuthorization: false,
-    managedEntry: `${publicToolName("head_tools_call")} with execution_mode: managed; original authorization, scope, lease and result checks apply`,
+    managedEntry: `${publicToolName("lode_tools_call")} with execution_mode: managed; original authorization, scope, lease and result checks apply`,
     maintenanceEntry: "scripts/mcp-managed-maintenance.mjs (same managed execution contract; retained reader supported)",
   };
   if (name == null && prefix == null) {
@@ -191,14 +181,14 @@ export function discoverTools({ name, prefix, offset = 0, limit = 8 } = {}, surf
     nextOffset: offset + limit < matches.length ? offset + limit : null,
     tools: matches.slice(offset, offset + limit).map((tool) => ({
       ...tool,
-      invokeWith: publicToolName(tool.annotations?.readOnlyHint === true ? "head_tools_read" : "head_tools_call"),
+      invokeWith: publicToolName(tool.annotations?.readOnlyHint === true ? "lode_tools_read" : "lode_tools_call"),
       ...(isManagedMutation(tool.name) ? { executionMode: "managed" } : {}),
     })),
   };
 }
 
 function requestedToolName(request) {
-  return ["head_tools_read", "head_tools_call"].includes(semanticToolName(request.params?.name))
+  return ["lode_tools_read", "lode_tools_call"].includes(semanticToolName(request.params?.name))
     ? semanticToolName(request.params?.arguments?.name)
     : semanticToolName(request.params?.name);
 }
@@ -235,7 +225,7 @@ async function unresolvedSessionResponse(id, name, root, reasonCode) {
   try {
     const routing = await import("./lib/session-routing.mjs");
     const value = routing.sessionSelectionUnresolved(root, {
-      includeProjectFacts: ["head_project_status", "head_conversation_enter"].includes(name),
+      includeProjectFacts: ["lode_project_status", "lode_conversation_enter"].includes(name),
       reasonCode,
     });
     // Keep the existing exceptional JSON-text + structuredContent contract.
@@ -255,7 +245,7 @@ export async function dispatch(request, options = {}) {
 
 async function dispatchSessionRequest(request, options = {}) {
   const outer = request.params?.arguments;
-  const routed = ["head_tools_read", "head_tools_call"].includes(semanticToolName(request.params?.name));
+  const routed = ["lode_tools_read", "lode_tools_call"].includes(semanticToolName(request.params?.name));
   const args = routed ? outer?.arguments : outer;
   const hasSelection = args && Object.hasOwn(args, "session_id");
   const requestedName = semanticToolName(routed ? outer?.name : request.params?.name);
@@ -282,7 +272,7 @@ async function dispatchSessionRequest(request, options = {}) {
   const dependent = sessionCallRequiresBinding(requestedName);
   let sessionContext = options.sessionContext;
   let bindingFailure = null;
-  if (request.method === "tools/call" && args?.project_root && requestedName === "head_project_status") {
+  if (request.method === "tools/call" && args?.project_root && requestedName === "lode_project_status") {
     try {
       const { inspectProjectLocationExperience } = await import("./lib/project-bootstrap.mjs");
       const projectLocationProjection = inspectProjectLocationExperience({ root: args.project_root, sessionId: hasSelection ? args.session_id : undefined });
@@ -297,7 +287,7 @@ async function dispatchSessionRequest(request, options = {}) {
   if (
     request.method === "tools/call" &&
     args?.project_root &&
-    requestedName === "head_project_initialize_or_resume" &&
+    requestedName === "lode_project_initialize_or_resume" &&
     (hasSelection || sessionContext || options.resolveSessionContext)
   ) {
     try {
@@ -341,7 +331,7 @@ async function dispatchSessionRequest(request, options = {}) {
   }
   // Discovery's existing session_id is an exact preview target, never a request
   // to update native persistence, a shared caller context, or the outer route.
-  if (request.method === "tools/call" && requestedName === "head_session_list") return await dispatchRouted(request, options);
+  if (request.method === "tools/call" && requestedName === "lode_session_list") return await dispatchRouted(request, options);
   if (args?.project_root && (hasSelection || dependent) && !sessionContext && options.resolveSessionContext) {
     try {
       sessionContext = await options.resolveSessionContext(request);
@@ -436,11 +426,11 @@ async function dispatchRouted(
   try {
     let name = semanticToolName(request.params?.name);
     let args = request.params?.arguments || {};
-    if (name === "head_tools_discover") {
+    if (name === "lode_tools_discover") {
       const value = discoverTools(args, surface);
       return success(id, { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
     }
-    if (name === "head_tools_read" || name === "head_tools_call") {
+    if (name === "lode_tools_read" || name === "lode_tools_call") {
       const selected = allTools.find((tool) => semanticToolName(tool.name) === semanticToolName(args.name));
       const descriptor = resolveOperation(args.name);
       if (
@@ -449,17 +439,17 @@ async function dispatchRouted(
         !args.arguments ||
         typeof args.arguments !== "object" ||
         Array.isArray(args.arguments) ||
-        Object.keys(args).some((key) => !["name", "arguments", ...(name === "head_tools_call" ? ["execution_mode"] : [])].includes(key))
+        Object.keys(args).some((key) => !["name", "arguments", ...(name === "lode_tools_call" ? ["execution_mode"] : [])].includes(key))
       )
         throw new Error("An exact HEAD tool name and arguments object are required; routing cannot be nested.");
       if (args.execution_mode != null && !["ordinary", "managed"].includes(args.execution_mode)) throw new Error("Unknown execution mode.");
-      if (name === "head_tools_call" && args.execution_mode === "managed") surface = "managed-maintenance";
-      if (name === "head_tools_read" && selected.annotations?.readOnlyHint !== true)
+      if (name === "lode_tools_call" && args.execution_mode === "managed") surface = "managed-maintenance";
+      if (name === "lode_tools_read" && selected.annotations?.readOnlyHint !== true)
         throw new Error("The selected tool is not read-only; use its declared effectful route within existing authority.");
       name = semanticToolName(selected.name);
       args = args.arguments;
     }
-    requireOperationSurface(name, surface);
+    requireOperationSurface(publicToolName(name), surface);
     // A declared, required project_root is the contract: refuse its absence or a
     // wrong type after the surface, router and read-only checks and before any
     // handler reads it (otherwise a missing root meant the server's cwd). Other
@@ -469,7 +459,7 @@ async function dispatchRouted(
     const declaredSchema = (registeredOperation(name)?.tool ?? allTools.find((tool) => semanticToolName(tool.name) === name))?.inputSchema;
     if (declaredSchema) assertProjectRootArgument(publicToolName(name), declaredSchema, args);
     const registered = registeredOperation(name);
-    if (!registered) throw new Error(`Unknown tool: ${name}`);
+    if (!registered) throw new Error(`Unknown tool: ${publicToolName(name)}`);
     const value = await callRegistered(registered, "mcp", args, {
       packageVersion,
       graphDbTransport,
@@ -502,7 +492,7 @@ async function dispatchRouted(
     });
     const maxResponseBytes = registered?.mcp.maxResponseBytes;
     if (maxResponseBytes != null && Buffer.byteLength(JSON.stringify(response), "utf8") > maxResponseBytes) {
-      throw new Error(`${name} response exceeds ${maxResponseBytes} bytes.`);
+      throw new Error(`${publicToolName(name)} response exceeds ${maxResponseBytes} bytes.`);
     }
     return response;
   } catch (error) {
@@ -563,7 +553,7 @@ export function serveMcp({
         return;
       }
       let controller;
-      if (request.method === "tools/call" && requestedToolName(request) === "head_source_context") {
+      if (request.method === "tools/call" && requestedToolName(request) === "lode_source_context") {
         sourceRequestId = request.id;
         if (sourceRequests.has(sourceRequestId)) throw new Error("Duplicate active source request id.");
         controller = new AbortController();

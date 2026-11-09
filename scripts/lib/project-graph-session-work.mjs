@@ -173,7 +173,7 @@ export function projectSessionWorkLayer(inventory, { nodeFromRecord, relation, a
       characters = JSON.stringify([exactRecord]).length;
     if (characters <= SESSION_WORK_MAX_CHARACTERS)
       node.originalExpansion = {
-        tool: publicToolName("head_session_work_read"),
+        tool: publicToolName("lode_session_work_read"),
         arguments: {
           project_root: root,
           session_id: owner.sessionId,

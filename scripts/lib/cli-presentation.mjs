@@ -1035,7 +1035,7 @@ No checkpoint, approval or original task effect was created or replayed.\n`;
   if (documents.status === "head-selection-required") {
     text +=
       `Latest recorded task state: ${inertTerminalText(documents.savedTaskStatus)}. Remote documents are not updated.\n` +
-      `HEAD action required; user action not required. Continue ${publicToolName("head_work_document_prepare")} then ${publicToolName("head_work_document_publish")} using the exact prior selection and saved result below. Do not ask for JSON, a repeated save, or another routine approval.\n`;
+      `HEAD action required; user action not required. Continue ${publicToolName("lode_work_document_prepare")} then ${publicToolName("lode_work_document_publish")} using the exact prior selection and saved result below. Do not ask for JSON, a repeated save, or another routine approval.\n`;
     if (documents.taskStatusReason) text += originalField("documentProjection.taskStatusReason", documents.taskStatusReason);
     return text + originalField("documentProjection.followUp", documents.followUp);
   }
@@ -1528,33 +1528,33 @@ function formatGraphInventory(value) {
 
 export function formatMcpToolContent(name, value) {
   name = resolveOperation(name)?.semanticName ?? name;
-  if (name === "head_session_list") return formatSessionList(value);
-  if (["head_runtime_invocation_authorization", "head_bounded_worker_status"].includes(name)) return formatPreparedRuntimeRead(value);
-  if (name === "head_project_graph") return formatGraphInventory(value) ?? formatTerminalGraph(value) ?? JSON.stringify(value);
-  if (name === "head_bounded_worker_prepare") return formatWorkerPreparation(value);
-  if (["head_worker_integration_status", "head_worker_integration"].includes(name)) return formatWorkerGuidance(value);
-  if (["head_bounded_worker_wave_status", "head_bounded_worker_wave_wait"].includes(name)) return formatWorkerGuidance(value);
-  if (name === "head_source_context") return formatSourceContext(value);
-  if (name === "head_project_status") return formatProjectStatus(value);
-  if (name === "head_project_initialize_or_resume") return formatProjectBootstrap(value);
-  if (name === "head_session_restore") return formatSessionRestore(value);
-  if (["head_conversation_enter", "head_compaction_lifecycle_step"].includes(name)) return formatConversationRecovery(value);
-  if (name === "head_onboarding_guide") return formatOnboardingGuide(value);
-  if (name === "head_feature_mapping_status") return formatFeatureMappingStatus(value);
-  if (name === "head_change_set_status") return formatChangeSetStatus(value);
-  if (name === "head_delivery_status") return formatDeliveryStatus(value);
-  if (name === "head_pending_review") return formatPendingReview(value);
-  if (name === "head_conformance_queue") return formatConformanceQueue(value);
-  if (name === "head_conformance_read") return formatConformanceFinding(value);
-  if (["head_onboarding_review", "head_feature_mapping_review", "head_conformance_disposition", "head_product_initiative_review"].includes(name))
+  if (name === "lode_session_list") return formatSessionList(value);
+  if (["lode_runtime_invocation_authorization", "lode_bounded_worker_status"].includes(name)) return formatPreparedRuntimeRead(value);
+  if (name === "lode_project_graph") return formatGraphInventory(value) ?? formatTerminalGraph(value) ?? JSON.stringify(value);
+  if (name === "lode_bounded_worker_prepare") return formatWorkerPreparation(value);
+  if (["lode_worker_integration_status", "lode_worker_integration"].includes(name)) return formatWorkerGuidance(value);
+  if (["lode_bounded_worker_wave_status", "lode_bounded_worker_wave_wait"].includes(name)) return formatWorkerGuidance(value);
+  if (name === "lode_source_context") return formatSourceContext(value);
+  if (name === "lode_project_status") return formatProjectStatus(value);
+  if (name === "lode_project_initialize_or_resume") return formatProjectBootstrap(value);
+  if (name === "lode_session_restore") return formatSessionRestore(value);
+  if (["lode_conversation_enter", "lode_compaction_lifecycle_step"].includes(name)) return formatConversationRecovery(value);
+  if (name === "lode_onboarding_guide") return formatOnboardingGuide(value);
+  if (name === "lode_feature_mapping_status") return formatFeatureMappingStatus(value);
+  if (name === "lode_change_set_status") return formatChangeSetStatus(value);
+  if (name === "lode_delivery_status") return formatDeliveryStatus(value);
+  if (name === "lode_pending_review") return formatPendingReview(value);
+  if (name === "lode_conformance_queue") return formatConformanceQueue(value);
+  if (name === "lode_conformance_read") return formatConformanceFinding(value);
+  if (["lode_onboarding_review", "lode_feature_mapping_review", "lode_conformance_disposition", "lode_product_initiative_review"].includes(name))
     return formatReviewOutcome(value);
-  if (name === "head_context_prepare") return formatContextPreparation(value);
-  if (name === "head_context_preview") return formatContextPreview(value);
-  if (name === "head_checkpoint_basis") return formatCheckpointBasis(value);
-  if (name === "head_checkpoint_diagnose") return formatCheckpointDiagnosis(value);
-  if (name === "head_checkpoint_sync") return formatCheckpointSync(value);
-  if (name === "head_session_work_record") return formatSessionWorkRecord(value);
-  if (name === "head_session_work_read")
+  if (name === "lode_context_prepare") return formatContextPreparation(value);
+  if (name === "lode_context_preview") return formatContextPreview(value);
+  if (name === "lode_checkpoint_basis") return formatCheckpointBasis(value);
+  if (name === "lode_checkpoint_diagnose") return formatCheckpointDiagnosis(value);
+  if (name === "lode_checkpoint_sync") return formatCheckpointSync(value);
+  if (name === "lode_session_work_record") return formatSessionWorkRecord(value);
+  if (name === "lode_session_work_read")
     return value?.status === "session_selection_unresolved"
       ? formatUnavailableSession(value)
       : formatSessionWorkContext(value) || "No selected Session work evidence is recorded. Ordinary work continues.\n";

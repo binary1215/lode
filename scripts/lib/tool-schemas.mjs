@@ -15,7 +15,7 @@ export const exactWorkEvidenceSchema = {
 export const sessionWorkEvidenceSchema = {
   type: "object",
   description:
-    "Sparse provider HEAD-authored P3 evidence. Reuse exact originals; select only otherwise unrepresented judgment/reasons/alternatives, observations, pending work and uncertainty. Never a user form, transcript, approval or P2 direction.",
+    "Sparse provider Lode-authored P3 evidence. Reuse exact originals; select only otherwise unrepresented judgment/reasons/alternatives, observations, pending work and uncertainty. Never a user form, transcript, approval or P2 direction.",
   properties: {
     summary: workEvidenceText,
     judgments: {
@@ -34,13 +34,13 @@ export const sessionWorkEvidenceSchema = {
     workTopics: {
       ...workEvidenceList,
       description:
-        "Optional HEAD-authored navigation labels from actual work, not Product Features, completion, approval or P2 direction. No taxonomy or user form required.",
+        "Optional Lode-authored navigation labels from actual work, not Product Features, completion, approval or P2 direction. No taxonomy or user form required.",
     },
     todos: {
       type: "array",
       minItems: 1,
       description:
-        "Optional explicit P3 task revisions. HEAD supplies stable IDs, exact prior and actual progress at meaningful changes; no user JSON/save ritual. Status is not execution authority or inferred from activity.",
+        "Optional explicit P3 task revisions. Lode supplies stable IDs, exact prior and actual progress at meaningful changes; no user JSON/save ritual. Status is not execution authority or inferred from activity.",
       items: {
         type: "object",
         properties: {
@@ -66,7 +66,7 @@ export const sessionWorkEvidenceSchema = {
     },
     occurrenceKey: {
       ...workEvidenceText,
-      description: "Optional HEAD-owned distinction for a genuinely separate occurrence; identical input retry reuses its original.",
+      description: "Optional Lode-owned distinction for a genuinely separate occurrence; identical input retry reuses its original.",
     },
     workLink: {
       type: "object",
@@ -255,7 +255,7 @@ export const conformanceFindingInputSchema = {
 export const onboardingSemanticProposalSchema = {
   type: "object",
   description:
-    "Fresh provider-HEAD-authored P3 product candidates. Core verifies exact current source evidence and never treats this proposal as Product Canon.",
+    "Fresh provider-Lode-authored P3 product candidates. Core verifies exact current source evidence and never treats this proposal as Product Canon.",
   properties: {
     schemaVersion: { type: "integer", const: 1 },
     sourceSnapshotId: { type: "string", pattern: "^source-snapshot-[a-f0-9]{24}$" },

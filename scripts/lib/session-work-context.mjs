@@ -869,7 +869,7 @@ function readLexicalWorkPage(owner, names, afterEvidenceId, maxRecords, maxChara
       wholeHistoryComplete: false,
       next: nextAfterEvidenceId
         ? {
-            tool: publicToolName("head_session_work_read"),
+            tool: publicToolName("lode_session_work_read"),
             arguments: {
               project_root: owner.root,
               session_id: owner.sessionId,

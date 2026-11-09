@@ -3,7 +3,7 @@ import { OPERATION_DESCRIPTORS, resolveOperation } from "./lode-operation-contra
 import { sessionCallRequiresBinding } from "./session-routing.mjs";
 import { sha256Hex } from "./core/digest.mjs";
 
-export const SESSION_HOST_REQUEST_HELPER = publicToolName("head_session_host_request_prepare");
+export const SESSION_HOST_REQUEST_HELPER = publicToolName("lode_session_host_request_prepare");
 const namespaces = () => [ARTIFACT_COMPOSITION.serverName, `plugin_${ARTIFACT_COMPOSITION.pluginName}_${ARTIFACT_COMPOSITION.serverName}`];
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -16,12 +16,12 @@ export function claudeNativeHookMatchers(catalog) {
   const routers = OPERATION_DESCRIPTORS.filter((operation) => operation.router).map((operation) => ({ name: operation.canonicalName }));
   for (const tool of [...catalog, ...routers]) {
     const operation = resolveOperation(tool.name);
-    if (!operation || operation.semanticName === "head_session_host_request_prepare") continue;
+    if (!operation || operation.semanticName === "lode_session_host_request_prepare") continue;
     if (
       operation.router ||
       sessionCallRequiresBinding(tool.name) ||
       tool.annotations?.readOnlyHint !== true ||
-      operation.semanticName === "head_conversation_list"
+      operation.semanticName === "lode_conversation_list"
     ) {
       names.add(operation.canonicalName);
       names.add(operation.legacyName);
@@ -38,7 +38,7 @@ export function parseClaudeNativeToolName(outer) {
     if (!outer.startsWith(prefix)) continue;
     const name = outer.slice(prefix.length),
       operation = resolveOperation(name);
-    if (operation && operation.semanticName !== "head_session_host_request_prepare") return { name, server };
+    if (operation && operation.semanticName !== "lode_session_host_request_prepare") return { name, server };
   }
   return null;
 }

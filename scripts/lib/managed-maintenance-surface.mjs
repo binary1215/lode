@@ -3,17 +3,17 @@
 import { resolveOperation } from "./lode-operation-contract.mjs";
 const mutations = Object.freeze(
   [
-    ["worker-prepare", "head_bounded_worker_prepare"],
-    ["worker-start", "head_bounded_worker_start"],
-    ["worker-dispatch", "head_bounded_worker_dispatch"],
+    ["worker-prepare", "lode_bounded_worker_prepare"],
+    ["worker-start", "lode_bounded_worker_start"],
+    ["worker-dispatch", "lode_bounded_worker_dispatch"],
     ["worker-execute", null],
-    ["worker-apply", "head_bounded_worker_apply_result"],
-    ["worker-reconcile", "head_bounded_worker_reconcile"],
-    ["worker-job-reconcile", "head_bounded_worker_job_reconcile"],
-    ["worker-integrate", "head_worker_integration"],
-    ["worker-wave-create", "head_bounded_worker_wave_create"],
-    ["worker-wave-seal", "head_bounded_worker_wave_seal"],
-    ["worker-wave-abandon", "head_bounded_worker_wave_abandon"],
+    ["worker-apply", "lode_bounded_worker_apply_result"],
+    ["worker-reconcile", "lode_bounded_worker_reconcile"],
+    ["worker-job-reconcile", "lode_bounded_worker_job_reconcile"],
+    ["worker-integrate", "lode_worker_integration"],
+    ["worker-wave-create", "lode_bounded_worker_wave_create"],
+    ["worker-wave-seal", "lode_bounded_worker_wave_seal"],
+    ["worker-wave-abandon", "lode_bounded_worker_wave_abandon"],
   ].map(Object.freeze),
 );
 

@@ -94,7 +94,7 @@ if (providedRoot) {
       startupHooks.hooks.PreToolUse.map((group) => group.hooks[0].server),
       [ARTIFACT_COMPOSITION.serverName, `plugin:${ARTIFACT_COMPOSITION.pluginName}:${ARTIFACT_COMPOSITION.serverName}`],
     );
-    assert.ok(startupHooks.hooks.PreToolUse.every((group) => group.hooks[0].tool === publicToolName("head_session_host_request_prepare")));
+    assert.ok(startupHooks.hooks.PreToolUse.every((group) => group.hooks[0].tool === publicToolName("lode_session_host_request_prepare")));
     assert.equal(/permissionDecision|updatedInput/.test(JSON.stringify(startupHooks)), false);
     assert.ok(runtimeManifest.files.some((file) => file.path === "scripts/lib/session-host-request.mjs"));
     assert.ok(runtimeManifest.files.some((file) => file.path === "scripts/lib/session-host-adapter.mjs"));

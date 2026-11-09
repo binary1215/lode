@@ -11,6 +11,16 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.99 — publication tracked separately
+
+- Make the canonical `lode_*` name the internal operation name. The 147
+  operation descriptors live in `scripts/lib/lode-operation-contract.mjs`; tool
+  descriptions say "Lode" in the source instead of being rewritten when listed.
+  `head_*` names are still accepted as one-way aliases on MCP and the router, and
+  `tools/list`, discovery, hooks and the CLI output are unchanged.
+- Reduce `compat/head/public-names.mjs` to the one-way legacy alias rule plus the
+  environment and discovery-prefix tables. `.head/` project readers are unchanged.
+
 ## 0.3.0-beta.98 — publication tracked separately
 
 - Dispatch every CLI command through the operation registry. `scripts/lode.mjs`

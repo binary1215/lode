@@ -396,7 +396,7 @@ async function verifiedLayer(inventory, layer, entries, model) {
         revisionId: artifactId,
         reviewState: artifact.kind === "ReviewDecision" ? `historical-${artifact.disposition}` : "not-applicable",
         originalExpansion: {
-          tool: publicToolName("head_lineage_artifact"),
+          tool: publicToolName("lode_lineage_artifact"),
           arguments: { project_root: root, artifact_id: artifactId },
           scope: "retained-artifact-only; not current approval, parent existence or permission",
         },
@@ -1631,7 +1631,7 @@ export async function queryProjectGraph(options = {}) {
       ...(contextLineage ? { contextLineage } : {}),
       detailExpansion: {
         supported: true,
-        tool: publicToolName("head_project_graph"),
+        tool: publicToolName("lode_project_graph"),
         arguments: { details: true, ...(exactWork ? { paths: normalized.paths } : {}) },
         instruction: "Use selected node IDs as anchor_ids; increase depth for relationships. Full records remain at sourceReference.path.",
       },

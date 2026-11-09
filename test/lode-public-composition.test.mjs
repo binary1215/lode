@@ -25,7 +25,7 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
   assert.equal(new Set(OPERATION_DESCRIPTORS.flatMap(item => [item.legacyName, item.canonicalName])).size, 294);
   for (const item of OPERATION_DESCRIPTORS) {
     assert.equal(resolveOperation(item.legacyName), item); assert.equal(resolveOperation(item.canonicalName), item);
-    assert.equal(item.semanticName, item.legacyName);
+    assert.equal(item.semanticName, item.canonicalName);
     assert.equal(publicToolName(item.legacyName), item.canonicalName); assert.equal(publicToolName(item.canonicalName), item.canonicalName);
   }
   for (const unknown of ["lode_unknown_mutation", "head_unknown_mutation", "lode_head_core_contract", "HEAD_core_contract", "head_core_contract_typo"]) {

@@ -238,7 +238,7 @@ async function verifyExistingProjectPromotion() {
     id: 7,
     method: "tools/call",
     params: {
-      name: publicToolName("head_temporal_graph"),
+      name: publicToolName("lode_temporal_graph"),
       arguments: {
         project_root: root,
         query: candidateId,
@@ -455,7 +455,7 @@ async function verifyNewProjectBriefAndRevision() {
     jsonrpc: "2.0",
     id: 8,
     method: "tools/call",
-    params: { name: publicToolName("head_onboarding_guide"), arguments: { project_root: root } },
+    params: { name: publicToolName("lode_onboarding_guide"), arguments: { project_root: root } },
   });
   assert.equal(guide.result.structuredContent.status, "ready");
   const producerFile = path.join(root, fixtureDirectory(root), "onboarding", "review-decisions", `${revised.reviewDecision.reviewDecisionId}.json`);
@@ -768,7 +768,7 @@ async function verifyLegacyMigrationAndReadOnlyMcp() {
     jsonrpc: "2.0",
     id: 1,
     method: "tools/call",
-    params: { name: publicToolName("head_onboarding_status"), arguments: { project_root: root } },
+    params: { name: publicToolName("lode_onboarding_status"), arguments: { project_root: root } },
   });
   assert.equal(mcp.result.structuredContent.state.candidateSetId, proposed.candidateSet.candidateSetId);
   assert.equal(mcp.result.structuredContent.authority.candidates, "non-authoritative-until-review");
