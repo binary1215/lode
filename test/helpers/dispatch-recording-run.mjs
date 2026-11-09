@@ -19,6 +19,7 @@ const OBSERVATION_REGISTRY = Object.freeze({ lodeRecordingPlaceholder: "observat
 const GRAPHDB_TRANSPORT = Object.freeze({ lodeRecordingPlaceholder: "graphDbTransport" });
 const COMPACTION_LIFECYCLE_HOST = Object.freeze({ lodeRecordingPlaceholder: "compactionLifecycleHost" });
 const READ_RELATED_NATIVE_CONTEXT = Object.freeze({ lodeRecordingPlaceholder: "readRelatedNativeContext" });
+const CALLER = Object.freeze({ lodeRecordingPlaceholder: "caller" });
 export const FIXTURE_ROOT = "/lode-dispatch-fixture/project";
 
 // Dispatch infrastructure that must run for real for a call to reach its
@@ -120,9 +121,10 @@ export function cliCommands() {
   const start = src.indexOf("async function runRoutedCommand(");
   const body = src.slice(start);
   const commands = new Map();
-  const re = /if \(((?:command === "[^"]+"(?: \|\| )?)+)\)/g;
+  // `if (command === "a" || command === "b")` and `if (["a", "b"].includes(command))`.
+  const re = /if \((?:((?:command === "[^"]+"(?: \|\| )?)+)|\[((?:"[^"]+"(?:, )?)+)\]\.includes\(command\))\)/g;
   for (let match; (match = re.exec(body)); ) {
-    const names = [...match[1].matchAll(/command === "([^"]+)"/g)].map((item) => item[1]);
+    const names = [...(match[1] ?? match[2]).matchAll(/"([^"]+)"/g)].map((item) => item[1]);
     let at = match.index + match[0].length;
     while (/\s/.test(body[at])) at += 1;
     const end = body[at] === "{" ? skipCode(body, at + 1, "}") : skipCode(body, at, ";");
@@ -134,7 +136,10 @@ export function cliCommands() {
     for (const name of names) if (!commands.has(name)) commands.set(name, [...flags].sort());
   }
   // Commands moved to the operation registry declare the options they read.
-  for (const entry of OPERATIONS) if (entry.cli && !commands.has(entry.cli.command)) commands.set(entry.cli.command, [...entry.cli.flags].sort());
+  for (const entry of OPERATIONS) {
+    if (!entry.cli) continue;
+    for (const name of [entry.cli.command, ...(entry.cli.aliases ?? [])]) if (!commands.has(name)) commands.set(name, [...entry.cli.flags].sort());
+  }
   return commands;
 }
 
@@ -267,6 +272,7 @@ export async function recordDispatch() {
             graphDbTransport: GRAPHDB_TRANSPORT,
             compactionLifecycleHost: COMPACTION_LIFECYCLE_HOST,
             readRelatedNativeContext: READ_RELATED_NATIVE_CONTEXT,
+            caller: CALLER,
           }));
         entries.push({ surface: "mcp", tool: tool.name, input: normalize(input), ...result });
       }
