@@ -11,6 +11,25 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.102 — publication tracked separately
+
+- Source code names wire protocols, record kinds and stored values by their Lode
+  spelling; the legacy `head-*` spellings come from inverse tables in
+  `compat/head/format.mjs`. Bytes written to disk are unchanged for both the
+  `.lode` and the `.head` dialect, and either spelling is accepted when a record
+  is read.
+- The stored review field `freshHeadReviewRequired`, the canon coverage values
+  `curated-head-canon(-only)` and the Todo origin `head-proposed` gain Lode
+  spellings (`freshLodeReviewRequired`, `curated-lode-canon(-only)`,
+  `lode-proposed`). `.lode` projects write the new spelling, `.head` projects keep
+  the old one, and readers accept both. `lode-proposed` is added to the Todo
+  origin input enum. Forward compatibility is not kept: a `.lode` project written
+  by this version is not fully readable by 0.3.0-beta.101 or older, which rejects
+  the new execution-authorization field and reports `lode-proposed` Todos as
+  unavailable. `.head` projects are unaffected.
+- The derived knowledge-graph document written by `.head` projects is headed
+  "LODE Agent derived knowledge graph".
+
 ## 0.3.0-beta.101 — publication tracked separately
 
 - Runtime error and guidance messages call the agent Lode instead of HEAD. The

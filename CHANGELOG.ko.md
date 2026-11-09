@@ -9,6 +9,23 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.102 — 게시 결과는 별도 확인
+
+- 소스 코드가 wire 프로토콜·레코드 종류·저장 값을 Lode 철자로 부릅니다. 구
+  `head-*` 철자는 `compat/head/format.mjs`의 역방향 표에서 만듭니다. `.lode`·`.head`
+  어느 방언이든 디스크에 쓰는 바이트는 그대로이고, 읽을 때는 양쪽 철자를 모두
+  받아들입니다.
+- 저장되는 검토 필드 `freshHeadReviewRequired`, 캐논 커버리지 값
+  `curated-head-canon(-only)`, Todo 출처 `head-proposed`에 Lode 철자
+  (`freshLodeReviewRequired`, `curated-lode-canon(-only)`, `lode-proposed`)가
+  생깁니다. `.lode` 프로젝트는 새 철자를 쓰고 `.head` 프로젝트는 옛 철자를 유지하며,
+  읽기는 둘 다 받아들입니다. Todo 출처 입력 enum에 `lode-proposed`가 추가됩니다.
+  순방향 호환은 유지되지 않습니다. 이 버전이 쓴 `.lode` 프로젝트를 0.3.0-beta.101
+  이하가 읽으면 새 실행 authorization 필드를 거부하고 `lode-proposed` Todo를
+  unavailable로 표시합니다. `.head` 프로젝트는 영향이 없습니다.
+- `.head` 프로젝트가 쓰는 파생 지식 그래프 문서의 제목은 "LODE Agent derived
+  knowledge graph"입니다.
+
 ## 0.3.0-beta.101 — 게시 결과는 별도 확인
 
 - 런타임 오류·안내 문구가 에이전트를 HEAD 대신 Lode라고 부릅니다. `.head`
