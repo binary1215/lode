@@ -33,7 +33,7 @@ A separate `fresh-selected-patch-proposal` backend candidate asks a fresh Codex
 worker for **patch data only**. It does not grant tools or file-write authority,
 and does not establish the missing selected-exec/native-fork guarantees. Its
 source-pinned runtime recipe is connected to the built-in local Host through
-`worker-prepare` / `lode_bounded_worker_prepare` and the existing start operation.
+`worker-prepare` / `lode_bounded_worker` (`prepare`) and the existing start operation.
 Fresh remains the default. Explicit `contextMode: "native-prefix"` (`context_mode`
 in MCP, `--context-mode` in CLI) uses `selectedContext` to create a controlled
 durable seed and fork its child: at most two model turns rather than one. The
@@ -98,7 +98,7 @@ never makes an already consumed authorization reusable.
 
 ## 2. Execute, observe and cancel the exact job
 
-`worker-start` / `lode_bounded_worker_start` requires a trusted Host runner capability. Tool input cannot supply an executable, environment or assertion that a policy is enforced. In the validated Windows synthetic connection, a native owner controls the runner's absolute deadline and process tree. Its binding includes the exact member, authorization, input, roots, runner/Core identity and policy.
+`worker-start` / `lode_bounded_worker` (`start`) requires a trusted Host runner capability. Tool input cannot supply an executable, environment or assertion that a policy is enforced. In the validated Windows synthetic connection, a native owner controls the runner's absolute deadline and process tree. Its binding includes the exact member, authorization, input, roots, runner/Core identity and policy.
 
 Repeated or uncertain start observes the same job; it does not launch another one. CLI and MCP provide the same operations:
 
@@ -106,8 +106,8 @@ Repeated or uncertain start observes the same job; it does not launch another on
 | --- | --- | --- |
 | Observe | `worker-job-status` | `lode_bounded_worker_job_status` |
 | Request cancellation | `worker-cancel` | `lode_bounded_worker_cancel` |
-| Reconcile returned evidence | `worker-job-reconcile` | `lode_bounded_worker_job_reconcile` |
-| Read the frozen patch | `worker-job-patch` | `lode_bounded_worker_job_patch` |
+| Reconcile returned evidence | `worker-job-reconcile` | `lode_bounded_worker_job` (`reconcile`) |
+| Read the frozen patch | `worker-job-patch` | `lode_bounded_worker_job` (`patch`) |
 
 Status is read-only and creates no artifacts. Success needs verified owner/tree exit, native terminal output, the exact released lease and invocation evidence—not a partial output file or cancellation request. Cancellation targets the existing job, never an arbitrary PID. Source drift or a Run transition must not prevent protective cancellation. Ownership checks use process-creation identity, not numeric PID absence alone.
 

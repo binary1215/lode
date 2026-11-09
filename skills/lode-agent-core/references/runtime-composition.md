@@ -145,7 +145,7 @@ actual evidence, or leave them unknown. No new fork-cutoff collection is needed.
 Absent mapping remains absent even if the parent later selects a Session.
 
 For an exact managed authorization, existing
-`lode_runtime_invocation_authorization` / `lode_bounded_worker_status`, or CLI
+`lode_runtime_invocation_authorization` / `lode_bounded_worker` (`status`), or CLI
 `runtime-invocation-read --authorization <id>`, can add a historical
 `preparedInput` view. Reuse it when it answers the question. It verifies retained
 authorization, plan/contract, Capsule and captured common-direction originals,
@@ -243,14 +243,14 @@ Do not change a user's installed server automatically.
 
 The following managed API details apply inside the explicit entry.
 For one managed Session result, use the idle Session's exact
-ExecutionAuthorization and `lode_bounded_worker_dispatch`; `worker-execute`
+ExecutionAuthorization and `lode_bounded_worker` (`dispatch`); `worker-execute`
 receives the authorized sessionRequest. Preserve lease, role and scope checks.
 `worker-apply` and waves remain Run-only. A wave groups independent
 authorizations; it is not a shared permission.
 
 For the built-in managed Codex patch-proposal path, Lode derives task, exact
 model, selected context, source paths and proposal targets, calls
-`lode_bounded_worker_prepare`, then `lode_bounded_worker_start` with the returned
+`lode_bounded_worker` (`prepare`), then `lode_bounded_worker` (`start`) with the returned
 task key. Preparation can inspect the local provider backend but makes no model
 turn; it is not account/model readiness proof. Never ask the user for modules,
 JSON, IDs or routine approval. `selected-only` must not silently inherit global

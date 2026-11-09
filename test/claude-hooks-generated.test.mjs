@@ -7,7 +7,9 @@ import test from "node:test";
 import { CLAUDE_HOOKS_FILE, generateClaudeHooks, renderClaudeHooks } from "../scripts/lib/claude-hooks-generation.mjs";
 import { resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
 import { sessionCallRequiresBinding } from "../scripts/lib/session-routing.mjs";
-import { catalogTools, toolsForSurface } from "../scripts/mcp-server.mjs";
+import { catalogTools, operationCatalogTools, toolsForSurface } from "../scripts/mcp-server.mjs";
+import { operationGroup } from "../scripts/lib/operation-groups.mjs";
+import { legacyOperationName } from "../compat/head/public-names.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const committed = fs.readFileSync(path.join(pluginRoot, CLAUDE_HOOKS_FILE), "utf8");
@@ -17,7 +19,7 @@ const matchers = committedHooks.hooks.PreToolUse.map((group) => new RegExp(group
 const alternatives = (group) => group.matcher.match(/__\((.*)\)\$$/)[1].split("|");
 
 test("committed hooks/claude.json is byte-identical to the generator output", () => {
-  assert.equal(renderClaudeHooks(committed, catalogTools), committed, "hooks/claude.json is stale; run: node scripts/generate-claude-hooks.mjs");
+  assert.equal(renderClaudeHooks(committed, operationCatalogTools), committed, "hooks/claude.json is stale; run: node scripts/generate-claude-hooks.mjs");
   const result = spawnSync(process.execPath, [path.join(pluginRoot, "scripts/generate-claude-hooks.mjs"), "--check"], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { status: "current", file: CLAUDE_HOOKS_FILE });
@@ -39,18 +41,22 @@ test("generation replaces only the two PreToolUse matchers and --check never wri
   assert.deepEqual(await generateClaudeHooks({ root, check: true }), { status: "current", file: CLAUDE_HOOKS_FILE });
   const reordered = structuredClone(committedHooks);
   reordered.hooks.PreToolUse.reverse();
-  assert.throws(() => renderClaudeHooks(JSON.stringify(reordered), catalogTools), { code: "CLAUDE_HOOKS_SHAPE_UNEXPECTED" });
+  assert.throws(() => renderClaudeHooks(JSON.stringify(reordered), operationCatalogTools), { code: "CLAUDE_HOOKS_SHAPE_UNEXPECTED" });
 });
 
 test("default tools/list and router-reachable tools follow the Session/effect matcher rule", () => {
+  // A grouped tool (stage 3-F) is matched when any of its member operations is.
+  const operations = new Map(operationCatalogTools.map((tool) => [tool.name, tool]));
   const rule = (tool) =>
-    resolveOperation(tool.name).router ||
-    sessionCallRequiresBinding(tool.name) ||
-    tool.annotations?.readOnlyHint !== true ||
-    tool.name === "lode_conversation_list";
+    operationGroup(tool.name)
+      ? operationGroup(tool.name).actions.some(({ operation }) => rule(operations.get(operation)))
+      : resolveOperation(tool.name).router ||
+        sessionCallRequiresBinding(tool.name) ||
+        tool.annotations?.readOnlyHint !== true ||
+        tool.name === "lode_conversation_list";
   const listed = toolsForSurface().filter((tool) => tool.name !== "lode_session_host_request_prepare");
   assert.equal(listed.length, toolsForSurface().length - 1);
-  for (const tool of [...listed, ...catalogTools.filter((tool) => tool.name !== "lode_session_host_request_prepare")]) {
+  for (const tool of [...listed, ...[...catalogTools, ...operationCatalogTools].filter((tool) => tool.name !== "lode_session_host_request_prepare")]) {
     namespaces.forEach((namespace, index) => assert.equal(matchers[index].test(namespace + tool.name), rule(tool), tool.name));
   }
   // The routers relay Session-bound and effectful inner calls.
@@ -69,8 +75,10 @@ test("every matcher alternative is a known operation, and legacy spellings only 
     assert.deepEqual(names, [...names].sort());
     for (const name of names) {
       const operation = resolveOperation(name);
-      assert.ok(operation, name);
-      assert.ok(names.includes(operation.canonicalName) && names.includes(operation.legacyName), name);
+      const group = operationGroup(name);
+      assert.ok(operation || group, name);
+      const canonical = operation?.canonicalName ?? group.name;
+      assert.ok(names.includes(canonical) && names.includes(legacyOperationName(canonical)), name);
     }
     assert.equal(names.filter((name) => name.startsWith("lode_")).length * 2, names.length);
   }

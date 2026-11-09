@@ -1,6 +1,8 @@
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lode-artifact-composition.mjs";
 import { OPERATION_DESCRIPTORS, resolveOperation } from "./lode-operation-contract.mjs";
 import { sessionCallRequiresBinding } from "./session-routing.mjs";
+import { OPERATION_GROUPS, operationGroup } from "./operation-groups.mjs";
+import { legacyOperationName } from "../../compat/head/public-names.mjs";
 import { sha256Hex } from "./core/digest.mjs";
 
 export const SESSION_HOST_REQUEST_HELPER = publicToolName("lode_session_host_request_prepare");
@@ -27,6 +29,13 @@ export function claudeNativeHookMatchers(catalog) {
       names.add(operation.legacyName);
     }
   }
+  // A grouped tool relays its member operations, so it joins when any member does.
+  for (const group of OPERATION_GROUPS) {
+    if (group.actions.some((entry) => names.has(entry.operation))) {
+      names.add(group.name);
+      names.add(legacyOperationName(group.name));
+    }
+  }
   const pattern = [...names].sort().map(escapeRegex).join("|");
   return namespaces().map((server) => `^mcp__${escapeRegex(server)}__(${pattern})$`);
 }
@@ -38,7 +47,7 @@ export function parseClaudeNativeToolName(outer) {
     if (!outer.startsWith(prefix)) continue;
     const name = outer.slice(prefix.length),
       operation = resolveOperation(name);
-    if (operation && operation.semanticName !== "lode_session_host_request_prepare") return { name, server };
+    if ((operation && operation.semanticName !== "lode_session_host_request_prepare") || operationGroup(name)) return { name, server };
   }
   return null;
 }

@@ -160,6 +160,7 @@ Thumbs.db
 !test/legacy-operation-names.test.mjs
 !test/legacy-reason-codes.test.mjs
 !test/legacy-wire-spellings.test.mjs
+!test/operation-groups.test.mjs
 !test/helpers/dispatch-recording-hooks.mjs
 !test/helpers/dispatch-recording-register.mjs
 !test/helpers/dispatch-recording-run.mjs

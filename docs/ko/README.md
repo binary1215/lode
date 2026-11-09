@@ -79,6 +79,7 @@
 - [Codex 마켓플레이스 배포](codex-marketplace.md)
 - [Claude Code 마켓플레이스 배포](claude-marketplace.md)
 - [규칙 표면 감사](rule-surface-audit.md)
+- [MCP 도구 표면과 폐기 예정 이름](mcp-surface.md)
 
 ## 과거 설계 증거
 

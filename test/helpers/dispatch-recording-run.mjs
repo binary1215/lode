@@ -25,6 +25,7 @@ export const FIXTURE_ROOT = "/lode-dispatch-fixture/project";
 // implementation: name resolution, surface and argument checks, presentation.
 const PASS_THROUGH = new Map([
   ["lode-operation-contract", null],
+  ["operation-groups", null],
   ["managed-maintenance-surface", null],
   ["mcp-argument-validation", null],
   ["lode-artifact-composition", null],
@@ -244,7 +245,9 @@ export async function recordDispatch() {
       }
       return { calls: normalize(recorder.calls), outcome: outcomeOf(normalize, error, response) };
     };
-    for (const tool of [...mcp.catalogTools].sort((a, b) => a.name.localeCompare(b.name, "en"))) {
+    // Every operation by its own name, including the deprecated names a grouped
+    // tool replaced (stage 3-F): those still dispatch exactly as recorded.
+    for (const tool of [...mcp.operationCatalogTools].sort((a, b) => a.name.localeCompare(b.name, "en"))) {
       const surface = isManagedMutation(tool.name) ? "managed-maintenance" : "ordinary";
       for (const input of mcpInputs(tool)) {
         const request = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool.name, arguments: input } };
@@ -276,8 +279,72 @@ export async function recordDispatch() {
   }
 }
 
+// Each grouped tool action, called directly, through its router, and by its
+// deprecated operation name through the router, with every recorded input of the
+// member operation. test/dispatch-recordings.test.mjs compares each with the
+// member operation's recording.
+export async function recordGroupedDispatch() {
+  const workDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "lode-dispatch-recording-"));
+  const previous = process.cwd();
+  process.chdir(workDirectory);
+  const normalize = normalizer(workDirectory);
+  try {
+    const mcp = await import("../../scripts/mcp-server.mjs");
+    const { operationGroup } = await import("../../scripts/lib/operation-groups.mjs");
+    const { isManagedMutation } = await import("../../scripts/lib/managed-maintenance-surface.mjs");
+    const operations = new Map(mcp.operationCatalogTools.map((tool) => [tool.name, tool]));
+    const entries = [];
+    const capture = async (request, surface) => {
+      recorder.calls = [];
+      recorder.active = true;
+      let error = null,
+        response = null;
+      try {
+        response = await mcp.dispatch(request, {
+          surface,
+          hostEnvironment: {},
+          observationRegistry: OBSERVATION_REGISTRY,
+          graphDbTransport: GRAPHDB_TRANSPORT,
+          compactionLifecycleHost: COMPACTION_LIFECYCLE_HOST,
+          readRelatedNativeContext: READ_RELATED_NATIVE_CONTEXT,
+          caller: CALLER,
+        });
+      } catch (caught) {
+        error = caught;
+      } finally {
+        recorder.active = false;
+      }
+      return { calls: normalize(recorder.calls), outcome: outcomeOf(normalize, error, response) };
+    };
+    for (const tool of mcp.catalogTools) {
+      const group = operationGroup(tool.name);
+      if (!group) continue;
+      for (const { action, operation } of group.actions) {
+        const member = operations.get(operation);
+        const surface = isManagedMutation(operation) ? "managed-maintenance" : "ordinary";
+        const router = member.annotations?.readOnlyHint === true ? "lode_tools_read" : "lode_tools_call";
+        for (const input of mcpInputs(member)) {
+          const paths = {
+            direct: { name: group.name, arguments: { action, ...input } },
+            router: { name: router, arguments: { name: group.name, arguments: { action, ...input } } },
+            alias: { name: router, arguments: { name: operation, arguments: input } },
+          };
+          for (const [route, params] of Object.entries(paths)) {
+            const result = await capture({ jsonrpc: "2.0", id: 1, method: "tools/call", params }, surface);
+            entries.push({ route, group: group.name, action, operation, input: normalize(input), ...result });
+          }
+        }
+      }
+    }
+    return { entries };
+  } finally {
+    process.chdir(previous);
+    fs.rmSync(workDirectory, { recursive: true, force: true });
+  }
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const value = await recordDispatch();
+  const value = process.argv.includes("--groups") ? await recordGroupedDispatch() : await recordDispatch();
   const text = `${JSON.stringify(value, null, 1)}\n`;
   const out = process.argv.indexOf("--out");
   if (out >= 0) fs.writeFileSync(process.argv[out + 1], text);

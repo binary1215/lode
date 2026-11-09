@@ -1,4 +1,6 @@
 import { resolveOperation } from "./lode-operation-contract.mjs";
+import { operationGroup } from "./operation-groups.mjs";
+import { legacyOperationName } from "../../compat/head/public-names.mjs";
 
 // Build-owned literal. Carrier staging fixes this before manifest hashes are
 // computed; it is not a runtime option, environment variable or Project mode.
@@ -33,5 +35,9 @@ export function artifactCompositionForIdentity(identity) {
 export const ARTIFACT_COMPOSITION = artifactCompositionForIdentity(ARTIFACT_IDENTITY);
 export function publicToolName(name) {
   const operation = resolveOperation(name);
-  return operation ? (ARTIFACT_COMPOSITION.identity === "lode" ? operation.canonicalName : operation.legacyName) : name;
+  if (operation) return ARTIFACT_COMPOSITION.identity === "lode" ? operation.canonicalName : operation.legacyName;
+  // A grouped tool (scripts/lib/operation-groups.mjs) follows the same spelling rule.
+  const group = operationGroup(name);
+  if (group) return ARTIFACT_COMPOSITION.identity === "lode" ? group.name : legacyOperationName(group.name);
+  return name;
 }

@@ -5,7 +5,15 @@ import { callRegistered, registeredOperation, registryCatalog, WORLD_MODEL_STATU
 import { assertProjectRootArgument } from "./lib/mcp-argument-validation.mjs";
 import { legacyReasonCodeFields } from "./lib/core/errors.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
-import { DISCOVERY_PREFIX_PAIRS } from "../compat/head/public-names.mjs";
+import { DISCOVERY_PREFIX_PAIRS, legacyOperationName } from "../compat/head/public-names.mjs";
+import {
+  DEPRECATED_ALIAS_REMOVAL_VERSION,
+  effectiveToolCall,
+  groupMembership,
+  groupedCatalog,
+  operationGroup,
+  resolveGroupedCall,
+} from "./lib/operation-groups.mjs";
 const semanticToolName = (name) => resolveOperation(name)?.semanticName ?? name;
 const presentedTools = new WeakMap();
 const presentedTool = (tool) => {
@@ -51,6 +59,9 @@ allTools.push({
   },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 });
+// Listed surface: grouped tools replace their member operations (see
+// scripts/lib/operation-groups.mjs). allTools keeps every operation for dispatch.
+const surfaceTools = groupedCatalog(allTools);
 const defaultToolNames = new Set([
   SESSION_HOST_REQUEST_HELPER,
   "lode_core_contract",
@@ -111,7 +122,7 @@ const discoveryTools = [
   {
     name: "lode_tools_call",
     description:
-      "Call a discovered Lode operation using its exact inputSchema within existing user scope. Original authority, current-basis, ownership, replay and maintenance checks still apply. Discovery grants no authorization. Prefer head_tools_read for read-only operations.",
+      "Call a discovered Lode operation using its exact inputSchema within existing user scope. Original authority, current-basis, ownership, replay and maintenance checks still apply. Discovery grants no authorization. Prefer lode_tools_read for read-only operations.",
     inputSchema: {
       ...routedInputSchema,
       properties: {
@@ -128,10 +139,13 @@ const discoveryTools = [
   },
 ];
 // Complete ordinary schemas for programmatic consumers; tools/list stays small.
-export const catalogTools = allTools.map(presentedTool);
+// catalogTools is the listed (grouped) catalog; operationCatalogTools keeps every
+// operation, including the deprecated names a group replaced.
+export const catalogTools = surfaceTools.map(presentedTool);
+export const operationCatalogTools = allTools.map(presentedTool);
 export function toolsForSurface(surface = "ordinary") {
   requireSurface(surface);
-  return [...allTools.filter((tool) => (surface === "managed-maintenance" ? true : defaultToolNames.has(tool.name))), ...discoveryTools].map(presentedTool);
+  return [...surfaceTools.filter((tool) => (surface === "managed-maintenance" ? true : defaultToolNames.has(tool.name))), ...discoveryTools].map(presentedTool);
 }
 export const tools = toolsForSurface();
 
@@ -148,8 +162,12 @@ export function discoverTools({ name, prefix, offset = 0, limit = 8 } = {}, surf
     limit > 20
   )
     throw new Error("Invalid tool discovery selector or page.");
-  const available = allTools.map(presentedTool);
-  if (name != null) name = publicToolName(name);
+  const available = surfaceTools.map(presentedTool);
+  if (name != null) {
+    // A deprecated operation name finds the grouped tool that replaced it.
+    const membership = groupMembership(resolveOperation(name)?.semanticName);
+    name = publicToolName(membership ? membership.group.name : name);
+  }
   if (prefix != null) {
     const known = DISCOVERY_PREFIX_PAIRS.find((pair) => pair.legacy === prefix || pair.canonical === prefix);
     if (known) prefix = ARTIFACT_COMPOSITION.identity === "lode" ? known.canonical : known.legacy;
@@ -171,6 +189,12 @@ export function discoverTools({ name, prefix, offset = 0, limit = 8 } = {}, surf
   }
   const matches = available.filter((tool) => {
     if (name != null) return tool.name === name;
+    const group = operationGroup(tool.name);
+    if (group) {
+      // A group matches its own prefix and every prefix its deprecated names matched.
+      const spellings = [group.name, ...group.actions.map((entry) => entry.operation)].flatMap((canonical) => [canonical, legacyOperationName(canonical)]);
+      return spellings.some((spelling) => `${spelling}_`.startsWith(prefix));
+    }
     const descriptor = resolveOperation(tool.name);
     return tool.name.startsWith(prefix) || descriptor?.legacyName.startsWith(prefix) || descriptor?.canonicalName.startsWith(prefix);
   });
@@ -184,21 +208,59 @@ export function discoverTools({ name, prefix, offset = 0, limit = 8 } = {}, surf
       ...tool,
       invokeWith: publicToolName(tool.annotations?.readOnlyHint === true ? "lode_tools_read" : "lode_tools_call"),
       ...(isManagedMutation(tool.name) ? { executionMode: "managed" } : {}),
+      ...groupDiscovery(tool.name),
     })),
   };
 }
 
+// Per-action routes of a grouped tool, and the deprecated names it replaced.
+function groupDiscovery(name) {
+  const group = operationGroup(name);
+  if (!group) return {};
+  const operations = new Map(allTools.map((tool) => [tool.name, tool]));
+  return {
+    actions: group.actions.map(({ action, operation }) => {
+      const tool = operations.get(operation);
+      return {
+        action,
+        description: tool.description,
+        required: tool.inputSchema?.required ?? [],
+        invokeWith: publicToolName(tool.annotations?.readOnlyHint === true ? "lode_tools_read" : "lode_tools_call"),
+        ...(isManagedMutation(operation) ? { executionMode: "managed" } : {}),
+      };
+    }),
+    deprecatedAliases: group.actions.map(({ action, operation }) => ({ name: publicToolName(operation), action, removedIn: DEPRECATED_ALIAS_REMOVAL_VERSION })),
+  };
+}
+
 function requestedToolName(request) {
-  return ["lode_tools_read", "lode_tools_call"].includes(semanticToolName(request.params?.name))
-    ? semanticToolName(request.params?.arguments?.name)
-    : semanticToolName(request.params?.name);
+  const routed = ["lode_tools_read", "lode_tools_call"].includes(semanticToolName(request.params?.name));
+  const outer = request.params?.arguments;
+  return semanticToolName(routed ? effectiveToolCall(outer?.name, outer?.arguments).name : effectiveToolCall(request.params?.name, outer).name);
+}
+
+// Rewrites a grouped call (directly or through a router) to its member operation,
+// before any other check reads the name or arguments.
+function ungroupedRequest(request) {
+  if (request.method !== "tools/call") return request;
+  const routed = ["lode_tools_read", "lode_tools_call"].includes(semanticToolName(request.params?.name));
+  const outer = request.params?.arguments;
+  const name = routed ? outer?.name : request.params?.name;
+  const resolved = resolveGroupedCall(name, routed ? outer?.arguments : outer, publicToolName(name));
+  if (!resolved) return request;
+  const params = routed
+    ? { ...request.params, arguments: { ...outer, name: resolved.name, arguments: resolved.arguments } }
+    : { ...request.params, name: resolved.name, arguments: resolved.arguments };
+  return { ...request, params };
 }
 
 // Use the shared policy after router unwrap. OpenCode applies it to the exact
 // Host before-hook; MCP uses its own caller and optional Codex observations.
 // Disabled mode does not read observations.
 async function subagentStateWriteRejection(name, args, caller, environment) {
-  const selected = allTools.find((tool) => semanticToolName(tool.name) === name);
+  const selected =
+    allTools.find((tool) => semanticToolName(tool.name) === name) ??
+    surfaceTools.find((tool) => operationGroup(tool.name) && operationGroup(tool.name) === operationGroup(name));
   if (!selected || selected.annotations?.readOnlyHint === true) return null;
   if (!subagentWriteGuardEnabled(environment, { caller })) return null;
   // A cold catalog or disabled guard must not load optional Codex observations.
@@ -250,6 +312,21 @@ export async function dispatch(request, options = {}) {
 }
 
 async function dispatchSessionRequest(request, options = {}) {
+  try {
+    request = ungroupedRequest(request);
+  } catch (error) {
+    // An invalid grouped call names no single operation. A guarded child still
+    // gets the write-guard refusal first when the group has an effectful action.
+    const routedGroup = ["lode_tools_read", "lode_tools_call"].includes(semanticToolName(request.params?.name));
+    const outerGroup = request.params?.arguments;
+    const rejection = await subagentStateWriteRejection(
+      routedGroup ? outerGroup?.name : request.params?.name,
+      routedGroup ? outerGroup?.arguments : outerGroup,
+      options.caller,
+      options.hostEnvironment ?? process.env,
+    );
+    return failure(request.id ?? null, rejection ?? error.message, rejection ? undefined : error?.code);
+  }
   const outer = request.params?.arguments;
   const routed = ["lode_tools_read", "lode_tools_call"].includes(semanticToolName(request.params?.name));
   const args = routed ? outer?.arguments : outer;

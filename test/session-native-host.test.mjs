@@ -13,7 +13,13 @@ import { createNativeSessionHostBridge } from "../scripts/lib/session-native-hos
 import { createSessionHostRequestRegistry, SESSION_HOST_REQUEST_HELPER, claudeNativeHookMatchers } from "../scripts/lib/session-host-request.mjs";
 import { resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
 import { sessionCallRequiresBinding } from "../scripts/lib/session-routing.mjs";
-import { dispatch, catalogTools } from "../scripts/mcp-server.mjs";
+import { dispatch, catalogTools as listedTools, operationCatalogTools } from "../scripts/mcp-server.mjs";
+import { operationGroup } from "../scripts/lib/operation-groups.mjs";
+import { legacyOperationName } from "../compat/head/public-names.mjs";
+// Every operation (deprecated names included) and every grouped tool (stage 3-F).
+const catalogTools = [...operationCatalogTools, ...listedTools.filter((tool) => operationGroup(tool.name))];
+const legacySpelling = (name) => resolveOperation(name)?.legacyName ?? legacyOperationName(name);
+const bindingRequired = (name) => operationGroup(name) ? operationGroup(name).actions.some(({ operation }) => sessionCallRequiresBinding(operation)) : sessionCallRequiresBinding(name);
 import { sessionStartContext } from "../scripts/session-host-hook.mjs";
 
 // head_* request inputs below deliberately exercise compatibility dispatch;
@@ -502,10 +508,10 @@ test("registry exact/active/divergent/expiry/capacity/dispose is bounded P5, nev
 
 test("Claude matcher derives Session and effectful coverage from the catalog, excluding helper and other servers", () => {
   const hooks=JSON.parse(fs.readFileSync(path.join(pluginRoot,"hooks/claude.json"),"utf8"));
-  assert.deepEqual(hooks.hooks.PreToolUse.map(group=>group.matcher),claudeNativeHookMatchers(catalogTools));
+  assert.deepEqual(hooks.hooks.PreToolUse.map(group=>group.matcher),claudeNativeHookMatchers(operationCatalogTools));
   for(const tool of catalogTools){
-    for(const spelling of [tool.name,resolveOperation(tool.name).legacyName]){
-      const expected=sessionCallRequiresBinding(tool.name)||["lode_tools_call","lode_tools_read"].includes(tool.name)||tool.annotations?.readOnlyHint!==true||["lode_conversation_list","head_conversation_list"].includes(spelling);
+    for(const spelling of [tool.name,legacySpelling(tool.name)]){
+      const expected=bindingRequired(tool.name)||["lode_tools_call","lode_tools_read"].includes(tool.name)||tool.annotations?.readOnlyHint!==true||["lode_conversation_list","head_conversation_list"].includes(spelling);
       assert.equal(new RegExp(hooks.hooks.PreToolUse[0].matcher).test("mcp__lode__"+spelling),expected,spelling);
       assert.equal(new RegExp(hooks.hooks.PreToolUse[1].matcher).test("mcp__plugin_lode-agent-core_lode__"+spelling),expected,spelling);
     }

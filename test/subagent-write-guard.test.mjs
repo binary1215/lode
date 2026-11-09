@@ -13,8 +13,23 @@ import {
   diagnoseSubagentWriteGuard,
   subagentWriteGuardEnabled,
 } from "../scripts/lib/subagent-write-guard.mjs";
-import { dispatch, catalogTools } from "../scripts/mcp-server.mjs";
+import { dispatch, operationCatalogTools } from "../scripts/mcp-server.mjs";
 import { resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
+import { OPERATION_GROUPS } from "../scripts/lib/operation-groups.mjs";
+import { legacyOperationName } from "../compat/head/public-names.mjs";
+
+// Every effectful operation (deprecated names included) and every effectful action
+// of a grouped tool (stage 3-F), each with its canonical and historical spelling.
+const effectful = (tool) => tool.annotations?.readOnlyHint !== true;
+const operationTool = new Map(operationCatalogTools.map((tool) => [tool.name, tool]));
+const effectfulCalls = [
+  ...operationCatalogTools.filter(effectful).map((tool) => ({ label: tool.name, names: [tool.name, resolveOperation(tool.name).legacyName], args: {} })),
+  ...OPERATION_GROUPS.flatMap((group) =>
+    group.actions
+      .filter(({ operation }) => effectful(operationTool.get(operation)))
+      .map(({ action }) => ({ label: `${group.name}:${action}`, names: [group.name, legacyOperationName(group.name)], args: { action } })),
+  ),
+];
 import plugin from "../scripts/opencode-plugin.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
@@ -73,11 +88,11 @@ test("supported-default: actual Claude exact hooks protect every catalog write w
     return read(file, ...args);
   };
   try {
-    for (const tool of catalogTools.filter((tool) => tool.annotations?.readOnlyHint !== true))
-      for (const name of [tool.name, resolveOperation(tool.name).legacyName])
+    for (const call of effectfulCalls)
+      for (const name of call.names)
         for (const routed of [false, true]) {
-          const wire = claudeWire(root, name, {}, `default-child-${sequence++}`, routed);
-          assert.equal(rejected(await claudeCall(native, wire, "verified-child")), true, tool.name + "/" + routed);
+          const wire = claudeWire(root, name, call.args, `default-child-${sequence++}`, routed);
+          assert.equal(rejected(await claudeCall(native, wire, "verified-child")), true, call.label + "/" + routed);
           assert.equal(native.requestStatus().pending, 0);
           assert.equal(native.requestStatus().active, 0);
         }
@@ -323,23 +338,22 @@ test("guard configuration typos warn without enabling unproven callers or blocki
 test("every effectful catalog operation rejects a child before its handler, direct and routed", async (t) => {
   const { root, canon, environment } = project(t),
     before = canon();
-  const effectful = catalogTools.filter((tool) => tool.annotations?.readOnlyHint !== true);
-  assert.ok(effectful.length >= 54, "Do not silently shrink existing write coverage.");
-  for (const tool of effectful)
+  assert.ok(effectfulCalls.length >= 54, "Do not silently shrink existing write coverage.");
+  for (const { label, names, args } of effectfulCalls)
     for (const routed of [false, true]) {
       const response = await dispatch(
         {
           jsonrpc: "2.0",
-          id: tool.name,
+          id: label,
           method: "tools/call",
           params: {
-            name: routed ? "lode_tools_call" : tool.name,
-            arguments: routed ? { name: tool.name, arguments: { project_root: root } } : { project_root: root },
+            name: routed ? "lode_tools_call" : names[0],
+            arguments: routed ? { name: names[0], arguments: { ...args, project_root: root } } : { ...args, project_root: root },
           },
         },
         { surface: "managed-maintenance", caller: { subagent: true }, hostEnvironment: environment(true) },
       );
-      assert.equal(rejected(response), true, `${tool.name}, routed=${routed}: ${JSON.stringify(response)}`);
+      assert.equal(rejected(response), true, `${label}, routed=${routed}: ${JSON.stringify(response)}`);
     }
   assert.deepEqual(canon(), before, "No operation handler reached canonical writes.");
 });
