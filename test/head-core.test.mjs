@@ -843,7 +843,7 @@ test("resume requires a fresh semantic reproposal for stale non-authoritative on
   const blocked = await initializeOrResumeProject({ root, pluginRoot, runtimes: ["codex"], profile: "product" });
   assert.equal(blocked.project.projectId, first.project.projectId);
   assert.equal(blocked.project.sessionId, first.project.sessionId);
-  assert.equal(blocked.onboardingAction, "fresh-head-semantic-reproposal-required");
+  assert.equal(blocked.onboardingAction, "fresh-lode-semantic-reproposal-required");
   assert.equal(blocked.inputDisposition, "semantic-proposal-required");
   assert.equal(blocked.onboarding.candidateSetId, firstSetId);
   const resumed = await initializeOrResumeProject({
@@ -863,7 +863,7 @@ test("resume requires a fresh semantic reproposal for stale non-authoritative on
 
   fs.rmSync(path.join(root, "src", "policy.py"));
   const returnBlocked = await initializeOrResumeProject({ root, pluginRoot, runtimes: ["codex"], profile: "product" });
-  assert.equal(returnBlocked.onboardingAction, "fresh-head-semantic-reproposal-required");
+  assert.equal(returnBlocked.onboardingAction, "fresh-lode-semantic-reproposal-required");
   const returnedToFirstSource = await initializeOrResumeProject({
     root,
     pluginRoot,
@@ -1156,7 +1156,7 @@ test("detects managed file drift and blocks canonical mutation", async (t) => {
   assert.equal(experience.attention.userDecisionRequired, false);
   assert.equal(experience.attention.headActionRequired, false);
   assert.equal(experience.attention.ordinaryWorkBlocked, false);
-  assert.equal(experience.attention.blockedOperations.includes("head-managed-mutation"), true);
+  assert.equal(experience.attention.blockedOperations.includes("lode-managed-mutation"), true);
   assert.equal(experience.attention.items.find((item) => item.id === "managed-projection-drift").actionability, "when-managed-mutation-is-in-scope");
   assert.equal(experience.capabilities.find((item) => item.id === "direct-work").availability, "available");
   assert.equal(

@@ -48,7 +48,7 @@ export function parse(argv) {
     if (!value || value.startsWith("--")) throw new Error(`A value is required for ${item}.`);
     options[key] = value;
   }
-  return { command: command === "lode-continuity" ? "head-continuity" : command, root, options };
+  return { command, root, options };
 }
 
 export function usage({ all = false, surface = "ordinary" } = {}) {

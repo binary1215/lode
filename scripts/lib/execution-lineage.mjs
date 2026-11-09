@@ -246,7 +246,7 @@ export function buildFreshLodeReview({ root = ".", wholePlanId, resultPacketId, 
     reviewContextId: `${formatForVerifiedOwner(projectStorage.get(project)).value("fresh-head-review")}-${reviewContextHash.slice(0, 24)}`,
     reviewContextHash,
   };
-  return { status: "ready_for_fresh_head_review", review };
+  return { status: "ready_for_fresh_lode_review", review };
 }
 
 function createWholePlanSnapshotUncoordinated({ root = ".", objective, plan, invariants = [], sources = [], persist = true } = {}) {

@@ -188,7 +188,7 @@ export function continueSessionFromArtifacts({
     }),
   );
   return {
-    status: status === "attached" ? "session_continued_with_live_attachment" : "session_continued_with_fresh_logical_head",
+    status: status === "attached" ? "session_continued_with_live_attachment" : "session_continued_with_fresh_logical_lode",
     restore: before,
     continuationOutcome: outcome,
   };

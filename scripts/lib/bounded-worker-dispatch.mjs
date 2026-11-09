@@ -471,5 +471,5 @@ export function applyBoundedWorkerDispatchResult({ root = ".", authorizationId }
       "BOUNDED_WORKER_APPLY_RUN_REQUIRED",
     );
   const applied = applyRuntimeRunResult({ root, authorizationId, storage: originalFormat(authorization) });
-  return { status: "bounded_worker_result_applied_for_fresh_head_review", dispatch, applied };
+  return { status: "bounded_worker_result_applied_for_fresh_lode_review", dispatch, applied };
 }

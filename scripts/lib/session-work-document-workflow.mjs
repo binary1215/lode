@@ -67,7 +67,7 @@ export async function recordSessionWorkAndProjectDocuments({ root, input, docume
           title = prior.draft.title;
         } else if (published.length > 1 || published.some((item) => rich(item.sourceSelection)) || rich(prior.draft?.sourceSelection)) {
           documentProjection = {
-            status: "head-selection-required",
+            status: "lode-selection-required",
             headActionRequired: true,
             userActionRequired: false,
             savedTaskStatus: todo.status,
@@ -138,7 +138,7 @@ export async function recordSessionWorkAndProjectDocuments({ root, input, docume
       const prior = store.read("selections", logicalKey + ".json");
       if (!documentSelection && rich(prior?.sourceSelection) && !exact(prior.taskRevision, record)) {
         projectDocuments = {
-          status: "head-selection-required",
+          status: "lode-selection-required",
           headActionRequired: true,
           userActionRequired: false,
           externalEffects: 0,

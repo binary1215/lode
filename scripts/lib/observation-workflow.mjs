@@ -54,9 +54,9 @@ export function prepareObservationEvidence({
   const sourceCount = configured.registry.matchingSourceCount ?? 0;
   const nextAction =
     existing.returned > 0
-      ? "head-assess-existing-observations"
+      ? "lode-assess-existing-observations"
       : sourceCount > 0
-        ? "head-may-collect-one-source-if-durable-current-evidence-is-required"
+        ? "lode-may-collect-one-source-if-durable-current-evidence-is-required"
         : "continue-without-persisted-observation-or-disclose-required-adapter-gap";
   const payload = {
     schemaVersion: SCHEMA_VERSION,

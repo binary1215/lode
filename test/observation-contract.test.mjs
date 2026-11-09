@@ -455,7 +455,7 @@ test("lets CLI and MCP collect a Host-injected source by opaque ID without user-
   const beforeCollection = prepareObservationEvidence({ root, registry, typeKey: "example.configured.health" });
   assert.equal(beforeCollection.existing.returned, 0);
   assert.equal(beforeCollection.configuredSources.matchingSourceCount, 1);
-  assert.equal(beforeCollection.workflow.nextAction, "head-may-collect-one-source-if-durable-current-evidence-is-required");
+  assert.equal(beforeCollection.workflow.nextAction, "lode-may-collect-one-source-if-durable-current-evidence-is-required");
 
   const cliSources = await runCommand(["observation-sources", root], { observationRegistry: registry });
   assert.equal(cliSources.registry.configuredSourceCount, 1);
@@ -466,7 +466,7 @@ test("lets CLI and MCP collect a Host-injected source by opaque ID without user-
   const prepared = prepareObservationEvidence({ root, registry, typeKey: "example.configured.health", sourceLimit: 10 });
   assert.equal(prepared.existing.returned, 1);
   assert.equal(prepared.configuredSources.matchingSourceCount, 1);
-  assert.equal(prepared.workflow.nextAction, "head-assess-existing-observations");
+  assert.equal(prepared.workflow.nextAction, "lode-assess-existing-observations");
   assert.equal(prepared.workflow.semanticSufficiencyAssessed, false);
   assert.equal(prepared.persisted, false);
   assert.match(prepared.preparationId, /^observation-preparation-[a-f0-9]{24}$/);

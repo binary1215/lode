@@ -1032,7 +1032,7 @@ No checkpoint, approval or original task effect was created or replayed.\n`;
     return text;
   }
   text += "The original work save remains successful. Do not replay its task effects.\n";
-  if (documents.status === "head-selection-required") {
+  if (documents.status === "lode-selection-required" || documents.status === "head-selection-required") {
     text +=
       `Latest recorded task state: ${inertTerminalText(documents.savedTaskStatus)}. Remote documents are not updated.\n` +
       `Lode action required; user action not required. Continue ${publicToolName("lode_work_document_prepare")} then ${publicToolName("lode_work_document_publish")} using the exact prior selection and saved result below. Do not ask for JSON, a repeated save, or another routine approval.\n`;
@@ -1764,7 +1764,7 @@ function formatWorkerGuidance(value) {
 }
 
 function formatSourceContext(value) {
-  if (["head-selection-needed", "lode-selection-needed"].includes(value.status)) return `${value.nextAction}\n`;
+  if (["lode-selection-needed", "head-selection-needed"].includes(value.status)) return `${value.nextAction}\n`;
   const ready = value.results.filter((item) => item.status === "ready" && item.includedInContext);
   const lines = [`Source context: ${ready.length}/${value.results.length} selected needs included.`];
   for (const item of value.results)

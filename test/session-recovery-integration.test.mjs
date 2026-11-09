@@ -452,7 +452,7 @@ test("CLI help and MCP expose artifact restore plus explicit integration without
     method: "tools/call",
     params: { name: "lode_session_continue", arguments: { project_root: root, runtime: "codex" } },
   });
-  assert.equal(continued.result.structuredContent.status, "session_continued_with_fresh_logical_head");
+  assert.equal(continued.result.structuredContent.status, "session_continued_with_fresh_logical_lode");
   assert.equal(continued.result.structuredContent.continuationOutcome.p2RestoredBeforeAttachment, true);
   assert.equal(continued.result.structuredContent.continuationOutcome.p2DirectionChanged, false);
   assert.equal(continued.result.structuredContent.continuationOutcome.providerSessionIdentityPersisted, false);

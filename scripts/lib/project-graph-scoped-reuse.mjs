@@ -308,7 +308,7 @@ export function rememberScopedDiscovery({ options, normalized, inventory, result
         action:
           "Read affected originals before relying on current effects; use a new or broad query to rediscover unrelated changes. Excluded inputs and retained discovery diagnostics are historical, not a fresh whole-inventory validation.",
       },
-      reuse: { status: "scoped-originals-reused", semanticSufficiency: "HEAD-owned", wholeProjectCurrent: false },
+      reuse: { status: "scoped-originals-reused", semanticSufficiency: "Lode-owned", wholeProjectCurrent: false },
     };
     delete scopedPayload.resultId;
     delete scopedPayload.resultHash;

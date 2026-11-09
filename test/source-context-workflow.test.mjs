@@ -83,7 +83,7 @@ test("CLI and typed MCP need no JSON/hash input and task-only keeps selection wi
   assert.equal(mcp.result.structuredContent.status, "observed", JSON.stringify(mcp));
   const selection = await prepareSourceContext({ root, task: "Inspect" });
   assert.equal(selection.userActionRequired, false);
-  assert.equal(selection.status, "head-selection-needed");
+  assert.equal(selection.status, "lode-selection-needed");
 });
 
 test("isolated interpreter ignores project ast/sitecustomize and honors cancellation and deadlines", async (t) => {

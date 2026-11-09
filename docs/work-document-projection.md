@@ -110,7 +110,7 @@ revision, Lode may supply optional `document_selection` in the same async record
 call (CLI `--document-selection`). Its local `recorded` alias resolves to that
 saved original; it does not change P3 schema or grant authority. If an existing
 rich selection cannot be carried safely without Lode judgment, the response
-reports `head-selection-required`, the recorded reopen/cancellation and remote
+reports `lode-selection-required`, the recorded reopen/cancellation and remote
 not-updated state. Lode continues explicit preparation and publication in the same
 turn, using the supplied exact prior scope, without asking the user for a form or
 re-saving work. Old before/after pairs remain historical unless explicitly

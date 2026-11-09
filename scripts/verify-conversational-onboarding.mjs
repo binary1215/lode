@@ -194,7 +194,7 @@ try {
 
   const evidenceGuide = await tool("lode_onboarding_guide", { project_root: projectRoot });
   assert.equal(evidenceGuide.status, "awaiting_evidence");
-  assert.deepEqual(evidenceGuide.materialChoicesRequired, ["fresh_head_semantic_proposal_or_user_brief"]);
+  assert.deepEqual(evidenceGuide.materialChoicesRequired, ["fresh_lode_semantic_proposal_or_user_brief"]);
 
   const proposed = await tool("lode_project_initialize_or_resume", {
     project_root: projectRoot,

@@ -337,7 +337,7 @@ test("basis changes during awaited preflight require HEAD reassessment before th
   const f = await workerIntegrationFixture(t, { workers: [{ path: "a.txt", after: "new A" }] });
   const native = syntheticHost({ preflight: () => fs.writeFileSync(path.join(f.root, "a.txt"), "concurrent change") });
   const result = await applyWorkerPatchIntegration(appInput(f), native.host);
-  assert.equal(result.action, "refresh-head-assessment");
+  assert.equal(result.action, "refresh-lode-assessment");
   assert.equal(result.claim, null);
   assert.deepEqual(native.writes(), []);
   assert.equal(bytes(f.root, "a.txt"), "concurrent change");
@@ -475,10 +475,10 @@ test("stale basis is an internal HEAD reassessment, not an additional user appro
   fs.writeFileSync(path.join(f.root, "b.txt"), "fresh dependency");
   const native = syntheticHost();
   const old = await applyWorkerPatchIntegration({ ...appInput(f), basisDigest: oldBasis }, native.host);
-  assert.equal(old.action, "refresh-head-assessment");
+  assert.equal(old.action, "refresh-lode-assessment");
   assert.equal(old.claim, null);
   const missing = await applyWorkerPatchIntegration(appInput(f), native.host);
-  assert.equal(missing.action, "head-reassess-current-basis");
+  assert.equal(missing.action, "lode-reassess-current-basis");
   assert.equal(missing.userActionRequired, undefined);
   assert.deepEqual(native.calls, []);
   const accepted = await applyWorkerPatchIntegration({ ...appInput(f), basisDigest: current(f).currentBasis.basisDigest }, native.host);
@@ -926,7 +926,7 @@ test("dependency drift between effects pauses only remaining work until fresh HE
     },
   });
   const partial = await applyWorkerPatchIntegration(appInput(f), native.host);
-  assert.equal(partial.action, "refresh-head-assessment");
+  assert.equal(partial.action, "refresh-lode-assessment");
   assert.deepEqual(
     partial.effectResults.map((effect) => effect.status),
     ["applied", "not-attempted"],
@@ -1053,7 +1053,7 @@ test("prepared retry rechecks source after preparation before another started at
   });
   await applyWorkerPatchIntegration(appInput(f), native.host);
   const result = await applyWorkerPatchIntegration({ ...appInput(f), retryKnownNoWrite: true }, native.host);
-  assert.equal(result.action, "refresh-head-assessment");
+  assert.equal(result.action, "refresh-lode-assessment");
   assert.equal(result.effectResults[0].attempts.length, 1);
   assert.equal(native.writes().length, 1);
   assert.equal(fs.existsSync(evidenceFile(f, ".effect-0.attempt-1.started.json")), false);

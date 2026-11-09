@@ -94,7 +94,7 @@ async function prepareSourceContextUnderLifetime({ root = ".", task, needs = [],
   if (!normalized.length)
     return {
       kind: "SourceContextResult",
-      status: "head-selection-needed",
+      status: "lode-selection-needed",
       task,
       authorityBoundary: artifactAuthorityBoundary("SourceContextResult"),
       instructionAuthority: false,
@@ -387,7 +387,7 @@ async function prepareSourceContextUnderLifetime({ root = ".", task, needs = [],
     headActionRequired: pendingNeeds.some((entry) => entry.need.required) || retentionPending.length > 0,
     userActionRequired: false,
     decisionScope: "hold-only-judgments-dependent-on-missing-required-evidence; independent-work-unaffected",
-    semanticSufficiency: "HEAD-assessment-required",
+    semanticSufficiency: "Lode-assessment-required",
     contextScope: "current-Core-instructions-and-HEAD-selected-source-observations; no-World-scan-or-full-index-required",
     authority: {
       observation: "P3",

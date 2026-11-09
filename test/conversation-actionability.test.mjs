@@ -143,7 +143,7 @@ test("uninitialized Core advises initialization without blocking direct work; al
       .every((capability) => capability.availability === "blocked-until-core-ready"),
     true,
   );
-  assert.deepEqual(entry.blockedOperations, ["head-managed-capabilities"]);
+  assert.deepEqual(entry.blockedOperations, ["lode-managed-capabilities"]);
 });
 
 test("ready Core without checkpoint has consistent quiet flags and adds no recovery gate", async (t) => {
@@ -216,7 +216,7 @@ test("managed projection drift with no checkpoint never invents a checkpoint-dep
   assert.equal(entry.status, "conversation_ready");
   assert.equal(entry.projectStatus.nextAction.id, "work_directly");
   assert.equal(entry.projectStatus.readiness.recovery.state, "no-current-checkpoint");
-  assert.deepEqual(entry.blockedOperations, ["head-managed-mutation"]);
+  assert.deepEqual(entry.blockedOperations, ["lode-managed-mutation"]);
   assert.equal(entry.attention.items.find((item) => item.id === "managed-projection-drift").actionability, "when-managed-mutation-is-in-scope");
   assert.equal(
     entry.attention.items.some((item) => item.id === "recovery-verification"),

@@ -419,7 +419,7 @@ test("proposal source drift asks HEAD to reassess without applying or blocking h
   fs.writeFileSync(f.source, "later user change\n");
   const effects = syntheticEffects();
   const result = await applyWorkerPatchIntegration(f.input, effects.host);
-  assert.equal(result.action, "head-reassess-current-basis");
+  assert.equal(result.action, "lode-reassess-current-basis");
   assert.deepEqual(effects.calls, []);
   assert.equal(fs.readFileSync(f.source, "utf8"), "later user change\n");
   assert.deepEqual(readWorkerPatchIntegration(f.input).intent, f.intent);

@@ -44,7 +44,7 @@ test("ordinary EN/KO CLI examples use the actual installed lode-agent launcher a
   for (const prefix of ["docs/", "docs/ko/"]) {
     assert(read(prefix + "session-recovery.md").includes("--input <head-direction.json>"));
     assert(read(prefix + "session-recovery.md").includes("--role <non-head-role>"));
-    assert(read(prefix + "product-operating-loop.md").includes("lode-agent head-continuity"));
+    assert(read(prefix + "product-operating-loop.md").includes("lode-agent lode-continuity"));
     assert(read(prefix + "conformance-reconciliation.md").includes("<provider-head-proposal.json>"));
     assert(read(prefix + "original-head-core-comparison.md").includes("`head help`"), "Historical source comparison remains original");
     assert(read(prefix + "architecture.md").includes("scripts/lib/lode-core   project canon"));
@@ -114,7 +114,7 @@ test("context display note changes no serialized status, authority, Capsule iden
   const prepared = (await prepareContextWorkflow({ root, task }));
   assert(preview.workflow.nextAction.note.startsWith("Lode decides which evidence is needed"));
   assert.equal(preview.workflow.status, "ready_for_lode_semantic_assessment");
-  assert.equal(preview.workflow.evidenceNeeds.semanticAcceptance, "not-assessed-HEAD-owned");
+  assert.equal(preview.workflow.evidenceNeeds.semanticAcceptance, "not-assessed-Lode-owned");
   assert.equal(preview.workflow.nextAction.id, "lode_assess_semantic_sufficiency");
   assert.equal(preview.workflow.evidenceNeeds.owner, formatForVerifiedOwner(inspectProject(root)).value("HEAD"));
   assert.equal(preview.workflow.authority.advisoryOnly, true);

@@ -48,7 +48,7 @@ export function buildAttentionProjection(experience, storage = undefined) {
         id: "core-initialization",
         owner,
         summary: "Initialize the Core only because Lode use was requested for this project.",
-        blockedOperations: ["head-managed-capabilities"],
+        blockedOperations: ["lode-managed-capabilities"],
       }),
     );
   if (core.state === "drifted")
@@ -59,7 +59,7 @@ export function buildAttentionProjection(experience, storage = undefined) {
         severity: "integrity",
         actionability: core.projectionDriftOnly ? "when-managed-mutation-is-in-scope" : "immediate",
         summary: "Inspect managed projection drift before a mutating Lode operation.",
-        blockedOperations: ["head-managed-mutation"],
+        blockedOperations: ["lode-managed-mutation"],
       }),
     );
   if (experience?.currentProjectDirectionAvailability?.status === "unavailable")

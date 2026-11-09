@@ -5460,9 +5460,10 @@ export const OPERATIONS = Object.freeze([
     },
   },
   {
-    name: "cli:head-continuity",
+    name: "cli:lode-continuity",
     cli: {
-      command: "head-continuity",
+      command: "lode-continuity",
+      aliases: ["head-continuity"],
       flags: ["fresh"],
       handle: async (context) => {
         const { root, options } = context;

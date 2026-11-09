@@ -14289,6 +14289,51 @@
   },
   {
    "surface": "cli",
+   "command": "lode-continuity",
+   "argv": [
+    "lode-continuity",
+    "<root>"
+   ],
+   "calls": [
+    {
+     "fn": "product-operating-loop#buildLodeContinuitySnapshot",
+     "args": [
+      {
+       "root": "<root>",
+       "fresh": false
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "lode-continuity",
+   "argv": [
+    "lode-continuity",
+    "<root>",
+    "--fresh"
+   ],
+   "calls": [
+    {
+     "fn": "product-operating-loop#buildLodeContinuitySnapshot",
+     "args": [
+      {
+       "root": "<root>",
+       "fresh": true
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "metric-assess",
    "argv": [
     "metric-assess",

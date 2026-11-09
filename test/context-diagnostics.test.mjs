@@ -54,7 +54,7 @@ test("diagnostics preserve generic project bytes and Capsule identity with truth
   assert.equal(report.contextPreview.firstCall.sampleCount, 1);
   assert.equal(report.contextPreview.repeatedCalls.sampleCount, 2);
   assert.equal(report.interpretation.headDiscoveryQuality, "not-measured");
-  assert.equal(report.interpretation.semanticSufficiency, "not-measured-HEAD-owned");
+  assert.equal(report.interpretation.semanticSufficiency, "not-measured-Lode-owned");
   assert.equal(report.interpretation.timingInCapsuleIdentity, false);
   assert.equal(JSON.stringify(report).includes(task), false);
   assert.equal(JSON.stringify(report).includes("export const enqueue"), false);

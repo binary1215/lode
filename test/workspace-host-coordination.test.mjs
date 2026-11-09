@@ -155,7 +155,7 @@ test("six-reference export composition supports P2-first MCP continuation withou
   assert.equal(response.result?.structuredContent?.status, "session_continued_with_live_attachment", JSON.stringify(response));
   publishWorkspaceHostExportSnapshot({ ...fx, hostInstanceId: "host-instance", endpoints: [] });
   const unavailable = await dispatch(request, { coordinationWorkspaceHost: composition });
-  assert.equal(unavailable.result?.structuredContent?.status, "session_continued_with_fresh_logical_head", JSON.stringify(unavailable));
+  assert.equal(unavailable.result?.structuredContent?.status, "session_continued_with_fresh_logical_lode", JSON.stringify(unavailable));
   assert.equal(unavailable.result.structuredContent.continuationOutcome.disclosure, "provider-attachment-unavailable");
   assert.deepEqual(bytes(fx.root), before);
 });
@@ -169,7 +169,7 @@ test("endpoint child directory loss preserves direct P2 continuation and cannot 
   fs.rmdirSync(cwd);
   const before = bytes(fx.root), operationalBefore = bytes(fx.exportRoot);
   const continued = continueSessionFromArtifacts({ root: fx.root, runtime: "codex", hostAttachment: attachment, workspaceHostAdapter: adapter });
-  assert.equal(continued.status, "session_continued_with_fresh_logical_head");
+  assert.equal(continued.status, "session_continued_with_fresh_logical_lode");
   assert.equal(continued.continuationOutcome.disclosure, "provider-attachment-unavailable");
   assert.equal(continued.restore.projection.sessionRestoreHash, expected.restore.projection.sessionRestoreHash);
   assert.deepEqual(continued.restore.projection.consumerInstruction, expected.restore.projection.consumerInstruction);
@@ -193,7 +193,7 @@ test("public MCP child directory loss between attach and receive returns origina
   adapter.attach = args => { const attachment = originalAttach(args); fs.rmdirSync(cwd); return attachment; };
   const response = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "head_session_continue", arguments: { project_root: fx.root, runtime: "codex" } } }, { coordinationWorkspaceHost: { adapter, caller, projectRoot: fx.root } });
   const continued = response.result?.structuredContent;
-  assert.equal(continued?.status, "session_continued_with_fresh_logical_head", JSON.stringify(response));
+  assert.equal(continued?.status, "session_continued_with_fresh_logical_lode", JSON.stringify(response));
   assert.equal(continued.continuationOutcome.disclosure, "provider-attachment-unavailable");
   assert.equal(continued.restore.projection.sessionRestoreHash, expected.restore.projection.sessionRestoreHash);
   assert.deepEqual(continued.restore.projection.consumerInstruction, expected.restore.projection.consumerInstruction);
@@ -263,7 +263,7 @@ test("public MCP rejects wrong project, current Session and runtime while Host s
   assert.match((await call()).error?.message || "", /exact Lode runtime/u);
   host.snapshot = () => { throw new Error("Optional Host snapshot unavailable"); };
   const unavailable = (await call()).result?.structuredContent;
-  assert.equal(unavailable?.status, "session_continued_with_fresh_logical_head");
+  assert.equal(unavailable?.status, "session_continued_with_fresh_logical_lode");
   assert.equal(unavailable.continuationOutcome.disclosure, "provider-attachment-unavailable");
   assert.equal(unavailable.restore.projection.sessionRestoreHash, expected.restore.projection.sessionRestoreHash);
   assert.deepEqual(unavailable.restore.projection.consumerInstruction, expected.restore.projection.consumerInstruction);
