@@ -183,7 +183,7 @@ lines.on("line", line => {
         { type: "reasoning", id: "seed-reasoning", summary: ["seed context", ""], content: ["raw omitted from legacy"] },
         { type: "agentMessage", id: "seed-empty-agent", text: "", phase: "commentary" },
         { type: "reasoning", id: "seed-reasoning-2", summary: ["second piece"], content: [] },
-        { type: "agentMessage", id: "seed-ack", text: JSON.stringify({ seed: "NATIVE_PREFIX_SEED_READY" }),
+        { type: "agentMessage", id: "seed-ack", text: JSON.stringify({ seed: "HEAD_NATIVE_PREFIX_SEED_READY" }),
           phase: "final_answer", memoryCitation: null, delivery: null, questions: null }] };
       if (scenario === "prefix-source-tools") seedTurn.items.push({ type: "dynamicToolCall", id: "unapproved-tool" });
       emitTurn(seedTurn, threadId, true); return;

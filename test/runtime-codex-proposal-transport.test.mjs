@@ -598,7 +598,7 @@ test("native prefix compares JSON values rather than field order and freezes the
     status: "completed",
     items: [
       { id: "live-user", type: "userMessage", clientId: null, content: state.params("turn/start").input },
-      { id: "seed-ack", type: "agentMessage", phase: "final_answer", text: '{"seed":"NATIVE_PREFIX_SEED_READY"}' },
+      { id: "seed-ack", type: "agentMessage", phase: "final_answer", text: '{"seed":"HEAD_NATIVE_PREFIX_SEED_READY"}' },
     ],
   };
   for (const item of turn.items) state.notification({ method: "item/completed", params: { threadId: "synthetic-source", turnId: turn.id, item } });
