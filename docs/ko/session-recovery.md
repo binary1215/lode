@@ -448,8 +448,8 @@ OpenCode assistant 인접성은 미지원입니다. 최근 맥락과 불확실�
 누락된 의존 근거가 필요할 때 제공된 정확한 원문 확장을 사용하고, 현재 P2 방향·취소와
 독립 Todo 뷰를 계속 일반 작업에 적용합니다.
 
-HEAD는 기존 `lode_session_work_record` 또는 checkpoint의 선택 work evidence에 `todos`를
-기록할 수 있습니다. 사용자는 평소처럼 작업을 말하며 HEAD가 stable `todoId`, task,
+Lode는 기존 `lode_session_work_record` 또는 checkpoint의 선택 work evidence에 `todos`를
+기록할 수 있습니다. 사용자는 평소처럼 작업을 말하며 Lode가 stable `todoId`, task,
 기록된 출처, 명시 status와 미해결 작업의 next action을 작성합니다. `partial`, `waiting`,
 `completed`, `cancelled`를 구분하고 대기·취소 사유를 남깁니다. 실제 진행과 관련 정확한
 evidence는 P3 기록이며 프로세스 상태로 추정하지 않습니다. 갱신은 같은 Session의 정확한

@@ -23,7 +23,7 @@ function projection(capsule) {
   return {
     kind: "ContextWorkflowProjection",
     protocolVersion: CONTEXT_WORKFLOW_PROTOCOL_VERSION,
-    status: "ready_for_head_semantic_assessment",
+    status: "ready_for_lode_semantic_assessment",
     task: capsule.task,
     world: {
       state: world,
@@ -111,7 +111,7 @@ export async function prepareContextWorkflow({ root = ".", task, budget = DEFAUL
     preparation: {
       kind: "ContextPreparationProjection",
       protocolVersion: CONTEXT_PREPARATION_PROTOCOL_VERSION,
-      status: "ready_for_head_semantic_assessment",
+      status: "ready_for_lode_semantic_assessment",
       task: capsule.task,
       world: workflow.world,
       currentState: capsule.currentState,

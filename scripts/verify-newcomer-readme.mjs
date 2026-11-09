@@ -115,7 +115,7 @@ function assertReadmeContract() {
   // and runtime fixtures. Check their linked destinations rather than duplicate prose.
   const advancedContracts = [
     ["README.md", "command-reference", ["core_ready", "readiness.product", "requires-session-or-run-authorization"]],
-    ["context-compiler.md", "context-examples", ["lode-agent context-prepare", "lode-agent context-preview", "ready_for_head_semantic_assessment"]],
+    ["context-compiler.md", "context-examples", ["lode-agent context-prepare", "lode-agent context-preview", "ready_for_lode_semantic_assessment"]],
     [
       "onboarding.md",
       "product-cli-examples",
@@ -283,7 +283,7 @@ try {
   const contextTask = "Find request acceptance and validation evidence";
   const preparation = await runGlobal(["context-prepare", projectRoot, "--task", contextTask, "--budget", "32768"]);
   assert.equal(preparation.status, "prepared");
-  assert.equal(preparation.preparation.status, "ready_for_head_semantic_assessment");
+  assert.equal(preparation.preparation.status, "ready_for_lode_semantic_assessment");
   assert.equal(preparation.preparation.task, contextTask);
   assert(preparation.preparation.selectedContext.repositoryFiles.length > 0);
   assert.equal(preparation.preparation.authority.selectsEvidenceNeeds, false);

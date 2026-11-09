@@ -193,7 +193,7 @@ lode-agent graph-query <project> --session <logical-session> --query "<task>"
 For automation, `--new-session` takes a caller-chosen logical Session id in the
 form `session-<36 hex digits and hyphens>` (the regular expression
 `^session-[a-fA-F0-9-]{36}$`); omit it to let Lode generate one. Any other form
-is refused with `INVALID_HEAD_SESSION_INPUT`.
+is refused with `INVALID_SESSION_INPUT`.
 
 ```text
 node <plugin-root>/scripts/lode.mjs session-create <project> --new-session session-12345678-1234-1234-1234-123456789abc --purpose "<independent work>"

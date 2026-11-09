@@ -84,7 +84,7 @@ test("CLI and typed MCP keep arbitrary Context budgets advisory with exact curre
   const prepared = await call("head_context_prepare", { project_root: root, task, budget: 50000 });
   const cliPrepared = await runCommand(["context-prepare", root, "--task", task, "--budget", "50000"]);
   assert.deepEqual(prepared, cliPrepared);
-  assert.equal(prepared.preparation.status, "ready_for_head_semantic_assessment");
+  assert.equal(prepared.preparation.status, "ready_for_lode_semantic_assessment");
   assert.deepEqual(prepared.preparation.currentDirection, direction);
   const preview = await call("head_context_preview", { project_root: root, task, budget: 50000 });
   const cliPreview = await runCommand(["context-preview", root, "--task", task, "--budget", "50000"]);

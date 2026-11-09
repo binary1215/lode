@@ -175,7 +175,7 @@ lode-agent graph-query <project> --session <logical-session> --query "<task>"
 
 자동화에서 `--new-session`은 호출자가 정한 논리 Session id를
 `session-<36 hex digits and hyphens>` 형식(정규식 `^session-[a-fA-F0-9-]{36}$`)으로 받습니다.
-생략하면 Lode가 생성합니다. 다른 형식은 `INVALID_HEAD_SESSION_INPUT`으로 거절됩니다.
+생략하면 Lode가 생성합니다. 다른 형식은 `INVALID_SESSION_INPUT`으로 거절됩니다.
 
 ```text
 node <plugin-root>/scripts/lode.mjs session-create <project> --new-session session-12345678-1234-1234-1234-123456789abc --purpose "<independent work>"

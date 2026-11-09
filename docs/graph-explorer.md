@@ -371,7 +371,7 @@ The [recorded context view](context-lineage.md) also follows selected work recor
 to cited code/documents and shows bounded exact version comparisons, recorded
 reasons and missing evidence. Known original bodies are readable; raw JSON and
 unknown fields remain optional diagnostics. This does not make a citation proof
-of fulfillment or turn HEAD-authored work into a verbatim user message.
+of fulfillment or turn Lode-authored work into a verbatim user message.
 
 ## Compact controls and unavailable current paths
 
