@@ -157,6 +157,13 @@ export function legacyReasonCode(code) {
   return LEGACY_BY_CODE.get(code);
 }
 
+// Spread next to a reason code on any wire surface: { legacyReasonCode } when the
+// code has a historical HEAD_* spelling (carried for one version), otherwise {}.
+export function legacyReasonCodeFields(code) {
+  const legacy = legacyReasonCode(code);
+  return legacy ? { legacyReasonCode: legacy } : {};
+}
+
 // Reason codes that appear as a `code`/`reasonCode` field value or as a string
 // argument of a fail*/…Error call in the shipped JavaScript, sorted. Codes that only
 // pass through another helper (readJson(file, "CODE"), rejectCode(…), a ternary or
