@@ -103,7 +103,7 @@ function buildPolicy({ projectId, mode, selection }, storage) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "PostRefreshProjectionPolicy",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-post-refresh-projection"), version: POST_REFRESH_PROJECTION_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-post-refresh-projection"), version: POST_REFRESH_PROJECTION_VERSION },
     projectId,
     mode,
     formats: ["markdown"],
@@ -149,10 +149,10 @@ export function verifyPostRefreshProjectionPolicy(policy, storage = undefined) {
     policy.kind !== "PostRefreshProjectionPolicy" ||
     canonicalJson(policy.protocol) !==
       canonicalJson({
-        name: familyFormatForOriginal("head-agent-core-post-refresh-projection", policy, storage)?.protocol("head-agent-core-post-refresh-projection"),
+        name: familyFormatForOriginal("lode-agent-core-post-refresh-projection", policy, storage)?.protocol("lode-agent-core-post-refresh-projection"),
         version: POST_REFRESH_PROJECTION_VERSION,
       }) ||
-    !new RegExp(`^${familyFormatForOriginal("head-agent-core-post-refresh-projection", policy, storage)?.projectPrefix}[a-f0-9]{20}$`).test(
+    !new RegExp(`^${familyFormatForOriginal("lode-agent-core-post-refresh-projection", policy, storage)?.projectPrefix}[a-f0-9]{20}$`).test(
       policy.projectId || "",
     ) ||
     !POLICY_PATTERN.test(policy.policyId || "") ||
@@ -362,7 +362,7 @@ function buildReceipt({ projectId, preflight, beforeSnapshot, afterSnapshot, ref
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "PostRefreshProjectionReceipt",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-post-refresh-projection"), version: POST_REFRESH_PROJECTION_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-post-refresh-projection"), version: POST_REFRESH_PROJECTION_VERSION },
     projectId,
     policy: preflight.policy
       ? {
@@ -465,10 +465,10 @@ export function verifyPostRefreshProjectionReceipt(receipt, storage = undefined)
     receipt.kind !== "PostRefreshProjectionReceipt" ||
     canonicalJson(receipt.protocol) !==
       canonicalJson({
-        name: familyFormatForOriginal("head-agent-core-post-refresh-projection", receipt, storage)?.protocol("head-agent-core-post-refresh-projection"),
+        name: familyFormatForOriginal("lode-agent-core-post-refresh-projection", receipt, storage)?.protocol("lode-agent-core-post-refresh-projection"),
         version: POST_REFRESH_PROJECTION_VERSION,
       }) ||
-    !new RegExp(`^${familyFormatForOriginal("head-agent-core-post-refresh-projection", receipt, storage)?.projectPrefix}[a-f0-9]{20}$`).test(
+    !new RegExp(`^${familyFormatForOriginal("lode-agent-core-post-refresh-projection", receipt, storage)?.projectPrefix}[a-f0-9]{20}$`).test(
       receipt.projectId || "",
     ) ||
     !RECEIPT_PATTERN.test(receipt.postRefreshProjectionReceiptId || "") ||

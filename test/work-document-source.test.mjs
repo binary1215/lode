@@ -84,8 +84,8 @@ test("manual work without Todos is readable; mixed tasks and wrong Session never
   const mixed = save({
     summary: "Mixed results",
     todos: [
-      { todoId: "todo-a", task: "A", status: "completed", origin: "head-proposed" },
-      { todoId: "todo-b", task: "B", status: "completed", origin: "head-proposed" },
+      { todoId: "todo-a", task: "A", status: "completed", origin: "lode-proposed" },
+      { todoId: "todo-b", task: "B", status: "completed", origin: "lode-proposed" },
     ],
   });
   await assert.rejects(readWorkDocumentBasis({ root, sessionId, todoId: "todo-a", evidenceIds: [mixed.evidenceId] }), {
@@ -94,15 +94,15 @@ test("manual work without Todos is readable; mixed tasks and wrong Session never
 });
 test("reopen and conflicting revisions stay visible even when reading an old completed original", async (t) => {
   const { root, sessionId, save } = setup(t);
-  const first = save({ observedWork: ["Local work saved"], todos: [{ todoId: "todo-a", task: "Task A", status: "completed", origin: "head-proposed" }] });
+  const first = save({ observedWork: ["Local work saved"], todos: [{ todoId: "todo-a", task: "Task A", status: "completed", origin: "lode-proposed" }] });
   const prior = { evidenceId: first.evidenceId, evidenceDigest: first.evidenceDigest };
   save({
     pending: ["Reopened due to later correction"],
-    todos: [{ todoId: "todo-a", task: "Task A", status: "partial", origin: "head-proposed", prior, nextAction: "Correct the earlier report" }],
+    todos: [{ todoId: "todo-a", task: "Task A", status: "partial", origin: "lode-proposed", prior, nextAction: "Correct the earlier report" }],
   });
   const basis = await readWorkDocumentBasis({ root, sessionId, todoId: "todo-a", evidenceIds: [first.evidenceId] });
   assert.equal(basis.taskState.items[0].status, "partial");
-  save({ todos: [{ todoId: "todo-a", task: "Task A", status: "cancelled", origin: "head-proposed", prior, reason: "Cancelled separately" }] });
+  save({ todos: [{ todoId: "todo-a", task: "Task A", status: "cancelled", origin: "lode-proposed", prior, reason: "Cancelled separately" }] });
   const conflict = await readWorkDocumentBasis({ root, sessionId, todoId: "todo-a", evidenceIds: [first.evidenceId] });
   assert.equal(conflict.taskState.items[0].status, "conflict");
   assert.ok(renderWorkDocument(conflict, { title: "Task A" }).markdown.includes("conflict"));
@@ -135,7 +135,7 @@ test("retained exact before/after and selected log quotes; unrelated checkpoint 
   const first = save({
     summary: "Old wording",
     references: [observe("export const expiry = 'try again';\n")],
-    todos: [{ todoId: "todo-expiry", task: "Clarify wording", status: "partial", nextAction: "Avoid suggesting retry", origin: "head-proposed" }],
+    todos: [{ todoId: "todo-expiry", task: "Clarify wording", status: "partial", nextAction: "Avoid suggesting retry", origin: "lode-proposed" }],
   });
   const second = save({
     summary: "Clarified without auto retry",
@@ -146,7 +146,7 @@ test("retained exact before/after and selected log quotes; unrelated checkpoint 
         todoId: "todo-expiry",
         task: "Clarify wording",
         status: "completed",
-        origin: "head-proposed",
+        origin: "lode-proposed",
         prior: { evidenceId: first.evidenceId, evidenceDigest: first.evidenceDigest },
       },
     ],

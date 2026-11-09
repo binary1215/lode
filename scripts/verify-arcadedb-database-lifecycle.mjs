@@ -91,12 +91,12 @@ try {
   assert.equal(shared.status, "compatible-empty-reserved-schema");
   assert.equal(shared.unrelatedTypeCount, 1);
 
-  transport.types.push({ name: format.kind("HeadAgentGraphNode"), type: "vertex", properties: [{ name: "projectId", type: "STRING" }], indexes: [] });
+  transport.types.push({ name: format.kind("LodeAgentGraphNode"), type: "vertex", properties: [{ name: "projectId", type: "STRING" }], indexes: [] });
   const partial = inspectArcadeDbDatabaseCompatibility({ root, transport, storage });
   assert.equal(partial.status, "compatible-partial-reserved-schema");
   assert.equal(partial.conflicts.length, 0);
 
-  transport.types[1] = { name: format.kind("HeadAgentGraphNode"), type: "document", properties: [] };
+  transport.types[1] = { name: format.kind("LodeAgentGraphNode"), type: "document", properties: [] };
   const incompatible = inspectArcadeDbDatabaseCompatibility({ root, transport, storage });
   assert.equal(incompatible.status, "incompatible-reserved-schema");
   assert.equal(incompatible.resetEligible, true);

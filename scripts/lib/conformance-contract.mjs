@@ -201,7 +201,7 @@ export function createConformanceFindingCandidate({ projectId, sessionId, baseli
   const body = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ConformanceFindingCandidate",
-    protocol: { name: format.protocol("head-agent-core-conformance-reconciliation"), version: CONFORMANCE_PROTOCOL_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-conformance-reconciliation"), version: CONFORMANCE_PROTOCOL_VERSION },
     projectId: text(projectId, "Conformance projectId", 256),
     sessionId: text(sessionId, "Conformance sessionId", 256),
     baseline: normalizedBaseline,
@@ -258,7 +258,7 @@ export function verifyConformanceFindingCandidate(document, projectId = "", stor
     "ConformanceFindingCandidate",
   );
   exactFields(document.protocol, ["name", "version"], "ConformanceFindingCandidate protocol");
-  const format = familyFormatForOriginal("head-agent-core-conformance-reconciliation", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-conformance-reconciliation", document, storage);
   verifyIdentity(document, "conformance-finding", "findingId", "findingHash", "ConformanceFindingCandidate");
   if (
     document.schemaVersion !== SCHEMA_VERSION ||
@@ -303,7 +303,7 @@ export function verifyConformanceFindingCandidate(document, projectId = "", stor
   return document;
 }
 
-export const CONFORMANCE_MAINTENANCE_AUTHORITY = "head-maintenance-evidence-not-user-decision-or-execution-authority";
+export const CONFORMANCE_MAINTENANCE_AUTHORITY = "lode-maintenance-evidence-not-user-decision-or-execution-authority";
 export const USER_CONFORMANCE_DISPOSITION_AUTHORITY = "user-disposition-evidence-not-canon-or-execution-authority";
 
 export function createConformanceDispositionReceipt(
@@ -331,7 +331,7 @@ export function createConformanceDispositionReceipt(
   const body = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ConformanceDispositionReceipt",
-    protocol: { name: format.protocol("head-agent-core-conformance-reconciliation"), version: CONFORMANCE_PROTOCOL_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-conformance-reconciliation"), version: CONFORMANCE_PROTOCOL_VERSION },
     projectId: text(projectId, "Conformance projectId", 256),
     sessionId: text(sessionId, "Conformance sessionId", 256),
     findingId: verified.findingId,
@@ -387,7 +387,7 @@ export function verifyConformanceDispositionReceipt(document, finding, projectId
     "ConformanceDispositionReceipt",
   );
   exactFields(document.protocol, ["name", "version"], "ConformanceDispositionReceipt protocol");
-  const format = familyFormatForOriginal("head-agent-core-conformance-reconciliation", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-conformance-reconciliation", document, storage);
   verifyIdentity(document, "conformance-disposition", "dispositionId", "dispositionHash", "ConformanceDispositionReceipt");
   const verified = verifyConformanceFindingCandidate(finding, projectId, storage);
   if (
@@ -440,7 +440,7 @@ export function createConformanceResolutionCandidate(
   const body = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ConformanceResolutionCandidate",
-    protocol: { name: format.protocol("head-agent-core-conformance-reconciliation"), version: CONFORMANCE_PROTOCOL_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-conformance-reconciliation"), version: CONFORMANCE_PROTOCOL_VERSION },
     projectId: text(projectId, "Conformance projectId", 256),
     sessionId: text(sessionId, "Conformance sessionId", 256),
     findingId: verified.findingId,
@@ -492,7 +492,7 @@ export function verifyConformanceResolutionCandidate(document, finding, projectI
     "ConformanceResolutionCandidate",
   );
   exactFields(document.protocol, ["name", "version"], "ConformanceResolutionCandidate protocol");
-  const format = familyFormatForOriginal("head-agent-core-conformance-reconciliation", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-conformance-reconciliation", document, storage);
   verifyIdentity(document, "conformance-resolution", "resolutionId", "resolutionHash", "ConformanceResolutionCandidate");
   const verified = verifyConformanceFindingCandidate(finding, projectId, storage);
   if (

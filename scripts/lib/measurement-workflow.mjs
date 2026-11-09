@@ -233,7 +233,7 @@ async function recordMetricObservationUncoordinated({
   if (form === "aggregate" && (start == null || end == null)) fail("Aggregate metrics require start and end.", "INVALID_MEASUREMENT_INPUT");
   const selected = findMetricDefinition(inspected.project.projectRoot, inspected.project.projectId, metricKey, typeVersion, inspected.storage);
   const normalizedAdapterKey = stableKey(
-    adapterKey === undefined ? formatForVerifiedOwner(inspected.storage).value("head.metric-host-input") : adapterKey,
+    adapterKey === undefined ? formatForVerifiedOwner(inspected.storage).value("lode.metric-host-input") : adapterKey,
     "Metric adapter key",
     192,
   );
@@ -359,9 +359,9 @@ async function compareMetricObservationsUncoordinated({ root = ".", baselineObse
       },
       inputObservationIds: exactInputs,
       algorithm: {
-        key: formatForVerifiedOwner(inspected.storage).value("head.metric-difference"),
+        key: formatForVerifiedOwner(inspected.storage).value("lode.metric-difference"),
         version: MEASUREMENT_WORKFLOW_VERSION,
-        digest: observationDigest(formatForVerifiedOwner(inspected.storage).value("head.metric-difference/0.1.0")),
+        digest: observationDigest(formatForVerifiedOwner(inspected.storage).value("lode.metric-difference/0.1.0")),
       },
       coverage: comparisonCoverageComplete
         ? {
@@ -521,7 +521,7 @@ export async function traceMeasurementLineage({
   const graph = await queryWorldTemporalGraph({ root: inspected.project.projectRoot, graphProjectionAdapter, ...queryParameters });
   return {
     kind: "MeasurementLineageProjection",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-measurement-lineage"), version: MEASUREMENT_WORKFLOW_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-measurement-lineage"), version: MEASUREMENT_WORKFLOW_VERSION },
     projectId: inspected.project.projectId,
     anchorId: selectedAnchorId,
     queryParameters,

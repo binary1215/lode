@@ -149,7 +149,7 @@ function buildCandidate({ inspected, operation, key, baseModel, prior, proposed,
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ProductPolicyCandidate",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-product-policy-candidate"), version: PRODUCT_POLICY_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-product-policy-candidate"), version: PRODUCT_POLICY_VERSION },
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     operation,
@@ -183,7 +183,7 @@ function buildReview({ candidate, disposition, rationale, storage = null }) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ReviewDecision",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-product-policy-review"), version: PRODUCT_POLICY_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-product-policy-review"), version: PRODUCT_POLICY_VERSION },
     projectId: candidate.projectId,
     sessionId: candidate.sessionId,
     candidateId: candidate.candidateId,

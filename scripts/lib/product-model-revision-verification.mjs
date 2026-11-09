@@ -33,7 +33,7 @@ export function verifyDocumentChangeProductModelRevision(document, projectId = "
     !document ||
     document.schemaVersion !== 1 ||
     document.kind !== "ProductModelRevision" ||
-    !familyFormatForOriginal("head-agent-core-document-change-product-revision", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-document-change-product-revision", document, storage) ||
     document.protocol?.version !== DOCUMENT_CHANGE_REVIEW_VERSION ||
     (projectId && document.projectId !== projectId) ||
     !PRODUCT_MODEL_ID_PATTERN.test(document.productModelId || "") ||
@@ -48,7 +48,7 @@ export function verifyDocumentChangeProductModelRevision(document, projectId = "
   if (document.authorityBoundary) verifyArtifactAuthorityBoundary("ProductModelRevision", document.authorityBoundary);
   const normalized = normalizeProductModelDocument(
     document.document,
-    familyFormatForOriginal("head-agent-core-document-change-product-revision", document, storage),
+    familyFormatForOriginal("lode-agent-core-document-change-product-revision", document, storage),
   );
   if (normalized.productModelId !== document.productModelId || normalized.productModelHash !== document.productModelHash) {
     fail("Document-change ProductModelRevision does not match its Product Model.", "DOCUMENT_CHANGE_PRODUCT_REVISION_MISMATCH");

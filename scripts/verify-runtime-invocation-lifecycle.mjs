@@ -746,7 +746,7 @@ async function main() {
       verifyRuntimeResultPacketDraft(sessionDraft);
       assert(sessionSuccess.receipt.scopeKind === "session", `${runtime} Session receipt lost its scope.`);
       assert(
-        sessionDraft.scopeKind === "session" && sessionDraft.freshHeadReviewRequired === false,
+        sessionDraft.scopeKind === "session" && sessionDraft.freshLodeReviewRequired === false,
         `${runtime} Session result incorrectly requires Fresh Lode review.`,
       );
       const sessionPublicArtifacts = JSON.stringify({
@@ -805,7 +805,7 @@ async function main() {
       codexProtocolExecution.draft.providerResult?.outcome === "Codex protocol fixture completed.",
       "Codex structured result was not carried into the draft.",
     );
-    assert(codexProtocolExecution.draft.freshHeadReviewRequired === false, "Codex Session protocol fixture incorrectly required Fresh Lode review.");
+    assert(codexProtocolExecution.draft.freshLodeReviewRequired === false, "Codex Session protocol fixture incorrectly required Fresh Lode review.");
     const recordedCodexProtocolExecution = readRuntimeInvocationResult({
       root: resolvedRoot,
       storage: initializedProject.storage,
@@ -870,7 +870,7 @@ async function main() {
       opencodeProtocolExecution.draft.providerResult?.outcome === "OpenCode protocol fixture completed.",
       "OpenCode structured result was not carried into the draft.",
     );
-    assert(opencodeProtocolExecution.draft.freshHeadReviewRequired === false, "OpenCode Session protocol fixture incorrectly required Fresh Lode review.");
+    assert(opencodeProtocolExecution.draft.freshLodeReviewRequired === false, "OpenCode Session protocol fixture incorrectly required Fresh Lode review.");
     const recordedOpenCodeProtocolExecution = readRuntimeInvocationResult({
       root: resolvedRoot,
       storage: initializedProject.storage,
@@ -924,7 +924,7 @@ async function main() {
     );
     assert(
       claudeProtocolExecution.draft.providerResult?.outcome === "Claude protocol fixture completed." &&
-        claudeProtocolExecution.draft.freshHeadReviewRequired === false,
+        claudeProtocolExecution.draft.freshLodeReviewRequired === false,
       "Claude structured Session result did not preserve the common result boundary.",
     );
     const recordedClaudeProtocolExecution = readRuntimeInvocationResult({
@@ -1030,7 +1030,7 @@ async function main() {
     assert(
       sessionWritePreview.scope.kind === "session" &&
         sessionWritePreview.requiredAllowedActions.includes("project.write") &&
-        sessionWritePreview.authorizationBoundary.freshHeadReviewRequired === false,
+        sessionWritePreview.authorizationBoundary.freshLodeReviewRequired === false,
       "Low-risk Session workspace-write was not authorized through the lightweight lane.",
     );
     const run = startRun({ root: resolvedRoot, executionContractId: contract.executionContractId }).run;

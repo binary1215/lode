@@ -13,6 +13,9 @@ export const PROTOCOL = { name: "head-agent-core-session-work-evidence", version
 export const MAX_RECORD_BYTES = 64 * 1024;
 export const MAX_REFERENCE_BYTES = 16 * 1024 * 1024;
 export const DEFAULT_SCAN = 512;
+// Recorded attribution of proposed work: the Lode spelling and the historical one.
+export const PROPOSED_ORIGINS = Object.freeze(["lode-proposed", "head-proposed"]);
+
 export function fail(message, code = "INVALID_SESSION_WORK_EVIDENCE") {
   throw Object.assign(new Error(message), { code });
 }
@@ -127,7 +130,7 @@ export function normalizeSessionWorkEvidence(input) {
       );
       if (!/^todo-[a-z0-9][a-z0-9-]{0,79}$/.test(item.todoId || "") || ids.has(item.todoId)) fail("Use a distinct stable Todo ID per item in this record.");
       ids.add(item.todoId);
-      if (!["pending", "partial", "waiting", "completed", "cancelled"].includes(item.status) || !["user-directed", "head-proposed"].includes(item.origin))
+      if (!["pending", "partial", "waiting", "completed", "cancelled"].includes(item.status) || !["user-directed", ...PROPOSED_ORIGINS].includes(item.origin))
         fail("Todo needs explicit status and recorded attribution.");
       const todo = { todoId: item.todoId, task: text(item.task, "Todo task"), status: item.status, origin: item.origin };
       for (const field of ["nextAction", "reason", "progress", "priority"]) if (item[field] !== undefined) todo[field] = text(item[field], "Todo " + field);

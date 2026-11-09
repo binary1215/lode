@@ -46,7 +46,7 @@ export function buildRepositorySourceScope({ includeRoots = [], excludeRoots = [
   const payload = {
     schemaVersion: 1,
     kind: "RepositorySourceScope",
-    protocol: { name: format.protocol("head-agent-core-repository-source-scope"), version: REPOSITORY_SOURCE_SCOPE_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-repository-source-scope"), version: REPOSITORY_SOURCE_SCOPE_VERSION },
     includeRoots: normalizeRoots(includeRoots, "includeRoots"),
     excludeRoots: normalizeRoots(excludeRoots, "excludeRoots"),
     authority: "user-selected-observation-boundary",
@@ -74,7 +74,7 @@ export function verifyRepositorySourceScope(document, { storage } = {}) {
     ],
     "Repository source scope",
   );
-  const format = familyFormatForOriginal("head-agent-core-repository-source-scope", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-repository-source-scope", document, storage);
   const rebuilt = buildRepositorySourceScope({ includeRoots: document.includeRoots, excludeRoots: document.excludeRoots, storage: format });
   if (!format || canonicalJson(rebuilt) !== canonicalJson(document))
     fail("Repository source scope digest verification failed.", "REPOSITORY_SOURCE_SCOPE_DIGEST_MISMATCH");

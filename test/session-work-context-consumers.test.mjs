@@ -1445,8 +1445,8 @@ test("Todo terminal detail counts flow unchanged through CLI, direct/router MCP 
   const f = fixture(t, "Synthetic Todo count consumers only");
   f.save({
     todos: [
-      { todoId: "todo-done", task: "Completed local inspection", status: "completed", origin: "head-proposed" },
-      { todoId: "todo-stop", task: "Cancelled synthetic proposal", status: "cancelled", reason: "Synthetic fixture scope", origin: "head-proposed" },
+      { todoId: "todo-done", task: "Completed local inspection", status: "completed", origin: "lode-proposed" },
+      { todoId: "todo-stop", task: "Cancelled synthetic proposal", status: "cancelled", reason: "Synthetic fixture scope", origin: "lode-proposed" },
       {
         todoId: "todo-wait",
         task: "Remaining local inspection",

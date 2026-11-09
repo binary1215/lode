@@ -80,7 +80,7 @@ function gitCommitObservation(commit, storage) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "GitCommitObservation",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-git-commit-observation"), version: VCS_EVIDENCE_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-git-commit-observation"), version: VCS_EVIDENCE_VERSION },
     vcsKind: "git",
     objectId: commit.commit,
     parents: [...commit.parents].sort(),
@@ -108,7 +108,7 @@ function branchState(projectId, reference, referencesDigest, commitObservation, 
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "BranchStateObservation",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-release-observation"), version: RELEASE_OBSERVATION_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-release-observation"), version: RELEASE_OBSERVATION_VERSION },
     projectId,
     vcsKind: "git",
     ref: reference.ref,
@@ -209,7 +209,7 @@ function deploymentResult(projectId, normalized, storage) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "DeploymentResultObservation",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-release-observation"), version: RELEASE_OBSERVATION_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-release-observation"), version: RELEASE_OBSERVATION_VERSION },
     projectId,
     ...normalized,
     epistemicClass: "observed-fact",
@@ -230,7 +230,7 @@ function releaseObservation(projectId, deployment, branchStates, storage) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ReleaseObservation",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-release-observation"), version: RELEASE_OBSERVATION_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-release-observation"), version: RELEASE_OBSERVATION_VERSION },
     projectId,
     environmentKey: deployment.environmentKey,
     commit: deployment.commit,

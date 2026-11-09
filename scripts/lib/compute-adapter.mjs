@@ -222,12 +222,12 @@ export function validateComputeRequest(request) {
     fail("Compute request identity or protocol verification failed.", "COMPUTE_REQUEST_MISMATCH");
   }
   const scopeFormat =
-    request.operation === "repository.scan.v1" ? familyFormatForOriginal("head-agent-core-repository-source-scope", request.input?.sourceScope) : null;
+    request.operation === "repository.scan.v1" ? familyFormatForOriginal("lode-agent-core-repository-source-scope", request.input?.sourceScope) : null;
   if (
     (producers[request.operation] && request.semanticProducer?.name !== producers[request.operation]) ||
     (request.operation === "worker.health.v1" && request.input?.probe !== (lode ? "lode-agent-core" : "head-agent-core")) ||
     (request.operation === "repository.scan.v1" &&
-      (!scopeFormat || (scopeFormat.dialect === "lode") !== lode || request.semanticProducer?.name !== scopeFormat.protocol("head-agent-core-repository-scan")))
+      (!scopeFormat || (scopeFormat.dialect === "lode") !== lode || request.semanticProducer?.name !== scopeFormat.protocol("lode-agent-core-repository-scan")))
   ) {
     fail("Compute request family is incoherent.", "COMPUTE_REQUEST_MISMATCH");
   }

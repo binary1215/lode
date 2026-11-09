@@ -150,7 +150,7 @@ async function recordDeliveryObservationUncoordinated({ root = ".", ...input } =
     fail("Rolled-back delivery observations require an exact rollback target.", "INVALID_DELIVERY_OBSERVATION_INPUT");
   if (outcome !== "rolled-back" && rollbackTargetObservationId)
     fail("Only rolled-back delivery observations may name a rollback target.", "INVALID_DELIVERY_OBSERVATION_INPUT");
-  const adapterKey = stableKey(input.adapterKey || formatForVerifiedOwner(inspected.storage).value("head.delivery-host-input"), "Delivery adapter key", 192);
+  const adapterKey = stableKey(input.adapterKey || formatForVerifiedOwner(inspected.storage).value("lode.delivery-host-input"), "Delivery adapter key", 192);
   const adapterVersion = stableKey(input.adapterVersion || DELIVERY_OBSERVATION_VERSION, "Delivery adapter version", 64);
   const sourceScopeDigest = digestValue(input.sourceScopeDigest, "Delivery source scope digest");
   const sourceEventKeyDigest = digestValue(input.sourceEventKeyDigest, "Delivery source event key digest");
@@ -490,7 +490,7 @@ export async function inspectDeliveryState({ root = ".", environmentKey = "", ta
   }));
   const payload = {
     kind: "DeliveryStateProjection",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-delivery-observation"), version: DELIVERY_OBSERVATION_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-delivery-observation"), version: DELIVERY_OBSERVATION_VERSION },
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     status: records.length ? "active" : "not_started",

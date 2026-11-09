@@ -292,7 +292,7 @@ async function recordProductSignalUnlocked({ root = ".", statement, observedAt =
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ProductSignal",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-product-operating-loop"), version: PRODUCT_OPERATING_LOOP_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-product-operating-loop"), version: PRODUCT_OPERATING_LOOP_VERSION },
     projectId: inspected.project.projectId,
     statement: requiredText(statement, "ProductSignal statement"),
     observedAt: new Date(observedAt).toISOString(),
@@ -339,7 +339,7 @@ async function recordProductHypothesisUnlocked({ root = ".", statement, signalId
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ProductHypothesis",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-product-operating-loop"), version: PRODUCT_HYPOTHESIS_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-product-operating-loop"), version: PRODUCT_HYPOTHESIS_VERSION },
     projectId: inspected.project.projectId,
     statement: requiredText(statement, "ProductHypothesis statement"),
     rationale: optionalText(rationale, "ProductHypothesis rationale"),
@@ -383,7 +383,7 @@ function resolveFeature(projectRoot, projectId, featureResolution, initiativeCan
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ProductFeatureCandidate",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-product-operating-loop"), version: PRODUCT_OPERATING_LOOP_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-product-operating-loop"), version: PRODUCT_OPERATING_LOOP_VERSION },
     projectId,
     initiativeCandidateSeed,
     feature: normalized,
@@ -544,7 +544,7 @@ async function proposeProductInitiativeUnlocked({ root = ".", title, description
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ProductInitiativeCandidate",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-product-operating-loop"), version: PRODUCT_OPERATING_LOOP_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-product-operating-loop"), version: PRODUCT_OPERATING_LOOP_VERSION },
     projectId: inspected.project.projectId,
     title: normalizedTitle,
     description: normalizedDescription,
@@ -636,7 +636,7 @@ async function reviewProductInitiativeUnlocked({ root = ".", initiativeCandidate
     schemaVersion: SCHEMA_VERSION,
     kind: "ReviewDecision",
     protocol: {
-      name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-product-initiative-review"),
+      name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-product-initiative-review"),
       version: PRODUCT_OPERATING_LOOP_VERSION,
     },
     projectId: inspected.project.projectId,
@@ -701,7 +701,7 @@ async function observeProductOutcomeUnlocked({
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "OutcomeObservation",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-product-operating-loop"), version: PRODUCT_OPERATING_LOOP_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-product-operating-loop"), version: PRODUCT_OPERATING_LOOP_VERSION },
     projectId: inspected.project.projectId,
     initiativeId: initiativeId || null,
     changeSetId: changeSet.changeSetId,
@@ -799,8 +799,8 @@ export async function buildHeadContinuitySnapshot({ root = ".", fresh = false } 
   }
   const snapshot = {
     schemaVersion: SCHEMA_VERSION,
-    kind: formatForVerifiedOwner(inspected.storage).kind("HEADContinuitySnapshot"),
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-head-continuity"), version: PRODUCT_OPERATING_LOOP_VERSION },
+    kind: formatForVerifiedOwner(inspected.storage).kind("LodeContinuitySnapshot"),
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-lode-continuity"), version: PRODUCT_OPERATING_LOOP_VERSION },
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     sessionMode: inspected.state.mode,
@@ -828,7 +828,7 @@ export async function buildHeadContinuitySnapshot({ root = ".", fresh = false } 
   const snapshotHash = productOperatingDigest(productOperatingCanonicalJson(snapshot));
   return {
     status: "derived",
-    snapshot: { ...snapshot, snapshotId: `${formatForVerifiedOwner(inspected.storage).value("head-continuity")}-${snapshotHash.slice(0, 24)}`, snapshotHash },
+    snapshot: { ...snapshot, snapshotId: `${formatForVerifiedOwner(inspected.storage).value("lode-continuity")}-${snapshotHash.slice(0, 24)}`, snapshotHash },
     readVerification: { productOperating: productRead.verification, worldModel: worldRead.verification },
   };
 }

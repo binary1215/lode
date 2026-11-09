@@ -88,7 +88,7 @@ function stateArtifact(project, body, storage) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ChangeSetStatePointer",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-change-set-state"), version: CHANGE_SET_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-change-set-state"), version: CHANGE_SET_VERSION },
     projectId: project.projectId,
     sessionId: body.sessionId,
     phase: body.phase,
@@ -108,7 +108,7 @@ export function verifyChangeSetStatePointer(document, project, storage) {
   if (
     !document ||
     document.kind !== "ChangeSetStatePointer" ||
-    !familyFormatForOriginal("head-agent-core-change-set-state", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-change-set-state", document, storage) ||
     document.protocol?.version !== CHANGE_SET_VERSION ||
     document.projectId !== project.projectId ||
     document.sessionId !== project.sessionId ||
@@ -240,7 +240,7 @@ function impactCandidateSet(changeSet, afterSnapshot, storage) {
       const payload = {
         schemaVersion: SCHEMA_VERSION,
         kind: "ChangeImpactCandidate",
-        protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-change-impact-candidates"), version: CHANGE_SET_VERSION },
+        protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-change-impact-candidates"), version: CHANGE_SET_VERSION },
         changeSetId: changeSet.changeSetId,
         relationshipType: "IMPACTS",
         target: group.target,
@@ -335,7 +335,7 @@ function impactCandidateSet(changeSet, afterSnapshot, storage) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ChangeImpactCandidateSet",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-change-impact-candidates"), version: CHANGE_SET_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-change-impact-candidates"), version: CHANGE_SET_VERSION },
     projectId: changeSet.projectId,
     sessionId: changeSet.sessionId,
     changeSetId: changeSet.changeSetId,
@@ -439,7 +439,7 @@ function gitCommitObservation(commit, storage) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "GitCommitObservation",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-git-commit-observation"), version: VCS_EVIDENCE_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-git-commit-observation"), version: VCS_EVIDENCE_VERSION },
     vcsKind: "git",
     objectId: commit.commit,
     parents: [...commit.parents].sort(),
@@ -476,7 +476,7 @@ function buildVcsEvidence(changeSet, history, commitIds, rationale, storage) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "VcsEvidence",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-vcs-evidence"), version: VCS_EVIDENCE_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-vcs-evidence"), version: VCS_EVIDENCE_VERSION },
     projectId: changeSet.projectId,
     sessionId: changeSet.sessionId,
     changeSetId: changeSet.changeSetId,
@@ -600,7 +600,7 @@ async function recordChangeSetUncoordinated({ root = ".", resultPacketId, review
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ChangeSet",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-change-set"), version: CHANGE_SET_RECORD_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-change-set"), version: CHANGE_SET_RECORD_VERSION },
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     parentChangeSetIds: parents,
@@ -666,7 +666,7 @@ function buildImpactReview(candidateSet, disposition, acceptedCandidateIds, rati
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ReviewDecision",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-change-impact-review"), version: CHANGE_SET_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-change-impact-review"), version: CHANGE_SET_VERSION },
     decisionScope: "change-impact",
     projectId: candidateSet.projectId,
     sessionId: candidateSet.sessionId,

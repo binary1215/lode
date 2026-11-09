@@ -296,10 +296,11 @@ async function loadSources(root, includeRepositoryWorld = true, worldDomains = n
 function contextSnapshot(inspected, sources) {
   const sourceDigests = Object.fromEntries(Object.entries(sources.raw).map(([name, value]) => [name, digest(value)]));
   if (sources.worldModel?.snapshot) sourceDigests.repositoryWorldModel = sources.worldModel.snapshot.worldModelHash;
-  let coverage = "curated-head-canon-only";
+  const format = formatForVerifiedOwner(inspected);
+  let coverage = format.value("curated-lode-canon-only");
   if (sources.worldModel?.snapshot) {
     const hasGitHistory = sources.worldModel.snapshot.gitDecisionHistory?.coverage === "all-reachable-commits";
-    const layers = ["curated-head-canon", hasGitHistory ? "repository-world-model-semantic" : "repository-world-model-semantic-alpha"];
+    const layers = [format.value("curated-lode-canon"), hasGitHistory ? "repository-world-model-semantic" : "repository-world-model-semantic-alpha"];
     if (sources.worldModel.snapshot.temporalProvenanceGraph) layers.push("temporal-provenance-alpha");
     if (domainCurrent(sources.worldModel, "product")) layers.push("product-canon-projection-alpha");
     if (hasGitHistory && domainCurrent(sources.worldModel, "git")) layers.push("git-history-alpha");
@@ -1042,7 +1043,7 @@ function normalizeEvidenceNeeds(evidenceNeeds) {
 function evidenceNeedContract(task, evidenceNeeds, format = formatForVerifiedOwner()) {
   const needs = normalizeEvidenceNeeds(evidenceNeeds);
   const contract = {
-    owner: format.value("HEAD"),
+    owner: format.value("Lode"),
     scope: "task-local-context-compilation",
     needs,
     productCanonAuthority: false,
@@ -1322,7 +1323,7 @@ async function compileContextUncoordinated({
     task,
     snapshot,
     compiler: {
-      name: format.protocol("head-agent-core-context-compiler"),
+      name: format.protocol("lode-agent-core-context-compiler"),
       version: CONTEXT_COMPILER_VERSION,
       strategy: "source-linked-head-guided-context-packaging",
       historyRelevance: historyClass,
@@ -1330,7 +1331,7 @@ async function compileContextUncoordinated({
       lexicalRole: "fallback-ranking-only-never-candidate-eligibility-or-semantic-acceptance",
     },
     budget: {
-      protocol: { name: format.protocol("head-agent-core-context-budget"), version: CONTEXT_BUDGET_PROTOCOL_VERSION },
+      protocol: { name: format.protocol("lode-agent-core-context-budget"), version: CONTEXT_BUDGET_PROTOCOL_VERSION },
       maxApproxTokens,
       usedApproxTokens: selection.used,
       metric: {
@@ -1371,7 +1372,7 @@ async function compileContextUncoordinated({
         ? ["Required current direction exceeds the requested budget; preserved without truncation."]
         : []),
     ],
-    semanticSufficiencyOwner: format.value("HEAD"),
+    semanticSufficiencyOwner: format.value("Lode"),
     authority: inspected.project.authority,
     currentState: projectContext,
     currentDirection: sources.direction,

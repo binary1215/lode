@@ -627,7 +627,7 @@ function verifyProductPolicyProjectionInput(projection, projectId) {
   if (
     !projection ||
     projection.kind !== "ProductPolicyGraphProjectionInput" ||
-    !familyFormatForOriginal("head-agent-core-product-policy-graph-projection", projection) ||
+    !familyFormatForOriginal("lode-agent-core-product-policy-graph-projection", projection) ||
     projection.protocol.version !== "0.1.0" ||
     projection.projectId !== projectId ||
     !/^product-model-[a-f0-9]{24}$/.test(projection.currentProductModelId || "") ||
@@ -3707,7 +3707,7 @@ export function buildTemporalProvenanceGraph({
   };
   const payload = {
     kind: "GraphSnapshot",
-    protocol: { name: format.protocol("head-agent-core-temporal-provenance"), version: TEMPORAL_PROVENANCE_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-temporal-provenance"), version: TEMPORAL_PROVENANCE_VERSION },
     authority: "derived-evidence-only",
     authorityBoundary: artifactAuthorityBoundary("GraphSnapshot"),
     rebuildable: true,
@@ -4062,7 +4062,7 @@ function validEndpointKinds(type, fromKind, toKind) {
 export function verifyTemporalProvenanceGraph(graph) {
   const owned = ownedTemporalGraphs.get(graph);
   if (owned?.state.active && owned.verified) return graph;
-  const format = familyFormatForOriginal("head-agent-core-temporal-provenance", graph);
+  const format = familyFormatForOriginal("lode-agent-core-temporal-provenance", graph);
   const graphVersion = graph?.protocol?.version;
   const v15Features = [TEMPORAL_PROVENANCE_VERSION, RELATION_IDENTITY_VERSION].includes(graphVersion);
   const legacyV02 = graphVersion === "0.2.0";
@@ -5746,7 +5746,7 @@ export function queryTemporalProvenanceGraph(
   } = {},
 ) {
   verifyTemporalProvenanceGraph(graph);
-  const format = familyFormatForOriginal("head-agent-core-temporal-provenance", graph);
+  const format = familyFormatForOriginal("lode-agent-core-temporal-provenance", graph);
   const originalNodeIds = eligibility ? new Set(graph.nodes.map((node) => node.nodeId)) : null;
   const originalEdgeIds = eligibility ? new Set(graph.edges.map((edge) => edge.edgeId)) : null;
   if (
@@ -5854,7 +5854,7 @@ export function queryTemporalProvenanceGraph(
   if (exactAnchorMode && matching.length > safeMaxNodes) fail("Temporal exact anchors exceed maxNodes.", "TEMPORAL_EXACT_ANCHOR_LIMIT");
   const anchors = matching.slice(0, safeMaxNodes);
   const selected = new Set(anchors.map((node) => node.nodeId));
-  const inclusionReasons = new Map(anchors.map((node) => [node.nodeId, exactAnchorMode ? format.value("exact-head-anchor") : "lexical-discovery-match"]));
+  const inclusionReasons = new Map(anchors.map((node) => [node.nodeId, exactAnchorMode ? format.value("exact-lode-anchor") : "lexical-discovery-match"]));
   let frontier = new Set(selected);
   const selectedEdges = [];
   const selectedEdgeIds = new Set();
@@ -5922,7 +5922,7 @@ export function queryTemporalProvenanceGraph(
   const boundaryLimit = 100;
   const boundedBoundaryItems = boundaryItems.slice(0, boundaryLimit).map(({ key, ...item }) => item);
   const traversalQuery = {
-    anchorMode: exactAnchorMode ? format.value("exact-head-proposed") : "lexical-discovery",
+    anchorMode: exactAnchorMode ? format.value("exact-lode-proposed") : "lexical-discovery",
     normalizedQuery,
     anchorIds: anchors.map((node) => node.nodeId),
     expectedGraphSnapshotId: exactAnchorMode ? graph.graphSnapshotId : null,
@@ -5941,7 +5941,7 @@ export function queryTemporalProvenanceGraph(
   const queryHash = digest(canonicalJson(traversalQuery));
   const resultPayload = {
     kind: "TemporalTraversalResult",
-    protocol: { name: format.protocol("head-agent-core-temporal-traversal"), version: TEMPORAL_TRAVERSAL_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-temporal-traversal"), version: TEMPORAL_TRAVERSAL_VERSION },
     graphSnapshotId: graph.graphSnapshotId,
     graphSnapshotHash: graph.graphSnapshotHash,
     sourceSnapshotId: graph.sourceSnapshotId,

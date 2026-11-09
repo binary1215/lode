@@ -323,7 +323,7 @@ collectionTest("a second process blocks only collection; a crashed participant i
 collectionTest("normal SessionWork/Todo, selected Session, reviewed Run and ChangeSet retain exact originals while orphan cleanup works", async t => {
   const f = await fixture(t);
   const input = { summary: "Same synthetic task", todos: [{ todoId: "todo-retained", task: "Read retained history",
-    status: "pending", origin: "head-proposed", nextAction: "Inspect the exact original" }] };
+    status: "pending", origin: "lode-proposed", nextAction: "Inspect the exact original" }] };
   const a = recordSessionWorkEvidence({ root: f.root, input });
   const selected = createLodeSession({ root: f.root, purpose: "Separate synthetic review" });
   const b = withSessionRoute(f.root, selected.sessionId, () => recordSessionWorkEvidence({ root: f.root, input }));

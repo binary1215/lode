@@ -141,7 +141,7 @@ export class StructuredObservationAdapter {
 
   describe() {
     return {
-      adapterKey: this.format.value("head.structured-host-observation"),
+      adapterKey: this.format.value("lode.structured-host-observation"),
       adapterVersion: this.adapterVersion,
       descriptorId: this.descriptor.descriptorId,
       descriptorHash: this.descriptor.descriptorHash,
@@ -335,7 +335,7 @@ export class ObservationAdapterRegistry {
     return {
       schemaVersion: 1,
       kind: "ObservationSourceDiscoveryProjection",
-      protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
+      protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
       status: "available",
       projectId: inspected.project.projectId,
       projectionId: currentProjectionId,
@@ -473,13 +473,13 @@ export function inspectObservationSources(
   if (registry != null && !(registry instanceof ObservationAdapterRegistry))
     fail("Host Observation adapter registry is invalid.", "INVALID_OBSERVATION_ADAPTER_REGISTRY");
   const configured = registry == null ? null : registry.inspect({ root, typeKey, adapterKey, availabilityState, limit, projectionId, cursor });
-  const format = configured ? familyFormatForOriginal("head-agent-core-observation", configured) : formatForVerifiedOwner(storage);
+  const format = configured ? familyFormatForOriginal("lode-agent-core-observation", configured) : formatForVerifiedOwner(storage);
   return {
     status: "available",
-    protocol: configured?.protocol ?? { name: formatForVerifiedOwner(storage).protocol("head-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
+    protocol: configured?.protocol ?? { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
     adapters: [
       {
-        adapterKey: format.value("head.structured-host-observation"),
+        adapterKey: format.value("lode.structured-host-observation"),
         adapterVersion: OBSERVATION_PROTOCOL_VERSION,
         mode: "host-supplied-bounded-input",
         requiresExactSourceBinding: true,
@@ -508,7 +508,7 @@ export function inspectObservationSources(
       authority: "P5-host-configuration-only",
     },
     workflow: {
-      semanticSelectionOwner: format.value("provider-head"),
+      semanticSelectionOwner: format.value("provider-lode"),
       existingEvidenceFirst: "query-exact-current-observations-before-collecting",
       collectOnlyWhenDurableEvidenceIsRequired: true,
       automaticProductInterpretation: false,

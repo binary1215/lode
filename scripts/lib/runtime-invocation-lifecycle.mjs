@@ -1,4 +1,4 @@
-import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { formatForVerifiedOwner, familyFormatForOriginal, recordedFieldName } from "./project-storage-format.mjs";
 import { sha256Hex as digest } from "./core/digest.mjs";
 import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
 import { failWith } from "./core/errors.mjs";
@@ -35,6 +35,7 @@ import {
   verifyRuntimeInvocationNeverStarted,
   reconcileUnconsumedWorkerLease,
 } from "./runtime-execution-lease.mjs";
+const FRESH_REVIEW_FIELD = "freshLodeReviewRequired";
 
 export const EXECUTION_AUTHORIZATION_VERSION = "0.3.0";
 export const WORKER_EXECUTION_AUTHORIZATION_VERSION = "0.4.0";
@@ -338,7 +339,7 @@ function runInvocationInput({ plan, contract, capsule }) {
   };
 }
 
-function sessionInvocationInput({ request, capsule, requiredActions }) {
+function sessionInvocationInput({ request, capsule, requiredActions, reviewField }) {
   return {
     schemaVersion: SCHEMA_VERSION,
     kind: "RuntimeExecutionInput",
@@ -369,7 +370,7 @@ function sessionInvocationInput({ request, capsule, requiredActions }) {
         verification: ["non-empty verification strings"],
         unknowns: ["explicit remaining unknowns, or an empty array"],
       },
-      freshHeadReviewRequired: false,
+      [reviewField]: false,
       transcriptIsNotResult: true,
       evidenceInstructionAuthority: false,
     },
@@ -640,7 +641,12 @@ export function buildRuntimeInvocationAuthorization({
       executionContractId: null,
       contextCapsuleId: capsule?.capsuleId || null,
     };
-    input = sessionInvocationInput({ request: selectedScope.request, capsule, requiredActions });
+    input = sessionInvocationInput({
+      request: selectedScope.request,
+      capsule,
+      requiredActions,
+      reviewField: formatForVerifiedOwner(inspected).value(FRESH_REVIEW_FIELD),
+    });
   }
   const verifiedProtocol = verifyRuntimeProtocolEvidence(protocolEvidence);
   const verifiedBinding = verifyRuntimeProjectBinding(projectBinding);
@@ -652,7 +658,7 @@ export function buildRuntimeInvocationAuthorization({
     sessionIdOf(verifiedBinding) !== inspected.state.sessionId ? "session" : null,
     verifiedBinding.projectRootDigest !== rootDigest ? "root" : null,
     verifiedBinding.protocolEvidenceId !== verifiedProtocol.evidenceId ? "protocol" : null,
-    verifiedBinding.status !== formatForVerifiedOwner(inspected).value("verified-head-project-session-capability-binding") ? "status" : null,
+    verifiedBinding.status !== formatForVerifiedOwner(inspected).value("verified-lode-project-session-capability-binding") ? "status" : null,
     runtimeBinding?.capabilityStatus !== "observed" ? "runtime-binding" : null,
     !runtimeObservation?.protocolNegotiationObserved ? "runtime-observation" : null,
   ].filter(Boolean);
@@ -784,7 +790,7 @@ export function buildRuntimeInvocationAuthorization({
       exactChildOwnershipRequired: true,
       descendantTreeOwnershipRequiredForProviderControl: true,
       providerEventValidationRequired: true,
-      freshHeadReviewRequired: executionScope.kind === "run",
+      [formatForVerifiedOwner(inspected).value(FRESH_REVIEW_FIELD)]: executionScope.kind === "run",
       capabilityDoesNotGrantAuthorization: true,
       singleInvocationExecutionLeaseRequired: true,
       executionLeaseActivated: false,
@@ -817,6 +823,7 @@ export function verifyRuntimeInvocationAuthorization(document) {
   const writeBoundWorker = document?.protocolVersion === WRITE_BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION;
   const boundWorker = proposalWorker || writeBoundWorker || document?.protocolVersion === BOUND_WORKER_EXECUTION_AUTHORIZATION_VERSION;
   const workerAuthorization = boundWorker || document?.protocolVersion === WORKER_EXECUTION_AUTHORIZATION_VERSION;
+  const reviewField = recordedFieldName(document?.authorizationBoundary, FRESH_REVIEW_FIELD);
   assertFields(
     document,
     [
@@ -870,7 +877,7 @@ export function verifyRuntimeInvocationAuthorization(document) {
       "exactChildOwnershipRequired",
       "descendantTreeOwnershipRequiredForProviderControl",
       "providerEventValidationRequired",
-      "freshHeadReviewRequired",
+      reviewField,
       "capabilityDoesNotGrantAuthorization",
       "singleInvocationExecutionLeaseRequired",
       "executionLeaseActivated",
@@ -941,7 +948,7 @@ export function verifyRuntimeInvocationAuthorization(document) {
     exactChildOwnershipRequired: true,
     descendantTreeOwnershipRequiredForProviderControl: true,
     providerEventValidationRequired: true,
-    freshHeadReviewRequired: runScope,
+    [reviewField]: runScope,
     capabilityDoesNotGrantAuthorization: true,
     singleInvocationExecutionLeaseRequired: true,
     executionLeaseActivated: false,
@@ -1018,7 +1025,12 @@ export function runtimeInvocationInputFromOriginals({ authorization, plan, contr
   let input =
     verified.scope.kind === "run"
       ? runInvocationInput({ plan, contract, capsule })
-      : sessionInvocationInput({ request: verified.workerInput.sessionRequest, capsule, requiredActions: verified.requiredAllowedActions });
+      : sessionInvocationInput({
+          request: verified.workerInput.sessionRequest,
+          capsule,
+          requiredActions: verified.requiredAllowedActions,
+          reviewField: recordedFieldName(verified.authorizationBoundary, FRESH_REVIEW_FIELD),
+        });
   input = attachWorkerInput(input, verified.workerInput);
   if (direction) input = { ...input, currentProjectDirection: direction };
   return Buffer.from(canonicalJson(input), "utf8");
@@ -1166,7 +1178,12 @@ function prepareRuntimeInvocationInput({ root = ".", authorization, sessionReque
     }
     const capsule =
       verified.scope.contextCapsuleId === null ? null : readContextCapsule({ root: projectRoot, capsuleId: verified.scope.contextCapsuleId }).capsule;
-    executionInput = sessionInvocationInput({ request, capsule, requiredActions: verified.requiredAllowedActions });
+    executionInput = sessionInvocationInput({
+      request,
+      capsule,
+      requiredActions: verified.requiredAllowedActions,
+      reviewField: recordedFieldName(verified.authorizationBoundary, FRESH_REVIEW_FIELD),
+    });
   }
   executionInput = attachWorkerInput(executionInput, verified.workerInput);
   if (currentProjectDirection) executionInput = { ...executionInput, currentProjectDirection };
@@ -1989,7 +2006,7 @@ export function buildRuntimeResultPacketDraft({ authorization, receipt, leaseRel
     ],
     unknowns: [...new Set([...lifecycleUnknowns, ...(verifiedProviderResult?.unknowns || [])])].sort(compareText),
     finalResultPacketPersisted: false,
-    freshHeadReviewRequired: verifiedAuthorization.scope.kind === "run",
+    [recordedFieldName(verifiedAuthorization.authorizationBoundary, FRESH_REVIEW_FIELD)]: verifiedAuthorization.scope.kind === "run",
     rawTranscriptIncluded: false,
     authority: "draft-evidence-not-reviewed-result",
     instructionAuthority: false,
@@ -2001,6 +2018,7 @@ export function buildRuntimeResultPacketDraft({ authorization, receipt, leaseRel
 
 export function verifyRuntimeResultPacketDraft(document, { authorization = null } = {}) {
   const legacyDraft = document?.protocolVersion === LEGACY_RUNTIME_RESULT_DRAFT_VERSION;
+  const reviewField = recordedFieldName(document, FRESH_REVIEW_FIELD);
   assertFields(
     document,
     [
@@ -2022,7 +2040,7 @@ export function verifyRuntimeResultPacketDraft(document, { authorization = null 
       "verification",
       "unknowns",
       "finalResultPacketPersisted",
-      "freshHeadReviewRequired",
+      reviewField,
       "rawTranscriptIncluded",
       "authority",
       "instructionAuthority",
@@ -2121,7 +2139,7 @@ export function verifyRuntimeResultPacketDraft(document, { authorization = null 
     !Array.isArray(document.unknowns) ||
     document.unknowns.some((item) => typeof item !== "string" || !item) ||
     document.finalResultPacketPersisted !== false ||
-    document.freshHeadReviewRequired !== (document.scopeKind === "run") ||
+    document[reviewField] !== (document.scopeKind === "run") ||
     document.rawTranscriptIncluded !== false ||
     document.authority !== "draft-evidence-not-reviewed-result" ||
     document.instructionAuthority !== false ||

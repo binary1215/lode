@@ -181,7 +181,7 @@ async function verifyExistingProjectPromotion() {
   );
   assert.equal(
     started.candidateSet.candidates.every(
-      (candidate) => candidate.origin === formatForVerifiedOwner(fixtureStorage(root)).value("fresh-head-semantic-proposal"),
+      (candidate) => candidate.origin === formatForVerifiedOwner(fixtureStorage(root)).value("fresh-lode-semantic-proposal"),
     ),
     true,
   );

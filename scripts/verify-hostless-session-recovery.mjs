@@ -207,7 +207,7 @@ function consumerChildMain(root, expectedFile, runtime) {
   const expected = JSON.parse(fs.readFileSync(expectedFile, "utf8"));
   const restored = restoreSessionFromArtifacts({ root });
   const inspected = inspectProject(root);
-  assert.equal(restored.projection.consumerInstruction.mode, formatForVerifiedOwner(inspected.storage).value("fresh-logical-head-from-verified-artifacts"));
+  assert.equal(restored.projection.consumerInstruction.mode, formatForVerifiedOwner(inspected.storage).value("fresh-logical-lode-from-verified-artifacts"));
   assert.equal(restored.projection.consumerInstruction.purpose, expected.purpose);
   assert.deepEqual(restored.projection.consumerInstruction.historicalCheckpointContext, {
     currentPosition: expected.currentPosition,

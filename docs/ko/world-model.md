@@ -170,7 +170,7 @@ node scripts/lode.mjs world-index <project> --git-log <host-exported-log-file>
 
 ## Context Compiler 동작
 
-- World Model 없음: Capsule 범위는 `curated-head-canon-only`로 유지됩니다;
+- World Model 없음: Capsule 범위는 `curated-lode-canon-only`(`.head` 프로젝트에서는 `curated-head-canon-only`)로 유지됩니다;
 - 현재 World Model: 작업 관련 저장소 파일, 제한된 시맨틱 및 시간 관계, 이력 클래스에 적격인 Git 증거 및 런타임 관찰이 일반 컨텍스트 예산 안에서 경쟁합니다;
 - 일치하는 Product Canon 개념은 같은 예산 아래 하나의 제한된 `ProductContext` 파생 프로젝션으로 경쟁합니다;
 - 오래된 World Model: 저장소 후보는 제외되고 Capsule 범위에 오래됨에 따른 제외가 명시적으로 기록됩니다;

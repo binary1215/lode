@@ -390,7 +390,7 @@ test("two native-owned model-free proposals reach exact HEAD effects, combined b
     { root: f.root },
   );
   assert.equal(published.status, "published");
-  assert.equal(published.application.freshHeadReviewRequired, true);
+  assert.equal(published.application.freshLodeReviewRequired, true);
   assert.ok(published.resultPacket.evidence[0].memberProvenance.every((member) => member.actualProviderInvoked === false));
   assert.equal(inspectProject(f.root).state.lastReviewDecisionId, null);
   assert.equal(inspectProject(f.root).state.latestCheckpoint, null);

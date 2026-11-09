@@ -142,7 +142,7 @@ node scripts/lode.mjs run-review <project> --input <review.json>
 
 ```json
 {
-  "reviewContextId": "fresh-head-review-<24 hex>",
+  "reviewContextId": "fresh-lode-review-<24 hex>",
   "disposition": "accept",
   "rationale": "The Result Packet satisfies the Execution Contract and whole-plan invariants.",
   "nextActions": ["Continue with the next accepted contract"]

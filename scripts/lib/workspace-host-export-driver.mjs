@@ -116,7 +116,7 @@ export function publishWorkspaceHostExportSnapshot({ exportRoot, projectRoot, ho
   const value = snapshot({
     schemaVersion: 1,
     kind: "WorkspaceHostExportSnapshot",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-workspace-host-export"), version: WORKSPACE_HOST_EXPORT_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-workspace-host-export"), version: WORKSPACE_HOST_EXPORT_VERSION },
     hostInstanceId: id(hostInstanceId),
     snapshotSequence: `snapshot-${crypto.randomUUID()}`,
     endpoints,
@@ -144,7 +144,7 @@ export function createWorkspaceHostExportDriver({ exportRoot, projectRoot, calle
   const descriptor = {
     schemaVersion: 1,
     kind: "WorkspaceHostDriverDescriptor",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-workspace-host-driver"), version: WORKSPACE_HOST_COORDINATION_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-workspace-host-driver"), version: WORKSPACE_HOST_COORDINATION_VERSION },
     hostKind: "host-export",
     transport: "filesystem-snapshot",
     providerNeutral: true,
@@ -161,7 +161,7 @@ export function createWorkspaceHostExportDriver({ exportRoot, projectRoot, calle
       return {
         schemaVersion: 1,
         kind: "WorkspaceHostSnapshot",
-        protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-workspace-host-snapshot"), version: WORKSPACE_HOST_COORDINATION_VERSION },
+        protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-workspace-host-snapshot"), version: WORKSPACE_HOST_COORDINATION_VERSION },
         hostKind: descriptor.hostKind,
         transport: descriptor.transport,
         hostInstanceId: value.hostInstanceId,

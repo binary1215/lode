@@ -136,7 +136,7 @@ export function buildSourceRelationEvidenceSet({ projectId, files, analyzer, rel
   const payload = {
     schemaVersion: 1,
     kind: "SourceRelationEvidenceSet",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-source-relation-evidence"), version: SOURCE_RELATION_EVIDENCE_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-source-relation-evidence"), version: SOURCE_RELATION_EVIDENCE_VERSION },
     projectId,
     analyzer: { name: analyzer.name, version: analyzer.version, method: "ast" },
     files: normalizedFiles,
@@ -170,7 +170,7 @@ export function verifySourceRelationEvidenceSet(document, { projectId = null, fi
     ],
     "Source relation evidence set",
   );
-  const format = familyFormatForOriginal("head-agent-core-source-relation-evidence", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-source-relation-evidence", document, storage);
   if (!format) fail("Source relation evidence identity or canonical form is invalid.", "SOURCE_RELATION_EVIDENCE_DIGEST_MISMATCH");
   const rebuilt = buildSourceRelationEvidenceSet(
     {

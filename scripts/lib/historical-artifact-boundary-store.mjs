@@ -145,7 +145,7 @@ function verifyIdentity(document, { idField, hashField, prefix, label }) {
 }
 
 export function verifyHistoricalArtifactBoundary(document, { projectRoot, projectId, verifyBytes = true, storage } = {}) {
-  const format = familyFormatForOriginal("head-agent-core-historical-artifact-boundary", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-historical-artifact-boundary", document, storage);
   if (
     document?.kind !== "HistoricalArtifactBoundary" ||
     !format ||
@@ -195,9 +195,9 @@ export function verifyHistoricalBoundaryReceipt(document, boundary) {
   if (
     document?.kind !== "HistoricalBoundaryApplicationReceipt" ||
     !familyFormatForOriginal(
-      "head-agent-core-historical-boundary-application",
+      "lode-agent-core-historical-boundary-application",
       document,
-      familyFormatForOriginal("head-agent-core-historical-artifact-boundary", boundary),
+      familyFormatForOriginal("lode-agent-core-historical-artifact-boundary", boundary),
     ) ||
     document.protocol?.version !== HISTORICAL_BOUNDARY_PROTOCOL_VERSION ||
     document.schemaVersion !== 1 ||
@@ -233,9 +233,9 @@ export function verifyHistoricalBoundaryCommit(document, boundary, receipt) {
   if (
     document?.kind !== "HistoricalBoundaryCommitMarker" ||
     !familyFormatForOriginal(
-      "head-agent-core-historical-boundary-commit",
+      "lode-agent-core-historical-boundary-commit",
       document,
-      familyFormatForOriginal("head-agent-core-historical-artifact-boundary", boundary),
+      familyFormatForOriginal("lode-agent-core-historical-artifact-boundary", boundary),
     ) ||
     document.protocol?.version !== HISTORICAL_BOUNDARY_PROTOCOL_VERSION ||
     document.schemaVersion !== 1 ||

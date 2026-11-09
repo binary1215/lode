@@ -120,7 +120,7 @@ function buildBatches({ projectId, baseGraphSnapshotId, targetGraphSnapshotId, k
     const payload = {
       schemaVersion: 1,
       kind: "ArcadeDbIncrementalSyncBatch",
-      protocol: { name: format.protocol("head-agent-core-arcadedb-incremental-sync"), version: ARCADEDB_INCREMENTAL_SYNC_VERSION },
+      protocol: { name: format.protocol("lode-agent-core-arcadedb-incremental-sync"), version: ARCADEDB_INCREMENTAL_SYNC_VERSION },
       projectId,
       baseGraphSnapshotId,
       targetGraphSnapshotId,
@@ -143,7 +143,7 @@ function buildBatches({ projectId, baseGraphSnapshotId, targetGraphSnapshotId, k
 export function buildArcadeDbIncrementalSyncManifest({ baseGraph = null, targetGraph, batchSize = null, storage = null } = {}) {
   const format = formatForVerifiedOwner(storage);
   verifyTemporalProvenanceGraph(targetGraph);
-  if (targetGraph.protocol.name !== format.protocol("head-agent-core-temporal-provenance")) {
+  if (targetGraph.protocol.name !== format.protocol("lode-agent-core-temporal-provenance")) {
     fail("Incremental sync target has a different storage family.", "ARCADEDB_INCREMENTAL_SYNC_PROJECT_MISMATCH");
   }
   if (baseGraph != null) {
@@ -186,7 +186,7 @@ export function buildArcadeDbIncrementalSyncManifest({ baseGraph = null, targetG
   const payload = {
     schemaVersion: 1,
     kind: "ArcadeDbIncrementalSyncManifest",
-    protocol: { name: format.protocol("head-agent-core-arcadedb-incremental-sync"), version: ARCADEDB_INCREMENTAL_SYNC_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-arcadedb-incremental-sync"), version: ARCADEDB_INCREMENTAL_SYNC_VERSION },
     projectId: targetGraph.projectId,
     baseGraphSnapshotId: baseGraph?.graphSnapshotId || null,
     baseGraphSnapshotHash: baseGraph?.graphSnapshotHash || null,
@@ -223,7 +223,7 @@ function validSummary(value) {
 }
 
 export function verifyArcadeDbIncrementalSyncBatch(document) {
-  const format = familyFormatForOriginal("head-agent-core-arcadedb-incremental-sync", document);
+  const format = familyFormatForOriginal("lode-agent-core-arcadedb-incremental-sync", document);
   if (
     !document ||
     document.kind !== "ArcadeDbIncrementalSyncBatch" ||
@@ -285,7 +285,7 @@ export function verifyArcadeDbIncrementalSyncBatch(document) {
 }
 
 export function verifyArcadeDbIncrementalSyncManifest(document, { baseGraph = null, targetGraph = null } = {}) {
-  const format = familyFormatForOriginal("head-agent-core-arcadedb-incremental-sync", document);
+  const format = familyFormatForOriginal("lode-agent-core-arcadedb-incremental-sync", document);
   if (
     !document ||
     document.kind !== "ArcadeDbIncrementalSyncManifest" ||
@@ -364,11 +364,11 @@ function expectedRecordsForBatch(batch, targetGraph) {
 }
 
 function buildCheckpoint({ manifest, batch, verifiedRecords }) {
-  const format = familyFormatForOriginal("head-agent-core-arcadedb-incremental-sync", manifest);
+  const format = familyFormatForOriginal("lode-agent-core-arcadedb-incremental-sync", manifest);
   const payload = {
     schemaVersion: 1,
     kind: "ArcadeDbIncrementalSyncCheckpoint",
-    protocol: { name: format.protocol("head-agent-core-arcadedb-incremental-sync"), version: ARCADEDB_INCREMENTAL_SYNC_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-arcadedb-incremental-sync"), version: ARCADEDB_INCREMENTAL_SYNC_VERSION },
     projectId: manifest.projectId,
     syncId: manifest.syncId,
     syncHash: manifest.syncHash,
@@ -392,7 +392,7 @@ function buildCheckpoint({ manifest, batch, verifiedRecords }) {
 }
 
 export function verifyArcadeDbIncrementalSyncCheckpoint(document, { manifest = null, batch = null, expectedRecords = null } = {}) {
-  const format = familyFormatForOriginal("head-agent-core-arcadedb-incremental-sync", document);
+  const format = familyFormatForOriginal("lode-agent-core-arcadedb-incremental-sync", document);
   if (
     !document ||
     document.kind !== "ArcadeDbIncrementalSyncCheckpoint" ||
@@ -617,7 +617,7 @@ export function buildArcadeDbIncrementalSyncReceipt({
   localMirrorVerified,
 } = {}) {
   const verifiedManifest = verifyArcadeDbIncrementalSyncManifest(manifest);
-  const format = familyFormatForOriginal("head-agent-core-arcadedb-incremental-sync", verifiedManifest);
+  const format = familyFormatForOriginal("lode-agent-core-arcadedb-incremental-sync", verifiedManifest);
   if (
     !syncState ||
     !Array.isArray(syncState.checkpoints) ||
@@ -631,7 +631,7 @@ export function buildArcadeDbIncrementalSyncReceipt({
   const payload = {
     schemaVersion: 1,
     kind: "ArcadeDbIncrementalSyncReceipt",
-    protocol: { name: format.protocol("head-agent-core-arcadedb-incremental-sync"), version: ARCADEDB_INCREMENTAL_SYNC_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-arcadedb-incremental-sync"), version: ARCADEDB_INCREMENTAL_SYNC_VERSION },
     projectId: verifiedManifest.projectId,
     syncId: verifiedManifest.syncId,
     syncHash: verifiedManifest.syncHash,
@@ -668,7 +668,7 @@ export function buildArcadeDbIncrementalSyncReceipt({
 }
 
 export function verifyArcadeDbIncrementalSyncReceipt(document) {
-  const format = familyFormatForOriginal("head-agent-core-arcadedb-incremental-sync", document);
+  const format = familyFormatForOriginal("lode-agent-core-arcadedb-incremental-sync", document);
   if (
     !document ||
     document.kind !== "ArcadeDbIncrementalSyncReceipt" ||

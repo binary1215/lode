@@ -1,4 +1,4 @@
-import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { formatForVerifiedOwner, familyFormatForOriginal, recordedFieldName } from "./project-storage-format.mjs";
 import { failWith } from "./core/errors.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
@@ -166,7 +166,7 @@ function resultFields(document) {
     ],
     verification: [
       {
-        kind: lineageFormat(document.lineage).kind("HeadWorkerIntegrationVerification"),
+        kind: lineageFormat(document.lineage).kind("LodeWorkerIntegrationVerification"),
         basisDigest: document.basisDigest,
         headReportDigest: digest(json(report)),
         checks: report.verification,
@@ -350,6 +350,7 @@ function readApplication(root, intent) {
   const file = fileFor(root, intent.integrationId, "result-application", false, lineageFormat(intent.lineage));
   if (!fs.existsSync(file)) return null;
   const application = JSON.parse(readIntegrationBytes(file));
+  const reviewField = recordedFieldName(application, "freshLodeReviewRequired");
   fields(application, [
     "kind",
     "protocolVersion",
@@ -363,7 +364,7 @@ function readApplication(root, intent) {
     "reviewContextId",
     "reviewContextHash",
     "status",
-    "freshHeadReviewRequired",
+    reviewField,
     ...Object.keys(flags),
     "applicationId",
     "applicationHash",
@@ -377,9 +378,9 @@ function readApplication(root, intent) {
     application.verificationHash !== verification.verificationHash ||
     application.resultPacketId !== verification.wholeResultPacket.resultPacketId ||
     application.status !== "whole-result-published-awaiting-review" ||
-    application.freshHeadReviewRequired !== true ||
+    application[reviewField] !== true ||
     !validHash(application.reviewContextHash) ||
-    application.reviewContextId !== `${lineageFormat(intent.lineage).value("fresh-head-review")}-${application.reviewContextHash.slice(0, 24)}`
+    application.reviewContextId !== `${lineageFormat(intent.lineage).value("fresh-lode-review")}-${application.reviewContextHash.slice(0, 24)}`
   )
     fail("Integration result receipt differs from its frozen provenance.");
   const resultPacket = readLineageArtifact({ root, artifactId: application.resultPacketId }).artifact;
@@ -548,7 +549,7 @@ export async function publishWorkerIntegrationResult({ root = ".", integrationId
         reviewContextId: fresh.review.reviewContextId,
         reviewContextHash: fresh.review.reviewContextHash,
         status: "whole-result-published-awaiting-review",
-        freshHeadReviewRequired: true,
+        [lineageFormat(intent.lineage).value("freshLodeReviewRequired")]: true,
         ...flags,
       },
       "worker-integration-result-application",

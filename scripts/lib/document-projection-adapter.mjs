@@ -235,7 +235,7 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
 
   const output = [];
   const indexLines = [
-    formatForVerifiedOwner(storage).dialect === "lode" ? "# Lode Agent derived knowledge graph" : "# HEAD Agent derived knowledge graph",
+    formatForVerifiedOwner(storage).dialect === "lode" ? "# Lode Agent derived knowledge graph" : "# LODE Agent derived knowledge graph",
     "",
     "> This is a deterministic, rebuildable projection of a verified GraphSnapshot. It is not project canon, an instruction source, or promotion authority.",
     "",
@@ -266,7 +266,7 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
   output.push(
     document(
       "index.md",
-      formatForVerifiedOwner(storage).dialect === "lode" ? "Lode Agent derived knowledge graph" : "HEAD Agent derived knowledge graph",
+      formatForVerifiedOwner(storage).dialect === "lode" ? "Lode Agent derived knowledge graph" : "LODE Agent derived knowledge graph",
       indexLines.join("\n"),
     ),
   );
@@ -324,8 +324,8 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
   const payload = {
     schemaVersion: 1,
     kind: "DocumentProjection",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-document-projection"), version: DOCUMENT_PROJECTION_ADAPTER_VERSION },
-    renderer: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-markdown"), version: MARKDOWN_PROJECTION_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-document-projection"), version: DOCUMENT_PROJECTION_ADAPTER_VERSION },
+    renderer: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-markdown"), version: MARKDOWN_PROJECTION_VERSION },
     projectId: graph.projectId,
     graphSnapshotId: graph.graphSnapshotId,
     graphSnapshotHash: graph.graphSnapshotHash,
@@ -356,9 +356,9 @@ export function verifyDocumentProjection(value, expectedGraph = null, storage = 
     !value ||
     value.kind !== "DocumentProjection" ||
     value.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-document-projection", value, storage) ||
+    !familyFormatForOriginal("lode-agent-core-document-projection", value, storage) ||
     value.protocol?.version !== DOCUMENT_PROJECTION_ADAPTER_VERSION ||
-    value.renderer?.name !== familyFormatForOriginal("head-agent-core-document-projection", value, storage)?.protocol("head-agent-core-markdown") ||
+    value.renderer?.name !== familyFormatForOriginal("lode-agent-core-document-projection", value, storage)?.protocol("lode-agent-core-markdown") ||
     value.renderer?.version !== MARKDOWN_PROJECTION_VERSION ||
     value.format !== "markdown" ||
     typeof value.projectId !== "string" ||
@@ -427,7 +427,7 @@ function pointerFor(projection, storage) {
   const payload = {
     schemaVersion: 1,
     kind: "DocumentProjectionPointer",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-document-projection"), version: DOCUMENT_PROJECTION_ADAPTER_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-document-projection"), version: DOCUMENT_PROJECTION_ADAPTER_VERSION },
     projectId: projection.projectId,
     documentProjectionId: projection.documentProjectionId,
     documentProjectionHash: projection.documentProjectionHash,
@@ -450,7 +450,7 @@ export function verifyDocumentProjectionPointer(value, expectedProjection = null
     !value ||
     value.kind !== "DocumentProjectionPointer" ||
     value.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-document-projection", value, storage) ||
+    !familyFormatForOriginal("lode-agent-core-document-projection", value, storage) ||
     value.protocol?.version !== DOCUMENT_PROJECTION_ADAPTER_VERSION ||
     typeof value.projectId !== "string" ||
     !value.projectId ||
@@ -797,7 +797,7 @@ export function verifyDocumentChangeCandidateSet(value, storage = undefined) {
     !value ||
     value.kind !== "DocumentChangeCandidateSet" ||
     value.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-document-change-candidates", value, storage) ||
+    !familyFormatForOriginal("lode-agent-core-document-change-candidates", value, storage) ||
     value.protocol?.version !== DOCUMENT_PROJECTION_ADAPTER_VERSION ||
     typeof value.projectId !== "string" ||
     !value.projectId ||
@@ -905,7 +905,7 @@ export function captureDocumentChangeCandidates({ projectRoot, storage, graph, a
   const payload = {
     schemaVersion: 1,
     kind: "DocumentChangeCandidateSet",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-document-change-candidates"), version: DOCUMENT_PROJECTION_ADAPTER_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-document-change-candidates"), version: DOCUMENT_PROJECTION_ADAPTER_VERSION },
     projectId: graph.projectId,
     documentProjectionId: current.projection.documentProjectionId,
     documentProjectionHash: current.projection.documentProjectionHash,
@@ -1092,7 +1092,7 @@ export function verifyDocumentProjectionAdapterConformance({ projectRoot, storag
     schemaVersion: 1,
     kind: "DocumentProjectionConformanceReport",
     protocol: {
-      name: formatForVerifiedOwner(storage).protocol("head-agent-core-document-projection-conformance"),
+      name: formatForVerifiedOwner(storage).protocol("lode-agent-core-document-projection-conformance"),
       version: DOCUMENT_PROJECTION_ADAPTER_VERSION,
     },
     graphSnapshotId: graph.graphSnapshotId,

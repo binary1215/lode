@@ -216,7 +216,7 @@ function buildBoundary({ projectId, entries, appliedAtBasis, validatedHistorical
   const payload = {
     schemaVersion: 1,
     kind: "HistoricalArtifactBoundary",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-historical-artifact-boundary"), version: HISTORICAL_BOUNDARY_PROTOCOL_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-historical-artifact-boundary"), version: HISTORICAL_BOUNDARY_PROTOCOL_VERSION },
     projectId,
     inventoryHash,
     entries,
@@ -236,7 +236,7 @@ function buildReceipt(boundary) {
       schemaVersion: 1,
       kind: "HistoricalBoundaryApplicationReceipt",
       protocol: {
-        name: familyFormatForOriginal("head-agent-core-historical-artifact-boundary", boundary).protocol("head-agent-core-historical-boundary-application"),
+        name: familyFormatForOriginal("lode-agent-core-historical-artifact-boundary", boundary).protocol("lode-agent-core-historical-boundary-application"),
         version: HISTORICAL_BOUNDARY_PROTOCOL_VERSION,
       },
       projectId: boundary.projectId,
@@ -260,7 +260,7 @@ function buildCommit(boundary, receipt) {
       schemaVersion: 1,
       kind: "HistoricalBoundaryCommitMarker",
       protocol: {
-        name: familyFormatForOriginal("head-agent-core-historical-artifact-boundary", boundary).protocol("head-agent-core-historical-boundary-commit"),
+        name: familyFormatForOriginal("lode-agent-core-historical-artifact-boundary", boundary).protocol("lode-agent-core-historical-boundary-commit"),
         version: HISTORICAL_BOUNDARY_PROTOCOL_VERSION,
       },
       projectId: boundary.projectId,

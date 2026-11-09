@@ -93,7 +93,7 @@ verifier는 digest mismatch, 지원되지 않는 node 또는 relation type, 중�
 
 ## 결정론적 제한 순회
 
-`queryTemporalProvenanceGraph`는 먼저 전체 GraphSnapshot을 검증한 다음 temporal traversal protocol `0.3.0`을 구성합니다. anchor mode는 명시적 검색용 `lexical-discovery`와 Lode가 의미 분석 후 제공하는 `exact-head-proposed` 중 하나입니다. exact mode는 1~32개의 고유 node ID와 현재 `expectedGraphSnapshotId`를 요구하며, 모든 anchor가 요청한 kind·authority·freshness·confidence·candidate policy를 충족해야 합니다.
+`queryTemporalProvenanceGraph`는 먼저 전체 GraphSnapshot을 검증한 다음 temporal traversal protocol `0.3.0`을 구성합니다. anchor mode는 명시적 검색용 `lexical-discovery`와 Lode가 의미 분석 후 제공하는 `exact-lode-proposed`(`.head` 프로젝트에서는 `exact-head-proposed`) 중 하나입니다. exact mode는 1~32개의 고유 node ID와 현재 `expectedGraphSnapshotId`를 요구하며, 모든 anchor가 요청한 kind·authority·freshness·confidence·candidate policy를 충족해야 합니다.
 
 - node-kind, relation, authority-class 및 freshness allowlist
 - minimum confidence

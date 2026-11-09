@@ -655,7 +655,7 @@ async function verifiedLayer(inventory, layer, entries, model) {
           (document.projectId && document.projectId !== projectId)
         )
           fail("SESSION_IDENTITY_MISMATCH");
-        const node = add({ ...document, kind: formatForVerifiedOwner(storage).kind("HeadSessionStateReference") }, record.path, ["work"], {
+        const node = add({ ...document, kind: formatForVerifiedOwner(storage).kind("LodeSessionStateReference") }, record.path, ["work"], {
           freshness: "current-session-record-bytes",
           reviewState: "session-progress-reference",
           activeRunId: document.activeRunId || null,
@@ -1622,7 +1622,7 @@ export async function queryProjectGraph(options = {}) {
     const partialContent = presentation.nodes.some((node) => node.contentPartial);
     const payload = {
       kind: "ProjectGraphDiscoveryProjection",
-      protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-project-graph"), version: PROJECT_GRAPH_PROTOCOL_VERSION },
+      protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-project-graph"), version: PROJECT_GRAPH_PROTOCOL_VERSION },
       authorityBoundary: artifactAuthorityBoundary("ProjectGraphDiscoveryProjection"),
       status: traversed.nodes.length ? "available" : "source-fallback",
       basis,

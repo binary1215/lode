@@ -172,7 +172,7 @@ Managed root projections and these directories are excluded: `.lode`, `.git`, VC
 
 ## Context Compiler behavior
 
-- no World Model: Capsule coverage remains `curated-head-canon-only`;
+- no World Model: Capsule coverage remains `curated-lode-canon-only` (`curated-head-canon-only` in `.head` projects);
 - current World Model: task-relevant repository files, bounded semantic and temporal relationships, history-class-eligible Git evidence, and runtime observations compete within the normal context budget;
 - matching Product Canon concepts compete as one bounded `ProductContext` derived projection under the same budget;
 - stale World Model: repository candidates are excluded and Capsule coverage explicitly records the stale exclusion;

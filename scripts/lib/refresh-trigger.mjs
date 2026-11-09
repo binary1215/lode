@@ -170,7 +170,7 @@ export function buildRefreshTriggerBatch(
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "RefreshTriggerBatch",
-    protocol: { name: format.protocol("head-agent-core-refresh-trigger"), version: REFRESH_TRIGGER_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-refresh-trigger"), version: REFRESH_TRIGGER_VERSION },
     projectId,
     source: {
       kind: source,
@@ -197,7 +197,7 @@ export function buildRefreshTriggerBatch(
 }
 
 export function verifyRefreshTriggerBatch(batch, expectedOwner = null) {
-  const format = familyFormatForOriginal("head-agent-core-refresh-trigger", batch, expectedOwner);
+  const format = familyFormatForOriginal("lode-agent-core-refresh-trigger", batch, expectedOwner);
   assertFields(
     batch,
     [
@@ -351,7 +351,7 @@ function validBinding(binding, label) {
 }
 
 export function verifyRefreshTriggerDelivery(delivery, expectedOwner = null) {
-  const format = familyFormatForOriginal("head-agent-core-refresh-trigger", delivery, expectedOwner);
+  const format = familyFormatForOriginal("lode-agent-core-refresh-trigger", delivery, expectedOwner);
   assertFields(
     delivery,
     [

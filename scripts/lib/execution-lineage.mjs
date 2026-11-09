@@ -128,7 +128,7 @@ function buildArtifact({ project, kind, body, parents = [] }) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind,
-    protocol: { name: formatForVerifiedOwner(projectStorage.get(project)).protocol("head-agent-core-execution-lineage"), version: EXECUTION_LINEAGE_VERSION },
+    protocol: { name: formatForVerifiedOwner(projectStorage.get(project)).protocol("lode-agent-core-execution-lineage"), version: EXECUTION_LINEAGE_VERSION },
     projectId: project.projectId,
     authorityBoundary: artifactAuthorityBoundary(kind),
     ...body,
@@ -184,8 +184,8 @@ function verifiedFreshLodeReview(review, storage) {
   // protocol/version readiness gate. Only the new family adds its tuple guard.
   if (
     !review ||
-    review.kind !== format.kind("FreshHeadReview") ||
-    (format.dialect === "lode" && !familyFormatForOriginal("head-agent-core-fresh-head-review", review, storage))
+    review.kind !== format.kind("FreshLodeReview") ||
+    (format.dialect === "lode" && !familyFormatForOriginal("lode-agent-core-fresh-lode-review", review, storage))
   )
     fail("Fresh Lode review context is required.", "INVALID_FRESH_REVIEW");
   const recordedHash = review.reviewContextHash;
@@ -194,7 +194,7 @@ function verifiedFreshLodeReview(review, storage) {
   delete payload.reviewContextId;
   delete payload.reviewContextHash;
   const actualHash = digest(canonicalJson(payload));
-  if (recordedHash !== actualHash || recordedId !== `${format.value("fresh-head-review")}-${actualHash.slice(0, 24)}`) {
+  if (recordedHash !== actualHash || recordedId !== `${format.value("fresh-lode-review")}-${actualHash.slice(0, 24)}`) {
     fail("Fresh Lode review context digest verification failed.", "FRESH_REVIEW_DIGEST_MISMATCH");
   }
   return review;
@@ -217,8 +217,8 @@ export function buildFreshLodeReview({ root = ".", wholePlanId, resultPacketId, 
   const capsule = readContextCapsule({ root: project.projectRoot, capsuleId: contract.capsuleId }).capsule;
   const payload = {
     schemaVersion: SCHEMA_VERSION,
-    kind: formatForVerifiedOwner(projectStorage.get(project)).kind("FreshHeadReview"),
-    protocol: { name: formatForVerifiedOwner(projectStorage.get(project)).protocol("head-agent-core-fresh-head-review"), version: FRESH_REVIEW_VERSION },
+    kind: formatForVerifiedOwner(projectStorage.get(project)).kind("FreshLodeReview"),
+    protocol: { name: formatForVerifiedOwner(projectStorage.get(project)).protocol("lode-agent-core-fresh-lode-review"), version: FRESH_REVIEW_VERSION },
     projectId: project.projectId,
     sessionId: optionalText(sessionId),
     runId: optionalText(runId),
@@ -243,7 +243,7 @@ export function buildFreshLodeReview({ root = ".", wholePlanId, resultPacketId, 
   const reviewContextHash = digest(canonicalJson(payload));
   const review = {
     ...payload,
-    reviewContextId: `${formatForVerifiedOwner(projectStorage.get(project)).value("fresh-head-review")}-${reviewContextHash.slice(0, 24)}`,
+    reviewContextId: `${formatForVerifiedOwner(projectStorage.get(project)).value("fresh-lode-review")}-${reviewContextHash.slice(0, 24)}`,
     reviewContextHash,
   };
   return { status: "ready_for_fresh_lode_review", review };
@@ -322,9 +322,9 @@ function createExecutionContractUncoordinated({
       wholePlanId: planId,
       capsuleId: contextId,
       contextAcceptance: {
-        authority: formatForVerifiedOwner(projectStorage.get(project)).value("HEAD"),
+        authority: formatForVerifiedOwner(projectStorage.get(project)).value("Lode"),
         disposition: "accepted-for-this-execution-contract",
-        semanticJudgmentSource: formatForVerifiedOwner(projectStorage.get(project)).value("HEAD-not-context-compiler"),
+        semanticJudgmentSource: formatForVerifiedOwner(projectStorage.get(project)).value("Lode-not-context-compiler"),
       },
       scope: requiredText(scope, "Execution scope"),
       acceptanceCriteria: stringList(acceptanceCriteria, "Acceptance criteria", { required: true }),
@@ -474,7 +474,7 @@ export function verifyLineageArtifactOriginal({ artifact, artifactId, projectId,
     fail("Lineage artifact identity does not match this project.", "LINEAGE_IDENTITY_MISMATCH");
   }
   const lineageVersion = artifact.protocol?.version;
-  if (!familyFormatForOriginal("head-agent-core-execution-lineage", artifact, storage) || !new Set(["0.3.0", EXECUTION_LINEAGE_VERSION]).has(lineageVersion)) {
+  if (!familyFormatForOriginal("lode-agent-core-execution-lineage", artifact, storage) || !new Set(["0.3.0", EXECUTION_LINEAGE_VERSION]).has(lineageVersion)) {
     fail("Lineage artifact protocol is invalid.", "INVALID_LINEAGE_ARTIFACT");
   }
   if (lineageVersion === EXECUTION_LINEAGE_VERSION) verifyArtifactAuthorityBoundary(artifact.kind, artifact.authorityBoundary);

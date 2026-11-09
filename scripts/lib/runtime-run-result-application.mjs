@@ -1,4 +1,4 @@
-import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
+import { formatForVerifiedOwner, familyFormatForOriginal, recordedFieldName } from "./project-storage-format.mjs";
 import { sha256Hex as digest } from "./core/digest.mjs";
 import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "./core/canonical-json.mjs";
 import { failWith } from "./core/errors.mjs";
@@ -17,6 +17,7 @@ import { finishRun, getPendingReviewContext } from "./run-lineage.mjs";
 import { withProjectMutation } from "./project-mutation-lock.mjs";
 import { isWorkerPatchProposalMode } from "./worker-patch-proposal.mjs";
 import { readRuntimeInvocationRecord, runtimeInvocationRecordDirectory, writeRuntimeInvocationArtifactExclusive } from "./runtime-invocation-record.mjs";
+const FRESH_REVIEW_FIELD = "freshLodeReviewRequired";
 
 export const RUNTIME_RUN_RESULT_APPLICATION_VERSION = "0.1.0";
 
@@ -44,6 +45,7 @@ function identifyApplication(payload) {
 }
 
 export function verifyRuntimeRunResultApplication(document) {
+  const reviewField = recordedFieldName(document, FRESH_REVIEW_FIELD);
   assertExactFields(
     document,
     [
@@ -58,7 +60,7 @@ export function verifyRuntimeRunResultApplication(document) {
       "resultPacketId",
       "reviewContextId",
       "status",
-      "freshHeadReviewRequired",
+      reviewField,
       "rawTranscriptIncluded",
       "authority",
       "instructionAuthority",
@@ -83,7 +85,7 @@ export function verifyRuntimeRunResultApplication(document) {
     !/^result-packet-[a-f0-9]{24}$/.test(document.resultPacketId || "") ||
     !/^fresh-(?:head|lode)-review-[a-f0-9]{24}$/.test(document.reviewContextId || "") ||
     document.status !== "run-result-applied-awaiting-review" ||
-    document.freshHeadReviewRequired !== true ||
+    document[reviewField] !== true ||
     document.rawTranscriptIncluded !== false ||
     document.authority !== "execution-lineage-application-evidence" ||
     document.instructionAuthority !== false ||
@@ -133,7 +135,7 @@ function canonicalRunResultFields(record) {
   if (
     draft.scopeKind !== "run" ||
     !draft.providerResult ||
-    draft.freshHeadReviewRequired !== true ||
+    draft[recordedFieldName(draft, FRESH_REVIEW_FIELD)] !== true ||
     receipt.status !== "completed" ||
     receipt.exitCode !== 0 ||
     receipt.providerBoundary.actualProviderInvoked !== true ||
@@ -372,7 +374,7 @@ function applyRuntimeRunResultLocked({ root, authorizationId, storage }) {
       resultPacketId: resultPacket.resultPacketId,
       reviewContextId: freshHead.review.reviewContextId,
       status: "run-result-applied-awaiting-review",
-      freshHeadReviewRequired: true,
+      [recordedFieldName(record.draft, FRESH_REVIEW_FIELD)]: true,
       rawTranscriptIncluded: false,
       authority: "execution-lineage-application-evidence",
       instructionAuthority: false,

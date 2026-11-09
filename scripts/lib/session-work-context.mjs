@@ -29,6 +29,7 @@ import {
   SESSION_WORK_DEFAULT_CHARACTERS,
   SESSION_WORK_MAX_CHARACTERS,
   sessionTodoDeclarations,
+  PROPOSED_ORIGINS,
 } from "./session-work-evidence-original.mjs";
 import { noteProjectGraphChange, readSessionWorkNavigationHints } from "./discovery-index.mjs";
 import { fitSelectedBodyGroups, workBodyTuples } from "./session-work-body-organization.mjs";
@@ -161,10 +162,19 @@ function readSessionWorkListBase({ root = ".", sessionId = null, maxSessions = 1
       "Stored evidence for discovery, not an owner assignment, current Host target, whole-work completion or permission. Preview preserves all selections.",
   };
 }
+// New records keep the owning dialect's spelling of the proposed-work origin;
+// either spelling is accepted as input and in stored records.
+function proposedOriginInDialect(input, storage) {
+  if (!Array.isArray(input?.todos)) return input;
+  const proposed = formatForVerifiedOwner(storage).value("lode-proposed");
+  return { ...input, todos: input.todos.map((todo) => (PROPOSED_ORIGINS.includes(todo?.origin) ? { ...todo, origin: proposed } : todo)) };
+}
+
 export function recordSessionWorkEvidence({ root = ".", input, storage } = {}) {
-  const content = normalizeSessionWorkEvidence(input);
+  normalizeSessionWorkEvidence(input);
   return withProjectMutation({ root, storage, scope: "session-recovery" }, () => {
     const owner = identity(root, storage);
+    const content = normalizeSessionWorkEvidence(proposedOriginInDialect(input, owner.storage));
     const evidenceId = `work-evidence-${inputIdentity(owner, content).slice(0, 24)}`;
     const file = fileFor(owner.root, evidenceId, owner.storage);
     // A retry reuses intact originals even if their source has since changed.
@@ -930,7 +940,7 @@ export function readSessionWorkContext({
     promotionAuthority: false,
     executionReplayAllowed: false,
     ordinaryWorkBlocked: false,
-    interpretation: `P3 ${formatForVerifiedOwner(owner.storage).value("HEAD")}-authored historical evidence, not current direction, approval, or proof of an external effect. Current Project constraints and selected Session P2 take precedence.`,
+    interpretation: `P3 ${formatForVerifiedOwner(owner.storage).value("Lode")}-authored historical evidence, not current direction, approval, or proof of an external effect. Current Project constraints and selected Session P2 take precedence.`,
   };
   if (
     (expectedSessionId && owner.sessionId !== expectedSessionId) ||

@@ -14,7 +14,7 @@ function document(input, storage) {
   const payload = {
     schemaVersion: 1,
     kind: "HistoricalContinuityReceipt",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-historical-continuity"), version: HISTORICAL_CONTINUITY_PROTOCOL_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-historical-continuity"), version: HISTORICAL_CONTINUITY_PROTOCOL_VERSION },
     projectId: input.projectId,
     boundaryId: input.boundaryId,
     boundaryHash: input.boundaryHash,
@@ -40,9 +40,9 @@ export function verifyHistoricalContinuityReceipt(receipt, { boundary, currentCa
   if (
     receipt?.kind !== "HistoricalContinuityReceipt" ||
     !familyFormatForOriginal(
-      "head-agent-core-historical-continuity",
+      "lode-agent-core-historical-continuity",
       receipt,
-      familyFormatForOriginal("head-agent-core-historical-artifact-boundary", boundary),
+      familyFormatForOriginal("lode-agent-core-historical-artifact-boundary", boundary),
     ) ||
     receipt.protocol?.version !== HISTORICAL_CONTINUITY_PROTOCOL_VERSION ||
     receipt.receiptHash !== hash ||

@@ -952,11 +952,11 @@ export function buildRuntimeProjectBinding({ projectId, headSessionId, projectRo
     protocolEvidenceId: protocol.evidenceId,
     bindings,
     status: bindingVerified
-      ? format?.value("verified-head-project-session-capability-binding") || "verified-head-project-session-capability-binding"
-      : format?.value("partial-head-project-session-capability-binding") || "partial-head-project-session-capability-binding",
+      ? format?.value("verified-lode-project-session-capability-binding") || "verified-head-project-session-capability-binding"
+      : format?.value("partial-lode-project-session-capability-binding") || "partial-head-project-session-capability-binding",
     bindingBoundary: {
-      [format?.value("headProjectIdentityCanonical") || "headProjectIdentityCanonical"]: true,
-      [format?.value("headSessionIdentityCanonical") || "headSessionIdentityCanonical"]: true,
+      [format?.value("lodeProjectIdentityCanonical") || "headProjectIdentityCanonical"]: true,
+      [format?.value("lodeSessionIdentityCanonical") || "headSessionIdentityCanonical"]: true,
       providerSessionIdentityCanonical: false,
       providerSessionCreated: false,
       projectContentPassed: false,
@@ -966,7 +966,7 @@ export function buildRuntimeProjectBinding({ projectId, headSessionId, projectRo
       callerAndChildOwnershipRequiredForControl: true,
     },
     authority:
-      format?.value("canonical-head-reference-with-operational-capability-evidence") || "canonical-head-reference-with-operational-capability-evidence",
+      format?.value("canonical-lode-reference-with-operational-capability-evidence") || "canonical-head-reference-with-operational-capability-evidence",
     instructionAuthority: false,
     promotionAuthority: false,
     controlAuthority: false,
@@ -1006,8 +1006,8 @@ export function verifyRuntimeProjectBinding(document) {
   assertFields(
     document.bindingBoundary,
     [
-      format?.value("headProjectIdentityCanonical") || "headProjectIdentityCanonical",
-      format?.value("headSessionIdentityCanonical") || "headSessionIdentityCanonical",
+      format?.value("lodeProjectIdentityCanonical") || "headProjectIdentityCanonical",
+      format?.value("lodeSessionIdentityCanonical") || "headSessionIdentityCanonical",
       "providerSessionIdentityCanonical",
       "providerSessionCreated",
       "projectContentPassed",
@@ -1041,8 +1041,8 @@ export function verifyRuntimeProjectBinding(document) {
   }
   const fullyObserved = document.projectStatus === "ready" && document.bindings.every((item) => item.capabilityStatus === "observed");
   const expectedBoundary = {
-    [format?.value("headProjectIdentityCanonical") || "headProjectIdentityCanonical"]: true,
-    [format?.value("headSessionIdentityCanonical") || "headSessionIdentityCanonical"]: true,
+    [format?.value("lodeProjectIdentityCanonical") || "headProjectIdentityCanonical"]: true,
+    [format?.value("lodeSessionIdentityCanonical") || "headSessionIdentityCanonical"]: true,
     providerSessionIdentityCanonical: false,
     providerSessionCreated: false,
     projectContentPassed: false,
@@ -1064,11 +1064,11 @@ export function verifyRuntimeProjectBinding(document) {
     !/^runtime-protocol-evidence-[a-f0-9]{24}$/.test(document.protocolEvidenceId || "") ||
     document.status !==
       (fullyObserved
-        ? format?.value("verified-head-project-session-capability-binding") || "verified-head-project-session-capability-binding"
-        : format?.value("partial-head-project-session-capability-binding") || "partial-head-project-session-capability-binding") ||
+        ? format?.value("verified-lode-project-session-capability-binding") || "verified-head-project-session-capability-binding"
+        : format?.value("partial-lode-project-session-capability-binding") || "partial-head-project-session-capability-binding") ||
     canonicalJson(document.bindingBoundary) !== canonicalJson(expectedBoundary) ||
     document.authority !==
-      (format?.value("canonical-head-reference-with-operational-capability-evidence") || "canonical-head-reference-with-operational-capability-evidence") ||
+      (format?.value("canonical-lode-reference-with-operational-capability-evidence") || "canonical-head-reference-with-operational-capability-evidence") ||
     document.instructionAuthority !== false ||
     document.promotionAuthority !== false ||
     document.controlAuthority !== false ||

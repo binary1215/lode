@@ -37,7 +37,7 @@ function readOwner(projectRoot, storage = null) {
 }
 
 function verifyOwner(owner, { projectId = "", token = "", storage = null } = {}) {
-  const format = familyFormatForOriginal("head-agent-core-refresh-writer-lease", owner, storage);
+  const format = familyFormatForOriginal("lode-agent-core-refresh-writer-lease", owner, storage);
   if (
     !owner ||
     typeof owner !== "object" ||
@@ -191,7 +191,7 @@ function acquire({ projectRoot, projectId, storage = null }) {
       const owner = {
         schemaVersion: 1,
         kind: "RefreshWriterLease",
-        protocol: { name: format.protocol("head-agent-core-refresh-writer-lease"), version: REFRESH_WRITER_LEASE_VERSION },
+        protocol: { name: format.protocol("lode-agent-core-refresh-writer-lease"), version: REFRESH_WRITER_LEASE_VERSION },
         projectId,
         pid: process.pid,
         hostIdentity: HOST,

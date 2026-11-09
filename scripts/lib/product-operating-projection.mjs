@@ -83,7 +83,7 @@ function verifyIdentity(document, prefix, idField, hashField, label) {
 }
 
 function commonValid(document, kind, projectId, epistemicClass, authority, storage) {
-  const format = familyFormatForOriginal("head-agent-core-product-operating-loop", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-product-operating-loop", document, storage);
   return (
     document.schemaVersion === SCHEMA_VERSION &&
     document.kind === kind &&
@@ -173,7 +173,7 @@ export function verifyProductInitiativeReviewDecision(document, projectId = "", 
   if (
     document.schemaVersion !== SCHEMA_VERSION ||
     document.kind !== "ReviewDecision" ||
-    !familyFormatForOriginal("head-agent-core-product-initiative-review", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-product-initiative-review", document, storage) ||
     !supportedProtocolVersion(document.protocol?.version) ||
     (!projectId || document.projectId === projectId) === false ||
     document.decisionScope !== "product-initiative" ||
@@ -202,7 +202,7 @@ export function verifyProductInitiativeReviewDecision(document, projectId = "", 
           verifyProductFeatureCandidate(
             document.featureCandidate,
             projectId,
-            familyFormatForOriginal("head-agent-core-product-initiative-review", document, storage),
+            familyFormatForOriginal("lode-agent-core-product-initiative-review", document, storage),
           ).featureCandidateId !== document.featureResolution.featureCandidateId
         )
           fail("Product Initiative ReviewDecision Feature candidate binding is invalid.", "INVALID_PRODUCT_INITIATIVE_REVIEW");
@@ -268,7 +268,7 @@ export function verifyProductOperatingProjectionInput(projection, storage = unde
   if (
     !projection ||
     projection.kind !== "ProductOperatingProjectionInput" ||
-    !familyFormatForOriginal("head-agent-core-product-operating-projection", projection, storage) ||
+    !familyFormatForOriginal("lode-agent-core-product-operating-projection", projection, storage) ||
     !supportedProtocolVersion(projection.protocol?.version) ||
     typeof projection.projectId !== "string" ||
     !projection.projectId ||
@@ -278,7 +278,7 @@ export function verifyProductOperatingProjectionInput(projection, storage = unde
   ) {
     fail("Product operating projection input is invalid.", "INVALID_PRODUCT_OPERATING_PROJECTION");
   }
-  const format = familyFormatForOriginal("head-agent-core-product-operating-projection", projection, storage);
+  const format = familyFormatForOriginal("lode-agent-core-product-operating-projection", projection, storage);
   for (const field of Object.keys(DIRECTORIES)) {
     if (!Array.isArray(projection[field])) fail(`Product operating projection ${field} is invalid.`, "INVALID_PRODUCT_OPERATING_PROJECTION");
     const family = field === "initiativeReviews" ? "head-agent-core-product-initiative-review" : "head-agent-core-product-operating-loop";
@@ -414,7 +414,7 @@ export function loadProductOperatingProjection({ projectRoot, projectId, storage
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ProductOperatingProjectionInput",
-    protocol: { name: format.protocol("head-agent-core-product-operating-projection"), version: PRODUCT_OPERATING_LOOP_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-product-operating-projection"), version: PRODUCT_OPERATING_LOOP_VERSION },
     projectId,
     ...Object.fromEntries(Object.entries(arrays).map(([key, values]) => [key, values.sort((a, b) => a[idFields[key]].localeCompare(b[idFields[key]]))])),
     authority: "derived-product-graph-input-not-product-or-execution-canon",
@@ -435,8 +435,8 @@ export function initiativeSeed(candidate) {
 }
 
 export function verifyReviewDecisionCandidateLineage(reviewDecision, candidate) {
-  const format = familyFormatForOriginal("head-agent-core-product-initiative-review", reviewDecision);
-  if (!format || !familyFormatForOriginal("head-agent-core-product-operating-loop", candidate, format))
+  const format = familyFormatForOriginal("lode-agent-core-product-initiative-review", reviewDecision);
+  if (!format || !familyFormatForOriginal("lode-agent-core-product-operating-loop", candidate, format))
     fail("Product Initiative ReviewDecision candidate binding is stale or invalid.", "INVALID_PRODUCT_INITIATIVE_REVIEW_LINEAGE");
   if (reviewDecision.protocol.version !== PRODUCT_OPERATING_LOOP_VERSION) return;
   if (reviewDecision.initiativeCandidateHash !== candidate.initiativeCandidateHash)
@@ -455,7 +455,7 @@ export function buildReviewedInitiative(candidate, reviewDecision, storage = nul
   const approved = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ReviewedProductInitiative",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-product-operating-loop"), version: PRODUCT_OPERATING_LOOP_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-product-operating-loop"), version: PRODUCT_OPERATING_LOOP_VERSION },
     projectId: candidate.projectId,
     initiativeCandidateId: candidate.initiativeCandidateId,
     reviewDecisionId: reviewDecision.reviewDecisionId,

@@ -143,7 +143,7 @@ function buildProductModelRevision({ projectId, model }, storage) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ProductModelRevision",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-document-change-product-revision"), version: DOCUMENT_CHANGE_REVIEW_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-document-change-product-revision"), version: DOCUMENT_CHANGE_REVIEW_VERSION },
     projectId,
     authorityBoundary: artifactAuthorityBoundary("ProductModelRevision"),
     productModelId: model.productModelId,
@@ -163,7 +163,7 @@ function buildReviewDecision(
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ReviewDecision",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-document-change-review"), version: DOCUMENT_CHANGE_REVIEW_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-document-change-review"), version: DOCUMENT_CHANGE_REVIEW_VERSION },
     decisionScope: "document-to-product-canon",
     projectId: candidateSet.projectId,
     authorityBoundary: artifactAuthorityBoundary("ReviewDecision"),
@@ -204,9 +204,9 @@ export function verifyDocumentChangeReviewDecision(document, candidateSet = null
     document.schemaVersion !== 1 ||
     document.kind !== "ReviewDecision" ||
     !familyFormatForOriginal(
-      "head-agent-core-document-change-review",
+      "lode-agent-core-document-change-review",
       document,
-      storage ?? (candidateSet ? familyFormatForOriginal("head-agent-core-document-change-candidates", candidateSet) : undefined),
+      storage ?? (candidateSet ? familyFormatForOriginal("lode-agent-core-document-change-candidates", candidateSet) : undefined),
     ) ||
     document.protocol?.version !== DOCUMENT_CHANGE_REVIEW_VERSION ||
     document.decisionScope !== "document-to-product-canon" ||
@@ -272,7 +272,7 @@ function buildApplicationReceipt({ review, candidateSet, beforeWorld, afterWorld
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "DocumentCanonApplicationReceipt",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-document-change-application"), version: DOCUMENT_CHANGE_REVIEW_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-document-change-application"), version: DOCUMENT_CHANGE_REVIEW_VERSION },
     projectId: review.projectId,
     reviewDecisionId: review.reviewDecisionId,
     reviewDecisionHash: review.reviewDecisionHash,
@@ -315,9 +315,9 @@ export function verifyDocumentChangeApplicationReceipt(document, review = null, 
     document.schemaVersion !== 1 ||
     document.kind !== "DocumentCanonApplicationReceipt" ||
     !familyFormatForOriginal(
-      "head-agent-core-document-change-application",
+      "lode-agent-core-document-change-application",
       document,
-      storage ?? (review ? familyFormatForOriginal("head-agent-core-document-change-review", review) : undefined),
+      storage ?? (review ? familyFormatForOriginal("lode-agent-core-document-change-review", review) : undefined),
     ) ||
     document.protocol?.version !== DOCUMENT_CHANGE_REVIEW_VERSION ||
     (projectId && document.projectId !== projectId) ||

@@ -1860,7 +1860,7 @@ test("supported Todo writer and reader keep exact historical states and coverage
           todoId: "todo-other-" + suffix.toLowerCase(),
           task: "Separate declaration",
           status: "pending",
-          origin: "head-proposed",
+          origin: "lode-proposed",
           nextAction: "Read the original",
         },
       ],
