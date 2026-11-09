@@ -82,7 +82,7 @@ function identify(payload) {
 }
 
 export function verifyBoundedWorkerDispatch(document) {
-  const format = familyFormatForOriginal("head-agent-core-bounded-worker-dispatch", document);
+  const format = familyFormatForOriginal("lode-agent-core-bounded-worker-dispatch", document);
   const fields = [
     "schemaVersion",
     "kind",
@@ -134,7 +134,7 @@ export function verifyBoundedWorkerDispatch(document) {
     document.schemaVersion !== 1 ||
     document.kind !== "BoundedWorkerDispatch" ||
     !format ||
-    document.protocol?.name !== format.protocol("head-agent-core-bounded-worker-dispatch") ||
+    document.protocol?.name !== format.protocol("lode-agent-core-bounded-worker-dispatch") ||
     !["0.1.0", BOUNDED_WORKER_DISPATCH_VERSION].includes(document.protocol?.version) ||
     (document.protocol?.version === "0.1.0" && document.runId === null) ||
     !new RegExp(`^${format?.projectPrefix || "head-"}[a-f0-9]{20}$`).test(document.projectId || "") ||
@@ -208,7 +208,7 @@ export function createBoundedWorkerDispatch({ root = ".", authorizationId, role 
     identify({
       schemaVersion: 1,
       kind: "BoundedWorkerDispatch",
-      protocol: { name: formatForVerifiedOwner(inspected).protocol("head-agent-core-bounded-worker-dispatch"), version: BOUNDED_WORKER_DISPATCH_VERSION },
+      protocol: { name: formatForVerifiedOwner(inspected).protocol("lode-agent-core-bounded-worker-dispatch"), version: BOUNDED_WORKER_DISPATCH_VERSION },
       authorityBoundary: artifactAuthorityBoundary("BoundedWorkerDispatch"),
       projectId: inspected.project.projectId,
       [formatForVerifiedOwner(inspected).sessionIdField]: inspected.state.sessionId,
@@ -265,7 +265,7 @@ function waitOutcome({ dispatch, leaseStatus, result, status, timedOut }) {
   const payload = {
     schemaVersion: 1,
     kind: "BoundedWorkerWaitOutcome",
-    protocol: { name: originalFormat(dispatch).protocol("head-agent-core-bounded-worker-wait"), version: BOUNDED_WORKER_DISPATCH_VERSION },
+    protocol: { name: originalFormat(dispatch).protocol("lode-agent-core-bounded-worker-wait"), version: BOUNDED_WORKER_DISPATCH_VERSION },
     authorityBoundary: artifactAuthorityBoundary("BoundedWorkerWaitOutcome"),
     projectId: dispatch.projectId,
     [originalFormat(dispatch).sessionIdField]: sessionIdOf(dispatch),
@@ -292,7 +292,7 @@ function waitOutcome({ dispatch, leaseStatus, result, status, timedOut }) {
 }
 
 export function verifyBoundedWorkerWaitOutcome(document) {
-  const format = familyFormatForOriginal("head-agent-core-bounded-worker-wait", document);
+  const format = familyFormatForOriginal("lode-agent-core-bounded-worker-wait", document);
   const fields = [
     "schemaVersion",
     "kind",
@@ -335,7 +335,7 @@ export function verifyBoundedWorkerWaitOutcome(document) {
     document.schemaVersion !== 1 ||
     document.kind !== "BoundedWorkerWaitOutcome" ||
     !format ||
-    document.protocol?.name !== format.protocol("head-agent-core-bounded-worker-wait") ||
+    document.protocol?.name !== format.protocol("lode-agent-core-bounded-worker-wait") ||
     !["0.1.0", BOUNDED_WORKER_DISPATCH_VERSION].includes(document.protocol?.version) ||
     !new RegExp(`^${format?.projectPrefix || "head-"}[a-f0-9]{20}$`).test(document.projectId || "") ||
     !/^session-[A-Fa-f0-9-]{36}$/.test(sessionIdOf(document) || "") ||

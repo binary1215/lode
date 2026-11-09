@@ -37,7 +37,7 @@ export function prepareObservationEvidence({
     recordKind: "all",
     limit: existingLimit,
   });
-  const storage = familyFormatForOriginal("head-agent-core-observation-query", existing);
+  const storage = familyFormatForOriginal("lode-agent-core-observation-query", existing);
   const configured = inspectObservationSources(
     {
       root,
@@ -61,7 +61,7 @@ export function prepareObservationEvidence({
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ObservationPreparationProjection",
-    protocol: { name: storage.protocol("head-agent-core-observation-preparation"), version: OBSERVATION_PROTOCOL_VERSION },
+    protocol: { name: storage.protocol("lode-agent-core-observation-preparation"), version: OBSERVATION_PROTOCOL_VERSION },
     projectId: existing.projectId,
     sessionId: existing.sessionId,
     exactNeed: {
@@ -76,7 +76,7 @@ export function prepareObservationEvidence({
     configuredSources: configured.registry,
     workflow: {
       nextAction,
-      semanticSelectionOwner: storage.value("provider-head"),
+      semanticSelectionOwner: storage.value("provider-lode"),
       semanticSufficiencyAssessed: false,
       sourceAutomaticallySelected: false,
       sourceAutomaticallyCollected: false,

@@ -193,11 +193,11 @@ function normalizePath(root, file) {
 }
 
 function scanFormat(input) {
-  return familyFormatForOriginal("head-agent-core-repository-source-scope", input.sourceScope);
+  return familyFormatForOriginal("lode-agent-core-repository-source-scope", input.sourceScope);
 }
 
 function semanticProducerFor(storage) {
-  return { name: formatForVerifiedOwner(storage).protocol("head-agent-core-repository-scan"), version: REPOSITORY_SCAN_VERSION };
+  return { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-repository-scan"), version: REPOSITORY_SCAN_VERSION };
 }
 
 function excludesManagedRootDirectory(relative, input) {
@@ -621,7 +621,7 @@ function validateLineRecord(record, fields, label) {
 }
 
 export function validateRepositoryScanResult(result) {
-  const format = familyFormatForOriginal("head-agent-core-repository-scan", result);
+  const format = familyFormatForOriginal("lode-agent-core-repository-scan", result);
   // 0.5.0 has the same declaration schema; only scan eligibility changed.
   const currentProtocol = [REPOSITORY_SCAN_VERSION, "0.5.0"].includes(result?.protocol?.version);
   const scopedProtocol = currentProtocol || new Set(["0.3.0", "0.4.0"]).has(result?.protocol?.version);

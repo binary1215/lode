@@ -402,7 +402,7 @@ export async function buildGitDecisionHistory({ projectRoot, adapter = null, ref
   const effectiveStatus = status === "available" && commits.length === 0 ? "empty" : status;
   const payload = {
     kind: "GitDecisionHistory",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-git-decision-history"), version: GIT_DECISION_HISTORY_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-git-decision-history"), version: GIT_DECISION_HISTORY_VERSION },
     status: effectiveStatus,
     coverage: effectiveStatus === "available" ? "all-reachable-commits" : effectiveStatus === "empty" ? "empty-repository" : "none",
     reasonCode: effectiveStatus === "available" || effectiveStatus === "empty" ? "" : String(observed?.reasonCode || "git-history-unavailable"),
@@ -435,7 +435,7 @@ export function verifyGitDecisionHistory(history) {
   if (history.historyHash !== actual || history.historyId !== `git-history-${actual.slice(0, 24)}`) {
     fail("Git decision history digest verification failed.", "GIT_DECISION_HISTORY_DIGEST_MISMATCH");
   }
-  if (!familyFormatForOriginal("head-agent-core-git-decision-history", history)) fail("Git decision history is invalid.", "INVALID_GIT_DECISION_HISTORY");
+  if (!familyFormatForOriginal("lode-agent-core-git-decision-history", history)) fail("Git decision history is invalid.", "INVALID_GIT_DECISION_HISTORY");
   return history;
 }
 

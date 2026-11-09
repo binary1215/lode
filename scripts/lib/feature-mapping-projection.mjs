@@ -106,7 +106,7 @@ function verifyCandidate(candidate, evidenceIds, storage) {
     candidate.authorityClass !== "candidate" ||
     candidate.instructionAuthority !== false ||
     candidate.promotionAuthority !== false ||
-    candidate.producer !== formatForVerifiedOwner(storage).protocol("head-agent-core-feature-mapping-proposal-normalizer") ||
+    candidate.producer !== formatForVerifiedOwner(storage).protocol("lode-agent-core-feature-mapping-proposal-normalizer") ||
     candidate.producerVersion !== FEATURE_MAPPING_VERSION ||
     !Number.isFinite(candidate.confidence) ||
     candidate.confidence < 0 ||
@@ -147,7 +147,7 @@ export function verifyFeatureMappingCandidateSet(document, projectId = "", stora
   if (
     document.schemaVersion !== 1 ||
     document.kind !== "FeatureMappingCandidateSet" ||
-    !familyFormatForOriginal("head-agent-core-feature-mapping-candidates", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-feature-mapping-candidates", document, storage) ||
     document.protocol?.version !== FEATURE_MAPPING_VERSION ||
     (projectId && document.projectId !== projectId) ||
     !/^world-model-[a-f0-9]{24}$/.test(document.worldModelId || "") ||
@@ -179,7 +179,7 @@ export function verifyFeatureMappingCandidateSet(document, projectId = "", stora
   }
   const candidateIds = new Set();
   for (const candidate of document.candidates) {
-    verifyCandidate(candidate, evidenceIds, familyFormatForOriginal("head-agent-core-feature-mapping-candidates", document, storage));
+    verifyCandidate(candidate, evidenceIds, familyFormatForOriginal("lode-agent-core-feature-mapping-candidates", document, storage));
     if (candidateIds.has(candidate.candidateId)) fail("Duplicate Feature mapping candidate.", "DUPLICATE_FEATURE_MAPPING_CANDIDATE");
     candidateIds.add(candidate.candidateId);
   }
@@ -215,9 +215,9 @@ export function verifyFeatureMappingReviewDecision(document, candidateSet, proje
     document.schemaVersion !== 1 ||
     document.kind !== "ReviewDecision" ||
     !familyFormatForOriginal(
-      "head-agent-core-feature-mapping-review",
+      "lode-agent-core-feature-mapping-review",
       document,
-      storage ?? familyFormatForOriginal("head-agent-core-feature-mapping-candidates", candidateSet),
+      storage ?? familyFormatForOriginal("lode-agent-core-feature-mapping-candidates", candidateSet),
     ) ||
     document.protocol?.version !== FEATURE_MAPPING_VERSION ||
     document.decisionScope !== "feature-implementation-mapping" ||
@@ -303,7 +303,7 @@ export function verifyFeatureMappingProjectionInput(projection, storage = undefi
   if (
     !projection ||
     projection.kind !== "FeatureMappingProjectionInput" ||
-    !familyFormatForOriginal("head-agent-core-feature-mapping-projection", projection, storage) ||
+    !familyFormatForOriginal("lode-agent-core-feature-mapping-projection", projection, storage) ||
     projection.protocol?.version !== FEATURE_MAPPING_VERSION ||
     !Array.isArray(projection.candidateSets) ||
     !Array.isArray(projection.reviewDecisions)
@@ -315,7 +315,7 @@ export function verifyFeatureMappingProjectionInput(projection, storage = undefi
     verifyFeatureMappingCandidateSet(
       candidateSet,
       projection.projectId,
-      familyFormatForOriginal("head-agent-core-feature-mapping-projection", projection, storage),
+      familyFormatForOriginal("lode-agent-core-feature-mapping-projection", projection, storage),
     );
     if (candidateById.has(candidateSet.candidateSetId)) fail("Duplicate Feature mapping candidate set.", "DUPLICATE_FEATURE_MAPPING_CANDIDATE_SET");
     candidateById.set(candidateSet.candidateSetId, candidateSet);
@@ -328,7 +328,7 @@ export function verifyFeatureMappingProjectionInput(projection, storage = undefi
       review,
       candidateSet,
       projection.projectId,
-      familyFormatForOriginal("head-agent-core-feature-mapping-projection", projection, storage),
+      familyFormatForOriginal("lode-agent-core-feature-mapping-projection", projection, storage),
     );
     if (reviewIds.has(review.reviewDecisionId)) fail("Duplicate Feature mapping ReviewDecision.", "DUPLICATE_FEATURE_MAPPING_REVIEW");
     reviewIds.add(review.reviewDecisionId);
@@ -376,7 +376,7 @@ export function loadFeatureMappingProjection({
   const payload = {
     schemaVersion: 1,
     kind: "FeatureMappingProjectionInput",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-feature-mapping-projection"), version: FEATURE_MAPPING_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-feature-mapping-projection"), version: FEATURE_MAPPING_VERSION },
     projectId,
     currentProductModelId,
     candidateSets: [...candidates.values()].sort((left, right) => left.candidateSetId.localeCompare(right.candidateSetId)),

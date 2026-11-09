@@ -188,7 +188,7 @@ function agentDescriptor(runtime, storage) {
     disabledOperations: ["start", "resume", "stream", "interrupt", "close"],
     tuiScraping: false,
     providerSessionIdentity: "external-reference-only",
-    [formatForVerifiedOwner(storage).value("headSessionIdentity")]: "canonical-project-session",
+    [formatForVerifiedOwner(storage).value("lodeSessionIdentity")]: "canonical-project-session",
     executionContractRequiredForControl: true,
     controlOperationsEnabled: false,
     instructionAuthority: false,

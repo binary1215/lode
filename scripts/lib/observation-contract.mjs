@@ -131,7 +131,7 @@ export function createObservationTypeDescriptor(input = {}, storage = null) {
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ObservationTypeDescriptor",
-    protocol: { name: format.protocol("head-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
     typeKey: stableKey(input.typeKey, "Observation typeKey", 192),
     typeVersion: stableKey(input.typeVersion, "Observation typeVersion", 64),
     forms,
@@ -145,7 +145,7 @@ export function createObservationTypeDescriptor(input = {}, storage = null) {
 }
 
 export function verifyObservationTypeDescriptor(document, storage = undefined) {
-  const format = familyFormatForOriginal("head-agent-core-observation", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-observation", document, storage);
   exactFields(
     document,
     [
@@ -314,7 +314,7 @@ export function createObservationRecord({ projectId, descriptor, subject, form, 
   const body = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ObservationRecord",
-    protocol: { name: format.protocol("head-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
     projectId: requiredText(projectId, "Observation projectId", 256),
     descriptorId: verifiedDescriptor.descriptorId,
     descriptorHash: verifiedDescriptor.descriptorHash,
@@ -343,7 +343,7 @@ export function createObservationRecord({ projectId, descriptor, subject, form, 
 }
 
 export function verifyObservationRecord(document, descriptor, projectId = "", storage) {
-  const format = familyFormatForOriginal("head-agent-core-observation", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-observation", document, storage);
   exactFields(
     document,
     [
@@ -433,7 +433,7 @@ export function createDerivedObservationRecord(
   const body = {
     schemaVersion: SCHEMA_VERSION,
     kind: "DerivedObservationRecord",
-    protocol: { name: format.protocol("head-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
     projectId: requiredText(projectId, "Derived Observation projectId", 256),
     descriptorId: verifiedDescriptor.descriptorId,
     descriptorHash: verifiedDescriptor.descriptorHash,
@@ -461,7 +461,7 @@ export function createDerivedObservationRecord(
 }
 
 export function verifyDerivedObservationRecord(document, descriptor, projectId = "", storage) {
-  const format = familyFormatForOriginal("head-agent-core-observation", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-observation", document, storage);
   exactFields(
     document,
     [

@@ -257,7 +257,7 @@ export function buildSemanticGraph({ files, sources, sourceRelationEvidence = nu
   edges.sort((left, right) => left.id.localeCompare(right.id));
   const payload = {
     kind: "RepositorySemanticGraph",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-semantic-graph"), version: SEMANTIC_GRAPH_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-semantic-graph"), version: SEMANTIC_GRAPH_VERSION },
     authority: "derived-evidence-only",
     accuracy: verifiedRelationEvidence ? "heuristic-fallback-plus-source-separated-ast-evidence" : "heuristic-not-ast-complete",
     sourceRelationEvidence: verifiedRelationEvidence
@@ -302,7 +302,7 @@ export function verifySemanticGraph(graph) {
   if (graph.semanticGraphHash !== actual || graph.semanticGraphId !== `semantic-graph-${actual.slice(0, 24)}`) {
     throw Object.assign(new Error("Semantic graph digest verification failed."), { code: "SEMANTIC_GRAPH_DIGEST_MISMATCH" });
   }
-  if (!familyFormatForOriginal("head-agent-core-semantic-graph", graph))
+  if (!familyFormatForOriginal("lode-agent-core-semantic-graph", graph))
     throw Object.assign(new Error("Semantic graph is invalid."), { code: "INVALID_SEMANTIC_GRAPH" });
   return graph;
 }

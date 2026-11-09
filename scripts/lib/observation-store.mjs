@@ -123,7 +123,7 @@ function receiptIdentity(payload) {
 }
 
 export function verifyObservationCollectionReceipt(document, projectId = "", storage) {
-  const format = familyFormatForOriginal("head-agent-core-observation", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-observation", document, storage);
   if (!document || typeof document !== "object" || Array.isArray(document)) fail("ObservationCollectionReceipt is invalid.", "INVALID_OBSERVATION_RECEIPT");
   const expectedFields = [
     "schemaVersion",
@@ -320,7 +320,7 @@ function recordCollectedObservationInternal({ root = ".", descriptor, input, ada
   const receiptPayload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ObservationCollectionReceipt",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
     projectId: inspected.project.projectId,
     observationId: record.observationId,
     observationHash: record.observationHash,

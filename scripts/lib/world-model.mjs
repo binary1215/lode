@@ -401,7 +401,7 @@ function verifiedSnapshot(snapshot, expectedId = "", storage = null) {
   if (recordedHash !== actualHash || recordedId !== `world-model-${actualHash.slice(0, 24)}` || (expectedId && recordedId !== expectedId)) {
     fail("World Model snapshot digest verification failed.", "WORLD_MODEL_DIGEST_MISMATCH");
   }
-  const format = familyFormatForOriginal("head-agent-core-world-model", snapshot, storage);
+  const format = familyFormatForOriginal("lode-agent-core-world-model", snapshot, storage);
   if (!format) fail("World Model snapshot protocol is unsupported.", "INVALID_WORLD_MODEL");
   if (snapshot.repositoryScan)
     validateRepositoryScanResult(
@@ -1430,8 +1430,8 @@ export function buildWorldModelStatusProjection(inspection, { sampleLimit = WORL
     schemaVersion: 1,
     kind: "WorldModelStatusProjection",
     protocol: {
-      name: (familyFormatForOriginal("head-agent-core-world-model", inspection.snapshot) || formatForVerifiedOwner(inspection.storage)).protocol(
-        "head-agent-core-world-model-status",
+      name: (familyFormatForOriginal("lode-agent-core-world-model", inspection.snapshot) || formatForVerifiedOwner(inspection.storage)).protocol(
+        "lode-agent-core-world-model-status",
       ),
       version: WORLD_MODEL_STATUS_PROJECTION_VERSION,
     },
@@ -1821,7 +1821,7 @@ async function buildWorldModelLocked({
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "RepositoryWorldModel",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-world-model"), version: WORLD_MODEL_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-world-model"), version: WORLD_MODEL_VERSION },
     storageContract: WORLD_MODEL_STORAGE_CONTRACT,
     projectId: project.projectId,
     projectRoot: project.projectRoot,
@@ -1850,7 +1850,7 @@ async function buildWorldModelLocked({
         "epistemically-typed-signals-hypotheses-human-reviewed-initiatives-feature-links-and-outcome-observations-as-derived-product-graph",
       releaseObservationProjection: "provider-neutral-git-ref-deployment-result-and-release-observations-as-p3-evidence-and-p4-graph",
       gitHistory: gitDecisionHistory.coverage,
-      runtimeState: formatForVerifiedOwner(storage).value("canonical-head-lifecycle-state"),
+      runtimeState: formatForVerifiedOwner(storage).value("canonical-lode-lifecycle-state"),
       externalRuntimeState: externalRuntimeState.coverage,
     },
     git,

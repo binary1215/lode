@@ -245,7 +245,7 @@ export function normalizeProductModelDocument(document = emptyProductModelDocume
   const model = {
     schemaVersion,
     protocol: {
-      name: formatForVerifiedOwner(storage).protocol("head-agent-core-product-model"),
+      name: formatForVerifiedOwner(storage).protocol("lode-agent-core-product-model"),
       version: schemaVersion === 1 ? PRODUCT_MODEL_V1_VERSION : PRODUCT_MODEL_V2_VERSION,
     },
     featureGroups,

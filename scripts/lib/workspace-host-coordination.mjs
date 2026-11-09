@@ -92,14 +92,14 @@ export class VerifiedWorkspaceHostAdapter {
     if (!driver || ["describe", "snapshot", "send"].some((key) => typeof driver[key] !== "function"))
       fail("A describe/snapshot/send Host driver is required.", "INVALID_WORKSPACE_HOST_DRIVER");
     const description = driver.describe();
-    const format = familyFormatForOriginal("head-agent-core-workspace-host-driver", description);
+    const format = familyFormatForOriginal("lode-agent-core-workspace-host-driver", description);
     if (
       description?.kind !== "WorkspaceHostDriverDescriptor" ||
       description.providerNeutral !== true ||
       description.tuiScraping !== false ||
       description.providerSessionIdentityPersisted !== false ||
       !format ||
-      description.protocol?.name !== format.protocol("head-agent-core-workspace-host-driver") ||
+      description.protocol?.name !== format.protocol("lode-agent-core-workspace-host-driver") ||
       description.protocol?.version !== WORKSPACE_HOST_COORDINATION_VERSION
     )
       fail("Invalid Host driver.", "INVALID_WORKSPACE_HOST_DRIVER");
@@ -121,7 +121,7 @@ export class VerifiedWorkspaceHostAdapter {
     const snapshot = this.driver.snapshot();
     if (
       snapshot?.kind !== "WorkspaceHostSnapshot" ||
-      snapshot.protocol?.name !== this.format.protocol("head-agent-core-workspace-host-snapshot") ||
+      snapshot.protocol?.name !== this.format.protocol("lode-agent-core-workspace-host-snapshot") ||
       snapshot.protocol?.version !== WORKSPACE_HOST_COORDINATION_VERSION ||
       snapshot.hostKind !== this.driverDescriptor.hostKind ||
       snapshot.transport !== this.driverDescriptor.transport ||

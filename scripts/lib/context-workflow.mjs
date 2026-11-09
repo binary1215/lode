@@ -5,7 +5,7 @@ export const CONTEXT_WORKFLOW_PROTOCOL_VERSION = "0.6.0";
 export const CONTEXT_PREPARATION_PROTOCOL_VERSION = "0.3.0";
 
 function projection(capsule) {
-  const format = familyFormatForOriginal("head-agent-core-context-budget", capsule.budget) || formatForVerifiedOwner();
+  const format = familyFormatForOriginal("lode-agent-core-context-budget", capsule.budget) || formatForVerifiedOwner();
   const coverage = capsule.snapshot.coverage;
   const domains = capsule.repositoryWorldFreshness?.domains;
   const world =
@@ -33,7 +33,7 @@ function projection(capsule) {
       fullSnapshotReturned: false,
     },
     evidenceNeeds: {
-      owner: format.value("HEAD"),
+      owner: format.value("Lode"),
       specifiedCount: capsule.evidenceNeedContract.needs.length,
       unmet: capsule.evidenceGaps,
       semanticAcceptance: "not-assessed-Lode-owned",
@@ -58,7 +58,7 @@ function projection(capsule) {
       },
       intentionallyOmitted: capsule.omissions,
       remainingUncertainty: capsule.uncertainty,
-      semanticSufficiencyOwner: format.value("HEAD"),
+      semanticSufficiencyOwner: format.value("Lode"),
       userDecisionRequired: false,
       persisted: false,
     },

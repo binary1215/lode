@@ -86,7 +86,7 @@ function verifyCandidateSet(document, projectId, storage) {
   if (
     document.kind !== "DocumentChangeCandidateSet" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-document-change-candidates", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-document-change-candidates", document, storage) ||
     document.protocol?.version !== "0.1.0" ||
     document.projectId !== projectId ||
     document.authority !== "unreviewed-candidate" ||
@@ -148,7 +148,7 @@ function verifyReview(document, projectId, storage) {
   if (
     document.kind !== "ReviewDecision" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-document-change-review", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-document-change-review", document, storage) ||
     document.protocol?.version !== "0.1.0" ||
     document.decisionScope !== "document-to-product-canon" ||
     document.projectId !== projectId ||
@@ -170,7 +170,7 @@ function verifyProductRevision(document, projectId, storage) {
     document.kind !== "ProductModelRevision" ||
     document.schemaVersion !== 1 ||
     document.projectId !== projectId ||
-    !familyFormatForOriginal("head-agent-core-document-change-product-revision", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-document-change-product-revision", document, storage) ||
     document.protocol?.version !== "0.1.0" ||
     document.authority !== "explicit-user-reviewed-product-canon-revision" ||
     document.instructionAuthority !== true ||
@@ -180,7 +180,7 @@ function verifyProductRevision(document, projectId, storage) {
   }
   const model = normalizeProductModelDocument(
     document.document,
-    familyFormatForOriginal("head-agent-core-document-change-product-revision", document, storage),
+    familyFormatForOriginal("lode-agent-core-document-change-product-revision", document, storage),
   );
   if (model.productModelId !== document.productModelId || model.productModelHash !== document.productModelHash)
     fail("Document-change ProductModelRevision does not match its Product Model.", "INVALID_DOCUMENT_CHANGE_PROJECTION_PRODUCT_REVISION");
@@ -192,7 +192,7 @@ function verifyApplication(document, projectId, storage) {
   if (
     document.kind !== "DocumentCanonApplicationReceipt" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-document-change-application", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-document-change-application", document, storage) ||
     document.protocol?.version !== "0.1.0" ||
     document.projectId !== projectId ||
     document.authority !== "application-evidence-not-independent-authority" ||
@@ -245,7 +245,7 @@ export function verifyDocumentChangeProjectionInput(input, storage = undefined) 
   if (
     !input ||
     input.kind !== "DocumentChangeGraphProjectionInput" ||
-    !familyFormatForOriginal("head-agent-core-document-change-graph-projection", input, storage) ||
+    !familyFormatForOriginal("lode-agent-core-document-change-graph-projection", input, storage) ||
     input.protocol?.version !== DOCUMENT_CHANGE_GRAPH_PROJECTION_VERSION ||
     typeof input.projectId !== "string" ||
     !input.projectId ||
@@ -313,7 +313,7 @@ export function loadDocumentChangeProjection({ projectRoot, projectId, storage }
   const payload = {
     kind: "DocumentChangeGraphProjectionInput",
     protocol: {
-      name: formatForVerifiedOwner(storage).protocol("head-agent-core-document-change-graph-projection"),
+      name: formatForVerifiedOwner(storage).protocol("lode-agent-core-document-change-graph-projection"),
       version: DOCUMENT_CHANGE_GRAPH_PROJECTION_VERSION,
     },
     projectId,

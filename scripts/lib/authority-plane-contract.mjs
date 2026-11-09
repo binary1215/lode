@@ -207,7 +207,7 @@ export function authorityPlaneContract(storage = undefined) {
   const format = formatForVerifiedOwner(storage);
   const payload = {
     kind: "AuthorityPlaneContract",
-    protocol: { name: format.protocol("head-agent-core-authority-plane-contract"), version: AUTHORITY_PLANE_CONTRACT_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-authority-plane-contract"), version: AUTHORITY_PLANE_CONTRACT_VERSION },
     semanticPlanes: PLANE_DEFINITIONS,
     artifactPlanes: Object.fromEntries(Object.entries(ARTIFACT_PLANES).map(([kind, plane]) => [format.kind(kind), plane])),
     architecturalPlanes: {

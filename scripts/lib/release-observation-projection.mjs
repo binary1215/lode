@@ -62,7 +62,7 @@ export function verifyBranchStateObservation(document, projectId = "", storage) 
   if (
     document.schemaVersion !== SCHEMA_VERSION ||
     document.kind !== "BranchStateObservation" ||
-    !familyFormatForOriginal("head-agent-core-release-observation", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-release-observation", document, storage) ||
     document.protocol?.version !== RELEASE_OBSERVATION_VERSION ||
     (projectId && document.projectId !== projectId) ||
     document.vcsKind !== "git" ||
@@ -73,7 +73,7 @@ export function verifyBranchStateObservation(document, projectId = "", storage) 
     !authorityValid(document, "non-authoritative-branch-state-observation")
   )
     fail("BranchStateObservation fields or authority are invalid.", "INVALID_BRANCH_STATE_OBSERVATION");
-  verifyGitCommitObservation(document.commitObservation, familyFormatForOriginal("head-agent-core-release-observation", document, storage));
+  verifyGitCommitObservation(document.commitObservation, familyFormatForOriginal("lode-agent-core-release-observation", document, storage));
   if (document.commit !== document.commitObservation.objectId) fail("BranchStateObservation commit lineage is invalid.", "INVALID_BRANCH_STATE_OBSERVATION");
   return document;
 }
@@ -83,7 +83,7 @@ export function verifyDeploymentResultObservation(document, projectId = "", stor
   if (
     document.schemaVersion !== SCHEMA_VERSION ||
     document.kind !== "DeploymentResultObservation" ||
-    !familyFormatForOriginal("head-agent-core-release-observation", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-release-observation", document, storage) ||
     document.protocol?.version !== RELEASE_OBSERVATION_VERSION ||
     (projectId && document.projectId !== projectId) ||
     !DEPLOYMENT_STATUSES.has(document.status) ||
@@ -107,7 +107,7 @@ export function verifyReleaseObservation(document, projectId = "", storage) {
   if (
     document.schemaVersion !== SCHEMA_VERSION ||
     document.kind !== "ReleaseObservation" ||
-    !familyFormatForOriginal("head-agent-core-release-observation", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-release-observation", document, storage) ||
     document.protocol?.version !== RELEASE_OBSERVATION_VERSION ||
     (projectId && document.projectId !== projectId) ||
     !/^deployment-result-observation-[a-f0-9]{24}$/.test(document.deploymentResultObservationId || "") ||
@@ -166,10 +166,10 @@ function projectionPayload({ projectId, branchStates, deploymentResults, release
   return {
     schemaVersion: SCHEMA_VERSION,
     kind: "ReleaseObservationProjectionInput",
-    protocol: { name: format.protocol("head-agent-core-release-observation-projection"), version: RELEASE_OBSERVATION_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-release-observation-projection"), version: RELEASE_OBSERVATION_VERSION },
     projectId,
     commonObservationContract: {
-      protocol: { name: format.protocol("head-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
+      protocol: { name: format.protocol("lode-agent-core-observation"), version: OBSERVATION_PROTOCOL_VERSION },
       role: "domain-specialization-with-exact-git-and-approved-deployment-lineage",
       genericReplacement: false,
       semanticAuthority: false,
@@ -184,7 +184,7 @@ function projectionPayload({ projectId, branchStates, deploymentResults, release
 }
 
 export function verifyReleaseObservationProjectionInput(projection, storage = undefined) {
-  const format = familyFormatForOriginal("head-agent-core-release-observation-projection", projection, storage);
+  const format = familyFormatForOriginal("lode-agent-core-release-observation-projection", projection, storage);
   if (
     !projection ||
     projection.kind !== "ReleaseObservationProjectionInput" ||
@@ -193,7 +193,7 @@ export function verifyReleaseObservationProjectionInput(projection, storage = un
     !Array.isArray(projection.branchStates) ||
     !Array.isArray(projection.deploymentResults) ||
     !Array.isArray(projection.releases) ||
-    projection.commonObservationContract?.protocol?.name !== format.protocol("head-agent-core-observation") ||
+    projection.commonObservationContract?.protocol?.name !== format.protocol("lode-agent-core-observation") ||
     projection.commonObservationContract?.protocol?.version !== OBSERVATION_PROTOCOL_VERSION ||
     projection.commonObservationContract?.role !== "domain-specialization-with-exact-git-and-approved-deployment-lineage" ||
     projection.commonObservationContract?.genericReplacement !== false ||

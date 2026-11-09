@@ -128,7 +128,7 @@ function buildState(
   const payload = {
     schemaVersion: 1,
     kind: "FeatureMappingStatePointer",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-feature-mapping"), version: FEATURE_MAPPING_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-feature-mapping"), version: FEATURE_MAPPING_VERSION },
     projectId: requiredText(projectId, "projectId"),
     sessionId: requiredText(sessionId, "sessionId"),
     phase,
@@ -153,7 +153,7 @@ function verifyState(document, { projectId, sessionId }, storage) {
   if (document.pointerHash !== featureMappingDigest(featureMappingCanonicalJson(payload))) {
     fail("Feature mapping state pointer digest verification failed.", "FEATURE_MAPPING_STATE_DIGEST_MISMATCH");
   }
-  const originalFormat = familyFormatForOriginal("head-agent-core-feature-mapping", document, storage);
+  const originalFormat = familyFormatForOriginal("lode-agent-core-feature-mapping", document, storage);
   const rebuilt = originalFormat ? buildState({ ...payload }, originalFormat) : null;
   if (featureMappingCanonicalJson(rebuilt) !== featureMappingCanonicalJson(document) || document.projectId !== projectId || document.sessionId !== sessionId) {
     fail("Feature mapping state pointer identity is invalid.", "FEATURE_MAPPING_STATE_IDENTITY_MISMATCH");
@@ -222,7 +222,7 @@ function candidateArtifact({ relationshipType, from, to, evidenceIds, explanatio
     confidence: Number(confidence.toFixed(6)),
     sourceSnapshotId,
     origin,
-    producer: formatForVerifiedOwner(storage).protocol("head-agent-core-feature-mapping-proposal-normalizer"),
+    producer: formatForVerifiedOwner(storage).protocol("lode-agent-core-feature-mapping-proposal-normalizer"),
     producerVersion: FEATURE_MAPPING_VERSION,
     authorityClass: "candidate",
     instructionAuthority: false,
@@ -248,7 +248,7 @@ function candidateSetArtifact({ project, sessionId, worldModel, candidates, evid
   const payload = {
     schemaVersion: 1,
     kind: "FeatureMappingCandidateSet",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-feature-mapping-candidates"), version: FEATURE_MAPPING_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-feature-mapping-candidates"), version: FEATURE_MAPPING_VERSION },
     projectId: project.projectId,
     sessionId,
     worldModelId: worldModel.worldModelId,
@@ -404,7 +404,7 @@ function buildReviewDecision({ candidateSet, disposition, acceptedCandidateIds, 
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ReviewDecision",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-feature-mapping-review"), version: FEATURE_MAPPING_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-feature-mapping-review"), version: FEATURE_MAPPING_VERSION },
     decisionScope: "feature-implementation-mapping",
     projectId: candidateSet.projectId,
     sessionId: candidateSet.sessionId,

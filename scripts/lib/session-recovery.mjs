@@ -288,7 +288,7 @@ export function restoreSessionFromArtifacts({ root = ".", checkpointId = null } 
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "SessionRestoreProjection",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-artifact-session-restore"), version: SESSION_RECOVERY_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-artifact-session-restore"), version: SESSION_RECOVERY_VERSION },
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     ...directionView,
@@ -319,7 +319,7 @@ export function restoreSessionFromArtifacts({ root = ".", checkpointId = null } 
     reviewedRunIntegration,
     integrationEvidence,
     consumerInstruction: {
-      mode: formatForVerifiedOwner(inspected.storage).value("fresh-logical-head-from-verified-artifacts"),
+      mode: formatForVerifiedOwner(inspected.storage).value("fresh-logical-lode-from-verified-artifacts"),
       purpose: checkpoint.purpose,
       historicalCheckpointContext: { currentPosition: checkpoint.currentPosition, nextExpectedResult: checkpoint.nextExpectedResult },
       currentExecution: {
@@ -330,7 +330,7 @@ export function restoreSessionFromArtifacts({ root = ".", checkpointId = null } 
         lastReviewDecision,
         storageTransition,
       },
-      nextActionOwner: formatForVerifiedOwner(inspected.storage).value("current-head-assessment-not-historical-checkpoint-replay"),
+      nextActionOwner: formatForVerifiedOwner(inspected.storage).value("current-lode-assessment-not-historical-checkpoint-replay"),
       historicalApprovalGrantsCurrentEffect: false,
       ...(currentProjectDirection
         ? { currentProjectDirection, commonDirectionPrecedence: "current-common-constraints-and-cancellations-apply-before-historical-session-intent" }
@@ -388,7 +388,7 @@ function integrationInput({ runId, reviewDecisionId, purpose, approvedDecisions,
 function verifyIntegrationRequest(root, request, expectedInput = null, expectedInputHash = null, storage) {
   if (
     request?.kind !== "RunResultIntegrationRequest" ||
-    !familyFormatForOriginal("head-agent-core-run-result-integration", request, storage) ||
+    !familyFormatForOriginal("lode-agent-core-run-result-integration", request, storage) ||
     request.protocol?.version !== HISTORICAL_INTEGRATION_VERSION
   ) {
     fail("Run result integration request is invalid.", "INVALID_RUN_RESULT_INTEGRATION_REQUEST");
@@ -439,7 +439,7 @@ function verifyIntegrationRequest(root, request, expectedInput = null, expectedI
 function verifyIntegrationReceipt(root, receipt, expectedReviewDecisionId = null, storage) {
   if (
     receipt?.kind !== "RunResultIntegrationReceipt" ||
-    !familyFormatForOriginal("head-agent-core-run-result-integration", receipt, storage) ||
+    !familyFormatForOriginal("lode-agent-core-run-result-integration", receipt, storage) ||
     receipt.protocol?.version !== HISTORICAL_INTEGRATION_VERSION ||
     receipt.reviewDecisionId !== (expectedReviewDecisionId || receipt.reviewDecisionId)
   ) {

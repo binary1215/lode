@@ -81,7 +81,7 @@ async function inspectGraphLineageWithReader({ root = ".", cursor = "", limit = 
   const segmentHash = digest(canonicalJson(segmentPayload));
   return {
     kind: "GraphLineageStatusProjection",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-graph-lineage-view"), version: GRAPH_LINEAGE_VIEW_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-graph-lineage-view"), version: GRAPH_LINEAGE_VIEW_VERSION },
     projectId: inspected.project.projectId,
     currentWorldModelId: current.snapshot.worldModelId,
     totalRetainedSnapshots: ids.length,
@@ -187,7 +187,7 @@ export async function traceGraphLineage({
     );
   return {
     kind: "GraphLineageTraceProjection",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-graph-lineage-view"), version: GRAPH_LINEAGE_VIEW_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-graph-lineage-view"), version: GRAPH_LINEAGE_VIEW_VERSION },
     projectId: inspected.project.projectId,
     worldModelId: snapshot.worldModelId,
     graphSnapshotId: graph.graphSnapshotId,
@@ -525,7 +525,7 @@ async function diffGraphLineageWithReader(
   return {
     kind: "GraphLineageDiffProjection",
     protocol: {
-      name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-graph-lineage-view"),
+      name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-graph-lineage-view"),
       version: scoped ? "0.3.0" : GRAPH_LINEAGE_VIEW_VERSION,
     },
     projectId: inspected.project.projectId,

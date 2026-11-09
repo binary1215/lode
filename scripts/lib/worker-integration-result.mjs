@@ -166,7 +166,7 @@ function resultFields(document) {
     ],
     verification: [
       {
-        kind: lineageFormat(document.lineage).kind("HeadWorkerIntegrationVerification"),
+        kind: lineageFormat(document.lineage).kind("LodeWorkerIntegrationVerification"),
         basisDigest: document.basisDigest,
         headReportDigest: digest(json(report)),
         checks: report.verification,
@@ -379,7 +379,7 @@ function readApplication(root, intent) {
     application.status !== "whole-result-published-awaiting-review" ||
     application.freshHeadReviewRequired !== true ||
     !validHash(application.reviewContextHash) ||
-    application.reviewContextId !== `${lineageFormat(intent.lineage).value("fresh-head-review")}-${application.reviewContextHash.slice(0, 24)}`
+    application.reviewContextId !== `${lineageFormat(intent.lineage).value("fresh-lode-review")}-${application.reviewContextHash.slice(0, 24)}`
   )
     fail("Integration result receipt differs from its frozen provenance.");
   const resultPacket = readLineageArtifact({ root, artifactId: application.resultPacketId }).artifact;

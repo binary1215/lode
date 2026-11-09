@@ -87,7 +87,7 @@ function agentDescriptor(runtime, storage) {
     disabledOperations: [...AGENT_RUNTIME_CONTROL_OPERATIONS],
     tuiScraping: false,
     providerSessionIdentity: "external-reference-only",
-    [format.value("headSessionIdentity")]: "canonical-project-session",
+    [format.value("lodeSessionIdentity")]: "canonical-project-session",
     capabilityAuthority: "none",
     executionContractRequired: true,
     controlOperationsEnabled: false,
@@ -164,7 +164,7 @@ function probeFromDescriptor(kind, descriptor, storage) {
   const payload = {
     schemaVersion: 1,
     kind,
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-runtime-adapter-probe"), version: RUNTIME_ADAPTER_CONTRACT_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-runtime-adapter-probe"), version: RUNTIME_ADAPTER_CONTRACT_VERSION },
     descriptor,
     status: activeWorkspaceHost ? "active" : "contract-only",
     availability: activeWorkspaceHost ? "configured" : "not-activated",
@@ -190,7 +190,7 @@ function validateAgentDescriptor(descriptor, selectedFormat) {
       "disabledOperations",
       "tuiScraping",
       "providerSessionIdentity",
-      format.value("headSessionIdentity"),
+      format.value("lodeSessionIdentity"),
       "capabilityAuthority",
       "executionContractRequired",
       "controlOperationsEnabled",
@@ -273,14 +273,14 @@ function validateHostDescriptor(descriptor) {
 function validateProbe(document, { kind, descriptorValidator, prefix }) {
   assertFields(document, ["schemaVersion", "kind", "protocol", "descriptor", "status", "availability", "authorityEffect", "probeId", "probeHash"], kind);
   assertFields(document.protocol, ["name", "version"], `${kind} protocol`);
-  const format = familyFormatForOriginal("head-agent-core-runtime-adapter-probe", document);
+  const format = familyFormatForOriginal("lode-agent-core-runtime-adapter-probe", document);
   descriptorValidator(document.descriptor, format);
   const activeWorkspaceHost = kind === "WorkspaceHostProbe" && document.descriptor.adapterKind === "verified-host-endpoint";
   if (
     document.schemaVersion !== 1 ||
     document.kind !== kind ||
     !format ||
-    document.protocol.name !== format.protocol("head-agent-core-runtime-adapter-probe") ||
+    document.protocol.name !== format.protocol("lode-agent-core-runtime-adapter-probe") ||
     document.protocol.version !== RUNTIME_ADAPTER_CONTRACT_VERSION ||
     document.status !== (activeWorkspaceHost ? "active" : "contract-only") ||
     document.availability !== (activeWorkspaceHost ? "configured" : "not-activated") ||
@@ -437,7 +437,7 @@ function activationBoundaryFor(workspaceHostProbe, storage) {
     workspaceHostMessagingEnabled,
     capabilityDoesNotGrantAuthorization: true,
     executionContractRequired: true,
-    [formatForVerifiedOwner(storage).value("headSessionIdentityIndependent")]: true,
+    [formatForVerifiedOwner(storage).value("lodeSessionIdentityIndependent")]: true,
     providerSessionReferencesOperationalOnly: true,
     tuiScrapingAllowed: false,
   };
@@ -483,7 +483,7 @@ export function buildRuntimeAdapterComposition({
   const payload = {
     schemaVersion: 1,
     kind: "RuntimeAdapterComposition",
-    protocol: { name: format.protocol("head-agent-core-runtime-adapter-composition"), version: RUNTIME_ADAPTER_CONTRACT_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-runtime-adapter-composition"), version: RUNTIME_ADAPTER_CONTRACT_VERSION },
     selectedRuntimes,
     platformProbe: selectedPlatform.probe(),
     workspaceHostProbe,
@@ -499,7 +499,7 @@ export function buildRuntimeAdapterComposition({
 }
 
 export function verifyRuntimeAdapterComposition(document) {
-  const format = familyFormatForOriginal("head-agent-core-runtime-adapter-composition", document);
+  const format = familyFormatForOriginal("lode-agent-core-runtime-adapter-composition", document);
   assertFields(
     document,
     [
@@ -531,7 +531,7 @@ export function verifyRuntimeAdapterComposition(document) {
       "workspaceHostMessagingEnabled",
       "capabilityDoesNotGrantAuthorization",
       "executionContractRequired",
-      format?.value("headSessionIdentityIndependent") || "headSessionIdentityIndependent",
+      format?.value("lodeSessionIdentityIndependent") || "headSessionIdentityIndependent",
       "providerSessionReferencesOperationalOnly",
       "tuiScrapingAllowed",
     ],
@@ -547,12 +547,12 @@ export function verifyRuntimeAdapterComposition(document) {
   if (
     canonicalJson(probes.map((probe) => probe.descriptor.runtime)) !== canonicalJson(runtimes) ||
     [document.platformProbe, document.workspaceHostProbe, ...probes].some(
-      (probe) => !format || probe.protocol.name !== format.protocol("head-agent-core-runtime-adapter-probe"),
+      (probe) => !format || probe.protocol.name !== format.protocol("lode-agent-core-runtime-adapter-probe"),
     ) ||
     document.schemaVersion !== 1 ||
     document.kind !== "RuntimeAdapterComposition" ||
     !format ||
-    document.protocol.name !== format.protocol("head-agent-core-runtime-adapter-composition") ||
+    document.protocol.name !== format.protocol("lode-agent-core-runtime-adapter-composition") ||
     document.protocol.version !== RUNTIME_ADAPTER_CONTRACT_VERSION ||
     canonicalJson(document.activationBoundary) !== canonicalJson(activationBoundaryFor(document.workspaceHostProbe, format)) ||
     document.authority !== "operational-capability-contract-only" ||

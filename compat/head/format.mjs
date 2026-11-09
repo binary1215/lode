@@ -160,13 +160,21 @@ export const VALUE_PAIRS = Object.freeze({
   "current-head-assessment-not-historical-checkpoint-replay": "current-lode-assessment-not-historical-checkpoint-replay",
   head: "lode",
 });
+// Source code names each wire value by its canonical Lode spelling. The head
+// dialect reads and writes the historical spelling through these inverses; a
+// historical spelling passed in is returned unchanged.
+const inverse = (pairs) => Object.freeze(Object.fromEntries(Object.entries(pairs).map(([legacy, canonical]) => [canonical, legacy])));
+export const LEGACY_PROTOCOLS = inverse(PROTOCOL_PAIRS);
+export const LEGACY_KINDS = inverse(KIND_PAIRS);
+export const LEGACY_VALUES = inverse(VALUE_PAIRS);
+const legacySpelling = (table) => (value) => (Object.hasOwn(table, value) ? table[value] : value);
 export const LEGACY_FORMAT = Object.freeze({
   dialect: "head",
   directory: ".head",
   projectPrefix: "head-",
   roleField: "head",
   sessionIdField: "headSessionId",
-  protocol: (value) => value,
-  kind: (value) => value,
-  value: (value) => value,
+  protocol: legacySpelling(LEGACY_PROTOCOLS),
+  kind: legacySpelling(LEGACY_KINDS),
+  value: legacySpelling(LEGACY_VALUES),
 });

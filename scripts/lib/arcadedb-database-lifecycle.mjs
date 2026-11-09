@@ -70,7 +70,7 @@ function compatibilityFor(records, storage) {
   // A new namespace must not adopt or migrate the existing HEAD DB schema.
   if (formatForVerifiedOwner(storage).dialect === "lode") {
     for (const legacy of ARCADEDB_GRAPH_RESERVED_SCHEMA) {
-      if (byName.has(legacy.name))
+      if (byName.has(formatForVerifiedOwner().kind(legacy.name)))
         conflicts.push({
           reservedType: formatForVerifiedOwner(storage).kind(legacy.name),
           field: "namespace",
@@ -161,7 +161,7 @@ function auditIdentity(payload) {
 }
 
 export function verifyArcadeDbDatabaseCompatibilityAudit(document) {
-  const format = familyFormatForOriginal("head-agent-core-arcadedb-database-lifecycle", document);
+  const format = familyFormatForOriginal("lode-agent-core-arcadedb-database-lifecycle", document);
   if (
     !document ||
     document.kind !== "ArcadeDbDatabaseCompatibilityAudit" ||
@@ -281,7 +281,7 @@ export function inspectArcadeDbDatabaseCompatibility({ root = ".", transport = n
   return auditIdentity({
     schemaVersion: 1,
     kind: "ArcadeDbDatabaseCompatibilityAudit",
-    protocol: { name: format.protocol("head-agent-core-arcadedb-database-lifecycle"), version: ARCADEDB_DATABASE_LIFECYCLE_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-arcadedb-database-lifecycle"), version: ARCADEDB_DATABASE_LIFECYCLE_VERSION },
     projectId: storageSelection.projectId,
     storageSelectionId: storageSelection.storageSelectionId,
     storageSelectionHash: storageSelection.storageSelectionHash,
@@ -316,7 +316,7 @@ function receiptFor({ storageSelection, before, after, action, invalidatedPointe
   const payload = {
     schemaVersion: 1,
     kind: "ArcadeDbDatabaseLifecycleReceipt",
-    protocol: { name: format.protocol("head-agent-core-arcadedb-database-lifecycle"), version: ARCADEDB_DATABASE_LIFECYCLE_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-arcadedb-database-lifecycle"), version: ARCADEDB_DATABASE_LIFECYCLE_VERSION },
     projectId: storageSelection.projectId,
     storageSelectionId: storageSelection.storageSelectionId,
     storageSelectionHash: storageSelection.storageSelectionHash,
@@ -337,7 +337,7 @@ function receiptFor({ storageSelection, before, after, action, invalidatedPointe
 }
 
 export function verifyArcadeDbDatabaseLifecycleReceipt(document) {
-  const format = familyFormatForOriginal("head-agent-core-arcadedb-database-lifecycle", document);
+  const format = familyFormatForOriginal("lode-agent-core-arcadedb-database-lifecycle", document);
   if (
     !document ||
     document.kind !== "ArcadeDbDatabaseLifecycleReceipt" ||

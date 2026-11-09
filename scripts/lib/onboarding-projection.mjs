@@ -125,7 +125,7 @@ function verifyCandidate(candidate, format) {
     !Number.isFinite(candidate.confidence) ||
     candidate.confidence < 0 ||
     candidate.confidence > 1 ||
-    !new Set([format.protocol("head-agent-core-semantic-proposal-normalizer"), format.protocol("head-agent-core-user-brief-normalizer")]).has(
+    !new Set([format.protocol("lode-agent-core-semantic-proposal-normalizer"), format.protocol("lode-agent-core-user-brief-normalizer")]).has(
       candidate.producer,
     ) ||
     candidate.producerVersion !== CANDIDATE_PROTOCOL_VERSION ||
@@ -148,7 +148,7 @@ export function verifyOnboardingCandidateSetForProjection(document, projectId = 
     label: "Onboarding candidate set",
   });
   const candidateProtocolVersion = document.protocol?.version;
-  const format = familyFormatForOriginal("head-agent-core-onboarding-candidates", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-onboarding-candidates", document, storage);
   if (
     !format ||
     document.kind !== "OnboardingCandidateSet" ||
@@ -269,8 +269,8 @@ export function verifyOnboardingReviewDecisionForProjection(document, candidateS
     label: "Onboarding ReviewDecision",
   });
   const dispositions = new Set(["accept-all", "accept-selection", "revise", "reject"]);
-  const format = familyFormatForOriginal("head-agent-core-onboarding-review", document);
-  const candidateFormat = familyFormatForOriginal("head-agent-core-onboarding-candidates", candidateSet);
+  const format = familyFormatForOriginal("lode-agent-core-onboarding-review", document);
+  const candidateFormat = familyFormatForOriginal("lode-agent-core-onboarding-candidates", candidateSet);
   if (
     !format ||
     !candidateFormat ||
@@ -441,7 +441,7 @@ export function loadOnboardingGraphProjection({
       const relative = `${relativeDirectory}/${document[idField]}.json`;
       const entry = historicalEntryForPath(historical, relative, role);
       if (!entry) {
-        if (familyFormatForOriginal("head-agent-core-onboarding-candidates", document) && document.protocol?.version !== CANDIDATE_PROTOCOL_VERSION) {
+        if (familyFormatForOriginal("lode-agent-core-onboarding-candidates", document) && document.protocol?.version !== CANDIDATE_PROTOCOL_VERSION) {
           fail(`Unsupported historical artifact is outside the committed boundary: ${relative}`, "HISTORICAL_BOUNDARY_COVERAGE_DRIFT");
         }
         current.push(document);
@@ -530,7 +530,7 @@ export function loadOnboardingGraphProjection({
     : [];
   const payload = {
     kind: "OnboardingGraphProjectionInput",
-    protocol: { name: format.protocol("head-agent-core-onboarding-graph-projection"), version: ONBOARDING_GRAPH_PROJECTION_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-onboarding-graph-projection"), version: ONBOARDING_GRAPH_PROJECTION_VERSION },
     projectId,
     currentProductModelId,
     candidateSets,
@@ -567,7 +567,7 @@ export function loadOnboardingGraphProjection({
 }
 
 export function verifyOnboardingGraphProjectionInput(document) {
-  const format = familyFormatForOriginal("head-agent-core-onboarding-graph-projection", document);
+  const format = familyFormatForOriginal("lode-agent-core-onboarding-graph-projection", document);
   if (
     !document ||
     document.kind !== "OnboardingGraphProjectionInput" ||

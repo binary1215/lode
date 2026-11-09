@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { verifyProjectLocation, safeLocationFile, locationJournalRelative } from "./project-location-proof.mjs";
-import { LEGACY_FORMAT, PROTOCOL_PAIRS, KIND_PAIRS, VALUE_PAIRS } from "../../compat/head/format.mjs";
+import { LEGACY_FORMAT, LEGACY_PROTOCOLS, PROTOCOL_PAIRS, KIND_PAIRS, VALUE_PAIRS } from "../../compat/head/format.mjs";
 import { verifyCopiedGitOwner, verifyCopiedGitRef } from "./project-copy-git-proof.mjs";
 import { verifyCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { sha256Hex as digest } from "./core/digest.mjs";
@@ -50,14 +50,22 @@ export function familyFormatForOriginal(family, record, expectedOwner) {
     const hasLegacy = Object.hasOwn(record, "headSessionId"),
       hasLode = Object.hasOwn(record, "lodeSessionId");
     if (hasLegacy && hasLode) return null;
-    const brandedKind = Object.hasOwn(KIND_PAIRS, family.kind) && record.kind === KIND_PAIRS[family.kind];
+    const brandedKind = lodeFormat.kind(family.kind) !== LEGACY_FORMAT.kind(family.kind) && record.kind === lodeFormat.kind(family.kind);
     const format = hasLode || brandedKind ? lodeFormat : hasLegacy ? LEGACY_FORMAT : formatForVerifiedOwner(expectedOwner);
     if (record.kind !== format.kind(family.kind)) return null;
     if (expectedOwner != null && formatForVerifiedOwner(expectedOwner).dialect !== format.dialect) return null;
     return format;
   }
-  const legacy = typeof family === "string" ? family : family?.legacy;
-  const canonical = typeof family === "string" ? (Object.hasOwn(PROTOCOL_PAIRS, family) ? PROTOCOL_PAIRS[family] : null) : family?.lode;
+  // A family is named by either spelling of a registered protocol.
+  const named = typeof family === "string";
+  const legacy = named ? (Object.hasOwn(LEGACY_PROTOCOLS, family) ? LEGACY_PROTOCOLS[family] : family) : family?.legacy;
+  const canonical = named
+    ? Object.hasOwn(PROTOCOL_PAIRS, family)
+      ? PROTOCOL_PAIRS[family]
+      : Object.hasOwn(LEGACY_PROTOCOLS, family)
+        ? family
+        : null
+    : family?.lode;
   if (!legacy || !canonical || !record || typeof record !== "object") return null;
   const originalProtocol = typeof record.protocol === "string" ? record.protocol : record.protocol?.name;
   const format = originalProtocol === legacy ? LEGACY_FORMAT : originalProtocol === canonical ? lodeFormat : null;

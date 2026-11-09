@@ -99,7 +99,7 @@ function projectionPayload({ projectId, descriptors, observations, derivedObserv
   return {
     schemaVersion: SCHEMA_VERSION,
     kind: "ObservationStatusProjection",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-observation-projection"), version: OBSERVATION_PROTOCOL_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-observation-projection"), version: OBSERVATION_PROTOCOL_VERSION },
     projectId,
     descriptorIds: descriptors.map((item) => item.descriptorId),
     observationIds: observations.map((item) => item.observationId),
@@ -121,7 +121,7 @@ function projectionPayload({ projectId, descriptors, observations, derivedObserv
 }
 
 export function verifyObservationProjection(document, projectId = "", storage) {
-  const format = familyFormatForOriginal("head-agent-core-observation-projection", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-observation-projection", document, storage);
   if (!document || typeof document !== "object" || Array.isArray(document)) fail("ObservationStatusProjection is invalid.", "INVALID_OBSERVATION_PROJECTION");
   const payload = { ...document };
   delete payload.projectionId;
@@ -311,7 +311,7 @@ export function queryObservations({
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ObservationQueryProjection",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-observation-query"), version: OBSERVATION_PROTOCOL_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-observation-query"), version: OBSERVATION_PROTOCOL_VERSION },
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     sourceProjectionId: projection.projectionId,

@@ -790,7 +790,7 @@ export async function inspectRuntimeAdapters(root = ".") {
     projectStatus: inspected.status,
     ...contracts,
     status:
-      projectBinding.status === formatForVerifiedOwner(inspected).value("verified-head-project-session-capability-binding")
+      projectBinding.status === formatForVerifiedOwner(inspected).value("verified-lode-project-session-capability-binding")
         ? "bounded-non-session-protocol-and-project-binding-verified"
         : "bounded-non-session-protocol-and-project-binding-partial",
     machineInterfaces,

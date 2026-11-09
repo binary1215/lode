@@ -480,7 +480,7 @@ export async function prepareConformanceAssessment({ root = ".", limit = 32, pro
   return {
     schemaVersion: SCHEMA_VERSION,
     kind: "ConformancePreparationProjection",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-conformance-reconciliation"), version: CONFORMANCE_PROTOCOL_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-conformance-reconciliation"), version: CONFORMANCE_PROTOCOL_VERSION },
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     projectionId: currentProjectionId,
@@ -490,7 +490,7 @@ export async function prepareConformanceAssessment({ root = ".", limit = 32, pro
     nextCursor: remaining ? { projectionId: currentProjectionId, cursor: `${page.at(-1).kind}:${page.at(-1).key}` } : null,
     resynchronization: { occurred: resynchronized, reason: resynchronized ? "stale-or-missing-read-only-cursor" : null, restartedAtFirstPage: resynchronized },
     workflow: {
-      semanticAssessmentOwner: formatForVerifiedOwner(inspected.storage).value("provider-head"),
+      semanticAssessmentOwner: formatForVerifiedOwner(inspected.storage).value("provider-lode"),
       coreRole: "exact-anchor-validation-only",
       userStructuredInputRequired: false,
       ordinaryWorkBlocked: false,
@@ -688,7 +688,7 @@ export async function inspectConformanceQueue({
   return {
     schemaVersion: SCHEMA_VERSION,
     kind: "ConformanceQueueProjection",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-conformance-reconciliation"), version: CONFORMANCE_PROTOCOL_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-conformance-reconciliation"), version: CONFORMANCE_PROTOCOL_VERSION },
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     projectionId: currentProjectionId,

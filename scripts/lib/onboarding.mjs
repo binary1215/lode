@@ -277,8 +277,8 @@ function candidateArtifact({ kind, entity, evidenceIds, explanation, confidence,
     origin: requiredText(origin, "Candidate origin"),
     producer:
       origin === "user-owned-brief-candidate"
-        ? format.protocol("head-agent-core-user-brief-normalizer")
-        : format.protocol("head-agent-core-semantic-proposal-normalizer"),
+        ? format.protocol("lode-agent-core-user-brief-normalizer")
+        : format.protocol("lode-agent-core-semantic-proposal-normalizer"),
     producerVersion: ONBOARDING_INFERENCE_VERSION,
     authorityClass: "candidate",
     instructionAuthority: false,
@@ -334,7 +334,7 @@ function buildCandidateSet(
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "OnboardingCandidateSet",
-    protocol: { name: formatForVerifiedOwner(storageOwner).protocol("head-agent-core-onboarding-candidates"), version: ONBOARDING_CANDIDATE_VERSION },
+    protocol: { name: formatForVerifiedOwner(storageOwner).protocol("lode-agent-core-onboarding-candidates"), version: ONBOARDING_CANDIDATE_VERSION },
     projectId,
     sessionId,
     inputMode,
@@ -367,7 +367,7 @@ function buildCandidateSet(
 }
 
 function verifyCandidateSet(document, projectId = "") {
-  const storageOwner = familyFormatForOriginal("head-agent-core-onboarding-candidates", document);
+  const storageOwner = familyFormatForOriginal("lode-agent-core-onboarding-candidates", document);
   if (!document || document.kind !== "OnboardingCandidateSet") fail("Onboarding candidate set is invalid.", "INVALID_ONBOARDING_CANDIDATE_SET");
   const payload = { ...document };
   delete payload.candidateSetId;
@@ -535,7 +535,7 @@ function normalizedBrief(brief, storageOwner) {
 }
 
 function semanticProposalRequiredUnknown(sourceSnapshotId, storageOwner) {
-  const statement = `Fresh ${formatForVerifiedOwner(storageOwner).value("HEAD")} semantic product candidates are required. Core intentionally does not infer product meaning from file names, symbols, or lexical overlap.`;
+  const statement = `Fresh ${formatForVerifiedOwner(storageOwner).value("Lode")} semantic product candidates are required. Core intentionally does not infer product meaning from file names, symbols, or lexical overlap.`;
   const hash = onboardingDigest(onboardingCanonicalJson({ sourceSnapshotId, kind: "semantic-product-proposal-required", statement }));
   return { unknownId: `onboarding-unknown-${hash.slice(0, 24)}`, statement, evidenceIds: [], status: "open" };
 }
@@ -602,7 +602,7 @@ function candidatesFromSemanticProposal(proposal, worldModel, projectRoot, stora
     const evidenceIds = evidenceInput.map((record, evidenceIndex) => {
       const normalized = normalizedProposalEvidence(record, evidenceIndex, { projectRoot, sourceSnapshotId, filesByPath });
       const evidence = evidenceRecord({
-        sourceKind: formatForVerifiedOwner(storageOwner).value(normalized.symbol ? "head-semantic-proposal-symbol" : "head-semantic-proposal-source"),
+        sourceKind: formatForVerifiedOwner(storageOwner).value(normalized.symbol ? "lode-semantic-proposal-symbol" : "lode-semantic-proposal-source"),
         sourceId: sourceSnapshotId,
         path: normalized.relativePath,
         line: normalized.line,
@@ -622,7 +622,7 @@ function candidatesFromSemanticProposal(proposal, worldModel, projectRoot, stora
         explanation: requiredText(item.explanation, `Semantic product candidate ${candidateIndex}.explanation`),
         confidence: item.confidence,
         sourceSnapshotId,
-        origin: formatForVerifiedOwner(storageOwner).value("fresh-head-semantic-proposal"),
+        origin: formatForVerifiedOwner(storageOwner).value("fresh-lode-semantic-proposal"),
       },
       storageOwner,
     );
@@ -1085,7 +1085,7 @@ async function refreshOnboardingCandidatesLocked({ root = ".", semanticProposal 
     return {
       status: "onboarding_semantic_reproposal_required",
       refreshed: false,
-      reason: formatForVerifiedOwner(storageOwner).value("source-snapshot-changed-fresh-head-semantic-proposal-required"),
+      reason: formatForVerifiedOwner(storageOwner).value("source-snapshot-changed-fresh-lode-semantic-proposal-required"),
       state,
       candidateSet: previousSet,
       currentSourceSnapshotId: world.snapshot.temporalProvenanceGraph.sourceSnapshotId,
@@ -1276,7 +1276,7 @@ function buildReviewDecision(
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "ReviewDecision",
-    protocol: { name: formatForVerifiedOwner(storageOwner).protocol("head-agent-core-onboarding-review"), version: ONBOARDING_REVIEW_VERSION },
+    protocol: { name: formatForVerifiedOwner(storageOwner).protocol("lode-agent-core-onboarding-review"), version: ONBOARDING_REVIEW_VERSION },
     decisionScope: "product-canon-bootstrap",
     projectId: candidateSet.projectId,
     sessionId: candidateSet.sessionId,

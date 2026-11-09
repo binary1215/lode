@@ -104,7 +104,7 @@ export function verifyChangeSet(document, projectId = "", storage = undefined) {
   if (
     document.schemaVersion !== 1 ||
     document.kind !== "ChangeSet" ||
-    !familyFormatForOriginal("head-agent-core-change-set", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-change-set", document, storage) ||
     !["0.1.0", "0.2.0", CHANGE_SET_RECORD_VERSION].includes(document.protocol?.version) ||
     (projectId && document.projectId !== projectId) ||
     typeof document.sessionId !== "string" ||
@@ -150,7 +150,7 @@ export function verifyGitCommitObservation(document, storage = undefined) {
   if (
     document.schemaVersion !== 1 ||
     document.kind !== "GitCommitObservation" ||
-    !familyFormatForOriginal("head-agent-core-git-commit-observation", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-git-commit-observation", document, storage) ||
     document.protocol?.version !== VCS_EVIDENCE_VERSION ||
     document.vcsKind !== "git" ||
     !/^[a-f0-9]{40,64}$/.test(document.objectId || "") ||
@@ -187,7 +187,7 @@ export function verifyVcsEvidence(document, changeSet, projectId = "", storage =
   if (
     document.schemaVersion !== 1 ||
     document.kind !== "VcsEvidence" ||
-    !familyFormatForOriginal("head-agent-core-vcs-evidence", document, storage ?? familyFormatForOriginal("head-agent-core-change-set", changeSet)) ||
+    !familyFormatForOriginal("lode-agent-core-vcs-evidence", document, storage ?? familyFormatForOriginal("lode-agent-core-change-set", changeSet)) ||
     document.protocol?.version !== VCS_EVIDENCE_VERSION ||
     (projectId && document.projectId !== projectId) ||
     !changeSet ||
@@ -214,7 +214,7 @@ export function verifyVcsEvidence(document, changeSet, projectId = "", storage =
   const observationIds = new Set();
   const objectIds = new Set();
   for (const observation of document.commitObservations) {
-    verifyGitCommitObservation(observation, familyFormatForOriginal("head-agent-core-vcs-evidence", document, storage));
+    verifyGitCommitObservation(observation, familyFormatForOriginal("lode-agent-core-vcs-evidence", document, storage));
     if (observationIds.has(observation.gitCommitObservationId) || objectIds.has(observation.objectId)) {
       fail("VCS evidence contains a duplicate commit observation.", "DUPLICATE_GIT_COMMIT_OBSERVATION");
     }
@@ -232,7 +232,7 @@ function verifyImpactCandidate(candidate, changeSet, storage) {
   if (
     candidate.schemaVersion !== 1 ||
     candidate.kind !== "ChangeImpactCandidate" ||
-    (candidate.protocol != null && !familyFormatForOriginal("head-agent-core-change-impact-candidates", candidate, storage)) ||
+    (candidate.protocol != null && !familyFormatForOriginal("lode-agent-core-change-impact-candidates", candidate, storage)) ||
     candidate.relationshipType !== "IMPACTS" ||
     candidate.changeSetId !== changeSet.changeSetId ||
     !["Feature", "Capability"].includes(candidate.target.kind) ||
@@ -272,9 +272,9 @@ export function verifyChangeImpactCandidateSet(document, changeSet, projectId = 
     document.schemaVersion !== 1 ||
     document.kind !== "ChangeImpactCandidateSet" ||
     !familyFormatForOriginal(
-      "head-agent-core-change-impact-candidates",
+      "lode-agent-core-change-impact-candidates",
       document,
-      storage ?? familyFormatForOriginal("head-agent-core-change-set", changeSet),
+      storage ?? familyFormatForOriginal("lode-agent-core-change-set", changeSet),
     ) ||
     !["0.1.0", CHANGE_SET_VERSION].includes(document.protocol?.version) ||
     (projectId && document.projectId !== projectId) ||
@@ -293,7 +293,7 @@ export function verifyChangeImpactCandidateSet(document, changeSet, projectId = 
   }
   const ids = new Set();
   for (const candidate of document.candidates) {
-    verifyImpactCandidate(candidate, changeSet, familyFormatForOriginal("head-agent-core-change-impact-candidates", document, storage));
+    verifyImpactCandidate(candidate, changeSet, familyFormatForOriginal("lode-agent-core-change-impact-candidates", document, storage));
     if (ids.has(candidate.candidateId)) fail("Duplicate Change impact candidate.", "DUPLICATE_CHANGE_IMPACT_CANDIDATE");
     ids.add(candidate.candidateId);
   }
@@ -382,9 +382,9 @@ export function verifyChangeImpactReviewDecision(document, candidateSet, project
     document.schemaVersion !== 1 ||
     document.kind !== "ReviewDecision" ||
     !familyFormatForOriginal(
-      "head-agent-core-change-impact-review",
+      "lode-agent-core-change-impact-review",
       document,
-      storage ?? familyFormatForOriginal("head-agent-core-change-impact-candidates", candidateSet),
+      storage ?? familyFormatForOriginal("lode-agent-core-change-impact-candidates", candidateSet),
     ) ||
     !["0.1.0", CHANGE_SET_VERSION].includes(document.protocol?.version) ||
     document.decisionScope !== "change-impact" ||
@@ -470,7 +470,7 @@ export function verifyChangeSetProjectionInput(projection, storage = undefined) 
   if (
     !projection ||
     projection.kind !== "ChangeSetProjectionInput" ||
-    !familyFormatForOriginal("head-agent-core-change-set-projection", projection, storage) ||
+    !familyFormatForOriginal("lode-agent-core-change-set-projection", projection, storage) ||
     !["0.1.0", "0.2.0", CHANGE_SET_PROJECTION_VERSION].includes(projectionVersion) ||
     !Array.isArray(projection.changeSets) ||
     !Array.isArray(projection.candidateSets) ||
@@ -481,7 +481,7 @@ export function verifyChangeSetProjectionInput(projection, storage = undefined) 
   }
   const changeSets = new Map();
   for (const changeSet of projection.changeSets) {
-    verifyChangeSet(changeSet, projection.projectId, familyFormatForOriginal("head-agent-core-change-set-projection", projection, storage));
+    verifyChangeSet(changeSet, projection.projectId, familyFormatForOriginal("lode-agent-core-change-set-projection", projection, storage));
     if (changeSets.has(changeSet.changeSetId)) fail("Duplicate ChangeSet.", "DUPLICATE_CHANGE_SET");
     changeSets.set(changeSet.changeSetId, changeSet);
   }
@@ -508,7 +508,7 @@ export function verifyChangeSetProjectionInput(projection, storage = undefined) 
       candidateSet,
       changeSet,
       projection.projectId,
-      familyFormatForOriginal("head-agent-core-change-set-projection", projection, storage),
+      familyFormatForOriginal("lode-agent-core-change-set-projection", projection, storage),
     );
     candidateSets.set(candidateSet.candidateSetId, candidateSet);
   }
@@ -520,7 +520,7 @@ export function verifyChangeSetProjectionInput(projection, storage = undefined) 
       review,
       candidateSet,
       projection.projectId,
-      familyFormatForOriginal("head-agent-core-change-set-projection", projection, storage),
+      familyFormatForOriginal("lode-agent-core-change-set-projection", projection, storage),
     );
     if (reviewIds.has(review.reviewDecisionId)) fail("Duplicate Change impact ReviewDecision.", "DUPLICATE_CHANGE_IMPACT_REVIEW");
     reviewIds.add(review.reviewDecisionId);
@@ -529,7 +529,7 @@ export function verifyChangeSetProjectionInput(projection, storage = undefined) 
   for (const evidence of projection.vcsEvidence || []) {
     const changeSet = changeSets.get(evidence.changeSetId);
     if (!changeSet) fail("VCS evidence references an unknown ChangeSet.", "UNKNOWN_CHANGE_SET");
-    verifyVcsEvidence(evidence, changeSet, projection.projectId, familyFormatForOriginal("head-agent-core-change-set-projection", projection, storage));
+    verifyVcsEvidence(evidence, changeSet, projection.projectId, familyFormatForOriginal("lode-agent-core-change-set-projection", projection, storage));
     if (vcsEvidenceIds.has(evidence.vcsEvidenceId)) fail("Duplicate VCS evidence.", "DUPLICATE_VCS_EVIDENCE");
     vcsEvidenceIds.add(evidence.vcsEvidenceId);
   }
@@ -579,7 +579,7 @@ export function loadChangeSetProjection({
   const payload = {
     schemaVersion: 1,
     kind: "ChangeSetProjectionInput",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-change-set-projection"), version: CHANGE_SET_PROJECTION_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-change-set-projection"), version: CHANGE_SET_PROJECTION_VERSION },
     projectId,
     changeSets,
     candidateSets,

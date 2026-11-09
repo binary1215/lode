@@ -68,7 +68,7 @@ function evidencePayload({ graph, request, storage = null }) {
   return {
     schemaVersion: 1,
     kind: "PreparedTraversalCostEvidence",
-    protocol: { name: format.protocol("head-agent-core-prepared-traversal-cost"), version: PREPARED_TRAVERSAL_COST_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-prepared-traversal-cost"), version: PREPARED_TRAVERSAL_COST_VERSION },
     payloadModel: "normalized-utf8-canonical-json-response-components",
     projectId: prepared.projectId,
     graphSnapshotId: prepared.graphSnapshotId,
@@ -109,7 +109,7 @@ export function buildPreparedTraversalCostEvidence({ graph, request, storage = n
 }
 
 export function verifyPreparedTraversalCostEvidence(document, { graph = null, request = null } = {}) {
-  const format = familyFormatForOriginal("head-agent-core-prepared-traversal-cost", document);
+  const format = familyFormatForOriginal("lode-agent-core-prepared-traversal-cost", document);
   assertFields(
     document,
     [

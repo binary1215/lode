@@ -930,7 +930,7 @@ export function readSessionWorkContext({
     promotionAuthority: false,
     executionReplayAllowed: false,
     ordinaryWorkBlocked: false,
-    interpretation: `P3 ${formatForVerifiedOwner(owner.storage).value("HEAD")}-authored historical evidence, not current direction, approval, or proof of an external effect. Current Project constraints and selected Session P2 take precedence.`,
+    interpretation: `P3 ${formatForVerifiedOwner(owner.storage).value("Lode")}-authored historical evidence, not current direction, approval, or proof of an external effect. Current Project constraints and selected Session P2 take precedence.`,
   };
   if (
     (expectedSessionId && owner.sessionId !== expectedSessionId) ||

@@ -117,7 +117,7 @@ function buildIncrementalRefreshRequestVersion(
   const payload = {
     schemaVersion: SCHEMA_VERSION,
     kind: "IncrementalRefreshRequest",
-    protocol: { name: format.protocol("head-agent-core-incremental-refresh"), version: protocolVersion },
+    protocol: { name: format.protocol("lode-agent-core-incremental-refresh"), version: protocolVersion },
     projectId,
     baseWorldModelId,
     baseSourceSnapshotId,
@@ -139,7 +139,7 @@ export function buildIncrementalRefreshRequest(options = {}, storage = null) {
 
 export function verifyIncrementalRefreshRequest(request, expectedOwner = null) {
   if (!request || typeof request !== "object" || Array.isArray(request)) fail("Incremental refresh request is invalid.", "INVALID_REFRESH_SCHEMA");
-  const format = familyFormatForOriginal("head-agent-core-incremental-refresh", request, expectedOwner);
+  const format = familyFormatForOriginal("lode-agent-core-incremental-refresh", request, expectedOwner);
   const protocolVersion = request.protocol?.version;
   if (![LEGACY_INCREMENTAL_REFRESH_VERSION, INCREMENTAL_REFRESH_VERSION].includes(protocolVersion) || !format)
     fail("Incremental refresh request protocol is unsupported.", "INVALID_REFRESH_SCHEMA");
@@ -344,7 +344,7 @@ export function verifyIncrementalRefreshReceipt(receipt, expectedOwner = null) {
     "Incremental refresh receipt execution drift",
   );
   assertFields(receipt.projectionDisposition, ["graph", "documents"], "Incremental refresh receipt projection disposition");
-  const format = familyFormatForOriginal("head-agent-core-incremental-refresh", receipt, expectedOwner);
+  const format = familyFormatForOriginal("lode-agent-core-incremental-refresh", receipt, expectedOwner);
   const protocolVersion = receipt.protocol?.version;
   if (
     !RECEIPT_PATTERN.test(receipt.refreshReceiptId || "") ||

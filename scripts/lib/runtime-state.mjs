@@ -137,8 +137,8 @@ function normalizedObservation(value, { projectRoot, observedAt }) {
 function normalizeExport(value, projectRoot) {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("Runtime state export must be an object.", "INVALID_RUNTIME_STATE_EXPORT");
   assertOnlyKeys(value, EXPORT_KEYS, "Runtime state export");
-  const format = familyFormatForOriginal({ kind: "HeadRuntimeStateExport" }, value);
-  if (!format || value.schemaVersion !== 1 || value.kind !== format.kind("HeadRuntimeStateExport"))
+  const format = familyFormatForOriginal({ kind: "LodeRuntimeStateExport" }, value);
+  if (!format || value.schemaVersion !== 1 || value.kind !== format.kind("LodeRuntimeStateExport"))
     fail("Runtime state export schema is incompatible.", "INVALID_RUNTIME_STATE_EXPORT");
   if (!Array.isArray(value.observations)) fail("Runtime state export observations must be an array.", "INVALID_RUNTIME_STATE_EXPORT");
   if (value.observations.length > MAX_OBSERVATIONS) fail(`Runtime state export exceeds ${MAX_OBSERVATIONS} observations.`, "RUNTIME_STATE_OBSERVATION_LIMIT");
@@ -278,7 +278,7 @@ export function buildExternalRuntimeState({ projectRoot, adapter = null, storage
   const runtimeNames = [...new Set(normalized.observations.map((item) => item.runtime))].sort();
   const payload = {
     kind: "ExternalRuntimeState",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-external-runtime-state"), version: EXTERNAL_RUNTIME_STATE_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-external-runtime-state"), version: EXTERNAL_RUNTIME_STATE_VERSION },
     status: effectiveStatus,
     coverage: effectiveStatus === "available" || effectiveStatus === "empty" ? "point-in-time-host-export" : "none",
     reasonCode,

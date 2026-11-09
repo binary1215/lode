@@ -78,7 +78,7 @@ export function projectSessionWorkLayer(inventory, { nodeFromRecord, relation, a
     if (owner && [...originals.values()].some((item) => item.owner === owner)) {
       const origin = { layer: "sessions", path: owner.statePath, digest: sha(context.read(owner.statePath, MAX_REFERENCE_BYTES)) };
       nodes.push(
-        nodeFromRecord({ ...owner.state, kind: formatForVerifiedOwner(inventory.storage).kind("HeadSessionStateReference") }, origin, ["work"], {
+        nodeFromRecord({ ...owner.state, kind: formatForVerifiedOwner(inventory.storage).kind("LodeSessionStateReference") }, origin, ["work"], {
           freshness: "current-session-record-bytes",
           reviewState: "session-progress-reference",
           revisionId: origin.digest,

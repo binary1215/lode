@@ -652,7 +652,7 @@ export function buildRuntimeInvocationAuthorization({
     sessionIdOf(verifiedBinding) !== inspected.state.sessionId ? "session" : null,
     verifiedBinding.projectRootDigest !== rootDigest ? "root" : null,
     verifiedBinding.protocolEvidenceId !== verifiedProtocol.evidenceId ? "protocol" : null,
-    verifiedBinding.status !== formatForVerifiedOwner(inspected).value("verified-head-project-session-capability-binding") ? "status" : null,
+    verifiedBinding.status !== formatForVerifiedOwner(inspected).value("verified-lode-project-session-capability-binding") ? "status" : null,
     runtimeBinding?.capabilityStatus !== "observed" ? "runtime-binding" : null,
     !runtimeObservation?.protocolNegotiationObserved ? "runtime-observation" : null,
   ].filter(Boolean);

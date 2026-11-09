@@ -34,7 +34,7 @@ function identify(payload) {
 }
 
 export function verifyContinuationOutcome(document) {
-  const format = familyFormatForOriginal("head-agent-core-runtime-session-continuation", document);
+  const format = familyFormatForOriginal("lode-agent-core-runtime-session-continuation", document);
   const fields = [
     "schemaVersion",
     "kind",
@@ -81,7 +81,7 @@ export function verifyContinuationOutcome(document) {
     document.schemaVersion !== 1 ||
     document.kind !== "ContinuationOutcome" ||
     !format ||
-    document.protocol?.name !== format.protocol("head-agent-core-runtime-session-continuation") ||
+    document.protocol?.name !== format.protocol("lode-agent-core-runtime-session-continuation") ||
     document.protocol?.version !== RUNTIME_SESSION_CONTINUATION_VERSION ||
     !new RegExp(`^${format?.projectPrefix || "head-"}[a-f0-9]{20}$`).test(document.projectId || "") ||
     !/^session-[A-Fa-f0-9-]{36}$/.test(sessionIdOf(document) || "") ||
@@ -123,7 +123,7 @@ export function continueSessionFromArtifacts({
 } = {}) {
   const selectedRuntime = runtimeName(runtime);
   const before = restoreSessionFromArtifacts({ root, checkpointId });
-  const format = storage == null ? familyFormatForOriginal("head-agent-core-artifact-session-restore", before.projection) : formatForVerifiedOwner(storage);
+  const format = storage == null ? familyFormatForOriginal("lode-agent-core-artifact-session-restore", before.projection) : formatForVerifiedOwner(storage);
   let attachment = null;
   let status = "fresh-logical-head";
   let disclosure = attachmentRequested ? "provider-attachment-unavailable" : "provider-attachment-not-requested";
@@ -162,7 +162,7 @@ export function continueSessionFromArtifacts({
     identify({
       schemaVersion: 1,
       kind: "ContinuationOutcome",
-      protocol: { name: format.protocol("head-agent-core-runtime-session-continuation"), version: RUNTIME_SESSION_CONTINUATION_VERSION },
+      protocol: { name: format.protocol("lode-agent-core-runtime-session-continuation"), version: RUNTIME_SESSION_CONTINUATION_VERSION },
       authorityBoundary: artifactAuthorityBoundary("ContinuationOutcome"),
       projectId: before.projection.projectId,
       [format.sessionIdField]: before.projection.sessionId,

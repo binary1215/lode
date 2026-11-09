@@ -355,7 +355,7 @@ function recoveryCheckpointBasisFromInspection(inspected) {
   const payload = {
     kind: "RecoveryCheckpointSyncBasis",
     protocol: {
-      name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-recovery-checkpoint-sync"),
+      name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-recovery-checkpoint-sync"),
       version: RECOVERY_CHECKPOINT_SYNC_VERSION,
     },
     persisted: false,
@@ -380,7 +380,7 @@ function recoveryCheckpointBasisFromInspection(inspected) {
     runTransition: { status: runTransition.status, transition: runTransition.transition },
     compaction,
     directionAuthorship: {
-      owner: formatForVerifiedOwner(inspected.storage).value("current-provider-head"),
+      owner: formatForVerifiedOwner(inspected.storage).value("current-provider-lode"),
       deriveAfterBasisRead: true,
       replacingOnlyTheBasisIdOnAnOlderDirectionIsValid: false,
       coreVerification: "exact-identity-lineage-and-concurrency-only",
@@ -523,7 +523,7 @@ function recoveryCheckpointPayload({
   return {
     schemaVersion: SCHEMA_VERSION,
     kind: "SessionRunCheckpoint",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-session-run-recovery"), version: COMPACTION_RECOVERY_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-session-run-recovery"), version: COMPACTION_RECOVERY_VERSION },
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
     authorityBoundary: artifactAuthorityBoundary("SessionRunCheckpoint"),
@@ -538,7 +538,7 @@ function recoveryCheckpointPayload({
     createdAt: verifiedIntegration?.reviewedAt || createdAt || now(),
     authority: {
       recovery: "canonical-session-run-checkpoint",
-      recoveryFieldSources: formatForVerifiedOwner(inspected.storage).value("explicit-head-user-direction-and-verified-p2-lineage-only"),
+      recoveryFieldSources: formatForVerifiedOwner(inspected.storage).value("explicit-lode-user-direction-and-verified-p2-lineage-only"),
       evidenceRecords: "reference-only-not-recovery-field-source",
       providerSummary: "orientation-only",
       continuitySnapshot: "derived-view-not-recovery-input",
@@ -867,7 +867,7 @@ function readEpoch(root, epochId, storage) {
   if (
     epoch.epochId !== epochId ||
     epoch.kind !== "CompactionEpoch" ||
-    (formatForVerifiedOwner(storage).dialect === "lode" && !familyFormatForOriginal("head-agent-core-compaction-recovery", epoch, storage))
+    (formatForVerifiedOwner(storage).dialect === "lode" && !familyFormatForOriginal("lode-agent-core-compaction-recovery", epoch, storage))
   )
     fail("Compaction epoch identity is invalid.", "INVALID_COMPACTION_EPOCH");
   return { file, epoch };
@@ -1010,7 +1010,7 @@ function createCompactionEpoch({ inspected, checkpoint, runtime, userTurnIdAtPre
   const epoch = {
     schemaVersion: SCHEMA_VERSION,
     kind: "CompactionEpoch",
-    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("head-agent-core-compaction-recovery"), version: COMPACTION_RECOVERY_VERSION },
+    protocol: { name: formatForVerifiedOwner(inspected.storage).protocol("lode-agent-core-compaction-recovery"), version: COMPACTION_RECOVERY_VERSION },
     epochId,
     projectId: inspected.project.projectId,
     sessionId: inspected.state.sessionId,
@@ -1164,7 +1164,7 @@ function verifyCompactionLocked({
       "provider-transcript",
       "provider-summary",
       "provider-session-identity",
-      formatForVerifiedOwner(inspected.storage).kind("HEADContinuitySnapshot"),
+      formatForVerifiedOwner(inspected.storage).kind("LodeContinuitySnapshot"),
     ],
   };
 }
@@ -1287,7 +1287,7 @@ export function verifyRecoveryCheckpointOriginal({ checkpoint, projectId, sessio
   }
   const checkpointVersion = checkpoint.protocol?.version;
   if (
-    !familyFormatForOriginal("head-agent-core-session-run-recovery", checkpoint, storage) ||
+    !familyFormatForOriginal("lode-agent-core-session-run-recovery", checkpoint, storage) ||
     !new Set(["0.1.0", "0.2.0", COMPACTION_RECOVERY_VERSION]).has(checkpointVersion)
   ) {
     fail("Recovery checkpoint protocol is invalid.", "INVALID_RECOVERY_CHECKPOINT");

@@ -755,7 +755,7 @@ function preflightCanonicalEnvelopeBudget(draft, sourceBytesByPath, rawBytesById
     schemaVersion: 0,
     kind: "StructuralRelationObservationEnvelope",
     protocol: {
-      name: formatForVerifiedOwner(storage).protocol("head-agent-core-structural-relation-observation-envelope"),
+      name: formatForVerifiedOwner(storage).protocol("lode-agent-core-structural-relation-observation-envelope"),
       version: STRUCTURAL_RELATION_OBSERVATION_ENVELOPE_VERSION,
     },
     subject: { projectId: draft.projectId, sourceManifest, sourceManifestDigest: DIGEST_PLACEHOLDER },
@@ -999,7 +999,7 @@ export function buildStructuralRelationObservationEnvelope(draft, { sourceBytesB
     schemaVersion: 0,
     kind: "StructuralRelationObservationEnvelope",
     protocol: {
-      name: formatForVerifiedOwner(storage).protocol("head-agent-core-structural-relation-observation-envelope"),
+      name: formatForVerifiedOwner(storage).protocol("lode-agent-core-structural-relation-observation-envelope"),
       version: STRUCTURAL_RELATION_OBSERVATION_ENVELOPE_VERSION,
     },
     subject: { projectId, sourceManifest: sources, sourceManifestDigest },
@@ -1166,7 +1166,7 @@ export function verifyStructuralRelationObservationEnvelope(document, { sourceBy
   if (
     document.schemaVersion !== 0 ||
     document.kind !== "StructuralRelationObservationEnvelope" ||
-    !familyFormatForOriginal("head-agent-core-structural-relation-observation-envelope", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-structural-relation-observation-envelope", document, storage) ||
     document.protocol?.version !== STRUCTURAL_RELATION_OBSERVATION_ENVELOPE_VERSION
   )
     fail("Envelope protocol is unsupported.");

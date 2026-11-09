@@ -205,7 +205,7 @@ function semanticFreshnessBoundary(storage) {
     basisEqualityProvesCurrentIntent: false,
     digestEqualityProvesCurrentIntent: false,
     automaticHeadAssessmentTriggered: false,
-    requiredEvaluator: formatForVerifiedOwner(storage).value("current-provider-head-when-recovery-direction-is-materially-relevant"),
+    requiredEvaluator: formatForVerifiedOwner(storage).value("current-provider-lode-when-recovery-direction-is-materially-relevant"),
   };
 }
 
@@ -254,7 +254,7 @@ function baseProjection({
     schemaVersion: SCHEMA_VERSION,
     kind: "RecoveryCheckpointDiagnosisProjection",
     protocol: {
-      name: formatForVerifiedOwner(project.storage).protocol("head-agent-core-recovery-checkpoint-diagnosis"),
+      name: formatForVerifiedOwner(project.storage).protocol("lode-agent-core-recovery-checkpoint-diagnosis"),
       version: RECOVERY_CHECKPOINT_DIAGNOSIS_VERSION,
     },
     status: "recovery_checkpoint_diagnosed",

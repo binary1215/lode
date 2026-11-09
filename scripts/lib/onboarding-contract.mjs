@@ -149,7 +149,7 @@ export function buildStorageSelection({ projectId, selection = null } = {}, stor
     {
       schemaVersion: 1,
       kind: "OnboardingStorageSelection",
-      protocol: { name: format.protocol("head-agent-core-onboarding-storage"), version: ONBOARDING_PROTOCOL_VERSION },
+      protocol: { name: format.protocol("lode-agent-core-onboarding-storage"), version: ONBOARDING_PROTOCOL_VERSION },
       projectId: normalizedProjectId,
       mode,
       local: {
@@ -180,7 +180,7 @@ export function verifyStorageSelection(document, projectId = "", storage) {
   if (projectId && verified.projectId !== projectId) {
     fail("Onboarding storage selection belongs to another project.", "ONBOARDING_PROJECT_MISMATCH");
   }
-  const format = familyFormatForOriginal("head-agent-core-onboarding-storage", verified, storage);
+  const format = familyFormatForOriginal("lode-agent-core-onboarding-storage", verified, storage);
   if (!format) fail("Onboarding storage selection fields are invalid.", "INVALID_ONBOARDING_STORAGE_SELECTION");
   const rebuilt = buildStorageSelection(
     {
@@ -211,13 +211,13 @@ export function buildSessionRecord({ project, sessionState } = {}, storage) {
   return withIdentity(
     {
       schemaVersion: 1,
-      kind: format.kind("HeadSession"),
-      protocol: { name: format.protocol("head-agent-core-session"), version: ONBOARDING_PROTOCOL_VERSION },
+      kind: format.kind("LodeSession"),
+      protocol: { name: format.protocol("lode-agent-core-session"), version: ONBOARDING_PROTOCOL_VERSION },
       projectId: requiredText(project.projectId, "project.projectId"),
       sessionId: requiredText(sessionState.sessionId, "sessionState.sessionId"),
       createdAt: optionalText(project.createdAt || sessionState.updatedAt, "Session createdAt"),
       providerReferences: [],
-      identityBoundary: format.value("project-scoped-head-session-not-provider-conversation"),
+      identityBoundary: format.value("project-scoped-lode-session-not-provider-conversation"),
       instructionAuthority: false,
       promotionAuthority: false,
     },
@@ -237,7 +237,7 @@ export function verifySessionRecord(document, { projectId = "", sessionId = "", 
   if ((projectId && verified.projectId !== projectId) || (sessionId && verified.sessionId !== sessionId)) {
     fail("Lode Session record identity does not match current project state.", "ONBOARDING_SESSION_MISMATCH");
   }
-  const format = familyFormatForOriginal("head-agent-core-session", verified, storage);
+  const format = familyFormatForOriginal("lode-agent-core-session", verified, storage);
   if (!format) fail("Lode Session record fields are invalid.", "INVALID_ONBOARDING_SESSION");
   const rebuilt = buildSessionRecord(
     {
@@ -277,7 +277,7 @@ function buildOnboardingStateDocument(
   const payload = {
     schemaVersion: 1,
     kind: "OnboardingStatePointer",
-    protocol: { name: format.protocol("head-agent-core-onboarding"), version: protocolVersion },
+    protocol: { name: format.protocol("lode-agent-core-onboarding"), version: protocolVersion },
     projectId: requiredIdentity(projectId, new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`), "projectId"),
     sessionId: requiredIdentity(sessionId, /^session-[A-Fa-f0-9-]{36}$/, "sessionId"),
     phase: normalizedPhase,
@@ -326,7 +326,7 @@ export function verifyOnboardingState(document, { projectId = "", sessionId = ""
   if ((projectId && document.projectId !== projectId) || (sessionId && document.sessionId !== sessionId)) {
     fail("Onboarding state pointer identity does not match current project state.", "ONBOARDING_STATE_IDENTITY_MISMATCH");
   }
-  const format = familyFormatForOriginal("head-agent-core-onboarding", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-onboarding", document, storage);
   const stateVersion = format ? document.protocol.version : "";
   if (stateVersion !== ONBOARDING_STATE_PROTOCOL_VERSION) {
     fail(

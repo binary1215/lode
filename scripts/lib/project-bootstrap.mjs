@@ -671,7 +671,7 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
     const context = contextReadiness({ coreState: "not_initialized", productState: "unavailable" });
     return withExperienceProjections(
       {
-        kind: formatForVerifiedOwner(projectInspection.storage).kind("HeadProjectExperienceProjection"),
+        kind: formatForVerifiedOwner(projectInspection.storage).kind("LodeProjectExperienceProjection"),
         protocolVersion: PROJECT_BOOTSTRAP_PROTOCOL_VERSION,
         status: "not_initialized",
         projectRoot: projectInspection.projectRoot,

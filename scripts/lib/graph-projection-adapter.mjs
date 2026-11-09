@@ -68,15 +68,15 @@ const ARCADEDB_BRIDGE_ENVIRONMENT_ALLOWLIST = Object.freeze([
   "no_proxy",
 ]);
 
-const ARCADEDB_SNAPSHOT_TYPE = "HeadAgentGraphSnapshot";
-const ARCADEDB_SNAPSHOT_CHUNK_TYPE = "HeadAgentGraphSnapshotChunk";
-const ARCADEDB_POINTER_TYPE = "HeadAgentGraphPointer";
-const ARCADEDB_NODE_TYPE = "HeadAgentGraphNode";
-const ARCADEDB_EDGE_TYPE = "HeadAgentGraphEdge";
-const ARCADEDB_TOPOLOGY_TYPE = "HeadAgentGraphTopology";
-const ARCADEDB_TOPOLOGY_CHUNK_TYPE = "HeadAgentGraphTopologyChunk";
-const ARCADEDB_SYNC_TYPE = "HeadAgentGraphSyncManifest";
-const ARCADEDB_SYNC_CHECKPOINT_TYPE = "HeadAgentGraphSyncCheckpoint";
+const ARCADEDB_SNAPSHOT_TYPE = "LodeAgentGraphSnapshot";
+const ARCADEDB_SNAPSHOT_CHUNK_TYPE = "LodeAgentGraphSnapshotChunk";
+const ARCADEDB_POINTER_TYPE = "LodeAgentGraphPointer";
+const ARCADEDB_NODE_TYPE = "LodeAgentGraphNode";
+const ARCADEDB_EDGE_TYPE = "LodeAgentGraphEdge";
+const ARCADEDB_TOPOLOGY_TYPE = "LodeAgentGraphTopology";
+const ARCADEDB_TOPOLOGY_CHUNK_TYPE = "LodeAgentGraphTopologyChunk";
+const ARCADEDB_SYNC_TYPE = "LodeAgentGraphSyncManifest";
+const ARCADEDB_SYNC_CHECKPOINT_TYPE = "LodeAgentGraphSyncCheckpoint";
 export const ARCADEDB_GRAPH_RESERVED_SCHEMA = Object.freeze([
   Object.freeze({
     name: ARCADEDB_SNAPSHOT_TYPE,
@@ -281,12 +281,12 @@ export function assertGraphProjectionAdapter(adapter) {
 }
 
 function pointerPayload(graph, storage = null) {
-  if (storage != null && !familyFormatForOriginal("head-agent-core-temporal-provenance", graph, storage))
+  if (storage != null && !familyFormatForOriginal("lode-agent-core-temporal-provenance", graph, storage))
     fail("Graph pointer owner family is incoherent.", "INVALID_GRAPH_PROJECTION_POINTER");
   return {
     schemaVersion: 1,
     kind: "GraphProjectionPointer",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-graph-projection"), version: GRAPH_PROJECTION_ADAPTER_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-graph-projection"), version: GRAPH_PROJECTION_ADAPTER_VERSION },
     projectId: graph.projectId,
     graphSnapshotId: graph.graphSnapshotId,
     graphSnapshotHash: graph.graphSnapshotHash,
@@ -315,7 +315,7 @@ export function verifyGraphProjectionPointer(document, expectedGraph = null, sto
     !document ||
     document.kind !== "GraphProjectionPointer" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-graph-projection", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-graph-projection", document, storage) ||
     document.protocol?.version !== GRAPH_PROJECTION_ADAPTER_VERSION ||
     typeof document.projectId !== "string" ||
     !document.projectId ||
@@ -351,12 +351,12 @@ export function verifyGraphProjectionPointer(document, expectedGraph = null, sto
 
 function topologyPayload(graph, storage = null) {
   verifyTemporalProvenanceGraph(graph);
-  if (storage != null && !familyFormatForOriginal("head-agent-core-temporal-provenance", graph, storage))
+  if (storage != null && !familyFormatForOriginal("lode-agent-core-temporal-provenance", graph, storage))
     fail("Graph topology owner family is incoherent.", "INVALID_ARCADEDB_GRAPH_TOPOLOGY");
   return {
     schemaVersion: 1,
     kind: "ArcadeDbGraphTopology",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-arcadedb-graph-topology"), version: ARCADEDB_GRAPH_TOPOLOGY_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-arcadedb-graph-topology"), version: ARCADEDB_GRAPH_TOPOLOGY_VERSION },
     projectId: graph.projectId,
     graphSnapshotId: graph.graphSnapshotId,
     graphSnapshotHash: graph.graphSnapshotHash,
@@ -411,7 +411,7 @@ export function verifyArcadeDbGraphTopology(document, graph = null, storage = nu
     !document ||
     document.kind !== "ArcadeDbGraphTopology" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-arcadedb-graph-topology", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-arcadedb-graph-topology", document, storage) ||
     document.protocol?.version !== ARCADEDB_GRAPH_TOPOLOGY_VERSION ||
     typeof document.projectId !== "string" ||
     !document.projectId ||
@@ -705,7 +705,7 @@ export class ArcadeDbHttpTransport {
       fail("ArcadeDB query batch must contain from one through eight queries.", "INVALID_ARCADEDB_QUERY_BATCH");
     }
     const input = {
-      protocol: { name: formatForVerifiedOwner(this.storage).protocol("head-agent-core-arcadedb-query-batch"), version: ARCADEDB_BRIDGE_BATCH_VERSION },
+      protocol: { name: formatForVerifiedOwner(this.storage).protocol("lode-agent-core-arcadedb-query-batch"), version: ARCADEDB_BRIDGE_BATCH_VERSION },
       endpoint: this.storageSelection.graphdb.endpoint,
       database: this.storageSelection.graphdb.database,
       secretReferenceNames: this.storageSelection.graphdb.secretReferenceNames,
@@ -1057,7 +1057,7 @@ export class ArcadeDbHttpTransport {
     } catch {
       return documentJson;
     }
-    if (manifest?.kind === formatForVerifiedOwner(this.storage).kind("HeadAgentGraphSnapshotTopologyManifest")) {
+    if (manifest?.kind === formatForVerifiedOwner(this.storage).kind("LodeAgentGraphSnapshotTopologyManifest")) {
       if (
         manifest.schemaVersion !== 1 ||
         manifest.encoding !== "topology-backed-canonical-graph" ||
@@ -1102,7 +1102,7 @@ export class ArcadeDbHttpTransport {
       }
       return assembled;
     }
-    if (manifest?.kind !== formatForVerifiedOwner(this.storage).kind("HeadAgentGraphSnapshotChunkManifest")) return documentJson;
+    if (manifest?.kind !== formatForVerifiedOwner(this.storage).kind("LodeAgentGraphSnapshotChunkManifest")) return documentJson;
     if (
       manifest.schemaVersion !== 1 ||
       manifest.encoding !== "gzip-base64-json-chunks" ||
@@ -1159,7 +1159,7 @@ export class ArcadeDbHttpTransport {
         delete header.edges;
         storedDocumentJson = graphProjectionCanonicalJson({
           schemaVersion: 1,
-          kind: formatForVerifiedOwner(this.storage).kind("HeadAgentGraphSnapshotTopologyManifest"),
+          kind: formatForVerifiedOwner(this.storage).kind("LodeAgentGraphSnapshotTopologyManifest"),
           encoding: "topology-backed-canonical-graph",
           topologyId: topology.topologyId,
           topologyHash: topology.topologyHash,
@@ -1204,7 +1204,7 @@ export class ArcadeDbHttpTransport {
         }
         storedDocumentJson = graphProjectionCanonicalJson({
           schemaVersion: 1,
-          kind: formatForVerifiedOwner(this.storage).kind("HeadAgentGraphSnapshotChunkManifest"),
+          kind: formatForVerifiedOwner(this.storage).kind("LodeAgentGraphSnapshotChunkManifest"),
           encoding: "gzip-base64-json-chunks",
           chunkCount: chunks.length,
           byteLength: Buffer.byteLength(documentJson, "utf8"),
@@ -1303,7 +1303,7 @@ export class ArcadeDbHttpTransport {
     } catch {
       return topologyJson;
     }
-    if (manifest?.kind !== formatForVerifiedOwner(this.storage).kind("HeadAgentGraphTopologyChunkManifest")) return topologyJson;
+    if (manifest?.kind !== formatForVerifiedOwner(this.storage).kind("LodeAgentGraphTopologyChunkManifest")) return topologyJson;
     if (
       manifest.schemaVersion !== 1 ||
       manifest.encoding !== "gzip-base64-json-chunks" ||
@@ -1438,7 +1438,7 @@ export class ArcadeDbHttpTransport {
     const topologyJson = chunks.length
       ? graphProjectionCanonicalJson({
           schemaVersion: 1,
-          kind: formatForVerifiedOwner(this.storage).kind("HeadAgentGraphTopologyChunkManifest"),
+          kind: formatForVerifiedOwner(this.storage).kind("LodeAgentGraphTopologyChunkManifest"),
           encoding: "gzip-base64-json-chunks",
           chunkCount: chunks.length,
           byteLength: Buffer.byteLength(fullTopologyJson, "utf8"),
@@ -1654,7 +1654,7 @@ function unfilteredTraversalRadius(graph, anchorIds, maxDepth) {
 }
 
 function traversalOptionsFromQuery(query, format) {
-  const exactAnchorMode = format.value("exact-head-proposed");
+  const exactAnchorMode = format.value("exact-lode-proposed");
   if (!["lexical-discovery", exactAnchorMode].includes(query.anchorMode)) {
     fail("Prepared traversal query anchor mode differs from its original family.", "INVALID_PREPARED_TRAVERSAL_REQUEST");
   }
@@ -1714,7 +1714,7 @@ function preparedGraphManifest(graph) {
 
 export function buildPreparedTraversalRequest({ graph, result, storage = null } = {}) {
   verifyTemporalProvenanceGraph(graph);
-  const format = familyFormatForOriginal("head-agent-core-temporal-provenance", graph, storage);
+  const format = familyFormatForOriginal("lode-agent-core-temporal-provenance", graph, storage);
   if (!format) fail("Prepared traversal owner family is incoherent.", "INVALID_PREPARED_TRAVERSAL_REQUEST");
   if (!result || result.kind !== "TemporalTraversalResult" || !result.traversalQuery) {
     fail("Prepared traversal requires a deterministic TemporalTraversalResult.", "INVALID_PREPARED_TRAVERSAL_REQUEST");
@@ -1728,7 +1728,7 @@ export function buildPreparedTraversalRequest({ graph, result, storage = null } 
   const payload = {
     schemaVersion: 1,
     kind: "PreparedTraversalRequest",
-    protocol: { name: format.protocol("head-agent-core-prepared-traversal"), version: PREPARED_TRAVERSAL_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-prepared-traversal"), version: PREPARED_TRAVERSAL_VERSION },
     projectId: graph.projectId,
     graphSnapshotId: graph.graphSnapshotId,
     graphSnapshotHash: graph.graphSnapshotHash,
@@ -1777,8 +1777,8 @@ export function verifyPreparedTraversalRequest(document, { graph = null, result 
     "Prepared traversal request",
     "INVALID_PREPARED_TRAVERSAL_REQUEST",
   );
-  const format = familyFormatForOriginal("head-agent-core-prepared-traversal", document, storage);
-  const exactAnchorMode = format?.value("exact-head-proposed");
+  const format = familyFormatForOriginal("lode-agent-core-prepared-traversal", document, storage);
+  const exactAnchorMode = format?.value("exact-lode-proposed");
   const query = document?.traversalQuery;
   if (query && typeof query === "object" && !Array.isArray(query))
     assertFields(
@@ -2059,7 +2059,7 @@ export function verifyPreparedTraversalVerification(document, expectedRequest = 
     !document ||
     document.kind !== "PreparedTraversalVerification" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-prepared-traversal", document) ||
+    !familyFormatForOriginal("lode-agent-core-prepared-traversal", document) ||
     document.protocol?.version !== PREPARED_TRAVERSAL_VERSION ||
     !/^prepared-traversal-[a-f0-9]{24}$/.test(document.requestId || "") ||
     !/^[a-f0-9]{64}$/.test(document.requestHash || "") ||
@@ -2111,7 +2111,7 @@ function verifyPreparedTraversalVerificationAgainstLocallyBuiltRequest(document,
 }
 
 function verifyArcadeDbServerTraversalResponseAgainstPrepared({ prepared, response, maxRecords }) {
-  const format = familyFormatForOriginal("head-agent-core-prepared-traversal", prepared);
+  const format = familyFormatForOriginal("lode-agent-core-prepared-traversal", prepared);
   const query = prepared.traversalQuery;
   assertFields(
     response,
@@ -2899,7 +2899,7 @@ export class LocalJsonGraphProjectionAdapter {
       const graph = ownWorldSnapshotForTemporalScope(scope, { temporalProvenanceGraph: entry.document }).temporalProvenanceGraph;
       const result = queryTemporalProvenanceGraph(
         graph,
-        traversalOptionsFromQuery(prepared.traversalQuery, familyFormatForOriginal("head-agent-core-prepared-traversal", prepared, this.storage)),
+        traversalOptionsFromQuery(prepared.traversalQuery, familyFormatForOriginal("lode-agent-core-prepared-traversal", prepared, this.storage)),
       );
       verifyPreparedTraversalRequest(prepared, { graph, result, storage: this.storage });
       return buildPreparedTraversalVerification(prepared, "local-snapshot-reference");
@@ -2963,7 +2963,7 @@ export class InMemoryGraphProjectionAdapter {
     if (!entry) fail(`Graph projection snapshot is missing: ${prepared.graphSnapshotId}`, "GRAPH_PROJECTION_SNAPSHOT_MISSING");
     const result = queryTemporalProvenanceGraph(
       entry.document,
-      traversalOptionsFromQuery(prepared.traversalQuery, familyFormatForOriginal("head-agent-core-prepared-traversal", prepared)),
+      traversalOptionsFromQuery(prepared.traversalQuery, familyFormatForOriginal("lode-agent-core-prepared-traversal", prepared)),
     );
     verifyPreparedTraversalRequest(prepared, { graph: entry.document, result });
     return buildPreparedTraversalVerification(prepared, "memory-snapshot-reference");
@@ -2986,16 +2986,16 @@ function activationPayload({ storageSelection, graph, conformanceReport, storage
   }
   if (
     storage != null &&
-    (!familyFormatForOriginal("head-agent-core-onboarding-storage", selection, storage) ||
-      !familyFormatForOriginal("head-agent-core-temporal-provenance", graph, storage) ||
-      !familyFormatForOriginal("head-agent-core-graph-projection-conformance", conformanceReport, storage))
+    (!familyFormatForOriginal("lode-agent-core-onboarding-storage", selection, storage) ||
+      !familyFormatForOriginal("lode-agent-core-temporal-provenance", graph, storage) ||
+      !familyFormatForOriginal("lode-agent-core-graph-projection-conformance", conformanceReport, storage))
   ) {
     fail("GraphDB activation owner family is incoherent.", "INVALID_ARCADEDB_ACTIVATION_CONFORMANCE");
   }
   return {
     schemaVersion: 1,
     kind: "ArcadeDbGraphProjectionActivation",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-arcadedb-graph-projection"), version: ARCADEDB_GRAPH_PROJECTION_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-arcadedb-graph-projection"), version: ARCADEDB_GRAPH_PROJECTION_VERSION },
     projectId: selection.projectId,
     storageSelectionId: selection.storageSelectionId,
     storageSelectionHash: selection.storageSelectionHash,
@@ -3062,7 +3062,7 @@ export function verifyArcadeDbGraphProjectionActivation(document, storage = null
     document.activationId !== `arcadedb-graph-activation-${hash.slice(0, 24)}` ||
     document.kind !== "ArcadeDbGraphProjectionActivation" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-arcadedb-graph-projection", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-arcadedb-graph-projection", document, storage) ||
     document.protocol?.version !== ARCADEDB_GRAPH_PROJECTION_VERSION ||
     typeof document.projectId !== "string" ||
     !document.projectId ||
@@ -3127,7 +3127,7 @@ function verifyActivationPointer(document, storage = null) {
     document.credentialValuesPersisted !== false ||
     document.kind !== "ArcadeDbGraphProjectionActivationPointer" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-arcadedb-graph-projection", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-arcadedb-graph-projection", document, storage) ||
     document.protocol?.version !== ARCADEDB_GRAPH_PROJECTION_VERSION ||
     typeof document.projectId !== "string" ||
     !document.projectId ||
@@ -3281,7 +3281,7 @@ function topologyActivationPayload({ storageSelection, graph, topology, storage 
   return {
     schemaVersion: 1,
     kind: "ArcadeDbGraphTopologyActivation",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-arcadedb-graph-topology"), version: ARCADEDB_GRAPH_TOPOLOGY_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-arcadedb-graph-topology"), version: ARCADEDB_GRAPH_TOPOLOGY_VERSION },
     projectId: selection.projectId,
     storageSelectionId: selection.storageSelectionId,
     storageSelectionHash: selection.storageSelectionHash,
@@ -3348,7 +3348,7 @@ export function verifyArcadeDbGraphTopologyActivation(document, storage = null) 
     !document ||
     document.kind !== "ArcadeDbGraphTopologyActivation" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-arcadedb-graph-topology", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-arcadedb-graph-topology", document, storage) ||
     document.protocol?.version !== ARCADEDB_GRAPH_TOPOLOGY_VERSION ||
     typeof document.projectId !== "string" ||
     !document.projectId ||
@@ -3425,7 +3425,7 @@ function verifyTopologyActivationPointer(document, storage = null) {
     !document ||
     document.kind !== "ArcadeDbGraphTopologyActivationPointer" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-arcadedb-graph-topology", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-arcadedb-graph-topology", document, storage) ||
     document.protocol?.version !== ARCADEDB_GRAPH_TOPOLOGY_VERSION ||
     typeof document.projectId !== "string" ||
     !document.projectId ||
@@ -3545,7 +3545,7 @@ function verifyIncrementalSyncReceiptPointer(document, storage = null) {
   if (
     document.kind !== "ArcadeDbIncrementalSyncReceiptPointer" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-arcadedb-incremental-sync", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-arcadedb-incremental-sync", document, storage) ||
     document.protocol?.version !== ARCADEDB_INCREMENTAL_SYNC_VERSION ||
     typeof document.projectId !== "string" ||
     !document.projectId ||
@@ -3573,7 +3573,7 @@ function verifyIncrementalSyncReceiptPointer(document, storage = null) {
 export function persistArcadeDbIncrementalSyncReceipt({ projectRoot, storage = null, receipt } = {}) {
   const root = path.resolve(projectRoot || ".");
   const verified = verifyArcadeDbIncrementalSyncReceipt(receipt);
-  if (storage != null && !familyFormatForOriginal("head-agent-core-arcadedb-incremental-sync", verified, storage))
+  if (storage != null && !familyFormatForOriginal("lode-agent-core-arcadedb-incremental-sync", verified, storage))
     fail("Incremental sync receipt owner family is incoherent.", "INVALID_ARCADEDB_INCREMENTAL_SYNC_RECEIPT");
   const receiptFile = path.join(
     root,
@@ -3604,7 +3604,7 @@ export function inspectArcadeDbIncrementalSyncReceipt({ projectRoot, storage = n
   );
   if (!fs.existsSync(receiptFile)) fail("ArcadeDB incremental sync receipt pointer references missing content.", "ARCADEDB_INCREMENTAL_SYNC_RECEIPT_MISSING");
   const receipt = verifyArcadeDbIncrementalSyncReceipt(parseDocument(receiptFile, "ArcadeDB incremental sync receipt"));
-  if (storage != null && !familyFormatForOriginal("head-agent-core-arcadedb-incremental-sync", receipt, storage))
+  if (storage != null && !familyFormatForOriginal("lode-agent-core-arcadedb-incremental-sync", receipt, storage))
     fail("Incremental sync receipt owner family is incoherent.", "INVALID_ARCADEDB_INCREMENTAL_SYNC_RECEIPT");
   if (
     receipt.projectId !== pointer.projectId ||
@@ -3977,7 +3977,7 @@ export async function verifyGraphProjectionAdapterConformance({ projectRoot, gra
   const payload = {
     schemaVersion: 1,
     kind: "GraphProjectionConformanceReport",
-    protocol: { name: formatForVerifiedOwner(storage).protocol("head-agent-core-graph-projection-conformance"), version: GRAPH_PROJECTION_ADAPTER_VERSION },
+    protocol: { name: formatForVerifiedOwner(storage).protocol("lode-agent-core-graph-projection-conformance"), version: GRAPH_PROJECTION_ADAPTER_VERSION },
     graphSnapshotId: graph.graphSnapshotId,
     graphSnapshotHash: graph.graphSnapshotHash,
     sourceSnapshotId: graph.sourceSnapshotId,
@@ -4024,7 +4024,7 @@ export function verifyGraphProjectionConformanceReport(document, storage = null)
     !document ||
     document.kind !== "GraphProjectionConformanceReport" ||
     document.schemaVersion !== 1 ||
-    !familyFormatForOriginal("head-agent-core-graph-projection-conformance", document, storage) ||
+    !familyFormatForOriginal("lode-agent-core-graph-projection-conformance", document, storage) ||
     document.protocol?.version !== GRAPH_PROJECTION_ADAPTER_VERSION ||
     !/^graph-snapshot-[a-f0-9]{24}$/.test(document.graphSnapshotId || "") ||
     !/^[a-f0-9]{64}$/.test(document.graphSnapshotHash || "") ||

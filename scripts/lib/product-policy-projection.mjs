@@ -82,7 +82,7 @@ function applicationStatuses(candidates, reviews, currentProductModelId) {
 }
 
 export function verifyProductPolicyGraphProjection(document, projectId = "", storage = undefined) {
-  const format = familyFormatForOriginal("head-agent-core-product-policy-graph-projection", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-product-policy-graph-projection", document, storage);
   if (
     !document ||
     document.kind !== "ProductPolicyGraphProjectionInput" ||
@@ -151,7 +151,7 @@ export function loadProductPolicyGraphProjection({ projectRoot, projectId, curre
   ).map((reviewDecisionId) => readProductPolicyReviewDecision({ root: projectRoot, reviewDecisionId, storage }).reviewDecision);
   const payload = {
     kind: "ProductPolicyGraphProjectionInput",
-    protocol: { name: format.protocol("head-agent-core-product-policy-graph-projection"), version: PRODUCT_POLICY_GRAPH_PROJECTION_VERSION },
+    protocol: { name: format.protocol("lode-agent-core-product-policy-graph-projection"), version: PRODUCT_POLICY_GRAPH_PROJECTION_VERSION },
     projectId,
     currentProductModelId,
     candidates: applicationStatuses(candidates, reviewDecisions, currentProductModelId),

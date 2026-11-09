@@ -174,7 +174,7 @@ function normalizeAuthorizationIds(values) {
 }
 
 export function verifyBoundedWorkerWave(document) {
-  const format = familyFormatForOriginal("head-agent-core-bounded-worker-wave", document);
+  const format = familyFormatForOriginal("lode-agent-core-bounded-worker-wave", document);
   const fields = [
     "schemaVersion",
     "kind",
@@ -239,7 +239,7 @@ export function verifyBoundedWorkerWave(document) {
     document.schemaVersion !== 1 ||
     document.kind !== "BoundedWorkerWave" ||
     !format ||
-    document.protocol?.name !== format.protocol("head-agent-core-bounded-worker-wave") ||
+    document.protocol?.name !== format.protocol("lode-agent-core-bounded-worker-wave") ||
     document.protocol?.version !== BOUNDED_WORKER_WAVE_VERSION ||
     !new RegExp(`^${format?.projectPrefix || "head-"}[a-f0-9]{20}$`).test(document.projectId || "") ||
     !/^session-[A-Fa-f0-9-]{36}$/.test(sessionIdOf(document) || "") ||
@@ -356,7 +356,7 @@ export function createBoundedWorkerWave(options = {}) {
       {
         schemaVersion: 1,
         kind: "BoundedWorkerWave",
-        protocol: { name: formatForVerifiedOwner(inspected).protocol("head-agent-core-bounded-worker-wave"), version: BOUNDED_WORKER_WAVE_VERSION },
+        protocol: { name: formatForVerifiedOwner(inspected).protocol("lode-agent-core-bounded-worker-wave"), version: BOUNDED_WORKER_WAVE_VERSION },
         authorityBoundary: artifactAuthorityBoundary("BoundedWorkerWave"),
         ...lineage,
         members,
@@ -433,7 +433,7 @@ function memberOperationalStatus(root, projectId, member, storage) {
 }
 
 function verifySeal(document, wave) {
-  const format = familyFormatForOriginal("head-agent-core-bounded-worker-wave-seal", document);
+  const format = familyFormatForOriginal("lode-agent-core-bounded-worker-wave-seal", document);
   const fields = [
     "schemaVersion",
     "kind",
@@ -494,7 +494,7 @@ function verifySeal(document, wave) {
     document.schemaVersion !== 1 ||
     document.kind !== "BoundedWorkerWaveSeal" ||
     !format ||
-    document.protocol?.name !== format.protocol("head-agent-core-bounded-worker-wave-seal") ||
+    document.protocol?.name !== format.protocol("lode-agent-core-bounded-worker-wave-seal") ||
     document.protocol?.version !== BOUNDED_WORKER_WAVE_VERSION ||
     document.projectId !== wave.projectId ||
     sessionIdOf(document) !== sessionIdOf(wave) ||
@@ -525,7 +525,7 @@ function verifySeal(document, wave) {
 }
 
 function verifyAbandonment(document, wave) {
-  const format = familyFormatForOriginal("head-agent-core-bounded-worker-wave-abandonment", document);
+  const format = familyFormatForOriginal("lode-agent-core-bounded-worker-wave-abandonment", document);
   const fields = [
     "schemaVersion",
     "kind",
@@ -580,7 +580,7 @@ function verifyAbandonment(document, wave) {
     document.schemaVersion !== 1 ||
     document.kind !== "BoundedWorkerWaveAbandonment" ||
     !format ||
-    document.protocol?.name !== format.protocol("head-agent-core-bounded-worker-wave-abandonment") ||
+    document.protocol?.name !== format.protocol("lode-agent-core-bounded-worker-wave-abandonment") ||
     document.protocol?.version !== BOUNDED_WORKER_WAVE_VERSION ||
     document.projectId !== wave.projectId ||
     sessionIdOf(document) !== sessionIdOf(wave) ||
@@ -634,7 +634,7 @@ function buildStatusProjection({ root, wave, seal = null, abandonment = null, ad
   const payload = {
     schemaVersion: 1,
     kind: "WorkerWaveStatusProjection",
-    protocol: { name: originalFormat(wave).protocol("head-agent-core-worker-wave-status"), version: BOUNDED_WORKER_WAVE_VERSION },
+    protocol: { name: originalFormat(wave).protocol("lode-agent-core-worker-wave-status"), version: BOUNDED_WORKER_WAVE_VERSION },
     authorityBoundary: artifactAuthorityBoundary("WorkerWaveStatusProjection"),
     projectId: wave.projectId,
     [originalFormat(wave).sessionIdField]: sessionIdOf(wave),
@@ -725,7 +725,7 @@ export function sealBoundedWorkerWave({ root = ".", waveId } = {}) {
       {
         schemaVersion: 1,
         kind: "BoundedWorkerWaveSeal",
-        protocol: { name: originalFormat(read.wave).protocol("head-agent-core-bounded-worker-wave-seal"), version: BOUNDED_WORKER_WAVE_VERSION },
+        protocol: { name: originalFormat(read.wave).protocol("lode-agent-core-bounded-worker-wave-seal"), version: BOUNDED_WORKER_WAVE_VERSION },
         authorityBoundary: artifactAuthorityBoundary("BoundedWorkerWaveSeal"),
         projectId: read.wave.projectId,
         [originalFormat(read.wave).sessionIdField]: sessionIdOf(read.wave),
@@ -806,7 +806,7 @@ export function abandonBoundedWorkerWave({ root = ".", waveId, reasonCode, reaso
       {
         schemaVersion: 1,
         kind: "BoundedWorkerWaveAbandonment",
-        protocol: { name: originalFormat(read.wave).protocol("head-agent-core-bounded-worker-wave-abandonment"), version: BOUNDED_WORKER_WAVE_VERSION },
+        protocol: { name: originalFormat(read.wave).protocol("lode-agent-core-bounded-worker-wave-abandonment"), version: BOUNDED_WORKER_WAVE_VERSION },
         authorityBoundary: artifactAuthorityBoundary("BoundedWorkerWaveAbandonment"),
         projectId: read.wave.projectId,
         [originalFormat(read.wave).sessionIdField]: sessionIdOf(read.wave),
@@ -853,7 +853,7 @@ function buildResultProjection(statusProjection) {
   const payload = {
     schemaVersion: 1,
     kind: "WorkerWaveResultProjection",
-    protocol: { name: originalFormat(statusProjection).protocol("head-agent-core-worker-wave-results"), version: BOUNDED_WORKER_WAVE_VERSION },
+    protocol: { name: originalFormat(statusProjection).protocol("lode-agent-core-worker-wave-results"), version: BOUNDED_WORKER_WAVE_VERSION },
     authorityBoundary: artifactAuthorityBoundary("WorkerWaveResultProjection"),
     projectId: statusProjection.projectId,
     [originalFormat(statusProjection).sessionIdField]: sessionIdOf(statusProjection),
@@ -894,7 +894,7 @@ function waitOutcome(statusProjection, timedOut) {
   const payload = {
     schemaVersion: 1,
     kind: "BoundedWorkerWaveWaitOutcome",
-    protocol: { name: originalFormat(statusProjection).protocol("head-agent-core-bounded-worker-wave-wait"), version: BOUNDED_WORKER_WAVE_VERSION },
+    protocol: { name: originalFormat(statusProjection).protocol("lode-agent-core-bounded-worker-wave-wait"), version: BOUNDED_WORKER_WAVE_VERSION },
     authorityBoundary: artifactAuthorityBoundary("BoundedWorkerWaveWaitOutcome"),
     projectId: statusProjection.projectId,
     [originalFormat(statusProjection).sessionIdField]: sessionIdOf(statusProjection),

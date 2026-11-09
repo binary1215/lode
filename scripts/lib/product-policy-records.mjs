@@ -148,7 +148,7 @@ export function nextPolicyModel({ baseModel, operation, key, name, description, 
 }
 
 export function verifyProductPolicyCandidate(document, projectId = "", storage = undefined) {
-  const format = familyFormatForOriginal("head-agent-core-product-policy-candidate", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-product-policy-candidate", document, storage);
   exactFields(
     document,
     [
@@ -255,7 +255,7 @@ export function verifyProductPolicyCandidate(document, projectId = "", storage =
 }
 
 export function verifyProductPolicyReviewDecision(document, candidate = null, projectId = "", storage = undefined) {
-  const format = familyFormatForOriginal("head-agent-core-product-policy-review", document, storage);
+  const format = familyFormatForOriginal("lode-agent-core-product-policy-review", document, storage);
   exactFields(
     document,
     [

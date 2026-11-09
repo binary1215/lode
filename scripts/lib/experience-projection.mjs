@@ -24,7 +24,7 @@ export function actionability({
 
 export function buildAttentionProjection(experience, storage = undefined) {
   const format = formatForVerifiedOwner(storage);
-  const owner = format.value("HEAD");
+  const owner = format.value("Lode");
   const core = experience?.readiness?.core || {};
   const product = experience?.readiness?.product || {};
   const recovery = experience?.readiness?.recovery || {};
@@ -150,7 +150,7 @@ export function buildAttentionProjection(experience, storage = undefined) {
   const userDecisionRequired = immediate.some((entry) => entry.owner === "user");
   const headActionRequired = immediate.some((entry) => entry.owner === owner);
   return {
-    kind: format.kind("HeadAttentionProjection"),
+    kind: format.kind("LodeAttentionProjection"),
     protocolVersion: EXPERIENCE_PROJECTION_PROTOCOL_VERSION,
     status: immediate.length ? "attention" : items.length ? "notice" : "clear",
     items,
@@ -183,7 +183,7 @@ export function buildPresentationProjection(attention, storage = undefined) {
   const format = formatForVerifiedOwner(storage);
   const mode = attention.userDecisionRequired ? "decision" : attention.headActionRequired ? "exception" : attention.status === "notice" ? "notice" : "quiet";
   return {
-    kind: format.kind("HeadPresentationProjection"),
+    kind: format.kind("LodePresentationProjection"),
     protocolVersion: EXPERIENCE_PROJECTION_PROTOCOL_VERSION,
     mode,
     successPolicy: "one-line-unless-details-requested",

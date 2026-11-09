@@ -226,7 +226,7 @@ export function verifySourceObservation(root, projectId, bundle, { requireCurren
   if (!recordShape(bundle) || !recordShape(bundle.evidence) || !recordShape(bundle.descriptor) || !recordShape(bundle.observation))
     throw sourceError("SOURCE_OBSERVATION_INVALID");
   const { evidence, descriptor, observation } = bundle;
-  const format = familyFormatForOriginal("head-agent-core-observation", observation, storage);
+  const format = familyFormatForOriginal("lode-agent-core-observation", observation, storage);
   if (!format) throw sourceError("SOURCE_OBSERVATION_INVALID");
   if (
     descriptor.descriptorId !== descriptorFor(evidence, format).descriptorId ||

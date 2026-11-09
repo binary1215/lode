@@ -384,7 +384,7 @@ export async function continueSessionFromMcp(args, coordinationWorkspaceHost) {
     root: args.project_root,
     checkpointId: args.checkpoint_id || null,
   });
-  const restoredFormat = familyFormatForOriginal("head-agent-core-artifact-session-restore", restored.projection);
+  const restoredFormat = familyFormatForOriginal("lode-agent-core-artifact-session-restore", restored.projection);
   if (coordinationWorkspaceHost.projectRoot) {
     const requested = fs.realpathSync(path.resolve(args.project_root));
     const injected = fs.realpathSync(path.resolve(coordinationWorkspaceHost.projectRoot));
