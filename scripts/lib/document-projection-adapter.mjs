@@ -27,6 +27,17 @@ const REQUIRED_METHODS = [
 
 const fail = failWith("DOCUMENT_PROJECTION_ERROR");
 
+// The derived knowledge-graph index heading. Every dialect writes the same
+// heading (user decision of 2026-11-10). A projection stored by an earlier
+// version carries the heading its dialect used then: it is still recognised as
+// the deterministic rendering of its GraphSnapshot, reported as stale, and
+// replaced by the next materialization.
+export const KNOWLEDGE_GRAPH_INDEX_HEADING = "LODE Agent derived knowledge graph";
+const EARLIER_INDEX_HEADINGS = Object.freeze({
+  lode: Object.freeze(["Lode Agent derived knowledge graph"]),
+  head: Object.freeze(["HEAD Agent derived knowledge graph"]),
+});
+
 function compare(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -196,6 +207,22 @@ function groupBy(values, keyFor) {
 }
 
 export function buildMarkdownDocumentProjection(graph, storage = undefined) {
+  return renderMarkdownDocumentProjection(graph, storage, KNOWLEDGE_GRAPH_INDEX_HEADING);
+}
+
+// "current" when a stored projection is the current deterministic rendering of
+// its GraphSnapshot, "earlier-index-heading" when it differs only by the index
+// heading an earlier version wrote for this dialect, otherwise null.
+function deterministicRendering(projection, graph, storage) {
+  const stored = documentProjectionCanonicalJson(projection);
+  if (stored === documentProjectionCanonicalJson(buildMarkdownDocumentProjection(graph, storage))) return "current";
+  for (const heading of EARLIER_INDEX_HEADINGS[formatForVerifiedOwner(storage).dialect] || []) {
+    if (stored === documentProjectionCanonicalJson(renderMarkdownDocumentProjection(graph, storage, heading))) return "earlier-index-heading";
+  }
+  return null;
+}
+
+function renderMarkdownDocumentProjection(graph, storage, indexHeading) {
   verifyTemporalProvenanceGraph(graph);
   const nodes = [...graph.nodes].sort((left, right) => compare(left.kind, right.kind) || compare(left.nodeId, right.nodeId));
   const edges = [...graph.edges].sort((left, right) => compare(left.type, right.type) || compare(left.edgeId, right.edgeId));
@@ -235,7 +262,7 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
 
   const output = [];
   const indexLines = [
-    formatForVerifiedOwner(storage).dialect === "lode" ? "# Lode Agent derived knowledge graph" : "# LODE Agent derived knowledge graph",
+    `# ${indexHeading}`,
     "",
     "> This is a deterministic, rebuildable projection of a verified GraphSnapshot. It is not project canon, an instruction source, or promotion authority.",
     "",
@@ -263,13 +290,7 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
       `| ${markdown(type)} | ${edgeGroups.get(type).length} | ${pages.map((page, index) => `[${index + 1}](${page.relativePath})`).join(", ")} |`,
     );
   }
-  output.push(
-    document(
-      "index.md",
-      formatForVerifiedOwner(storage).dialect === "lode" ? "Lode Agent derived knowledge graph" : "LODE Agent derived knowledge graph",
-      indexLines.join("\n"),
-    ),
-  );
+  output.push(document("index.md", indexHeading, indexLines.join("\n")));
 
   for (const page of nodePages) {
     const lines = [
@@ -765,15 +786,12 @@ export function inspectMarkdownProjection({ projectRoot, storage, graph, adapter
     current.projection.graphSnapshotId !== graph.graphSnapshotId ||
     current.projection.graphSnapshotHash !== graph.graphSnapshotHash ||
     current.projection.sourceSnapshotId !== graph.sourceSnapshotId;
-  if (!stale) {
-    const expected = buildMarkdownDocumentProjection(graph, storage);
-    if (documentProjectionCanonicalJson(current.projection) !== documentProjectionCanonicalJson(expected)) {
-      fail("Stored DocumentProjection differs from the deterministic Markdown reference.", "DOCUMENT_PROJECTION_SEMANTIC_MISMATCH");
-    }
-  }
+  const rendering = stale ? null : deterministicRendering(current.projection, graph, storage);
+  if (!stale && !rendering) fail("Stored DocumentProjection differs from the deterministic Markdown reference.", "DOCUMENT_PROJECTION_SEMANTIC_MISMATCH");
   const drift = publishedDrift(current.projection, actual);
   return {
-    status: drift.length ? "modified" : stale ? "stale" : "current",
+    status: drift.length ? "modified" : stale || rendering !== "current" ? "stale" : "current",
+    ...(rendering === "earlier-index-heading" ? { staleReason: "earlier-index-heading" } : {}),
     graphFreshness: stale ? "stale" : "current",
     graphSnapshotId: graph.graphSnapshotId,
     projectedGraphSnapshotId: current.projection.graphSnapshotId,
@@ -872,8 +890,7 @@ export function captureDocumentChangeCandidates({ projectRoot, storage, graph, a
   if (current.projection.graphSnapshotId !== graph.graphSnapshotId || current.projection.graphSnapshotHash !== graph.graphSnapshotHash) {
     fail("Document edits cannot be captured against a stale GraphSnapshot.", "DOCUMENT_PROJECTION_STALE");
   }
-  const expectedProjection = buildMarkdownDocumentProjection(graph, storage);
-  if (documentProjectionCanonicalJson(current.projection) !== documentProjectionCanonicalJson(expectedProjection)) {
+  if (!deterministicRendering(current.projection, graph, storage)) {
     fail("Document edits cannot be captured against a semantically divergent projection.", "DOCUMENT_PROJECTION_SEMANTIC_MISMATCH");
   }
   const expected = new Map(current.projection.documents.map((item) => [item.relativePath, item]));
