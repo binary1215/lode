@@ -8,6 +8,7 @@ const hasProjectMarker = (root) => [".head", ".lode"].some((directory) => fs.exi
 import { sessionCallRequiresBinding } from "./session-routing.mjs";
 import { createSessionHostRequestRegistry, parseClaudeNativeToolName } from "./session-host-request.mjs";
 import { subagentWriteGuardEnabled } from "./subagent-write-guard.mjs";
+import { effectiveToolCall } from "./operation-groups.mjs";
 
 const validCaller = (id) => typeof id === "string" && id.length > 0 && id.length <= 512 && !/[\u0000-\u001f]/u.test(id);
 const missingCaller = () => {
@@ -135,7 +136,8 @@ export function createNativeSessionHostBridge({
       const original = JSON.parse(value.original_arguments);
       if (!original || typeof original !== "object" || Array.isArray(original)) throw Object.assign(new Error(), { code: "INVALID_NATIVE_HOOK_ARGUMENTS" });
       const routed = routerName(match.name);
-      const name = semanticToolName(routed ? original.name : match.name);
+      // A grouped tool is classified as the member operation its action selects.
+      const name = semanticToolName(routed ? effectiveToolCall(original.name, original.arguments).name : effectiveToolCall(match.name, original).name);
       if (helperName(name)) throw Object.assign(new Error(), { code: "NATIVE_HOOK_RECURSION" });
       if (name === "lode_conversation_list" || name === "lode_conversation_send") {
         requestRegistry.prepare({
@@ -164,8 +166,8 @@ export function createNativeSessionHostBridge({
       ) {
         // Catalog metadata only. A Project-only guarded write gets transient
         // exact correlation without Session/P2/inventory lookup or persistence.
-        const { catalogTools } = await import("../mcp-server.mjs");
-        const selected = catalogTools.find((tool) => semanticToolName(tool.name) === name);
+        const { operationCatalogTools } = await import("../mcp-server.mjs");
+        const selected = operationCatalogTools.find((tool) => semanticToolName(tool.name) === name);
         guardOnlyCorrelation = Boolean(selected && selected.annotations?.readOnlyHint !== true);
       }
       // Independent reads/off-mode preserve the existing no-binding path.
@@ -198,8 +200,9 @@ export function createNativeSessionHostBridge({
   async function dispatchProjectRequest(request, handler, caller) {
     const outer = request.params?.arguments;
     const routed = routerName(request.params?.name);
-    const args = routed ? outer?.arguments : outer;
-    const name = semanticToolName(routed ? outer?.name : request.params?.name);
+    const effective = effectiveToolCall(routed ? outer?.name : request.params?.name, routed ? outer?.arguments : outer);
+    const args = effective.arguments;
+    const name = semanticToolName(effective.name);
     const route = (extra) => ({
       caller: visibleCaller(caller),
       hostEnvironment: environment,
@@ -363,7 +366,8 @@ export function createNativeSessionHostBridge({
       if (request.method !== "tools/call") return handler(request, {});
       if (helperName(request.params?.name)) return await prepareHookRequest(request);
       const routed = routerName(request.params?.name);
-      const targetName = routed ? request.params?.arguments?.name : request.params?.name;
+      const outer = request.params?.arguments;
+      const targetName = effectiveToolCall(routed ? outer?.name : request.params?.name, routed ? outer?.arguments : outer).name;
       if (helperName(targetName)) return reply(request, Object.assign(new Error(), { code: "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED" }));
       const caller = callerFor(request);
       try {

@@ -145,7 +145,7 @@ compaction UX·전체 활동 파악의 증거가 아닙니다. Codex 현재 대�
 
 ## 과거에 준비된 입력
 
-기존 `lode_runtime_invocation_authorization`, `lode_bounded_worker_status`와
+기존 `lode_runtime_invocation_authorization`, `lode_bounded_worker` (`status`)와
 CLI `runtime-invocation-read --authorization <id>`의 명시적 read/status 경계에서
 선택적 `preparedInput`을 제공합니다. 공유 정본 authorization/dispatch reader와
 prepare/execute/apply 검사는 바뀌지 않습니다. 선택적 뷰를 불러오지 못해도 원래
@@ -522,7 +522,7 @@ thread·turn·모델 호출은 하지 않았습니다. 내장 로컬 Host의 준
 새 사용자 JSON 양식이나 일반 Session 게이트를 만들지 않으며, 선택 모드가
 실패해도 정본 작업 폴더에서 조용히 실행하지 않습니다.
 
-`worker-prepare` / `lode_bounded_worker_prepare`는 Lode가 정한 task, 정확한 모델,
+`worker-prepare` / `lode_bounded_worker` (`prepare`)는 Lode가 정한 task, 정확한 모델,
 member, context, source·proposal 범위를 받습니다. 로컬의 고정 Codex backend를
 탐색하고 소유된 모델 없는 feature/config/skill/version/help 검사로 P5 준비를
 프로젝트 밖에 보존합니다. 동일한 준비는 같은 authorization을 재사용합니다.
@@ -604,7 +604,7 @@ node scripts/lode.mjs runtime-invocation-result <project> --authorization <execu
 node scripts/lode.mjs runtime-invocation-apply-run-result <project> --authorization <execution-authorization-id>
 ```
 
-input에는 `runtime`, `scope`, `workspaceMode` 및 optional `limits`가 들어 있습니다. Run scope는 `{ "kind": "run" }`입니다. Session scope는 `{ "kind": "session", "request": "...", "contextCapsuleId": null }`입니다. request는 bounded stdin payload를 파생하며 선택적 retained-worker 입력을 사용할 때만 보존됩니다. read-only MCP tool `lode_runtime_invocation_authorization`과 `lode_runtime_invocation_lease_status`는 persisted authorization 하나와 available/claimed/consumed/released state를 검증합니다. 이 읽기 전용 도구는 권한을 생성·소비·해제하지 않습니다. 선택적 `lode_bounded_worker_start`는 신뢰된 Host 연결과 기존 lease로 실행을 위임하며 소비된 authorization을 replay하는 공개 도구는 없습니다.
+input에는 `runtime`, `scope`, `workspaceMode` 및 optional `limits`가 들어 있습니다. Run scope는 `{ "kind": "run" }`입니다. Session scope는 `{ "kind": "session", "request": "...", "contextCapsuleId": null }`입니다. request는 bounded stdin payload를 파생하며 선택적 retained-worker 입력을 사용할 때만 보존됩니다. read-only MCP tool `lode_runtime_invocation_authorization`과 `lode_runtime_invocation_lease_status`는 persisted authorization 하나와 available/claimed/consumed/released state를 검증합니다. 이 읽기 전용 도구는 권한을 생성·소비·해제하지 않습니다. 선택적 `lode_bounded_worker` (`start`)는 신뢰된 Host 연결과 기존 lease로 실행을 위임하며 소비된 authorization을 replay하는 공개 도구는 없습니다.
 
 추적되는 verifier는 다음과 같습니다.
 

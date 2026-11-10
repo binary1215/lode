@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import test from "node:test";
 import { runCommand, usage } from "../scripts/head.mjs";
 import { dispatch, tools, catalogTools, toolsForSurface } from "../scripts/mcp-server.mjs";
+import { groupMembership } from "../scripts/lib/operation-groups.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
 import { buildRuntimeProtocolEvidence, buildRuntimeProjectBinding } from "../scripts/lib/runtime-protocol-evidence.mjs";
@@ -84,8 +85,12 @@ test("small default discovery keeps all optional contracts discoverable and mana
   for (const [, name] of mutations)
     if (name) {
       const discovered = (await dispatch(request("lode_tools_discover", { name }))).result.structuredContent.tools[0];
-      assert.equal(discovered.executionMode, "managed");
-      assert.equal(discovered.invokeWith, "lode_tools_call");
+      // A deprecated name finds its grouped tool (stage 3-F); the action keeps the route.
+      const membership = groupMembership(name);
+      const route = membership ? discovered.actions.find((entry) => entry.action === membership.action) : discovered;
+      assert.equal(discovered.name, membership ? membership.group.name : name);
+      assert.equal(route.executionMode, "managed");
+      assert.equal(route.invokeWith, "lode_tools_call");
     }
   for (const name of [
     "lode_bounded_worker_status",
@@ -102,12 +107,13 @@ test("small default discovery keeps all optional contracts discoverable and mana
     "lode_world_model",
     "lode_conversation_enter",
   ]) {
+    const listed = groupMembership(name)?.group.name ?? name;
     assert(
-      catalogTools.some((tool) => tool.name === name),
+      catalogTools.some((tool) => tool.name === listed),
       name,
     );
     const found = await dispatch(request("lode_tools_discover", { name }));
-    assert.equal(found.result.structuredContent.tools[0].name, name);
+    assert.equal(found.result.structuredContent.tools[0].name, listed);
   }
 });
 

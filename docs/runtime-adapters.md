@@ -159,7 +159,7 @@ tools only when useful; see [runtime composition](../skills/lode-agent-core/refe
 
 ## Historical prepared input
 
-Existing `lode_runtime_invocation_authorization`, `lode_bounded_worker_status`
+Existing `lode_runtime_invocation_authorization`, `lode_bounded_worker` (`status`)
 and CLI `runtime-invocation-read --authorization <id>` add an optional
 `preparedInput` view at their explicit read/status boundary. The shared canonical
 authorization/dispatch readers and prepare/execute/apply checks are unchanged.
@@ -596,7 +596,7 @@ install or update a runtime cache.
 There is no new user JSON form or general Session gate, and failure of this
 optional mode never silently launches in the canonical workspace.
 
-`worker-prepare` / `lode_bounded_worker_prepare` accepts Lode-selected task,
+`worker-prepare` / `lode_bounded_worker` (`prepare`) accepts Lode-selected task,
 model, member, context, source and proposal scope. It discovers the local fixed
 Codex backend, uses owned model-free feature/config/skill/version/help probes,
 and retains its exact P5 preparation outside the project. Identical preparation
@@ -683,7 +683,7 @@ node scripts/lode.mjs runtime-invocation-result <project> --authorization <execu
 node scripts/lode.mjs runtime-invocation-apply-run-result <project> --authorization <execution-authorization-id>
 ```
 
-The input contains `runtime`, `scope`, `workspaceMode`, and optional `limits`. Run scope is `{ "kind": "run" }`. Session scope is `{ "kind": "session", "request": "...", "contextCapsuleId": null }`; the request derives the bounded stdin payload and is retained only when optional retained-worker input is selected. The read-only MCP tools `lode_runtime_invocation_authorization` and `lode_runtime_invocation_lease_status` verify one persisted authorization and its available/claimed/consumed/released state. These read-only tools do not create, consume or release authorization. Optional `lode_bounded_worker_start` delegates execution through its trusted Host connection and the existing lease; no public tool can replay a consumed authorization.
+The input contains `runtime`, `scope`, `workspaceMode`, and optional `limits`. Run scope is `{ "kind": "run" }`. Session scope is `{ "kind": "session", "request": "...", "contextCapsuleId": null }`; the request derives the bounded stdin payload and is retained only when optional retained-worker input is selected. The read-only MCP tools `lode_runtime_invocation_authorization` and `lode_runtime_invocation_lease_status` verify one persisted authorization and its available/claimed/consumed/released state. These read-only tools do not create, consume or release authorization. Optional `lode_bounded_worker` (`start`) delegates execution through its trusted Host connection and the existing lease; no public tool can replay a consumed authorization.
 
 The tracked verifier is:
 

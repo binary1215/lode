@@ -33,7 +33,7 @@ Backend의 강제 기능 미구현, provider API의 불완전한 정책 관측, 
 별도의 `fresh-selected-patch-proposal` backend 후보는 새 Codex worker에게
 **patch 데이터만** 요청합니다. 도구나 파일 쓰기 권한을 주지 않으며, 부족한
 selected-exec/native-fork 보장을 대신 증명하지도 않습니다. 소스에 고정된 runtime
-구성은 `worker-prepare` / `lode_bounded_worker_prepare`와 기존 start 작업을 통해
+구성은 `worker-prepare` / `lode_bounded_worker` (`prepare`)와 기존 start 작업을 통해
 내장 로컬 Host에 연결됩니다. 기본은 fresh입니다. 명시적인 `contextMode: "native-prefix"`
 (MCP는 `context_mode`, CLI는 `--context-mode`)는 `selectedContext`로 새 controlled
 durable seed를 만들고 그 child를 fork합니다. 한 번 대신 최대 두 번의 모델 turn을
@@ -91,7 +91,7 @@ authorization을 재사용할 수는 없습니다.
 
 ## 2. 정확한 job 실행·관찰·취소
 
-`worker-start` / `lode_bounded_worker_start`에는 신뢰된 Host runner capability가 필요합니다. 도구 입력으로 실행 파일·환경·정책이 강제된다는 주장을 넘길 수 없습니다. 검증된 Windows 합성 연결에서는 native owner가 runner의 절대 deadline과 자식 프로세스 트리를 관리합니다. 정확한 member·authorization·input·root·runner/Core identity·policy가 결속됩니다.
+`worker-start` / `lode_bounded_worker` (`start`)에는 신뢰된 Host runner capability가 필요합니다. 도구 입력으로 실행 파일·환경·정책이 강제된다는 주장을 넘길 수 없습니다. 검증된 Windows 합성 연결에서는 native owner가 runner의 절대 deadline과 자식 프로세스 트리를 관리합니다. 정확한 member·authorization·input·root·runner/Core identity·policy가 결속됩니다.
 
 시작 요청을 반복하거나 응답이 불확실해도 같은 job을 관찰하며 새로 실행하지 않습니다. CLI와 MCP는 동일한 연산을 제공합니다.
 
@@ -99,8 +99,8 @@ authorization을 재사용할 수는 없습니다.
 | --- | --- | --- |
 | 상태 관찰 | `worker-job-status` | `lode_bounded_worker_job_status` |
 | 취소 요청 | `worker-cancel` | `lode_bounded_worker_cancel` |
-| 반환 근거 재대조 | `worker-job-reconcile` | `lode_bounded_worker_job_reconcile` |
-| 동결된 patch 조회 | `worker-job-patch` | `lode_bounded_worker_job_patch` |
+| 반환 근거 재대조 | `worker-job-reconcile` | `lode_bounded_worker_job` (`reconcile`) |
+| 동결된 patch 조회 | `worker-job-patch` | `lode_bounded_worker_job` (`patch`) |
 
 상태 조회는 읽기 전용이며 artifact를 만들지 않습니다. 성공에는 owner·트리 종료, native terminal 출력, 정확한 lease release와 invocation 근거의 검증이 필요합니다. 부분 출력 파일이나 취소 요청만으로 완료를 판단하지 않습니다. 취소는 임의 PID가 아닌 기존 job만 대상으로 하며 소스 drift나 Run 전환이 보호적 취소를 막지 않습니다. 소유권은 숫자 PID 부재뿐 아니라 프로세스 생성 identity로 확인합니다.
 

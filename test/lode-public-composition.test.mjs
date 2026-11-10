@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { ARTIFACT_COMPOSITION, artifactCompositionForIdentity, publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
 import { OPERATION_DESCRIPTORS, resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
-import { dispatch, tools, toolsForSurface, catalogTools, discoverTools } from "../scripts/mcp-server.mjs";
+import { dispatch, tools, toolsForSurface, catalogTools, operationCatalogTools, discoverTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { workerIntegrationFixture } from "./helpers/worker-integration-fixture.mjs";
 import { readRuntimeInvocationResult } from "../scripts/lib/runtime-run-result-application.mjs";
@@ -36,7 +36,9 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
   assert.ok(tools.every(tool => tool.name.startsWith("lode_")));
   assert.ok(catalogTools.every(tool => tool.name.startsWith("lode_")));
   assert.equal(new Set(catalogTools.map(tool => tool.name)).size, catalogTools.length);
-  assert.equal(catalogTools.length, 144, "Discovery and the two routers are not private operation catalog entries");
+  assert.equal(operationCatalogTools.length, 144, "Discovery and the two routers are not private operation catalog entries");
+  // Stage 3-F: grouped tools replace their member operations in the listed catalog.
+  assert.equal(catalogTools.length, 131);
   assert.deepEqual(catalogTools.filter(tool => tool.name.startsWith("lode_work_document_")).map(tool => tool.name).sort(),
     ["lode_work_document_configure", "lode_work_document_prepare", "lode_work_document_publish", "lode_work_document_status"]);
   const routingSurface = new Map([["lode_tools_discover", false], ["lode_tools_read", true], ["lode_tools_call", true]]);

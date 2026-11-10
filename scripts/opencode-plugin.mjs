@@ -6,6 +6,7 @@ import { createNativeObservationStore, nativeId, projectNativeObservations, appe
 import { createSessionHostAdapter } from "./lib/session-host-adapter.mjs";
 import { startupProjection, MAX_CONTEXT_CHARACTERS } from "./lib/session-host-context-projection.mjs";
 import { resolveOperation } from "./lib/lode-operation-contract.mjs";
+import { effectiveToolCall } from "./lib/operation-groups.mjs";
 import { assessSubagentStateWrite, subagentWriteGuardEnabled } from "./lib/subagent-write-guard.mjs";
 import { resolveProjectStorage, assertProjectStorageUnchanged } from "./lib/project-storage-format.mjs";
 import { safeGraphFile } from "./lib/discovery-index.mjs";
@@ -399,12 +400,12 @@ export default {
           if (!raw) return;
           const resolved = resolveOperation(tool);
           const routed = ["lode_tools_read", "lode_tools_call"].includes(resolved?.semanticName || tool);
-          const inner = routed ? raw.name : tool;
-          const args = routed ? raw.arguments : raw;
+          // A grouped tool is classified as the member operation its action selects.
+          const { name: inner, arguments: args } = effectiveToolCall(routed ? raw.name : tool, routed ? raw.arguments : raw);
           const semantic = resolveOperation(inner)?.semanticName;
           if (!semantic || !object(args)) return;
-          const { catalogTools } = await import("./mcp-server.mjs");
-          const selected = catalogTools.find((item) => resolveOperation(item.name)?.semanticName === semantic);
+          const { operationCatalogTools } = await import("./mcp-server.mjs");
+          const selected = operationCatalogTools.find((item) => resolveOperation(item.name)?.semanticName === semantic);
           if (!selected || selected.annotations?.readOnlyHint === true) return;
           const session = await exactSession(input.sessionID);
           if (typeof session?.parentID !== "string" || !session.parentID || (!explicitEnforce && !nativeId(session.parentID))) return;

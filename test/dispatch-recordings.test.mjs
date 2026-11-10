@@ -49,8 +49,43 @@ test("MCP tools and CLI commands still call the recorded library functions with 
   }
 });
 
-test("the recordings cover every catalog tool and every CLI command branch", async () => {
+// Stage 3-F: a grouped tool action, its router call and the deprecated operation
+// name through the router each make exactly the member operation's recorded call.
+test("grouped tools, their routers and the deprecated names call exactly what the member operation recorded", async () => {
+  const result = spawnSync(process.execPath, ["--import", register, runner, "--groups"], { cwd: pluginRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  assert.equal(result.status, 0, result.stderr);
+  const { entries } = JSON.parse(result.stdout);
+  const expected = JSON.parse(fs.readFileSync(fixtureFile, "utf8"));
+  const recorded = new Map(expected.entries.filter((entry) => entry.surface === "mcp").map((entry) => [key(entry), entry]));
   const { catalogTools } = await import("../scripts/mcp-server.mjs");
+  const { operationGroup } = await import("../scripts/lib/operation-groups.mjs");
+  const groups = catalogTools.filter((tool) => operationGroup(tool.name));
+  assert.ok(groups.length > 0);
+  for (const group of groups) {
+    for (const { action } of operationGroup(group.name).actions) {
+      for (const route of ["direct", "router", "alias"]) {
+        assert.ok(
+          entries.some((entry) => entry.group === group.name && entry.action === action && entry.route === route),
+          `${group.name} ${action} ${route}`,
+        );
+      }
+    }
+  }
+  for (const entry of entries) {
+    const original = recorded.get(key({ surface: "mcp", tool: entry.operation, input: entry.input }));
+    assert.ok(original, `no recording for ${entry.operation}`);
+    assert.deepEqual(
+      { calls: entry.calls, outcome: entry.outcome },
+      { calls: original.calls, outcome: original.outcome },
+      `${entry.route} ${entry.group} ${entry.action}`,
+    );
+  }
+});
+
+test("the recordings cover every catalog tool and every CLI command branch", async () => {
+  // Every operation, including the deprecated names grouped tools replaced; the
+  // grouped tools themselves are covered by the test above.
+  const { operationCatalogTools: catalogTools } = await import("../scripts/mcp-server.mjs");
   const { cliCommands } = await import("./helpers/dispatch-recording-run.mjs");
   const expected = JSON.parse(fs.readFileSync(fixtureFile, "utf8"));
   const tools = new Set(expected.entries.filter((entry) => entry.surface === "mcp").map((entry) => entry.tool));
