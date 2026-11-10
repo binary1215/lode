@@ -315,6 +315,11 @@ async function dispatchSessionRequest(request, options = {}) {
   const args = routed ? outer?.arguments : outer;
   const hasSelection = args && Object.hasOwn(args, "session_id");
   const requestedName = semanticToolName(routed ? outer?.name : request.params?.name);
+  // Reached only without the native session bridge, which answers the helper
+  // itself. It is not a catalog tool, but a direct or routed call is refused
+  // before any Session or catalog step, never reported as an unknown tool.
+  if (request.method === "tools/call" && requestedName === semanticToolName(SESSION_HOST_REQUEST_HELPER))
+    return failure(request.id ?? null, `${SESSION_HOST_REQUEST_HELPER} accepts only native Host Hook ingress.`, "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED");
   // A verified child write has the same optional policy regardless of whether
   // its caller has selected a logical Session. Reject it before an unrelated
   // absent-binding diagnostic can hide the existing write-guard explanation.
@@ -494,12 +499,6 @@ async function dispatchRouted(
   try {
     let name = semanticToolName(request.params?.name);
     let args = request.params?.arguments || {};
-    // Reached only without the native session bridge, which answers the helper
-    // itself. It is not a catalog tool, but a direct or routed call is refused as
-    // before, never reported as an unknown tool.
-    const routedTarget = name === "lode_tools_read" || name === "lode_tools_call" ? args?.name : name;
-    if (semanticToolName(routedTarget) === semanticToolName(SESSION_HOST_REQUEST_HELPER))
-      return failure(id, `${SESSION_HOST_REQUEST_HELPER} accepts only native Host Hook ingress.`, "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED");
     if (name === "lode_tools_discover") {
       const value = discoverTools(args, surface);
       return success(id, { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
