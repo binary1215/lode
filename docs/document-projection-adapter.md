@@ -90,11 +90,11 @@ node scripts/lode.mjs world-docs-status <project>
 - `not-materialized`: no pointer or published Markdown exists;
 - `unmanaged`: Markdown exists without a verified base projection;
 - `current`: projection, published bytes, and current graph agree;
-- `stale`: the projection belongs to a different GraphSnapshot;
+- `stale`: the projection belongs to a different GraphSnapshot, or (with `staleReason: "earlier-index-heading"`) it was rendered by an earlier version under that version's index heading and the next build rewrites it;
 - `source-stale`: the projection matches the stored graph but the working project changed since indexing;
 - `modified`: the published view differs from its immutable base projection.
 
-Missing output can be regenerated. Digest mismatch, semantic divergence, unsafe paths, or adapter authority escalation fail closed. A newer verified graph may replace a clean published view, but the core never overwrites a modified view.
+Every project heads the index "LODE Agent derived knowledge graph". Missing output can be regenerated. Digest mismatch, semantic divergence, unsafe paths, or adapter authority escalation fail closed. A newer verified graph may replace a clean published view, but the core never overwrites a modified view.
 
 The effective post-refresh policy defaults to `manual`. An explicit user-selected `automatic` policy may invoke the same deterministic materialization only after incremental refresh has verified and advanced the World Model. The policy inspects the base view before refresh, captures current edits as immutable candidates, and records a separate content-derived outcome afterward. Invalid policy or projection state cannot stop or rewrite observed-state refresh. See [`post-refresh-projection.md`](post-refresh-projection.md).
 

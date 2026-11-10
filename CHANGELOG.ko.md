@@ -9,6 +9,25 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.104 — 게시 결과는 별도 확인
+
+- `.lode` 프로젝트도 파생 지식 그래프 색인 문서의 제목을 "LODE Agent derived
+  knowledge graph"로 씁니다. `.head` 프로젝트가 0.3.0-beta.102부터 쓰는 문자열과
+  같습니다.
+- 각 방언의 이전 제목("Lode Agent derived knowledge graph"(`.lode`), "HEAD Agent
+  derived knowledge graph"(`.head`))으로 저장된 Markdown 투영은 그래프가 그대로인
+  동안 의미 불일치 오류 대신 `stale`(`staleReason: "earlier-index-heading"`)로
+  보고됩니다. 다음 `world-docs-build`가 새 제목으로 다시 씁니다. 저장된 기록은
+  이관하지 않습니다.
+
+## 0.3.0-beta.103 — 게시 결과는 별도 확인
+
+- 분리 실행 워커 소유자의 `stderr.bin` 실패 줄이 실패한 파일 작업(`syscall`,
+  `path`, `dest`, `errno`)과 스택을 담아 간헐적 파일 시스템 오류의 위치를 찾을
+  수 있습니다.
+- 동시 presence 재작성 테스트를 프로세스당 40회로 제한해 느린 러너에서 잠금
+  기아가 아니라 이름 바꾸기 경합을 검사하도록 했습니다.
+
 ## 0.3.0-beta.102 — 게시 결과는 별도 확인
 
 - 소스 코드가 wire 프로토콜·레코드 종류·저장 값을 Lode 철자로 부릅니다. 구
