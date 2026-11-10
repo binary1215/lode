@@ -11,6 +11,14 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.103 — publication tracked separately
+
+- The detached worker owner's failure line in `stderr.bin` names the failing
+  file operation (`syscall`, `path`, `dest`, `errno`) and its stack, so an
+  intermittent filesystem error can be located.
+- The concurrent presence-rewrite test is bounded to 40 rewrites per process so
+  it checks the rename race rather than lock starvation on a slow runner.
+
 ## 0.3.0-beta.102 — publication tracked separately
 
 - Source code names wire protocols, record kinds and stored values by their Lode
