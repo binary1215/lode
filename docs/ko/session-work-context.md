@@ -543,6 +543,10 @@ local 또는 plugin-scoped의 정확히 같은 MCP 서버를 호출합니다. �
 관측된 stock transport에서 모델 직접 호출·helper router 호출·중첩된 가짜 metadata·
 치환되지 않은 template은 연결을 만들 수 없습니다. 이는 확인된 stock transport
 연결 지점이지 임의 client를 인증하는 보안 수단은 아닙니다.
+helper는 카탈로그 도구가 아닙니다. `tools/list`, discovery, router는 helper를
+보여 주거나 라우팅하지 않으며, 모델의 직접 호출은
+`NATIVE_HOOK_INGRESS_REQUIRED`(router를 거치면
+`NATIVE_HOOK_DIRECT_INGRESS_REQUIRED`)로 거절됩니다.
 
 helper는 `{}`만 반환하며 `permissionDecision`, `updatedInput`, 논리 Session,
 승인 또는 P2 방향을 전달하지 않습니다. 도구 권한은 기존 Host가 관리합니다.

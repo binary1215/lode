@@ -53,7 +53,8 @@ test("refusals name the operation by this artifact's public name, whatever spell
     assert.match(response.error.message, /^lode_worker_integration is not available on the ordinary command surface\./);
   }
   const helper = await dispatch({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "head_session_host_request_prepare", arguments: {} } });
-  assert.equal(helper.error.message, "Unknown tool: lode_session_host_request_prepare");
+  assert.equal(helper.error.message, "lode_session_host_request_prepare accepts only native Host Hook ingress.");
+  assert.equal(helper.error.data.reasonCode, "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED");
 });
 
 test("Session binding for unregistered names still follows the historical head_* prefixes only", async () => {

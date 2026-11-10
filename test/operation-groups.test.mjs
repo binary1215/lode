@@ -43,7 +43,7 @@ test("each grouped action is exactly one registered operation, never a default-l
     assert.ok(listed.has(group.name));
   }
   assert.equal(catalogTools.length, operationCatalogTools.length - seen.size + OPERATION_GROUPS.length);
-  assert.equal(tools.length, 23);
+  assert.equal(tools.length, 22);
   assert.equal(toolsForSurface("managed-maintenance").length, catalogTools.length + 3);
 });
 

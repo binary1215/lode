@@ -54,9 +54,9 @@ test("default tools/list and router-reachable tools follow the Session/effect ma
         sessionCallRequiresBinding(tool.name) ||
         tool.annotations?.readOnlyHint !== true ||
         tool.name === "lode_conversation_list";
-  const listed = toolsForSurface().filter((tool) => tool.name !== "lode_session_host_request_prepare");
-  assert.equal(listed.length, toolsForSurface().length - 1);
-  for (const tool of [...listed, ...[...catalogTools, ...operationCatalogTools].filter((tool) => tool.name !== "lode_session_host_request_prepare")]) {
+  // The native Hook helper is in no catalog, so every listed tool follows the rule.
+  assert.ok([...toolsForSurface(), ...catalogTools, ...operationCatalogTools].every((tool) => tool.name !== "lode_session_host_request_prepare"));
+  for (const tool of [...toolsForSurface(), ...catalogTools, ...operationCatalogTools]) {
     namespaces.forEach((namespace, index) => assert.equal(matchers[index].test(namespace + tool.name), rule(tool), tool.name));
   }
   // The routers relay Session-bound and effectful inner calls.

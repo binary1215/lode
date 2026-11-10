@@ -31,14 +31,14 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
   for (const unknown of ["lode_unknown_mutation", "head_unknown_mutation", "lode_head_core_contract", "HEAD_core_contract", "head_core_contract_typo"]) {
     assert.equal(resolveOperation(unknown), null); assert.equal(publicToolName(unknown), unknown);
   }
-  assert.equal(tools.length, 23);
+  assert.equal(tools.length, 22);
   assert.ok(tools.some(tool => tool.name === "lode_session_list"), "the entry's advertised discovery call is directly callable");
   assert.ok(tools.every(tool => tool.name.startsWith("lode_")));
   assert.ok(catalogTools.every(tool => tool.name.startsWith("lode_")));
   assert.equal(new Set(catalogTools.map(tool => tool.name)).size, catalogTools.length);
-  assert.equal(operationCatalogTools.length, 144, "Discovery and the two routers are not private operation catalog entries");
+  assert.equal(operationCatalogTools.length, 143, "Discovery, the two routers and the native Hook helper are not operation catalog entries");
   // Stage 3-F: grouped tools replace their member operations in the listed catalog.
-  assert.equal(catalogTools.length, 131);
+  assert.equal(catalogTools.length, 130);
   assert.deepEqual(catalogTools.filter(tool => tool.name.startsWith("lode_work_document_")).map(tool => tool.name).sort(),
     ["lode_work_document_configure", "lode_work_document_prepare", "lode_work_document_publish", "lode_work_document_status"]);
   const routingSurface = new Map([["lode_tools_discover", false], ["lode_tools_read", true], ["lode_tools_call", true]]);
