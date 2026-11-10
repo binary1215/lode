@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { catalogTools, discoverTools, dispatch, operationCatalogTools, tools, toolsForSurface } from "../scripts/mcp-server.mjs";
@@ -155,4 +156,19 @@ test("discovery lists grouped tools, finds them by their deprecated names, and k
 
 test("docs/mcp-surface.md (+ko) mapping tables are current", async () => {
   for (const result of await generateMcpSurfaceDocs({ root: pluginRoot, check: true })) assert.equal(result.status, "current", result.file);
+});
+
+test("the docs/mcp-surface.md (+ko) example call runs as written, and needs its execution_mode", async () => {
+  for (const file of ["docs/mcp-surface.md", "docs/ko/mcp-surface.md"]) {
+    const text = fs.readFileSync(path.join(pluginRoot, file), "utf8");
+    const example = JSON.parse(text.match(/```json\n([\s\S]*?)\n```/)[1]);
+    const run = (args) => dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: example.name, arguments: args } });
+    const asWritten = await run(example.arguments);
+    assert.notEqual(asWritten.error?.data?.reasonCode, "MANAGED_OPERATION_NOT_ON_DEFAULT_SURFACE", JSON.stringify(asWritten));
+    assert.notEqual(asWritten.error?.data?.reasonCode, "INVALID_TOOL_ARGUMENTS", JSON.stringify(asWritten));
+    const withoutMode = { ...example.arguments };
+    delete withoutMode.execution_mode;
+    const refused = await run(withoutMode);
+    assert.equal(refused.error?.data?.reasonCode, "MANAGED_OPERATION_NOT_ON_DEFAULT_SURFACE", JSON.stringify(refused));
+  }
 });

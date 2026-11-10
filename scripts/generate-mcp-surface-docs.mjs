@@ -11,6 +11,10 @@ import { fileURLToPath } from "node:url";
 export const MCP_SURFACE_DOCS = Object.freeze(["docs/mcp-surface.md", "docs/ko/mcp-surface.md"]);
 const BEGIN = "<!-- generated: mcp-surface-groups (node scripts/generate-mcp-surface-docs.mjs) -->";
 const END = "<!-- end generated: mcp-surface-groups -->";
+const MANAGED_ROUTE = {
+  "docs/mcp-surface.md": " with `execution_mode: managed`",
+  "docs/ko/mcp-surface.md": ", `execution_mode: managed` 필요",
+};
 const HEADERS = {
   "docs/mcp-surface.md": ["Grouped tool", "`action`", "Route", "Deprecated name"],
   "docs/ko/mcp-surface.md": ["묶음 도구", "`action`", "경로", "폐기 예정 이름"],
@@ -19,13 +23,15 @@ const HEADERS = {
 export async function renderMcpSurfaceTable(file) {
   const { operationCatalogTools } = await import("./mcp-server.mjs");
   const { DEPRECATED_ALIAS_REMOVAL_VERSION, OPERATION_GROUPS } = await import("./lib/operation-groups.mjs");
+  const { isManagedMutation } = await import("./lib/managed-maintenance-surface.mjs");
   const operations = new Map(operationCatalogTools.map((tool) => [tool.name, tool]));
   const [group, action, route, alias] = HEADERS[file];
   const lines = [`| ${group} | ${action} | ${route} | ${alias} (${DEPRECATED_ALIAS_REMOVAL_VERSION}) |`, "| --- | --- | --- | --- |"];
   for (const entry of OPERATION_GROUPS) {
     for (const { action: name, operation } of entry.actions) {
       const router = operations.get(operation).annotations?.readOnlyHint === true ? "lode_tools_read" : "lode_tools_call";
-      lines.push(`| \`${entry.name}\` | \`${name}\` | \`${router}\` | \`${operation}\` |`);
+      const managed = isManagedMutation(operation) ? MANAGED_ROUTE[file] : "";
+      lines.push(`| \`${entry.name}\` | \`${name}\` | \`${router}\`${managed} | \`${operation}\` |`);
     }
   }
   return lines.join("\n");

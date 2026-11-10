@@ -62,6 +62,7 @@ allTools.push({
 // Listed surface: grouped tools replace their member operations (see
 // scripts/lib/operation-groups.mjs). allTools keeps every operation for dispatch.
 const surfaceTools = groupedCatalog(allTools);
+const operationsByName = new Map(allTools.map((tool) => [tool.name, tool]));
 const defaultToolNames = new Set([
   SESSION_HOST_REQUEST_HELPER,
   "lode_core_contract",
@@ -217,10 +218,9 @@ export function discoverTools({ name, prefix, offset = 0, limit = 8 } = {}, surf
 function groupDiscovery(name) {
   const group = operationGroup(name);
   if (!group) return {};
-  const operations = new Map(allTools.map((tool) => [tool.name, tool]));
   return {
     actions: group.actions.map(({ action, operation }) => {
-      const tool = operations.get(operation);
+      const tool = operationsByName.get(operation);
       return {
         action,
         description: tool.description,
