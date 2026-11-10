@@ -45,7 +45,9 @@ function fixture(t, runtime, purpose = "Selected current purpose; investigate on
     assert.equal(value.persisted, false);
     assert.equal(value.logicalSessionId, session.sessionId);
     assert.deepEqual(value.route, { session_id: session.sessionId });
-    assert.match(value.expansion, /lode_session_work_read|lode_conversation_enter/); assert.match(value.expansion, /project_root/);
+    if (value.expansion.startsWith("Omitted work:")) assert.match(value.expansion, /lode_session_work_read.*project_root:projectRoot.*route/);
+    else { assert.match(value.expansion, /lode_conversation_enter.*project_root:projectRoot.*exact route/); assert.match(value.expansion, /When needed/); }
+    assert.match(value.scope, /Read-only, non-atomic.*(?:Recheck|Check) current authority (?:before an effect|for effects)/);
     t.diagnostic(JSON.stringify({ runtime, length: text.length, sessionId: value.logicalSessionId,
       records: value.records.length, omittedEvidenceCount: value.omittedEvidenceCount,
       purposeOmitted: value.sessionPurposeCoverage?.contentIncluded === false,
@@ -98,6 +100,10 @@ function assertPartialWorkExpansion(f, raw, value, runtime, mode) {
   assert.equal(work.coverage.unavailable, 0); assert.equal(work.nextAfterEvidenceId, null);
   assert.equal(work.omissions.uninspected, 40 - inspected); assert.equal(work.omissions.byBudget, 0);
   assert.deepEqual(work.omissions.evidenceIds, []); assert.equal(work.omissions.omittedIdCount, 0);
+  if (mode === "hinted") {
+    assert.match(work.coverage.selection, /historical|hint/i); assert.match(work.coverage.selection, /inspected/i);
+    assert.match(value.scope, /historical|hint/i); assert.match(value.scope, /inspected/i);
+  } else assert.match(work.coverage.selection, /all discovered originals canonically inspected once.*partial body delivery.*not live state or semantic sufficiency/);
   assert.equal(value.workCoverage.status, work.status);
   if (value.workCoverage.omitted) {
     assert.equal(value.workCoverage.sourceOriginals, 40); assert.equal(value.workCoverage.sourceInspected, inspected);
@@ -118,7 +124,12 @@ function assertPartialWorkExpansion(f, raw, value, runtime, mode) {
     assert.deepEqual(record.content, original.content);
   }
   assert.equal(value.projectRoot, f.root); assert.deepEqual(value.route, { session_id: f.session.sessionId });
-  assert.match(value.expansion, /lode_session_work_read/);
+  if (value.expansion.startsWith("Omitted work:")) {
+    assert.equal(value.expansion, "Omitted work: lode_session_work_read(project_root:projectRoot, ...route)");
+  } else {
+    assert.match(value.expansion, /^When needed, lode_conversation_enter with project_root:projectRoot and the exact route above reads originals/);
+    assert.match(value.expansion, /Omitted work: lode_session_work_read with the same root\/route\.$/);
+  }
   // Use the actual emitted root/route, not an evaluated prose instruction.
   const read = input => withSessionRoute(value.projectRoot, value.route.session_id,
     () => readSessionWorkContext({ root: value.projectRoot, ...input }));
@@ -192,8 +203,8 @@ for (const runtime of ["codex", "claude"]) {
     assert.equal(value.sessionRecovery.contentIncluded, false);
     assert.equal(value.sessionRecovery.historicalApprovalGrantsCurrentEffect, false);
     assert.equal(value.projectRoot, f.root);
-    assert.match(value.expansion, /lode_conversation_enter/); assert.match(value.expansion, /workContext\.sessionPurpose/);
-    assert.equal(typeof value.requiredSourceExpansion, "string");
+    assert.match(value.expansion, /lode_conversation_enter.*workContext\.sessionPurpose/);
+    assert.match(value.requiredSourceExpansion, /no constraint or cancellation is assumed absent/);
     assert.deepEqual(snapshot(f.base), before);
     fs.unlinkSync(path.join(f.root, relativeProjectArtifact(f.storage, "project-direction", "current.json")));
     before = snapshot(f.base); value = (await f.read());
@@ -364,6 +375,7 @@ test("private formatter: oversized metadata/root explicitly omit content and ret
   assert.equal(value.projectRootSource, "SessionStart.cwd");
   assert.deepEqual(value.route, { session_id: sessionId });
   assert.deepEqual(value.currentProjectDirectionAvailability, unavailable);
+  assert.match(value.expansion, /project_root:the original SessionStart.cwd and the exact route/);
   t.diagnostic(JSON.stringify({ evidenceScope: "private-serializer-only; unsupported-filesystem-path-not-executed", length: text.length, branch: "coverage-and-last-resort-root-omission" }));
 });
 
@@ -392,7 +404,7 @@ test("P3 optional discovery never evicts fitting current direction; overflow exp
       assert(JSON.stringify(withHint).length <= limit);
       assert.equal(withHint.route, null); assert.equal(withHint.logicalSessionId, null);
       if (withHint.currentProjectDirection?.contentIncluded === false) {
-        assert.equal(typeof withHint.requiredSourceExpansion, "string");
+        assert.match(withHint.requiredSourceExpansion, /no constraint or cancellation is assumed absent/u);
         assert.match(withHint.expansion, new RegExp(publicToolName("head_project_direction_read"), "u"));
         assert.doesNotMatch(withHint.expansion, /session_list/u);
       } else assert.deepEqual(withHint.currentProjectDirection.input, entry(count).currentProjectDirection.input);

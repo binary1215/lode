@@ -28,6 +28,13 @@ function inventory(root) {
   }).sort(([a], [b]) => a.localeCompare(b));
 }
 
+test("EN/KO CLI example docs never show a bare head or lode command, which is not an installed launcher", () => {
+  const exampleDocs = ["bounded-worker-wave", "compaction-recovery", "conformance-reconciliation", "delivery-observation",
+    "document-change-review", "product-operating-loop", "release-observation", "session-recovery"];
+  for (const name of exampleDocs) for (const prefix of ["docs/", "docs/ko/"])
+    assert.equal((read(`${prefix}${name}.md`).match(/^head |^lode /gm) || []).length, 0, `${prefix}${name}.md`);
+});
+
 test("the installed launcher is named lode-agent and the head-core import shim is retained", () => {
   assert(read("scripts/lib/distribution-lifecycle.mjs").includes('const command = `${identity}-agent`;'));
   assert(fs.existsSync(path.join(pluginRoot, "scripts/lib/head-core.mjs")), "Import shim is retained");

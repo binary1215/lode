@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Runs the README first-request flow on two synthetic Git projects, once through
 // the CLI and once through MCP, and checks that both surfaces return the same
-// status, reasonCode and nextAction.id at every step, and that the two
-// conversation entry states listed below hold.
+// status, reasonCode and nextAction.id at every step, that the two conversation
+// entry states listed below hold, and that every value seen is documented
+// somewhere in README, docs/ or skills/ (a coverage check, not a wording check).
 //
 //   node scripts/verify-documented-flow.mjs
 //
@@ -15,6 +16,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function syntheticProject(label) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `lode-documented-flow-${label}-`));
@@ -113,6 +116,8 @@ const DOCUMENTED_ENTRY = {
   "conversation-enter": { status: "conversation_ready" },
 };
 
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const summary = (value) => ({ status: value?.status ?? null, reasonCode: value?.reasonCode ?? null, nextAction: value?.nextAction?.id ?? null });
 
 async function runCli(root, workDirectory) {
@@ -144,6 +149,20 @@ async function runMcp(root) {
   return results;
 }
 
+function documentationText() {
+  const files = [path.join(pluginRoot, "README.md")];
+  const walk = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(file);
+      else if (entry.name.endsWith(".md")) files.push(file);
+    }
+  };
+  walk(path.join(pluginRoot, "docs"));
+  walk(path.join(pluginRoot, "skills"));
+  return files.map((file) => fs.readFileSync(file, "utf8")).join("\n");
+}
+
 export async function verifyDocumentedFlow() {
   const cliRoot = syntheticProject("cli");
   const mcpRoot = syntheticProject("mcp");
@@ -157,6 +176,17 @@ export async function verifyDocumentedFlow() {
       const actual = steps.find((step) => step.id === id).cli;
       for (const [field, value] of Object.entries(expected)) assert.equal(actual[field], value, `${id}.${field}`);
     }
+    const docs = documentationText();
+    const undocumented = [
+      ...new Set(
+        steps.flatMap((step) => Object.values(step.cli)).filter((value) => typeof value === "string" && !new RegExp(`\\b${escapeRegExp(value)}\\b`).test(docs)),
+      ),
+    ];
+    assert.deepEqual(
+      undocumented,
+      [],
+      `status/reasonCode/nextAction values missing from README, docs/ and skills/: ${JSON.stringify(steps.map(({ id, cli: values }) => ({ id, ...values })))}`,
+    );
     return { status: "documented_flow_verified", surfaces: ["cli", "mcp"], steps: steps.map(({ id, cli: values }) => ({ id, ...values })) };
   } finally {
     for (const directory of [cliRoot, mcpRoot, workDirectory]) fs.rmSync(directory, { recursive: true, force: true });

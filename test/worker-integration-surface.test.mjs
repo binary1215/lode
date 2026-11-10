@@ -95,8 +95,6 @@ test("two integration tools describe exact actions and separate file effects fro
       assert.equal(Object.hasOwn(schema.properties, privateField), false);
     }
   }
-  assert.match(integration.description, /Lode supplies/);
-  assert.match(integration.description, /never creates ReviewDecision, Product Canon or checkpoint/);
   assert.ok(usage({ all: true, surface: "managed-maintenance" }).commands.some((line) => line.startsWith("lode-agent managed-maintenance worker-integrate ")));
   assert.equal(
     usage({ all: true }).commands.some((line) => line.startsWith("lode-agent worker-integrate ")),

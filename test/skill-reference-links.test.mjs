@@ -88,7 +88,10 @@ function fixture(t) {
 // route to it are free to change.
 function assertReferencesReachable(skillLinks, label) {
   const linked = new Set(skillLinks.map((target) => target.split("#")[0]));
-  for (const reference of files.slice(1)) assert(linked.has(reference), `${label}: unreachable Core reference ${reference}`);
+  // Every file in references/, so a new reference must be linked as well.
+  const references = fs.readdirSync(path.join(skillRoot, "references")).filter((name) => name.endsWith(".md"));
+  assert.ok(references.length > 0);
+  for (const name of references) assert(linked.has(`references/${name}`), `${label}: unreachable Core reference references/${name}`);
 }
 
 test("Lode Skills and all Core references route to existing files and anchors", () => {
