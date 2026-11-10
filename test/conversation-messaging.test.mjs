@@ -1627,9 +1627,15 @@ test("an inflight handoff and an owned orphan follow the claim disposition", asy
 
 test("four processes can rewrite one presence without ENOENT or a lost file", async (t) => {
   const { root, environment } = isolated(t);
+  // The presence lock is not fair: a releasing process may take it again before
+  // a polling waiter does, so one waiter can lose until the others finish. Keep
+  // the other three processes' total work (3 x REWRITES lock holds) well inside
+  // the 10 s lock wait, also on a slow Windows runner (about 57 ms per rewrite
+  // was measured there), so the test checks rename races rather than starvation.
+  const REWRITES = 40;
   const script = `
     import { registerConversationPresence } from ${JSON.stringify(new URL("../scripts/lib/conversation-messaging.mjs", import.meta.url).href)};
-    for (let index = 0; index < 400; index += 1) {
+    for (let index = 0; index < ${REWRITES}; index += 1) {
       registerConversationPresence({
         root: ${JSON.stringify(root)},
         identity: { runtime: "claude", nativeSessionId: "claude-race", agentId: null, subagent: false, parentSessionId: null },
