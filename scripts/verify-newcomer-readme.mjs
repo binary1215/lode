@@ -101,9 +101,11 @@ function headingSlug(heading) {
     .replace(/\s/g, "-");
 }
 
-// Structural README checks only: every local link resolves to a real file, every
-// fragment resolves to an explicit anchor or heading in its target, and the
-// English and Korean READMEs carry the same fragment links in the same order.
+// Structural README checks only: every local link to another file resolves to a
+// real file, every fragment on such a link resolves to an explicit anchor or
+// heading in its target, and the English and Korean READMEs carry the same
+// cross-file fragment links in the same order. Same-page `#anchor` links and
+// external URLs are not checked.
 function readmeFragmentLinks(name) {
   const file = path.join(sourceRoot, name);
   const readme = fs.readFileSync(file, "utf8");

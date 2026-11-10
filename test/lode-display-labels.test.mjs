@@ -31,6 +31,8 @@ function inventory(root) {
 test("EN/KO CLI example docs never show a bare head or lode command, which is not an installed launcher", () => {
   const exampleDocs = ["bounded-worker-wave", "compaction-recovery", "conformance-reconciliation", "delivery-observation",
     "document-change-review", "product-operating-loop", "release-observation", "session-recovery"];
+  // Wording pinned: the installed launcher is `${identity}-agent` (scripts/lib/distribution-lifecycle.mjs);
+  // no bare head or lode command is installed, so a doc example using one cannot run.
   for (const name of exampleDocs) for (const prefix of ["docs/", "docs/ko/"])
     assert.equal((read(`${prefix}${name}.md`).match(/^head |^lode /gm) || []).length, 0, `${prefix}${name}.md`);
 });

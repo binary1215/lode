@@ -175,7 +175,7 @@ test("common distribution install reuses synthetic files and project identity wi
   assert(!fs.existsSync(path.join(selectedRoot, "CLAUDE.md"))); assert(!fs.existsSync(path.join(selectedRoot, "opencode.json")));
 });
 
-test("four actual marketplace packages load the terminal module and ship agent-led entry instructions offline", async t => {
+test("four actual marketplace packages load the terminal module offline and every relative link in their packaged SKILL.md resolves", async t => {
   const f = fixture(t), value = graph();
   for (const [client, build] of [["codex", buildCodexMarketplaceSnapshot], ["claude", buildClaudeMarketplaceSnapshot]]) for (const name of ["lode-agent-plugin", "head-agent-plugin"]) {
     const outputRoot = path.join(f.base, `${client}-${name}`), built = build({ sourceRoot: pluginRoot, outputRoot, name, repository: "local", commit: "local" });
