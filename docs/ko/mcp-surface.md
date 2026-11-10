@@ -8,10 +8,14 @@ Lode는 작은 기본 MCP 도구 목록만 나열하고, 나머지 작업은 dis
 
 ## 기본 목록
 
-일반 `tools/list`는 같은 이름과 스키마의 도구 23개를 그대로 유지합니다.
-여기에는 `lode_tools_discover`, `lode_tools_read`, `lode_tools_call`이
-포함됩니다. 묶음은 discovery와 managed maintenance `tools/list`에 보이는 것만
-바꿉니다.
+일반 `tools/list`의 도구는 22개입니다. 여기에는 `lode_tools_discover`,
+`lode_tools_read`, `lode_tools_call`이 포함됩니다. 묶음은 이 목록을 바꾸지 않고,
+discovery와 managed maintenance `tools/list`에 보이는 것만 바꿉니다.
+
+Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로그 도구가
+아닙니다. `tools/list`, discovery, router 어디에도 보이거나 라우팅되지 않으며,
+동봉된 PreToolUse Hook만 이 helper를 호출합니다. 이전 버전은 이 helper를 23번째
+도구로 나열했습니다.
 
 ## 묶음 도구
 

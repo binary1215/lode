@@ -158,6 +158,7 @@ Thumbs.db
 !test/lib-core-helpers.test.mjs
 !test/dispatch-recordings.test.mjs
 !test/legacy-operation-names.test.mjs
+!test/hook-helper-unlisted.test.mjs
 !test/legacy-reason-codes.test.mjs
 !test/legacy-wire-spellings.test.mjs
 !test/operation-groups.test.mjs

@@ -9,6 +9,18 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.106 — 게시 결과는 별도 확인
+
+- 네이티브 Claude Hook 도우미 `lode_session_host_request_prepare`를 `tools/list`와
+  카탈로그에서 뺐고, 탐색과 라우터로도 닿지 않습니다. 기본 도구는 22개(이전 23개),
+  나열 카탈로그는 130개(이전 131개)입니다. 함께 배포되는 PreToolUse Hook은 여전히
+  도우미를 호출하며, 모델의 직접 호출은 그대로 `NATIVE_HOOK_INGRESS_REQUIRED` 또는
+  `NATIVE_HOOK_DIRECT_INGRESS_REQUIRED`로 거절됩니다.
+- Claude Code가 목록에 없는 도구를 Hook에서 호출할 수 있다는 점은 Claude Code
+  2.1.317의 `UserPromptSubmit`에서만 확인했고, `PreToolUse`와 다른 버전은 확인하지
+  못했습니다. Host가 거절하면 네이티브 Session 연결은 Hook이 없는 클라이언트처럼
+  호출자 정보 없음 경로로 넘어갑니다.
+
 ## 0.3.0-beta.105 — 게시 결과는 별도 확인
 
 - MCP 탐색이 작업을 자원 단위로 묶고 `action` 열거형으로 고릅니다. 첫 대상은

@@ -185,6 +185,9 @@ const ROWS = [
   { canonicalName: "lode_bounded_worker_job_reconcile", router: false, sessionDependent: true, managedMutation: true, kind: "operation", nativeRole: null },
   { canonicalName: "lode_bounded_worker_cancel", router: false, sessionDependent: true, managedMutation: false, kind: "operation", nativeRole: null },
   { canonicalName: "lode_bounded_worker_job_patch", router: false, sessionDependent: true, managedMutation: false, kind: "operation", nativeRole: null },
+  // Not a catalog tool: never listed, discoverable or routable. The row stays so
+  // the native session bridge recognises both spellings Hooks may send
+  // (lode_* and the historical head_*).
   {
     canonicalName: "lode_session_host_request_prepare",
     router: false,

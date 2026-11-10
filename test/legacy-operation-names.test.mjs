@@ -53,7 +53,19 @@ test("refusals name the operation by this artifact's public name, whatever spell
     assert.match(response.error.message, /^lode_worker_integration is not available on the ordinary command surface\./);
   }
   const helper = await dispatch({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "head_session_host_request_prepare", arguments: {} } });
-  assert.equal(helper.error.message, "Unknown tool: lode_session_host_request_prepare");
+  assert.equal(helper.error.message, "lode_session_host_request_prepare accepts only native Host Hook ingress.");
+  assert.equal(helper.error.data.reasonCode, "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED");
+  // Also before any Session route step, directly or through a router, on either surface.
+  const routedArgs = { project_root: "/missing-root", session_id: "session-x" };
+  for (const surface of ["ordinary", "managed-maintenance"]) {
+    for (const params of [
+      { name: "lode_session_host_request_prepare", arguments: routedArgs },
+      { name: "lode_tools_call", arguments: { name: "head_session_host_request_prepare", arguments: routedArgs } },
+    ]) {
+      const refused = await dispatch({ jsonrpc: "2.0", id: 4, method: "tools/call", params }, { surface });
+      assert.equal(refused.error.data.reasonCode, "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED", `${surface} ${params.name}`);
+    }
+  }
 });
 
 test("Session binding for unregistered names still follows the historical head_* prefixes only", async () => {

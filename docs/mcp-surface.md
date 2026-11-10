@@ -6,10 +6,13 @@ resource are grouped into one tool that takes an `action`.
 
 ## Default list
 
-The ordinary `tools/list` stays at the same 23 tools, with the same names and
-schemas. It includes `lode_tools_discover`, `lode_tools_read` and
-`lode_tools_call`. Grouping changes only what discovery and the managed
-maintenance `tools/list` show.
+The ordinary `tools/list` has 22 tools. It includes `lode_tools_discover`,
+`lode_tools_read` and `lode_tools_call`. Grouping does not change it; grouping
+changes only what discovery and the managed maintenance `tools/list` show.
+
+The native Claude Hook helper `lode_session_host_request_prepare` is not a
+catalog tool. No `tools/list`, discovery or router shows or routes it; only the
+bundled PreToolUse Hook calls it. Earlier versions listed it as a 23rd tool.
 
 ## Grouped tools
 

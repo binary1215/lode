@@ -39,32 +39,15 @@ const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const packageVersion = JSON.parse(fs.readFileSync(path.join(pluginRoot, "package.json"), "utf8")).version;
 const allTools = [...registryCatalog()];
 
-// Stateless discovery, not a registration store or permission/activation system.
-allTools.push({
-  name: SESSION_HOST_REQUEST_HELPER,
-  description:
-    "Internal native Host Hook ingress for one transient request correlation. No logical Session selection, original write, permission or recovery authority. Ordinary model calls cannot mint native claims; users never fill this input.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      native_session_id: { type: "string", minLength: 1, maxLength: 512 },
-      native_agent_id: { type: ["string", "null"], maxLength: 512 },
-      native_project_root: { type: "string", description: "Optional trusted Hook cwd; model input is not proof of plugin loading or Project scope." },
-      tool_use_id: { type: "string", minLength: 1, maxLength: 512 },
-      outer_tool_name: { type: "string", minLength: 1, maxLength: 512 },
-      original_arguments: { type: "string", minLength: 2 },
-    },
-    required: ["native_session_id", "tool_use_id", "outer_tool_name", "original_arguments"],
-    additionalProperties: false,
-  },
-  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-});
+// The native Host Hook helper (SESSION_HOST_REQUEST_HELPER) is deliberately not a
+// catalog tool: it is not listed, discoverable or routable. Only the native
+// session bridge accepts it, before any catalog lookup; every other path refuses
+// it with NATIVE_HOOK_DIRECT_INGRESS_REQUIRED (see dispatchRouted).
 // Listed surface: grouped tools replace their member operations (see
 // scripts/lib/operation-groups.mjs). allTools keeps every operation for dispatch.
 const surfaceTools = groupedCatalog(allTools);
 const operationsByName = new Map(allTools.map((tool) => [tool.name, tool]));
 const defaultToolNames = new Set([
-  SESSION_HOST_REQUEST_HELPER,
   "lode_core_contract",
   "lode_project_initialize_or_resume",
   "lode_conversation_enter",
@@ -332,6 +315,11 @@ async function dispatchSessionRequest(request, options = {}) {
   const args = routed ? outer?.arguments : outer;
   const hasSelection = args && Object.hasOwn(args, "session_id");
   const requestedName = semanticToolName(routed ? outer?.name : request.params?.name);
+  // Reached only without the native session bridge, which answers the helper
+  // itself. It is not a catalog tool, but a direct or routed call is refused
+  // before any Session or catalog step, never reported as an unknown tool.
+  if (request.method === "tools/call" && requestedName === semanticToolName(SESSION_HOST_REQUEST_HELPER))
+    return failure(request.id ?? null, `${SESSION_HOST_REQUEST_HELPER} accepts only native Host Hook ingress.`, "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED");
   // A verified child write has the same optional policy regardless of whether
   // its caller has selected a logical Session. Reject it before an unrelated
   // absent-binding diagnostic can hide the existing write-guard explanation.
@@ -539,8 +527,8 @@ async function dispatchRouted(
     // wrong type after the surface, router and read-only checks and before any
     // handler reads it (otherwise a missing root meant the server's cwd). Other
     // argument rules stay with the operation's own, CLI-identical refusal.
-    // The registry entry's schema; the one unregistered catalog tool (the host
-    // request helper) is still checked against its catalog schema.
+    // The registry entry's schema, or the catalog schema of a tool the registry
+    // does not hold.
     const declaredSchema = (registeredOperation(name)?.tool ?? allTools.find((tool) => semanticToolName(tool.name) === name))?.inputSchema;
     if (declaredSchema) assertProjectRootArgument(publicToolName(name), declaredSchema, args);
     const registered = registeredOperation(name);

@@ -11,6 +11,19 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.106 — publication tracked separately
+
+- The native Claude Hook helper `lode_session_host_request_prepare` is no longer
+  listed in `tools/list` or the catalog, and discovery and the routers do not
+  reach it. The default tool list has 22 tools (was 23) and the listed catalog
+  130 (was 131). The bundled PreToolUse Hook still calls the helper, and a
+  model's direct call is still refused with `NATIVE_HOOK_INGRESS_REQUIRED` or
+  `NATIVE_HOOK_DIRECT_INGRESS_REQUIRED`.
+- Claude Code calling an unlisted tool from a Hook was confirmed only for
+  `UserPromptSubmit` on Claude Code 2.1.317, not for `PreToolUse` or other
+  versions. If a Host refuses it, native Session linkage falls back to the
+  caller-unavailable path, as on a client without Hooks.
+
 ## 0.3.0-beta.105 — publication tracked separately
 
 - MCP discovery groups operations per resource behind an `action` enum, starting

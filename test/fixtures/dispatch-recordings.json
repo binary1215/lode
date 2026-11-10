@@ -8220,55 +8220,6 @@
   },
   {
    "surface": "mcp",
-   "tool": "lode_session_host_request_prepare",
-   "input": {
-    "native_session_id": "sample-native_session_id",
-    "tool_use_id": "sample-tool_use_id",
-    "outer_tool_name": "sample-outer_tool_name",
-    "original_arguments": "sample-original_arguments"
-   },
-   "calls": [],
-   "outcome": {
-    "error": -32000,
-    "message": "Unknown tool: lode_session_host_request_prepare"
-   }
-  },
-  {
-   "surface": "mcp",
-   "tool": "lode_session_host_request_prepare",
-   "input": {
-    "native_session_id": "sample-native_session_id",
-    "native_agent_id": "sample-native_agent_id",
-    "native_project_root": "sample-native_project_root",
-    "tool_use_id": "sample-tool_use_id",
-    "outer_tool_name": "sample-outer_tool_name",
-    "original_arguments": "sample-original_arguments"
-   },
-   "calls": [],
-   "outcome": {
-    "error": -32000,
-    "message": "Unknown tool: lode_session_host_request_prepare"
-   }
-  },
-  {
-   "surface": "mcp",
-   "tool": "lode_session_host_request_prepare",
-   "input": {
-    "native_session_id": "sample-native_session_id",
-    "native_agent_id": "",
-    "native_project_root": "",
-    "tool_use_id": "sample-tool_use_id",
-    "outer_tool_name": "sample-outer_tool_name",
-    "original_arguments": "sample-original_arguments"
-   },
-   "calls": [],
-   "outcome": {
-    "error": -32000,
-    "message": "Unknown tool: lode_session_host_request_prepare"
-   }
-  },
-  {
-   "surface": "mcp",
    "tool": "lode_session_list",
    "input": {
     "project_root": "<root>"

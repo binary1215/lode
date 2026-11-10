@@ -614,6 +614,10 @@ exact argument digest before unwrapping a router and resolves that caller only.
 Normal model calls, router calls to the helper, nested fake metadata and
 unexpanded templates cannot prepare this linkage on the observed stock transport.
 This is a verified stock-transport seam, not arbitrary-client authentication.
+The helper is not a catalog tool: `tools/list`, discovery and the routers never
+show or route it, and a direct model call is refused with
+`NATIVE_HOOK_INGRESS_REQUIRED` (`NATIVE_HOOK_DIRECT_INGRESS_REQUIRED` through a
+router).
 
 The helper returns `{}` and never supplies `permissionDecision`, `updatedInput`,
 logical Session, approval or P2 direction. Native permission remains Host-owned.
