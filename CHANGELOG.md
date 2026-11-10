@@ -11,6 +11,22 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.105 — publication tracked separately
+
+- MCP discovery groups operations per resource behind an `action` enum, starting
+  with `lode_bounded_worker`, `lode_bounded_worker_job` and
+  `lode_bounded_worker_wave`. A grouped call is rewritten to its member
+  operation before any check, so results, errors and effects are unchanged. The
+  default tool list of 23 is unchanged; the listed catalog shrinks from 144 to
+  131 tools.
+- The replaced names (`lode_bounded_worker_prepare` …
+  `lode_bounded_worker_wave_abandon`, and their `head_*` spellings) remain
+  callable directly and through the routers until 0.5.0. Discovery lists them as
+  `deprecatedAliases` and no longer shows them as tools.
+- New `docs/mcp-surface.md` maps every grouped action to its deprecated name;
+  `node scripts/generate-mcp-surface-docs.mjs --check` keeps it current.
+- The `lode_tools_call` description points to `lode_tools_read`.
+
 ## 0.3.0-beta.104 — publication tracked separately
 
 - `.lode` projects head the derived knowledge-graph index "LODE Agent derived

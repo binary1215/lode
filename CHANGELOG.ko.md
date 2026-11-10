@@ -9,6 +9,20 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.105 — 게시 결과는 별도 확인
+
+- MCP 탐색이 작업을 자원 단위로 묶고 `action` 열거형으로 고릅니다. 첫 대상은
+  `lode_bounded_worker`, `lode_bounded_worker_job`, `lode_bounded_worker_wave`
+  입니다. 묶인 호출은 어떤 검사보다 먼저 구성 작업으로 바꿔 쓰이므로 결과·오류·
+  효과는 그대로입니다. 기본 도구 23개는 변하지 않고, 나열 카탈로그는 144개에서
+  131개로 줄어듭니다.
+- 대체된 이름(`lode_bounded_worker_prepare` … `lode_bounded_worker_wave_abandon`
+  과 `head_*` 표기)은 0.5.0까지 직접 호출과 라우터 경유 모두 가능합니다. 탐색은
+  이를 `deprecatedAliases`로 보여 주고 도구로는 더 이상 나열하지 않습니다.
+- 새 문서 `docs/mcp-surface.md`가 묶인 action과 폐기 이름의 대응표를 담습니다.
+  `node scripts/generate-mcp-surface-docs.mjs --check`로 최신 상태를 확인합니다.
+- `lode_tools_call` 설명이 `lode_tools_read`를 가리킵니다.
+
 ## 0.3.0-beta.104 — 게시 결과는 별도 확인
 
 - `.lode` 프로젝트도 파생 지식 그래프 색인 문서의 제목을 "LODE Agent derived
