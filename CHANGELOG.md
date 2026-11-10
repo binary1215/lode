@@ -11,6 +11,17 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.104 — publication tracked separately
+
+- `.lode` projects head the derived knowledge-graph index "LODE Agent derived
+  knowledge graph", the same string `.head` projects write since 0.3.0-beta.102.
+- A Markdown projection stored with the earlier heading of its dialect ("Lode
+  Agent derived knowledge graph" for `.lode`, "HEAD Agent derived knowledge
+  graph" for `.head`) is reported `stale` with `staleReason:
+  "earlier-index-heading"` while its graph is unchanged, instead of failing as
+  semantically divergent. The next `world-docs-build` rewrites it; stored
+  records are not migrated.
+
 ## 0.3.0-beta.103 — publication tracked separately
 
 - The detached worker owner's failure line in `stderr.bin` names the failing
