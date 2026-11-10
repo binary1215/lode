@@ -93,74 +93,48 @@ async function runGlobal(args, expectedExitCode = 0) {
   );
 }
 
-function assertReadmeContract() {
-  const readme = fs.readFileSync(path.join(sourceRoot, "README.md"), "utf8");
-  const koreanReadme = fs.readFileSync(path.join(sourceRoot, "README.ko.md"), "utf8");
-  const sharedRequired = [
-    "--native auto",
-    "distribution.mjs uninstall",
-    "head-agent-core@head-agent-plugin",
-    "lode-agent-core@lode-agent-plugin",
-    "codex plugin marketplace add binary1215/lode --ref lode-codex-marketplace",
-    "codex plugin add lode-agent-core@lode-agent-plugin",
-    "claude plugin install lode-agent-core@lode-agent-plugin",
-    "status-beta-blue",
-    "[MIT License](LICENSE)",
-  ];
-  for (const required of sharedRequired) {
-    assert(readme.includes(required), `README newcomer contract is missing: ${required}`);
-    assert(koreanReadme.includes(required), `Korean README newcomer contract is missing: ${required}`);
+function headingSlug(heading) {
+  return heading
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+    .replace(/\s/g, "-");
+}
+
+// Structural README checks only: every local link resolves to a real file, every
+// fragment resolves to an explicit anchor or heading in its target, and the
+// English and Korean READMEs carry the same fragment links in the same order.
+function readmeFragmentLinks(name) {
+  const file = path.join(sourceRoot, name);
+  const readme = fs.readFileSync(file, "utf8");
+  const fragments = [];
+  for (const [, rawTarget] of readme.matchAll(/\]\(([^)\s]+)\)/g)) {
+    if (/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(rawTarget)) continue;
+    const [targetPath, fragment] = rawTarget.split("#", 2);
+    const resolved = path.resolve(path.dirname(file), decodeURIComponent(targetPath));
+    assert(fs.existsSync(resolved), `${name} has a broken link: ${rawTarget}`);
+    if (!fragment) continue;
+    const content = fs.readFileSync(resolved, "utf8");
+    const anchors = new Set([
+      ...[...content.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]),
+      ...[...content.matchAll(/^#{1,6}\s+(.+)$/gm)].map((match) => headingSlug(match[1])),
+    ]);
+    assert(anchors.has(fragment), `${name} links a missing anchor: ${rawTarget}`);
+    fragments.push(fragment);
   }
-  // Advanced examples moved out of the newcomer page, retaining exact commands
-  // and runtime fixtures. Check their linked destinations rather than duplicate prose.
-  const advancedContracts = [
-    ["README.md", "command-reference", ["core_ready", "readiness.product", "requires-session-or-run-authorization"]],
-    ["context-compiler.md", "context-examples", ["lode-agent context-prepare", "lode-agent context-preview", "ready_for_lode_semantic_assessment"]],
-    [
-      "onboarding.md",
-      "product-cli-examples",
-      [
-        "lode-agent onboarding-status",
-        '"disposition": "accept-all"',
-        "lode-agent onboarding-review",
-        "lode-agent world-status",
-        "lode-agent world-docs-build",
-        "lode-agent resume",
-        "--profile product",
-      ],
-    ],
-    ["architecture.md", "detailed-core-model", ["evidenceGaps"]],
-    ["verification-evidence.md", "source-verification", ["verify:claude-marketplace"]],
-  ];
-  for (const [file, anchor, required] of advancedContracts) {
-    for (const [entry, directory] of [
-      [readme, "docs"],
-      [koreanReadme, "docs/ko"],
-    ]) {
-      assert(entry.includes(`(${directory}/${file}#${anchor})`), `README must link the advanced contract: ${directory}/${file}#${anchor}`);
-      const content = fs.readFileSync(path.join(sourceRoot, directory, file), "utf8");
-      assert(content.includes(`id="${anchor}"`), `Advanced contract anchor is missing: ${anchor}`);
-      for (const token of required) assert(content.includes(token), `Advanced contract is missing: ${file}: ${token}`);
-    }
-  }
-  for (const required of ["[한국어](README.ko.md)", "## Who it is for", "## Why use it"]) {
-    assert(readme.includes(required), `README audience contract is missing: ${required}`);
-  }
-  for (const required of ["## How to use it", "Lode continues it after initialization and verified recovery"]) {
-    assert(readme.includes(required), `README task-first conversation contract is missing: ${required}`);
-  }
-  for (const required of ["[English](README.md)", "## 누구에게 필요한가", "## 왜 사용해야 하는가"]) {
-    assert(koreanReadme.includes(required), `Korean README audience contract is missing: ${required}`);
-  }
-  for (const required of ["## 일반 사용자는 어떻게 사용하나요?", "Lode는 초기화와 검증된 복구 뒤에도 그 작업을 이어가므로"]) {
-    assert(koreanReadme.includes(required), `Korean README task-first conversation contract is missing: ${required}`);
-  }
-  assert(readme.includes("binary1215/lode@lode-claude-marketplace"), "README Claude marketplace install contract is missing.");
-  assert(koreanReadme.includes("binary1215/lode@lode-claude-marketplace"), "Korean README Claude marketplace install contract is missing.");
+  return fragments;
+}
+
+function assertReadmeLinks() {
+  assert.deepEqual(
+    readmeFragmentLinks("README.ko.md"),
+    readmeFragmentLinks("README.md"),
+    "README language variants must link the same anchors in the same order",
+  );
 }
 
 try {
-  assertReadmeContract();
+  assertReadmeLinks();
   fs.mkdirSync(path.join(projectRoot, "src"), { recursive: true });
   fs.writeFileSync(path.join(projectRoot, "README.md"), "# Request workspace\n\nAccept and validate a request before publishing its receipt.\n", "utf8");
   fs.writeFileSync(

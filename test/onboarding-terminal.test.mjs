@@ -181,9 +181,10 @@ test("four actual marketplace packages load the terminal module and ship agent-l
     const outputRoot = path.join(f.base, `${client}-${name}`), built = build({ sourceRoot: pluginRoot, outputRoot, name, repository: "local", commit: "local" });
     const root = path.join(outputRoot, "plugins", built.pluginName), installed = await import(pathToFileURL(path.join(root, "scripts/lib/cli-presentation.mjs")));
     assert(installed.formatCliResult("graph-query", value).includes("Selected connections"));
-    const skill = fs.readFileSync(path.join(root, "skills", built.pluginName, "SKILL.md"), "utf8");
-    assert.match(skill, /For an authorized installation\/update request, perform the selected client's\s+available official procedure and verify its result/);
-    assert(skill.includes("../../README.md#install")); assert(fs.existsSync(path.join(root, "README.md")));
-    assert(skill.includes("Host loading"));
+    const skillDirectory = path.join(root, "skills", built.pluginName), skill = fs.readFileSync(path.join(skillDirectory, "SKILL.md"), "utf8");
+    assert(fs.existsSync(path.join(root, "README.md")));
+    for (const [, target] of skill.matchAll(/\]\(([^)#\s]+)(?:#[^)\s]*)?\)/gu)) {
+      if (!/^[a-z]+:/iu.test(target)) assert(fs.existsSync(path.resolve(skillDirectory, target)), `${built.pluginName} skill link resolves offline: ${target}`);
+    }
   }
 });

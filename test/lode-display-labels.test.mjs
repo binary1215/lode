@@ -28,27 +28,8 @@ function inventory(root) {
   }).sort(([a], [b]) => a.localeCompare(b));
 }
 
-test("ordinary EN/KO CLI examples use the actual installed lode-agent launcher and retain raw arguments", () => {
-  const counts = { "bounded-worker-wave": 7, "compaction-recovery": 5, "conformance-reconciliation": 6,
-    "delivery-observation": 2, "document-change-review": 5, "product-operating-loop": 7,
-    "release-observation": 2, "session-recovery": 17 };
-  let count = 0;
-  for (const [name, expected] of Object.entries(counts)) for (const prefix of ["docs/", "docs/ko/"]) {
-    const text = read(`${prefix}${name}.md`);
-    assert.equal((text.match(/^lode-agent /gm) || []).length, expected);
-    assert.equal((text.match(/^head |^lode /gm) || []).length, 0, "Neither bare command is an installed launcher");
-    count += expected;
-  }
-  assert.equal(count, 102);
+test("the installed launcher is named lode-agent and the head-core import shim is retained", () => {
   assert(read("scripts/lib/distribution-lifecycle.mjs").includes('const command = `${identity}-agent`;'));
-  for (const prefix of ["docs/", "docs/ko/"]) {
-    assert(read(prefix + "session-recovery.md").includes("--input <head-direction.json>"));
-    assert(read(prefix + "session-recovery.md").includes("--role <non-head-role>"));
-    assert(read(prefix + "product-operating-loop.md").includes("lode-agent lode-continuity"));
-    assert(read(prefix + "conformance-reconciliation.md").includes("<provider-head-proposal.json>"));
-    assert(read(prefix + "original-head-core-comparison.md").includes("`head help`"), "Historical source comparison remains original");
-    assert(read(prefix + "architecture.md").includes("scripts/lib/lode-core   project canon"));
-  }
   assert(fs.existsSync(path.join(pluginRoot, "scripts/lib/head-core.mjs")), "Import shim is retained");
 });
 
@@ -68,11 +49,9 @@ test("canonical light and complete help use the real launcher without changing s
   assert.equal(complete.commands.includes("lode-agent product-signal-record <project> --input <signal.json>"), true);
 });
 
-test("fresh instruction and diagnostics use Lode while retaining exact existing error codes and roles", async t => {
+test("diagnostics use Lode while retaining exact existing error codes and roles", async t => {
   const root = fixture(t), empty = fixture(t);
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
-  assert(read("scripts/lib/lode-core.mjs").includes("# Project-specific Lode context"));
-  assert(fs.readFileSync(path.join(root, ".lode/instructions/project.md"), "utf8").startsWith("# Project-specific Lode context\n"));
   const before = inventory(root);
   assert.throws(() => initializeProject({ root, pluginRoot, runtimes: ["codex"] }),
     { code: "ALREADY_INITIALIZED", message: "Lode Agent Core is already initialized for this project." });

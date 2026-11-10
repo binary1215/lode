@@ -137,6 +137,9 @@ jobs:
       - name: Verify the documented first-request flow on CLI and MCP
         run: node scripts/verify-documented-flow.mjs
 
+      - name: Verify documentation links and English/Korean structure
+        run: node test/verify-documentation-localization.mjs
+
       - name: Set up Go from the worker module
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:

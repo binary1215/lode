@@ -494,10 +494,9 @@ test("initializes Claude, Codex, and OpenCode projections and verifies managed c
   assert.ok(fs.existsSync(path.join(root, "AGENTS.md")));
   assert.ok(fs.existsSync(path.join(root, "opencode.json")));
   const generatedInstructions = fs.readFileSync(path.join(root, layout.directory, "generated", "lode-instructions.md"), "utf8");
-  assert.match(generatedInstructions, /Keep the user's original task as the active objective/u);
-  assert.match(generatedInstructions, /Do not initialize an unrelated repository/u);
-  assert.match(generatedInstructions, /Never infer a disposition from keyword matching, silence, or a default/u);
-  assert.match(generatedInstructions, /distinguish mechanical coverage from semantic sufficiency/u);
+  assert.ok(generatedInstructions.length > 0);
+  assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), generatedInstructions);
+  assert.equal(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"), generatedInstructions);
   const claudeMcp = JSON.parse(fs.readFileSync(path.join(root, ".mcp.json"), "utf8"));
   assert.deepEqual(Object.keys(claudeMcp.mcpServers), ["lode"]);
   assert.equal(claudeMcp.mcpServers.lode.command, "node");

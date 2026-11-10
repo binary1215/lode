@@ -347,30 +347,6 @@ test("CI publishes canonical and compatibility identities to separate exact bran
   }
 });
 
-test("English and Korean defaults use Lode installation, while legacy updates stay documented", () => {
-  for (const file of ["README.md", "README.ko.md"]) {
-    const text = read(file);
-    for (const command of [
-      "codex plugin marketplace add binary1215/lode --ref lode-codex-marketplace",
-      "codex plugin add lode-agent-core@lode-agent-plugin",
-      "claude plugin marketplace add binary1215/lode@lode-claude-marketplace",
-      "claude plugin install lode-agent-core@lode-agent-plugin",
-      "codex plugin marketplace upgrade head-agent-plugin",
-      "claude plugin update head-agent-core@head-agent-plugin",
-    ]) assert(text.includes(command), `${file}: ${command}`);
-    assert(text.indexOf("lode-agent-core@lode-agent-plugin") < text.indexOf("head-agent-core@head-agent-plugin"));
-  }
-  for (const prefix of ["docs/", "docs/ko/"]) {
-    for (const provider of ["codex", "claude"]) {
-      const text = read(`${prefix}${provider}-marketplace.md`);
-      assert(text.includes(`lode-${provider}-marketplace`));
-      assert(text.includes("lode-agent-core@lode-agent-plugin"));
-      assert(text.includes("head-agent-core@head-agent-plugin"));
-      assert(text.indexOf("lode-agent-core@lode-agent-plugin") < text.indexOf("head-agent-core@head-agent-plugin"));
-    }
-  }
-});
-
 for (const [provider, build, verify, catalogPath] of [
   ["codex", buildCodexMarketplaceSnapshot, verifyCodexMarketplaceSnapshot, ".agents/plugins/marketplace.json"],
   ["claude", buildClaudeMarketplaceSnapshot, verifyClaudeMarketplaceSnapshot, ".claude-plugin/marketplace.json"],

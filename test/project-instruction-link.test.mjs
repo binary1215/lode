@@ -34,8 +34,12 @@ test("explicit setup links host-correct instructions once while preserving all C
   assert.match(formatProjectBootstrap(result), /Project instructions: linked; actual Host consumption was not verified/);
   for (const file of ["CLAUDE.md", "AGENTS.md"]) assert(fs.readFileSync(path.join(root, file)).subarray(0, original.length).equals(original));
   const claude = fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), codex = fs.readFileSync(path.join(root, "AGENTS.md"), "utf8");
+  // Wording pinned: Claude Code parses `@path` import lines in CLAUDE.md.
   assert.match(claude, /\r\n@\.lode\/generated\/lode-instructions\.md\r\n@\.lode\/instructions\/project\.md\r\n/);
-  assert.match(codex, /read `\.lode\/generated\/lode-instructions\.md` and `\.lode\/instructions\/project\.md`/);
+  for (const linked of [".lode/generated/lode-instructions.md", ".lode/instructions/project.md"]) {
+    assert(codex.includes(linked), linked);
+    assert(fs.existsSync(path.join(root, linked)), linked);
+  }
   assert.doesNotMatch(codex, /^@/m);
   for (const [file, digest] of before) assert.equal(hash(fs.readFileSync(file)), digest);
   const bytes = [claude, codex];
@@ -61,6 +65,7 @@ for (const encoding of ["utf8-bom", "utf16le", "utf16be"]) {
       const tail = Buffer.from(result.subarray(original.length));
       if (encoding === "utf16be") tail.swap16();
       const added = tail.toString(encoding === "utf8-bom" ? "utf8" : "utf16le");
+      // Wording pinned: linkProjectInstructions searches for this marker to detect existing/duplicated blocks.
       assert(added.includes("lode-agent:project-instructions"));
       assert.doesNotMatch(added.replaceAll("\r\n", ""), /\n/);
       assert.doesNotMatch(added, /\ufeff/);
@@ -160,6 +165,7 @@ test("a synthetic legacy Project links only its validated .head sources without 
   fs.writeFileSync(path.join(base, "generated/manifest.json"), JSON.stringify({ schemaVersion: 1, managed: [".head/project.json", ".head/generated/head-instructions.md"].map(relative => ({ path: relative, sha256: hash(fs.readFileSync(path.join(root, relative))) })) }));
   const before = records(root, ".head");
   assert.equal(linkProjectInstructions({ root, choice: "link" }).status, "linked");
+  // Wording pinned: Claude Code parses `@path` import lines in CLAUDE.md.
   assert.match(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), /@\.head\/generated\/head-instructions\.md/);
   assert.equal(fs.existsSync(path.join(root, ".lode")), false);
   for (const [file, digest] of before) assert.equal(hash(fs.readFileSync(file)), digest);
