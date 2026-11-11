@@ -54,7 +54,49 @@ test("no hint literal names a deprecated alias; grouped operations go through th
   }
 });
 
+// Files whose deprecated names are routing or dispatch tables, not hints.
+const ROUTING_FILES = new Set([
+  "scripts/lib/operation-registry.mjs",
+  "scripts/lib/lode-operation-contract.mjs",
+  "scripts/lib/operation-groups.mjs",
+  "scripts/lib/session-routing.mjs",
+  "scripts/lib/work-document-surface.mjs",
+  "scripts/lib/dispatch-adapters.mjs",
+  "scripts/lib/managed-maintenance-surface.mjs",
+]);
+// Line-level dispatch: formatter selection by operation name, and the MCP
+// server's per-operation cancellation hook.
+const DISPATCH_LINE = /\bname === "|\]\.includes\(name\)|requestedToolName\(request\) === "/;
+
+test("no runtime string names a deprecated alias outside routing tables, however it is built", () => {
+  const misses = [];
+  const walk = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      const relative = path.relative(pluginRoot, file).replaceAll("\\", "/");
+      if (entry.isDirectory()) walk(file);
+      else if (entry.name.endsWith(".mjs") && !/^(verify|measure|generate)-/.test(entry.name) && !ROUTING_FILES.has(relative))
+        fs.readFileSync(file, "utf8")
+          .split("\n")
+          .forEach((line, index) => {
+            if (DISPATCH_LINE.test(line)) return;
+            // A name handed to a hint builder is its input, not its output.
+            const scanned = line.includes(".map((name) => publicHintCall(name))")
+              ? line.replace(/"[a-z_]+"/g, "")
+              : line.replace(/\b(?:publicHintCall|publicHintText|hintEntrypoint|compactHintCall)\(\s*"[a-z_]+"/g, "");
+            for (const [token] of scanned.matchAll(/\b(?:lode|head)_[a-z_]+\b/g)) {
+              const operation = resolveOperation(token)?.canonicalName;
+              if (operation && groupMembership(operation)) misses.push(`${relative}:${index + 1} ${token}`);
+            }
+          });
+    }
+  };
+  walk(path.join(pluginRoot, "scripts"));
+  assert.deepEqual(misses, [], "name the grouped tool through publicHintCall/publicHintText");
+});
+
 test("hint builders return the grouped tool with its action first, or the single operation", () => {
+  assert.throws(() => publicHintCall("lode_onboarding_guide", { action: "review" }), /cannot carry an action/);
   assert.deepEqual(publicHintCall("lode_onboarding_guide"), { tool: publicToolName("lode_onboarding"), arguments: { action: "guide" } });
   assert.deepEqual(publicHintCall("lode_session_work_read", { session_id: "s", max_records: 1 }), {
     tool: publicToolName("lode_session"),

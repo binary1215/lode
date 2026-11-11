@@ -50,6 +50,7 @@ export function publicHintCall(operationName, args = {}) {
   const operation = resolveOperation(operationName);
   if (!operation) throw new Error(`Unknown hint operation: ${operationName}`);
   const membership = groupMembership(operation.canonicalName);
+  if (membership && Object.hasOwn(args, "action")) throw new Error(`Hint arguments for ${operationName} cannot carry an action.`);
   return membership
     ? { tool: publicToolName(membership.group.name), arguments: { action: membership.action, ...args } }
     : { tool: publicToolName(operation.canonicalName), arguments: { ...args } };

@@ -172,7 +172,7 @@ for (const [runtime, limit] of [
         value = JSON.parse(text);
       assert.equal(value.workCoverage.status, status);
       assert.equal(value.workCoverage.reasonCode, "SYNTHETIC_UNAVAILABLE");
-      assert.match(value.expansion, /lode_session_work_read/);
+      assert.match(value.expansion, /lode_session \(action: work_read\)/);
       assert.equal(value.ordinaryWorkBlocked, false);
       assert.ok(text.length <= limit);
     }

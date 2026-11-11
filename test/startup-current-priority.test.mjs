@@ -99,7 +99,7 @@ function fixture(t, purpose, { records = 40, checkpoint = false } = {}) {
           if (omittedWork) assert.match(value.expansion, /Omitted work: lode_session \(action: work_read\) with the same root\/route\.$/);
         } else {
           const enter = value.requiredSourceExpansion ? "When needed: lode_conversation_enter(project_root:projectRoot, ...route)" : "";
-          const work = omittedWork ? "Omitted work: lode_session (action: work_read)(project_root:projectRoot, ...route)" : "";
+          const work = omittedWork ? "Omitted work: lode_session(action:work_read, project_root:projectRoot, ...route)" : "";
           assert.equal(value.expansion, enter + (enter && work ? "; " : "") + work);
         }
         return { text, value };
@@ -277,7 +277,7 @@ test("public Hook: normal complete context adds no omission-specific query instr
     const { value } = await caller.read();
     assert.equal(value.omittedEvidenceCount, 0);
     assert.equal(Object.hasOwn(value, "requiredSourceExpansion"), false);
-    assert.equal(value.expansion.includes("lode_session (action: work_read)"), false);
+    assert.doesNotMatch(value.expansion, /lode_session(\b|_work_read)/);
     assert.equal(value.expansion.includes("omitted"), false);
     assert.equal(value.expansion.includes("reread"), false);
     assert.equal(value.expansion.includes("required"), false);
@@ -346,7 +346,7 @@ test("private formatter: varying root/purpose/checkpoint lengths preserves every
         witness.scope =
           "Read-only, non-atomic. Current common/selected P2 apply; history/P3 grant no effects. IDs/digests select originals; reference freshness not inferred. Check current authority for effects.";
         witness.hostCapability = "Verified route only; never guess. No extra bind/save/repeated Session ID.";
-        witness.expansion = "Omitted work: lode_session (action: work_read)(project_root:projectRoot, ...route)";
+        witness.expansion = "Omitted work: lode_session(action:work_read, project_root:projectRoot, ...route)";
         if (JSON.stringify(witness).length <= 10000) {
           fitted += 1;
           assert.equal(value.sessionPurpose, raw.workContext.sessionPurpose);
@@ -375,7 +375,7 @@ test("private formatter: even optional compact coverage/prose yield to all prote
   witness.scope =
     "Read-only, non-atomic. Current common/selected P2 apply; history/P3 grant no effects. IDs/digests select originals; reference freshness not inferred. Check current authority for effects.";
   witness.hostCapability = "Verified route only; never guess. No extra bind/save/repeated Session ID.";
-  witness.expansion = "Omitted work: lode_session (action: work_read)(project_root:projectRoot, ...route)";
+  witness.expansion = "Omitted work: lode_session(action:work_read, project_root:projectRoot, ...route)";
   const capacity = 10000 - JSON.stringify(witness).length;
   for (const delta of [-1, 0, 1]) {
     const candidate = serializerEntry(capacity + delta, 280),

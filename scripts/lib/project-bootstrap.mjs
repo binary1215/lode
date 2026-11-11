@@ -195,11 +195,16 @@ function productReadiness(status) {
 // `<identity>-agent` launcher exists only after scripts/install.sh|ps1.
 const CLI_DISPLAY = `node <plugin-root>/scripts/${ARTIFACT_COMPOSITION.identity}.mjs`;
 
+// An MCP entrypoint as mcpTool + mcpArguments: the grouped tool and its action.
+function hintEntrypoint(operation) {
+  const { tool, arguments: args } = publicHintCall(operation);
+  return { mcpTool: tool, mcpArguments: args };
+}
+
 function contextReadiness({ coreState, productState, onboardingInspection = null }) {
   const entrypoint = {
     cli: `${CLI_DISPLAY} context-prepare <project> --task <exact-task>`,
-    mcpTool: publicHintCall("lode_context_prepare").tool,
-    mcpArguments: publicHintCall("lode_context_prepare").arguments,
+    ...hintEntrypoint("lode_context_prepare"),
   };
   if (coreState !== "ready")
     return {
@@ -397,8 +402,7 @@ function entrypoint(action, onboardingInspection = null) {
     },
     review_product_candidates: {
       cli: `${CLI_DISPLAY} onboarding-status <project>`,
-      mcpTool: publicHintCall("lode_onboarding_guide").tool,
-      mcpArguments: publicHintCall("lode_onboarding_guide").arguments,
+      ...hintEntrypoint("lode_onboarding_guide"),
     },
     resume_product_governance: {
       cli: `${CLI_DISPLAY} resume <project> --profile product`,
@@ -421,8 +425,7 @@ function entrypoint(action, onboardingInspection = null) {
     },
     inspect_product_governance: {
       cli: `${CLI_DISPLAY} onboarding-status <project>`,
-      mcpTool: publicHintCall("lode_onboarding_guide").tool,
-      mcpArguments: publicHintCall("lode_onboarding_guide").arguments,
+      ...hintEntrypoint("lode_onboarding_guide"),
     },
   };
   return entries[action];
@@ -800,7 +803,11 @@ export function inspectProjectLocationExperience({ root = ".", sessionId } = {})
         id: "continue_selected_import",
         summary:
           "The selected import is incomplete. Reuse its exact bundle through the import entrypoint; ordinary coding remains available and no task execution was replayed.",
-        entrypoint: { ...publicHintCall("lode_project_bundle_import"), bundleId: pendingImport.bundleId, bundleRootHint: pendingImport.bundleRootHint },
+        entrypoint: {
+          ...publicHintCall("lode_project_bundle_import", { target_root: pendingImport.projectRoot, expected_bundle_id: pendingImport.bundleId }),
+          bundleId: pendingImport.bundleId,
+          bundleRootHint: pendingImport.bundleRootHint,
+        },
       },
       authority: { plane: "P4", advisoryOnly: true, persisted: false, mutatesProject: false, grantsAuthorization: false, writesRecoveryDirection: false },
     });

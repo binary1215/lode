@@ -582,7 +582,8 @@ test("defaults to the constitutional core without activating Product or Graph go
       worldModelId: null,
       entrypoint: {
         cli: `node <plugin-root>/scripts/${ARTIFACT_COMPOSITION.identity}.mjs context-prepare <project> --task <exact-task>`,
-        mcpTool: publicToolName("head_context_prepare"),
+        mcpTool: publicToolName("head_context"),
+        mcpArguments: { action: "prepare" },
       },
     },
     recovery: {
@@ -1260,6 +1261,17 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
   assert.equal(statusProjection.fullSnapshot.serializedByteLength, Buffer.byteLength(JSON.stringify(first.snapshot), "utf8"));
   assert.equal(Object.hasOwn(statusProjection, "snapshot"), false);
   assert.ok(Buffer.byteLength(JSON.stringify(statusProjection), "utf8") < WORLD_MODEL_STATUS_PROJECTION_MAX_BYTES);
+  // Each bounded detail tool is a callable grouped call, made exactly as returned.
+  for (const hint of statusProjection.fullSnapshot.boundedDetailTools) {
+    const response = await dispatchMcp({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: hint.tool, arguments: { ...hint.arguments, project_root: root } },
+    });
+    assert.notEqual(response.error?.data?.reasonCode, "INVALID_TOOL_ARGUMENTS", JSON.stringify(hint));
+    assert.doesNotMatch(response.error?.message ?? "", /Unknown tool/, JSON.stringify(hint));
+  }
 
   const mcpStatus = await dispatchMcp({
     jsonrpc: "2.0",
