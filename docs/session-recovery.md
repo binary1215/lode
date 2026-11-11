@@ -224,7 +224,13 @@ Synchronization has four explicit outcomes:
   with current Session state, so no recovery bytes are written.
 
 `lode_checkpoint_basis` returns `status: "recovery_checkpoint_basis_inspected"`;
-pass its `basis.basisId` as `expected_recovery_basis_id`. The sync result's
+pass its `basis.basisId` as `expected_recovery_basis_id`. On MCP, a caller the
+Host has verified may omit that id: the server uses the basis it last handed
+that caller for the same Project and logical Session (from
+`lode_checkpoint_basis` or a `created` sync), exactly as if it were passed. A
+`conflict` or `deferred` outcome drops it, and with no held basis the call is
+refused with `RECOVERY_BASIS_NOT_HELD`. Unverified callers and the CLI pass the
+id as before; the held value is in memory only. The sync result's
 `status` is the outcome with a `recovery_checkpoint_sync_` prefix, for example
 `recovery_checkpoint_sync_created`.
 

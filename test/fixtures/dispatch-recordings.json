@@ -840,7 +840,6 @@
    "tool": "lode_checkpoint_sync",
    "input": {
     "project_root": "<root>",
-    "expected_recovery_basis_id": "sample-expected_recovery_basis_id",
     "purpose": "sample-purpose",
     "approved_decisions": [
      "sample-approved_decisions"
@@ -854,7 +853,7 @@
      "args": [
       {
        "root": "<root>",
-       "expectedRecoveryBasisId": "sample-expected_recovery_basis_id",
+       "expectedRecoveryBasisId": "$undefined",
        "purpose": "sample-purpose",
        "approvedDecisions": [
         "sample-approved_decisions"
@@ -1045,7 +1044,7 @@
    "tool": "lode_checkpoint_sync",
    "input": {
     "project_root": "<root>",
-    "expected_recovery_basis_id": "sample-expected_recovery_basis_id",
+    "expected_recovery_basis_id": "",
     "purpose": "sample-purpose",
     "approved_decisions": [
      "sample-approved_decisions"
@@ -1061,7 +1060,7 @@
      "args": [
       {
        "root": "<root>",
-       "expectedRecoveryBasisId": "sample-expected_recovery_basis_id",
+       "expectedRecoveryBasisId": "",
        "purpose": "sample-purpose",
        "approvedDecisions": [
         "sample-approved_decisions"

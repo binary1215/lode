@@ -204,7 +204,12 @@ lock 안에서 이 basis를 다시 구축합니다. basis는 동시성 증거이
   충돌하므로 복구 byte를 쓰지 않았습니다.
 
 `lode_checkpoint_basis`는 `status: "recovery_checkpoint_basis_inspected"`를 반환하며,
-그 `basis.basisId`를 `expected_recovery_basis_id`로 넘깁니다. 동기화 결과의 `status`는
+그 `basis.basisId`를 `expected_recovery_basis_id`로 넘깁니다. MCP에서 Host가 검증한
+호출자는 이 id를 생략할 수 있습니다. 서버는 같은 Project와 logical Session에 대해 그
+호출자에게 마지막으로 건넨 basis(`lode_checkpoint_basis` 또는 `created` 동기화)를,
+넘겨받은 것과 똑같이 사용합니다. `conflict`나 `deferred` 결과는 이를 버리며, 보관된
+basis가 없으면 `RECOVERY_BASIS_NOT_HELD`로 거부합니다. 검증되지 않은 호출자와 CLI는
+전처럼 id를 넘기며, 보관 값은 메모리에만 있습니다. 동기화 결과의 `status`는
 결과 이름 앞에 `recovery_checkpoint_sync_`를 붙인 값입니다. 예:
 `recovery_checkpoint_sync_created`.
 

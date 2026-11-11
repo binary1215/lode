@@ -9,6 +9,7 @@ import { sessionCallRequiresBinding } from "./session-routing.mjs";
 import { createSessionHostRequestRegistry, parseClaudeNativeToolName } from "./session-host-request.mjs";
 import { subagentWriteGuardEnabled } from "./subagent-write-guard.mjs";
 import { effectiveToolCall } from "./operation-groups.mjs";
+import { createRecoveryBasisMemory } from "./recovery-basis-memory.mjs";
 
 const validCaller = (id) => typeof id === "string" && id.length > 0 && id.length <= 512 && !/[\u0000-\u001f]/u.test(id);
 const missingCaller = () => {
@@ -23,6 +24,7 @@ export function createNativeSessionHostBridge({
   requestRegistry = createSessionHostRequestRegistry(),
   pluginLaunch = null,
   servingModuleUrl = null,
+  recoveryBasisMemory = createRecoveryBasisMemory(),
 } = {}) {
   let transportRuntime = runtime,
     observedNativeMetadata = false,
@@ -98,8 +100,9 @@ export function createNativeSessionHostBridge({
     // This remembers only the transport capability, NEVER the last caller.
     return { status: observedNativeMetadata ? "unavailable" : "legacy" };
   }
+  const callerKey = (caller) => JSON.stringify([caller.runtime, caller.nativeSessionId, caller.agentId || null]);
   async function adapterFor(caller) {
-    const key = JSON.stringify([caller.runtime, caller.nativeSessionId, caller.agentId || null]);
+    const key = callerKey(caller);
     const { createSessionHostAdapter } = await import("./session-host-adapter.mjs");
     if (!adapters.has(key)) adapters.set(key, createSessionHostAdapter({ ...caller, environment }));
     return adapters.get(key);
@@ -303,7 +306,17 @@ export function createNativeSessionHostBridge({
       }
     }
     try {
-      response = await handler(request, route({ resolveSessionContext, onValidatedSessionSelection, readRelatedNativeContext }));
+      // Only a verified caller gets held recovery basis ids (4-D); everyone else
+      // keeps the explicit argument contract unchanged.
+      response = await handler(
+        request,
+        route({
+          resolveSessionContext,
+          onValidatedSessionSelection,
+          readRelatedNativeContext,
+          recoveryBasisMemory: recoveryBasisMemory.forCaller(callerKey(caller)),
+        }),
+      );
     } catch (error) {
       if (prepared) adapter.settleSelection({ ticket: prepared.ticket, outcome: "uncertain" });
       throw error;
@@ -380,8 +393,10 @@ export function createNativeSessionHostBridge({
       }
     },
     requestStatus: () => requestRegistry.describe(),
+    recoveryBasisStatus: () => recoveryBasisMemory.describe(),
     dispose() {
       requestRegistry.dispose();
+      recoveryBasisMemory.clear();
       adapters.clear();
       subagentToolUses.length = 0;
     },

@@ -294,7 +294,9 @@ async function unresolvedSessionResponse(id, name, root, reasonCode) {
 
 export async function dispatch(request, options = {}) {
   if (options.nativeSessionBridge && !options.sessionContext && !options.resolveSessionContext) {
-    return options.nativeSessionBridge.dispatch(request, async (original, routing) => await dispatchSessionRequest(original, { ...options, ...routing }));
+    // Only the bridge grants a held recovery basis, and only to a verified caller.
+    const { recoveryBasisMemory: _embedderMemory, ...base } = options;
+    return options.nativeSessionBridge.dispatch(request, async (original, routing) => await dispatchSessionRequest(original, { ...base, ...routing }));
   }
   return await dispatchSessionRequest(request, options);
 }
@@ -461,6 +463,52 @@ async function dispatchSessionRequest(request, options = {}) {
   return await dispatchRouted(request, options);
 }
 
+// 4-D (user decision 4-2 (a)). A verified caller may omit
+// expected_recovery_basis_id on lode_checkpoint_sync: the server uses the basis it
+// last handed this caller for this Project and logical Session, exactly as if it
+// were passed. Explicit ids are untouched; unverified callers never get a memory,
+// so the operation keeps today's "required" refusal.
+async function heldRecoveryBasisCall(name, args, memory) {
+  if (name !== "lode_checkpoint_sync" || !args || typeof args !== "object" || args.expected_recovery_basis_id !== undefined) return null;
+  const { routedSessionId } = await import("./lib/session-routing.mjs");
+  // An uninitialized or unreadable Project has no routed Session: leave the
+  // call unchanged so the operation gives its own refusal, as on main.
+  let sessionId;
+  try {
+    sessionId = routedSessionId(args.project_root);
+  } catch {
+    return null;
+  }
+  if (!sessionId) return null;
+  const held = memory.held(args.project_root, sessionId);
+  if (!held)
+    throw Object.assign(
+      new Error(
+        `No recovery basis is held for this caller and Session. Call ${publicToolName("lode_checkpoint_basis")}, derive the direction from that basis, then sync.`,
+      ),
+      { code: "RECOVERY_BASIS_NOT_HELD" },
+    );
+  return { args: { ...args, expected_recovery_basis_id: held }, sessionId };
+}
+
+// Sources of a held basis: lode_checkpoint_basis and a created sync (its resulting
+// basis). A conflict or deferral drops it: the caller must read a fresh basis and
+// derive again, so repeating the same call cannot win by retry. A diagnosis never
+// arms it, and "reused" keeps what is held.
+async function rememberRecoveryBasis(name, args, value, memory, heldBasis) {
+  if (!value || typeof value !== "object") return;
+  if (name === "lode_checkpoint_basis" && value.basis) {
+    memory.hold(args.project_root, value.basis.sessionId, value.basis.basisId);
+    return;
+  }
+  if (name !== "lode_checkpoint_sync") return;
+  if (value.outcome === "created" && value.resultingBasis) memory.hold(args.project_root, value.resultingBasis.sessionId, value.resultingBasis.basisId);
+  else if (value.outcome === "conflict" || value.outcome === "deferred") {
+    const sessionId = heldBasis?.sessionId ?? value.basis?.sessionId;
+    if (sessionId) memory.drop(args.project_root, sessionId);
+  }
+}
+
 async function dispatchRouted(
   request,
   {
@@ -486,6 +534,7 @@ async function dispatchRouted(
     pluginLaunch = null,
     servingModuleUrl = null,
     installationCaller = null,
+    recoveryBasisMemory = null,
   } = {},
 ) {
   requireSurface(surface);
@@ -538,6 +587,8 @@ async function dispatchRouted(
     const declaredSchema = registered?.tool?.inputSchema;
     if (declaredSchema) assertProjectRootArgument(publicToolName(name), declaredSchema, args);
     if (!registered) throw new Error(`Unknown tool: ${publicToolName(name)}`);
+    const heldBasis = recoveryBasisMemory ? await heldRecoveryBasisCall(name, args, recoveryBasisMemory) : null;
+    if (heldBasis) args = heldBasis.args;
     const value = await callRegistered(registered, "mcp", args, {
       packageVersion,
       graphDbTransport,
@@ -562,6 +613,7 @@ async function dispatchRouted(
       servingModuleUrl,
       installationCaller,
     });
+    if (recoveryBasisMemory) await rememberRecoveryBasis(name, args, value, recoveryBasisMemory, heldBasis);
     // MCP structuredContent is an optional object, never null/array/scalar.
     // Keep absent originals as their original text value, not fabricated state.
     const response = success(id, {
