@@ -11,6 +11,21 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.109 — publication tracked separately
+
+- The always-loaded Lode guidance is rewritten as an entry paragraph and six
+  behavior statements. This is the text in the generated `lode-instructions.md`
+  and in a project's managed `AGENTS.md` / `CLAUDE.md`. It shrinks from 8,381 to
+  2,301 characters, and "never" / "do not" go from 13 to 1. Existing Projects
+  receive the new text when they converge to this version.
+- The entry paragraph is also the MCP server `instructions` and the startup
+  `coreGuidance`. It grows from 749 to 822 characters.
+- The guidance now says when to open a Run: only for persistent ownership,
+  recovery after interruption, tracking effects with unknown outcomes, or
+  preventing duplicate integration. Run behavior is unchanged.
+- Instructions that apply to one procedure are no longer always loaded. They
+  remain in the Skill and its references.
+
 ## 0.3.0-beta.108 — publication tracked separately
 
 - MCP discovery and the managed tool list now group the remaining routed
