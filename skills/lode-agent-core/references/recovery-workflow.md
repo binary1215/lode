@@ -59,7 +59,7 @@ checkpoint, and neither does direction the existing checkpoint still covers.
 1. Call read-only `lode_checkpoint_basis` (a diagnosis does not replace it).
    A caller the Host has verified that entered through this server
    (`lode_conversation_enter` or `lode_project_initialize_or_resume`) already
-   has a basis held from that entry and can skip this read.
+   has a basis held from that ready entry and can skip this read.
 2. From that exact Project, Session, lineage, review and transition basis, or
    the entry context, derive the bounded recovery direction afresh in the
    current provider Lode. Do not resubmit old direction with only a new

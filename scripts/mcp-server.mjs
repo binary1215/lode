@@ -531,29 +531,42 @@ async function entryRecoveryBasisBefore(name, args) {
 // Session record), so its basis is read after the operation, for the Session it
 // returned, and held only when that basis reflects exactly the returned Session
 // record and Project direction. Any other change in between leaves nothing held.
+// Pure hold decisions for a verified entry (4-D b2), exported for tests. Each
+// returns the Session to hold the basis for, or null to hold nothing.
+// Conversation entry: a ready entry whose Project status Session is the
+// basis Session (the Project status Session is set even when optional work
+// evidence is unreadable).
+export function entryHoldSession(value, basis) {
+  if (!value || !basis || !["conversation_ready", "conversation_direction_restored"].includes(value.status)) return null;
+  const sessionId = value.projectStatus?.project?.sessionId ?? value.workContext?.sessionId ?? null;
+  return sessionId === basis.sessionId ? sessionId : null;
+}
+
+// Initialize-or-resume: the basis was read right before the final read that
+// built this result (scripts/lib/entry-basis-capture.mjs); hold only when it is
+// exactly the returned Session record and Project direction.
+export function initHoldSession(value, basis, sessionHash) {
+  const sessionId = value?.project?.sessionId;
+  if (!basis || !["initialized", "resumed"].includes(value?.projectAction) || typeof sessionId !== "string" || !value.state) return null;
+  const matches =
+    basis.sessionId === sessionId &&
+    basis.sessionRecordHash === sessionHash(value.state) &&
+    (basis.currentProjectDirectionId ?? null) === (value.currentProjectDirection?.directionId ?? null);
+  return matches ? sessionId : null;
+}
+
 async function rememberEntryBasis(name, args, value, memory, entryBasis) {
-  if (name === "lode_conversation_enter") {
-    const ready = ["conversation_ready", "conversation_direction_restored"].includes(value.status);
-    if (ready && entryBasis && value.workContext?.sessionId === entryBasis.sessionId) memory.hold(args.project_root, entryBasis.sessionId, entryBasis.basisId);
-    return;
+  let sessionId = null;
+  if (name === "lode_conversation_enter") sessionId = entryHoldSession(value, entryBasis);
+  else {
+    try {
+      const { sessionStateHash } = await import("./lib/run-lineage.mjs");
+      sessionId = initHoldSession(value, entryBasis, sessionStateHash);
+    } catch {
+      sessionId = null;
+    }
   }
-  const sessionId = value.project?.sessionId;
-  if (!["initialized", "resumed"].includes(value.projectAction) || typeof sessionId !== "string" || !value.state) return;
-  try {
-    const [{ inspectRecoveryCheckpointBasis }, { withSessionRoute }, { sessionStateHash }] = await Promise.all([
-      import("./lib/compaction-recovery.mjs"),
-      import("./lib/session-routing.mjs"),
-      import("./lib/run-lineage.mjs"),
-    ]);
-    const basis = withSessionRoute(args.project_root, sessionId, () => inspectRecoveryCheckpointBasis({ root: args.project_root }).basis);
-    const matches =
-      basis.sessionId === sessionId &&
-      basis.sessionRecordHash === sessionStateHash(value.state) &&
-      (basis.currentProjectDirectionId ?? null) === (value.currentProjectDirection?.directionId ?? null);
-    if (matches) memory.hold(args.project_root, sessionId, basis.basisId);
-  } catch {
-    /* A basis that cannot be read is simply not held. */
-  }
+  if (sessionId) memory.hold(args.project_root, sessionId, entryBasis.basisId);
 }
 
 async function dispatchRouted(
@@ -638,32 +651,39 @@ async function dispatchRouted(
     const basisMemory =
       recoveryBasisMemory && (await import("./lib/session-native-host.mjs")).isBridgeIssuedRecoveryBasis(recoveryBasisMemory) ? recoveryBasisMemory : null;
     const heldBasis = basisMemory ? await heldRecoveryBasisCall(name, args, basisMemory) : null;
-    const entryBasis = basisMemory ? await entryRecoveryBasisBefore(name, args) : null;
+    let entryBasis = basisMemory ? await entryRecoveryBasisBefore(name, args) : null;
     if (heldBasis) args = heldBasis.args;
-    const value = await callRegistered(registered, "mcp", args, {
-      packageVersion,
-      graphDbTransport,
-      coordinationWorkspaceHost,
-      observationRegistry,
-      conformanceTriggerRegistry,
-      compactionLifecycleHost,
-      workerJobHost,
-      workerJobSupervisor,
-      workerPreparationBackend,
-      nativeHistoryHost,
-      signal,
-      onProcess,
-      onExportScope,
-      onValidatedSessionSelection,
-      readRelatedNativeContext,
-      projectSessionRoute,
-      projectLocationProjection,
-      caller,
-      hostEnvironment,
-      pluginLaunch,
-      servingModuleUrl,
-      installationCaller,
-    });
+    const capturesInitBasis = basisMemory && name === "lode_project_initialize_or_resume";
+    const invoke = () =>
+      callRegistered(registered, "mcp", args, {
+        packageVersion,
+        graphDbTransport,
+        coordinationWorkspaceHost,
+        observationRegistry,
+        conformanceTriggerRegistry,
+        compactionLifecycleHost,
+        workerJobHost,
+        workerJobSupervisor,
+        workerPreparationBackend,
+        nativeHistoryHost,
+        signal,
+        onProcess,
+        onExportScope,
+        onValidatedSessionSelection,
+        readRelatedNativeContext,
+        projectSessionRoute,
+        projectLocationProjection,
+        caller,
+        hostEnvironment,
+        pluginLaunch,
+        servingModuleUrl,
+        installationCaller,
+      });
+    let value;
+    if (capturesInitBasis) {
+      const { withEntryBasisCapture } = await import("./lib/entry-basis-capture.mjs");
+      ({ value, basis: entryBasis } = await withEntryBasisCapture(invoke));
+    } else value = await invoke();
     if (basisMemory) await rememberRecoveryBasis(name, args, value, basisMemory, heldBasis, entryBasis);
     // MCP structuredContent is an optional object, never null/array/scalar.
     // Keep absent originals as their original text value, not fabricated state.

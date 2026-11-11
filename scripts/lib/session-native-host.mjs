@@ -315,21 +315,25 @@ export function createNativeSessionHostBridge({
         /* Optional context cannot replace primary Core errors. */
       }
     }
+    // Only a verified caller gets held recovery basis ids (4-D); everyone else
+    // keeps the explicit argument contract unchanged. The view is valid for this
+    // one request and revoked after it, so it cannot be reused elsewhere.
+    const basisView = issueRecoveryBasisView(callerKey(caller));
     try {
-      // Only a verified caller gets held recovery basis ids (4-D); everyone else
-      // keeps the explicit argument contract unchanged.
       response = await handler(
         request,
         route({
           resolveSessionContext,
           onValidatedSessionSelection,
           readRelatedNativeContext,
-          recoveryBasisMemory: issueRecoveryBasisView(callerKey(caller)),
+          recoveryBasisMemory: basisView,
         }),
       );
     } catch (error) {
       if (prepared) adapter.settleSelection({ ticket: prepared.ticket, outcome: "uncertain" });
       throw error;
+    } finally {
+      issuedRecoveryBasisViews.delete(basisView);
     }
     if (!selecting) {
       // Only enrich a successful entry. Caller observations cannot soften a

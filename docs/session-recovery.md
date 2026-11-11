@@ -227,7 +227,7 @@ Synchronization has four explicit outcomes:
 pass its `basis.basisId` as `expected_recovery_basis_id`. On MCP, a caller the
 Host has verified may omit that id: the server uses the basis it last handed
 that caller for the same Project and logical Session (from
-`lode_checkpoint_basis`, a `created` sync, or a successful
+`lode_checkpoint_basis`, a `created` sync, or a ready
 `lode_conversation_enter` or `lode_project_initialize_or_resume`), exactly as
 if it were passed. A verified caller that entered through this server therefore
 saves with one call. A `conflict` or `deferred` outcome drops it, and with no

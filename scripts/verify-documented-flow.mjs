@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Runs the README first-request flow on two synthetic Git projects, once through
+// Runs the README first-request flow on synthetic Git projects, once through
 // the CLI and once through MCP, and checks that both surfaces return the same
 // status, reasonCode and nextAction.id at every step, that the two conversation
 // entry states listed below hold, and that every value seen is documented
@@ -9,7 +9,9 @@
 //
 // Flow: conversation entry before init -> init (core) -> conversation entry ->
 // graph query -> checkpoint basis/sync -> compact prepare/verify/continue ->
-// session restore. Nothing outside the two temporary projects is written.
+// session restore. A third synthetic project runs the verified MCP save (Codex
+// thread route): init, entry, then one id-less checkpoint sync. Nothing outside
+// the temporary projects and one temporary Host-state directory is written.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";

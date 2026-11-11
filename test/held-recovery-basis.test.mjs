@@ -7,7 +7,7 @@ import { initializeProject } from "../scripts/lib/head-core.mjs";
 import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
 import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session-host-request.mjs";
 import { createRecoveryBasisMemory } from "../scripts/lib/recovery-basis-memory.mjs";
-import { dispatch, tools } from "../scripts/mcp-server.mjs";
+import { dispatch, entryHoldSession, initHoldSession, tools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 
 // 4-D part (b), user decision 4-2 (a): a Host-verified caller may omit
@@ -371,4 +371,62 @@ test("unverified entry holds nothing; entry holds per caller and per Session", a
   const refused = await codex(bridge, root, "lode_checkpoint_sync", { ...direction, session_id: other }, "thread-A");
   assert.equal(refused.error.data.reasonCode, "RECOVERY_BASIS_NOT_HELD");
   assert.equal(value(await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).outcome, "created");
+});
+
+test("entry hold decisions: only a ready entry for the basis Session, and init only for the exact returned state", () => {
+  const basis = { sessionId: "s1", basisId: "recovery-basis-000000000000000000000001", sessionRecordHash: "h1", currentProjectDirectionId: "direction-1" };
+  const ready = { status: "conversation_ready", projectStatus: { project: { sessionId: "s1" } } };
+  assert.equal(entryHoldSession(ready, basis), "s1");
+  assert.equal(entryHoldSession({ ...ready, status: "conversation_direction_restored" }, basis), "s1");
+  for (const status of ["recovery_attention_required", "conversation_recovery_unavailable", "session_selection_unresolved"])
+    assert.equal(entryHoldSession({ ...ready, status }, basis), null, status);
+  assert.equal(entryHoldSession({ ...ready, projectStatus: { project: { sessionId: "s2" } } }, basis), null, "another Session");
+  assert.equal(entryHoldSession({ status: "conversation_ready", workContext: { sessionId: "s1" } }, basis), "s1", "work context fallback");
+  assert.equal(entryHoldSession(ready, null), null);
+
+  const hash = (state) => state.hash;
+  const init = { projectAction: "resumed", project: { sessionId: "s1" }, state: { hash: "h1" }, currentProjectDirection: { directionId: "direction-1" } };
+  assert.equal(initHoldSession(init, basis, hash), "s1");
+  assert.equal(initHoldSession({ ...init, projectAction: "initialized" }, basis, hash), "s1");
+  assert.equal(initHoldSession({ ...init, state: { hash: "h2" } }, basis, hash), null, "a Session record change in between");
+  assert.equal(initHoldSession({ ...init, currentProjectDirection: { directionId: "direction-2" } }, basis, hash), null, "a direction change in between");
+  assert.equal(initHoldSession({ ...init, currentProjectDirection: null }, basis, hash), null);
+  assert.equal(initHoldSession({ ...init, project: { sessionId: "s2" } }, basis, hash), null, "another Session");
+  assert.equal(initHoldSession({ ...init, projectAction: "relocation_available" }, basis, hash), null);
+  assert.equal(initHoldSession(init, null, hash), null);
+});
+
+test("a view the bridge issued for one request cannot be reused outside it", async (t) => {
+  const { root, environment } = fixture(t);
+  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment });
+  t.after(() => bridge.dispose());
+  let captured = null;
+  const request = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: { _meta: { threadId: "thread-A" }, name: "lode_checkpoint_basis", arguments: { project_root: root } },
+  };
+  await bridge.dispatch(request, async (original, routing) => {
+    captured = routing.recoveryBasisMemory;
+    return dispatch(original, routing);
+  });
+  assert.ok(captured, "the verified request received a view");
+  const before = snapshot(root);
+  const reused = await dispatch(
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "lode_checkpoint_sync", arguments: { project_root: root, ...direction } } },
+    { recoveryBasisMemory: captured },
+  );
+  assert.equal(reused.error?.message, "Expected recovery basis id is required.", JSON.stringify(reused));
+  assert.deepEqual(snapshot(root), before);
+});
+
+test("an unverified entry on a native transport holds nothing", async (t) => {
+  const { root, environment } = fixture(t);
+  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment });
+  t.after(() => bridge.dispose());
+  value(await codex(bridge, root, "lode_project_status", {}, "thread-A"));
+  const unverified = value(await codex(bridge, root, "lode_conversation_enter", {}, null));
+  assert.equal(unverified.status, "session_selection_unresolved");
+  assert.equal((await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).error.data.reasonCode, "RECOVERY_BASIS_NOT_HELD");
 });
