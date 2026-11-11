@@ -1,6 +1,6 @@
 {
   "name": "@local/lode-agent-core-plugin",
-  "version": "0.3.0-beta.109",
+  "version": "0.3.0-beta.110",
   "private": true,
   "type": "module",
   "description": "Lode Agent Core plugin distribution",

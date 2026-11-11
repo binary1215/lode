@@ -11,6 +11,32 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.110 — publication tracked separately
+
+- The `conversation-ux` Skill reference is rewritten as procedures: when to
+  read it, numbered steps, and what to do on failure. It shrinks from 23,729 to
+  11,972 characters, and strong prohibitions ("never", "do not", "must not",
+  "cannot") go from 50 to 6. Tool order and arguments are unchanged.
+- Product-evidence detail now links to the docs that define it, and silence is
+  named as a non-answer for protected decisions.
+- The `recovery-workflow` Skill reference is rewritten as procedures. It shrinks
+  from 13,014 to 8,907 characters, and strong prohibitions go from 36 to 4. The
+  checkpoint, compaction, native-history and handoff procedures are unchanged.
+- Detail now links to the Project portability and Session restore docs.
+- The `runtime-composition` Skill reference is rewritten as procedures. It
+  shrinks from 19,581 to 13,539 characters, and strong prohibitions go from 31
+  to 8. Tool order and arguments of the delegation, plan-preservation,
+  `wait_threads`, handoff, messaging and managed-execution procedures are
+  unchanged. Some examples and "no new ritual" sentences are removed or
+  softened.
+- The adapter architecture now links to the runtime adapters and architecture
+  docs.
+- The `project-discovery` Skill reference is rewritten as procedures. It shrinks
+  from 12,511 to 10,487 characters, and strong prohibitions go from 21 to 4.
+  API detail now links to the graph discovery doc.
+- Across these four core Skill references, the text goes from 68,835 to 44,905
+  characters and strong prohibitions from 138 to 22.
+
 ## 0.3.0-beta.109 — publication tracked separately
 
 - The always-loaded Lode guidance is rewritten as an entry paragraph and six
