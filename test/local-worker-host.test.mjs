@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
+import { effectiveToolCall } from "../scripts/lib/operation-groups.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
 import { compileContext } from "../scripts/lib/context-compiler.mjs";
 import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/execution-lineage.mjs";
@@ -335,6 +336,11 @@ test("public preparation composes a fixed Host, reuses exact input and rejects H
   assert.equal(first.authorizationId, repeated.authorizationId);
   assert.equal(first.modelCallAttempted, false);
   assert.equal(first.workersStarted, 0);
+  // The start hint is the grouped call, with the task key in its arguments.
+  assert.deepEqual(effectiveToolCall(first.nextAction.tool, first.nextAction.arguments), {
+    name: "lode_bounded_worker_start",
+    arguments: { task_key: f.input.taskKey },
+  });
   assert.deepEqual(fs.readFileSync(path.join(f.root, f.layout.directory, "sessions/current.json")), before);
   for (const extra of [{ runnerFile: "evil" }, { executable: "evil" }, { environment: {} }, { enforcement: true }]) {
     const rejected = await f.mcp.dispatch(call("head_bounded_worker_prepare", { project_root: f.root, task: f.input.task, model: f.input.model, ...extra }));

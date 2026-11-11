@@ -87,7 +87,7 @@ import { withRefreshWriterLease } from "./refresh-writer-lease.mjs";
 import { readGraphProject, safeGraphFile } from "./discovery-index.mjs";
 import { SOURCE_ANALYSIS_VERSION } from "./source-analysis.mjs";
 import { withSessionRoute } from "./session-routing.mjs";
-import { ARTIFACT_COMPOSITION, publicToolName } from "./lode-artifact-composition.mjs";
+import { ARTIFACT_COMPOSITION, publicHintCall } from "./lode-artifact-composition.mjs";
 import { familyFormatForOriginal, formatForVerifiedOwner, relativeProjectArtifact, projectOwnsRecordedSnapshot } from "./project-storage-format.mjs";
 import { sha256Hex as digest } from "./core/digest.mjs";
 import { failWith } from "./core/errors.mjs";
@@ -1503,7 +1503,7 @@ export function buildWorldModelStatusProjection(inspection, { sampleLimit = WORL
       worldModelId: snapshot.worldModelId,
       worldModelHash: snapshot.worldModelHash,
       localInspectionCommand: `${ARTIFACT_COMPOSITION.identity === "lode" ? "lode-agent" : "head-agent"} world-status <project>`,
-      boundedDetailTools: ["lode_world_query", "lode_temporal_graph", "lode_git_history", "lode_runtime_state"].map(publicToolName),
+      boundedDetailTools: ["lode_world_query", "lode_temporal_graph", "lode_git_history", "lode_runtime_state"].map((name) => publicHintCall(name)),
     },
   };
   const statusProjectionHash = digest(canonicalJson(payload));

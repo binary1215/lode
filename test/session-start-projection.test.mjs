@@ -45,7 +45,7 @@ function fixture(t, runtime, purpose = "Selected current purpose; investigate on
     assert.equal(value.persisted, false);
     assert.equal(value.logicalSessionId, session.sessionId);
     assert.deepEqual(value.route, { session_id: session.sessionId });
-    if (value.expansion.startsWith("Omitted work:")) assert.match(value.expansion, /lode_session_work_read.*project_root:projectRoot.*route/);
+    if (value.expansion.startsWith("Omitted work:")) assert.match(value.expansion, /lode_session\(action:work_read, project_root:projectRoot, \.\.\.route\)/);
     else { assert.match(value.expansion, /lode_conversation_enter.*project_root:projectRoot.*exact route/); assert.match(value.expansion, /When needed/); }
     assert.match(value.scope, /Read-only, non-atomic.*(?:Recheck|Check) current authority (?:before an effect|for effects)/);
     t.diagnostic(JSON.stringify({ runtime, length: text.length, sessionId: value.logicalSessionId,
@@ -125,10 +125,10 @@ function assertPartialWorkExpansion(f, raw, value, runtime, mode) {
   }
   assert.equal(value.projectRoot, f.root); assert.deepEqual(value.route, { session_id: f.session.sessionId });
   if (value.expansion.startsWith("Omitted work:")) {
-    assert.equal(value.expansion, "Omitted work: lode_session_work_read(project_root:projectRoot, ...route)");
+    assert.equal(value.expansion, "Omitted work: lode_session(action:work_read, project_root:projectRoot, ...route)");
   } else {
     assert.match(value.expansion, /^When needed, lode_conversation_enter with project_root:projectRoot and the exact route above reads originals/);
-    assert.match(value.expansion, /Omitted work: lode_session_work_read with the same root\/route\.$/);
+    assert.match(value.expansion, /Omitted work: lode_session \(action: work_read\) with the same root\/route\.$/);
   }
   // Use the actual emitted root/route, not an evaluated prose instruction.
   const read = input => withSessionRoute(value.projectRoot, value.route.session_id,

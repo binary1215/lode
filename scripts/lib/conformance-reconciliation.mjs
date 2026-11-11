@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { inspectProject, SCHEMA_VERSION } from "./lode-core.mjs";
 import { formatForVerifiedOwner, relativeProjectArtifact } from "./project-storage-format.mjs";
-import { publicToolName } from "./lode-artifact-composition.mjs";
+import { publicHintText } from "./lode-artifact-composition.mjs";
 import { artifactAuthorityBoundary } from "./authority-plane-contract.mjs";
 import { readProductModelCanon } from "./product-model.mjs";
 import { inspectWorldModel } from "./world-model.mjs";
@@ -507,7 +507,7 @@ export async function prepareConformanceAssessment({ root = ".", limit = 32, pro
 function assertCurrentBaseline(expected, current) {
   if (conformanceCanonicalJson(expected) !== conformanceCanonicalJson(current.baseline))
     fail(
-      `Conformance baseline changed; rerun ${publicToolName("lode_conformance_prepare")} and retry the read-only semantic assessment. Ordinary work remains available.`,
+      `Conformance baseline changed; rerun ${publicHintText("lode_conformance_prepare")} and retry the read-only semantic assessment. Ordinary work remains available.`,
       "CONFORMANCE_BASELINE_DRIFT",
     );
 }

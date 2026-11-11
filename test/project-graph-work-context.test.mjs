@@ -288,8 +288,10 @@ function completeNode(value, saved) {
   return node;
 }
 function expansion(node, f, saved) {
-  assert.equal(node.originalExpansion.tool, publicToolName("head_session_work_read"));
+  // The hint is the grouped callable form (lode_session, action work_read).
+  assert.equal(node.originalExpansion.tool, publicToolName("head_session"));
   const args = node.originalExpansion.arguments;
+  assert.equal(args.action, "work_read");
   assert.equal(args.project_root, f.root);
   assert.equal(args.session_id, saved.evidence.sessionId);
   assert.deepEqual(args.evidence_ids, [saved.evidence.evidenceId]);
@@ -433,7 +435,7 @@ test("A-D: Todo-only semantic terms reach actual graph, CLI/MCP and exact owner 
       for (const item of [saved, other]) {
         const node = completeNode(result.structuredContent, item),
           args = expansion(node, f, item);
-        exactResult((await call("head_session_work_read", args, routed)).structuredContent, item, args);
+        exactResult((await call("head_session", args, routed)).structuredContent, item, args);
       }
       const wrongOwner = await call(
         "head_session_work_read",
@@ -494,7 +496,7 @@ test("A-D: two long Todo revisions retain sparse source indices, status, provena
       assert.equal(node.workContentCoverage.fieldItems.todos.originalItems, 4);
       assert.ok(node.workContentCoverage.fieldItems.todos.omittedItems > 0);
       const args = expansion(node, f, item);
-      exactResult((await call("head_session_work_read", args)).structuredContent, item, args);
+      exactResult((await call("head_session", args)).structuredContent, item, args);
     }
     assertGraphPresentation(formatCliResult("graph-query", graph), graph);
     const cli = await runCommand(["graph-query", f.root, "--query", seed, "--depth", "0", "--max-edges", "0"]);
@@ -659,7 +661,7 @@ test("Core topic-only lexical discovery carries the actual reason/result/pending
       completeNode(result.structuredContent, saved);
       assertGraphPresentation(result.content[0].text, result.structuredContent);
       exactResult(
-        (await call("head_session_work_read", expansion(completeNode(result.structuredContent, saved), f, saved), routed)).structuredContent,
+        (await call("head_session", expansion(completeNode(result.structuredContent, saved), f, saved), routed)).structuredContent,
         saved,
         expansion(completeNode(result.structuredContent, saved), f, saved),
       );
@@ -857,7 +859,7 @@ test("partial graph topic bodies use exact source-index ranges and count topics 
     );
     assertGraphPresentation(formatCliResult("graph-query", result), result);
     const args = expansion(node, f, original);
-    exactResult((await call("head_session_work_read", args)).structuredContent, original, args);
+    exactResult((await call("head_session", args)).structuredContent, original, args);
   }
   assert.deepEqual(snapshot(f.base), before);
 });
@@ -1142,7 +1144,7 @@ test("identical text in separate Sessions keeps distinct graph identity and exac
   assert.equal(new Set(workNodes(found).map((node) => node.nodeId)).size, 3);
   for (const saved of [a, b, d]) {
     const args = expansion(completeNode(found, saved), f, saved);
-    const result = await call("head_session_work_read", args);
+    const result = await call("head_session", args);
     exactResult(result.structuredContent, saved, args);
   }
   assert.deepEqual(readProjectDirection({ root: f.root }), direction);
@@ -1178,7 +1180,7 @@ test("one near-limit work keeps its full reason in question, path, anchor and ne
     );
     const args = expansion(completeNode(value, saved), f, saved);
     assert.ok(args.max_characters > 32768);
-    for (const routed of [false, true]) exactResult((await call("head_session_work_read", args, routed)).structuredContent, saved, args);
+    for (const routed of [false, true]) exactResult((await call("head_session", args, routed)).structuredContent, saved, args);
   }
   assert.deepEqual(snapshot(f.base), before);
 });
@@ -1203,7 +1205,7 @@ test("graph-generated exact expansion fits the actual enriched record through re
   const before = snapshot(f.base);
   exactResult(f.read({ evidenceIds: args.evidence_ids, maxRecords: args.max_records, maxCharacters: args.max_characters }), saved, args);
   exactResult(await runCommand(["session-work-read", f.root, "--session", args.session_id, "--input", inputFile]), saved, args);
-  for (const routed of [false, true]) exactResult((await call("head_session_work_read", args, routed)).structuredContent, saved, args);
+  for (const routed of [false, true]) exactResult((await call("head_session", args, routed)).structuredContent, saved, args);
   assert.deepEqual(snapshot(f.base), before);
 });
 

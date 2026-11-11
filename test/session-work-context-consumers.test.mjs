@@ -514,7 +514,7 @@ function withoutSyncWrites(action) {
 }
 function assertHookWorkScope(value, work) {
   assert.equal(value.workCoverage.status, work.status);
-  if (work.status === "work_context_partial") assert.match(value.expansion, /lode_session_work_read/u);
+  if (work.status === "work_context_partial") assert.match(value.expansion, /lode_session(?: \(action: work_read\)|\(action:work_read, )/u);
   if (value.workCoverage.coverage) {
     assert.deepEqual(value.workCoverage.coverage, work.coverage);
     assert.deepEqual(value.workCoverage.omissions, work.omissions);

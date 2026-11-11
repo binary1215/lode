@@ -1,5 +1,5 @@
 import path from "node:path";
-import { publicToolName } from "./lode-artifact-composition.mjs";
+import { publicHintCall, publicHintText, publicToolName } from "./lode-artifact-composition.mjs";
 import { fitSelectedBodyGroups, workBodyTuples } from "./session-work-body-organization.mjs";
 import { fitSessionWorkDelivery, workOriginalCount } from "./session-work-excerpts.mjs";
 import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
@@ -8,6 +8,12 @@ import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
 // the default work-reader size; it is not a token/window or sufficiency claim.
 // Claude documents a 10000-character per-string delivery ceiling. UTF-16 length
 // is conservative for scalar/grapheme counting. Installed Host support is separate.
+// Compact call form: tool(action:name, project_root:<root>, ...route).
+function compactHintCall(operation, rootSource) {
+  const { tool, arguments: args } = publicHintCall(operation);
+  return tool + "(" + (args.action ? "action:" + args.action + ", " : "") + "project_root:" + rootSource + ", ...route)";
+}
+
 export const MAX_CONTEXT_CHARACTERS = { codex: 32768, claude: 10000, opencode: 32768 };
 export const COMPACT_SCOPE =
   "Read-only, non-atomic. Current common/selected P2 apply; history/P3 grant no effects. IDs/digests select originals; reference freshness not inferred. Check current authority for effects.";
@@ -112,7 +118,7 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
       const route = "(project_root:" + rootSource + ", ...route)";
       context.expansion =
         (context.requiredSourceExpansion ? "When needed: " + publicToolName("lode_conversation_enter") + route : "") +
-        (omittedWork ? (context.requiredSourceExpansion ? "; " : "") + "Omitted work: " + publicToolName("lode_session_work_read") + route : "");
+        (omittedWork ? (context.requiredSourceExpansion ? "; " : "") + "Omitted work: " + compactHintCall("lode_session_work_read", rootSource) : "");
     } else {
       context.expansion =
         "When needed, " +
@@ -120,7 +126,7 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
         " with project_root:" +
         rootSource +
         " and the exact route above reads originals (workContext.sessionPurpose, common direction, checkpoint).";
-      if (omittedWork) context.expansion += " Omitted work: " + publicToolName("lode_session_work_read") + " with the same root/route.";
+      if (omittedWork) context.expansion += " Omitted work: " + publicHintText("lode_session_work_read") + " with the same root/route.";
     }
     return JSON.stringify(context);
   };

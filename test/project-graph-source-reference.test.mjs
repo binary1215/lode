@@ -683,7 +683,8 @@ test("Lode exact path expansion retains its actual Project and Session from anot
   assert.notEqual(saved.evidence.evidenceId, otherSaved.evidence.evidenceId);
   const found = original(await readOnly(f, request(f)), f, saved);
   const expansion = found.originalExpansion;
-  assert.equal(expansion.tool, "lode_session_work_read");
+  assert.equal(expansion.tool, "lode_session");
+  assert.equal(expansion.arguments.action, "work_read");
   assert.equal(expansion.arguments.project_root, fs.realpathSync(f.root));
   assert.equal(expansion.arguments.session_id, f.session.sessionId);
   assert.deepEqual(expansion.arguments.evidence_ids, [saved.evidence.evidenceId]);

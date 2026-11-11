@@ -1,4 +1,4 @@
-import { publicToolName } from "./lode-artifact-composition.mjs";
+import { publicHintCall } from "./lode-artifact-composition.mjs";
 import { SESSION_WORK_MAX_CHARACTERS } from "./session-work-evidence-original.mjs";
 
 // P4 only, over already verified/returned values. No reads, writes, new scan,
@@ -175,11 +175,15 @@ function excerptOf(entry, fields) {
       conditionsMayBeOmitted: true,
       fullOriginalIncluded: false,
     },
-    expansion: {
-      operation: publicToolName("lode_session_work_read"),
-      sameVerifiedProjectRoot: true,
-      arguments: { session_id: entry.source.sessionId, evidence_ids: [entry.source.evidenceId], max_records: 1, max_characters: SESSION_WORK_MAX_CHARACTERS },
-    },
+    expansion: (() => {
+      const call = publicHintCall("lode_session_work_read", {
+        session_id: entry.source.sessionId,
+        evidence_ids: [entry.source.evidenceId],
+        max_records: 1,
+        max_characters: SESSION_WORK_MAX_CHARACTERS,
+      });
+      return { operation: call.tool, sameVerifiedProjectRoot: true, arguments: call.arguments };
+    })(),
   };
 }
 

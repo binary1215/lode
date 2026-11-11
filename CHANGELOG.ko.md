@@ -9,6 +9,23 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.111 — 게시 결과는 별도 확인
+
+- 도구 결과의 안내가 폐기 예정 이름 대신 묶음 도구와 action을 알려 줍니다.
+  구조화된 안내는 받은 그대로 호출할 수 있고
+  (`mcpTool: "lode_onboarding"`과 `mcpArguments: { action: "guide" }`,
+  `{ tool: "lode_session", arguments: { action: "work_read", … } }`), 문장으로 된
+  안내는 `lode_session (action: work_read)`처럼 적습니다.
+- doctor의 `MCP:` 줄에 action이 함께 표시됩니다.
+- World 상태의 `boundedDetailTools`는 도구 이름 문자열 목록에서
+  `{ tool, arguments }` 항목 목록으로 바뀌었습니다. 도구와 action을 알려 주며,
+  `project_root`와 질의는 호출하는 쪽이 채웁니다.
+- 폐기 예정 이름은 0.5.0 전까지 그대로 동작합니다. 바뀐 것은 안내 문구뿐입니다.
+- `recovery-workflow` Skill 참조 문서가 `lode_project_native_history` 작업과 그
+  action을 이름으로 밝히고, Codex는 register에서만 `runtime_root`를 받는다고
+  적습니다. `lode_checkpoint_diagnose`가 모델을 호출하지 않고 잠금이나 캐시를
+  쓰지 않으며 매 턴 확인용이 아니라는 점도 다시 적었습니다.
+
 ## 0.3.0-beta.110 — 게시 결과는 별도 확인
 
 - `conversation-ux` Skill 참조 문서를 절차 형태로 다시 썼습니다. 언제 읽는지,

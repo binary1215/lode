@@ -44,7 +44,9 @@ explanation: pointer presence, artifact-restore verification, sync availability
 and the next Lode action. Integrity failure, a missing pointed artifact,
 required-reference drift and optional ResultPacket loss are different cases; a
 changed observed sequence needs another read. Matching IDs or hashes say nothing
-about semantic freshness.
+about semantic freshness. The diagnosis makes no model call, writes no lock or
+cache and is not an atomic filesystem snapshot; call it when recovery needs
+explanation or the user asks. It is not a per-turn check.
 
 ## Publishing recovery direction
 
@@ -99,7 +101,10 @@ complete. A task grants no effect. Resolve competing branches with exact
 
 ## Native history
 
-Details, supported versions and qualification limits are in
+The operation is `lode_project_native_history` (CLI `project-native-history`)
+with `action` capture, read, restore or register. It is not on the default tool
+list: inspect it with `lode_tools_discover` and call its returned `invokeWith`
+route. Details, supported versions and qualification limits are in
 [Project portability](../../../docs/project-portability.md).
 
 1. Take the capture `provider` from the user's request or a verified Host route;
@@ -109,7 +114,10 @@ Details, supported versions and qualification limits are in
 2. Resolve the user's native selection yourself, by exact explicit selection or
    a verified Host route rather than titles or recency, and pass the selected
    source project (capture) or target project (restore, register) as
-   `runtime_root` for Claude and OpenCode; read needs only the bundle.
+   `runtime_root` for Claude and OpenCode; read needs only the bundle. Codex
+   differs: it takes `runtime_root` (the target, i.e. current, workspace) only
+   for register and refuses it for capture and restore
+   (`PROJECT_NATIVE_RUNTIME_ROOT_NOT_USED`).
 3. Leave the user's default profile and its database untouched. OpenCode writes
    only into an existing, explicitly selected isolated profile; Lode does not
    create or migrate it. Registration that omits a child or older item is not
