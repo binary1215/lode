@@ -81,12 +81,12 @@ Its goal, constraints, decisions and cancelled actions remain distinct from
 historical checkpoint fields: a past deploy step cannot revoke a later shared
 cancellation. `lode_project_direction_update` requires the exact read
 `expected_direction_id` and current user direction. On MCP, a verified caller may
-omit it once a Lode result showed it the current direction id; a direction
-conflict drops that held id, and with none held an omitted id means no current
-direction. Concurrent differences require reconciliation. Neither restore nor
-this direction record grants an execution authorization. An older valid record
-remains inspectable history, while a stale checkpoint cannot drive current
-effect execution merely by being readable.
+omit it after its status, entry, basis, `created` save or own update showed the
+current direction id; a direction conflict drops that held id, and with none
+held an omitted id means no current direction. Concurrent differences require
+reconciliation. Neither restore nor this direction record grants an execution
+authorization. An older valid record remains inspectable history, while a stale
+checkpoint cannot drive current effect execution merely by being readable.
 
 If a verified Project has lost its selected Session, ordinary work and common
 direction remain available. Entry returns `sessionDiscovery.call` for the

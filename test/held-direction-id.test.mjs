@@ -64,7 +64,7 @@ test("schema: expected_direction_id leaves required and stays declared; the desc
   const update = tools.find((tool) => tool.name === "lode_project_direction_update");
   assert.deepEqual(update.inputSchema.required, ["project_root", "direction"]);
   assert.deepEqual(update.inputSchema.properties.expected_direction_id, { type: ["string", "null"] });
-  assert.match(update.description, /Host-verified caller may omit expected_direction_id/u);
+  assert.match(update.description, /Host-verified caller may omit expected_direction_id after its status, entry, basis, created save or own update/u);
 });
 
 test("basis id with a substituted direction: the same direction gives the same id, another gives another", (t) => {
@@ -297,4 +297,73 @@ test("CLI is unchanged: an omitted expected direction still means no current dir
   assert.equal((await runCommand(["project-direction-update", root, "--input", input])).status, "updated");
   fs.writeFileSync(input, JSON.stringify(goal("h").direction));
   await assert.rejects(runCommand(["project-direction-update", root, "--input", input]), (error) => error.code === "PROJECT_DIRECTION_CONFLICT");
+});
+
+test("a reused update does not re-arm: after another caller's update with the same direction, the id-less save conflicts", async (t) => {
+  const { root, call } = codexFixture(t);
+  value(await call("lode_checkpoint_basis", {}, "thread-A"));
+  value(await call("lode_project_direction_update", { expected_direction_id: null, ...goal("same") }, "thread-B"));
+  assert.equal(value(await call("lode_project_direction_update", { expected_direction_id: null, ...goal("same") }, "thread-A")).status, "reused");
+  const before = snapshot(root);
+  assert.equal(value(await call("lode_checkpoint_sync", direction, "thread-A")).outcome, "conflict");
+  assert.deepEqual(snapshot(root), before);
+});
+
+test("unverified callers on a bridge get no held direction id", async (t) => {
+  const { root, environment, bridge } = codexFixture(t);
+  // The transport has seen native metadata, so a call without it is unverified.
+  value(await codex(bridge, root, "lode_project_status", {}, "thread-A"));
+  value(await codex(bridge, root, "lode_project_direction_update", { expected_direction_id: null, ...goal("x") }, null));
+  assert.equal(reason(await codex(bridge, root, "lode_project_direction_update", goal("y"), null)), "PROJECT_DIRECTION_CONFLICT");
+  // A legacy bridge that has never seen native metadata.
+  const legacy = createNativeSessionHostBridge({ runtime: "codex", environment });
+  t.after(() => legacy.dispose());
+  value(await codex(legacy, root, "lode_project_status", {}, null));
+  assert.equal(reason(await codex(legacy, root, "lode_project_direction_update", goal("y"), null)), "PROJECT_DIRECTION_CONFLICT");
+});
+
+test("a verified entry hands the direction id", async (t) => {
+  const { root, call } = codexFixture(t);
+  value(await plain(root, "lode_project_direction_update", { expected_direction_id: null, ...goal("x") }));
+  value(await call("lode_conversation_enter", {}, "thread-A"));
+  assert.equal(value(await call("lode_project_direction_update", goal("y"), "thread-A")).status, "updated");
+});
+
+test("Claude guarded child: a prepared update is refused and a failed preparation errors, as on main", async (t) => {
+  const { root, environment } = fixture(t);
+  const { LODE_SUBAGENT_WRITE_GUARD: _off, ...guarded } = environment;
+  const bridge = createNativeSessionHostBridge({ runtime: "claude", environment: guarded });
+  t.after(() => bridge.dispose());
+  const request = (id) => ({
+    jsonrpc: "2.0",
+    id,
+    method: "tools/call",
+    params: {
+      _meta: { "claudecode/toolUseId": id },
+      name: "lode_project_direction_update",
+      arguments: { project_root: root, expected_direction_id: null, ...goal("child") },
+    },
+  });
+  const hook = (wire) => ({
+    jsonrpc: "2.0",
+    id: "hook",
+    method: "tools/call",
+    params: {
+      name: SESSION_HOST_REQUEST_HELPER,
+      arguments: {
+        native_session_id: "claude-session",
+        native_agent_id: "agent-1",
+        tool_use_id: wire.params._meta["claudecode/toolUseId"],
+        outer_tool_name: "mcp__lode__" + wire.params.name,
+        original_arguments: JSON.stringify(wire.params.arguments),
+      },
+    },
+  });
+  const before = snapshot(root);
+  assert.equal((await dispatch(hook(request("child-1")), { nativeSessionBridge: bridge })).result.isError, undefined);
+  const refused = await dispatch(request("child-1"), { nativeSessionBridge: bridge });
+  assert.match(JSON.stringify(refused), /SUBAGENT_STATE_WRITE_REJECTED/u);
+  assert.deepEqual(snapshot(root), before);
+  // The tool use id is spent: preparation fails and the hook gets an error reply.
+  assert.equal((await dispatch(hook(request("child-1")), { nativeSessionBridge: bridge })).result.isError, true);
 });

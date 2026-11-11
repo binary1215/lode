@@ -77,11 +77,12 @@ MCP `session_id` 또는 CLI `--session`은 요청 대상만 선택하며
 constraints, decisions, cancelledActions는 과거 checkpoint 필드와 구분합니다.
 과거 배포 단계가 더 최신인 공통 배포 취소를 되돌릴 수 없습니다.
 `lode_project_direction_update`는 정확한 조회 `expected_direction_id`와 현재
-사용자 방향을 요구하며 경합은 다시 읽고 조정합니다. MCP에서 검증된 호출자는 Lode
-결과가 현재 방향 id를 보여 준 뒤에는 이를 생략할 수 있습니다. 방향 충돌은 보관된
-id를 버리며, 보관된 것이 없으면 생략은 현재 방향 없음을 뜻합니다. 복구나 방향
-기록은 실행 authorization을 만들지 않습니다. 온전한 과거 자료는 탐색할 수 있지만
-읽을 수 있다는 이유만으로 현재 효과를 실행하지는 않습니다.
+사용자 방향을 요구하며 경합은 다시 읽고 조정합니다. MCP에서 검증된 호출자는 자신의
+상태·진입·basis·`created` 저장·방향 갱신 결과가 현재 방향 id를 보여 준 뒤에는 이를
+생략할 수 있습니다. 방향 충돌은 보관된 id를 버리며, 보관된 것이 없으면 생략은 현재
+방향 없음을 뜻합니다. 복구나 방향 기록은 실행 authorization을 만들지 않습니다. 온전한
+과거 자료는 탐색할 수 있지만 읽을 수 있다는 이유만으로 현재 효과를 실행하지는
+않습니다.
 
 검증된 Project에서 선택 Session을 잃어도 일반 작업과 공통 방향은 계속 사용할 수
 있습니다. Entry는 정확한 Project root를 넣은 기존 읽기 전용 `lode_session_list`의
