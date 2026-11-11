@@ -12,6 +12,7 @@ import { inspectProject, convergeProjectInstallation } from "../scripts/lib/lode
 import { pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
+import { effectiveToolCall } from "../scripts/lib/operation-groups.mjs";
 import {
   createSessionCallContext,
   createLodeSession,
@@ -494,6 +495,18 @@ test("public status/resume reports an interrupted import without initializing a 
     resume = await runCommand(["resume", root]);
   assert.equal(status.status, "project_import_pending");
   assert.equal(resume.status, "project_import_pending");
+  // The continue-import hint is a grouped call to the import operation with the
+  // pending Project and exact bundle; called exactly as returned, it reaches the
+  // import, which still needs the caller's bundle_root and changes nothing.
+  const importHint = status.nextAction.entrypoint;
+  const importCall = effectiveToolCall(importHint.tool, importHint.arguments);
+  assert.equal(importCall.name, "lode_project_bundle_import");
+  assert.equal(importCall.arguments.expected_bundle_id, importHint.bundleId);
+  assert.equal(fs.realpathSync(importCall.arguments.target_root), fs.realpathSync(root));
+  const asReturned = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: importHint.tool, arguments: importHint.arguments } });
+  assert.ok(asReturned.error, JSON.stringify(asReturned));
+  assert.notEqual(asReturned.error.data?.reasonCode, "INVALID_TOOL_ARGUMENTS");
+  assert.match(asReturned.error.message, /bundle locations must be non-empty/u);
   assert.deepEqual(snapshot(root), before);
   assert(!fs.existsSync(path.join(root, ".lode/project.json")));
 });

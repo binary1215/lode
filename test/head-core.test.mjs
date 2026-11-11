@@ -118,6 +118,7 @@ import {
   verifyRuntimeAdapterContractMatrix,
 } from "../scripts/lib/runtime-adapter.mjs";
 import { WORLD_MODEL_STATUS_MCP_MAX_BYTES, dispatch as dispatchMcp, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
+import { effectiveToolCall } from "../scripts/lib/operation-groups.mjs";
 import { buildRepositorySourceScope } from "../scripts/lib/repository-source-scope.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import {
@@ -829,6 +830,18 @@ test("resume requires a fresh semantic reproposal for stale non-authoritative on
   });
   assert.equal(first.status, "product_review_required");
   assert.equal(first.nextAction.id, "review_product_candidates");
+  // The onboarding-guide entrypoint, called exactly as returned plus the Project
+  // root, reaches lode_onboarding_guide.
+  const guideHint = first.nextAction.entrypoint;
+  assert.deepEqual(guideHint.mcpArguments, { action: "guide" });
+  assert.equal(effectiveToolCall(guideHint.mcpTool, guideHint.mcpArguments).name, "lode_onboarding_guide");
+  const guided = await dispatchMcp({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: { name: guideHint.mcpTool, arguments: { ...guideHint.mcpArguments, project_root: root } },
+  });
+  assert.equal(guided.error, undefined, JSON.stringify(guided.error));
   assert.equal(first.onboarding.status, "awaiting_review");
   assert.equal(first.attention.userDecisionRequired, false);
   assert.equal(first.attention.status, "notice");
@@ -1262,6 +1275,12 @@ test("builds an incremental, freshness-aware Repository World Model", async (t) 
   assert.equal(Object.hasOwn(statusProjection, "snapshot"), false);
   assert.ok(Buffer.byteLength(JSON.stringify(statusProjection), "utf8") < WORLD_MODEL_STATUS_PROJECTION_MAX_BYTES);
   // Each bounded detail tool is a callable grouped call, made exactly as returned.
+  // The list stays partial calls: the caller adds project_root (and query).
+  const detailOperations = ["lode_world_query", "lode_temporal_graph", "lode_git_history", "lode_runtime_state"];
+  assert.deepEqual(
+    statusProjection.fullSnapshot.boundedDetailTools.map((hint) => effectiveToolCall(hint.tool, hint.arguments).name),
+    detailOperations,
+  );
   for (const hint of statusProjection.fullSnapshot.boundedDetailTools) {
     const response = await dispatchMcp({
       jsonrpc: "2.0",

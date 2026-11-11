@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { publicHintCall, publicHintText, publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
-import { groupMembership, resolveGroupedCall } from "../scripts/lib/operation-groups.mjs";
+import { effectiveToolCall, groupMembership, resolveGroupedCall } from "../scripts/lib/operation-groups.mjs";
 import { resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
 import { catalogTools, dispatch, discoverTools, tools } from "../scripts/mcp-server.mjs";
@@ -61,14 +61,17 @@ const ROUTING_FILES = new Set([
   "scripts/lib/operation-groups.mjs",
   "scripts/lib/session-routing.mjs",
   "scripts/lib/work-document-surface.mjs",
-  "scripts/lib/dispatch-adapters.mjs",
   "scripts/lib/managed-maintenance-surface.mjs",
 ]);
 // Line-level dispatch: formatter selection by operation name, and the MCP
 // server's per-operation cancellation hook.
 const DISPATCH_LINE = /\bname === "|\]\.includes\(name\)|requestedToolName\(request\) === "/;
 
-test("no runtime string names a deprecated alias outside routing tables, however it is built", () => {
+// Scope: every whole-word lode_/head_ token in runtime scripts/**/*.mjs. Not
+// covered: names assembled by concatenation or template interpolation, lines that
+// match DISPATCH_LINE, the routing files above, non-.mjs files, and
+// verify-/measure-/generate- scripts.
+test("no runtime string literal names a deprecated alias outside routing tables", () => {
   const misses = [];
   const walk = (directory) => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -129,18 +132,13 @@ test("structured hints from a real Project are callable as returned", async (t) 
   fs.writeFileSync(path.join(root, "README.md"), "# Hint fixture\n");
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const status = (await call("lode_project_status", { project_root: root })).result.structuredContent;
-  const entrypoints = [];
-  const collect = (value) => {
-    if (!value || typeof value !== "object") return;
-    if (typeof value.mcpTool === "string") entrypoints.push({ tool: value.mcpTool, arguments: value.mcpArguments ?? {} });
-    for (const entry of Object.values(value)) collect(entry);
-  };
-  collect(status);
-  assert.ok(entrypoints.length > 0, "status carries at least one MCP entrypoint");
-  for (const entry of entrypoints) {
-    assert.equal(groupMembership(entry.tool), null, entry.tool);
-    const response = await call(entry.tool, { ...entry.arguments, project_root: root });
-    assert.notEqual(response.error?.data?.reasonCode, "INVALID_TOOL_ARGUMENTS", JSON.stringify(response));
-    assert.doesNotMatch(response.error?.message ?? "", /Unknown tool/);
-  }
+  // The context readiness entrypoint, called exactly as returned (plus the
+  // Project root it leaves to the caller), reaches lode_context_prepare.
+  const entry = status.readiness.context.entrypoint;
+  assert.deepEqual(entry.mcpArguments, { action: "prepare" });
+  assert.equal(groupMembership(entry.mcpTool), null, entry.mcpTool);
+  assert.equal(effectiveToolCall(entry.mcpTool, entry.mcpArguments).name, "lode_context_prepare");
+  const response = await call(entry.mcpTool, { ...entry.mcpArguments, project_root: root, task: "Inspect the README" });
+  assert.equal(response.error, undefined, JSON.stringify(response.error));
+  assert.equal(response.result.isError, undefined);
 });
