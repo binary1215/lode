@@ -495,8 +495,12 @@ async function heldRecoveryBasisCall(name, args, memory) {
 // basis). A conflict or deferral drops it: the caller must read a fresh basis and
 // derive again, so repeating the same call cannot win by retry. A diagnosis never
 // arms it, and "reused" keeps what is held.
-async function rememberRecoveryBasis(name, args, value, memory, heldBasis) {
+async function rememberRecoveryBasis(name, args, value, memory, heldBasis, entryBasis) {
   if (!value || typeof value !== "object") return;
+  if (name === "lode_conversation_enter" || name === "lode_project_initialize_or_resume") {
+    await rememberEntryBasis(name, args, value, memory, entryBasis);
+    return;
+  }
   if (name === "lode_checkpoint_basis" && value.basis) {
     memory.hold(args.project_root, value.basis.sessionId, value.basis.basisId);
     return;
@@ -506,6 +510,49 @@ async function rememberRecoveryBasis(name, args, value, memory, heldBasis) {
   else if (value.outcome === "conflict" || value.outcome === "deferred") {
     const sessionId = heldBasis?.sessionId ?? value.basis?.sessionId;
     if (sessionId) memory.drop(args.project_root, sessionId);
+  }
+}
+
+// 4-D (b2): a verified caller's successful entry also hands it a basis (held, not
+// returned). Conversation entry is read-only, so the basis is read before the
+// entry reads that build the returned context; a change after that point shows
+// up as a conflict on save instead of being missed.
+async function entryRecoveryBasisBefore(name, args) {
+  if (name !== "lode_conversation_enter" || typeof args?.project_root !== "string") return null;
+  try {
+    const { inspectRecoveryCheckpointBasis } = await import("./lib/compaction-recovery.mjs");
+    return inspectRecoveryCheckpointBasis({ root: args.project_root }).basis;
+  } catch {
+    return null;
+  }
+}
+
+// Initialize-or-resume may write (first adoption, a resume that changes the
+// Session record), so its basis is read after the operation, for the Session it
+// returned, and held only when that basis reflects exactly the returned Session
+// record and Project direction. Any other change in between leaves nothing held.
+async function rememberEntryBasis(name, args, value, memory, entryBasis) {
+  if (name === "lode_conversation_enter") {
+    const ready = ["conversation_ready", "conversation_direction_restored"].includes(value.status);
+    if (ready && entryBasis && value.workContext?.sessionId === entryBasis.sessionId) memory.hold(args.project_root, entryBasis.sessionId, entryBasis.basisId);
+    return;
+  }
+  const sessionId = value.project?.sessionId;
+  if (!["initialized", "resumed"].includes(value.projectAction) || typeof sessionId !== "string" || !value.state) return;
+  try {
+    const [{ inspectRecoveryCheckpointBasis }, { withSessionRoute }, { sessionStateHash }] = await Promise.all([
+      import("./lib/compaction-recovery.mjs"),
+      import("./lib/session-routing.mjs"),
+      import("./lib/run-lineage.mjs"),
+    ]);
+    const basis = withSessionRoute(args.project_root, sessionId, () => inspectRecoveryCheckpointBasis({ root: args.project_root }).basis);
+    const matches =
+      basis.sessionId === sessionId &&
+      basis.sessionRecordHash === sessionStateHash(value.state) &&
+      (basis.currentProjectDirectionId ?? null) === (value.currentProjectDirection?.directionId ?? null);
+    if (matches) memory.hold(args.project_root, sessionId, basis.basisId);
+  } catch {
+    /* A basis that cannot be read is simply not held. */
   }
 }
 
@@ -587,7 +634,11 @@ async function dispatchRouted(
     const declaredSchema = registered?.tool?.inputSchema;
     if (declaredSchema) assertProjectRootArgument(publicToolName(name), declaredSchema, args);
     if (!registered) throw new Error(`Unknown tool: ${publicToolName(name)}`);
-    const heldBasis = recoveryBasisMemory ? await heldRecoveryBasisCall(name, args, recoveryBasisMemory) : null;
+    // Only a view the native bridge issued to a verified caller counts (4-D).
+    const basisMemory =
+      recoveryBasisMemory && (await import("./lib/session-native-host.mjs")).isBridgeIssuedRecoveryBasis(recoveryBasisMemory) ? recoveryBasisMemory : null;
+    const heldBasis = basisMemory ? await heldRecoveryBasisCall(name, args, basisMemory) : null;
+    const entryBasis = basisMemory ? await entryRecoveryBasisBefore(name, args) : null;
     if (heldBasis) args = heldBasis.args;
     const value = await callRegistered(registered, "mcp", args, {
       packageVersion,
@@ -613,7 +664,7 @@ async function dispatchRouted(
       servingModuleUrl,
       installationCaller,
     });
-    if (recoveryBasisMemory) await rememberRecoveryBasis(name, args, value, recoveryBasisMemory, heldBasis);
+    if (basisMemory) await rememberRecoveryBasis(name, args, value, basisMemory, heldBasis, entryBasis);
     // MCP structuredContent is an optional object, never null/array/scalar.
     // Keep absent originals as their original text value, not fabricated state.
     const response = success(id, {

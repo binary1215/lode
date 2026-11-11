@@ -11,6 +11,11 @@ import { subagentWriteGuardEnabled } from "./subagent-write-guard.mjs";
 import { effectiveToolCall } from "./operation-groups.mjs";
 import { createRecoveryBasisMemory } from "./recovery-basis-memory.mjs";
 
+// Held recovery basis views the bridge itself issued to a verified caller. The
+// dispatcher honours only these, so no embedder option can supply one.
+const issuedRecoveryBasisViews = new WeakSet();
+export const isBridgeIssuedRecoveryBasis = (view) => issuedRecoveryBasisViews.has(view);
+
 const validCaller = (id) => typeof id === "string" && id.length > 0 && id.length <= 512 && !/[\u0000-\u001f]/u.test(id);
 const missingCaller = () => {
   throw Object.assign(new Error("Native caller metadata is unavailable; never substitute another caller."), { code: "NATIVE_SESSION_CALLER_UNAVAILABLE" });
@@ -99,6 +104,11 @@ export function createNativeSessionHostBridge({
     }
     // This remembers only the transport capability, NEVER the last caller.
     return { status: observedNativeMetadata ? "unavailable" : "legacy" };
+  }
+  function issueRecoveryBasisView(key) {
+    const view = recoveryBasisMemory.forCaller(key);
+    issuedRecoveryBasisViews.add(view);
+    return view;
   }
   const callerKey = (caller) => JSON.stringify([caller.runtime, caller.nativeSessionId, caller.agentId || null]);
   async function adapterFor(caller) {
@@ -314,7 +324,7 @@ export function createNativeSessionHostBridge({
           resolveSessionContext,
           onValidatedSessionSelection,
           readRelatedNativeContext,
-          recoveryBasisMemory: recoveryBasisMemory.forCaller(callerKey(caller)),
+          recoveryBasisMemory: issueRecoveryBasisView(callerKey(caller)),
         }),
       );
     } catch (error) {

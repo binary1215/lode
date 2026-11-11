@@ -225,9 +225,8 @@ test("verified Claude caller (hook-prepared) saves in one call; without the hook
   assert.equal(value(await call("lode_checkpoint_sync", direction, "sync")).outcome, "created");
 });
 
-test("memory bounds: entries beyond the size or age bound are dropped, then the basis read is required again", () => {
-  let time = 0;
-  const memory = createRecoveryBasisMemory({ now: () => time, ttlMs: 10, maxEntries: 2 });
+test("memory bound: entries beyond the size bound are dropped; there is no age bound", () => {
+  const memory = createRecoveryBasisMemory({ maxEntries: 2 });
   const a = memory.forCaller("caller-a");
   a.hold("/p", "s1", "recovery-basis-000000000000000000000001");
   a.hold("/p", "s2", "recovery-basis-000000000000000000000002");
@@ -235,23 +234,25 @@ test("memory bounds: entries beyond the size or age bound are dropped, then the 
   assert.equal(a.held("/p", "s1"), null, "the oldest entry is dropped beyond the size bound");
   assert.equal(a.held("/p", "s3"), "recovery-basis-000000000000000000000003");
   assert.equal(memory.forCaller("caller-b").held("/p", "s3"), null, "per caller");
-  time = 11;
-  assert.equal(a.held("/p", "s3"), null, "entries expire with age");
-  assert.equal(memory.describe().persisted, false);
+  assert.deepEqual(Object.keys(memory.describe()).sort(), ["authorityPlane", "entries", "maxEntries", "persisted", "recoveryAuthority"]);
 });
 
-test("age bound through the real dispatch: an expired held basis is refused like nothing held", async (t) => {
+test("only the native bridge supplies a held basis: an embedder option is ignored with or without a bridge", async (t) => {
   const { root, environment } = fixture(t);
-  let time = 0;
-  const bridge = createNativeSessionHostBridge({
-    runtime: "codex",
-    environment,
-    recoveryBasisMemory: createRecoveryBasisMemory({ now: () => time, ttlMs: 5 }),
-  });
+  const embedded = createRecoveryBasisMemory().forCaller("embedder");
+  const plain = (name, args, options) =>
+    dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: { project_root: root, ...args } } }, options);
+  const basis = value(await plain("lode_checkpoint_basis", {}, { recoveryBasisMemory: embedded })).basis;
+  embedded.hold(root, basis.sessionId, basis.basisId);
+  const before = snapshot(root);
+  const noBridge = await plain("lode_checkpoint_sync", direction, { recoveryBasisMemory: embedded });
+  assert.equal(noBridge.error?.message, "Expected recovery basis id is required.", JSON.stringify(noBridge));
+  assert.equal(noBridge.error.data.reasonCode, "INVALID_COMPACTION_INPUT");
+  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment });
   t.after(() => bridge.dispose());
-  value(await codex(bridge, root, "lode_checkpoint_basis", {}, "thread-A"));
-  time = 6;
-  assert.equal((await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).error.data.reasonCode, "RECOVERY_BASIS_NOT_HELD");
+  const viaBridge = await plain("lode_checkpoint_sync", direction, { nativeSessionBridge: bridge, recoveryBasisMemory: embedded });
+  assert.equal(viaBridge.error?.message, "Expected recovery basis id is required.");
+  assert.deepEqual(snapshot(root), before);
 });
 
 test("a verified caller on an uninitialized directory gets the operation's own refusal, as on main", async (t) => {
@@ -284,4 +285,90 @@ test("CLI is unchanged: the basis id is still required", async (t) => {
     assert.equal(error.message, "Expected recovery basis id is required.");
     return true;
   });
+});
+
+// 4-D (b2): a verified caller's successful entry holds a basis too.
+test("verified entry, work, then one-call save with zero refusals, equal to the explicit-id save", async (t) => {
+  const { root, environment } = fixture(t);
+  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment });
+  t.after(() => bridge.dispose());
+  const entered = value(await codex(bridge, root, "lode_conversation_enter", {}, "thread-A"));
+  assert.equal(entered.status, "conversation_ready");
+  value(await codex(bridge, root, "lode_project_graph", { query: "README" }, "thread-A"));
+  const saved = value(await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A"));
+  assert.equal(saved.outcome, "created");
+  const twin = fixture(t);
+  const twinBridge = createNativeSessionHostBridge({ runtime: "codex", environment: twin.environment });
+  t.after(() => twinBridge.dispose());
+  const twinBasis = value(await codex(twinBridge, twin.root, "lode_checkpoint_basis", {}, "thread-A")).basis.basisId;
+  const explicit = value(await codex(twinBridge, twin.root, "lode_checkpoint_sync", { ...direction, expected_recovery_basis_id: twinBasis }, "thread-A"));
+  const shape = (result) => ({
+    status: result.status,
+    outcome: result.outcome,
+    writes: result.writes,
+    persisted: result.persisted,
+    reasonCode: result.reasonCode,
+  });
+  assert.deepEqual(shape(saved), shape(explicit));
+});
+
+test("verified initialize-or-resume holds the basis of the Session it returned, including a first adoption", async (t) => {
+  const { root, environment } = fixture(t);
+  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment });
+  t.after(() => bridge.dispose());
+  const resumed = value(await codex(bridge, root, "lode_project_initialize_or_resume", {}, "thread-A"));
+  assert.equal(resumed.projectAction, "resumed");
+  assert.equal(value(await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).outcome, "created");
+  const fresh = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-held-basis-adopt-")));
+  t.after(() => fs.rmSync(fresh, { recursive: true, force: true }));
+  const adopted = value(await codex(bridge, fresh, "lode_project_initialize_or_resume", { profile: "core", runtimes: ["codex"] }, "thread-A"));
+  assert.equal(adopted.projectAction, "initialized");
+  assert.equal(value(await codex(bridge, fresh, "lode_checkpoint_sync", direction, "thread-A")).outcome, "created");
+});
+
+test("after entry, another caller's change conflicts like a stale explicit id and writes nothing", async (t) => {
+  const { root, environment } = fixture(t);
+  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment });
+  t.after(() => bridge.dispose());
+  value(await codex(bridge, root, "lode_conversation_enter", {}, "thread-A"));
+  const stale = value(await codex(bridge, root, "lode_checkpoint_basis", {}, "thread-C")).basis.basisId;
+  const other = value(await codex(bridge, root, "lode_checkpoint_basis", {}, "thread-B")).basis.basisId;
+  const first = value(await codex(bridge, root, "lode_checkpoint_sync", { ...direction, purpose: "B first", expected_recovery_basis_id: other }, "thread-B"));
+  assert.equal(first.outcome, "created");
+  const before = snapshot(root);
+  const held = value(await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A"));
+  const explicit = value(await codex(bridge, root, "lode_checkpoint_sync", { ...direction, expected_recovery_basis_id: stale }, "thread-C"));
+  assert.equal(held.outcome, "conflict");
+  assert.deepEqual(
+    { outcome: held.outcome, reasonCode: held.reasonCode, writes: held.writes },
+    { outcome: explicit.outcome, reasonCode: explicit.reasonCode, writes: explicit.writes },
+  );
+  assert.deepEqual(snapshot(root), before);
+});
+
+test("the caller's own direction update after entry makes the id-less save conflict (part c changes this)", async (t) => {
+  const { root, environment } = fixture(t);
+  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment });
+  t.after(() => bridge.dispose());
+  value(await codex(bridge, root, "lode_conversation_enter", {}, "thread-A"));
+  const update = { expected_direction_id: null, direction: { goal: "g", constraints: [], decisions: [], cancelledActions: [] } };
+  assert.equal(value(await codex(bridge, root, "lode_project_direction_update", update, "thread-A")).status, "updated");
+  const before = snapshot(root);
+  assert.equal(value(await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).outcome, "conflict");
+  assert.deepEqual(snapshot(root), before);
+  assert.equal((await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).error.data.reasonCode, "RECOVERY_BASIS_NOT_HELD");
+});
+
+test("unverified entry holds nothing; entry holds per caller and per Session", async (t) => {
+  const { root, environment } = fixture(t);
+  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment });
+  t.after(() => bridge.dispose());
+  value(await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "lode_conversation_enter", arguments: { project_root: root } } }));
+  assert.equal((await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).error.data.reasonCode, "RECOVERY_BASIS_NOT_HELD");
+  value(await codex(bridge, root, "lode_conversation_enter", {}, "thread-A"));
+  assert.equal((await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-B")).error.data.reasonCode, "RECOVERY_BASIS_NOT_HELD");
+  const other = value(await codex(bridge, root, "lode_session_create", { purpose: "Other work" }, "thread-A")).sessionId;
+  const refused = await codex(bridge, root, "lode_checkpoint_sync", { ...direction, session_id: other }, "thread-A");
+  assert.equal(refused.error.data.reasonCode, "RECOVERY_BASIS_NOT_HELD");
+  assert.equal(value(await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).outcome, "created");
 });
