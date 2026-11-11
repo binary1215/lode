@@ -149,8 +149,8 @@ After activation, the default adapter mirrors every successful remote snapshot a
 - `world-graph-status`: read and verify projection state;
 - `world-graph-remote-activate` and `world-graph-remote-status`: explicit activation and read-only remote status;
 - `world-graph-remote-database-status` and `world-graph-remote-database-initialize`: read-only compatibility audit and explicit exact-target provisioning/reset boundary;
-- `lode_graph_projection_status`: read-only MCP equivalent;
-- `lode_graphdb_projection_status` and `lode_graphdb_database_status`: read-only MCP activation and compatibility status equivalents;
+- `lode_projection` (`graph_projection_status`): read-only MCP equivalent;
+- `lode_projection` (`graphdb_projection_status`) and `lode_projection` (`graphdb_database_status`): read-only MCP activation and compatibility status equivalents;
 - `world-temporal`, MCP temporal traversal, and Context Compiler temporal expansion use the adapter boundary while preserving result identity.
 - the separate [`DocumentProjectionAdapter`](document-projection-adapter.md) consumes the verified GraphSnapshot for deterministic Markdown without changing graph identity.
 

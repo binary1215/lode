@@ -73,7 +73,7 @@ Exact graph detail keeps the same revision path; a missing public full historica
 direction reader is disclosed, with the named original file for remaining
 partial content. The current direction tool does not select that old revision.
 
-For broader history in a known Session, Lode can start `lode_session_work_read`
+For broader history in a known Session, Lode can start `lode_session` (`work_read`)
 with `scan_evidence: true`, then follow the returned `enumeration.next` arguments.
 The CLI equivalent is `session-work-read --scan-evidence`; a fabricated starting
 ID or user-authored JSON is unnecessary. Each call inspects one lexical page,
@@ -145,7 +145,7 @@ preserves available pending work and unknowns across nodes instead of allowing
 one long reason to consume every node's share. `details` requests the richer
 existing presentation; neither presentation establishes semantic sufficiency.
 
-`originalExpansion` supplies the existing `lode_session_work_read` call with the
+`originalExpansion` supplies the existing `lode_session` (`work_read`) call with the
 verified owner's `session_id`, exact `evidence_ids`, `max_records` of one and the
 actual enriched record-array size as `max_characters`. A successful same-basis
 expansion returns that one original with no budget omission. Compare its owner,
@@ -303,7 +303,7 @@ same-basis fallback reuse. Neither path claims combined traversal acceleration.
 
 General `CONTAINS`, `HAS_REVISION` and `DECLARES` paths connect records and
 versions; expanding them is not code-impact analysis. For a symbol's import/call
-neighbors use existing `lode_world_query` or:
+neighbors use existing `lode_world` (`query`) or:
 
 ```text
 lode-agent world-query <project> --query "<symbol>" --depth 3 --limit 20
@@ -329,7 +329,7 @@ do not each perform an uncoordinated global refresh.
 | --- | --- | --- |
 | `lode_project_graph_index` / `graph-index` | Refreshes the replaceable inventory of existing verified records and observations; reuses identical input | Does not extract new repository code relations or infer a feature |
 | `world-refresh` | Refreshes an already active World, including its supported code relations and revision evidence | Does not activate missing Product/World capability or grant approval |
-| `lode_world_model`, `lode_incremental_refresh_status`, `lode_world_query` / `world-query` | Reads freshness/refresh evidence or bounded affected relations | Does not trigger a World refresh |
+| `lode_world` (`model`), `lode_projection` (`incremental_refresh_status`), `lode_world` (`query`) / `world-query` | Reads freshness/refresh evidence or bounded affected relations | Does not trigger a World refresh |
 
 Core initialization/resume and supported source/observation persistence already
 update the observation inventory. Reuse their sufficiently current results;

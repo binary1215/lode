@@ -111,7 +111,7 @@ const STEPS = [
 ];
 
 // Expected conversation entry states for this flow.
-const DOCUMENTED_ENTRY = {
+const EXPECTED_ENTRY_STATES = {
   "conversation-enter-before-init": { status: "conversation_recovery_unavailable", reasonCode: "NOT_INITIALIZED" },
   "conversation-enter": { status: "conversation_ready" },
 };
@@ -172,7 +172,7 @@ export async function verifyDocumentedFlow() {
     const mcp = await runMcp(mcpRoot);
     const steps = STEPS.map((step) => ({ id: step.id, cli: summary(cli[step.id]), mcp: summary(mcp[step.id]) }));
     for (const step of steps) assert.deepEqual(step.mcp, step.cli, `${step.id}: CLI and MCP differ`);
-    for (const [id, expected] of Object.entries(DOCUMENTED_ENTRY)) {
+    for (const [id, expected] of Object.entries(EXPECTED_ENTRY_STATES)) {
       const actual = steps.find((step) => step.id === id).cli;
       for (const [field, value] of Object.entries(expected)) assert.equal(actual[field], value, `${id}.${field}`);
     }

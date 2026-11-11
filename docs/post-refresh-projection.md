@@ -81,10 +81,10 @@ The setting command accepts only `mode: manual|automatic`. Status and receipt co
 
 Read-only MCP exposes:
 
-- `lode_post_refresh_projection_status`;
-- `lode_post_refresh_projection_receipt`.
+- `lode_projection` (`post_refresh_projection_status`);
+- `lode_projection` (`post_refresh_projection_receipt`).
 
-MCP cannot change the post-refresh policy, trigger refresh, review document-change candidates, apply decisions, or mutate Canon. The separate typed `lode_markdown_projection_build` operation may perform an explicit deterministic document build outside the automatic post-refresh policy; read-only document-review MCP tools inspect status and immutable artifacts.
+MCP cannot change the post-refresh policy, trigger refresh, review document-change candidates, apply decisions, or mutate Canon. The separate typed `lode_projection` (`markdown_projection_build`) operation may perform an explicit deterministic document build outside the automatic post-refresh policy; read-only document-review MCP tools inspect status and immutable artifacts.
 
 ## Authority and optional infrastructure
 

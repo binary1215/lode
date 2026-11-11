@@ -91,7 +91,7 @@ Git이나 Run이 없고, World가 없거나 오래됐거나, 과거 소스가 �
 
 ## 정확한 경로 범위의 과거 diff
 
-`lode_graph_lineage_diff`는 선택적으로 `scope_paths`와 opaque `cursor`를 받습니다. CLI는 `graph-lineage-diff --from <id> --to <id> --path <exact-relative-path>`로 단일 경로를 선택합니다. scope/cursor를 생략하면 기존 version0.2 전체 endpoint 투영 그대로이며, 선택/페이지 결과는version0.3입니다. cursor는 from/to hash·범위·정렬에 묶이며 current pointer가 움직여도 바뀌지 않습니다. 다음 페이지에도 같은 endpoint와 범위를 전달합니다.
+`lode_graph_lineage` (`diff`)는 선택적으로 `scope_paths`와 opaque `cursor`를 받습니다. CLI는 `graph-lineage-diff --from <id> --to <id> --path <exact-relative-path>`로 단일 경로를 선택합니다. scope/cursor를 생략하면 기존 version0.2 전체 endpoint 투영 그대로이며, 선택/페이지 결과는version0.3입니다. cursor는 from/to hash·범위·정렬에 묶이며 current pointer가 움직여도 바뀌지 않습니다. 다음 페이지에도 같은 endpoint와 범위를 전달합니다.
 
 각 endpoint는 전체를 읽고 검증합니다. 노드 변경은 제거된 파일을 포함해 정확한 경로를 선택합니다. 관계 변경은 전후 어느 쪽이든 선택된 노드에 닿거나 정확한 evidence path를 가진 관계를 포함하므로 cross-path edge도 보존합니다. 이동 후보는 전후 경로 모두 범위 안에 있어야 하며 신원 증명이 아닙니다. root source 문맥 변화는 선택 레코드와 별도로 표시합니다. count는 선택 범위 내 정확한 값이고 전체 count는0 대신 not-computed로 표시합니다. omittedCount는 이번 페이지 밖 전체 항목, page.remaining은 뒤에 남은 항목입니다. chunk만 읽고 전체 검증했다고 하거나 허위 무변경/삭제를 선언하지 않습니다. locale상 같은 이동 키는 원래 removed-major/added-minor 순서를 보존하며 digest 그룹과 k-way merge로 bounded page를 만들 때 모든 일치 쌍을 만들거나 순회하지 않습니다.
 
@@ -120,7 +120,7 @@ Run/Capsule이나 ArcadeDB를 시작 조건으로 삼지 않습니다. 부분 �
 `graphSnapshotId`를 생성하고, 의미가 달라지면 명시적인 계보를 가진 새
 스냅샷이 생성됩니다.
 
-`lode_world_model`은 전체 모델과 현재 저장소를 빠짐없이 검증한 뒤, 전체
+`lode_world` (`model`)은 전체 모델과 현재 저장소를 빠짐없이 검증한 뒤, 전체
 스냅샷 대신 크기가 제한된 상태 조회 결과를 반환합니다. 개수, ID, 다이제스트,
 표본과 생략 정보는 유지합니다. 더 자세한 내용은 범위가 제한된 그래프·이력·
 런타임·의미 질의 도구로 확인합니다. 최신성이나 다이제스트 계산을 생략하지 않고

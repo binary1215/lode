@@ -42,7 +42,7 @@ const allTools = [...registryCatalog()];
 // The native Host Hook helper (SESSION_HOST_REQUEST_HELPER) is deliberately not a
 // catalog tool: it is not listed, discoverable or routable. Only the native
 // session bridge accepts it, before any catalog lookup; every other path refuses
-// it with NATIVE_HOOK_DIRECT_INGRESS_REQUIRED (see dispatchRouted).
+// it with NATIVE_HOOK_DIRECT_INGRESS_REQUIRED (see dispatchSessionRequest).
 // Listed surface: grouped tools replace their member operations (see
 // scripts/lib/operation-groups.mjs). allTools keeps every operation for dispatch.
 const surfaceTools = groupedCatalog(allTools);
@@ -163,25 +163,30 @@ export function discoverTools({ name, prefix, offset = 0, limit = 8 } = {}, surf
     managedEntry: `${publicToolName("lode_tools_call")} with execution_mode: managed; original authorization, scope, lease and result checks apply`,
     maintenanceEntry: "scripts/mcp-managed-maintenance.mjs (same managed execution contract; retained reader supported)",
   };
-  if (name == null && prefix == null) {
-    const counts = new Map();
-    for (const tool of available) {
-      const key = `${ARTIFACT_COMPOSITION.toolPrefix}${tool.name.split("_")[1]}_`;
-      counts.set(key, (counts.get(key) || 0) + 1);
-    }
-    return { ...scope, prefixes: [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([prefix, count]) => ({ prefix, count })), nextOffset: null };
-  }
-  const matches = available.filter((tool) => {
-    if (name != null) return tool.name === name;
+  const matchesPrefix = (tool, selected) => {
     const group = operationGroup(tool.name);
     if (group) {
       // A group matches its own prefix and every prefix its deprecated names matched.
       const spellings = [group.name, ...group.actions.map((entry) => entry.operation)].flatMap((canonical) => [canonical, legacyOperationName(canonical)]);
-      return spellings.some((spelling) => `${spelling}_`.startsWith(prefix));
+      return spellings.some((spelling) => `${spelling}_`.startsWith(selected));
     }
     const descriptor = resolveOperation(tool.name);
-    return tool.name.startsWith(prefix) || descriptor?.legacyName.startsWith(prefix) || descriptor?.canonicalName.startsWith(prefix);
-  });
+    return tool.name.startsWith(selected) || descriptor?.legacyName.startsWith(selected) || descriptor?.canonicalName.startsWith(selected);
+  };
+  if (name == null && prefix == null) {
+    // One prefix per leading noun of a listed name. A grouped tool can also match
+    // another listed prefix through a deprecated name (lode_projection under
+    // lode_graph_), so each count is what that prefix returns.
+    const keys = new Set(available.map((tool) => `${ARTIFACT_COMPOSITION.toolPrefix}${tool.name.split("_")[1]}_`));
+    return {
+      ...scope,
+      prefixes: [...keys]
+        .sort((a, b) => a.localeCompare(b))
+        .map((key) => ({ prefix: key, count: available.filter((tool) => matchesPrefix(tool, key)).length })),
+      nextOffset: null,
+    };
+  }
+  const matches = available.filter((tool) => (name != null ? tool.name === name : matchesPrefix(tool, prefix)));
   if (name != null && !matches.length) throw new Error(`Unknown or unavailable tool on ${surface}: ${name}`);
   return {
     ...scope,
@@ -527,11 +532,11 @@ async function dispatchRouted(
     // wrong type after the surface, router and read-only checks and before any
     // handler reads it (otherwise a missing root meant the server's cwd). Other
     // argument rules stay with the operation's own, CLI-identical refusal.
-    // The registry entry's schema, or the catalog schema of a tool the registry
-    // does not hold.
-    const declaredSchema = (registeredOperation(name)?.tool ?? allTools.find((tool) => semanticToolName(tool.name) === name))?.inputSchema;
-    if (declaredSchema) assertProjectRootArgument(publicToolName(name), declaredSchema, args);
+    // Every catalog tool comes from the registry (allTools = registryCatalog()), so
+    // the registry entry's schema is the declared one.
     const registered = registeredOperation(name);
+    const declaredSchema = registered?.tool?.inputSchema;
+    if (declaredSchema) assertProjectRootArgument(publicToolName(name), declaredSchema, args);
     if (!registered) throw new Error(`Unknown tool: ${publicToolName(name)}`);
     const value = await callRegistered(registered, "mcp", args, {
       packageVersion,

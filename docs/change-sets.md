@@ -95,7 +95,7 @@ VCS evidence attachment input:
 }
 ```
 
-The read-only MCP tools `lode_change_set_status` and `lode_vcs_evidence` expose verified state and attachments without recording, reviewing, or promoting anything. When an exact durable impact decision exists but its state pointer is pending, status reports recovery with `requiresNewUserDecision: false` and directs the caller to retry the unchanged decision.
+The read-only MCP tools `lode_vcs` (`change_set_status`) and `lode_vcs` (`evidence`) expose verified state and attachments without recording, reviewing, or promoting anything. When an exact durable impact decision exists but its state pointer is pending, status reports recovery with `requiresNewUserDecision: false` and directs the caller to retry the unchanged decision.
 
 ## Project artifacts
 

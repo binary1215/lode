@@ -216,7 +216,7 @@ export function buildMarkdownDocumentProjection(graph, storage = undefined) {
 function deterministicRendering(projection, graph, storage) {
   const stored = documentProjectionCanonicalJson(projection);
   if (stored === documentProjectionCanonicalJson(buildMarkdownDocumentProjection(graph, storage))) return "current";
-  for (const heading of EARLIER_INDEX_HEADINGS[formatForVerifiedOwner(storage).dialect] || []) {
+  for (const heading of EARLIER_INDEX_HEADINGS[formatForVerifiedOwner(storage).dialect]) {
     if (stored === documentProjectionCanonicalJson(renderMarkdownDocumentProjection(graph, storage, heading))) return "earlier-index-heading";
   }
   return null;

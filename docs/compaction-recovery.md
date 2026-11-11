@@ -136,7 +136,7 @@ bounded outcome `succeeded`, `failed`, or `uncertain`. Provider session IDs,
 transcripts, summaries, prompts, credentials, PIDs, sockets, and UI identities
 are rejected from this contract.
 
-`lode_compaction_lifecycle_step` processes the event without exposing those
+`lode_compact` (`compaction_lifecycle_step`) processes the event without exposing those
 operational fields to the user:
 
 1. Before compaction it reuses an exact current checkpoint when possible. If new
@@ -219,7 +219,7 @@ waits for the existing compaction transition to reach its own terminal path.
 This keeps operational recovery from becoming a new global work gate.
 
 Host integration additionally uses `lode_conversation_enter` and
-`lode_compaction_lifecycle_step`; they are not a user setup ritual. The lifecycle
+`lode_compact` (`compaction_lifecycle_step`); they are not a user setup ritual. The lifecycle
 step is non-blocking-unavailable when no adapter is injected.
 
 Example prepare input:

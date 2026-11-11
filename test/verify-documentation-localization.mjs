@@ -188,11 +188,14 @@ assert.doesNotMatch(publicMarkdown, /status-alpha|\bUNLICENSED\b/i, "public docu
 
 for (const readmeName of ["README.md", "README.ko.md"]) {
   const readme = fs.readFileSync(path.join(root, readmeName), "utf8");
-  assert.match(readme, /docs\/README\.md/, `${readmeName} must link the English documentation index`);
-  assert.match(readme, /docs\/ko\/README\.md/, `${readmeName} must link the Korean documentation index`);
+  const readmeTargets = links(readme).map(withoutFragment);
+  assert.ok(readmeTargets.includes("docs/README.md"), `${readmeName} must link the English documentation index`);
+  assert.ok(readmeTargets.includes("docs/ko/README.md"), `${readmeName} must link the Korean documentation index`);
   assertLinksExist(path.join(root, readmeName), readme);
   const images = assertHtmlImages(path.join(root, readmeName), readme);
   const iconSource = "docs/assets/branding/lode-repository-icon.png";
+  // Wording pinned: the wordmark's src, alt text and width are the accepted branding
+  // (its bytes are pinned by digest below); changing them needs the same approval.
   assert.deepEqual(images[0], { src: "docs/assets/branding/lode-readme-wordmark.png", alt: "Lode Agent Core", width: "720" }, `${readmeName} must restore the accepted large wordmark at the top`);
   assert.equal(images.filter((image) => image.src === iconSource).length, 0, `${readmeName} no longer substitutes the small repository icon for its wordmark`);
   assert(readme.indexOf("lode-readme-wordmark.png") < readme.search(/^# /m), `${readmeName} wordmark must be visible outside the background details`);

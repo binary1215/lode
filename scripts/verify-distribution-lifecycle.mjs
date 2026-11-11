@@ -309,8 +309,16 @@ try {
   assert.equal(fs.readFileSync(path.join(installedReleaseRoot, "LICENSE"), "utf8"), fs.readFileSync(path.join(sourceRoot, "LICENSE"), "utf8"));
   assert.equal(JSON.parse(fs.readFileSync(path.join(installedReleaseRoot, ".codex-plugin", "plugin.json"), "utf8")).license, "MIT");
   assert.equal(JSON.parse(fs.readFileSync(path.join(installedReleaseRoot, "package.json"), "utf8")).license, "MIT");
-  assert.equal(fs.readFileSync(path.join(installedReleaseRoot, "README.md"), "utf8").includes("[한국어](README.ko.md)"), true);
-  assert.equal(fs.readFileSync(path.join(installedReleaseRoot, "README.ko.md"), "utf8").includes("[English](README.md)"), true);
+  assert.equal(
+    fs.readFileSync(path.join(installedReleaseRoot, "README.md"), "utf8").includes("](README.ko.md)"),
+    true,
+    "installed README links its Korean variant",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(installedReleaseRoot, "README.ko.md"), "utf8").includes("](README.md)"),
+    true,
+    "installed Korean README links its English variant",
+  );
   assertRuntimeSurfaceIsolated(installedReleaseRoot);
   assert.equal(fs.existsSync(path.join(projectRoot, ".git")), false);
   assert.equal(inspectDistribution({ installRoot, binDirectory }).activeReleaseId, installed.releaseId);

@@ -32,18 +32,18 @@ second direction store, history document, global memory database or daemon.
   have separate outcomes. A stale/deferred checkpoint does not promote its
   retained work evidence; an optional evidence-storage failure does not block
   an otherwise valid explicit P2 publication.
-- Without a useful checkpoint boundary, one optional `lode_session_work_record`
+- Without a useful checkpoint boundary, one optional `lode_session` (`work_record`)
   preserves selected Run-free context. Lode supplies sparse input from the
   conversation. The user need not author JSON, choose an ID, approve saving,
   create a Run or compile a Capsule.
 - `lode_conversation_enter` reads selected Session originals and existing P2
   direction, together with current common constraints/cancellations. It writes
   nothing. Missing or damaged optional evidence affects only that layer.
-- `lode_session_work_read` expands known exact originals or an explicitly anchored
+- `lode_session` (`work_read`) expands known exact originals or an explicitly anchored
   ID inspection page. Use it when needed, not as a compulsory tool chain.
 
 For automation, CLI `session-work-record <project> --input <file.json>` takes the
-same keys as `lode_session_work_record` `evidence`: at least one of `summary`,
+same keys as `lode_session` (`work_record`) `evidence`: at least one of `summary`,
 `judgments`, `observedWork`, `pending`, `unknowns`, `suggestedFollowUp`,
 `references`, `todos`, plus optional `workTopics`, `workLink`,
 `executionObservation` and `occurrenceKey`. Unknown keys are refused with

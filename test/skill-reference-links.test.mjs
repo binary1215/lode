@@ -8,15 +8,14 @@ import { buildClaudeMarketplaceSnapshot } from "../scripts/lib/claude-marketplac
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const skillRoot = path.join(pluginRoot, "skills", "lode-agent-core");
+// SKILL.md and every Core reference, so a new reference is link-checked too.
 const files = [
   "SKILL.md",
-  "references/runtime-composition.md",
-  "references/conversation-ux.md",
-  "references/authority-and-roles.md",
-  "references/project-discovery.md",
-  "references/context-workflow.md",
-  "references/recovery-workflow.md",
-  "references/context-compiler.md",
+  ...fs
+    .readdirSync(path.join(skillRoot, "references"))
+    .filter((name) => name.endsWith(".md"))
+    .sort()
+    .map((name) => `references/${name}`),
 ];
 
 // This checks this Skill's inline Markdown links and ATX heading anchors, not
@@ -98,7 +97,17 @@ test("Lode Skills and all Core references route to existing files and anchors", 
   const checked = files.map((relative) => verifyLinks(path.join(skillRoot, relative), pluginRoot));
   assertReferencesReachable(checked[0], "source");
   verifyLinks(path.join(pluginRoot, "skills/lode-conversation/SKILL.md"), pluginRoot);
-  verifyLinks(path.join(pluginRoot, "skills/lode-agent-onboarding/SKILL.md"), pluginRoot);
+  const onboarding = verifyLinks(path.join(pluginRoot, "skills/lode-agent-onboarding/SKILL.md"), pluginRoot);
+  // Routes between Skills: Core sends user-facing explanation to the Conversation
+  // Skill, and Onboarding sends ordinary adoption back to the Core Skill.
+  assert(
+    checked[0].some((target) => target.split("#")[0] === "../lode-conversation/SKILL.md"),
+    "Core Skill routes to the Conversation Skill",
+  );
+  assert(
+    onboarding.some((target) => target.split("#")[0] === "../lode-agent-core/SKILL.md"),
+    "Onboarding Skill routes to the Core Skill",
+  );
   for (const name of ["lode-agent-core", "lode-agent-onboarding", "lode-conversation"]) {
     const source = fs.readFileSync(path.join(pluginRoot, "skills", name, "SKILL.md"), "utf8");
     // Wording pinned: Hosts register the Skill from the frontmatter `name` field.

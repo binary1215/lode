@@ -153,12 +153,12 @@ node scripts/lode.mjs world-docs-refresh-read <project> --receipt post-refresh-p
 
 읽기 전용 MCP는 다음을 노출합니다.
 
-- `lode_incremental_refresh_status`;
-- `lode_incremental_refresh_receipt`;
-- `lode_refresh_trigger_status`;
-- `lode_refresh_trigger_delivery`;
-- `lode_post_refresh_projection_status`;
-- `lode_post_refresh_projection_receipt`.
+- `lode_projection` (`incremental_refresh_status`);
+- `lode_projection` (`incremental_refresh_receipt`);
+- `lode_projection` (`refresh_trigger_status`);
+- `lode_projection` (`refresh_trigger_delivery`);
+- `lode_projection` (`post_refresh_projection_status`);
+- `lode_projection` (`post_refresh_projection_receipt`).
 
 MCP는 새로 고침 mutation을 노출하지 않습니다.
 

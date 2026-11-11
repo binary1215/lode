@@ -149,8 +149,8 @@ The event-ingestion command accepts only `sourceKind`, `events`, and optional `m
 
 MCP exposes only verification:
 
-- `lode_refresh_trigger_status`;
-- `lode_refresh_trigger_delivery`.
+- `lode_projection` (`refresh_trigger_status`);
+- `lode_projection` (`refresh_trigger_delivery`).
 
 MCP cannot start a watcher, ingest CI events, acquire mutation authority, or initiate refresh.
 

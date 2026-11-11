@@ -141,5 +141,13 @@ test("the native Hook helper is unlisted and undiscoverable, a Hook call still c
     assert.equal(served.result?.isError, undefined);
     // The Hook's correlation linked this native caller (no caller-unavailable fallback).
     assert.equal(served.result._meta?.headSessionBinding?.status, "host_selection_retained", JSON.stringify(served.result._meta));
+    // The correlation prepared under the head_* spelling is consumed the same way.
+    const servedAlias = await call("tools/call", {
+      name: "lode_project_initialize_or_resume",
+      arguments: args,
+      _meta: { "claudecode/toolUseId": "hook-alias" },
+    });
+    assert.equal(servedAlias.result?.isError, undefined, JSON.stringify(servedAlias));
+    assert.equal(servedAlias.result._meta?.headSessionBinding?.status, "host_selection_retained", JSON.stringify(servedAlias.result._meta));
   });
 });

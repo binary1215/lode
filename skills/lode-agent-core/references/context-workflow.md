@@ -5,10 +5,10 @@ reuse sufficient same-basis evidence, then inspect original sources.
 Expand returned anchors with `details: true` only when useful.
 Ordinary reading, fixes and Host delegation need no Capsule or inclusion proof.
 
-When selected-context handoff is useful, `lode_context_prepare` accepts the
+When selected-context handoff is useful, `lode_context` (`prepare`) accepts the
 exact user task and returns selected records, sources, omissions and uncertainty.
 It is a single read-only preparation, not a prerequisite for every task.
-`lode_context_preview` optionally accepts Lode-authored EvidenceNeeds or exact
+`lode_context` (`preview`) optionally accepts Lode-authored EvidenceNeeds or exact
 current graph anchors. Users never fill JSON, select IDs or operate a budget ladder.
 
 Lode assesses relevance and sufficiency. `ready_for_lode_semantic_assessment`
@@ -23,8 +23,8 @@ inspection without Product onboarding or full indexing. Exact stale graph reques
 fail only their dependent operation. Persist a Capsule only when durable handoff,
 Run or recovery actually needs it. Context never approves a result or writes P2 direction.
 
-For historical state, use bounded `lode_graph_lineage_status`,
-`lode_graph_lineage_trace` and `lode_graph_lineage_diff` views. Preserve original
+For historical state, use bounded `lode_graph_lineage` (`status`),
+`lode_graph_lineage` (`trace`) and `lode_graph_lineage` (`diff`) views. Preserve original
 Project, revisions, candidate state, provenance and coverage. A content-equal
 possible move is not semantic identity.
 

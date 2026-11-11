@@ -29,7 +29,7 @@ tool calls remain available to hosts that expose them.
 ## Start or resume
 
 1. Confirm the request is for the optional Product/World governance path, then
-   call `lode_onboarding_guide` for the exact project root.
+   call `lode_onboarding` (`guide`) for the exact project root.
 2. If status is `not_initialized`, infer only safe defaults:
    - existing project when repository evidence already exists;
    - local storage unless the user explicitly selects GraphDB;
@@ -43,7 +43,7 @@ tool calls remain available to hosts that expose them.
    Project and default/selected logical Session rather than inventing identities.
    Project-scoped review lineage remains intact across independently routed
    Sessions; a new Session does not require re-onboarding.
-5. Call `lode_onboarding_guide` again and follow its `nextAction`.
+5. Call `lode_onboarding` (`guide`) again and follow its `nextAction`.
    Its values (from the guide status) and what each asks for:
    - `initialize_or_resume`: not initialized, review/promotion recovery pending,
      or migration required; call `lode_project_initialize_or_resume` (step 4).
@@ -57,7 +57,7 @@ tool calls remain available to hosts that expose them.
    - `verify_graph_projection`: graph projection is not current.
    - `build_document_projection`: generated documents are not current.
    - `ready`: report readiness and Unknowns.
-   - `inspect_state`: none of the above applies; read `lode_onboarding_status`.
+   - `inspect_state`: none of the above applies; read `lode_onboarding` (`status`).
 
 Installation or initialization must not contact GraphDB. The optional remote
 projection has separate compatibility and activation operations.
@@ -69,7 +69,7 @@ normally returns `awaiting_evidence`. This is intentional: Core does not turn
 symbol names, paths, README headings, or lexical overlap into product concepts.
 
 1. Use the exact `sourceSnapshotId` returned by
-   `lode_project_initialize_or_resume` or `lode_onboarding_status`.
+   `lode_project_initialize_or_resume` or `lode_onboarding` (`status`).
 2. Query `lode_project_graph` first or reuse sufficient same-basis results, then
    inspect needed current repository originals with normal read/search tools.
    Historical discovery helps investigation but cannot replace the proposal's
@@ -102,9 +102,9 @@ opaque P3/P4 evidence and ordinary current status, World, Context, and Session
 recovery may continue.
 
 Only when the user actually requests a product-meaning change, inspect current
-repository evidence and call `lode_onboarding_semantic_refresh` with a fresh
+repository evidence and call `lode_onboarding` (`semantic_refresh`) with a fresh
 current semantic proposal. The first current candidate has no typed historical
-parent. Present it for the same explicit `lode_onboarding_review` used by any
+parent. Present it for the same explicit `lode_onboarding` (`review`) used by any
 other current candidate. The continuity receipt and `HISTORICALLY_FOLLOWS`
 projection are evidence only; never describe them as approval, recovery
 direction, or Canon authority.
@@ -121,22 +121,22 @@ verify or activate it. Never accept a username, password, or token as MCP input
 or copy a value from conversation, goal text, repository files, or generated
 documents.
 
-1. Call `lode_graphdb_connection_preflight`. It performs no network request and
+1. Call `lode_projection` (`graphdb_connection_preflight`). It performs no network request and
    returns only configured reference names plus presence booleans. If references
    are unavailable, ask the user to inject them outside the conversation and
    restart the host. A credential written in goal text or chat is not runtime
    injection and must never be copied automatically.
-2. After all references are present, call `lode_graphdb_database_status` and
+2. After all references are present, call `lode_projection` (`graphdb_database_status`) and
    present the privacy-safe compatibility status. Before any database mutation,
-   obtain explicit confirmation and call `lode_graphdb_database_initialize` with
+   obtain explicit confirmation and call `lode_projection` (`graphdb_database_initialize`) with
    `confirm_initialize: true`.
 3. If and only if the audit proves an incompatible Lode-reserved schema, explain
    the conflicts and obtain a separate exact selected-database confirmation
    before setting `reset_incompatible: true` and `confirm_database`. Never reset
    because unrelated schema exists.
 4. Obtain explicit confirmation for projection writes, then call
-   `lode_graphdb_projection_activate` with `confirm_remote_write: true`.
-5. Call `lode_graphdb_projection_status`, `lode_graph_projection_status`, and a
+   `lode_projection` (`graphdb_projection_activate`) with `confirm_remote_write: true`.
+5. Call `lode_projection` (`graphdb_projection_status`), `lode_projection` (`graph_projection_status`), and a
    bounded graph query. Report verified remote state, disclosed fallback, and
    Unknowns without endpoint, database, credential, or record-ID values.
 
@@ -158,7 +158,7 @@ Do not choose a disposition for the user. Collect one explicit decision:
   the successor batch;
 - `reject` without accepted candidates or edits.
 
-Then call `lode_onboarding_review` with the exact current candidate-set ID and
+Then call `lode_onboarding` (`review`) with the exact current candidate-set ID and
 the user's rationale. Stop on stale source, Canon drift, digest failure, or an
 active/pending Run; do not reinterpret a failed mutation as success.
 
@@ -166,16 +166,16 @@ active/pending Run; do not reinterpret a failed mutation as success.
 
 After a ready review:
 
-1. call `lode_world_model` for its bounded, fully verified status projection and
-   `lode_graph_projection_status`; never request the complete World Model through MCP;
+1. call `lode_world` (`model`) for its bounded, fully verified status projection and
+   `lode_projection` (`graph_projection_status`); never request the complete World Model through MCP;
 2. only when a concrete task needs reproducible selected context, a durable Run
-   or recovery Capsule, call `lode_context_prepare` and author any
-   task-required EvidenceNeeds as Lode, then call `lode_context_preview` with
+   or recovery Capsule, call `lode_context` (`prepare`) and author any
+   task-required EvidenceNeeds as Lode, then call `lode_context` (`preview`) with
    the byte-identical task and a bounded budget; never ask the user to write
    structured Context input. Otherwise continue ordinary work with needed files;
-3. call `lode_markdown_projection_build`, then
-   `lode_markdown_projection_status`;
-4. call `lode_onboarding_guide` once more and report its Project/Session IDs,
+3. call `lode_projection` (`markdown_projection_build`), then
+   `lode_projection` (`markdown_projection_status`);
+4. call `lode_onboarding` (`guide`) once more and report its Project/Session IDs,
    readiness states, and explicit Unknowns.
 
 Generated Markdown and GraphDB remain rebuildable projections. They cannot

@@ -99,13 +99,13 @@ semantic reference는 group membership에서 추론되지 않습니다.
 
 ## Policy 제안과 검토
 
-대화에서 Lode는 `lode_product_policy_propose`를 사용해 정확한 현재 Product Model을 기준으로
+대화에서 Lode는 `lode_product` (`policy_propose`)를 사용해 정확한 현재 Product Model을 기준으로
 create, revise 또는 retire 불변 candidate 하나를 기록할 수 있습니다. Proposal은 bounded local
 source evidence와 정확한 semantic reference를 인용할 수 있지만 선택적 evidence 또는 reference가
 없다는 사실은 gate가 아니라 disclosure입니다. Canon을 변경하거나 일반 작업을 막지 않습니다.
 Lode는 의미, 정확한 적용 대상, reference, evidence 상태 및
 영향을 작은 decision card 하나로 제시하며, 현재 사용자의 명확한 결정 뒤에만
-`lode_product_policy_review`를 호출할 수 있습니다. `lode_product_policy_status`는 읽기 전용
+`lode_product` (`policy_review`)를 호출할 수 있습니다. `lode_product` (`policy_status`)는 읽기 전용
 inspection surface입니다.
 
 Acceptance만 보호된 전이입니다. 현재 Session, Product Model base, active Run conflict, candidate

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
+import { coreEntryGuidance } from "../scripts/lib/lode-entry-guidance.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 function project(t) {
@@ -44,5 +45,5 @@ test("initialization preserves existing user instructions and exposes only the e
   const inspected = inspectProject(root);
   for (const runtime of runtimes) assert.equal(inspected.project.integrations[runtime].status, "manual");
   const alternative = fs.readFileSync(path.join(root, layout.directory, "generated/lode-instructions.md"), "utf8");
-  assert.ok(alternative.length > 0, "the manual integration alternative is generated");
+  assert.ok(alternative.includes(coreEntryGuidance()), "the manual integration alternative carries the core guidance");
 });

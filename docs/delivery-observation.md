@@ -38,7 +38,7 @@ This complements rather than replaces [Release observation](release-observation.
 
 `outcome` is `applied`, `failed`, `cancelled`, or `rolled-back`. A rollback names the exact earlier applied observation in `rollbackTargetObservationId`. The optional `revisionReference` is all-or-nothing. When present, Core verifies the retained World snapshot, exact `FileRevision`, path, and digest before writing anything. Without it, the revision remains explicitly `declared`; a string supplied by the Host is never relabeled as a verified repository revision.
 
-`delivery.state` is a Core-owned specialization because its verified binding creates an `AT_REVISION` graph claim. Generic `lode_observation_ingest` and generic registered adapters reject this reserved type; Hosts use `lode_delivery_observe`, whose dedicated writer repeats the same-project retained-World check at the persistence boundary. This is a proof-integrity boundary, not a user approval gate: custom Observation types remain open, and declared delivery revisions remain accepted through the dedicated call.
+`delivery.state` is a Core-owned specialization because its verified binding creates an `AT_REVISION` graph claim. Generic `lode_observation` (`ingest`) and generic registered adapters reject this reserved type; Hosts use `lode_delivery` (`observe`), whose dedicated writer repeats the same-project retained-World check at the persistence boundary. This is a proof-integrity boundary, not a user approval gate: custom Observation types remain open, and declared delivery revisions remain accepted through the dedicated call.
 
 Replay uses the common exact adapter/version/source-scope/source-event key. Identical replay converges. Divergent content fails without replacing the earlier event.
 
@@ -69,8 +69,8 @@ lode-agent delivery-observe <project> --input <delivery-observation.json>
 lode-agent delivery-status <project> [--environment <key>] [--target <key>] [--history-limit <1..4096>]
 ```
 
-- `lode_delivery_observe`
-- `lode_delivery_status`
+- `lode_delivery` (`observe`)
+- `lode_delivery` (`status`)
 
 The typed observation call intentionally adds no user confirmation checkbox: it records non-authoritative Host evidence and grants no deployment or product authority. Trusted Host composition should construct the structured event; ordinary users inspect the concise status card or ask Lode about an environment or target.
 

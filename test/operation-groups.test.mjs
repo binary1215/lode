@@ -134,7 +134,7 @@ test("discovery lists grouped tools, finds them by their deprecated names, and k
     for (const entry of byGroup.actions) {
       const operation = operations.get(group.actions.find((item) => item.action === entry.action).operation);
       assert.equal(entry.invokeWith, operation.annotations.readOnlyHint === true ? "lode_tools_read" : "lode_tools_call");
-      assert.deepEqual(entry.required, operation.inputSchema.required);
+      assert.deepEqual(entry.required, operation.inputSchema.required ?? []);
       assert.equal(entry.description, operation.description);
     }
     assert.deepEqual(

@@ -494,7 +494,7 @@ test("initializes Claude, Codex, and OpenCode projections and verifies managed c
   assert.ok(fs.existsSync(path.join(root, "AGENTS.md")));
   assert.ok(fs.existsSync(path.join(root, "opencode.json")));
   const generatedInstructions = fs.readFileSync(path.join(root, layout.directory, "generated", "lode-instructions.md"), "utf8");
-  assert.ok(generatedInstructions.length > 0);
+  assert.ok(generatedInstructions.includes(coreEntryGuidance()), "generated instructions carry the core guidance");
   assert.equal(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"), generatedInstructions);
   assert.equal(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"), generatedInstructions);
   const claudeMcp = JSON.parse(fs.readFileSync(path.join(root, ".mcp.json"), "utf8"));

@@ -135,12 +135,12 @@ Lode 직접 작업이 기본이고, 유용하면 일반 Host 위임을 사용합
 
 선택적인 typed MCP 목록에는 다음 도구가 있습니다.
 
-- `lode_product_signal_record`
-- `lode_product_hypothesis_record`
-- `lode_product_initiative_propose`
-- `lode_product_initiative_review`
-- `lode_product_outcome_observe`
-- `lode_product_operating_status`
+- `lode_product` (`signal_record`)
+- `lode_product` (`hypothesis_record`)
+- `lode_product` (`initiative_propose`)
+- `lode_product` (`initiative_review`)
+- `lode_product` (`outcome_observe`)
+- `lode_product` (`operating_status`)
 - `lode_continuity_snapshot`
 
 기본 MCP 목록은 독립 Session 생성과 현재 공통 방향 갱신을 포함한 Core·복구에

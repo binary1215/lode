@@ -135,9 +135,9 @@ lode-agent world-docs-application-read <project> --application <document-change-
 ## Read-only MCP
 
 ```text
-lode_document_change_review_status
-lode_document_change_review
-lode_document_change_application
+lode_document_change (review_status)
+lode_document_change (review)
+lode_document_change (application)
 ```
 
 MCP cannot record a review, apply one, write Canon, rebuild a graph, or publish documents.

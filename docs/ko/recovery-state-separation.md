@@ -18,7 +18,7 @@ basis/sync는 의미를 새로 보존할 실제 필요에 사용하지, Run마�
 ## 저장과 실행 재시도 구분
 
 `run-start --contract <id> [--start-request <key>]`와 typed MCP
-`lode_run_start`는 같은 Core 전환입니다. Lode/Host가 내부 키를 한 번 정해 동일
+`lode_run` (`start`)는 같은 Core 전환입니다. Lode/Host가 내부 키를 한 번 정해 동일
 요청 재시도에 유지합니다. 사용자 ID 입력이나 prepare 호출은 필요 없습니다.
 정체성은 기존 Run에 보존하며 새 global ledger는 없습니다. 같은 키/다른 입력은
 충돌, 같은 contract/다른 키는 새 요청입니다. 키 없는 정상 시작도 유지하지만

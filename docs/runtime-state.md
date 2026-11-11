@@ -62,7 +62,7 @@ node scripts/lode.mjs world-status <project>
 node scripts/lode.mjs world-runtime <project> --runtime codex --state active --kind session --limit 20
 ```
 
-The read-only MCP tool is `lode_runtime_state`.
+The read-only MCP tool is `lode_runtime` (`state`).
 
 The physical source path and adapter descriptor are recorded only in the mutable World Model pointer so the source can be re-read for freshness checks. They are excluded from the semantic snapshot hash. The normalized observations, timestamp, coverage, and protocol versions determine the content-derived `runtimeStateId` and World Model ID.
 

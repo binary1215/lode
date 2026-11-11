@@ -63,7 +63,7 @@ node scripts/lode.mjs world-status <project>
 node scripts/lode.mjs world-runtime <project> --runtime codex --state active --kind session --limit 20
 ```
 
-읽기 전용 MCP 도구는 `lode_runtime_state`입니다.
+읽기 전용 MCP 도구는 `lode_runtime` (`state`)입니다.
 
 물리 소스 경로와 어댑터 설명자는 변경 가능한 World Model 포인터에만 기록되므로 최신 상태 검사에서 소스를 다시 읽을 수 있습니다. 이들은 시맨틱 스냅샷 해시에서 제외됩니다. 정규화된 관찰, 타임스탬프, 범위 및 프로토콜 버전이 콘텐츠에서 파생되는 `runtimeStateId`와 World Model ID를 결정합니다.
 

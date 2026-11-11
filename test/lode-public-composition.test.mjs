@@ -38,9 +38,8 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
   assert.equal(new Set(catalogTools.map(tool => tool.name)).size, catalogTools.length);
   assert.equal(operationCatalogTools.length, 143, "Discovery, the two routers and the native Hook helper are not operation catalog entries");
   // Stage 3-F: grouped tools replace their member operations in the listed catalog.
-  assert.equal(catalogTools.length, 130);
-  assert.deepEqual(catalogTools.filter(tool => tool.name.startsWith("lode_work_document_")).map(tool => tool.name).sort(),
-    ["lode_work_document_configure", "lode_work_document_prepare", "lode_work_document_publish", "lode_work_document_status"]);
+  assert.equal(catalogTools.length, 50);
+  assert.deepEqual(catalogTools.filter(tool => tool.name.startsWith("lode_work_document")).map(tool => tool.name), ["lode_work_document"]);
   const routingSurface = new Map([["lode_tools_discover", false], ["lode_tools_read", true], ["lode_tools_call", true]]);
   const stableSurface = toolsForSurface();
   for (const tool of tools) {
