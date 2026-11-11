@@ -1,5 +1,5 @@
 import { resolveOperation } from "./lode-operation-contract.mjs";
-import { operationGroup } from "./operation-groups.mjs";
+import { groupMembership, operationGroup } from "./operation-groups.mjs";
 import { legacyOperationName } from "../../compat/head/public-names.mjs";
 
 // Build-owned literal. Carrier staging fixes this before manifest hashes are
@@ -40,4 +40,23 @@ export function publicToolName(name) {
   const group = operationGroup(name);
   if (group) return ARTIFACT_COMPOSITION.identity === "lode" ? group.name : legacyOperationName(group.name);
   return name;
+}
+
+// The callable form of one operation for a hint: its grouped tool with
+// `action` first in the arguments, or the operation itself when it is not
+// grouped. Hints use this instead of a deprecated alias name (stage 3-F); the
+// group and action come from scripts/lib/operation-groups.mjs.
+export function publicHintCall(operationName, args = {}) {
+  const operation = resolveOperation(operationName);
+  if (!operation) throw new Error(`Unknown hint operation: ${operationName}`);
+  const membership = groupMembership(operation.canonicalName);
+  return membership
+    ? { tool: publicToolName(membership.group.name), arguments: { action: membership.action, ...args } }
+    : { tool: publicToolName(operation.canonicalName), arguments: { ...args } };
+}
+
+// The same call in prose: "lode_group (action: name)", or the tool name.
+export function publicHintText(operationName) {
+  const { tool, arguments: args } = publicHintCall(operationName);
+  return args.action ? `${tool} (action: ${args.action})` : tool;
 }

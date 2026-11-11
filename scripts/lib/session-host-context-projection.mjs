@@ -1,5 +1,5 @@
 import path from "node:path";
-import { publicToolName } from "./lode-artifact-composition.mjs";
+import { publicHintText, publicToolName } from "./lode-artifact-composition.mjs";
 import { fitSelectedBodyGroups, workBodyTuples } from "./session-work-body-organization.mjs";
 import { fitSessionWorkDelivery, workOriginalCount } from "./session-work-excerpts.mjs";
 import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
@@ -112,7 +112,7 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
       const route = "(project_root:" + rootSource + ", ...route)";
       context.expansion =
         (context.requiredSourceExpansion ? "When needed: " + publicToolName("lode_conversation_enter") + route : "") +
-        (omittedWork ? (context.requiredSourceExpansion ? "; " : "") + "Omitted work: " + publicToolName("lode_session_work_read") + route : "");
+        (omittedWork ? (context.requiredSourceExpansion ? "; " : "") + "Omitted work: " + publicHintText("lode_session_work_read") + route : "");
     } else {
       context.expansion =
         "When needed, " +
@@ -120,7 +120,7 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
         " with project_root:" +
         rootSource +
         " and the exact route above reads originals (workContext.sessionPurpose, common direction, checkpoint).";
-      if (omittedWork) context.expansion += " Omitted work: " + publicToolName("lode_session_work_read") + " with the same root/route.";
+      if (omittedWork) context.expansion += " Omitted work: " + publicHintText("lode_session_work_read") + " with the same root/route.";
     }
     return JSON.stringify(context);
   };
