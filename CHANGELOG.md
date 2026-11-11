@@ -11,6 +11,15 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.107 — publication tracked separately
+
+- Tests and verification scripts no longer pin the wording of instructions,
+  documentation, Skills and tool descriptions. Structural checks remain:
+  generated output equals the committed files, links and anchors resolve,
+  English and Korean documents have the same structure, and tool names and
+  schemas match the operation contract.
+- The documentation link and English/Korean structure check now runs in CI.
+
 ## 0.3.0-beta.106 — publication tracked separately
 
 - The native Claude Hook helper `lode_session_host_request_prepare` is no longer
