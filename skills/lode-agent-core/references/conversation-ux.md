@@ -34,8 +34,9 @@ before an effect.
 
 Use separate logical Sessions when work needs its own progress and recovery.
 Route each request explicitly without switching the default Session, and keep
-the common goal, constraints and cancellations visible. A restored earlier step does not undo a common cancellation, and a scope change in
-one Session does not redirect another. The user maintains no Session IDs.
+the common goal, constraints and cancellations visible. A restored earlier step
+does not undo a common cancellation, and a scope change in one Session does not
+redirect another. The user maintains no Session IDs.
 
 ## Agreement and implementation
 
@@ -55,8 +56,8 @@ one Session does not redirect another. The user maintains no Session IDs.
 
 **Authority.** Recovered agreements are reconciled with current requests and
 cancellations and do not authorize execution by themselves. Summaries, evidence,
-reviewer assent, model inference and keywords create no user authority. A short reply
-counts only when it clearly answers a concrete proposal and scope. A new or
+reviewer assent, model inference and keywords create no user authority. A short
+reply counts only when it clearly answers a concrete proposal and scope. A new or
 changed protected target needs the current user decision described in
 [Decision presentation](#decision-presentation).
 
@@ -100,11 +101,12 @@ readiness has three states:
 - **attention required:** disclose the exact recovery failure; direction is not
   rebuilt from a summary, transcript, graph, Capsule or message.
 
-Entry stays read-only: leave continuation tokens, provider sessions and
-checkpoint fields untouched to make entry smoother. Only when the managed
-lifecycle is chosen and a trusted Host lifecycle event exists does Lode call the
-lifecycle step ([recovery workflow](recovery-workflow.md)); the user supplies no
-event, epoch, turn or token fields. A new user
+Entry stays read-only: making entry smoother is no reason to consume a
+continuation token, attach a provider session or rewrite checkpoint fields.
+Only when the managed lifecycle is chosen and a trusted Host lifecycle event
+exists does Lode call the lifecycle step
+([recovery workflow](recovery-workflow.md)); the user supplies no event, epoch,
+turn or token fields. A new user
 request supersedes a prepared continuation for future work only.
 
 **Diagnosis.** When entry reports recovery attention, or the user asks why
@@ -202,12 +204,13 @@ can.
 - **Conformance** ([reconciliation](../../../docs/conformance-reconciliation.md)):
   `lode_conformance` (`prepare`), then your own semantic comparison cited with
   exact anchors in (`propose`); read (`queue`) in pages at work boundaries. Lode
-  may acknowledge or defer a Finding itself with `actor: "head"` and no user
-  confirmation, and never records or supersedes a user disposition. Closing or
+  may acknowledge or defer a Finding as itself, with `actor: "head"` and no user
+  confirmation; it never acts as the user or overrides a disposition the user
+  made. Closing or
   dismissing one needs the user's disposition, then (`disposition`) with
   `confirm_user_disposition: true`; Lode may submit a fresh resolution with
   (`resolution_propose`). A Finding is evidence, not a violation.
 - **Feature mapping** ([mapping](../../../docs/feature-mapping.md)):
   `lode_feature_mapping` (`propose`) with exact Product and source or test node
-  identities, not names; (`review`) with `confirm_user_review: true` only after
-  the user's explicit disposition.
+  identities, not names; (`review`) with the exact `candidate_set_id` and
+  `confirm_user_review: true` only after the user's explicit disposition.
