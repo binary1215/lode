@@ -11,6 +11,24 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.111 — publication tracked separately
+
+- Hints in tool results name the grouped tool and its action instead of a
+  deprecated name. Structured hints are callable as returned
+  (`mcpTool: "lode_onboarding"` with `mcpArguments: { action: "guide" }`;
+  `{ tool: "lode_session", arguments: { action: "work_read", … } }`), and prose
+  hints read `lode_session (action: work_read)`.
+- The doctor `MCP:` line shows the action.
+- World status `boundedDetailTools` is now a list of `{ tool, arguments }`
+  entries instead of tool-name strings. They name the tool and action; the
+  caller still adds `project_root` and the query.
+- The deprecated names still work until 0.5.0. Only what hints say changes.
+- The `recovery-workflow` Skill reference names the routed
+  `lode_project_native_history` operation and its actions, and states that
+  Codex takes `runtime_root` only for register. It also restates that
+  `lode_checkpoint_diagnose` makes no model call, writes no lock or cache and
+  is not a per-turn check.
+
 ## 0.3.0-beta.110 — publication tracked separately
 
 - The `conversation-ux` Skill reference is rewritten as procedures: when to
