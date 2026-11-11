@@ -44,7 +44,8 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
   알려 줍니다.
 - **인자.** 묶음 스키마는 `action`과 각 action이 쓰는 모든 필드를 선언합니다.
   Lode가 `action`을 떼어 내고 나머지 인자로 원래 작업을 실행하므로 필수 필드는
-  여전히 action마다 검사되고, 다른 action만 쓰는 필드는 무시됩니다. discovery는
+  여전히 action마다 검사됩니다. 다른 action만 쓰는 필드는 쓰이지 않습니다. 대부분의
+  작업은 이를 무시하고, 일부는 거부합니다(예: `lode_project_bundle`). discovery는
   action마다 `required` 필드를 알려 줍니다.
 - **결과.** 묶음 호출은 원래 작업의 결과를 그대로 반환하고, 같은 Session,
   write-guard, managed-surface 검사를 거칩니다.

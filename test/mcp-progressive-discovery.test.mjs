@@ -9,6 +9,7 @@ import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs"
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
 import { sessionStatePath } from "../scripts/lib/session-routing.mjs";
 import { groupMembership } from "../scripts/lib/operation-groups.mjs";
+import { publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
 import { runCommand, usage } from "../scripts/head.mjs";
 import { coreEntryGuidance } from "../scripts/lib/lode-entry-guidance.mjs";
 const pluginRoot = path.resolve(import.meta.dirname, "..");
@@ -337,7 +338,7 @@ test("conversation onboarding discovers advanced schemas and exercises the adver
   ]) {
     // The verifier reports the form it called: the grouped tool and its action.
     const membership = groupMembership(name);
-    const called = membership ? `${membership.group.name} (action: ${membership.action})` : name;
+    const called = membership ? `${publicToolName(membership.group.name)} (action: ${membership.action})` : publicToolName(name);
     assert(result.advancedToolsDiscovered.includes(called), called);
     assert(result.advancedToolsRouted.includes(called), called);
   }

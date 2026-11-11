@@ -41,9 +41,10 @@ A grouped tool is named after its resource, for example
   discovery reports them with `executionMode: "managed"`.
 - **Arguments.** The grouped schema declares `action` and every field its actions
   use. Lode removes `action` and runs the operation with the remaining
-  arguments, so each action still checks its own required fields; a field that
-  only another action uses is ignored. Discovery lists each action's `required`
-  fields.
+  arguments, so each action still checks its own required fields. A field that
+  only another action uses is not used: most operations ignore it, and some
+  refuse it (for example `lode_project_bundle`). Discovery lists each action's
+  `required` fields.
 - **Results.** A grouped call returns exactly what the operation returns, and it
   runs the same Session, write-guard and managed-surface checks.
 - **Errors.** A missing or unknown `action` is refused with
