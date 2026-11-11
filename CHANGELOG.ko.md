@@ -9,6 +9,18 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.112 — 게시 결과는 별도 확인
+
+- `docs/ko/mcp-surface.md`는 이제 다른 action만 쓰는 필드가 선택한 action에서
+  쓰이지 않는다고 적습니다. 대부분의 작업은 이를 무시하고 일부는 거부합니다
+  (예: `lode_project_bundle`). 또한 `PreToolUse` matcher가 효과가 있거나
+  Session에 묶인 작업의 폐기 예정 이름만 포함한다고 적습니다.
+- `verify-conversational-onboarding`은 실제로 호출한 묶음 도구와 action을
+  보고합니다. 예: `lode_context (action: prepare)`.
+- 테스트: Hook 상관관계가 없을 때 읽을 수 있는 단언 오류로 실패하고,
+  discovery는 둘 이상의 접두사 아래에 나오는 도구가 `lode_projection`뿐임을
+  확인합니다.
+
 ## 0.3.0-beta.111 — 게시 결과는 별도 확인
 
 - 도구 결과의 안내가 폐기 예정 이름 대신 묶음 도구와 action을 알려 줍니다.

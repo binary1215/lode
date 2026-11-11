@@ -40,8 +40,11 @@ A grouped tool is named after its resource, for example
   `MANAGED_OPERATION_NOT_ON_DEFAULT_SURFACE`. The table marks these actions, and
   discovery reports them with `executionMode: "managed"`.
 - **Arguments.** The grouped schema declares `action` and every field its actions
-  use. Each action still checks its own required and optional fields: Lode
-  removes `action` and runs the operation with the remaining arguments.
+  use. Lode removes `action` and runs the operation with the remaining
+  arguments, so each action still checks its own required fields. A field that
+  only another action uses is not used: most operations ignore it, and some
+  refuse it (for example `lode_project_bundle`). Discovery lists each action's
+  `required` fields.
 - **Results.** A grouped call returns exactly what the operation returns, and it
   runs the same Session, write-guard and managed-surface checks.
 - **Errors.** A missing or unknown `action` is refused with
@@ -58,7 +61,7 @@ directly, through `lode_tools_read` / `lode_tools_call`, and in their historical
   and `removedIn` version.
 - The Claude Code `PreToolUse` matchers in `hooks/claude.json` cover every
   grouped tool with an effectful or Session-bound action, and the deprecated
-  names.
+  names of those effectful or Session-bound operations.
 - Operation results that suggest a next call name the grouped tool and its
   action, for example `lode_session` with `action: "work_read"` or
   `lode_context` with `action: "prepare"`. They no longer suggest the

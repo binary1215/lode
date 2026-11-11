@@ -8,6 +8,8 @@ import { dispatch, discoverTools, tools, catalogTools } from "../scripts/mcp-ser
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
 import { sessionStatePath } from "../scripts/lib/session-routing.mjs";
+import { groupMembership } from "../scripts/lib/operation-groups.mjs";
+import { publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
 import { runCommand, usage } from "../scripts/head.mjs";
 import { coreEntryGuidance } from "../scripts/lib/lode-entry-guidance.mjs";
 const pluginRoot = path.resolve(import.meta.dirname, "..");
@@ -141,6 +143,13 @@ test("small default catalog discovers every ordinary contract without registerin
   // A grouped tool can be found under more than one prefix through its deprecated
   // names (lode_projection under lode_graph_); every listed tool is found.
   assert.deepEqual([...new Set(found.map((x) => x.name))].sort(), catalogTools.map((x) => x.name).sort());
+  // Exactly one tool is listed under more than one prefix.
+  const seen = new Map();
+  for (const { name } of found) seen.set(name, (seen.get(name) ?? 0) + 1);
+  assert.deepEqual(
+    [...seen].filter(([, count]) => count > 1).map(([name]) => name),
+    ["lode_projection"],
+  );
   for (const tool of found) {
     assert.deepEqual(tool.inputSchema, catalogTools.find((x) => x.name === tool.name).inputSchema);
     assert.equal(tool.invokeWith, tool.annotations.readOnlyHint ? "lode_tools_read" : "lode_tools_call");
@@ -327,8 +336,11 @@ test("conversation onboarding discovers advanced schemas and exercises the adver
     "lode_graphdb_connection_preflight",
     "lode_graphdb_projection_activate",
   ]) {
-    assert(result.advancedToolsDiscovered.includes(name), name);
-    assert(result.advancedToolsRouted.includes(name), name);
+    // The verifier reports the form it called: the grouped tool and its action.
+    const membership = groupMembership(name);
+    const called = membership ? `${publicToolName(membership.group.name)} (action: ${membership.action})` : publicToolName(name);
+    assert(result.advancedToolsDiscovered.includes(called), called);
+    assert(result.advancedToolsRouted.includes(called), called);
   }
 });
 
