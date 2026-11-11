@@ -9,6 +9,19 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.113 — 게시 결과는 별도 확인
+
+- MCP에서 Host가 검증한 호출자는 `lode_checkpoint_basis`나 `created` 동기화
+  뒤에 `expected_recovery_basis_id` 없이 `lode_checkpoint_sync` 한 번으로 복구
+  방향을 저장할 수 있습니다. 서버는 같은 Project와 Session에 대해 그 호출자에게
+  마지막으로 건넨 basis를 보관했다가 넘겨받은 것과 똑같이 사용하므로, 충돌
+  검사는 그대로입니다.
+  - 보관 값은 메모리에만 있습니다(최대 1024개, 각 1시간). `conflict`나
+    `deferred` 결과는 이를 버립니다.
+  - 보관된 값이 없으면 새 사유 코드 `RECOVERY_BASIS_NOT_HELD`로 거부하며,
+    메시지가 `lode_checkpoint_basis`를 알려 줍니다. 아무것도 쓰지 않습니다.
+- 명시적 id, 검증되지 않은 호출자, CLI의 동작은 전과 같습니다.
+
 ## 0.3.0-beta.112 — 게시 결과는 별도 확인
 
 - `docs/ko/mcp-surface.md`는 이제 다른 action만 쓰는 필드가 선택한 action에서

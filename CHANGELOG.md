@@ -11,6 +11,20 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.113 — publication tracked separately
+
+- On MCP, a caller the Host has verified can save recovery direction with one
+  `lode_checkpoint_sync` and no `expected_recovery_basis_id`, after
+  `lode_checkpoint_basis` or a `created` sync. The server keeps the basis it
+  last handed that caller for the same Project and Session and uses it exactly
+  as if it were passed, so the conflict check is unchanged.
+  - The held basis is in memory only (up to 1024 entries, one hour each). A
+    `conflict` or `deferred` outcome drops it.
+  - With nothing held, the call is refused with the new reason code
+    `RECOVERY_BASIS_NOT_HELD`, which names `lode_checkpoint_basis`. Nothing is
+    written.
+- Explicit ids, unverified callers and the CLI behave as before.
+
 ## 0.3.0-beta.112 — publication tracked separately
 
 - `docs/mcp-surface.md` now says that a field only another action uses is not
