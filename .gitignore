@@ -160,6 +160,7 @@ Thumbs.db
 !test/legacy-operation-names.test.mjs
 !test/hook-helper-unlisted.test.mjs
 !test/hint-grouped-calls.test.mjs
+!test/held-recovery-basis.test.mjs
 !test/legacy-reason-codes.test.mjs
 !test/legacy-wire-spellings.test.mjs
 !test/operation-groups.test.mjs

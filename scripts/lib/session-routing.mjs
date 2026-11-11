@@ -143,6 +143,16 @@ function selectedId(root) {
   return selectedRoute(root)?.sessionId || null;
 }
 
+// The logical Session the current call routes to for this Project: the selected
+// route, else the Project default. Read-only; used only to key in-memory Host
+// values per Session (4-D), never to select or write a Session.
+export function routedSessionId(root) {
+  const selected = selectedId(root);
+  if (selected) return selected;
+  const base = canonicalRoot(root);
+  return read(defaultSessionStatePath(base, resolveProjectStorage(base)))?.sessionId ?? null;
+}
+
 // A trusted embedding Host owns one context per caller, not per Project or
 // shared MCP process. No provider identity or selector is written into Canon.
 export function createSessionCallContext() {

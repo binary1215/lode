@@ -61,10 +61,14 @@ checkpoint, and neither does direction the existing checkpoint still covers.
    derive the bounded recovery direction afresh in the current provider Lode.
    Do not resubmit old direction with only a new `expected_recovery_basis_id`:
    Core verifies identity and concurrency, not whether the reasoning is fresh.
-3. Call `lode_checkpoint_sync`.
-   - `created`, `reused`: done, silently.
+3. Call `lode_checkpoint_sync`. When the Host has verified the caller, the
+   server holds the basis from step 1 (and from each `created` sync), so the
+   call may omit `expected_recovery_basis_id`; the CLI always passes it.
+   - `created`, `reused`: done, silently. A later save after `created` can omit
+     the id again.
    - `deferred`: recover the named exact Run or compaction transition first.
-   - `conflict`: read a new basis and derive again.
+   - `conflict`: read a new basis and derive again. The held basis is dropped,
+     so an omitted id is refused (`RECOVERY_BASIS_NOT_HELD`) until that read.
 
 Reviewed-Run integration has its own accepted-result integration operation;
 general sync does not carry it. The user never saves, confirms or fills this

@@ -2200,7 +2200,7 @@ export const OPERATIONS = Object.freeze([
     tool: {
       name: "lode_checkpoint_sync",
       description:
-        "Publish or reuse one canonical P2 recovery checkpoint only when the exact read-only basis is current. Identical retries converge; stale direction conflicts; incomplete Run or open compaction transitions defer only this sync.",
+        "Publish or reuse one canonical P2 recovery checkpoint only when the exact read-only basis is current. Identical retries converge; stale direction conflicts; incomplete Run or open compaction transitions defer only this sync. A Host-verified caller may omit expected_recovery_basis_id after lode_checkpoint_basis or a created sync; a conflict or deferral requires a fresh basis read.",
       inputSchema: {
         type: "object",
         properties: {
@@ -2213,7 +2213,7 @@ export const OPERATIONS = Object.freeze([
           open_review_ids: { type: "array", uniqueItems: true, items: { type: "string", minLength: 1 } },
           work_evidence: sessionWorkEvidenceSchema,
         },
-        required: ["project_root", "expected_recovery_basis_id", "purpose", "approved_decisions", "current_position", "next_expected_result"],
+        required: ["project_root", "purpose", "approved_decisions", "current_position", "next_expected_result"],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
