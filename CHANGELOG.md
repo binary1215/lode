@@ -11,6 +11,19 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.112 — publication tracked separately
+
+- `docs/mcp-surface.md` now says that a field only another action uses is not
+  used by the selected action: most operations ignore it and some refuse it
+  (for example `lode_project_bundle`). It also says that the `PreToolUse`
+  matchers cover the deprecated names of effectful or Session-bound operations
+  only.
+- `verify-conversational-onboarding` reports the grouped tool and action it
+  called, for example `lode_context (action: prepare)`.
+- Tests: a missing Hook correlation now fails with a readable assertion, and
+  discovery asserts that `lode_projection` is the only tool listed under more
+  than one prefix.
+
 ## 0.3.0-beta.111 — publication tracked separately
 
 - Hints in tool results name the grouped tool and its action instead of a
