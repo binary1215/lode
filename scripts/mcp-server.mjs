@@ -497,6 +497,11 @@ async function heldRecoveryBasisCall(name, args, memory) {
 // arms it, and "reused" keeps what is held.
 async function rememberRecoveryBasis(name, args, value, memory, heldBasis, entryBasis) {
   if (!value || typeof value !== "object") return;
+  rememberDirection(name, args, value, memory);
+  if (name === "lode_project_direction_update") {
+    if (value.status === "updated") await reArmHeldBases(args.project_root, value.direction, memory);
+    return;
+  }
   if (name === "lode_conversation_enter" || name === "lode_project_initialize_or_resume") {
     await rememberEntryBasis(name, args, value, memory, entryBasis);
     return;
@@ -510,6 +515,68 @@ async function rememberRecoveryBasis(name, args, value, memory, heldBasis, entry
   else if (value.outcome === "conflict" || value.outcome === "deferred") {
     const sessionId = heldBasis?.sessionId ?? value.basis?.sessionId;
     if (sessionId) memory.drop(args.project_root, sessionId);
+  }
+}
+
+// 4-D (c), D1: a verified caller may omit expected_direction_id on
+// lode_project_direction_update when a direction id is held for it and this
+// Project; it is used exactly as if passed. With nothing held the omitted id
+// keeps its existing meaning (no current direction). Explicit values, including
+// null, are untouched.
+function heldDirectionCall(name, args, memory) {
+  if (name !== "lode_project_direction_update" || !args || typeof args !== "object" || args.expected_direction_id !== undefined) return args;
+  if (typeof args.project_root !== "string") return args;
+  const held = memory.heldDirection(args.project_root);
+  return held ? { ...args, expected_direction_id: held } : args;
+}
+
+// The results that hand a verified caller the current Project direction id.
+function rememberDirection(name, args, value, memory) {
+  const directionId =
+    name === "lode_project_direction_update"
+      ? ["updated", "reused"].includes(value.status) && value.direction?.directionId
+      : name === "lode_checkpoint_basis"
+        ? value.basis?.currentProjectDirectionId
+        : name === "lode_checkpoint_sync"
+          ? value.outcome === "created" && value.resultingBasis?.currentProjectDirectionId
+          : name === "lode_conversation_enter"
+            ? value.projectStatus?.currentProjectDirection?.directionId
+            : name === "lode_project_status" || name === "lode_project_initialize_or_resume"
+              ? value.currentProjectDirection?.directionId
+              : null;
+  if (typeof directionId === "string") memory.holdDirection(args.project_root, directionId);
+}
+
+// 4-D (c), user rule 2026-11-11: the caller's own direction update must not
+// make its next id-less save conflict. For each basis this caller holds on this
+// Project, read that Session's basis once (read-only, without changing routing
+// or the default Session) and re-arm it only when the update is the one change:
+// the new basis carries the returned direction id, and the same payload with
+// the previous direction id hashes to the held basis id. Nothing new is held, and
+// a failed read leaves that entry as it was.
+// Pure re-arm decision, exported for tests: the new basis id, or null.
+export function reArmedBasisId(held, basis, direction, basisIdWithDirection) {
+  if (!held || !basis || !direction || basis.currentProjectDirectionId !== direction.directionId) return null;
+  return basisIdWithDirection(basis, direction.previousDirectionId ?? null) === held ? basis.basisId : null;
+}
+
+async function reArmHeldBases(root, direction, memory) {
+  try {
+    const sessions = memory.heldSessions(root);
+    if (!sessions.length) return;
+    const { inspectRecoveryCheckpointBasis, recoveryBasisIdWithDirection } = await import("./lib/compaction-recovery.mjs");
+    const { withSessionRoute } = await import("./lib/session-routing.mjs");
+    for (const sessionId of sessions) {
+      try {
+        const basis = withSessionRoute(root, sessionId, () => inspectRecoveryCheckpointBasis({ root }).basis);
+        const next = basis.sessionId === sessionId ? reArmedBasisId(memory.held(root, sessionId), basis, direction, recoveryBasisIdWithDirection) : null;
+        if (next) memory.hold(root, sessionId, next);
+      } catch {
+        /* That entry stays as it was; the update result is unchanged. */
+      }
+    }
+  } catch {
+    /* Re-arming never fails the update. */
   }
 }
 
@@ -527,10 +594,6 @@ async function entryRecoveryBasisBefore(name, args) {
   }
 }
 
-// Initialize-or-resume may write (first adoption, a resume that changes the
-// Session record), so its basis is read after the operation, for the Session it
-// returned, and held only when that basis reflects exactly the returned Session
-// record and Project direction. Any other change in between leaves nothing held.
 // Pure hold decisions for a verified entry (4-D b2), exported for tests. Each
 // returns the Session to hold the basis for, or null to hold nothing.
 // Conversation entry: a ready entry whose Project status Session is the
@@ -653,6 +716,7 @@ async function dispatchRouted(
     const heldBasis = basisMemory ? await heldRecoveryBasisCall(name, args, basisMemory) : null;
     let entryBasis = basisMemory ? await entryRecoveryBasisBefore(name, args) : null;
     if (heldBasis) args = heldBasis.args;
+    if (basisMemory) args = heldDirectionCall(name, args, basisMemory);
     const capturesInitBasis = basisMemory && name === "lode_project_initialize_or_resume";
     const invoke = () =>
       callRegistered(registered, "mcp", args, {
@@ -683,7 +747,17 @@ async function dispatchRouted(
     if (capturesInitBasis) {
       const { withEntryBasisCapture } = await import("./lib/entry-basis-capture.mjs");
       ({ value, basis: entryBasis } = await withEntryBasisCapture(invoke));
-    } else value = await invoke();
+    } else {
+      try {
+        value = await invoke();
+      } catch (error) {
+        // A direction conflict drops the held direction id; the caller reads
+        // the current direction again. Held recovery bases stay as they were.
+        if (basisMemory && name === "lode_project_direction_update" && error?.code === "PROJECT_DIRECTION_CONFLICT")
+          basisMemory.dropDirection(args.project_root);
+        throw error;
+      }
+    }
     if (basisMemory) await rememberRecoveryBasis(name, args, value, basisMemory, heldBasis, entryBasis);
     // MCP structuredContent is an optional object, never null/array/scalar.
     // Keep absent originals as their original text value, not fabricated state.

@@ -346,17 +346,14 @@ test("after entry, another caller's change conflicts like a stale explicit id an
   assert.deepEqual(snapshot(root), before);
 });
 
-test("the caller's own direction update after entry makes the id-less save conflict (part c changes this)", async (t) => {
+test("the caller's own direction update after entry re-arms the held basis: the id-less save is created (part c)", async (t) => {
   const { root, environment } = fixture(t);
   const bridge = createNativeSessionHostBridge({ runtime: "codex", environment });
   t.after(() => bridge.dispose());
   value(await codex(bridge, root, "lode_conversation_enter", {}, "thread-A"));
   const update = { expected_direction_id: null, direction: { goal: "g", constraints: [], decisions: [], cancelledActions: [] } };
   assert.equal(value(await codex(bridge, root, "lode_project_direction_update", update, "thread-A")).status, "updated");
-  const before = snapshot(root);
-  assert.equal(value(await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).outcome, "conflict");
-  assert.deepEqual(snapshot(root), before);
-  assert.equal((await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).error.data.reasonCode, "RECOVERY_BASIS_NOT_HELD");
+  assert.equal(value(await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).outcome, "created");
 });
 
 test("unverified entry holds nothing; entry holds per caller and per Session", async (t) => {

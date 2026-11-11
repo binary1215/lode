@@ -148,7 +148,8 @@ async function runVerifiedMcpSave(root) {
   const { createNativeSessionHostBridge } = await import("./lib/session-native-host.mjs");
   const bridge = createNativeSessionHostBridge({
     runtime: "codex",
-    environment: { ...process.env, HEAD_AGENT_OPERATIONAL_STATE_ROOT: hostRoot },
+    // Only the Host state root: nothing from the ambient environment reaches it.
+    environment: { HEAD_AGENT_OPERATIONAL_STATE_ROOT: hostRoot },
   });
   const call = async (name, args) => {
     const response = await dispatch(

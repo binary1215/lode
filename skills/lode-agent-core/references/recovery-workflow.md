@@ -73,8 +73,10 @@ checkpoint, and neither does direction the existing checkpoint still covers.
    - `deferred`: recover the named exact Run or compaction transition first.
    - `conflict`: read a new basis and derive again. The held basis is dropped
      (also after `deferred`), so an omitted id is refused
-     (`RECOVERY_BASIS_NOT_HELD`) until that read. Your own direction update
-     or a Run or review change also makes the next id-less save conflict.
+     (`RECOVERY_BASIS_NOT_HELD`) until that read or a ready re-entry. Your own
+     `updated` direction update re-arms a held basis when it is the only
+     change; another caller's change or a Run or review change makes the next
+     id-less save conflict.
 
 Reviewed-Run integration has its own accepted-result integration operation;
 general sync does not carry it. The user never saves, confirms or fills this
