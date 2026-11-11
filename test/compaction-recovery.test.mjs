@@ -19,7 +19,7 @@ import {
   readRecoveryCheckpoint,
   verifyCompaction,
 } from "../scripts/lib/compaction-recovery.mjs";
-import { dispatch, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
+import { dispatch, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");

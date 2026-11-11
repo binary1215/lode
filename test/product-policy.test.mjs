@@ -21,7 +21,7 @@ import { withProjectMutationAsync } from "../scripts/lib/project-mutation-lock.m
 import { buildWorldModel, inspectWorldModel, queryWorldTemporalGraph } from "../scripts/lib/world-model.mjs";
 import { traceGraphLineage } from "../scripts/lib/graph-lineage.mjs";
 import { runCommand } from "../scripts/head.mjs";
-import { dispatch, catalogTools as tools } from "../scripts/mcp-server.mjs";
+import { dispatch, operationCatalogTools as tools } from "../scripts/mcp-server.mjs";
 import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
 import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
 import { snapshot } from "./helpers/session-work-linkage-fixture.mjs";

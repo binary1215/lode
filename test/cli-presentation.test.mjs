@@ -52,7 +52,7 @@ test("Session list presents existing purpose and stored pointers without live-st
 });
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { catalogTools as tools, dispatch } from "../scripts/mcp-server.mjs";
+import { operationCatalogTools as tools, dispatch } from "../scripts/mcp-server.mjs";
 import {
   formatCliResult,
   formatChangeSetStatus,

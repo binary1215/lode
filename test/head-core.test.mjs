@@ -117,7 +117,7 @@ import {
   verifyRuntimeAdapterComposition,
   verifyRuntimeAdapterContractMatrix,
 } from "../scripts/lib/runtime-adapter.mjs";
-import { WORLD_MODEL_STATUS_MCP_MAX_BYTES, dispatch as dispatchMcp, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
+import { WORLD_MODEL_STATUS_MCP_MAX_BYTES, dispatch as dispatchMcp, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { buildRepositorySourceScope } from "../scripts/lib/repository-source-scope.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import {

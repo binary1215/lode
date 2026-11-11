@@ -13,7 +13,7 @@ import { createNotionWorkDocumentAdapter, createBoundedNotionRequest } from "../
 import { workDocumentHash } from "../scripts/lib/work-document-source.mjs";
 import { recordSessionWorkAndProjectDocuments } from "../scripts/lib/session-work-document-workflow.mjs";
 import { workDocumentStore } from "../scripts/lib/work-document-store.mjs";
-import { dispatch, catalogTools } from "../scripts/mcp-server.mjs";
+import { dispatch, operationCatalogTools as catalogTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
 
