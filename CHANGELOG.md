@@ -11,6 +11,21 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.108 — publication tracked separately
+
+- MCP discovery and the managed tool list now group the remaining routed
+  operations per resource behind an `action`. There are 21 new grouped tools,
+  among them `lode_product`, `lode_metric`, `lode_projection`, `lode_compact`
+  and `lode_observation`. The listed catalog shrinks from 130 to 50 tools and
+  the managed tool list from 133 to 53. The default tool list of 22 is
+  unchanged.
+- The 101 replaced operation names (and their `head_*` spellings) remain
+  callable directly and through the routers until 0.5.0. `docs/mcp-surface.md`
+  maps every action to its deprecated name. Some operation results still name
+  the next tool by its deprecated name.
+- Discovery prefix counts are now the number of tools each prefix returns.
+- Docs and Skills name the grouped tool and action.
+
 ## 0.3.0-beta.107 — publication tracked separately
 
 - Tests and verification scripts no longer pin the wording of instructions,
