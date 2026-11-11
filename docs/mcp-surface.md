@@ -56,8 +56,13 @@ directly, through `lode_tools_read` / `lode_tools_call`, and in their historical
 - Discovery lists only the grouped tool. Looking up a deprecated name returns that
   grouped tool, whose `deprecatedAliases` lists each old name with its `action`
   and `removedIn` version.
-- The Claude Code `PreToolUse` matchers in `hooks/claude.json` cover both the
-  grouped tools and the deprecated names.
+- The Claude Code `PreToolUse` matchers in `hooks/claude.json` cover every
+  grouped tool with an effectful or Session-bound action, and the deprecated
+  names.
+- Some operation results still name the next tool by its deprecated name, for
+  example `lode_session_work_read` or `lode_context_prepare`. Those names work
+  until the removal version; call them directly or use the grouped tool and
+  action from the table.
 
 ## Mapping
 

@@ -59,8 +59,11 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
 - discovery는 묶음 도구만 나열합니다. 폐기 예정 이름으로 조회하면 그 묶음 도구를
   반환하며, `deprecatedAliases`에 옛 이름마다 `action`과 `removedIn` 버전이
   담깁니다.
-- `hooks/claude.json`의 Claude Code `PreToolUse` matcher는 묶음 도구와 폐기 예정
-  이름을 모두 포함합니다.
+- `hooks/claude.json`의 Claude Code `PreToolUse` matcher는 효과가 있거나 Session에
+  묶인 action을 가진 모든 묶음 도구와 폐기 예정 이름을 포함합니다.
+- 일부 작업 결과는 다음 도구를 아직 폐기 예정 이름으로 알려 줍니다. 예를 들어
+  `lode_session_work_read`나 `lode_context_prepare`입니다. 이 이름은 제거 버전
+  전까지 동작하므로 그대로 호출하거나, 표의 묶음 도구와 action을 사용하면 됩니다.
 
 ## 매핑
 

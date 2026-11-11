@@ -73,6 +73,20 @@ test("a grouped schema declares action and every member field, and each action k
       tool.annotations.readOnlyHint,
       members.every((member) => member.annotations.readOnlyHint === true),
     );
+    // A grouped hint is never weaker than a member's, with MCP defaults for omitted
+    // hints (destructiveHint true unless read-only, openWorldHint true).
+    const destructive = (member) => member.annotations.readOnlyHint !== true && member.annotations.destructiveHint !== false;
+    assert.equal(tool.annotations.destructiveHint, members.some(destructive), `${group.name} destructiveHint`);
+    assert.equal(
+      tool.annotations.openWorldHint,
+      members.some((member) => member.annotations.openWorldHint !== false),
+      `${group.name} openWorldHint`,
+    );
+    assert.equal(
+      tool.annotations.idempotentHint,
+      members.every((member) => member.annotations.idempotentHint === true),
+      `${group.name} idempotentHint`,
+    );
   }
 });
 

@@ -257,8 +257,11 @@ export function groupedToolDefinition(group, memberTools) {
   for (const [field, schemas] of variants) properties[field] = schemas.length === 1 ? schemas[0] : { anyOf: schemas };
   const requiredBy = (member) => member.tool.inputSchema?.required ?? [];
   const common = requiredBy(members[0]).filter((field) => members.every((member) => requiredBy(member).includes(field)));
-  const every = (hint) => members.every((member) => member.tool.annotations?.[hint] === true);
-  const some = (hint) => members.some((member) => member.tool.annotations?.[hint] === true);
+  // MCP hint defaults apply to a member that leaves a hint out: readOnlyHint and
+  // idempotentHint default to false; destructiveHint (for a tool that is not
+  // read-only) and openWorldHint default to true.
+  const hints = (member) => member.tool.annotations ?? {};
+  const readOnly = (member) => hints(member).readOnlyHint === true;
   const actionLines = members.map((member) => {
     const required = requiredBy(member).filter((field) => !common.includes(field));
     const route = member.tool.annotations?.readOnlyHint === true ? "read" : "call";
@@ -269,10 +272,10 @@ export function groupedToolDefinition(group, memberTools) {
     description: `${group.summary} Actions: ${actionLines.join("; ")}.${common.length ? ` Every action requires ${common.join(", ")}.` : ""}`,
     inputSchema: { type: "object", properties, required: ["action", ...common], additionalProperties: false },
     annotations: {
-      readOnlyHint: every("readOnlyHint"),
-      destructiveHint: some("destructiveHint"),
-      idempotentHint: every("idempotentHint"),
-      openWorldHint: some("openWorldHint"),
+      readOnlyHint: members.every(readOnly),
+      destructiveHint: members.some((member) => !readOnly(member) && hints(member).destructiveHint !== false),
+      idempotentHint: members.every((member) => hints(member).idempotentHint === true),
+      openWorldHint: members.some((member) => hints(member).openWorldHint !== false),
     },
   };
 }
