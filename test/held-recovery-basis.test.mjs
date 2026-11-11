@@ -71,6 +71,10 @@ test("verified caller: read the basis, then save in one call exactly as with the
   // An identical retry converges ("reused") and keeps what is held.
   const reused = value(await codex(bridge, root, "lode_checkpoint_sync", { ...direction, current_position: "Second save" }, "thread-A"));
   assert.equal(reused.outcome, "reused");
+  // "reused" keeps what is held: a further changed save is still one call.
+  const after = value(await codex(bridge, root, "lode_checkpoint_sync", { ...direction, current_position: "Third save" }, "thread-A"));
+  assert.equal(after.outcome, "created");
+  assert.equal(after.expectedBasisId, again.resultingBasis.basisId);
 
   // Same outcome as the explicit-id call on a twin Project.
   const twin = fixture(t);
@@ -138,16 +142,25 @@ test("nothing held: verified callers get the basis-read refusal; unverified call
     method: "tools/call",
     params: { name: "lode_checkpoint_sync", arguments: { project_root: root, ...direction } },
   });
-  for (const response of [plain]) {
-    assert.equal(response.error.message, "Expected recovery basis id is required.");
+  // A Codex bridge that has never seen native metadata (legacy transport), and an
+  // unverified call with an explicit Session route: today's argument refusal.
+  const legacyBridge = createNativeSessionHostBridge({ runtime: "codex", environment });
+  t.after(() => legacyBridge.dispose());
+  const legacy = await codex(legacyBridge, root, "lode_checkpoint_sync", direction, null);
+  const sessionId = value(await codex(bridge, root, "lode_session_create", { purpose: "Explicit route" }, "thread-A")).sessionId;
+  const before2 = snapshot(root);
+  const routedUnverified = await codex(bridge, root, "lode_checkpoint_sync", { ...direction, session_id: sessionId }, null);
+  for (const response of [plain, legacy, routedUnverified]) {
+    assert.equal(response.error?.message, "Expected recovery basis id is required.", JSON.stringify(response));
     assert.equal(response.error.data.reasonCode, "INVALID_COMPACTION_INPUT");
   }
+  assert.deepEqual(snapshot(root), before2);
   // Today's unverified-caller result on a native transport (unchanged from main):
   // the Session-dependent call is unresolved, nothing is published.
   assert.equal(unverified.error, undefined);
   assert.equal(unverified.result.structuredContent.status, "session_selection_unresolved");
   assert.equal(unverified.result.structuredContent.reasonCode, "NATIVE_SESSION_CALLER_UNAVAILABLE");
-  assert.deepEqual(snapshot(root), before);
+  assert.deepEqual(snapshot(root), before2);
 });
 
 test("a diagnosis does not arm the held basis, and one caller's basis is never used for another", async (t) => {
@@ -239,6 +252,19 @@ test("age bound through the real dispatch: an expired held basis is refused like
   value(await codex(bridge, root, "lode_checkpoint_basis", {}, "thread-A"));
   time = 6;
   assert.equal((await codex(bridge, root, "lode_checkpoint_sync", direction, "thread-A")).error.data.reasonCode, "RECOVERY_BASIS_NOT_HELD");
+});
+
+test("a verified caller on an uninitialized directory gets the operation's own refusal, as on main", async (t) => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-held-basis-empty-")));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment: { HEAD_AGENT_OPERATIONAL_STATE_ROOT: path.join(base, "host") } });
+  t.after(() => bridge.dispose());
+  const response = await codex(bridge, base, "lode_checkpoint_sync", direction, "thread-A");
+  assert.equal(response.error?.message, "Expected recovery basis id is required.", JSON.stringify(response));
+  assert.deepEqual(
+    fs.readdirSync(base).filter((name) => name !== "host"),
+    [],
+  );
 });
 
 test("CLI is unchanged: the basis id is still required", async (t) => {

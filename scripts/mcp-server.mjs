@@ -294,7 +294,9 @@ async function unresolvedSessionResponse(id, name, root, reasonCode) {
 
 export async function dispatch(request, options = {}) {
   if (options.nativeSessionBridge && !options.sessionContext && !options.resolveSessionContext) {
-    return options.nativeSessionBridge.dispatch(request, async (original, routing) => await dispatchSessionRequest(original, { ...options, ...routing }));
+    // Only the bridge grants a held recovery basis, and only to a verified caller.
+    const { recoveryBasisMemory: _embedderMemory, ...base } = options;
+    return options.nativeSessionBridge.dispatch(request, async (original, routing) => await dispatchSessionRequest(original, { ...base, ...routing }));
   }
   return await dispatchSessionRequest(request, options);
 }
@@ -469,7 +471,15 @@ async function dispatchSessionRequest(request, options = {}) {
 async function heldRecoveryBasisCall(name, args, memory) {
   if (name !== "lode_checkpoint_sync" || !args || typeof args !== "object" || args.expected_recovery_basis_id !== undefined) return null;
   const { routedSessionId } = await import("./lib/session-routing.mjs");
-  const sessionId = routedSessionId(args.project_root);
+  // An uninitialized or unreadable Project has no routed Session: leave the
+  // call unchanged so the operation gives its own refusal, as on main.
+  let sessionId;
+  try {
+    sessionId = routedSessionId(args.project_root);
+  } catch {
+    return null;
+  }
+  if (!sessionId) return null;
   const held = memory.held(args.project_root, sessionId);
   if (!held)
     throw Object.assign(

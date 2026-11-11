@@ -67,8 +67,9 @@ checkpoint, and neither does direction the existing checkpoint still covers.
    - `created`, `reused`: done, silently. A later save after `created` can omit
      the id again.
    - `deferred`: recover the named exact Run or compaction transition first.
-   - `conflict`: read a new basis and derive again. The held basis is dropped,
-     so an omitted id is refused (`RECOVERY_BASIS_NOT_HELD`) until that read.
+   - `conflict`: read a new basis and derive again. The held basis is dropped
+     (also after `deferred`), so an omitted id is refused
+     (`RECOVERY_BASIS_NOT_HELD`) until that read.
 
 Reviewed-Run integration has its own accepted-result integration operation;
 general sync does not carry it. The user never saves, confirms or fills this
