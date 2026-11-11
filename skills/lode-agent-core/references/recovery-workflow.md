@@ -46,7 +46,7 @@ required-reference drift and optional ResultPacket loss are different cases; a
 changed observed sequence needs another read. Matching IDs or hashes say nothing
 about semantic freshness. The diagnosis makes no model call, writes no lock or
 cache and is not an atomic filesystem snapshot; call it when recovery needs
-attention or the user asks, not every turn.
+explanation or the user asks. It is not a per-turn check.
 
 ## Publishing recovery direction
 
@@ -101,8 +101,10 @@ complete. A task grants no effect. Resolve competing branches with exact
 
 ## Native history
 
-The tool is `lode_project_native_history` (CLI `project-native-history`) with
-`action` capture, read, restore or register. Details, supported versions and
+The operation is `lode_project_native_history` (CLI `project-native-history`)
+with `action` capture, read, restore or register. It is not on the default tool
+list: inspect it with `lode_tools_discover` and call its returned `invokeWith`
+route. Details, supported versions and
 qualification limits are in
 [Project portability](../../../docs/project-portability.md).
 
@@ -114,7 +116,7 @@ qualification limits are in
    a verified Host route rather than titles or recency, and pass the selected
    source project (capture) or target project (restore, register) as
    `runtime_root` for Claude and OpenCode; read needs only the bundle. Codex
-   differs: it takes `runtime_root` (the current workspace) only for
+   differs: it takes `runtime_root` (the target, i.e. current, workspace) only for
    register and refuses it for capture and restore
    (`PROJECT_NATIVE_RUNTIME_ROOT_NOT_USED`).
 3. Leave the user's default profile and its database untouched. OpenCode writes
