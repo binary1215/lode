@@ -244,21 +244,21 @@ durable cross-Run, rebuttal/audit, handoff, or context-loss record of structured
 external facts. The mere existence of build, delivery, analytics, support, or
 runtime data does not justify ingestion; keep ordinary inspection ephemeral.
 After Lode determines one exact task-required Observation `typeKey`, call
-`lode_observation_prepare` first. It returns bounded current exact IDs before
+`lode_observation` (`prepare`) first. It returns bounded current exact IDs before
 matching configured Host sources without judging sufficiency, selecting a source,
-or collecting. Inspect a returned existing record with `lode_observation_read` and
+or collecting. Inspect a returned existing record with `lode_observation` (`read`) and
 reuse it when Lode determines that its time scope and content are semantically
-sufficient. Use `lode_observation_query` for additional exact-ID paging and
-`lode_observation_sources` only for configured-source paging, filtering, or
+sufficient. Use `lode_observation` (`query`) for additional exact-ID paging and
+`lode_observation` (`sources`) only for configured-source paging, filtering, or
 adapter diagnosis. Follow a stale source cursor's disclosed first-page
 resynchronization automatically; do not turn it into a user decision. A real Host
 adapter owns source access, binding, digests, coverage, and the Host provenance
 confirmation; do not ask the user to compose those fields or to attest to a
-machine observation. `lode_observation_ingest` is the advanced Host/CI boundary
+machine observation. `lode_observation` (`ingest`) is the advanced Host/CI boundary
 for an already constructed bounded input; configured-source collection stays
 separate because it performs Host access. Descriptors define a closed data
 shape, not Feature meaning, success, causality, policy, or tool routing. Read
-the `inventorySummary` in `lode_observation_query` as the unfiltered retained-inventory
+the `inventorySummary` in `lode_observation` (`query`) as the unfiltered retained-inventory
 summary alongside the filtered page; a zero-match page does not mean no retained records. To use one of these
 records in task context, Lode must add an EvidenceNeed of kind `observation` with
 exact current `observationIds`; lexical overlap never makes an Observation
@@ -276,23 +276,23 @@ prepared bounded JSON event. Do not route its file path through MCP or ask the
 user to author its source configuration. It does not replace a configured Host
 integration, scheduler, or remote connector.
 
-When `lode_observation_prepare` shows no semantically sufficient current record,
+When `lode_observation` (`prepare`) shows no semantically sufficient current record,
 select a configured source only if the current task requires a durable current
 Observation. Prefer a `ready` Host availability hint but treat it only as P5
 operational evidence, not semantic relevance or freshness proof. Then call
-`lode_observation_collect_source` with the opaque Project-bound source ID. Do not
+`lode_observation` (`collect_source`) with the opaque Project-bound source ID. Do not
 ask the user for a path, binding, descriptor, digest, coverage claim, credential
 reference, provider identity, or source alias. If no configured source is
 available, disclose the optional adapter gap and continue without Observation
 persistence unless that exact evidence is required.
 
 When the user wants to add, revise, or retire a product Policy, reason about its
-meaning in the provider Lode and call `lode_product_policy_propose` with exact
+meaning in the provider Lode and call `lode_product` (`policy_propose`) with exact
 Feature or FeatureGroup applications plus optional exact Requirement,
 Constraint, or Decision references. Do not infer those references from group
 membership, source names, or graph proximity, and do not ask the user to write
 proposal JSON. The candidate is non-blocking P3 evidence. Present one compact
-decision card and call `lode_product_policy_review` only after the current user
+decision card and call `lode_product` (`policy_review`) only after the current user
 unambiguously accepts or rejects that exact candidate. A missing optional
 reference or evidence anchor is a disclosure, not a reason to manufacture one
 or block ordinary work. On later inspection, summarize the shared read-only
@@ -308,14 +308,14 @@ differ, while adapter key/version/descriptor, source scope, form, duration,
 sample size, and coverage remain visibly `same`, `different`, or `unknown`.
 Never convert that comparison into semantic equivalence or causality. Assessment
 is only a P3 ProductHypothesis. Propose a follow-up with the existing
-`lode_product_initiative_propose`, citing its exact hypothesis ID; no metric-specific
+`lode_product` (`initiative_propose`), citing its exact hypothesis ID; no metric-specific
 formatter call is needed. It uses the existing explicit Product review only if
 the user chooses to promote it.
 
 When the task asks what is currently deployed or delivered to named targets,
-use `lode_delivery_status` and summarize observed `uniform`, `mixed`, or
+use `lode_delivery` (`status`) and summarize observed `uniform`, `mixed`, or
 `unknown` state without asking the user for event JSON. A trusted Host adapter
-may call `lode_delivery_observe`; neither the Host nor user needs an additional
+may call `lode_delivery` (`observe`); neither the Host nor user needs an additional
 approval step because the record is P3 evidence and performs no deployment.
 Never choose current state by receipt time, let a failed attempt erase the last
 applied revision, infer success for an unobserved target, or call the projection
@@ -328,16 +328,16 @@ Ordering conflicts are a disclosed `unknown` for that target, not a block
 on ordinary work or a request for a Product review.
 
 When approved Product Canon may have drifted from code or external evidence,
-keep Conformance reconciliation non-blocking. Call `lode_conformance_prepare`
+keep Conformance reconciliation non-blocking. Call `lode_conformance` (`prepare`)
 without asking the user for Canon keys, graph IDs, digests, or JSON. Provider
 Lode performs the semantic comparison and cites one or more exact current
 source, ChangeSet, Observation, or optional Graph anchors; Core only verifies
-those anchors through `lode_conformance_propose`. Lexical overlap, test or
+those anchors through `lode_conformance` (`propose`). Lexical overlap, test or
 document presence, Graph availability, connector availability, coverage class,
 risk hint, and queue length never determine candidate eligibility or ordinary-
 work blocking. Missing optional evidence is a disclosure.
 
-Read `lode_conformance_queue` in bounded pages and summarize Findings at natural
+Read `lode_conformance` (`queue`) in bounded pages and summarize Findings at natural
 work boundaries instead of interrupting every change. A Finding is P3 candidate
 evidence. Lode may acknowledge or defer it with `actor: "head"` and no user
 confirmation; do not impersonate a user or supersede any user disposition.
@@ -345,9 +345,9 @@ Keep maintained Findings discoverable. This neither resolves them nor requires
 a user response. A Finding remains
 evidence, not a violation or decision. Source or Canon drift means
 `needs-recheck`, never automatic resolution. Provider Lode may submit a fresh
-`lode_conformance_resolution_propose`, but close or dismiss an exact Finding
+`lode_conformance` (`resolution_propose`), but close or dismiss an exact Finding
 only after the user's natural-language disposition by calling
-`lode_conformance_disposition` with explicit confirmation. Requests for a code
+`lode_conformance` (`disposition`) with explicit confirmation. Requests for a code
 fix still enter the normal execution lane; requests for Canon revision still
 enter the existing exact candidate and user ReviewDecision path.
 
@@ -360,7 +360,7 @@ ordinary Lode work. Read `../../../docs/conformance-reconciliation.md` before
 changing this subsystem.
 
 For Product-to-code or Product-to-test mapping, inspect the current World and
-Graph, then use `lode_feature_mapping_propose` with exact current Product and
+Graph, then use `lode_feature_mapping` (`propose`) with exact current Product and
 source/test node identities. Do not derive mappings from names or token overlap.
 Inspect and batch unreviewed candidates without interrupting ordinary work.
 To replace an obsolete pending unreviewed batch, call the same proposal tool
@@ -368,6 +368,6 @@ with its exact `expected_candidate_set_id` and a fresh semantic proposal.
 This preserves historical evidence and cannot bypass an already saved decision.
 Present the relevant batch when reviewed relationship promotion is needed.
 Only after an explicit user disposition,
-call `lode_feature_mapping_review` with the exact candidate-set ID and
+call `lode_feature_mapping` (`review`) with the exact candidate-set ID and
 `confirm_user_review: true`; proposal, model agreement, or tool success alone
 never creates a reviewed relationship or changes Product Canon.

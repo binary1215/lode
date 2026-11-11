@@ -56,7 +56,7 @@ operations. They never recover a historical promotion or ask the user to review
 an opaque candidate again.
 
 If product meaning must change, a provider Lode proposes fresh `0.4.0`
-candidates through `lode_onboarding_semantic_refresh` or the equivalent CLI
+candidates through `lode_onboarding` (`semantic_refresh`) or the equivalent CLI
 `onboarding-semantic-refresh`. Core verifies exact current evidence, and only a
 later explicit user ReviewDecision may change Canon. A P3 continuity receipt
 and P4 `HISTORICALLY_FOLLOWS` relation connect history to the fresh candidate

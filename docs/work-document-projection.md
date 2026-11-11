@@ -66,8 +66,8 @@ automatically binding a page or repeating POST. Exact provider terminal result
 IDs keep their separate validated recovery path. The existing single bounded
 parent observation is also not an atomic remote snapshot or authorship proof.
 
-Typed MCP: lode_project_document_prepare, lode_project_document_publish,
-lode_project_document_status. CLI: project-document-prepare,
+Typed MCP: lode_project_document (prepare, publish, status).
+CLI: project-document-prepare,
 project-document-publish, project-document-status. Lode supplies exact work
 references, optional feature reading associations, saved task reading selections
 and source-linked narrative. Project delivery records are P5 under
@@ -177,8 +177,7 @@ transaction. Receipts state the verified scope and preserve partial/unknown resu
 
 ## APIs and evidence
 
-Typed MCP: `lode_work_document_configure`, `lode_work_document_prepare`,
-`lode_work_document_publish`, `lode_work_document_status`, discoverable under
+Typed MCP: `lode_work_document` (`configure`/`prepare`/`publish`/`status`), discoverable under
 `lode_work_`. CLI: matching `work-document-*` commands with request-local Session
 routing. Status reads local receipts; it is not a live network freshness probe.
 

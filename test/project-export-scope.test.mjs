@@ -13,7 +13,7 @@ import {
   importProjectBundle,
 } from "../scripts/lib/project-portability.mjs";
 import { runCommand } from "../scripts/lode.mjs";
-import { dispatch, catalogTools } from "../scripts/mcp-server.mjs";
+import { dispatch, operationCatalogTools as catalogTools } from "../scripts/mcp-server.mjs";
 const sha = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 test("default legacy export includes required raw proof metadata, not other Session bodies; opt-out stays partial", async (t) => {
   const f = fixture(t);

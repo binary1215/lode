@@ -40,7 +40,7 @@ Host가 보고한 각 이벤트는 `delivery.state` 타입의 불변 공통 `Obs
 
 `outcome`은 `applied`, `failed`, `cancelled`, `rolled-back` 중 하나입니다. rollback은 `rollbackTargetObservationId`로 이전의 정확한 applied observation을 지정합니다. 선택적 `revisionReference`는 전부 제공하거나 전부 생략합니다. 제공하면 Core는 어떤 것도 기록하기 전에 보존된 World snapshot, 정확한 `FileRevision`, path 및 digest를 검증합니다. 생략하면 revision은 명시적으로 `declared`에 머뭅니다. Host가 제공한 문자열을 검증된 저장소 revision으로 바꾸지 않습니다.
 
-`delivery.state`는 검증된 binding이 `AT_REVISION` graph claim을 만들기 때문에 Core가 소유하는 specialization입니다. 일반 `lode_observation_ingest`와 일반 registered adapter는 이 예약 타입을 거부합니다. Host는 전용 `lode_delivery_observe`를 사용하며, 전용 writer가 persistence 경계에서 동일 Project의 보존된 World를 다시 대조합니다. 이는 사용자 승인 gate가 아니라 proof-integrity 경계입니다. custom Observation type은 계속 열려 있고 declared delivery revision도 전용 호출로 받아들입니다.
+`delivery.state`는 검증된 binding이 `AT_REVISION` graph claim을 만들기 때문에 Core가 소유하는 specialization입니다. 일반 `lode_observation` (`ingest`)와 일반 registered adapter는 이 예약 타입을 거부합니다. Host는 전용 `lode_delivery` (`observe`)를 사용하며, 전용 writer가 persistence 경계에서 동일 Project의 보존된 World를 다시 대조합니다. 이는 사용자 승인 gate가 아니라 proof-integrity 경계입니다. custom Observation type은 계속 열려 있고 declared delivery revision도 전용 호출로 받아들입니다.
 
 Replay는 공통 exact adapter/version/source-scope/source-event key를 사용합니다. 동일 replay는 수렴하고 내용이 다르면 이전 이벤트를 대체하지 않고 실패합니다.
 
@@ -71,8 +71,8 @@ lode-agent delivery-observe <project> --input <delivery-observation.json>
 lode-agent delivery-status <project> [--environment <key>] [--target <key>] [--history-limit <1..4096>]
 ```
 
-- `lode_delivery_observe`
-- `lode_delivery_status`
+- `lode_delivery` (`observe`)
+- `lode_delivery` (`status`)
 
 Typed observation call은 의도적으로 사용자 확인 checkbox를 추가하지 않습니다. 비권위 Host evidence만 기록하며 배포 또는 제품 권한을 부여하지 않기 때문입니다. Trusted Host composition이 구조화 이벤트를 구성하고, 일반 사용자는 간결한 status card를 보거나 Lode에 환경 또는 대상을 질문하면 됩니다.
 

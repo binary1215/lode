@@ -6,7 +6,7 @@ import { EventEmitter } from "node:events";
 import { spawn } from "node:child_process";
 import test from "node:test";
 import { runCommand, usage } from "../scripts/head.mjs";
-import { dispatch, tools, catalogTools, toolsForSurface } from "../scripts/mcp-server.mjs";
+import { dispatch, tools, catalogTools, operationCatalogTools, toolsForSurface } from "../scripts/mcp-server.mjs";
 import { groupMembership } from "../scripts/lib/operation-groups.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
@@ -74,7 +74,8 @@ test("small default discovery keeps all optional contracts discoverable and mana
   }
   // The native Hook helper is on no surface; only the native session bridge accepts it.
   for (const surface of [ordinary, retained]) assert(!surface.some((tool) => tool.name === "lode_session_host_request_prepare"));
-  assert(catalogTools.some((tool) => tool.name === "lode_onboarding_candidate_restore"));
+  assert(operationCatalogTools.some((tool) => tool.name === "lode_onboarding_candidate_restore"));
+  assert(catalogTools.some((tool) => tool.name === "lode_onboarding"));
   const routers = new Set(["lode_tools_discover", "lode_tools_read", "lode_tools_call"]);
   assert.deepEqual(
     retained

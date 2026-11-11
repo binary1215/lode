@@ -33,18 +33,18 @@ Canonical sources and promoted knowledge
 Lode owns the whole outcome and determines whether the compiled world is sufficient. For each task, Lode should first perform semantic task analysis and may define an explicit `EvidenceNeed[]` contract with exact project-relative `paths`, exact Product Canon `entityKeys`, evidence kind, relation types, and minimum item counts. For `temporal-relation`, Lode may add an exact `graphAnchor` bound to the current `projectId`, `worldModelId`, and `graphSnapshotId`, plus one to 32 exact `nodeIds` and explicit `depth`, `maxNodes`, and `maxEdges`. Core verifies current eligibility and actual bounded inclusion only. Do not combine lexical facets with exact graph anchors. Lexical overlap is discovery/fallback ranking only: zero overlap never makes a current candidate ineligible. The compiler must not choose graph anchors or infer required evidence kinds from available candidates.
 
 For optional task-local source/call evidence, see the source workflow below; it
-needs no World scan. For World/Graph preparation, begin with `lode_context_prepare`, passing only the exact
+needs no World scan. For World/Graph preparation, begin with `lode_context` (`prepare`), passing only the exact
 user task. The returned `ContextPreparationProjection` is bounded P4 candidate
 visibility, not a semantic proposal. Use its current binding and node identities
 plus ordinary repository inspection to author the structure yourself as Lode;
 do not ask the user to write JSON and do not treat omission from the lexical
 baseline as irrelevance. Then pass the byte-identical task and your proposal to
-`lode_context_preview`.
+`lode_context` (`preview`).
 
 ### Current source evidence without a World scan
 
 Keep ordinary file reads or already-current World range reads when they suffice.
-Use `lode_source_context` when the task benefits from narrowly selected declaration
+Use `lode_source` (`context`) when the task benefits from narrowly selected declaration
 evidence, verified declaration boundaries or task-scoped Context inclusion—not
 merely because a file is Python or a name is known. Lode makes this judgment;
 no per-call measurement, comparison, justification form or approval is required.
@@ -94,7 +94,7 @@ Use `retain: true` when audit, cross-process reuse or handoff needs originals;
 Lode can choose this within the task without another user approval. Otherwise
 evidence is ephemeral, not durable recovery. Retained success uses common P3
 Observations and create-only source bundles. Failed attempts retain raw responses
-and coalesce identical source/profile/query/outcome. `lode_source_observation_read`
+and coalesce identical source/profile/query/outcome. `lode_source` (`observation_read`)
 reads the returned `bundle_key` or `failure_key`; neither writes P2 direction.
 Reuse checks source bytes and collector/runtime/profile/normalizer identity;
 edits or replacement trigger recollection. Old evidence remains historical.
@@ -123,7 +123,7 @@ inclusion certificate. Lode chooses useful requirements, inspects original bodie
 and separately judges relevance and sufficiency before consequential work.
 An incomplete selection is useful context, not a global execution gate.
 
-`lode_context_preview` performs one read-only selection with the exact task and
+`lode_context` (`preview`) performs one read-only selection with the exact task and
 optional Lode guidance. It reports sources, World availability, selected evidence,
 omissions, uncertainty and the next Lode assessment. It cannot invoke a provider,
 mutate World, persist the preview, approve a result or write recovery direction.

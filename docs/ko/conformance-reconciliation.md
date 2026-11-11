@@ -60,14 +60,14 @@ Conformance artifact는 어느 것도 P1이나 P2가 아닙니다. 코드 수정
 사용자는 작업을 한 번 설명합니다. Lode가 내부적으로 구조를 처리합니다.
 
 ```text
-lode_conformance_prepare
+lode_conformance (prepare)
   -> provider Lode semantic comparison
-  -> lode_conformance_propose
-  -> lode_conformance_queue
+  -> lode_conformance (propose)
+  -> lode_conformance (queue)
   -> natural-language batch disposition when useful
 ```
 
-`lode_conformance_prepare`는 현재 Product Canon entity를 paging하고 현재 Product Model과 선택적인 현재 World/Source/Graph baseline을 반환합니다. Graph는 절대 필수가 아닙니다. 정확하고 제한된 project-relative source digest, 검토된 ChangeSet change 하나 또는 불변 Observation 하나면 기계적 증거로 충분합니다. Lode는 검토 가능성을 높일 때 여러 anchor kind를 사용할 수 있습니다.
+`lode_conformance` (`prepare`)는 현재 Product Canon entity를 paging하고 현재 Product Model과 선택적인 현재 World/Source/Graph baseline을 반환합니다. Graph는 절대 필수가 아닙니다. 정확하고 제한된 project-relative source digest, 검토된 ChangeSet change 하나 또는 불변 Observation 하나면 기계적 증거로 충분합니다. Lode는 검토 가능성을 높일 때 여러 anchor kind를 사용할 수 있습니다.
 
 Core가 disclosure를 계산합니다. 공급자와 사용자는 connector가 완전하다거나 Graph가 current라거나 Observation이 포괄적이라고 주장하지 않습니다. Finding fingerprint는 설명 문구를 제외하며 Lode가 설명을 다르게 표현해도 동일한 Project, baseline, Canon anchor, evidence anchor, claim kind는 수렴합니다.
 

@@ -129,15 +129,18 @@ test("small default catalog discovers every ordinary contract without registerin
   assert.equal(groups.persisted, false);
   assert.equal(groups.grantsAuthorization, false);
   const found = [];
-  for (const { prefix } of groups.prefixes) {
+  for (const { prefix, count } of groups.prefixes) {
     let offset = 0;
     do {
       const page = (await call("lode_tools_discover", { prefix, offset, limit: 2 })).result.structuredContent;
       found.push(...page.tools);
+      if (offset === 0) assert.equal(page.total, count, prefix);
       offset = page.nextOffset;
     } while (offset != null);
   }
-  assert.deepEqual(found.map((x) => x.name).sort(), catalogTools.map((x) => x.name).sort());
+  // A grouped tool can be found under more than one prefix through its deprecated
+  // names (lode_projection under lode_graph_); every listed tool is found.
+  assert.deepEqual([...new Set(found.map((x) => x.name))].sort(), catalogTools.map((x) => x.name).sort());
   for (const tool of found) {
     assert.deepEqual(tool.inputSchema, catalogTools.find((x) => x.name === tool.name).inputSchema);
     assert.equal(tool.invokeWith, tool.annotations.readOnlyHint ? "lode_tools_read" : "lode_tools_call");

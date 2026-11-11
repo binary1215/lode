@@ -7,8 +7,8 @@ Compiler는 선택된 증거를 묶고, Lode는 관련성·충분성·확대·�
 
 ## 선택 맥락
 
-`lode_context_prepare`는 정확한 사용자 작업에 대한 출처 연결 맥락을 반환합니다.
-`lode_context_preview`는 Lode가 작성한 선택적 `EvidenceNeed[]` 안내를 받습니다.
+`lode_context` (`prepare`)는 정확한 사용자 작업에 대한 출처 연결 맥락을 반환합니다.
+`lode_context` (`preview`)는 Lode가 작성한 선택적 `EvidenceNeed[]` 안내를 받습니다.
 사용자는 JSON이나 anchor를 작성하지 않습니다. 두 호출은 읽기 전용이며
 `ready_for_lode_semantic_assessment`를 반환합니다. 이는 Lode에 대한 안내이지,
 충분성 증명이나 실행 gate가 아닙니다.
@@ -78,7 +78,7 @@ runtime observation과 exact graph traversal을 제공할 수 있습니다.
 source revision과 누락은 명시됩니다. 휴리스틱 또는 static AST relation은
 runtime truth를 증명하지 않습니다. index 부재·오래됨은 직접 작업을 막지 않습니다.
 
-`lode_source_context`는 전체 scan 없이 작업별 현재 source와 Python static
+`lode_source` (`context`)는 전체 scan 없이 작업별 현재 source와 Python static
 declaration/call observation을 지원합니다. retention은 선택적이며 raw source는
 Product 개념이 아닙니다. collector 범위, 미확정 call, parser 실패와 원본 보존은
 [Observation 어댑터](observation-adapters.md)를 참고하세요.
@@ -94,8 +94,8 @@ Product 개념이 아닙니다. collector 범위, 미확정 call, parser 실패�
 
 대화에서는 원하는 작업을 한 번만 설명하면 됩니다. 일반 읽기·수정에는 필요한
 파일을 직접 확인합니다. 선택한 맥락을 재현해 전달하거나 지속 가능한 Run과
-복구에 Capsule이 필요할 때만 Lode Skill이 `lode_context_prepare`를 호출합니다.
-저장소 내용을 읽고 필요한 `EvidenceNeed[]`를 작성한 뒤 `lode_context_preview`로
+복구에 Capsule이 필요할 때만 Lode Skill이 `lode_context` (`prepare`)를 호출합니다.
+저장소 내용을 읽고 필요한 `EvidenceNeed[]`를 작성한 뒤 `lode_context` (`preview`)로
 이어갑니다. 선택적 World 근거가 없거나 오래됐어도 직접 작업은 계속하며,
 필요성이 확인되면 예산을 자동으로 늘립니다. 최종 미리보기는 포함된 근거의 종류,
 제외 이유와 남은 불확실성을 설명 카드로 보여줍니다. 추가 절차 없이 기계적 확인

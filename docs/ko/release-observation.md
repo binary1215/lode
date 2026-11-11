@@ -62,7 +62,7 @@ lode-agent release-status <project>
 
 ## MCP
 
-- `lode_release_observe`
-- `lode_release_status`
+- `lode_delivery` (`release_observe`)
+- `lode_delivery` (`release_status`)
 
-`lode_release_observe`에는 `confirm_host_observation: true`가 필요합니다. 이 확인은 모델이 실수로 만든 입력의 수집을 막지만, 배포 승인이 아니며 관측 결과에 권한을 더하지 않습니다.
+`lode_delivery` (`release_observe`)에는 `confirm_host_observation: true`가 필요합니다. 이 확인은 모델이 실수로 만든 입력의 수집을 막지만, 배포 승인이 아니며 관측 결과에 권한을 더하지 않습니다.

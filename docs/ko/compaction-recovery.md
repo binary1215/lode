@@ -123,7 +123,7 @@ post-compaction에서만 epoch와 `succeeded`, `failed`, `uncertain` 중 하나�
 bounded outcome을 포함합니다. Provider session ID, transcript, summary, prompt,
 credential, PID, socket 및 UI identity는 이 계약에서 거부됩니다.
 
-`lode_compaction_lifecycle_step`은 운영 field를 사용자에게 노출하지 않고 event를
+`lode_compact` (`compaction_lifecycle_step`)은 운영 field를 사용자에게 노출하지 않고 event를
 처리합니다.
 
 1. compaction 전에는 가능한 경우 정확한 현재 checkpoint를 재사용합니다. 새
@@ -203,7 +203,7 @@ checkpoint 재사용은 artifact와 pointer를 쓰지 않으며, 바뀐 방향�
 전이가 자체 terminal path에 도달할 때까지 기다립니다. 따라서 운영 복구가 새로운 전역
 작업 gate가 되지 않습니다.
 
-Host 통합은 `lode_conversation_enter`와 `lode_compaction_lifecycle_step`도 사용하지만,
+Host 통합은 `lode_conversation_enter`와 `lode_compact` (`compaction_lifecycle_step`)도 사용하지만,
 이는 사용자 설정 절차가 아닙니다. adapter가 주입되지 않으면 lifecycle step은
 일반 작업을 막지 않는 unavailable 결과를 냅니다.
 

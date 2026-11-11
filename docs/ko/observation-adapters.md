@@ -4,7 +4,7 @@
 
 ## 작업 범위 소스 수집
 
-`lode_source_context` / `lode-agent source-context`는 Lode가 선택한 현재 소스를
+`lode_source` (`context`) / `lode-agent source-context`는 Lode가 선택한 현재 소스를
 수집해 기존 Context Compiler에 넣습니다. 사용자는 작업을 대화로 설명하고,
 Lode가 정확한 파일 경로와 함수 이름을 구성합니다. JSON·ID·해시를 직접 작성하거나
 전체 World 스캔, 재인덱싱, Product 온보딩, GraphDB를 요구하지 않습니다.
@@ -34,7 +34,7 @@ stdout/stderr 제한과 취소는 유한한 종료를 위한 운영 한도이지
 받지만 영속 복구를 주장하지 않습니다. 재시작 후 재사용은 현재 소스, 질의,
 Python/AST/tokenizer, worker·normalizer 식별자를 대조합니다. 실패는 확보한 원본
 응답을 보관하고 동일 소스·profile·질의·결과의 반복 기록은 합칩니다.
-`lode_source_observation_read`로 결과에 자동 반환된 성공/실패 key를 조회합니다.
+`lode_source` (`observation_read`)로 결과에 자동 반환된 성공/실패 key를 조회합니다.
 보관은 작업 내 증거 선택이지 추가 사용자 승인 단계가 아닙니다. 캐시·관측·결과·미리보기는
 Product Canon, ReviewDecision, P2 checkpoint나 방향을 변경하지 않습니다.
 
@@ -141,15 +141,15 @@ Coverage는 complete, sampled, partial, unknown으로 명시됩니다. bounded e
 
 ## 대화형 configured-source 흐름
 
-trusted Host composition은 Project-bound registry를 `serveMcp`에 전달합니다. provider Lode가 필요한 exact `typeKey` 하나를 선택한 뒤 `lode_observation_prepare`가 read-only reuse-first flow를 수행합니다. 현재 exact Observation ID를 먼저 query하고 source를 선택하거나 collect하지 않은 채 일치하는 configured source ID를 반환합니다. 기존 evidence가 의미적으로 충분하지 않고 durable current evidence가 실제로 필요할 때만 Lode가 필요에 따라 `lode_observation_sources`를 page/filter하고 선택한 ID로 `lode_observation_collect_source`를 호출합니다.
+trusted Host composition은 Project-bound registry를 `serveMcp`에 전달합니다. provider Lode가 필요한 exact `typeKey` 하나를 선택한 뒤 `lode_observation` (`prepare`)가 read-only reuse-first flow를 수행합니다. 현재 exact Observation ID를 먼저 query하고 source를 선택하거나 collect하지 않은 채 일치하는 configured source ID를 반환합니다. 기존 evidence가 의미적으로 충분하지 않고 durable current evidence가 실제로 필요할 때만 Lode가 필요에 따라 `lode_observation` (`sources`)를 page/filter하고 선택한 ID로 `lode_observation` (`collect_source`)를 호출합니다.
 
 ```text
 trusted Host configuration
-  -> lode_observation_prepare(exact Lode-selected typeKey)
+  -> lode_observation (prepare, exact Lode-selected typeKey)
   -> existing exact Observation IDs first
-  -> lode_observation_sources only for paging or diagnosis
+  -> lode_observation (sources) only for paging or diagnosis
   -> opaque Project-bound sourceId
-  -> lode_observation_collect_source
+  -> lode_observation (collect_source)
   -> verified P3 ObservationRecord + ObservationCollectionReceipt
 ```
 
@@ -157,11 +157,11 @@ preparation projection은 semantic sufficiency를 판단하거나 lexical overla
 
 ## Metric evidence workflow
 
-Metric workflow는 공통 계약을 얇게 사용하는 provider-neutral 경로이며 두 번째 analytics store가 아닙니다. `lode_metric_define`은 unit과 desired direction을 포함한 versioned metric shape를 등록합니다. 정확한 replay는 idempotent하며, 동일 metric key와 version 아래에서 shape가 충돌하면 이후 lookup을 모호하게 만들지 않고 새 version을 사용하도록 요청하며 실패합니다.
+Metric workflow는 공통 계약을 얇게 사용하는 provider-neutral 경로이며 두 번째 analytics store가 아닙니다. `lode_metric` (`define`)은 unit과 desired direction을 포함한 versioned metric shape를 등록합니다. 정확한 replay는 idempotent하며, 동일 metric key와 version 아래에서 shape가 충돌하면 이후 lookup을 모호하게 만들지 않고 새 version을 사용하도록 요청하며 실패합니다.
 
-`lode_metric_observe`는 정확한 subject, value, time scope, source scope, 알려진 경우 sample size, coverage 및 collection-adapter identity를 기록합니다. Host가 observation time을 다시 제공하지 않고 같은 event를 retry하면 Core는 durable event time을 재사용하며, 같은 source event 아래에서 content가 달라지면 계속 fail closed됩니다. `lode_metric_compare`는 정확히 같은 descriptor, subject, unit 및 direction에 대해서만 numeric difference를 허용합니다. Adapter key, adapter version, adapter descriptor digest, source scope, snapshot/aggregate form, period duration, sample size 또는 coverage state가 달라도 approval gate를 추가하지 않습니다. Numeric comparison은 계속 사용할 수 있지만 결과는 조건을 same, different, unknown으로 표시하고 normalization이 적용되지 않았음을 밝히며, like-for-like result로 보이지 않도록 derived coverage를 낮춥니다.
+`lode_metric` (`observe`)는 정확한 subject, value, time scope, source scope, 알려진 경우 sample size, coverage 및 collection-adapter identity를 기록합니다. Host가 observation time을 다시 제공하지 않고 같은 event를 retry하면 Core는 durable event time을 재사용하며, 같은 source event 아래에서 content가 달라지면 계속 fail closed됩니다. `lode_metric` (`compare`)는 정확히 같은 descriptor, subject, unit 및 direction에 대해서만 numeric difference를 허용합니다. Adapter key, adapter version, adapter descriptor digest, source scope, snapshot/aggregate form, period duration, sample size 또는 coverage state가 달라도 approval gate를 추가하지 않습니다. Numeric comparison은 계속 사용할 수 있지만 결과는 조건을 same, different, unknown으로 표시하고 normalization이 적용되지 않았음을 밝히며, like-for-like result로 보이지 않도록 derived coverage를 낮춥니다.
 
-`lode_metric_assess`는 P3 ProductHypothesis만 기록하고 causality가 성립하지 않았음을 항상 명시합니다. 후속 제안은 별도 metric 형식화 호출 없이 정확한 평가 hypothesis ID를 인용해 `lode_product_initiative_propose`로 만듭니다. Product Initiative candidate일 뿐이며 승인에는 기존의 명시적 user review가 필요합니다. `lode_metric_status`와 `lode_metric_trace`는 bounded read-only P4 view입니다. 어떤 operation도 Product Canon, ReviewDecision, Conformance disposition 또는 P2 recovery direction을 쓰지 않습니다.
+`lode_metric` (`assess`)는 P3 ProductHypothesis만 기록하고 causality가 성립하지 않았음을 항상 명시합니다. 후속 제안은 별도 metric 형식화 호출 없이 정확한 평가 hypothesis ID를 인용해 `lode_product` (`initiative_propose`)로 만듭니다. Product Initiative candidate일 뿐이며 승인에는 기존의 명시적 user review가 필요합니다. `lode_metric` (`status`)와 `lode_metric` (`trace`)는 bounded read-only P4 view입니다. 어떤 operation도 Product Canon, ReviewDecision, Conformance disposition 또는 P2 recovery direction을 쓰지 않습니다.
 
 ## Context와 사용법
 
@@ -209,7 +209,7 @@ dispatch 직렬화 크기는 stdio 전송량이나 설치 Host 비용이 아닙�
 토큰·과금·프롬프트 캐시 절감은 미확인입니다. 이 측정은 선택 사항이지 사용·배포
 관문이 아닙니다.
 
-기존 `lode_source_context`에서 `declarations`는 제한된 정적 선언 목록을,
+기존 `lode_source` (`context`)에서 `declarations`는 제한된 정적 선언 목록을,
 `selected-source`는 알려진 정규화된 선언 이름의 원문을 조회합니다. 원문 조회 전에
 목록을 읽을 필요는 없습니다. CLI는 `--kind`로 선택하며, 단독 `--symbol`은 기존
 호출 관계 조회 의미를 유지합니다. 동명 선언은 Lode가 응답의 정확한 선택 객체를
@@ -241,9 +241,9 @@ typed MCP 또는 고급 CLI `--input`에 전달합니다. 일반 대화에서는
 
 Context compilation은 기본적으로 공통 observation을 제외합니다. Lode가 semantic analysis를 수행하고 kind가 `observation`이며 `observationIds`에 불변 현재 ID가 들어 있는 EvidenceNeed로 정확한 identity를 요청합니다. Core는 포함 증명 gate, lexical eligibility 규칙, semantic promotion 또는 sufficiency judgment 없이 선택 근거, 제외 정보와 불확실성을 보존합니다.
 
-일상적인 inspection은 ephemeral하게 유지합니다. cross-Run, rebuttal/audit, handoff, context-loss evidence가 필요할 때만 Observation을 persist합니다. 사용자가 아니라 Host adapter가 정확한 source binding, descriptor, digest, coverage, provenance confirmation을 구성합니다. `observation-ingest`와 `lode_observation_ingest`는 이미 bounded된 input을 위한 고급 Host/CI surface입니다. 중복 collect 호환 별칭은 제거했습니다. `observation-source-collect`와 `lode_observation_collect_source`는 설정된 Host 소스에서 자료를 수집하는 별도 surface로 유지되며, 이미 bounded된 input을 수신하는 ingestion의 별칭이 아닙니다.
+일상적인 inspection은 ephemeral하게 유지합니다. cross-Run, rebuttal/audit, handoff, context-loss evidence가 필요할 때만 Observation을 persist합니다. 사용자가 아니라 Host adapter가 정확한 source binding, descriptor, digest, coverage, provenance confirmation을 구성합니다. `observation-ingest`와 `lode_observation` (`ingest`)는 이미 bounded된 input을 위한 고급 Host/CI surface입니다. 중복 collect 호환 별칭은 제거했습니다. `observation-source-collect`와 `lode_observation` (`collect_source`)는 설정된 Host 소스에서 자료를 수집하는 별도 surface로 유지되며, 이미 bounded된 input을 수신하는 ingestion의 별칭이 아닙니다.
 
-`observation-query`와 `lode_observation_query`는 전체 payload node 없이 전체 보존 자료의 개수·graph policy인 `inventorySummary`와 필터된 페이지를 함께 반환합니다. 별도 status 호출은 없습니다. `inventorySummary`는 필터된 match count가 아니며 빈 페이지가 보존 자료의 부재를 뜻하지 않습니다. 조회는 type, subject, source, time, observed/derived kind로 정확한 현재 identity를 필터링하며 최대 page는 100입니다. cursor continuation은 정확한 현재 `ObservationStatusProjection`에 binding되고 drift 시 fail closed합니다. query result에는 payload body 대신 payload digest가 들어갑니다. exact read surface는 선택한 record, descriptor, bounded receipt 또는 derivation lineage를 반환합니다. query는 discovery일 뿐 semantic selection, Context eligibility, sufficiency judgment가 아닙니다.
+`observation-query`와 `lode_observation` (`query`)는 전체 payload node 없이 전체 보존 자료의 개수·graph policy인 `inventorySummary`와 필터된 페이지를 함께 반환합니다. 별도 status 호출은 없습니다. `inventorySummary`는 필터된 match count가 아니며 빈 페이지가 보존 자료의 부재를 뜻하지 않습니다. 조회는 type, subject, source, time, observed/derived kind로 정확한 현재 identity를 필터링하며 최대 page는 100입니다. cursor continuation은 정확한 현재 `ObservationStatusProjection`에 binding되고 drift 시 fail closed합니다. query result에는 payload body 대신 payload digest가 들어갑니다. exact read surface는 선택한 record, descriptor, bounded receipt 또는 derivation lineage를 반환합니다. query는 discovery일 뿐 semantic selection, Context eligibility, sufficiency judgment가 아닙니다.
 
 ## 수락 속성
 

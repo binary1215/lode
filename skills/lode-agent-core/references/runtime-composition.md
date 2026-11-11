@@ -145,7 +145,7 @@ actual evidence, or leave them unknown. No new fork-cutoff collection is needed.
 Absent mapping remains absent even if the parent later selects a Session.
 
 For an exact managed authorization, existing
-`lode_runtime_invocation_authorization` / `lode_bounded_worker` (`status`), or CLI
+`lode_runtime` (`invocation_authorization`) / `lode_bounded_worker` (`status`), or CLI
 `runtime-invocation-read --authorization <id>`, can add a historical
 `preparedInput` view. Reuse it when it answers the question. It verifies retained
 authorization, plan/contract, Capsule and captured common-direction originals,

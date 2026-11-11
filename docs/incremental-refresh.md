@@ -151,12 +151,12 @@ node scripts/lode.mjs world-docs-refresh-read <project> --receipt post-refresh-p
 
 Read-only MCP exposes:
 
-- `lode_incremental_refresh_status`;
-- `lode_incremental_refresh_receipt`;
-- `lode_refresh_trigger_status`;
-- `lode_refresh_trigger_delivery`;
-- `lode_post_refresh_projection_status`;
-- `lode_post_refresh_projection_receipt`.
+- `lode_projection` (`incremental_refresh_status`);
+- `lode_projection` (`incremental_refresh_receipt`);
+- `lode_projection` (`refresh_trigger_status`);
+- `lode_projection` (`refresh_trigger_delivery`);
+- `lode_projection` (`post_refresh_projection_status`);
+- `lode_projection` (`post_refresh_projection_receipt`).
 
 MCP does not expose refresh mutation.
 

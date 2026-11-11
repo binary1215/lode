@@ -39,8 +39,7 @@ node scripts/lode.mjs project-bundle-inspect "<bundle-folder>"
 node scripts/lode.mjs project-import "<target-project>" --bundle "<bundle-folder>"
 ```
 
-Typed equivalents are `lode_project_bundle_export`, `lode_project_bundle_read`
-and `lode_project_bundle_import`. The bundle contains exact common direction
+Typed equivalents are `lode_project_bundle` (`export`/`read`/`import`). The bundle contains exact common direction
 and selected P2/Canon/reference originals and work evidence. Other Session
 bodies, caches, root integration settings, credentials, live leases and native
 bindings are excluded. The repository worktree and attachments are not copied
@@ -153,7 +152,7 @@ message session IDs. This observation does not verify official native ownership.
 
 These are distinct requested effects, not a prerequisite command sequence for
 ordinary coding. For data inspection use the existing read-only
-`lode_project_bundle_read` with `include_native_history: true`; no SDK starts.
+`lode_project_bundle` (`read`) with `include_native_history: true`; no SDK starts.
 Its common result and an optional native failure are reported separately.
 
 The Codex adapter's capture and raw/SQLite restoration require an observed stopped-writer window.
@@ -350,7 +349,7 @@ or new setup. The existing inspection command also accepts its explicit path:
 node scripts/lode.mjs project-bundle-inspect "<HANDOFF.md>"
 ```
 
-The existing `lode_project_bundle_read` accepts `handoff_file` instead of
+The existing `lode_project_bundle` (`read`) accepts `handoff_file` instead of
 `bundle_root` for this standalone read. The agent supplies the argument.
 Optional byte paging reports partial output and the next offset; remaining
 evidence can be read when needed.

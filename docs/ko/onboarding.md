@@ -72,7 +72,7 @@ producer ReviewDecision 및 producer policy로부터 candidate-set identity를 �
 
 helper를 제거한 뒤에도 정상 status, World, Context, Session recovery와 새 current
 온보딩은 계속 동작합니다. 제품 의미를 변경하려면 provider Lode가
-`lode_onboarding_semantic_refresh` 또는 `onboarding-semantic-refresh`로 fresh current
+`lode_onboarding` (`semantic_refresh`) 또는 `onboarding-semantic-refresh`로 fresh current
 semantic proposal을 작성하고, 사용자는 일반 ReviewDecision 경로에서 새 candidate를
 검토합니다. 첫 current candidate는 historical candidate를 typed parent로 재사용하지
 않습니다. P3 continuity receipt와 P4 `HISTORICALLY_FOLLOWS` edge는 역사적 연속성만
@@ -81,13 +81,13 @@ semantic proposal을 작성하고, 사용자는 일반 ReviewDecision 경로에�
 ## 공개 initialize 및 resume 경로
 
 권장되는 사용자 대면 경로는 Claude Code, Codex 또는 OpenCode 대화 안에 번들된
-`lode-agent-onboarding` Skill입니다. 먼저 읽기 전용 `lode_onboarding_guide`
+`lode-agent-onboarding` Skill입니다. 먼저 읽기 전용 `lode_onboarding` (`guide`)
 tool을 호출하고, 해결되지 않은 중요한 선택지만 질문한 다음, typed MCP operation을
 통해 동일한 Core를 호출합니다.
 
 - idempotent project 및 Lode Session 구성을 위한 `lode_project_initialize_or_resume`
-- 명시적이며 evidence-linked candidate 결정을 위한 `lode_onboarding_review`
-- 파생되고 복구 가능한 문서 view를 위한 `lode_markdown_projection_build`
+- 명시적이며 evidence-linked candidate 결정을 위한 `lode_onboarding` (`review`)
+- 파생되고 복구 가능한 문서 view를 위한 `lode_projection` (`markdown_projection_build`)
 
 `profile: "core"`로 호출한 `lode_project_initialize_or_resume`(CLI `init --profile core`)는
 `status: "core_ready"`와 `nextAction.id: "work_directly"`를 반환합니다. 사용자의
@@ -241,12 +241,12 @@ digest를 다시 쓰지 마세요.
 
 첫 current GraphSnapshot이 생긴 뒤, 대화 밖에서 참조된 두 environment variable을
 주입하고 host를 재시작하여 plugin process가 이를 상속하게 하세요. 정상 대화 경로는
-먼저 `lode_graphdb_connection_preflight`를 호출합니다. 이 exact-child check는 network
+먼저 `lode_projection` (`graphdb_connection_preflight`)를 호출합니다. 이 exact-child check는 network
 request를 수행하지 않으며, 구성된 reference name과 각각의 존재 여부 boolean만
 반환합니다. credential, endpoint 또는 database value는 절대 반환하지 않습니다. 두
-reference가 모두 있으면 Skill은 `lode_graphdb_database_status`를 호출하고, 명시적 사용자
-확인을 받은 다음 `lode_graphdb_database_initialize`를 호출하며, 별도의 remote-write
-확인을 받고 `lode_graphdb_projection_activate`를 호출합니다. 이러한 typed MCP operation은
+reference가 모두 있으면 Skill은 `lode_projection` (`graphdb_database_status`)를 호출하고, 명시적 사용자
+확인을 받은 다음 `lode_projection` (`graphdb_database_initialize`)를 호출하며, 별도의 remote-write
+확인을 받고 `lode_projection` (`graphdb_projection_activate`)를 호출합니다. 이러한 typed MCP operation은
 confirmation과 exact-target reset evidence는 받지만 credential value는 절대 받지
 않습니다. 동등한 recovery/automation CLI는 `world-graph-remote-database-status`,
 `world-graph-remote-database-initialize`, `world-graph-remote-activate`입니다.
@@ -259,7 +259,7 @@ Activation은 검증되고 재개 가능한 GraphSnapshot delta를 upload하고,
 비교하여 완전한 reconstruction 및 bounded traversal equality를 입증한 다음,
 exact-predecessor compare-and-swap으로 remote pointer를 전진시키고 별도의
 content-addressed activation 및 sync receipt를 저장합니다. `world-graph-remote-status`,
-`lode_graphdb_projection_status`, `lode_graphdb_database_status`는 credential 또는
+`lode_projection` (`graphdb_projection_status`), `lode_projection` (`graphdb_database_status`)는 credential 또는
 target value를 노출하지 않고 operational state를 보고합니다. initialization 또는
 activation 실패 시 완전한 local graph mirror가 recovery path로 남으며 Product Canon을
 승격할 수 없습니다.
@@ -371,13 +371,13 @@ refresh도 준비 상태를 유지합니다. World base가 없으면 명시적 `
 재구축하고, 기존 base가 stale이면 `world-refresh`를 사용합니다.
 Status는 어느 작업도 암묵적으로 실행하지 않습니다.
 
-읽기 전용 MCP tool `lode_onboarding_status`는 state pointer, Session record, storage
+읽기 전용 MCP tool `lode_onboarding` (`status`)는 state pointer, Session record, storage
 selection, current candidate set, successor-producing ReviewDecision, 최신 phase-appropriate
 ReviewDecision, Product Model revision, Product Canon identity 및 World Model freshness를
 검증합니다. review 대기 중인 후속 candidate에서는 producer도 latest decision입니다.
 `ready` 또는 `rejected`에서는 latest decision이 current successor를 직접 review하고
 일치하는 acceptance 또는 rejection disposition을 가져야 합니다. 별도의
-`lode_onboarding_review` transaction은 정확한 current candidate-set identity에 대한
+`lode_onboarding` (`review`) transaction은 정확한 current candidate-set identity에 대한
 사용자 작성의 명시적 disposition만 수락하고, 모든 promotion check를 Core에 위임합니다.
 
 ## Temporal graph projection
@@ -428,7 +428,7 @@ legacy migration, 읽기 전용 status MCP, 그리고 Git, GraphDB 또는 Go bin
 
 알려진 Product/World/Graph 무결성 오류는 기존 readiness와 Attention에 표시하며, 정상 Core 진입·대화 복구·일반 작업을 차단하지 않습니다. 해당 Product 작업의 엄격한 근거 검증은 유지합니다. Lode가 진단을 맡으며 사용자에게 복구 양식을 작성하게 하지 않습니다.
 
-손상되거나 누락된 후보의 검증된 원본이 있으면 `lode_onboarding_candidate_restore`(CLI `onboarding-candidate-restore`)를 사용합니다. Lode가 정확한 Project/후보 식별자·원본 내용·관찰한 raw digest를 전달합니다. 작업은 손상 바이트를 recovery custody에 보존하고 동시 변경을 검사한 뒤 정확한 대상만 원자적으로 교체합니다. canonical content가 같아도 raw bytes가 동일하다는 뜻은 아닙니다. 복원은 승인·Canon 변경·P2 방향을 만들지 않습니다.
+손상되거나 누락된 후보의 검증된 원본이 있으면 `lode_onboarding` (`candidate_restore`)(CLI `onboarding-candidate-restore`)를 사용합니다. Lode가 정확한 Project/후보 식별자·원본 내용·관찰한 raw digest를 전달합니다. 작업은 손상 바이트를 recovery custody에 보존하고 동시 변경을 검사한 뒤 정확한 대상만 원자적으로 교체합니다. canonical content가 같아도 raw bytes가 동일하다는 뜻은 아닙니다. 복원은 승인·Canon 변경·P2 방향을 만들지 않습니다.
 
 원본이 없으면 손상된 현재 후보 중 미승인·다른 후보의 참조 대상이 아닌 경우에만 기존 semantic refresh의 `recoveryBasis`를 사용합니다. Lode가 새로운 근거 연결 제안을 작성하며 Core는 의미를 추론하거나 과거 승인을 승계하지 않습니다. 보존 위치로 옮기기 전에 Canon과 계보 사전조건을 검사합니다. 손상 바이트는 digest 주소의 custody에 남고, 실패 시 포인터가 그대로이며 원래 경로가 비어 있을 때만 복원합니다. 프로세스 중단 후에는 같은 pointer/raw basis를 다시 전달해 해당 custody를 정확히 복구하고 재개합니다. 다른 파일·후속 포인터·새 편집은 롤백하지 않습니다. 검토된 후보는 의미 대체가 아니라 정확한 원본 복원이 필요합니다.
 

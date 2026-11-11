@@ -58,7 +58,7 @@ their original P1 status.
 Normal status, World, Context, Session recovery, and new current onboarding work
 continue without the helper. If product meaning should change, the provider
 Lode authors a fresh current semantic proposal with
-`lode_onboarding_semantic_refresh` or `onboarding-semantic-refresh`; the user
+`lode_onboarding` (`semantic_refresh`) or `onboarding-semantic-refresh`; the user
 then reviews the new candidate through the ordinary ReviewDecision path. The
 first current candidate does not reuse a historical candidate as typed ancestry.
 Instead, a P3 continuity receipt and P4 `HISTORICALLY_FOLLOWS` edge preserve only
@@ -68,13 +68,13 @@ historical continuity and grant no instruction, recovery, or promotion authority
 
 The preferred human-facing path is the bundled `lode-agent-onboarding` Skill
 inside a Claude Code, Codex or OpenCode conversation. It first calls the read-only
-`lode_onboarding_guide` tool, asks only for unresolved material choices, and
+`lode_onboarding` (`guide`) tool, asks only for unresolved material choices, and
 then invokes the same Core through typed MCP operations:
 
 - `lode_project_initialize_or_resume` for idempotent project and Lode Session
   composition;
-- `lode_onboarding_review` for an explicit evidence-linked candidate decision;
-- `lode_markdown_projection_build` for a derived, recoverable document view.
+- `lode_onboarding` (`review`) for an explicit evidence-linked candidate decision;
+- `lode_projection` (`markdown_projection_build`) for a derived, recoverable document view.
 
 With `profile: "core"`, `lode_project_initialize_or_resume` (CLI `init --profile core`)
 returns `status: "core_ready"` and `nextAction.id: "work_directly"`: continue
@@ -213,9 +213,9 @@ mechanism. An existing selection keeps its exact saved names, including any
 `HEAD_GRAPHDB_USERNAME` and `HEAD_GRAPHDB_PASSWORD` references; do not rename
 them or rewrite selection digests as part of a package update.
 
-After the first current GraphSnapshot exists, inject both referenced environment variables outside the conversation and restart the host so the plugin process inherits them. The normal conversation path calls `lode_graphdb_connection_preflight` first. That exact-child check performs no network request and returns only the configured reference names and their presence booleans; it never returns credential, endpoint, or database values. Once both references are present, the Skill calls `lode_graphdb_database_status`, obtains explicit user confirmation, calls `lode_graphdb_database_initialize`, obtains a separate remote-write confirmation, and calls `lode_graphdb_projection_activate`. These typed MCP operations accept confirmation and exact-target reset evidence but never credential values. The equivalent recovery/automation CLI is `world-graph-remote-database-status`, `world-graph-remote-database-initialize`, and `world-graph-remote-activate`.
+After the first current GraphSnapshot exists, inject both referenced environment variables outside the conversation and restart the host so the plugin process inherits them. The normal conversation path calls `lode_projection` (`graphdb_connection_preflight`) first. That exact-child check performs no network request and returns only the configured reference names and their presence booleans; it never returns credential, endpoint, or database values. Once both references are present, the Skill calls `lode_projection` (`graphdb_database_status`), obtains explicit user confirmation, calls `lode_projection` (`graphdb_database_initialize`), obtains a separate remote-write confirmation, and calls `lode_projection` (`graphdb_projection_activate`). These typed MCP operations accept confirmation and exact-target reset evidence but never credential values. The equivalent recovery/automation CLI is `world-graph-remote-database-status`, `world-graph-remote-database-initialize`, and `world-graph-remote-activate`.
 
-Unrelated existing schema is compatible and preserved. Reset is available only for a proven conflict with a Lode-reserved type and requires `reset_incompatible: true` plus the exact selected database through MCP, or `--reset-incompatible true --confirm-database <exact-selected-name>` through CLI. Activation uploads a verified resumable GraphSnapshot delta, proves complete reconstruction and bounded traversal equality against the local adapter, then advances the remote pointer by exact-predecessor compare-and-swap and persists separate content-addressed activation and sync receipts. `world-graph-remote-status`, `lode_graphdb_projection_status`, and `lode_graphdb_database_status` report operational state without exposing credential or target values. A failed initialization or activation leaves the complete local graph mirror as the recovery path and cannot promote Product Canon.
+Unrelated existing schema is compatible and preserved. Reset is available only for a proven conflict with a Lode-reserved type and requires `reset_incompatible: true` plus the exact selected database through MCP, or `--reset-incompatible true --confirm-database <exact-selected-name>` through CLI. Activation uploads a verified resumable GraphSnapshot delta, proves complete reconstruction and bounded traversal equality against the local adapter, then advances the remote pointer by exact-predecessor compare-and-swap and persists separate content-addressed activation and sync receipts. `world-graph-remote-status`, `lode_projection` (`graphdb_projection_status`), and `lode_projection` (`graphdb_database_status`) report operational state without exposing credential or target values. A failed initialization or activation leaves the complete local graph mirror as the recovery path and cannot promote Product Canon.
 
 ## Batch review
 
@@ -326,7 +326,7 @@ approval snapshot IDs or asking for another approval. An unchanged refresh stays
 ready. A missing World base is rebuilt with explicit `world-index`; an existing
 stale base uses `world-refresh`. Status never runs either operation implicitly.
 
-The read-only MCP tool `lode_onboarding_status` verifies the state pointer, Session record, storage selection, current candidate set, successor-producing ReviewDecision, latest phase-appropriate ReviewDecision, Product Model revisions, Product Canon identity, and World Model freshness. For a review-pending successor the producer is also the latest decision; for `ready` or `rejected`, the latest decision must directly review the current successor and carry the matching acceptance or rejection disposition. The separate `lode_onboarding_review` transaction accepts only an explicit user-authored disposition against the exact current candidate-set identity and delegates every promotion check to Core.
+The read-only MCP tool `lode_onboarding` (`status`) verifies the state pointer, Session record, storage selection, current candidate set, successor-producing ReviewDecision, latest phase-appropriate ReviewDecision, Product Model revisions, Product Canon identity, and World Model freshness. For a review-pending successor the producer is also the latest decision; for `ready` or `rejected`, the latest decision must directly review the current successor and carry the matching acceptance or rejection disposition. The separate `lode_onboarding` (`review`) transaction accepts only an explicit user-authored disposition against the exact current candidate-set identity and delegates every promotion check to Core.
 
 ## Temporal graph projection
 
@@ -361,7 +361,7 @@ It covers existing code, a new-project brief, empty evidence, revision followed 
 
 Known Product/World/Graph integrity errors appear in existing readiness and Attention views; they do not block healthy Core entry, conversation recovery or ordinary work. The affected Product operation still verifies its evidence strictly. Lode handles diagnostics rather than asking users to fill recovery forms.
 
-For a damaged or missing candidate with a verified original, use `lode_onboarding_candidate_restore` (CLI `onboarding-candidate-restore`). Lode supplies exact Project/candidate identity, original content and the observed raw digest. The operation preserves damaged bytes in recovery custody, checks concurrent changes and atomically replaces only the exact target. Equal canonical content is not a claim of identical raw bytes. Restoration creates no approval, Canon change or P2 direction.
+For a damaged or missing candidate with a verified original, use `lode_onboarding` (`candidate_restore`) (CLI `onboarding-candidate-restore`). Lode supplies exact Project/candidate identity, original content and the observed raw digest. The operation preserves damaged bytes in recovery custody, checks concurrent changes and atomically replaces only the exact target. Equal canonical content is not a claim of identical raw bytes. Restoration creates no approval, Canon change or P2 direction.
 
 Without an original, only a damaged unreviewed/unreferenced current candidate can use the existing semantic refresh with `recoveryBasis`. Lode supplies a fresh evidence-linked proposal; Core never invents product meaning or inherits old approval. Canon and lineage preconditions are checked before relocation. Damaged bytes remain in digest-addressed custody; a failed call restores them only if the pointer is unchanged and the original path is absent. After process loss, repeating the same pointer/raw basis recovers that exact custody before resuming. Other files, later pointers and new edits are never rolled back. Reviewed candidates require exact restoration rather than semantic replacement.
 

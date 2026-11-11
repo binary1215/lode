@@ -61,14 +61,14 @@ No Conformance artifact is P1 or P2. A request to fix code still enters the ordi
 The user describes the work once. Lode performs the structure internally:
 
 ```text
-lode_conformance_prepare
+lode_conformance (prepare)
   -> provider Lode semantic comparison
-  -> lode_conformance_propose
-  -> lode_conformance_queue
+  -> lode_conformance (propose)
+  -> lode_conformance (queue)
   -> natural-language batch disposition when useful
 ```
 
-`lode_conformance_prepare` pages current Product Canon entities and returns the current Product Model plus an optional current World/Source/Graph baseline. Graph is never required: an exact bounded project-relative source digest, one reviewed ChangeSet change, or one immutable Observation is sufficient mechanical evidence. Lode may use multiple anchor kinds when that improves reviewability.
+`lode_conformance` (`prepare`) pages current Product Canon entities and returns the current Product Model plus an optional current World/Source/Graph baseline. Graph is never required: an exact bounded project-relative source digest, one reviewed ChangeSet change, or one immutable Observation is sufficient mechanical evidence. Lode may use multiple anchor kinds when that improves reviewability.
 
 Core computes disclosures. The provider and user do not assert that a connector is complete, a Graph is current, or an Observation is comprehensive. Finding fingerprinting excludes explanatory wording and converges the same Project, baseline, Canon anchor, evidence anchors, and claim kind even when Lode phrases the explanation differently.
 

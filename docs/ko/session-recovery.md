@@ -448,7 +448,7 @@ OpenCode assistant 인접성은 미지원입니다. 최근 맥락과 불확실�
 누락된 의존 근거가 필요할 때 제공된 정확한 원문 확장을 사용하고, 현재 P2 방향·취소와
 독립 Todo 뷰를 계속 일반 작업에 적용합니다.
 
-Lode는 기존 `lode_session_work_record` 또는 checkpoint의 선택 work evidence에 `todos`를
+Lode는 기존 `lode_session` (`work_record`) 또는 checkpoint의 선택 work evidence에 `todos`를
 기록할 수 있습니다. 사용자는 평소처럼 작업을 말하며 Lode가 stable `todoId`, task,
 기록된 출처, 명시 status와 미해결 작업의 next action을 작성합니다. `partial`, `waiting`,
 `completed`, `cancelled`를 구분하고 대기·취소 사유를 남깁니다. 실제 진행과 관련 정확한
@@ -460,7 +460,7 @@ evidence는 P3 기록이며 프로세스 상태로 추정하지 않습니다. �
 entry/resume과 제한된 Host startup에서도 현재 P2 방향·취소 아래 읽습니다. 기존 재생성 가능한
 graph index는 탐색 힌트만 제공하고 선택된 Todo 원본은 다시 검증합니다. 미검사 원본이나
 색인 유실·손상은 coverage unknown이며 빈 목록·완료의 증명이 아닙니다. 읽기 때문에 색인을
-수리하거나 World를 갱신하거나 독립 작업을 막지 않습니다. `lode_session_work_read`의
+수리하거나 World를 갱신하거나 독립 작업을 막지 않습니다. `lode_session` (`work_read`)의
 `todo_id`, `after_todo_id`, 또는 `scan_todos`·`after_evidence_id` 원본 페이지로 확장합니다.
 CLI `session-work-read --input`은 이에 대응하는 camelCase Core 필드를 받습니다.
 

@@ -93,7 +93,7 @@ node scripts/lode.mjs world-docs-status <project>
 - `current`: 프로젝션, 게시 바이트 및 현재 그래프가 일치합니다.
 - `stale`: 프로젝션이 다른 GraphSnapshot에 속하거나, (`staleReason: "earlier-index-heading"`과 함께) 이전 버전이 그 버전의 색인 제목으로 렌더링한 것이며 다음 빌드에서 다시 작성됩니다.
 - `source-stale`: 프로젝션은 저장된 그래프와 일치하지만, 인덱싱 후 작업 프로젝트가 변경되었습니다.
-- `modified`: 게시된 뷰가 불변 기준 프로젝션과 다릅니다.
+- `modified`: 게시된 뷰가 불변 기준 프로젝션과 다릅니다. 그 기준 프로젝션이 이전 색인 제목으로 렌더링된 경우 여기에도 `staleReason: "earlier-index-heading"`이 함께 나옵니다.
 
 모든 프로젝트의 색인 제목은 "LODE Agent derived knowledge graph"입니다. 누락된 출력은 재생성할 수 있습니다. 다이제스트 불일치, 의미적 분기, 안전하지 않은 경로 또는 어댑터 권한 상승은 실패로 폐쇄됩니다. 더 새로운 검증된 그래프가 깨끗한 게시 뷰를 교체할 수 있지만, 코어는 수정된 뷰를 덮어쓰지 않습니다.
 
@@ -108,7 +108,7 @@ node scripts/lode.mjs world-docs-capture <project>
 node scripts/lode.mjs world-docs-candidates <project> --candidate-set <document-change-candidate-set-id>
 ```
 
-캡처는 `.lode/document-changes/candidate-sets/` 아래에 불변이며 콘텐츠로부터 파생된 `DocumentChangeCandidateSet`을 생성합니다. 추가, 수정 또는 제거된 각 경로는 정확한 기준/제안 콘텐츠와 다이제스트, 소스 프로젝션, GraphSnapshot 및 거짓 지시/승격 플래그를 기록합니다. 캡처 자체는 Product Canon, 그래프, 소스 코드 또는 실행 아티팩트를 변경하지 않습니다. 별도의 범위 지정 ReviewDecision은 세트를 거부하거나 완전하고 명시적인 Product Model과 함께 있을 때만 수락할 수 있습니다. [`document-change-review.md`](document-change-review.md)를 참조하십시오. 형식화된 MCP는 `lode_markdown_projection_build`를 통해 결정론적 Markdown 프로젝션을 명시적으로 빌드할 수 있으며, 읽기 전용 MCP 도구는 프로젝션, 후보, 검토 및 적용 상태를 검사합니다. 그래도 MCP는 인바운드 편집을 캡처하거나, 문서 변경 후보를 검토하거나, 문서 의사결정을 적용할 수 없습니다.
+캡처는 `.lode/document-changes/candidate-sets/` 아래에 불변이며 콘텐츠로부터 파생된 `DocumentChangeCandidateSet`을 생성합니다. 추가, 수정 또는 제거된 각 경로는 정확한 기준/제안 콘텐츠와 다이제스트, 소스 프로젝션, GraphSnapshot 및 거짓 지시/승격 플래그를 기록합니다. 캡처 자체는 Product Canon, 그래프, 소스 코드 또는 실행 아티팩트를 변경하지 않습니다. 별도의 범위 지정 ReviewDecision은 세트를 거부하거나 완전하고 명시적인 Product Model과 함께 있을 때만 수락할 수 있습니다. [`document-change-review.md`](document-change-review.md)를 참조하십시오. 형식화된 MCP는 `lode_projection` (`markdown_projection_build`)를 통해 결정론적 Markdown 프로젝션을 명시적으로 빌드할 수 있으며, 읽기 전용 MCP 도구는 프로젝션, 후보, 검토 및 적용 상태를 검사합니다. 그래도 MCP는 인바운드 편집을 캡처하거나, 문서 변경 후보를 검토하거나, 문서 의사결정을 적용할 수 없습니다.
 
 ## 적합성 및 유보된 작업
 

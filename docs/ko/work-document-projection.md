@@ -60,8 +60,8 @@ receipt는 마지막 확인 범위입니다. 원문·설정 변화나 사용자 
 terminal 결과 ID의 기존 복구는 별도로 검증합니다. 단일 제한 조회 역시 원격 원자
 snapshot이나 최초 저자 증명이 아닙니다.
 
-Typed MCP는 lode_project_document_prepare, lode_project_document_publish,
-lode_project_document_status, CLI는 project-document-prepare,
+Typed MCP는 lode_project_document (prepare, publish, status),
+CLI는 project-document-prepare,
 project-document-publish, project-document-status입니다. 정확한 작업 참조·기능 읽기
 연결·기존 코드/diff 선택·설명문 인자는 Lode가 채웁니다.
 document-projection/project/<Project>/의 P5 게시 상태는 세션 P2 방향을 합치지 않습니다.
@@ -159,8 +159,7 @@ exclusive create하고 개인 메모는 분리합니다. 관리 영역은 정확
 
 ## API·시험
 
-Typed MCP는 `lode_work_document_configure`, `lode_work_document_prepare`,
-`lode_work_document_publish`, `lode_work_document_status`이고 `lode_work_` 그룹에서
+Typed MCP는 `lode_work_document` (`configure`/`prepare`/`publish`/`status`)이고 `lode_work_` 그룹에서
 찾습니다. CLI는 같은 `work-document-*`와 요청별 Session 경로를 제공합니다.
 status는 로컬 receipt이며 실시간 네트워크 최신성 검사가 아닙니다.
 

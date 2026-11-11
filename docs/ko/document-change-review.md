@@ -137,9 +137,9 @@ lode-agent world-docs-application-read <project> --application <document-change-
 ## 읽기 전용 MCP
 
 ```text
-lode_document_change_review_status
-lode_document_change_review
-lode_document_change_application
+lode_document_change (review_status)
+lode_document_change (review)
+lode_document_change (application)
 ```
 
 MCP는 검토를 기록하거나 적용할 수 없으며, Canon을 쓰거나, 그래프를 다시 빌드하거나, 문서를 게시할 수 없습니다.

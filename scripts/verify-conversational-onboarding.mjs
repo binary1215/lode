@@ -4,7 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { dispatch } from "./mcp-server.mjs";
+import { canonicalOperationName } from "../compat/head/public-names.mjs";
 import { publicToolName } from "./lib/lode-artifact-composition.mjs";
+import { groupMembership } from "./lib/operation-groups.mjs";
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "head-agent-conversation-"));
 const projectRoot = path.join(temporaryRoot, "sample-project");
@@ -26,6 +28,9 @@ async function directToolResponse(name, args) {
   return response.result;
 }
 
+// Discovers one operation. An operation replaced by a grouped tool (stage 3-F) is
+// discovered through that tool: the result describes its action, and calls go to
+// the grouped tool with that action.
 async function discoverTool(name) {
   name = publicToolName(name);
   if (!discoveredTools.has(name)) {
@@ -33,9 +38,22 @@ async function discoverTool(name) {
     assert.equal(discovery.persisted, false);
     assert.equal(discovery.grantsAuthorization, false);
     assert.equal(discovery.total, 1);
-    assert.equal(discovery.tools[0].name, name);
-    assert.equal(discovery.tools[0].invokeWith, publicToolName(discovery.tools[0].annotations.readOnlyHint === true ? "lode_tools_read" : "lode_tools_call"));
-    discoveredTools.set(name, discovery.tools[0]);
+    const [found] = discovery.tools;
+    const membership = groupMembership(canonicalOperationName(name));
+    assert.equal(found.name, membership ? publicToolName(membership.group.name) : name);
+    if (membership) {
+      const entry = found.actions.find((item) => item.action === membership.action);
+      assert.ok(["lode_tools_read", "lode_tools_call"].map(publicToolName).includes(entry.invokeWith), entry.invokeWith);
+      discoveredTools.set(name, {
+        name: found.name,
+        action: membership.action,
+        invokeWith: entry.invokeWith,
+        inputSchema: { ...found.inputSchema, required: entry.required },
+      });
+    } else {
+      assert.equal(found.invokeWith, publicToolName(found.annotations.readOnlyHint === true ? "lode_tools_read" : "lode_tools_call"));
+      discoveredTools.set(name, found);
+    }
   }
   return discoveredTools.get(name);
 }
@@ -45,6 +63,7 @@ async function toolResponse(name, args) {
   if (defaultToolNames.has(name)) return directToolResponse(name, args);
   const discovered = await discoverTool(name);
   routedToolNames.add(name);
+  if (discovered.action) return directToolResponse(discovered.invokeWith, { name: discovered.name, arguments: { action: discovered.action, ...args } });
   return directToolResponse(discovered.invokeWith, { name, arguments: args });
 }
 
