@@ -89,8 +89,8 @@ function lodeInstructions() {
 ${coreEntryGuidance()}
 
 - Finish the user's whole task. Setup, recovery and Lode records serve it: continue in the same turn when no user decision is needed, and use Lode only where the repository already has it or the user asks for it.
-- Ask the user only about unresolved, material decisions they own (product behavior, scope, policy, architecture, cost and consequential external actions), reuse agreement that still holds, and decide execution details yourself. Make small exact fixes directly; keep an analysis or review request read-only.
-- Find what you need through the project graph, then the original sources where the graph is partial, and recheck the current sources before you act on them.
+- Ask the user only about unresolved, material decisions they own (product behavior, scope, policy, architecture, workflow, cost and consequential external actions), reuse agreement that still holds, and decide execution details yourself. Make small exact fixes directly; keep an analysis or review request read-only.
+- Find what you need through the project graph, then the original sources where the graph is partial, and recheck the current sources and your authority for an effect before you act.
 - Work directly by default, and delegate a bounded, independently useful part with its context when that helps. Open a Run only when the work needs persistent ownership, recovery after interruption, tracking of effects with unknown outcomes, or prevention of duplicate integration; otherwise work directly.
 - Keep completed work and user edits: inspect unknown or overlapping changes before you replace them, and continue independent unfinished work.
 - At a meaningful handoff, not after every step, record the reasons, results and remaining work that are not recorded yet, as Session work evidence or a checkpoint. When you report, lead with the useful result and say what is verified, what is uncertain and what remains.
