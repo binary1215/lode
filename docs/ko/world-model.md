@@ -89,15 +89,15 @@ node scripts/lode.mjs change-set-status <project>
 
 저장소 파일 변경, 제품 Git ref, 시맨틱 Lode 수명주기 상태 및 인덱서 프로토콜 버전은 모두 소스 다이제스트에 참여합니다. 제품 Git ref는 정확히 로컬 브랜치, 원격 추적 ref 및 태그입니다. `refs/codex/turn-diffs/**` 같은 호스트 운영 ref는 loose 또는 packed 여부와 관계없이 제외됩니다. 이는 제품 증거가 아니라 P5 대화 장부이기 때문입니다. 현재 체크아웃된 Lode는 제외된 네임스페이스를 가리키더라도 계속 관찰됩니다. 체크아웃 상태가 작업 트리 의미를 바꾸기 때문입니다. 변동 타임스탬프, ref 저장 레이아웃 및 물리 저장소 식별자는 제외됩니다.
 
-읽기 전용 MCP 도구 `lode_world_model`은 `world-status`와 동일하게 완전한 스냅샷 다이제스트, 구조 및 저장소 최신 상태를 검증하지만, 제한된 `WorldModelStatusProjection`만 반환합니다. 이 프로젝션에는 식별자, 다이제스트, 수치형 개수, 변경 분류별 최대 20개 경로, 비활성 파일 샘플, 명시적인 생략 개수 및 생략된 전체 스냅샷의 간결한 직렬화 바이트 길이가 포함됩니다. 완전한 `snapshot`, 물리 스냅샷 경로 또는 제한 없는 최신 상태 배열은 절대 반환하지 않습니다. 프로젝션은 512 KiB로 제한되고 중복된 JSON-RPC 텍스트/구조화 MCP 봉투는 4 MiB로 제한됩니다. 이는 전송 한계이지, 검증이나 인덱싱 한계를 줄인 것이 아닙니다. 제한된 상세 정보에는 `lode_world_query`, `lode_temporal_graph`, `lode_git_history` 또는 `lode_runtime_state`를 사용하고, 완전한 스냅샷이 운영상 필요한 경우에만 로컬 `world-status` CLI를 사용하세요.
+읽기 전용 MCP 도구 `lode_world` (`model`)은 `world-status`와 동일하게 완전한 스냅샷 다이제스트, 구조 및 저장소 최신 상태를 검증하지만, 제한된 `WorldModelStatusProjection`만 반환합니다. 이 프로젝션에는 식별자, 다이제스트, 수치형 개수, 변경 분류별 최대 20개 경로, 비활성 파일 샘플, 명시적인 생략 개수 및 생략된 전체 스냅샷의 간결한 직렬화 바이트 길이가 포함됩니다. 완전한 `snapshot`, 물리 스냅샷 경로 또는 제한 없는 최신 상태 배열은 절대 반환하지 않습니다. 프로젝션은 512 KiB로 제한되고 중복된 JSON-RPC 텍스트/구조화 MCP 봉투는 4 MiB로 제한됩니다. 이는 전송 한계이지, 검증이나 인덱싱 한계를 줄인 것이 아닙니다. 제한된 상세 정보에는 `lode_world` (`query`), `lode_temporal_graph`, `lode_vcs` (`git_history`) 또는 `lode_runtime` (`state`)를 사용하고, 완전한 스냅샷이 운영상 필요한 경우에만 로컬 `world-status` CLI를 사용하세요.
 
-`lode_context_preview`는 비영속 `ContextWorkflowProjection`에서 World의 현재·부재·stale 제외를 공개합니다.
+`lode_context` (`preview`)는 비영속 `ContextWorkflowProjection`에서 World의 현재·부재·stale 제외를 공개합니다.
 출처 연결 selection, 누락과 불확실성을 제공하며 고정 tier나 포함 증명 gate는 없습니다.
 World가 없어도 현재 source를 직접 맥락으로 사용할 수 있습니다.
 확대나 refresh가 유용한지는 Lode가 판단합니다. preview는 World 변경, 승인,
 의미 선택이나 복구 방향 쓰기를 수행하지 않습니다.
 
-`lode_graph_projection_status`는 그래프 프로젝션 검증을 노출합니다. `lode_incremental_refresh_status`와 `lode_incremental_refresh_receipt`는 변경 권한 없이 새로 고침 최신 상태, 계보, 변경 및 활성 실행 드리프트를 노출합니다. `lode_refresh_trigger_status`와 `lode_refresh_trigger_delivery`는 이벤트를 수집하거나 감시자를 시작할 수 없지만 이벤트 배치, 직렬화된 전달 및 연결된 새로 고침 증거를 검증합니다. `lode_post_refresh_projection_status`와 `lode_post_refresh_projection_receipt`는 어느 쪽도 변경하지 않으면서 유효 정책과 정확한 문서 결과를 검증합니다. `lode_world_query`는 제한된 0~3홉 휴리스틱 시맨틱 이웃을 반환합니다. `lode_temporal_graph`는 현재 프로젝션 어댑터를 통해 그래프/쿼리/결과 다이제스트를 포함한 결정론적 허용 목록 기반 시간 순회를 반환하며, 프로젝션이 없으면 공개된 임베디드 그래프 폴백을 반환합니다. `lode_git_history`는 검증된 현재 Git 증거에 대해 제한된 쿼리를 수행합니다. `lode_runtime_state`는 검증된 특정 시점 런타임 관찰에 대해 제한된 쿼리를 수행합니다. 모든 시맨틱 쿼리는 오래된 인덱스를 거부합니다.
+`lode_projection` (`graph_projection_status`)는 그래프 프로젝션 검증을 노출합니다. `lode_projection` (`incremental_refresh_status`)와 `lode_projection` (`incremental_refresh_receipt`)는 변경 권한 없이 새로 고침 최신 상태, 계보, 변경 및 활성 실행 드리프트를 노출합니다. `lode_projection` (`refresh_trigger_status`)와 `lode_projection` (`refresh_trigger_delivery`)는 이벤트를 수집하거나 감시자를 시작할 수 없지만 이벤트 배치, 직렬화된 전달 및 연결된 새로 고침 증거를 검증합니다. `lode_projection` (`post_refresh_projection_status`)와 `lode_projection` (`post_refresh_projection_receipt`)는 어느 쪽도 변경하지 않으면서 유효 정책과 정확한 문서 결과를 검증합니다. `lode_world` (`query`)는 제한된 0~3홉 휴리스틱 시맨틱 이웃을 반환합니다. `lode_temporal_graph`는 현재 프로젝션 어댑터를 통해 그래프/쿼리/결과 다이제스트를 포함한 결정론적 허용 목록 기반 시간 순회를 반환하며, 프로젝션이 없으면 공개된 임베디드 그래프 폴백을 반환합니다. `lode_vcs` (`git_history`)는 검증된 현재 Git 증거에 대해 제한된 쿼리를 수행합니다. `lode_runtime` (`state`)는 검증된 특정 시점 런타임 관찰에 대해 제한된 쿼리를 수행합니다. 모든 시맨틱 쿼리는 오래된 인덱스를 거부합니다.
 
 ## 시간적 출처 그래프
 

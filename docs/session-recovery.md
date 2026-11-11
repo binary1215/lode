@@ -490,7 +490,7 @@ history, not no history or complete recovery. Use the supplied exact-read
 expansion for missing dependent evidence; current P2 direction/cancellation and
 the independent Todo view continue to govern ordinary work.
 
-Lode can record optional `todos` through the existing `lode_session_work_record`
+Lode can record optional `todos` through the existing `lode_session` (`work_record`)
 or checkpoint's optional work evidence. Users describe work normally. Lode
 supplies stable `todoId`, task, recorded attribution, explicit status and a next
 action for unresolved work. `partial`, `waiting`, `completed` and `cancelled`
@@ -509,7 +509,7 @@ unindexed publication can join immediately without a second scan or index repair
 Contradictory hints are disclosed and do not defeat a valid original.
 Uninspected originals and missing/damaged indexes leave coverage unknown, never
 proof of an empty list or completion. No read repairs the index, refreshes World
-or blocks independent work. Expand with `lode_session_work_read` using `todo_id`,
+or blocks independent work. Expand with `lode_session` (`work_read`) using `todo_id`,
 `after_todo_id`, or bounded `scan_todos` original pages and `after_evidence_id`.
 CLI `session-work-read --input` accepts their camelCase Core equivalents.
 

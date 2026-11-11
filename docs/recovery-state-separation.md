@@ -16,7 +16,7 @@ checkpoint, Run/Session target, trusted user turn and unconsumed token.
 ## Storage is not execution replay
 
 `run-start --contract <id> [--start-request <key>]` and typed MCP
-`lode_run_start` share the Core transaction. Lode/Host supplies the optional Core
+`lode_run` (`start`) share the Core transaction. Lode/Host supplies the optional Core
 request key once and retains it for retries; users need no key form or prepare
 call. Identity is stored inside the existing Run, not a global ledger. Same
 key/different input conflicts; same contract/different key is a new request.

@@ -116,7 +116,7 @@ node scripts/lode.mjs feature-mapping-review-read <project> --review <feature-ma
 }
 ```
 
-`accept-all`은 `acceptedCandidateIds`를 무시하고, `reject`는 아무것도 수락하지 않습니다. CLI 검토와 타입이 지정된 MCP `lode_feature_mapping_review`는 동일한 Core 변경을 호출하며, MCP는 추가로 `confirm_user_review: true`를 요구합니다. MCP는 `lode_feature_mapping_propose`와 읽기 전용 `lode_feature_mapping_status`도 노출합니다. `include_unreviewed_candidates`를 명시적으로 활성화하지 않는 한 일반 temporal traversal은 검토되지 않은 candidate 표면을 제외합니다.
+`accept-all`은 `acceptedCandidateIds`를 무시하고, `reject`는 아무것도 수락하지 않습니다. CLI 검토와 타입이 지정된 MCP `lode_feature_mapping` (`review`)는 동일한 Core 변경을 호출하며, MCP는 추가로 `confirm_user_review: true`를 요구합니다. MCP는 `lode_feature_mapping` (`propose`)와 읽기 전용 `lode_feature_mapping` (`status`)도 노출합니다. `include_unreviewed_candidates`를 명시적으로 활성화하지 않는 한 일반 temporal traversal은 검토되지 않은 candidate 표면을 제외합니다.
 
 ## 저장 및 프로젝션
 

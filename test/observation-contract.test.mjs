@@ -25,7 +25,7 @@ import { prepareObservationEvidence } from "../scripts/lib/observation-workflow.
 import { recordProductHypothesis, recordProductSignal } from "../scripts/lib/product-operating-loop.mjs";
 import { buildWorldModel, inspectWorldModelStatus, readWorldModel } from "../scripts/lib/world-model.mjs";
 import { runCommand } from "../scripts/head.mjs";
-import { dispatch as dispatchMcp, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
+import { dispatch as dispatchMcp, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testParent = process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();

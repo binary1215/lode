@@ -96,7 +96,7 @@ VCS evidence attachment input:
 }
 ```
 
-읽기 전용 MCP tool `lode_change_set_status`와 `lode_vcs_evidence`는 어떤 것도 기록, 검토 또는 promote하지 않고 검증된 state와 attachment를 노출합니다. 정확한 영속 impact decision이 있지만 state pointer 반영이 남았다면 status는 `requiresNewUserDecision: false`인 복구 상태를 표시하고 변경되지 않은 결정을 재시도하도록 안내합니다.
+읽기 전용 MCP tool `lode_vcs` (`change_set_status`)와 `lode_vcs` (`evidence`)는 어떤 것도 기록, 검토 또는 promote하지 않고 검증된 state와 attachment를 노출합니다. 정확한 영속 impact decision이 있지만 state pointer 반영이 남았다면 status는 `requiresNewUserDecision: false`인 복구 상태를 표시하고 변경되지 않은 결정을 재시도하도록 안내합니다.
 
 ## 프로젝트 아티팩트
 

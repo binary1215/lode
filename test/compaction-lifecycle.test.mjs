@@ -12,7 +12,7 @@ import {
 } from "../scripts/lib/compaction-recovery.mjs";
 import { enterConversationRecovery, InMemoryCompactionLifecycleHostAdapter, processCompactionLifecycle } from "../scripts/lib/compaction-lifecycle.mjs";
 import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
-import { dispatch, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
+import { dispatch, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");

@@ -18,7 +18,7 @@ import {
   recordConformanceDisposition,
 } from "../scripts/lib/conformance-reconciliation.mjs";
 import { ConformanceTriggerRegistry } from "../scripts/lib/conformance-trigger-adapter.mjs";
-import { dispatch as dispatchMcp, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
+import { dispatch as dispatchMcp, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { ingestStructuredObservation } from "../scripts/lib/observation-adapter.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { formatReviewOutcome, formatConformanceFinding, formatConformanceQueue } from "../scripts/lib/cli-presentation.mjs";

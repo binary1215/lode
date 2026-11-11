@@ -152,7 +152,7 @@ SourceSnapshot, path, digest, line, optional symbol, Product Model references,
 and bounds before presenting one immutable batch. Core performs no lexical
 product inference, and the proposal has no instruction or promotion authority.
 
-Only an explicit user-authored `ReviewDecision` with `decisionScope: product-canon-bootstrap` may create a Product Canon revision. The CLI and typed `lode_onboarding_review` operation delegate the same exact-candidate checks to Core; neither routing nor discovery supplies user approval. Acceptance records previous and next Product Model hashes, rebuilds a child SourceSnapshot, and verifies the temporal GraphSnapshot before the state pointer becomes ready. Revision creates a successor candidate set; rejection leaves canon unchanged. Immutable candidate, Evidence, Unknown, ReviewDecision, and ProductModelRevision receipts are projected into the graph for audit, but the projection cannot decide or promote. Read-only status and graph operations cannot review or promote.
+Only an explicit user-authored `ReviewDecision` with `decisionScope: product-canon-bootstrap` may create a Product Canon revision. The CLI and typed `lode_onboarding` (`review`) operation delegate the same exact-candidate checks to Core; neither routing nor discovery supplies user approval. Acceptance records previous and next Product Model hashes, rebuilds a child SourceSnapshot, and verifies the temporal GraphSnapshot before the state pointer becomes ready. Revision creates a successor candidate set; rejection leaves canon unchanged. Immutable candidate, Evidence, Unknown, ReviewDecision, and ProductModelRevision receipts are projected into the graph for audit, but the projection cannot decide or promote. Read-only status and graph operations cannot review or promote.
 
 Storage selection defaults to the complete local path. A GraphDB endpoint, database, and environment-style secret-reference names can be recorded as pending operational configuration, but credentials are rejected and no remote success is claimed before an adapter passes conformance. See [`onboarding.md`](onboarding.md).
 
@@ -406,7 +406,7 @@ Packaged read-only context delivery does not perform this whole lifecycle:
 
 The normal UX is simply to continue the task. `lode_conversation_enter` is the
 automatic read-only entry projection used by the Skill, while the `compact-*`
-and `lode_compaction_lifecycle_step` surfaces are advanced adapter and diagnostic
+and `lode_compact` (`compaction_lifecycle_step`) surfaces are advanced adapter and diagnostic
 operations. Missing Host hooks do not create a setup gate and never block
 ordinary work.
 

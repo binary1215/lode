@@ -121,7 +121,7 @@ Example acceptance input:
 }
 ```
 
-`accept-all` ignores `acceptedCandidateIds`; `reject` accepts none. CLI review and typed MCP `lode_feature_mapping_review` call the same Core mutation; MCP additionally requires `confirm_user_review: true`. MCP also exposes `lode_feature_mapping_propose` and read-only `lode_feature_mapping_status`. Normal temporal traversal excludes the unreviewed candidate surface unless `include_unreviewed_candidates` is explicitly enabled.
+`accept-all` ignores `acceptedCandidateIds`; `reject` accepts none. CLI review and typed MCP `lode_feature_mapping` (`review`) call the same Core mutation; MCP additionally requires `confirm_user_review: true`. MCP also exposes `lode_feature_mapping` (`propose`) and read-only `lode_feature_mapping` (`status`). Normal temporal traversal excludes the unreviewed candidate surface unless `include_unreviewed_candidates` is explicitly enabled.
 
 ## Storage and projection
 

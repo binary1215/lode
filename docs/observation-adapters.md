@@ -2,7 +2,7 @@
 
 ## Task-scoped source collection
 
-`lode_source_context` / `lode-agent source-context` collects Lode-selected current
+`lode_source` (`context`) / `lode-agent source-context` collects Lode-selected current
 source evidence and feeds it into the existing Context Compiler. Lode translates
 the conversational task into exact paths and qualified function names; users do
 not author hashes, IDs or JSON. No World scan, full reindex, Product onboarding or
@@ -37,7 +37,7 @@ Default ephemeral inputs receive the same verification before Context use but
 make no durable-recovery claim. Cross-process reuse checks current source,
 query, Python/AST/tokenizer, worker and normalizer identities. Failed collection
 records preserve raw responses when available and coalesce identical outcomes.
-Read exact success/failure keys with `lode_source_observation_read`; keys are
+Read exact success/failure keys with `lode_source` (`observation_read`); keys are
 returned to Lode automatically. Retention is a task-local evidence choice, not
 an extra user approval. Neither cache, observations, results nor Context previews
 alter Product Canon, ReviewDecision or P2 checkpoint/direction.
@@ -147,15 +147,15 @@ Run `observation-file-ingest` only from a trusted Host/CI integration. It intent
 
 ## Conversational configured-source flow
 
-A trusted Host composition passes its Project-bound registry to `serveMcp`. After provider Lode selects one exact required `typeKey`, `lode_observation_prepare` performs the read-only reuse-first flow: it queries current exact Observation IDs, then returns matching configured source IDs without selecting or collecting one. When existing evidence is not semantically sufficient and durable current evidence is actually needed, Lode pages or filters `lode_observation_sources` as necessary and calls `lode_observation_collect_source` with one selected ID:
+A trusted Host composition passes its Project-bound registry to `serveMcp`. After provider Lode selects one exact required `typeKey`, `lode_observation` (`prepare`) performs the read-only reuse-first flow: it queries current exact Observation IDs, then returns matching configured source IDs without selecting or collecting one. When existing evidence is not semantically sufficient and durable current evidence is actually needed, Lode pages or filters `lode_observation` (`sources`) as necessary and calls `lode_observation` (`collect_source`) with one selected ID:
 
 ```text
 trusted Host configuration
-  -> lode_observation_prepare(exact Lode-selected typeKey)
+  -> lode_observation (prepare, exact Lode-selected typeKey)
   -> existing exact Observation IDs first
-  -> lode_observation_sources only for paging or diagnosis
+  -> lode_observation (sources) only for paging or diagnosis
   -> opaque Project-bound sourceId
-  -> lode_observation_collect_source
+  -> lode_observation (collect_source)
   -> verified P3 ObservationRecord + ObservationCollectionReceipt
 ```
 
@@ -163,11 +163,11 @@ The preparation projection does not judge semantic sufficiency, infer relevance 
 
 ## Metric evidence workflow
 
-The metric workflow is a thin provider-neutral use of the common contract, not a second analytics store. `lode_metric_define` registers a versioned metric shape containing its unit and desired direction. An exact replay is idempotent; a conflicting shape under the same metric key and version fails with a request to use a new version instead of making later lookup ambiguous.
+The metric workflow is a thin provider-neutral use of the common contract, not a second analytics store. `lode_metric` (`define`) registers a versioned metric shape containing its unit and desired direction. An exact replay is idempotent; a conflicting shape under the same metric key and version fails with a request to use a new version instead of making later lookup ambiguous.
 
-`lode_metric_observe` records an exact subject, value, time scope, source scope, sample size when known, coverage, and collection-adapter identity. If a Host retries the same event without resupplying an observation time, Core reuses the durable event time; changed content under the same source event still fails closed. `lode_metric_compare` permits a numeric difference only for the exact same descriptor, subject, unit, and direction. Different adapter key, adapter version, adapter descriptor digest, source scope, snapshot/aggregate form, period duration, sample size, or coverage state does not add an approval gate: the numeric comparison remains available, but the result marks the condition as same, different, or unknown, states that no normalization was applied, and downgrades derived coverage rather than presenting a like-for-like result. Even when every recorded collection condition matches, Core reports only `recordedCollectionConditionsEquivalent: true`; semantic equivalence remains `not-assessed` and is never mechanically inferred.
+`lode_metric` (`observe`) records an exact subject, value, time scope, source scope, sample size when known, coverage, and collection-adapter identity. If a Host retries the same event without resupplying an observation time, Core reuses the durable event time; changed content under the same source event still fails closed. `lode_metric` (`compare`) permits a numeric difference only for the exact same descriptor, subject, unit, and direction. Different adapter key, adapter version, adapter descriptor digest, source scope, snapshot/aggregate form, period duration, sample size, or coverage state does not add an approval gate: the numeric comparison remains available, but the result marks the condition as same, different, or unknown, states that no normalization was applied, and downgrades derived coverage rather than presenting a like-for-like result. Even when every recorded collection condition matches, Core reports only `recordedCollectionConditionsEquivalent: true`; semantic equivalence remains `not-assessed` and is never mechanically inferred.
 
-`lode_metric_assess` records only a P3 ProductHypothesis and always states that causality is not established. A follow-up uses `lode_product_initiative_propose` with the exact assessment hypothesis ID; there is no separate metric formatter. It creates only a Product Initiative candidate, which still needs the existing explicit user review before approval. `lode_metric_status` and `lode_metric_trace` are bounded read-only P4 views. None of these operations writes Product Canon, a ReviewDecision, Conformance disposition, or P2 recovery direction.
+`lode_metric` (`assess`) records only a P3 ProductHypothesis and always states that causality is not established. A follow-up uses `lode_product` (`initiative_propose`) with the exact assessment hypothesis ID; there is no separate metric formatter. It creates only a Product Initiative candidate, which still needs the existing explicit user review before approval. `lode_metric` (`status`) and `lode_metric` (`trace`) are bounded read-only P4 views. None of these operations writes Product Canon, a ReviewDecision, Conformance disposition, or P2 recovery direction.
 
 ## Context and use
 
@@ -218,7 +218,7 @@ affect latency; serialized in-process dispatch bytes are not stdio wire or
 installed Host cost. Provider tokens, billing and prompt-cache savings remain
 unknown. This measurement is optional, not a usage or deployment gate.
 
-The existing `lode_source_context` accepts `declarations` for a bounded static
+The existing `lode_source` (`context`) accepts `declarations` for a bounded static
 outline and `selected-source` for a known qualified declaration. The latter needs
 no prior outline. CLI uses `--kind`; an unqualified `--symbol` option retains its
 existing outgoing-call meaning. For ambiguous occurrences, Lode supplies the
@@ -252,9 +252,9 @@ World, ReviewDecision or recovery direction is created by these optional reads.
 
 Context compilation excludes common observations by default. Lode performs semantic analysis and requests exact identities through an EvidenceNeed whose kind is `observation` and whose `observationIds` are immutable current IDs. Core preserves selected evidence, exclusions and uncertainty without an inclusion-proof gate, lexical eligibility rule, semantic promotion or sufficiency judgment.
 
-Ordinary inspection remains ephemeral. Persist an Observation only when cross-Run, rebuttal/audit, handoff, or context-loss evidence is required. A Host adapter, not the user, constructs the exact source binding, descriptor, digests, coverage, and provenance confirmation. `observation-ingest` and `lode_observation_ingest` are advanced Host/CI surfaces for already bounded input. The redundant collect compatibility alias is removed. `observation-source-collect` and `lode_observation_collect_source` remain distinct configured Host-source collection surfaces, not aliases for ingesting already bounded input.
+Ordinary inspection remains ephemeral. Persist an Observation only when cross-Run, rebuttal/audit, handoff, or context-loss evidence is required. A Host adapter, not the user, constructs the exact source binding, descriptor, digests, coverage, and provenance confirmation. `observation-ingest` and `lode_observation` (`ingest`) are advanced Host/CI surfaces for already bounded input. The redundant collect compatibility alias is removed. `observation-source-collect` and `lode_observation` (`collect_source`) remain distinct configured Host-source collection surfaces, not aliases for ingesting already bounded input.
 
-`observation-query` and `lode_observation_query` return both an unfiltered `inventorySummary` (all retained counts and graph policy) and a filtered page, without full payload nodes. No separate status call is needed. `inventorySummary` is not the filtered match count; an empty page cannot establish that the retained inventory is empty. Queries filter exact current identities by type, subject, source, time, and observed/derived kind with a maximum page of 100. Cursor continuation is bound to the exact current `ObservationStatusProjection`; drift fails closed. Query results contain payload digests rather than payload bodies. The exact read surface returns the selected record, descriptor, and bounded receipt or derivation lineage. Querying is discovery, not semantic selection, Context eligibility, or sufficiency judgment.
+`observation-query` and `lode_observation` (`query`) return both an unfiltered `inventorySummary` (all retained counts and graph policy) and a filtered page, without full payload nodes. No separate status call is needed. `inventorySummary` is not the filtered match count; an empty page cannot establish that the retained inventory is empty. Queries filter exact current identities by type, subject, source, time, and observed/derived kind with a maximum page of 100. Cursor continuation is bound to the exact current `ObservationStatusProjection`; drift fails closed. Query results contain payload digests rather than payload bodies. The exact read surface returns the selected record, descriptor, and bounded receipt or derivation lineage. Querying is discovery, not semantic selection, Context eligibility, or sufficiency judgment.
 
 ## Acceptance properties
 

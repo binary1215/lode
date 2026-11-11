@@ -63,17 +63,17 @@ startup은 실제로 출력에 담은 record의 index로 group을 만들고 Host
   요청에 선택적인 `work_evidence`를 함께 넣습니다. P2와 P3 결과는 별개입니다.
   stale·deferred checkpoint 때문에 근거가 방향으로 승격되지 않으며, 선택적
   근거 저장 실패가 유효한 명시적 P2 게시를 막지도 않습니다.
-- checkpoint가 불필요한 의미 있는 작업에는 선택적 `lode_session_work_record`
+- checkpoint가 불필요한 의미 있는 작업에는 선택적 `lode_session` (`work_record`)
   한 번으로 Run 없는 맥락을 보존합니다. Lode가 대화에서 필요한 항목만 작성합니다.
   사용자는 JSON·ID·저장 승인·Run·Capsule을 준비하지 않습니다.
 - `lode_conversation_enter`는 선택된 Session의 원본과 P2 방향을 현재 공통
   제약·취소와 함께 읽습니다. 쓰기는 없으며 선택적 근거의 누락·손상은 해당 계층만
   제한합니다.
-- `lode_session_work_read`로 알고 있는 정확한 원본이나 명시적 ID anchor의 조회
+- `lode_session` (`work_read`)로 알고 있는 정확한 원본이나 명시적 ID anchor의 조회
   페이지를 펼칩니다. 필요에 따른 확대이지 의무적인 도구 호출 순서는 아닙니다.
 
 자동화에서 CLI `session-work-record <project> --input <file.json>`는
-`lode_session_work_record` `evidence`와 같은 키를 받습니다. `summary`,
+`lode_session` (`work_record`) `evidence`와 같은 키를 받습니다. `summary`,
 `judgments`, `observedWork`, `pending`, `unknowns`, `suggestedFollowUp`,
 `references`, `todos` 중 하나 이상이 필요하고 `workTopics`, `workLink`,
 `executionObservation`, `occurrenceKey`는 선택입니다. 알 수 없는 키는

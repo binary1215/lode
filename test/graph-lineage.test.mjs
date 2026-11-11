@@ -21,7 +21,7 @@ import { normalizeProductModelDocument } from "../scripts/lib/product-model.mjs"
 import { buildTemporalProvenanceGraph, verifyTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
 import { buildWorldModel } from "../scripts/lib/world-model.mjs";
 import { runCommand } from "../scripts/head.mjs";
-import { dispatch as dispatchMcp, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
+import { dispatch as dispatchMcp, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
 import { LocalJsonWorldModelStoreAdapter, assertWorldModelStoreAdapter } from "../scripts/lib/world-model-store.mjs";
 import { readWorldModelSnapshot } from "../scripts/lib/world-model.mjs";

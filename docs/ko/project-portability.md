@@ -39,8 +39,7 @@ node scripts/lode.mjs project-bundle-inspect "<bundle-folder>"
 node scripts/lode.mjs project-import "<target-project>" --bundle "<bundle-folder>"
 ```
 
-동일한 typed 도구는 `lode_project_bundle_export`, `lode_project_bundle_read`,
-`lode_project_bundle_import`입니다. 공통 방향, 선택한 P2·Canon·참조의 정확한 원본과
+동일한 typed 도구는 `lode_project_bundle` (`export`/`read`/`import`)입니다. 공통 방향, 선택한 P2·Canon·참조의 정확한 원본과
 작업 근거를 담습니다. 다른 Session의 본문, 캐시, 루트 통합 설정, 인증 정보, 살아 있는
 lease와 네이티브 연결은 제외합니다. 저장소 작업 파일이나 첨부도 이 작업으로 복사하지
 않습니다. 누락한 자료가 필요한 경우 번들뿐 아니라 원래 프로젝트 작업 파일·첨부 또는
@@ -141,7 +140,7 @@ Claude 구조 검사에서는 파일명이나 메타데이터 행만으로 선�
 이는 공식 클라이언트에서의 대화 소유 검증을 뜻하지 않습니다.
 
 각각 별도로 요청하는 효과입니다. 일반 개발 전에 이 명령들을 순서대로 실행할 필요는
-없습니다. 데이터 조회에는 기존 읽기 전용 `lode_project_bundle_read`의
+없습니다. 데이터 조회에는 기존 읽기 전용 `lode_project_bundle` (`read`)의
 `include_native_history: true`를 사용합니다. SDK를 시작하지 않으며, 공통 결과와 선택적
 네이티브 오류를 분리해서 보여 줍니다.
 
@@ -316,7 +315,7 @@ raw·이력 보존, SDK 메타데이터 등록, 현재 네이티브 연결, Lode
 node scripts/lode.mjs project-bundle-inspect "<HANDOFF.md>"
 ```
 
-기존 `lode_project_bundle_read`에도 `bundle_root` 대신 `handoff_file`을 전달할 수
+기존 `lode_project_bundle` (`read`)에도 `bundle_root` 대신 `handoff_file`을 전달할 수
 있습니다. 인자는 에이전트가 준비합니다. byte 페이지는 부분 출력과 다음 offset을
 표시하며, 필요한 나머지 근거를 추가로 읽을 수 있습니다.
 

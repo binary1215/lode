@@ -92,7 +92,7 @@ node scripts/lode.mjs world-docs-status <project>
 - `current`: projection, published bytes, and current graph agree;
 - `stale`: the projection belongs to a different GraphSnapshot, or (with `staleReason: "earlier-index-heading"`) it was rendered by an earlier version under that version's index heading and the next build rewrites it;
 - `source-stale`: the projection matches the stored graph but the working project changed since indexing;
-- `modified`: the published view differs from its immutable base projection.
+- `modified`: the published view differs from its immutable base projection. `staleReason: "earlier-index-heading"` also appears here when that base projection was rendered under an earlier index heading.
 
 Every project heads the index "LODE Agent derived knowledge graph". Missing output can be regenerated. Digest mismatch, semantic divergence, unsafe paths, or adapter authority escalation fail closed. A newer verified graph may replace a clean published view, but the core never overwrites a modified view.
 
@@ -107,7 +107,7 @@ node scripts/lode.mjs world-docs-capture <project>
 node scripts/lode.mjs world-docs-candidates <project> --candidate-set <document-change-candidate-set-id>
 ```
 
-Capture creates an immutable, content-derived `DocumentChangeCandidateSet` under `.lode/document-changes/candidate-sets/`. Each added, modified, or removed path records the exact base/proposed content and digests, source projection, GraphSnapshot, and false instruction/promotion flags. Capture itself does not change Product Canon, the graph, source code, or an execution artifact. A separate scoped ReviewDecision can reject the set or accept it only alongside a complete explicit Product Model; see [`document-change-review.md`](document-change-review.md). Typed MCP may explicitly build the deterministic Markdown projection through `lode_markdown_projection_build`, and read-only MCP tools inspect projection, candidate, review, and application status. MCP still cannot capture inbound edits, review document-change candidates, or apply a document decision.
+Capture creates an immutable, content-derived `DocumentChangeCandidateSet` under `.lode/document-changes/candidate-sets/`. Each added, modified, or removed path records the exact base/proposed content and digests, source projection, GraphSnapshot, and false instruction/promotion flags. Capture itself does not change Product Canon, the graph, source code, or an execution artifact. A separate scoped ReviewDecision can reject the set or accept it only alongside a complete explicit Product Model; see [`document-change-review.md`](document-change-review.md). Typed MCP may explicitly build the deterministic Markdown projection through `lode_projection` (`markdown_projection_build`), and read-only MCP tools inspect projection, candidate, review, and application status. MCP still cannot capture inbound edits, review document-change candidates, or apply a document decision.
 
 ## Conformance and deferred work
 

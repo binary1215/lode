@@ -49,7 +49,7 @@ Concurrent discovery is non-atomic: a missing cursor requires a fresh page.
 
 The list reads metadata only; a preview reads at most eight recent bodies plus
 the existing independently selected Todo projection. Honor its partial/conflict/
-unknown coverage, and expand needed originals using `lode_session_work_read`.
+unknown coverage, and expand needed originals using `lode_session` (`work_read`).
 Known canonical Session work, execution-lineage and historical direction paths
 can use the existing graph `paths` argument before global inventory; retain
 returned exact paths for detail. Existing lineage reads still inspect selected
@@ -116,7 +116,7 @@ Saved observations and citations remain historical P3 evidence, not current
 direction, live execution, review acceptance or effect authorization. Do not
 require another save, mandatory details/read call or user selector form.
 
-For code impact use `lode_world_query` (discover/invoke through the existing
+For code impact use `lode_world` (`query`) (discover/invoke through the existing
 optional tool route) or `world-query --query <symbol> --depth <0..3> --limit <n>`.
 General containment/revision expansion is not IMPORTS/CALLS analysis. If World
 is absent/stale, inspect affected current imports/calls; do not activate World,
@@ -155,13 +155,13 @@ update this inventory in supported paths. New or missing relevant records may
 need an explicit index; unchanged input is reused.
 
 When an existing World is needed by follow-up work, use CLI `world-refresh`
-and bounded `lode_world_query` / `world-query` to check affected code relations.
+and bounded `lode_world` (`query`) / `world-query` to check affected code relations.
 The current refresh discovers and reads/hashes all eligible source-scope files,
 reuses unchanged semantic analysis, and rebuilds supported relations against the
 current file set. It is not a changed-files-only read. Inspect freshness, source
 scope, added/changed/removed paths, relation evidence/confidence and unresolved
 imports/calls. A rename can appear as remove/add; do not invent a verified rename
-lineage. `lode_world_model` and `lode_incremental_refresh_status` are read-only
+lineage. `lode_world` (`model`) and `lode_projection` (`incremental_refresh_status`) are read-only
 checks, not refresh commands. Do not activate World or DB solely for this duty.
 
 Connect purpose/requirements, implementation and verification through existing

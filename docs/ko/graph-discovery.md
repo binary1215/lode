@@ -71,7 +71,7 @@ reader를 사용하며 현재성은 unknown입니다. 정확한 graph detail은 
 유지합니다. 공개된 과거 direction 전체 원문 reader가 없다는 한계와 부분 내용 보완용
 원본 파일을 표시하며, 현재 direction 도구가 과거 리비전을 선택한다고 안내하지 않습니다.
 
-알려진 Session의 더 넓은 기록이 필요하면 `lode_session_work_read`에
+알려진 Session의 더 넓은 기록이 필요하면 `lode_session` (`work_read`)에
 `scan_evidence: true`를 주어 첫 페이지를 받고 `enumeration.next`의 인자를 따릅니다.
 CLI에서는 `session-work-read --scan-evidence`를 사용합니다. 가짜 시작 ID나 사용자가
 작성한 JSON은 필요하지 않습니다. 한 호출은 사전순 원본 페이지 하나를 검사하며,
@@ -133,7 +133,7 @@ MCP `structuredContent`, CLI `--json`, Hook, 선택과 proof는 그대로입니�
 일과 불확실성도 노드들에 걸쳐 표시합니다. `details`는 기존의 더 풍부한 표시를
 요청하며 어느 표시도 의미적 충분성을 판정하지 않습니다.
 
-`originalExpansion`은 기존 `lode_session_work_read` 호출에 검증된 소유자의
+`originalExpansion`은 기존 `lode_session` (`work_read`) 호출에 검증된 소유자의
 `session_id`, 정확한 `evidence_ids`, 한 건을 뜻하는 `max_records`, 실제 enriched
 record 배열 크기의 `max_characters`를 제공합니다. 같은 기준의 확장이 성공하면
 예산 생략 없이 그 원본 한 건을 반환합니다. 소유자·ID·`evidenceDigest`를 그래프
@@ -274,7 +274,7 @@ token과 품질 개선은 측정 전까지 가설입니다.
 
 일반 `CONTAINS`, `HAS_REVISION`, `DECLARES` 경로는 기록·버전을 연결합니다.
 이를 확대하는 것은 코드 영향 분석이 아닙니다. 심볼의 import·call 이웃은 기존
-`lode_world_query` 또는 다음 명령으로 조회합니다.
+`lode_world` (`query`) 또는 다음 명령으로 조회합니다.
 
 ```text
 lode-agent world-query <project> --query "<symbol>" --depth 3 --limit 20
@@ -297,7 +297,7 @@ World가 없거나 관련 소스가 stale이면 현재 소스의 import·call을
 | --- | --- | --- |
 | `lode_project_graph_index` / `graph-index` | 기존 검증 기록·관측의 교체 가능한 목록 색인을 갱신하고 동일 입력은 재사용합니다 | 저장소의 새 코드 관계를 추출하거나 기능 의미를 추론하지 않습니다 |
 | `world-refresh` | 이미 활성화된 World의 지원 코드 관계와 리비전 근거를 갱신합니다 | 없는 Product/World 기능을 활성화하거나 승인을 만들지 않습니다 |
-| `lode_world_model`, `lode_incremental_refresh_status`, `lode_world_query` / `world-query` | 최신성·갱신 근거 또는 제한된 영향 관계를 읽습니다 | World 갱신을 실행하지 않습니다 |
+| `lode_world` (`model`), `lode_projection` (`incremental_refresh_status`), `lode_world` (`query`) / `world-query` | 최신성·갱신 근거 또는 제한된 영향 관계를 읽습니다 | World 갱신을 실행하지 않습니다 |
 
 Core 초기화·재개와 지원되는 원본·관측 저장 경로는 이미 관측 색인을 갱신합니다.
 충분히 최신인 결과는 재사용합니다. 관련 새 기록·누락 기록이나 통합 조정에 필요하면

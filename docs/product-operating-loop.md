@@ -143,12 +143,12 @@ own authority, rather than trusting a lane recommendation.
 
 The optional typed MCP catalog includes:
 
-- `lode_product_signal_record`
-- `lode_product_hypothesis_record`
-- `lode_product_initiative_propose`
-- `lode_product_initiative_review`
-- `lode_product_outcome_observe`
-- `lode_product_operating_status`
+- `lode_product` (`signal_record`)
+- `lode_product` (`hypothesis_record`)
+- `lode_product` (`initiative_propose`)
+- `lode_product` (`initiative_review`)
+- `lode_product` (`outcome_observe`)
+- `lode_product` (`operating_status`)
 - `lode_continuity_snapshot`
 
 The default MCP list focuses on Core and recovery, including independent Session

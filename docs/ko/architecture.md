@@ -116,7 +116,7 @@ cache를 보장하지 않습니다.
 
 초기화는 공급자 대화와 독립적인 기본 Session과 온보딩 포인터를 보존하고 경량 기존 관측 색인을 갱신합니다. 명시적인 `product` 범위에서만 관리되는 로컬 World Model을 구성합니다. 구조화된 user brief는 candidate를 직접 seed할 수 있고, 그 외에는 fresh provider Lode가 현재 evidence에서 bounded semantic proposal을 작성합니다. JavaScript Core는 정확한 SourceSnapshot, path, digest, line, optional symbol, Product Model reference와 bound를 검증한 뒤 하나의 immutable batch를 제시합니다. Core는 lexical product inference를 하지 않으며 proposal에는 지시 또는 승격 권한이 없습니다.
 
-명시적인 사용자 결정으로 작성되고 `decisionScope: product-canon-bootstrap`이 지정된 `ReviewDecision`만 Product Canon revision을 생성할 수 있습니다. CLI와 typed `lode_onboarding_review`는 동일한 exact-candidate 검증을 Core에 위임하며, 라우팅이나 도구 탐색이 사용자 승인을 공급하지 않습니다. 수락 시 이전 및 다음 Product Model 해시를 기록하고, 자식 SourceSnapshot을 재구축하며, 상태 포인터가 준비 상태가 되기 전에 temporal GraphSnapshot을 검증합니다. revision은 후속 후보 집합을 생성하고, 거부 시 Canon은 변경되지 않습니다. 불변 candidate, Evidence, Unknown, ReviewDecision 및 ProductModelRevision 영수증은 감사를 위해 그래프에 프로젝션되지만, 프로젝션 자체는 결정하거나 승격할 수 없습니다. 읽기 전용 상태·그래프 작업은 검토하거나 승격할 수 없습니다.
+명시적인 사용자 결정으로 작성되고 `decisionScope: product-canon-bootstrap`이 지정된 `ReviewDecision`만 Product Canon revision을 생성할 수 있습니다. CLI와 typed `lode_onboarding` (`review`)는 동일한 exact-candidate 검증을 Core에 위임하며, 라우팅이나 도구 탐색이 사용자 승인을 공급하지 않습니다. 수락 시 이전 및 다음 Product Model 해시를 기록하고, 자식 SourceSnapshot을 재구축하며, 상태 포인터가 준비 상태가 되기 전에 temporal GraphSnapshot을 검증합니다. revision은 후속 후보 집합을 생성하고, 거부 시 Canon은 변경되지 않습니다. 불변 candidate, Evidence, Unknown, ReviewDecision 및 ProductModelRevision 영수증은 감사를 위해 그래프에 프로젝션되지만, 프로젝션 자체는 결정하거나 승격할 수 없습니다. 읽기 전용 상태·그래프 작업은 검토하거나 승격할 수 없습니다.
 
 스토리지 선택의 기본값은 완전한 로컬 경로입니다. GraphDB endpoint, database 및 환경 스타일 secret-reference 이름은 보류 중인 운영 구성으로 기록할 수 있지만, 자격 증명은 거부되며 어댑터가 적합성 검사를 통과하기 전에는 원격 성공을 주장하지 않습니다. [`onboarding.md`](onboarding.md)를 참조하세요.
 
@@ -345,7 +345,7 @@ P2 체크포인트와 검증된 계보에서 현재 입력을 재구성합니다
 
 일반 사용자는 작업을 계속 말하면 됩니다. Skill은 읽기 전용
 `lode_conversation_enter`로 자동 진입하고, `compact-*`와
-`lode_compaction_lifecycle_step`은 고급 어댑터와 진단 작업에 사용합니다.
+`lode_compact` (`compaction_lifecycle_step`)은 고급 어댑터와 진단 작업에 사용합니다.
 Host Hook이 없어도 추가 설정을 요구하거나 일반 작업을 막지 않습니다.
 
 방향을 지속 가능한 기록으로 갱신할 때 Skill은 내부적으로 읽기 전용

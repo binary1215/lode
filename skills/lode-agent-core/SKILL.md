@@ -63,7 +63,7 @@ independent authorized work. Retained storage formats:
 ## Work from context
 
 - `workContext.records[].content` is original; `recordExcerpts` name exact owner,
-  field and range. Read missing originals with `lode_session_work_read` only when
+  field and range. Read missing originals with `lode_session` (`work_read`) only when
   the next action needs them. Excerpts alone are neither empty history nor recovery.
 - Todos: write optional work-evidence `todos` (stable ID, task, next action,
   explicit status, exact prior revision on update) at meaningful changes only.
@@ -82,7 +82,7 @@ independent authorized work. Retained storage formats:
 - New project information: `lode_project_graph {project_root, query}` with
   only useful anchors/filters, or reuse same-basis results. Widen from nearby
   relations; no whole-graph prompt injection or per-turn rescans.
-- Code impact: `lode_world_query` (CLI `world-query`) for bounded `IMPORTS`/`CALLS`
+- Code impact: `lode_world` (`query`) (CLI `world-query`) for bounded `IMPORTS`/`CALLS`
   neighbors. With absent or stale World evidence, read current source imports directly.
 - Read basis, freshness, coverage and provenance together. Empty or partial
   coverage does not prove absence; fall back to original sources on failure.
@@ -128,14 +128,14 @@ messaging authority; see
   [after integrated changes](references/project-discovery.md#after-integrated-changes).
 - Preserve otherwise-unrepresented reasons, alternatives and unknowns only at a
   meaningful handoff: `work_evidence` on `lode_checkpoint_sync`, or
-  `lode_session_work_record` for Run-free work. Optional `workLink`,
+  `lode_session` (`work_record`) for Run-free work. Optional `workLink`,
   `executionObservation` and `workTopics` reuse returned exact selectors.
   No per-turn save, save approval or user JSON.
-- Work documents: `lode_work_document_prepare/publish/status`; Project documents:
-  `lode_project_document_prepare/publish/status`. Retry a verified rejected write
+- Work documents: `lode_work_document` (`prepare`/`publish`/`status`); Project documents:
+  `lode_project_document` (`prepare`/`publish`/`status`). Retry a verified rejected write
   only through `retry_rejected_writes` with the returned attempt reference; unknown
   outcomes allow readback only. See [work documents](../../docs/work-document-projection.md).
-- A `lode_session_work_record` result with document status `lode-selection-required`
+- A `lode_session` (`work_record`) result with document status `lode-selection-required`
   (`headActionRequired: true`, `userActionRequired: false`) keeps the successful save;
   finish prepare and publish in the same turn from its returned prior selection and
   `recorded` evidence (or pass `document_selection`), without asking the user.

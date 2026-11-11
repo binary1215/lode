@@ -150,8 +150,8 @@ activation 후 기본 adapter는 성공한 모든 remote snapshot과 pointer를 
 - `world-graph-status`: projection state를 읽고 검증합니다.
 - `world-graph-remote-activate` 및 `world-graph-remote-status`: 명시적인 activation 및 read-only remote status입니다.
 - `world-graph-remote-database-status` 및 `world-graph-remote-database-initialize`: read-only compatibility audit 및 명시적인 exact-target provisioning/reset boundary입니다.
-- `lode_graph_projection_status`: read-only MCP equivalent입니다.
-- `lode_graphdb_projection_status` 및 `lode_graphdb_database_status`: read-only MCP activation 및 compatibility status equivalent입니다.
+- `lode_projection` (`graph_projection_status`): read-only MCP equivalent입니다.
+- `lode_projection` (`graphdb_projection_status`) 및 `lode_projection` (`graphdb_database_status`): read-only MCP activation 및 compatibility status equivalent입니다.
 - `world-temporal`, MCP temporal traversal, Context Compiler temporal expansion은 result identity를 보존하면서 adapter boundary를 사용합니다.
 - 별도의 [`DocumentProjectionAdapter`](document-projection-adapter.md)는 graph identity를 변경하지 않고 결정론적 Markdown 생성을 위해 검증된 GraphSnapshot을 사용합니다.
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { dispatch, catalogTools } from "../scripts/mcp-server.mjs";
+import { dispatch, catalogTools, operationCatalogTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { formatCliResult, formatMcpToolContent, formatConversationRecovery } from "../scripts/lib/cli-presentation.mjs";
 import { enterConversationRecovery } from "../scripts/lib/compaction-lifecycle.mjs";
@@ -664,7 +664,7 @@ test("shared optional schema travels through direct record, CLI JSON and checkpo
   const topics = ["ConnectedTopicMhjv4172", "Alternative topic", "ConnectedTopicMhjv4172"];
   const root = (await call(f, "head_session_work_record", { evidence: { summary: "Synthetic initial anchor", workTopics: topics } })).structuredContent;
   assert.deepEqual(root.evidence.content.workTopics, topics);
-  const recordSchema = catalogTools.find((tool) => tool.name === "lode_session_work_record").inputSchema.properties.evidence;
+  const recordSchema = operationCatalogTools.find((tool) => tool.name === "lode_session_work_record").inputSchema.properties.evidence;
   const checkpointSchema = catalogTools.find((tool) => tool.name === "lode_checkpoint_sync").inputSchema.properties.work_evidence;
   assert.deepEqual(recordSchema.properties.workTopics, checkpointSchema.properties.workTopics);
   assert.equal(recordSchema.properties.workTopics.type, "array");

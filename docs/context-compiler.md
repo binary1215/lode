@@ -6,8 +6,8 @@ require a Capsule, a Run, an inclusion proof or another approval.
 
 ## Selected context
 
-`lode_context_prepare` returns source-linked context for the exact user task.
-`lode_context_preview` accepts optional Lode-authored `EvidenceNeed[]` guidance.
+`lode_context` (`prepare`) returns source-linked context for the exact user task.
+`lode_context` (`preview`) accepts optional Lode-authored `EvidenceNeed[]` guidance.
 Users do not write JSON or choose anchors. Both calls are read-only and return
 `ready_for_lode_semantic_assessment`, which is advice to Lode, not a proof of
 sufficiency or an execution gate.
@@ -79,7 +79,7 @@ Git history, runtime observations and exact graph traversals. All source revisio
 and omissions remain explicit. Neither heuristic nor static AST relations prove
 runtime truth. Missing/stale indexes do not block direct work.
 
-`lode_source_context` supports task-scoped current source and Python static
+`lode_source` (`context`) supports task-scoped current source and Python static
 declaration/call observations without a full scan. Retention is optional;
 raw source is not a Product concept. For collector scope, unresolved calls,
 parser failures and original-source retention, see
@@ -98,8 +98,8 @@ savings, live database behavior or real-provider speed.
 In conversation, describe the task once. Ordinary reading and editing use the
 needed files directly. Only when reproducible selected-context handoff, a durable
 Run or recovery actually needs a Capsule does the Lode Skill call
-`lode_context_prepare`, perform semantic repository inspection, author any
-task-required `EvidenceNeed[]`, and call `lode_context_preview` without asking
+`lode_context` (`prepare`), perform semantic repository inspection, author any
+task-required `EvidenceNeed[]`, and call `lode_context` (`preview`) without asking
 the user to operate those steps. Missing or stale optional World evidence does
 not block direct work, and justified budget expansion is automatic.
 The final preview includes one explanation card with included evidence by kind,

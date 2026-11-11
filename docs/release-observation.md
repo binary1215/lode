@@ -60,7 +60,7 @@ lode-agent release-status <project>
 
 ## MCP
 
-- `lode_release_observe`
-- `lode_release_status`
+- `lode_delivery` (`release_observe`)
+- `lode_delivery` (`release_status`)
 
-`lode_release_observe` requires `confirm_host_observation: true`. The confirmation prevents accidental model-authored ingestion; it is not deployment approval and does not add authority to the observed result.
+`lode_delivery` (`release_observe`) requires `confirm_host_observation: true`. The confirmation prevents accidental model-authored ingestion; it is not deployment approval and does not add authority to the observed result.

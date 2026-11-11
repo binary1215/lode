@@ -83,10 +83,10 @@ node scripts/lode.mjs world-docs-refresh-read <project> --receipt <post-refresh-
 
 읽기 전용 MCP는 다음을 노출합니다.
 
-- `lode_post_refresh_projection_status`;
-- `lode_post_refresh_projection_receipt`.
+- `lode_projection` (`post_refresh_projection_status`);
+- `lode_projection` (`post_refresh_projection_receipt`).
 
-MCP는 갱신 후 정책을 변경하거나, 갱신을 트리거하거나, 문서 변경 후보를 검토하거나, 결정을 적용하거나, Canon을 변경할 수 없습니다. 별도로 타입이 지정된 `lode_markdown_projection_build` 작업은 자동 갱신 후 정책 밖에서 명시적인 결정적 문서 빌드를 수행할 수 있습니다. 읽기 전용 문서 검토 MCP 도구는 상태와 불변 아티팩트를 검사합니다.
+MCP는 갱신 후 정책을 변경하거나, 갱신을 트리거하거나, 문서 변경 후보를 검토하거나, 결정을 적용하거나, Canon을 변경할 수 없습니다. 별도로 타입이 지정된 `lode_projection` (`markdown_projection_build`) 작업은 자동 갱신 후 정책 밖에서 명시적인 결정적 문서 빌드를 수행할 수 있습니다. 읽기 전용 문서 검토 MCP 도구는 상태와 불변 아티팩트를 검사합니다.
 
 ## 권한 및 선택적 인프라
 

@@ -151,8 +151,8 @@ node scripts/lode.mjs world-refresh-trigger-read <project> --delivery refresh-tr
 
 MCP는 검증 기능만 노출합니다.
 
-- `lode_refresh_trigger_status`;
-- `lode_refresh_trigger_delivery`.
+- `lode_projection` (`refresh_trigger_status`);
+- `lode_projection` (`refresh_trigger_delivery`).
 
 MCP는 감시자를 시작하거나, CI 이벤트를 수집하거나, 변경 권한을 획득하거나, 새로 고침을 시작할 수 없습니다.
 
