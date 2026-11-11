@@ -28,19 +28,23 @@ risk and persistence, not a launcher. For useful ordinary delegation:
 4. At completion, workers return changed, added, deleted and renamed code,
    affected references, decisions, original evidence, actual verification
    results (a test added is not a test passed) and unknowns.
-5. Lode checks the combined checkout after reconciliation and performs any
-   needed graph update for that integrated basis, reusing persistence-hook
-   results; see [after integrated changes](project-discovery.md#after-integrated-changes).
+5. Lode checks the combined checkout after reconciliation and performs or
+   verifies any needed graph update for that integrated basis, reusing
+   persistence-hook results; see
+   [after integrated changes](project-discovery.md#after-integrated-changes).
    Workers run no uncoordinated global refresh. An update failure is a scoped
-   evidence gap, not a new approval or barrier.
+   evidence gap, not a new approval, worker authorization or barrier to
+   independent work.
 
 **On failure:** keep completed contributions and user edits. Continue the
 unfinished part directly or sequentially only when it never started or left no
 effects; inspect unknown outcomes and overlapping effects before replacing
 anything, while independent work continues. A cancellation request does not
-establish exit. An active Run may use Host contributions under its own
-whole-result review contract; Host handles stay operational and results do not
-become decisions or direction.
+establish exit.
+
+An active Run may use Host contributions under its own whole-result review
+contract; Host handles stay operational and results do not become decisions or
+direction.
 
 Successful tests alone are not completion: when a result leaves a user
 requirement unchecked (for example, a required output format), Lode assesses it
@@ -49,8 +53,8 @@ summary leaves a question open.
 
 ## Preserved plan sources and next stages
 
-For substantial work, fix the goal, agreed conditions, reasons, alternatives and
-completion meaning before detailed production or inspection. An accepted review
+For substantial work, record the goal, agreed conditions, reasons, alternatives
+and completion meaning before detailed production or inspection. An accepted review
 is not by itself a preserved judgment context; reuse an actually preserved
 planning source or say that the plan is reconstructed from current direction and
 records.
@@ -61,20 +65,27 @@ records.
    - obtain a separate preservation fork; once its ready identity and plan basis
      are observed, the original may progress, and the preserved source stays
      idle (no work, receipts or probes).
-2. **Check readiness on the actual Host surface.** A visible plan message is not
-   a completed turn, and pending client IDs are not ready thread IDs. Read before
+2. **Check readiness on the actual Host surface.** Confirm that the source turn
+   actually completed (its reported turn or activity) and that the child has a
+   usable identity and plan basis; worktree setup needs its actual ready result,
+   not an invented mapping. A visible plan message is not a completed turn, and
+   pending client IDs are not ready thread IDs. Read before
    fork is not an atomic freeze; limit preservation claims to the inheritance
    actually observed. A ready child may already be running, so inspect unknown
-   effects before sending more work. An uncertain fork is not repeated.
+   effects before sending more work. An uncertain fork is inspected, not repeated
+   automatically.
 3. **Split roles.** Implementation gets owned files or effects; independent
    inspection gets the same criteria and the exact candidate, not the
    implementation conversation; integration receives findings, counterexamples,
-   exact results and uncertainty, and may inspect specific originals.
+   exact results and uncertainty, and may inspect specific originals. A sibling
+   fork shares the plan's assumptions, so its review checks the goal and
+   plausible counterexamples, not only conformance to the plan.
 4. **At each meaningful stage**, integrate completed results, new facts, changed
    assumptions, reasons, remaining dependencies and next actions, and evolve the
    next plan from them under the whole goal. Detailed review history is not
    promoted into the next plan automatically. A changed candidate needs review of
-   its affected claims.
+   its affected claims; an unchanged clarification can reuse the existing
+   inspection. Preserve a newly accepted plan source once its turn completes.
 
 When Host history is insufficient, a bounded check in an actual work child can
 show what context is available; echoing the expected answer back is not
@@ -108,10 +119,12 @@ absent.
 `lode_runtime` (`invocation_authorization`), `lode_bounded_worker` (`status`) or
 CLI `runtime-invocation-read --authorization <id>` can add a historical
 `preparedInput` view that verifies retained originals and compares the serialized
-input's size and digest. It is a read-only view: preparation does not prove
+input's size and digest. It is a read-only historical view, not current
+permission or recovery direction: preparation does not prove
 delivery or model use, missing originals and integrity failures stay distinct,
 and later cancellations stay in force. An optional view failure keeps the
-primary authorization read. Details: [runtime adapters](../../../docs/runtime-adapters.md).
+primary authorization read. Details:
+[runtime adapters](../../../docs/runtime-adapters.md).
 
 **Codex live state.** Where the app exposes `wait_threads`, and you have an actual
 ready `threadId` (from an authorized launch, fork or known target, or the trusted
@@ -119,16 +132,18 @@ ready `threadId` (from an authorized launch, fork or known target, or the truste
 answered as follows:
 
 1. Call `wait_threads` once with `timeoutMs: 0` for that target. Pass `hostId`
-   only if it was genuinely supplied. `clientThreadId`, collaboration IDs and
-   managed handles are not app thread IDs.
+   only if it was genuinely supplied, never inferred from a local path; no prior
+   status call is needed. `clientThreadId`, collaboration IDs and managed
+   handles are not app thread IDs without an actual mapping.
 2. Use the returned target and current turn. `timedOut: true` can accompany a
-   valid active poll; `afterCursor` tracks new information, and an older
-   completed result does not close a newer turn.
+   valid active poll and is not a target failure. `afterCursor` tracks new
+   information, not an execution identity, and an older completed result does
+   not close a newer turn or logical Lode work.
 3. If the snapshot answers the question, stop. Use a narrow `read_thread` only
    for a material missing result or failure detail.
 
-There is no automatic status/wait/read chain, self-poll, list-all or fallback,
-and Core does not persist these snapshots.
+There is no automatic status/wait/read chain, self-poll, list-all or socket/CLI
+fallback, and Core neither calls peer MCP tools nor persists these snapshots.
 
 **OpenCode.** The optional V1 entry uses the supplied Host client and the local
 Lode MCP alias. Busy, retry and idle are at-check; an absent status entry means
@@ -155,7 +170,8 @@ managed input.
 Reuse sufficient current context before searching again. For related work,
 inspect its exact records and responsibility: a shared title, file or topic is a
 hint, not ownership. Logical Session, work root and native conversation are
-different things, and activity is never ownership or completion. See
+different things; the caller's native Host target is not a global
+Session-to-chat directory, and activity is never ownership or completion. See
 [record discovery](project-discovery.md#existing-work-and-recorded-conclusions).
 
 **Messaging another conversation** needs a real Host target and direct human
@@ -196,18 +212,22 @@ worker count, duration and ordinary Host failure do not force it.
    context, source paths and proposal targets, calls `lode_bounded_worker`
    (`prepare`), then (`start`) with the returned task key. Preparation makes no
    model turn and does not prove account or model readiness. The user supplies
-   no modules, JSON, IDs or routine approval. `selected-only` excludes global
-   instructions; `host-global` only within the approved input scope.
+   no modules, JSON, IDs or routine approval. `selected-only` never silently
+   inherits global instructions (preparation reports
+   `unavailable_for_selected_scope` instead, with no automatic switch or retry);
+   select `host-global` only within the approved input scope.
 4. **Context mode.** Preparation defaults to fresh (one turn). `context_mode:
-   "native-prefix"` seeds a new durable controlled conversation and forks a
-   child (two turns); it does not inherit this conversation. Inspect
-   `executionPlan`, and claim no stronger native guarantees or cache savings.
+   "native-prefix"` seeds a new durable controlled conversation from the selected
+   context and forks a child (two turns); it does not inherit this
+   conversation. Use it only within the existing call, input and persistence
+   scope, inspect `executionPlan`, and claim no stronger native guarantees or
+   cache savings.
 
 **On failure:** a missing managed backend affects that operation only. Unknown
 effects, receipt and basis checks, user-edit protection and owned cleanup still
 apply. When integration or wave status returns `guidance`, Lode handles the
-scoped inspection or cleanup itself, without a user form, automatic retry or new
-direction.
+scoped inspection, reassessment or cleanup itself, without a user form,
+approval step, automatic retry or new direction.
 
 The adapter architecture (AgentRuntimeAdapter, PlatformAdapter,
 WorkspaceHostAdapter) and its deferred capabilities are described in
