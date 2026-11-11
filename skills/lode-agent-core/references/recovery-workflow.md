@@ -8,9 +8,9 @@ read native history or a handoff. Ordinary entry is in
 reference adds the procedures behind them.
 
 Throughout: a record, summary, transcript, graph, Capsule, ResultPacket or
-handoff is evidence, not current approval. Apply the current request and current
-common direction to it (an old checkpoint does not undo a later cancellation),
-and reconcile uncertain effects instead of replaying them.
+handoff is evidence, not current approval or direction. Apply the current
+request and current common direction to it (an old checkpoint does not undo a
+later cancellation), and reconcile uncertain effects instead of replaying them.
 
 ## Entry and recovery state
 
@@ -79,7 +79,8 @@ chosen and the Host exposes a trusted lifecycle event:
    reused, restating only current user direction, existing approved decisions
    and verified lineage, with no invented approval.
 2. The Host keeps the one-shot token and reports `succeeded`, `failed` or
-   `uncertain`; Core restores the checkpoint's direction before verify or continue.
+   `uncertain`; Core restores the checkpoint's direction before verify or
+   continue.
 
 A newer user turn supersedes a continuation, and an uncertain provider outcome
 is not replayed. Without a lifecycle Host, entry recovery stays automatic and
@@ -92,9 +93,9 @@ recovery-sensitive compaction.
 Optional tasks are work evidence. Read `workContext.todoContext` on entry for
 unresolved tasks, keep stable task IDs and exact selectors when recording
 progress, and read missing items with `todo_id`, `after_todo_id` or
-`scan_todos`. Unknown coverage is neither empty nor complete. A task grants no
-effect. Resolve competing branches with exact `resolves` references. Details:
-[Session restore](../../../docs/session-recovery.md).
+`scan_todos` with `after_evidence_id`. Unknown coverage is neither empty nor
+complete. A task grants no effect. Resolve competing branches with exact
+`resolves` references. Details: [Session restore](../../../docs/session-recovery.md).
 
 ## Native history
 
@@ -103,8 +104,8 @@ Details, supported versions and qualification limits are in
 
 1. Take the capture `provider` from the user's request or a verified Host route;
    read, restore and register may only reuse the verified companion link
-   provider, and an explicit provider must match it. IDs and executable names do
-   not identify a provider.
+   provider, and an explicit provider must match it. IDs and executable names
+   identify no provider.
 2. Resolve the user's native selection yourself, by exact explicit selection or
    a verified Host route rather than titles or recency, and pass the selected
    source project (capture) or target project (restore, register) as
