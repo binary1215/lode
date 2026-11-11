@@ -34,6 +34,7 @@ import {
 import { coreEntryGuidance } from "./lode-entry-guidance.mjs";
 import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
 import { fail } from "./core/errors.mjs";
+import { captureEntryBasis } from "./entry-basis-capture.mjs";
 
 export const PROJECT_BOOTSTRAP_PROTOCOL_VERSION = "0.6.0";
 
@@ -888,6 +889,8 @@ export async function inspectConversationProjectExperience({ root = ".", recover
 }
 
 function bootstrapResponse({ root, profile, before, installation, onboardingAction, inputDisposition, inspected, extra = {} }) {
+  // 4-D (b2): no-op unless the MCP dispatcher opened a capture for a verified caller.
+  captureEntryBasis(root);
   const experience = projectExperience(inspectProject(root), inspected);
   return {
     ...experience,

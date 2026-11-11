@@ -57,19 +57,24 @@ Run boundary approaches. Short Observe work and conversation entry need no
 checkpoint, and neither does direction the existing checkpoint still covers.
 
 1. Call read-only `lode_checkpoint_basis` (a diagnosis does not replace it).
-2. From that exact Project, Session, lineage, review and transition basis,
-   derive the bounded recovery direction afresh in the current provider Lode.
-   Do not resubmit old direction with only a new `expected_recovery_basis_id`:
-   Core verifies identity and concurrency, not whether the reasoning is fresh.
+   A caller the Host has verified that entered through this server
+   (`lode_conversation_enter` or `lode_project_initialize_or_resume`) already
+   has a basis held from that ready entry and can skip this read.
+2. From that exact Project, Session, lineage, review and transition basis, or
+   the entry context, derive the bounded recovery direction afresh in the
+   current provider Lode. Do not resubmit old direction with only a new
+   `expected_recovery_basis_id`: Core verifies identity and concurrency, not
+   whether the reasoning is fresh.
 3. Call `lode_checkpoint_sync`. When the Host has verified the caller, the
-   server holds the basis from step 1 (and from each `created` sync), so the
+   server holds the basis from entry, step 1 or each `created` sync, so the
    call may omit `expected_recovery_basis_id`; the CLI always passes it.
    - `created`, `reused`: done, silently. A later save after `created` can omit
      the id again.
    - `deferred`: recover the named exact Run or compaction transition first.
    - `conflict`: read a new basis and derive again. The held basis is dropped
      (also after `deferred`), so an omitted id is refused
-     (`RECOVERY_BASIS_NOT_HELD`) until that read.
+     (`RECOVERY_BASIS_NOT_HELD`) until that read. Your own direction update
+     or a Run or review change also makes the next id-less save conflict.
 
 Reviewed-Run integration has its own accepted-result integration operation;
 general sync does not carry it. The user never saves, confirms or fills this

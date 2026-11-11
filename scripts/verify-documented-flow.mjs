@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Runs the README first-request flow on two synthetic Git projects, once through
+// Runs the README first-request flow on synthetic Git projects, once through
 // the CLI and once through MCP, and checks that both surfaces return the same
 // status, reasonCode and nextAction.id at every step, that the two conversation
 // entry states listed below hold, and that every value seen is documented
@@ -9,7 +9,9 @@
 //
 // Flow: conversation entry before init -> init (core) -> conversation entry ->
 // graph query -> checkpoint basis/sync -> compact prepare/verify/continue ->
-// session restore. Nothing outside the two temporary projects is written.
+// session restore. A third synthetic project runs the verified MCP save (Codex
+// thread route): init, entry, then one id-less checkpoint sync. Nothing outside
+// the temporary projects and one temporary Host-state directory is written.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -136,6 +138,43 @@ async function runCli(root, workDirectory) {
   return results;
 }
 
+// The MCP save path of a caller the Host verified (Codex thread route): initialize,
+// enter, then one lode_checkpoint_sync without expected_recovery_basis_id. The CLI
+// and unverified MCP paths above keep the two-call save (basis, then sync).
+async function runVerifiedMcpSave(root) {
+  // Host-local state lives outside the Project, as for an installed plugin.
+  const hostRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lode-documented-flow-host-"));
+  const { dispatch } = await import("./mcp-server.mjs");
+  const { createNativeSessionHostBridge } = await import("./lib/session-native-host.mjs");
+  const bridge = createNativeSessionHostBridge({
+    runtime: "codex",
+    environment: { ...process.env, HEAD_AGENT_OPERATIONAL_STATE_ROOT: hostRoot },
+  });
+  const call = async (name, args) => {
+    const response = await dispatch(
+      { jsonrpc: "2.0", id: name, method: "tools/call", params: { _meta: { threadId: "documented-flow" }, name, arguments: { project_root: root, ...args } } },
+      { nativeSessionBridge: bridge },
+    );
+    if (response.error) throw Object.assign(new Error(`verified ${name}: ${response.error.message}`), { code: response.error.data?.reasonCode });
+    return response.result.structuredContent;
+  };
+  try {
+    await call("lode_project_initialize_or_resume", { profile: "core" });
+    await call("lode_conversation_enter", {});
+    const saved = await call("lode_checkpoint_sync", {
+      purpose: recovery.purpose,
+      approved_decisions: recovery.approvedDecisions,
+      current_position: recovery.currentPosition,
+      next_expected_result: recovery.nextExpectedResult,
+    });
+    assert.equal(saved.outcome, "created", `a verified caller saves in one call after entry: ${JSON.stringify(saved).slice(0, 400)}`);
+    return { calls: 3, saveCalls: 1, outcome: saved.outcome };
+  } finally {
+    bridge.dispose();
+    fs.rmSync(hostRoot, { recursive: true, force: true });
+  }
+}
+
 async function runMcp(root) {
   const { dispatch } = await import("./mcp-server.mjs");
   const results = {};
@@ -166,6 +205,7 @@ function documentationText() {
 export async function verifyDocumentedFlow() {
   const cliRoot = syntheticProject("cli");
   const mcpRoot = syntheticProject("mcp");
+  const verifiedRoot = syntheticProject("verified");
   const workDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "lode-documented-flow-input-"));
   try {
     const cli = await runCli(cliRoot, workDirectory);
@@ -187,9 +227,15 @@ export async function verifyDocumentedFlow() {
       [],
       `status/reasonCode/nextAction values missing from README, docs/ and skills/: ${JSON.stringify(steps.map(({ id, cli: values }) => ({ id, ...values })))}`,
     );
-    return { status: "documented_flow_verified", surfaces: ["cli", "mcp"], steps: steps.map(({ id, cli: values }) => ({ id, ...values })) };
+    const verifiedSave = await runVerifiedMcpSave(verifiedRoot);
+    return {
+      status: "documented_flow_verified",
+      surfaces: ["cli", "mcp"],
+      steps: steps.map(({ id, cli: values }) => ({ id, ...values })),
+      verifiedMcpSave: verifiedSave,
+    };
   } finally {
-    for (const directory of [cliRoot, mcpRoot, workDirectory]) fs.rmSync(directory, { recursive: true, force: true });
+    for (const directory of [cliRoot, mcpRoot, verifiedRoot, workDirectory]) fs.rmSync(directory, { recursive: true, force: true });
   }
 }
 

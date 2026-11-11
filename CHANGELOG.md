@@ -11,6 +11,24 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.114 — publication tracked separately
+
+- On MCP, a caller the Host has verified that enters through
+  `lode_conversation_enter` (ready) or `lode_project_initialize_or_resume`
+  saves recovery direction with one `lode_checkpoint_sync` and no
+  `expected_recovery_basis_id`: the first save after entry no longer needs
+  `lode_checkpoint_basis`. The server holds the basis it read for that entry,
+  in memory only and never in the result.
+  - A `conflict` or `deferred` outcome drops it. The caller's own direction
+    update, or a Run or review change, makes the next id-less save conflict;
+    read `lode_checkpoint_basis` (or enter again) and derive afresh.
+- The held recovery basis no longer expires after one hour; only the size
+  bound (1024 entries) remains. A held basis that is no longer current
+  conflicts on use.
+- Only the native bridge can supply a held basis, one request at a time. A
+  `recoveryBasisMemory` option that an embedder passes to `dispatch()` is
+  ignored with or without a bridge.
+
 ## 0.3.0-beta.113 — publication tracked separately
 
 - On MCP, a caller the Host has verified can save recovery direction with one
