@@ -104,8 +104,7 @@ complete. A task grants no effect. Resolve competing branches with exact
 The operation is `lode_project_native_history` (CLI `project-native-history`)
 with `action` capture, read, restore or register. It is not on the default tool
 list: inspect it with `lode_tools_discover` and call its returned `invokeWith`
-route. Details, supported versions and
-qualification limits are in
+route. Details, supported versions and qualification limits are in
 [Project portability](../../../docs/project-portability.md).
 
 1. Take the capture `provider` from the user's request or a verified Host route;
@@ -116,8 +115,8 @@ qualification limits are in
    a verified Host route rather than titles or recency, and pass the selected
    source project (capture) or target project (restore, register) as
    `runtime_root` for Claude and OpenCode; read needs only the bundle. Codex
-   differs: it takes `runtime_root` (the target, i.e. current, workspace) only for
-   register and refuses it for capture and restore
+   differs: it takes `runtime_root` (the target, i.e. current, workspace) only
+   for register and refuses it for capture and restore
    (`PROJECT_NATIVE_RUNTIME_ROOT_NOT_USED`).
 3. Leave the user's default profile and its database untouched. OpenCode writes
    only into an existing, explicitly selected isolated profile; Lode does not
