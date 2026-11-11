@@ -18,6 +18,8 @@ test('repository rename preserves installed carrier identity and pins only exact
   assert.equal((workflow.match(/--force-with-lease="refs\/heads\/\$\{MARKETPLACE_BRANCH\}:\$\{EXPECTED_SHA\}"/g) ?? []).length, 2);
   assert(!workflow.includes('--force origin'));
   // This is a workflow contract check, not an actual installation/update test.
+  // Wording pinned: these are the published marketplace refs and plugin ids users
+  // type to install or update; they must match the marketplace branches.
   for (const file of ['../README.md', '../README.ko.md']) {
     const readme = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
     assert(readme.includes('binary1215/lode --ref lode-codex-marketplace'));

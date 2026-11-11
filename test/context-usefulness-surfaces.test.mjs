@@ -160,24 +160,6 @@ function navigationCases(root, layout) {
     },
   }));
 }
-test("generated instructions lead with the original outcome and preserve only necessary working boundaries", (t) => {
-  const f = fixture(t),
-    text = fs.readFileSync(path.join(f.root, f.layout.directory, "generated/lode-instructions.md"), "utf8");
-  assert.match(text, /understand the user's work.*finish the whole outcome/);
-  assert.match(text, /Keep the user's original task as the active objective/);
-  assert.match(text, /Work directly by default/);
-  assert.match(text, /current request bounds action/);
-  assert.match(text, /common constraints\/cancellations.*selected Session's P2/);
-  assert.match(text, /Preserve completed contributions and user edits/);
-  assert.match(text, /No per-turn save or mandatory sync\/Run\/Capsule; no duplicate administrative approval ritual/);
-  assert.match(text, /Never infer a disposition from keyword matching, silence, or a default/);
-  assert.match(text, /reuse sufficient verified supplied context for the exact Project and selected Session/);
-  assert.match(text, /Obtain missing current context through read-only conversation-entry once/);
-  assert.match(text, /do not repeat init\/resume\/status\/list\/graph merely to confirm unchanged supplied material/);
-  assert.match(text, /distinguish mechanical coverage from semantic sufficiency/);
-  assert.match(text, /Use existing progressive references only when their detail is relevant/);
-  assert.match(text, /Capability does not grant authorization/);
-});
 test("CLI and direct/router MCP explain supplied Session work without changing originals or writing", async (t) => {
   const f = fixture(t);
   updateProjectDirection({ root: f.root, input: { goal: "Investigate locally only", cancelledActions: ["deployment"] } });

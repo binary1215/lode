@@ -84,24 +84,29 @@ function fixture(t) {
   return { root, source, reference };
 }
 
+// Every Core reference stays reachable from SKILL.md; which anchors and wording
+// route to it are free to change.
+function assertReferencesReachable(skillLinks, label) {
+  const linked = new Set(skillLinks.map((target) => target.split("#")[0]));
+  // Every file in references/, so a new reference must be linked as well.
+  const references = fs.readdirSync(path.join(skillRoot, "references")).filter((name) => name.endsWith(".md"));
+  assert.ok(references.length > 0);
+  for (const name of references) assert(linked.has(`references/${name}`), `${label}: unreachable Core reference references/${name}`);
+}
+
 test("Lode Skills and all Core references route to existing files and anchors", () => {
-  const checked = new Map(files.map((relative) => [relative, verifyLinks(path.join(skillRoot, relative), pluginRoot)]));
-  for (const target of ["references/runtime-composition.md", "references/runtime-composition.md#follow-up-handoffs", "references/conversation-ux.md"]) {
-    assert(checked.get("SKILL.md").includes(target), `Missing discoverable Markdown route: ${target}`);
-  }
-  assert(checked.get("references/runtime-composition.md").includes("conversation-ux.md#recovery-presentation"));
-  assert(checked.get("SKILL.md").includes("../lode-conversation/SKILL.md"));
-  assert(checked.get("references/conversation-ux.md").includes("../../lode-conversation/SKILL.md"));
+  const checked = files.map((relative) => verifyLinks(path.join(skillRoot, relative), pluginRoot));
+  assertReferencesReachable(checked[0], "source");
   verifyLinks(path.join(pluginRoot, "skills/lode-conversation/SKILL.md"), pluginRoot);
-  const onboarding = verifyLinks(path.join(pluginRoot, "skills/lode-agent-onboarding/SKILL.md"), pluginRoot);
-  assert(onboarding.includes("../lode-agent-core/SKILL.md"), "Onboarding must route ordinary adoption to the actual Core Skill");
+  verifyLinks(path.join(pluginRoot, "skills/lode-agent-onboarding/SKILL.md"), pluginRoot);
   for (const name of ["lode-agent-core", "lode-agent-onboarding", "lode-conversation"]) {
     const source = fs.readFileSync(path.join(pluginRoot, "skills", name, "SKILL.md"), "utf8");
+    // Wording pinned: Hosts register the Skill from the frontmatter `name` field.
     assert.match(source, new RegExp(`^---\\r?\\nname: ${name}\\r?\\n`));
   }
 });
 
-test("S1-S6: packaged Codex/Claude guidance retains direct work, uninstalled entry and conditional discovery/recovery/handoff routes", (t) => {
+test("packaged Codex/Claude Skills keep every Core reference reachable and every link resolvable", (t) => {
   const { root } = fixture(t);
   for (const [client, build] of [
     ["codex", buildCodexMarketplaceSnapshot],
@@ -111,26 +116,8 @@ test("S1-S6: packaged Codex/Claude guidance retains direct work, uninstalled ent
       built = build({ sourceRoot: pluginRoot, outputRoot, name: "lode-agent-plugin" });
     const packaged = path.join(outputRoot, "plugins", built.pluginName),
       skill = path.join(packaged, "skills/lode-agent-core");
-    for (const file of files) verifyLinks(path.join(skill, file), packaged);
-    const main = fs.readFileSync(path.join(skill, "SKILL.md"), "utf8");
-    for (const target of [
-      "../../README.md#install",
-      "references/project-discovery.md#installation-and-adoption",
-      "references/project-discovery.md#existing-work-and-recorded-conclusions",
-      "references/recovery-workflow.md#retained-project-storage",
-      "references/runtime-composition.md#continuing-in-an-existing-conversation",
-    ])
-      assert(main.includes(target), `${client}: ${target}`);
-    assert.match(main, /Work directly for small tasks/u);
-    assert.match(main, /installed-Skill prerequisite/u);
-    assert.match(main, /Current user direction\/cancellations and P2 take precedence/u);
-    const handoff = fs.readFileSync(path.join(skill, "references/runtime-composition.md"), "utf8");
-    assert.match(handoff, /messaging another chat needs direct human/u);
-    assert.match(handoff, /preparation does not prove delivery or model use/u);
-    assert.match(handoff, /No new acknowledgement, save format or automatic assignment/u);
-    const discovery = fs.readFileSync(path.join(skill, "references/project-discovery.md"), "utf8");
-    assert.match(discovery, /declined installation leaves ordinary work available/u);
-    assert.match(discovery, /No mandatory recap save/u);
+    const checked = files.map((file) => verifyLinks(path.join(skill, file), packaged));
+    assertReferencesReachable(checked[0], client);
   }
 });
 

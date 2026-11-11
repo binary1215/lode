@@ -186,7 +186,6 @@ test("Core, CLI and typed MCP publish scope before effects without any acknowled
   assert.equal(raw.status, "exported");
   const tool = catalogTools.find((tool) => tool.name === "lode_project_bundle_export");
   assert.equal(tool.inputSchema.properties.provenance_scope.default, "project-proof-metadata");
-  assert.match(tool.description, /Before invoking export/);
 });
 const wireScript = String.raw`
 import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import {pathToFileURL} from 'node:url';

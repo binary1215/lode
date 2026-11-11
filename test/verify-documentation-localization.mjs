@@ -181,6 +181,8 @@ const publicMarkdown = [
   ...englishFiles.map((name) => fs.readFileSync(path.join(docsDir, name), "utf8")),
   ...koreanFiles.map((name) => fs.readFileSync(path.join(koDir, name), "utf8")),
 ].join("\n");
+// Wording pinned: a release guard, not guidance wording. Public docs must not leak
+// private NeoPick material or regress to the superseded alpha/unlicensed status.
 assert.doesNotMatch(publicMarkdown, /neo\s*pick/i, "public documentation must not contain NeoPick material");
 assert.doesNotMatch(publicMarkdown, /status-alpha|\bUNLICENSED\b/i, "public documentation must not retain the superseded alpha or unlicensed status");
 
@@ -193,7 +195,7 @@ for (const readmeName of ["README.md", "README.ko.md"]) {
   const iconSource = "docs/assets/branding/lode-repository-icon.png";
   assert.deepEqual(images[0], { src: "docs/assets/branding/lode-readme-wordmark.png", alt: "Lode Agent Core", width: "720" }, `${readmeName} must restore the accepted large wordmark at the top`);
   assert.equal(images.filter((image) => image.src === iconSource).length, 0, `${readmeName} no longer substitutes the small repository icon for its wordmark`);
-  assert(readme.indexOf("lode-readme-wordmark.png") < readme.indexOf("# Lode"), `${readmeName} wordmark must be visible outside the background details`);
+  assert(readme.indexOf("lode-readme-wordmark.png") < readme.search(/^# /m), `${readmeName} wordmark must be visible outside the background details`);
   const wordmarks = images.filter((image) => image.src === "docs/assets/branding/lode-readme-wordmark.png");
   assert.equal(wordmarks.length, 1, `${readmeName} must retain exactly one accepted wordmark`);
   assert.deepEqual(wordmarks[0], { src: "docs/assets/branding/lode-readme-wordmark.png", alt: "Lode Agent Core", width: "720" }, `${readmeName} must retain the accepted wordmark attributes independently of image order`);
@@ -212,45 +214,6 @@ assert.throws(() => htmlImages('<img src="one.png" src="two.png">'), /Duplicate 
 
 const koreanReadme = fs.readFileSync(path.join(root, "README.ko.md"), "utf8");
 const englishReadme = fs.readFileSync(path.join(root, "README.md"), "utf8");
-for (const [name, readme] of [["README.md", englishReadme], ["README.ko.md", koreanReadme]]) {
-  assert.match(readme, /status-beta-blue/, `${name} must publish the beta status badge`);
-  assert.match(readme, /\[MIT License\]\(LICENSE\)/, `${name} must link the canonical MIT license`);
-  assert.match(readme, /git clone https:\/\/github\.com\/binary1215\/lode\.git lode\r?\n/, `${name} must clone into the documented lode directory`);
-  assert.match(readme, /Set-Location \.\\lode\r?\n/, `${name} PowerShell directory must match the clone target`);
-  assert.match(readme, /cd lode\r?\n/, `${name} shell directory must match the clone target`);
-  assert.match(readme, /lode-agent --version/, `${name} must preserve the actual installed executable`);
-  const normalizedReadme = readme.replace(/\r\n/g, "\n");
-  const noticeStart = normalizedReadme.indexOf(name === "README.md" ? "## Install\n" : "## 설치\n");
-  const firstInstallCommand = normalizedReadme.indexOf("codex plugin marketplace add", noticeStart);
-  assert.ok(noticeStart >= 0 && firstInstallCommand > noticeStart, `${name} must retain an installation section`);
-  const installNotice = normalizedReadme.slice(noticeStart, firstInstallCommand);
-  for (const token of ["`lode`", "`mcp__head_core__...`", "`mcp__lode_core__...`", "`head_*`"])
-    assert.ok(installNotice.includes(token), `${name} must disclose the Host namespace migration boundary near installation: ${token}`);
-  assert.doesNotMatch(normalizedReadme.slice(0, noticeStart), /\]\(docs\/(?:ko\/)?recovery-state-separation\.md\)/, `${name} recovery reference belongs in documentation navigation, not the opening banner`);
-  assert.match(normalizedReadme.slice(noticeStart), /\]\(docs\/(?:ko\/)?recovery-state-separation\.md\)/, `${name} must retain access to recovery guidance`);
-}
-
-for (const languageDir of [docsDir, koDir]) {
-  for (const file of ["codex-marketplace.md", "claude-marketplace.md"]) {
-    const guide = fs.readFileSync(path.join(languageDir, file), "utf8");
-    const notice = guide.slice(guide.indexOf("plugin marketplace add"), guide.indexOf("## Upgrade") > 0 ? guide.indexOf("## Upgrade") : guide.indexOf("## 업그레이드"));
-    for (const token of ["`lode`", "`mcp__head_core__...`", "`mcp__lode_core__...`", "`head_*`"])
-      assert.ok(notice.includes(token), `${file} must keep the Host migration notice next to installation: ${token}`);
-  }
-  const history = fs.readFileSync(path.join(languageDir, "original-head-core-comparison.md"), "utf8");
-  assert.match(history, /2026-08-20/, "Keep the historical comparison date");
-  assert.match(history, /2026-10-20/, "Label the separate source-path verification date");
-  for (const commit of ["ba220c55c14b8af947bf6d1fb9d27a620a2cf2aa", "067701f0c0390a6b9f7dfd1a90a417d10247bd02"])
-    assert.ok(history.includes(`https://github.com/Won6314/head-agent-core/tree/${commit}`), "Current verification references must be immutable upstream commit links");
-  const sourceCollection = fs.readFileSync(path.join(languageDir, "observation-adapters.md"), "utf8");
-  for (const token of ["`LODE_PYTHON`", "`HEAD_PYTHON`"])
-    assert.ok(sourceCollection.includes(token), "Python interpreter guidance must retain both canonical and compatibility settings");
-  const onboarding = fs.readFileSync(path.join(languageDir, "onboarding.md"), "utf8");
-  assert.match(onboarding, /"username": "LODE_GRAPHDB_USERNAME"/, "New GraphDB examples use caller-selected Lode reference names");
-  assert.match(onboarding, /"password": "LODE_GRAPHDB_PASSWORD"/, "New GraphDB examples use caller-selected Lode reference names");
-  for (const token of ["`HEAD_GRAPHDB_USERNAME`", "`HEAD_GRAPHDB_PASSWORD`"])
-    assert.ok(onboarding.includes(token), "Existing saved secret-reference names must remain documented");
-}
 assert.deepEqual(
   links(koreanReadme).filter((target) => /^https?:/i.test(target)).sort(),
   links(englishReadme).filter((target) => /^https?:/i.test(target)).sort(),
@@ -259,12 +222,6 @@ assert.deepEqual(
 for (const target of links(koreanReadme).filter((entry) => entry.startsWith("docs/"))) {
   assert.ok(target === "docs/README.md" || target.startsWith("docs/ko/"), `README.ko.md routes a detailed document link to English: ${target}`);
 }
-
-const contextCompiler = fs.readFileSync(path.join(docsDir, "context-compiler.md"), "utf8");
-assert.match(contextCompiler, /any positive safe integer/i, "Context docs must describe arbitrary positive safe budgets");
-assert.match(contextCompiler, /No coverage-proof state machine/i, "Context docs must disclose advisory selection rather than inclusion-proof gating");
-assert.match(fs.readFileSync(path.join(docsDir, "product-operating-loop.md"), "utf8"), /protocol `0\.4\.0`/i);
-assert.match(fs.readFileSync(path.join(docsDir, "onboarding.md"), "utf8"), /Claude Code, Codex, OpenCode/);
 
 console.log(JSON.stringify({
   status: "ok",

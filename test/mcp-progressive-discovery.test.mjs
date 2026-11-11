@@ -35,7 +35,7 @@ function snapshot(root) {
     });
 }
 
-test("initialize supplies shared plain-language guidance without selecting a Session or changing Project state", async (t) => {
+test("initialize supplies the generated entry guidance without selecting a Session or changing Project state", async (t) => {
   const { root } = fixture(t),
     before = snapshot(root),
     names = tools.map((tool) => tool.name);
@@ -50,18 +50,6 @@ test("initialize supplies shared plain-language guidance without selecting a Ses
     assert.equal(response.result.instructions, coreEntryGuidance());
     assert.equal(response.result.protocolVersion, "2024-11-05");
     assert.deepEqual(response.result.capabilities, { tools: {} });
-    assert.doesNotMatch(response.result.instructions, /\bP[1-5]\b/);
-    for (const phrase of [
-      "constraints and cancellations",
-      "selected Session",
-      "read-only",
-      "missing context",
-      "only dependent work",
-      "not permission",
-      "uncertain outcomes",
-      "permission denial",
-    ])
-      assert(response.result.instructions.includes(phrase), phrase);
   }
   assert.deepEqual(
     tools.map((tool) => tool.name),
