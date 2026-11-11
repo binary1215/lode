@@ -67,6 +67,13 @@ async function toolResponse(name, args) {
   return directToolResponse(discovered.invokeWith, { name, arguments: args });
 }
 
+// The form each discovered operation was actually called in: the grouped tool
+// and its action, or the operation itself.
+function calledForm(name) {
+  const discovered = discoveredTools.get(name);
+  return discovered?.action ? `${discovered.name} (action: ${discovered.action})` : name;
+}
+
 async function tool(name, args) {
   return (await toolResponse(name, args)).structuredContent;
 }
@@ -340,8 +347,8 @@ try {
         worldGraphContextDocumentsReady: true,
         optionalGraphDbConversationOperationsDiscoverable: true,
         defaultToolCount: defaultToolNames.size,
-        advancedToolsDiscovered: [...discoveredTools.keys()].sort(),
-        advancedToolsRouted: [...routedToolNames].sort(),
+        advancedToolsDiscovered: [...discoveredTools.keys()].map(calledForm).sort(),
+        advancedToolsRouted: [...routedToolNames].map(calledForm).sort(),
         discoveryGrantsAuthorization: false,
         unconfirmedGraphDbActivationRejected: true,
         graphDbCredentialPreflightNetworkRequests: 0,
