@@ -1,185 +1,176 @@
 # Project discovery and Session routing
 
-For new information use `lode_project_graph` first, or reuse sufficient same-basis
-results. Read bounded nearby relations, original state, integrity, freshness and
-coverage. Use original sources when needed; no whole-World/Product/Run/DB gate.
-Historical approval remains evidence and effects recheck current authority.
+Read this when you install or adopt Lode, look for existing work or recorded
+conclusions, find a related conversation, or update evidence after integrated
+changes. Exact query, index, Session and direction APIs, with counterexamples,
+are in [graph discovery](../../../docs/graph-discovery.md).
+
+For new information, call `lode_project_graph` first or reuse a sufficient
+same-basis result; read bounded nearby relations, original state, integrity,
+freshness and coverage, and use original sources when needed. World, Product,
+Runs and databases are not prerequisites. Historical approval is evidence, and
+an effect rechecks current authority.
 
 ## Installation and adoption
 
-For an explicit authorized install/update, use the chosen client's official path
-in [Install](../../../README.md#install). Perform available permitted actions and
-check the existing installation inventory or returned result, rather than merely
-returning commands you can execute. Reuse valid installations and the user's
-runtime/link/preserve choice. Reuse an initialized Project's recorded runtime set;
-choose a client subset only for a new Project. Login, Host approval, unavailable
-actions or a user-controlled restart may need human action. Do not restart the
-app, rewrite cache/config, weaken trust, install other clients or infer permission
-for model calls. A declined installation leaves ordinary work available.
+1. For an explicit, authorized install or update, follow the chosen client's
+   official path in [Install](../../../README.md#install). Perform the permitted
+   actions and check the installation inventory or returned result, rather
+   than only returning commands.
+2. Reuse valid installations and the user's runtime, link and preserve choices.
+   An initialized Project keeps its recorded runtime set; choose a client
+   subset only for a new Project.
+3. Login, Host approval, an unavailable action or a user-controlled restart may
+   need the user. Leave app restarts, cache edits, wholesale config rewrites,
+   trust settings, other clients and model-call permission to the user.
 
-Installed files, Project initialization, optional instruction linking and actual
-Host loading/use are separate observations. A CLI version/generated file does
-not prove loading. Check an already available tool when useful; unknown loading
-does not block independent work or require another setup/doctor ritual. Users
-without this Skill can follow the README directly.
+Installed files, Project initialization, instruction linking and actual Host
+loading are separate observations; a CLI version or generated file does not
+prove loading. Check an already available tool when useful. Unknown loading
+blocks no independent work, and a declined installation leaves ordinary work
+available. Users without this Skill can follow the README directly.
 
-For selected OpenCode projects, init/resume/status return `opencodeConnection`
-with separate local instructions and MCP observations plus the next useful
-action. Reuse configured entries, sufficient AGENTS links and legacy aliases;
-never add duplicates just because the Project records a manual integration.
-Within an already authorized setup request, inspect the exact current file and
-apply only the missing diff, preserving model/permissions/other servers/order.
-Resolve a material disabled/conflicting-entry choice only when needed; do not
-repeat existing consent or add a setup gate. JSONC, concurrent edits, unresolved
-Host variables and uninspectable components stay unknown. The observer never
-merges or repairs user config; local configured state is not actual Host loading.
+**OpenCode.** For selected OpenCode projects, init, resume and status return
+`opencodeConnection`, with separate local-instruction and MCP observations and
+the next useful action.
+
+1. Reuse configured entries, sufficient AGENTS links and legacy aliases; a
+   manual integration record is no reason to add a duplicate.
+2. Within an authorized setup request, inspect the exact current file and apply
+   only the missing diff, preserving model, permissions, other servers and
+   order.
+3. Ask about a disabled or conflicting entry only when setup needs it and the
+   choice is material; existing consent is reused, and there is no setup gate.
+
+JSONC, concurrent edits, unresolved Host variables and uninspectable components
+stay unknown. The observer never merges or repairs user config, and configured
+state is not actual Host loading.
 
 ## Existing work and recorded conclusions
 
-Reuse sufficient supplied context. When missing, `lode_session_list` reads a
-bounded page of stored Session states. Its existing `session_id` previews one
-exact Session's Work and Todo without selecting it, even with a lost/unselected
-Host binding. CLI: `session-list <project> --session <id>`. Use `max_sessions`
-(CLI `--max-sessions`, default 16, maximum 64) and returned `nextAfterSessionId`
-as `after_session_id` (CLI `--after-session`) only for useful remaining pages.
-The cursor identifies an entry: `default`, a Session ID, or `entry:<name>` for an
-invalid directory name. It is not a route, and an actual directory named
-`default` has the distinct key `entry:default`.
-Concurrent discovery is non-atomic: a missing cursor requires a fresh page.
+**Find Sessions.** Reuse sufficient supplied context. Otherwise:
 
-The list reads metadata only; a preview reads at most eight recent bodies plus
-the existing independently selected Todo projection. Honor its partial/conflict/
-unknown coverage, and expand needed originals using `lode_session` (`work_read`).
-Known canonical Session work, execution-lineage and historical direction paths
-can use the existing graph `paths` argument before global inventory; retain
-returned exact paths for detail. Existing lineage reads still inspect selected
-Session/managed dependencies; retained artifacts are not current permission.
-Historical direction currentness stays unknown, and the current direction tool
-does not select an old revision. This narrower
-scope leaves unrelated membership/incoming relations unknown. If broader known
-Session history is useful, `scan_evidence: true` starts its first lexical page
-without a seed ID; follow only the returned `enumeration.next` arguments for a
-useful next page. Neither an exhausted page nor unseen insertions prove complete
-history. General Project/layer inventory continuation is still unavailable.
-Each inspected scan original has a complete body or an exact bounded selector;
-the returned next frontier preserves access to the remaining undisclosed IDs.
-No body or failed metadata outside the page is assumed absent or complete.
-Per-Session errors preserve healthy rows. An unreadable shared directory is
-unavailable, not an empty complete inventory; an invalid common Project identity
-cannot establish ownership. Reads never repair, bind or initialize anything.
+1. Call `lode_session_list` for a bounded page of stored Session states (CLI
+   `session-list <project>`). Page with `max_sessions` (CLI `--max-sessions`,
+   default 16, maximum 64) and the returned `nextAfterSessionId` as
+   `after_session_id` (CLI `--after-session`), only when more pages are useful.
+   The cursor names an entry, not a route; a missing cursor after concurrent
+   changes needs a fresh page.
+2. Pass `session_id` (CLI `--session <id>`) to the same list to preview one
+   exact Session's work and Todo without selecting it, even with a lost or
+   unselected Host binding. A preview reads at most eight recent bodies; honor
+   its partial, conflict or unknown coverage and expand needed originals with
+   `lode_session` (`work_read`).
+3. For known canonical Session work, execution-lineage or historical-direction
+   paths, use the graph `paths` argument before a global inventory; a `paths`
+   read leaves unrelated membership and incoming relations unknown. For broader
+   history in a known Session, call `lode_session` (`work_read`) with
+   `scan_evidence: true` (CLI `session-work-read --scan-evidence`) and follow
+   only the returned `enumeration.next` arguments. An exhausted page does not
+   prove complete history.
 
-Show the selected record's conclusion or recent recorded results alongside exact
-IDs/digests, judgments, pending work, uncertainty and current cancellation. Default
-ordering, a declared work root, ended observation, empty pending or passing tests
-does not designate a whole-work representative result or prove completion. Keep
-conflicting branches and same-title work with different owners separate. Expand
-exact linked ResultPackets/ReviewDecisions only for their verified scope. Label
-model synthesis as derived and cite its originals. No mandatory recap save is
-needed. For actual conversations see
+Use request-local `session_id` or `--session` without replacing the default
+Session, and apply current common constraints and cancellations separately when
+restoring checkpoint fields.
+
+Per-Session errors keep healthy rows; an unreadable shared directory is
+unavailable, not empty. Reads never repair, bind or initialize anything, and
+retained artifacts are not current permission.
+
+**Present what you found.** Show the selected record's conclusion or recent
+results with exact IDs or digests, judgments, pending work, uncertainty and
+current cancellation. Default ordering, a declared work root, an ended
+observation, empty pending work or passing tests do not prove completion or make
+a record the whole work's result. Keep conflicting branches and same-title work
+with different owners separate, expand linked ResultPackets or ReviewDecisions
+only for their verified scope, and label model synthesis as derived with its
+originals cited. To continue in an existing conversation, see
 [continuing work](runtime-composition.md#continuing-in-an-existing-conversation).
 
-When finding a conversation matters, reuse actual bounded Host candidates already
-available, or use a relevant bounded listing only if that Host exposes one.
-Pass useful candidates to the existing `lode_session_list` as optional
-`conversation_candidates`, alongside `session_id` when previewing exact work.
-Lode supplies each actual `runtime`, `native_session_id`, optional `agent_id` and
-explicit `environment_scope: "current"`; users do not fill out selectors.
-CLI automation can supply the same array with `--conversation-candidates <file>`.
-No Host list means ordinary work continues from useful existing records.
+**Find a conversation.** When it matters, reuse bounded Host candidates already
+available, or a bounded listing the Host exposes, and pass them to
+`lode_session_list` as `conversation_candidates` (CLI `--conversation-candidates
+<file>`). Lode supplies each `runtime`, `native_session_id`, optional `agent_id`
+and `environment_scope: "current"`; the user fills in no selectors. The result
+checks at most 16 selectors in the current namespace; preserve its mapping
+revision and digest, read time, row failures and omitted counts. An absent
+mapping never selects the default; other or unverified namespaces are
+unsupported, with no local fallback. Stored connection is not work-root
+participation, ownership, live activity or contact readiness. Candidates change
+no caller, route, environment or selection and authorize no message or
+assignment. Live peers and their send addresses come from
+`lode_conversation_list`; sending uses `lode_conversation_send`. With no Host
+list, continue from existing records.
 
-The result checks at most 16 selectors in the current operational namespace.
-Preserve mapping revision/digest, read time, per-row failures and omitted counts.
-An absent mapping never selects the default. Other or unverified Host namespaces
-are unsupported, with no local fallback. Stored Session connection is distinct
-from participation in a particular work root, current ownership, live activity
-and contact readiness; those remain unknown without separate actual evidence.
-Candidates never replace the caller, route, environment or selection and cannot
-authorize a message or assignment. This is an optional lookup, not a required
-list/status/read pipeline or a global conversation directory. Live same-project
-peers, their send addresses and current reachability come from
-`lode_conversation_list`; sending uses `lode_conversation_send`.
+**Read saved work.** Search ranks lexical evidence; it does not judge relevance
+or sufficiency. Saved reasons, alternatives, observed and pending work and
+unknowns are graph evidence:
 
-Search matches bounded display/domain values and ranks lexical evidence; it
-does not infer semantic relevance or sufficient context. Lode can use exact
-names, paths or anchors without asking the user for a query form. Shared direction
-excerpts retain constraints, decisions, cancellations, revision and freshness.
-Omission disclosure leads to the original direction read, not a new gate.
+1. Use fitting `workContent` directly.
+2. For a large multi-original result, check `workContentCoverage.partial` and
+   the ranges in `workContentExcerpts`, and expand only useful missing content
+   with its `originalExpansion`, keeping the owner and comparing the expanded ID
+   and digest.
 
-Existing saved work reasons, alternatives, observed work, pending work and
-unknowns are also graph evidence. Use fitting `workContent` directly, including
-one complete large work original beside ordinary navigation nodes. For a large
-multi-original result, inspect `workContentCoverage.partial` and the original
-ranges in `workContentExcerpts`; expand only useful missing content with its
-returned `originalExpansion`. Keep the actual owner and compare the expanded
-ID/digest. Graph discovery itself needs no native binding or Session switch.
-Saved observations and citations remain historical P3 evidence, not current
-direction, live execution, review acceptance or effect authorization. Do not
-require another save, mandatory details/read call or user selector form.
+Saved observations and citations are historical evidence, not current
+direction, live execution, review acceptance or effect authorization. Shared
+direction excerpts keep constraints, decisions, cancellations, revision and
+freshness; an omission disclosure leads to the original direction read.
 
-For code impact use `lode_world` (`query`) (discover/invoke through the existing
-optional tool route) or `world-query --query <symbol> --depth <0..3> --limit <n>`.
-General containment/revision expansion is not IMPORTS/CALLS analysis. If World
-is absent/stale, inspect affected current imports/calls; do not activate World,
-refresh everything or create a Run merely to explore. Verify retained links
-against current sources before effects.
+**Code impact.** Use `lode_world` (`query`) through `lode_tools_read`, or
+`world-query --query <symbol> --depth <0..3> --limit <n>`. Containment or
+revision expansion is not IMPORTS/CALLS analysis. If World is absent or stale,
+inspect the affected imports and calls directly instead of activating World,
+refreshing everything or creating a Run. Verify retained links against current
+sources before an effect.
 
-Read [graph discovery](../../../docs/graph-discovery.md) for exact public query,
-index, Session and common-direction APIs and counterexamples. Use request-local
-`session_id`/`--session` without replacing the default Session. Restore exact
-checkpoint fields with current common constraints/cancellations applied separately.
-Do not create new user forms, per-read artifacts or background collectors.
-
-If a general inventory bound hides relevant originals, use the existing
-`lode_project_graph` with `inventory_page: true`, optionally narrowing with
-`inventory_paths` to returned owned files/directories (CLI `graph-query
---inventory-page --inventory-paths <path,...>`). These are untyped byte rows,
-not graph nodes or review/currentness proof. Follow useful returned `exactRead`
-or `next` arguments yourself; do not ask the user to write IDs/cursors. Check
-`coverage`, failures and unresolved typed dependencies. `metadata-bound` offers
-observed narrowing, `changed-scope` offers restart, and exhausted applies only
-to that observed range. Do not retry unchanged bounds, loop automatically,
-invent missing IDs/counts or make discovery completion a work prerequisite.
+**Hidden originals.** If an inventory bound hides relevant originals, call
+`lode_project_graph` with `inventory_page: true`, optionally narrowed by
+`inventory_paths` to returned owned record files or directories (CLI
+`graph-query --inventory-page --inventory-paths <path,...>`). These are untyped
+byte rows, not graph nodes or review proof. Follow the returned `exactRead` or
+`next` arguments yourself and check `coverage`, failures and unresolved typed
+dependencies: `metadata-bound` offers narrowing, `changed-scope` offers a
+restart, and exhaustion applies only to the observed range. Follow `next` pages
+as returned, and repeat a call only with changed arguments; stop when no
+useful `next` remains; discovery completion is not a work prerequisite.
 
 ## After integrated changes
 
-At a meaningful completion boundary, Lode checks the integrated edit/addition,
-deletion or rename and affected callers/importers, including unchanged files
-whose relations may now resolve differently. Reuse sufficiently current hook
-results instead of repeating a full update. Workers supply changed paths/symbols,
-purpose, evidence and unknowns; Lode reconciles overlapping results before updating.
+At a meaningful completion boundary:
 
-Use `lode_project_graph_index` / `graph-index` for the inventory of existing
-verified records and observations. It does not parse a code edit or infer a new
-feature. Core initialization/resume and source/observation persistence already
-update this inventory in supported paths. New or missing relevant records may
-need an explicit index; unchanged input is reused.
+1. **Check the integrated change.** Look at the edits, additions, deletions or
+   renames and the affected callers and importers, including unchanged files
+   whose relations may now resolve differently. Workers supply changed paths and
+   symbols, purpose, evidence and unknowns; Lode reconciles overlapping results
+   first and reuses sufficiently current hook results.
+2. **Index records.** `lode_project_graph_index` (CLI `graph-index`) inventories
+   existing verified records and observations; it does not parse code or infer
+   features. Initialization, resume and source or observation persistence
+   already update it; index explicitly when relevant records are new or missing
+   or after reconciliation. Unchanged input is reused.
+3. **Refresh an existing World when follow-up work needs it.** Run CLI
+   `world-refresh`, then bounded `lode_world` (`query`) or `world-query` for the
+   affected relations. The refresh reads and hashes every eligible source file
+   and reuses unchanged analysis; it is not a changed-files-only read. Inspect
+   freshness, scope, added, changed and removed paths, relation evidence and
+   unresolved imports or calls. A rename can appear as remove and add; report it
+   that way rather than claiming a verified rename lineage. `lode_world`
+   (`model`) and `lode_projection` (`incremental_refresh_status`) are read-only
+   checks, not refreshes.
+4. **Connect purpose, implementation and verification** through existing source
+   documents, current user direction, exact code references and applicable
+   results. Each original keeps its approval state: indexing documents or
+   conversation creates no Product Canon, and storing a feature explanation is
+   no reason to write P2 direction. Unsupported links stay in their
+   originals with the unprojected scope disclosed. A test file is implementation
+   evidence; a PASS needs its execution result and basis. Preserve durable
+   evidence only when later work needs it.
 
-When an existing World is needed by follow-up work, use CLI `world-refresh`
-and bounded `lode_world` (`query`) / `world-query` to check affected code relations.
-The current refresh discovers and reads/hashes all eligible source-scope files,
-reuses unchanged semantic analysis, and rebuilds supported relations against the
-current file set. It is not a changed-files-only read. Inspect freshness, source
-scope, added/changed/removed paths, relation evidence/confidence and unresolved
-imports/calls. A rename can appear as remove/add; do not invent a verified rename
-lineage. `lode_world` (`model`) and `lode_projection` (`incremental_refresh_status`) are read-only
-checks, not refresh commands. Do not activate World or DB solely for this duty.
-
-Connect purpose/requirements, implementation and verification through existing
-source documents, current user direction, exact code references and applicable
-observations/results/candidates. Keep each original's approval state; indexing
-plain documents or conversation cannot automatically create Product Canon.
-Existing explicit user review remains unchanged. Reference current user direction;
-do not write P2 direction merely to store a feature explanation. Existing graph schemas
-project supported references, not arbitrary semantic edges. Preserve unsupported
-links in their originals and disclose the unprojected scope. A test file is
-implementation evidence; an actual PASS needs its execution result and basis.
-Do not manufacture a Run, result artifact, new feature-inference API or form merely
-to express these links. Preserve durable evidence only when later work needs it.
-
-If refresh/indexing fails, report affected unreflected paths/records and remaining
-uncertainty. Keep valid historical evidence labelled, verify current sources,
-and continue independent work. Do not claim currentness from an old graph, retry
-the same failure indefinitely, or make graph success a general completion gate.
-The [graph-discovery guide](../../../docs/graph-discovery.md#maintain-evidence-after-integrated-changes)
-describes the current APIs and representative checks. This is Lode completion
-guidance, not a newly implemented automatic Host lifecycle hook.
+**On failure:** report the unreflected paths or records and the remaining
+uncertainty, keep valid historical evidence labelled, verify current sources and
+continue independent work. An old graph does not prove currentness; stop
+retrying an unchanged failure, and graph success is not a general completion
+gate. Details:
+[graph discovery](../../../docs/graph-discovery.md#maintain-evidence-after-integrated-changes).
+This is completion guidance, not an automatic Host lifecycle hook.

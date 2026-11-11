@@ -11,6 +11,47 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.110 — publication tracked separately
+
+- The `conversation-ux` Skill reference is rewritten as procedures: when to
+  read it, numbered steps, and what to do on failure. It shrinks from 23,729 to
+  11,972 characters, and strong prohibitions ("never", "do not", "must not",
+  "cannot") go from 50 to 6. Tool order and arguments are unchanged.
+- Product-evidence detail now links to the docs that define it, and silence is
+  named as a non-answer for protected decisions.
+- The `recovery-workflow` Skill reference is rewritten as procedures. It shrinks
+  from 13,014 to 8,907 characters, and strong prohibitions go from 36 to 4. The
+  checkpoint, compaction, native-history and handoff procedures are unchanged.
+- Detail now links to the Project portability and Session restore docs.
+- The `runtime-composition` Skill reference is rewritten as procedures. It
+  shrinks from 19,581 to 13,539 characters, and strong prohibitions go from 31
+  to 8. Tool order and arguments of the delegation, plan-preservation,
+  `wait_threads`, handoff, messaging and managed-execution procedures are
+  unchanged. Some examples and "no new ritual" sentences are removed or
+  softened.
+- The adapter architecture now links to the runtime adapters and architecture
+  docs.
+- The `project-discovery` Skill reference is rewritten as procedures. It shrinks
+  from 12,511 to 10,487 characters, and strong prohibitions go from 21 to 4.
+  API detail now links to the graph discovery doc.
+- Across these four core Skill references, the text goes from 68,835 to 44,905
+  characters and strong prohibitions from 138 to 22.
+
+## 0.3.0-beta.109 — publication tracked separately
+
+- The always-loaded Lode guidance is rewritten as an entry paragraph and six
+  behavior statements. This is the text in the generated `lode-instructions.md`
+  and in a project's managed `AGENTS.md` / `CLAUDE.md`. It shrinks from 8,381 to
+  2,301 characters, and "never" / "do not" go from 13 to 1. Existing Projects
+  receive the new text when they converge to this version.
+- The entry paragraph is also the MCP server `instructions` and the startup
+  `coreGuidance`. It grows from 749 to 822 characters.
+- The guidance now says when to open a Run: only for persistent ownership,
+  recovery after interruption, tracking effects with unknown outcomes, or
+  preventing duplicate integration. Run behavior is unchanged.
+- Instructions that apply to one procedure are no longer always loaded. They
+  remain in the Skill and its references.
+
 ## 0.3.0-beta.108 — publication tracked separately
 
 - MCP discovery and the managed tool list now group the remaining routed
