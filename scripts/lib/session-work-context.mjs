@@ -1,5 +1,5 @@
 import { formatForVerifiedOwner, resolveProjectStorage } from "./project-storage-format.mjs";
-import { publicToolName } from "./lode-artifact-composition.mjs";
+import { publicHintCall } from "./lode-artifact-composition.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { atomicCreateArtifact } from "./core/fs-atomic.mjs";
@@ -878,17 +878,14 @@ function readLexicalWorkPage(owner, names, afterEvidenceId, maxRecords, maxChara
       membership: "observed-this-request-not-atomic; unseen insertions before the cursor remain unknown",
       wholeHistoryComplete: false,
       next: nextAfterEvidenceId
-        ? {
-            tool: publicToolName("lode_session_work_read"),
-            arguments: {
-              project_root: owner.root,
-              session_id: owner.sessionId,
-              scan_evidence: true,
-              after_evidence_id: nextAfterEvidenceId,
-              max_records: maxRecords,
-              max_characters: maxCharacters,
-            },
-          }
+        ? publicHintCall("lode_session_work_read", {
+            project_root: owner.root,
+            session_id: owner.sessionId,
+            scan_evidence: true,
+            after_evidence_id: nextAfterEvidenceId,
+            max_records: maxRecords,
+            max_characters: maxCharacters,
+          })
         : null,
     },
     expansion:

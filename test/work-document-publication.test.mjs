@@ -698,7 +698,7 @@ test("real async MCP/CLI retry retains rich selection; new cancellation requests
   assert.match(lastText, /lode-selection-required/);
   assert.match(lastText, /cancelled/);
   assert.match(lastText, /user action not required/);
-  assert.match(lastText, /lode_work_document_prepare/);
+  assert.match(lastText, /lode_work_document \(action: prepare\)/);
   assert.match(lastText, /Remote documents are not updated/);
   const followUpPrefix = "documentProjection.followUp: ";
   const textOnlyFollowUp = JSON.parse(lastText.slice(lastText.indexOf(followUpPrefix) + followUpPrefix.length));

@@ -12,7 +12,7 @@ import {
 } from "./session-work-evidence-original.mjs";
 import { readSessionWorkEvidenceOwner, projectExactSessionWorkRecord } from "./session-work-context.mjs";
 import { relativeProjectArtifact, formatForVerifiedOwner } from "./project-storage-format.mjs";
-import { publicToolName } from "./lode-artifact-composition.mjs";
+import { publicHintCall } from "./lode-artifact-composition.mjs";
 
 // Project-wide originals, not the current Host selection or recent-page reader.
 export function projectSessionWorkLayer(inventory, { nodeFromRecord, relation, authority, id }) {
@@ -172,16 +172,13 @@ export function projectSessionWorkLayer(inventory, { nodeFromRecord, relation, a
     const exactRecord = projectExactSessionWorkRecord(record, referenceViews),
       characters = JSON.stringify([exactRecord]).length;
     if (characters <= SESSION_WORK_MAX_CHARACTERS)
-      node.originalExpansion = {
-        tool: publicToolName("lode_session_work_read"),
-        arguments: {
-          project_root: root,
-          session_id: owner.sessionId,
-          evidence_ids: [record.evidenceId],
-          max_records: 1,
-          max_characters: characters,
-        },
-      };
+      node.originalExpansion = publicHintCall("lode_session_work_read", {
+        project_root: root,
+        session_id: owner.sessionId,
+        evidence_ids: [record.evidenceId],
+        max_records: 1,
+        max_characters: characters,
+      });
     else node.originalExpansion = { supported: false, reasonCode: "SESSION_WORK_ENRICHED_READ_LIMIT", path: origin.path, requiredCharacters: characters };
   }
   return { nodes, edges, sources, skipped, reused: false };

@@ -1,5 +1,5 @@
 import { resolveOperation } from "./lode-operation-contract.mjs";
-import { publicToolName } from "./lode-artifact-composition.mjs";
+import { publicHintText } from "./lode-artifact-composition.mjs";
 import { organizeSelectedWorkBodies, workBodyTuples } from "./session-work-body-organization.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { formatTerminalGraph, inertTerminalText, terminalBlock } from "./terminal-graph.mjs";
@@ -239,7 +239,11 @@ export function formatProjectStatus(value, { doctor = false } = {}) {
   if (value.nextAction) {
     lines.push("", `Next: ${next}`);
     if (doctor && value.nextAction.entrypoint?.cli) lines.push(`Command: ${value.nextAction.entrypoint.cli}`);
-    if (doctor && value.nextAction.entrypoint?.mcpTool) lines.push(`MCP: ${value.nextAction.entrypoint.mcpTool}`);
+    if (doctor && value.nextAction.entrypoint?.mcpTool) {
+      // A grouped tool needs its action to be callable (stage 3-F).
+      const action = value.nextAction.entrypoint.mcpArguments?.action;
+      lines.push(`MCP: ${value.nextAction.entrypoint.mcpTool}${typeof action === "string" ? ` (action: ${action})` : ""}`);
+    }
   }
   if (value.attention?.items?.length) {
     lines.push("", "Attention:");
@@ -1035,7 +1039,7 @@ No checkpoint, approval or original task effect was created or replayed.\n`;
   if (documents.status === "lode-selection-required" || documents.status === "head-selection-required") {
     text +=
       `Latest recorded task state: ${inertTerminalText(documents.savedTaskStatus)}. Remote documents are not updated.\n` +
-      `Lode action required; user action not required. Continue ${publicToolName("lode_work_document_prepare")} then ${publicToolName("lode_work_document_publish")} using the exact prior selection and saved result below. Do not ask for JSON, a repeated save, or another routine approval.\n`;
+      `Lode action required; user action not required. Continue ${publicHintText("lode_work_document_prepare")} then ${publicHintText("lode_work_document_publish")} using the exact prior selection and saved result below. Do not ask for JSON, a repeated save, or another routine approval.\n`;
     if (documents.taskStatusReason) text += originalField("documentProjection.taskStatusReason", documents.taskStatusReason);
     return text + originalField("documentProjection.followUp", documents.followUp);
   }

@@ -4,7 +4,7 @@ import { verifyWorldModelPointerOriginal } from "./world-model.mjs";
 import { verifyGraphProjectionPointer } from "./graph-projection-adapter.mjs";
 import fs from "node:fs";
 import { formatForVerifiedOwner, resolveProjectStorage } from "./project-storage-format.mjs";
-import { ARTIFACT_COMPOSITION, publicToolName } from "./lode-artifact-composition.mjs";
+import { ARTIFACT_COMPOSITION, publicHintCall, publicHintText, publicToolName } from "./lode-artifact-composition.mjs";
 import path from "node:path";
 import { readProjectDirectionView } from "./project-direction-view.mjs";
 import { noteProjectGraphChange, projectGraphIndexPath } from "./discovery-index.mjs";
@@ -195,10 +195,16 @@ function productReadiness(status) {
 // `<identity>-agent` launcher exists only after scripts/install.sh|ps1.
 const CLI_DISPLAY = `node <plugin-root>/scripts/${ARTIFACT_COMPOSITION.identity}.mjs`;
 
+// An MCP entrypoint as mcpTool + mcpArguments: the grouped tool and its action.
+function hintEntrypoint(operation) {
+  const { tool, arguments: args } = publicHintCall(operation);
+  return { mcpTool: tool, mcpArguments: args };
+}
+
 function contextReadiness({ coreState, productState, onboardingInspection = null }) {
   const entrypoint = {
     cli: `${CLI_DISPLAY} context-prepare <project> --task <exact-task>`,
-    mcpTool: publicToolName("lode_context_prepare"),
+    ...hintEntrypoint("lode_context_prepare"),
   };
   if (coreState !== "ready")
     return {
@@ -396,7 +402,7 @@ function entrypoint(action, onboardingInspection = null) {
     },
     review_product_candidates: {
       cli: `${CLI_DISPLAY} onboarding-status <project>`,
-      mcpTool: publicToolName("lode_onboarding_guide"),
+      ...hintEntrypoint("lode_onboarding_guide"),
     },
     resume_product_governance: {
       cli: `${CLI_DISPLAY} resume <project> --profile product`,
@@ -415,11 +421,11 @@ function entrypoint(action, onboardingInspection = null) {
       cli: null,
       mcpTool: null,
       note: "Continue the user's task with the needed files and available Product evidence. Prepare a Capsule only for reproducible selected-context handoff, durable Run or recovery needs.",
-      optionalContextTool: publicToolName("lode_context_prepare"),
+      optionalContextTool: publicHintText("lode_context_prepare"),
     },
     inspect_product_governance: {
       cli: `${CLI_DISPLAY} onboarding-status <project>`,
-      mcpTool: publicToolName("lode_onboarding_guide"),
+      ...hintEntrypoint("lode_onboarding_guide"),
     },
   };
   return entries[action];
@@ -448,14 +454,14 @@ function capabilityGuide({ coreState, productState, contextState, runtimes = [] 
               ? "active-ready"
               : "active-action-required"),
       useWhen: "The task needs reviewed product meaning, World/Graph evidence, or governed document projections.",
-      entrypoint: `${publicToolName("lode_project_initialize_or_resume")} profile=product, then ${publicToolName("lode_onboarding_guide")}`,
+      entrypoint: `${publicToolName("lode_project_initialize_or_resume")} profile=product, then ${publicHintText("lode_onboarding_guide")}`,
     },
     {
       id: "context-compiler",
       availability: blocked || contextState.repositoryEvidence,
       useWhen:
         "Reproducible selected-context handoff, a durable Run or recovery actually needs a Capsule. Ordinary reading/editing uses needed files directly; the Compiler does not decide semantic sufficiency.",
-      entrypoint: publicToolName("lode_context_prepare"),
+      entrypoint: publicHintText("lode_context_prepare"),
     },
     {
       id: "durable-run",
@@ -480,7 +486,7 @@ function capabilityGuide({ coreState, productState, contextState, runtimes = [] 
       id: "provider-runtime",
       availability: blocked || "requires-capability-inspection-and-authorization",
       useWhen: "A selected provider must execute an explicitly bounded Session or Run action.",
-      entrypoint: `${publicToolName("lode_runtime_adapters")}, then an exact ExecutionAuthorization`,
+      entrypoint: `${publicHintText("lode_runtime_adapters")}, then an exact ExecutionAuthorization`,
       selectedRuntimes: runtimes,
     },
   ];
@@ -797,7 +803,11 @@ export function inspectProjectLocationExperience({ root = ".", sessionId } = {})
         id: "continue_selected_import",
         summary:
           "The selected import is incomplete. Reuse its exact bundle through the import entrypoint; ordinary coding remains available and no task execution was replayed.",
-        entrypoint: { tool: publicToolName("lode_project_bundle_import"), bundleId: pendingImport.bundleId, bundleRootHint: pendingImport.bundleRootHint },
+        entrypoint: {
+          ...publicHintCall("lode_project_bundle_import", { target_root: pendingImport.projectRoot, expected_bundle_id: pendingImport.bundleId }),
+          bundleId: pendingImport.bundleId,
+          bundleRootHint: pendingImport.bundleRootHint,
+        },
       },
       authority: { plane: "P4", advisoryOnly: true, persisted: false, mutatesProject: false, grantsAuthorization: false, writesRecoveryDirection: false },
     });

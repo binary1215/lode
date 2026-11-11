@@ -829,14 +829,17 @@ test("capacity: first lexical page returns actual continuation without a fabrica
   assert.equal(cli.code, 0, cli.stderr || cli.stdout);
   assert.equal(JSON.parse(cli.stdout).nextAfterEvidenceId, first.nextAfterEvidenceId);
   for (const routed of [false, true]) {
-    for (const args of [{ project_root: f.root, session_id: f.session.sessionId, scan_evidence: true }, first.enumeration.next.arguments]) {
+    for (const args of [
+      { action: "work_read", project_root: f.root, session_id: f.session.sessionId, scan_evidence: true },
+      first.enumeration.next.arguments,
+    ]) {
       const response = await dispatch({
         jsonrpc: "2.0",
         id: "capacity-page",
         method: "tools/call",
         params: {
-          name: routed ? "head_tools_call" : "head_session_work_read",
-          arguments: routed ? { name: "head_session_work_read", arguments: args } : args,
+          name: routed ? "head_tools_call" : "head_session",
+          arguments: routed ? { name: "head_session", arguments: args } : args,
         },
       });
       assert.equal(response.error, undefined);

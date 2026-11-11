@@ -1,4 +1,4 @@
-import { publicToolName } from "./lode-artifact-composition.mjs";
+import { publicHintCall } from "./lode-artifact-composition.mjs";
 import { formatForVerifiedOwner, familyFormatForOriginal } from "./project-storage-format.mjs";
 import { sha256CanonicalJson as digest, sha256Hex as hash } from "./core/digest.mjs";
 import { canonicalValue as canonical } from "./core/canonical-json.mjs";
@@ -435,7 +435,7 @@ async function prepareLocalBoundedWorkerInternal(
     accountInspected: false,
     workersStarted: 0,
     recoveryAuthority: false,
-    nextAction: { tool: publicToolName("lode_bounded_worker_start"), task_key: request.taskKey },
+    nextAction: publicHintCall("lode_bounded_worker_start", { task_key: request.taskKey }),
   };
 }
 function authorizationInput(record) {

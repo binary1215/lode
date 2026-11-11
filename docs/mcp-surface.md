@@ -62,10 +62,10 @@ directly, through `lode_tools_read` / `lode_tools_call`, and in their historical
 - The Claude Code `PreToolUse` matchers in `hooks/claude.json` cover every
   grouped tool with an effectful or Session-bound action, and the deprecated
   names of those effectful or Session-bound operations.
-- Some operation results still name the next tool by its deprecated name, for
-  example `lode_session_work_read` or `lode_context_prepare`. Those names work
-  until the removal version; call them directly or use the grouped tool and
-  action from the table.
+- Operation results that suggest a next call name the grouped tool and its
+  action, for example `lode_session` with `action: "work_read"` or
+  `lode_context` with `action: "prepare"`. They no longer suggest the
+  deprecated names, which stay callable until the removal version.
 
 ## Mapping
 

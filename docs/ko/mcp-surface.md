@@ -63,9 +63,10 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
   담깁니다.
 - `hooks/claude.json`의 Claude Code `PreToolUse` matcher는 효과가 있거나 Session에
   묶인 action을 가진 모든 묶음 도구와, 그런 작업의 폐기 예정 이름을 포함합니다.
-- 일부 작업 결과는 다음 도구를 아직 폐기 예정 이름으로 알려 줍니다. 예를 들어
-  `lode_session_work_read`나 `lode_context_prepare`입니다. 이 이름은 제거 버전
-  전까지 동작하므로 그대로 호출하거나, 표의 묶음 도구와 action을 사용하면 됩니다.
+- 다음 호출을 알려 주는 작업 결과는 묶음 도구와 그 action을 씁니다. 예를 들어
+  `lode_session`과 `action: "work_read"`, 또는 `lode_context`와
+  `action: "prepare"`입니다. 폐기 예정 이름은 더 이상 안내하지 않으며, 제거 버전
+  전까지는 계속 호출할 수 있습니다.
 
 ## 매핑
 

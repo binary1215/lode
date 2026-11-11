@@ -402,6 +402,12 @@ test("ordinary project status leads with the task and hides implementation detai
   const doctor = formatProjectStatus(projectExperience(), { doctor: true });
   assert.match(doctor, /fixture-version/u);
   assert.match(doctor, /Command:|MCP:/u);
+  assert.match(doctor, /^MCP: head_project_status$/mu, "an ungrouped entrypoint prints no action");
+
+  // A grouped entrypoint prints its action, so the printed line is enough to call it.
+  const grouped = projectExperience();
+  grouped.nextAction.entrypoint = { cli: "head-agent onboarding-status fixture", mcpTool: "lode_onboarding", mcpArguments: { action: "guide" } };
+  assert.match(formatProjectStatus(grouped, { doctor: true }), /^MCP: lode_onboarding \(action: guide\)$/mu);
 });
 
 test("quiet and notice readiness disclose preserved Host configuration and modified projections without a work gate", () => {
