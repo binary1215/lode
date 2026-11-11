@@ -21,9 +21,8 @@ an effect rechecks current authority.
    An initialized Project keeps its recorded runtime set; choose a client
    subset only for a new Project.
 3. Login, Host approval, an unavailable action or a user-controlled restart may
-   need the user. Leave app restarts, wholesale cache or config rewrites, trust
-settings,
-   other clients and model-call permission to the user.
+   need the user. Leave app restarts, cache edits, wholesale config rewrites,
+   trust settings, other clients and model-call permission to the user.
 
 Installed files, Project initialization, instruction linking and actual Host
 loading are separate observations; a CLI version or generated file does not
@@ -57,11 +56,11 @@ state is not actual Host loading.
    `after_session_id` (CLI `--after-session`), only when more pages are useful.
    The cursor names an entry, not a route; a missing cursor after concurrent
    changes needs a fresh page.
-2. Pass `session_id` (CLI `--session <id>`) to preview one exact Session's work
-   and Todo without selecting it, even with a lost or unselected Host binding. A
-   preview reads at most eight recent bodies; honor its partial, conflict or
-   unknown coverage and expand needed originals with `lode_session`
-   (`work_read`).
+2. Pass `session_id` (CLI `--session <id>`) to the same list to preview one
+   exact Session's work and Todo without selecting it, even with a lost or
+   unselected Host binding. A preview reads at most eight recent bodies; honor
+   its partial, conflict or unknown coverage and expand needed originals with
+   `lode_session` (`work_read`).
 3. For known canonical Session work, execution-lineage or historical-direction
    paths, use the graph `paths` argument before a global inventory; a `paths`
    read leaves unrelated membership and incoming relations unknown. For broader
@@ -85,8 +84,8 @@ observation, empty pending work or passing tests do not prove completion or make
 a record the whole work's result. Keep conflicting branches and same-title work
 with different owners separate, expand linked ResultPackets or ReviewDecisions
 only for their verified scope, and label model synthesis as derived with its
-originals cited. To continue in an existing conversation, see [continuing
-work](runtime-composition.md#continuing-in-an-existing-conversation).
+originals cited. To continue in an existing conversation, see
+[continuing work](runtime-composition.md#continuing-in-an-existing-conversation).
 
 **Find a conversation.** When it matters, reuse bounded Host candidates already
 available, or a bounded listing the Host exposes, and pass them to
@@ -98,9 +97,10 @@ revision and digest, read time, row failures and omitted counts. An absent
 mapping never selects the default; other or unverified namespaces are
 unsupported, with no local fallback. Stored connection is not work-root
 participation, ownership, live activity or contact readiness. Candidates change
-no caller, route or selection and authorize no message or assignment. Live peers
-and their send addresses come from `lode_conversation_list`; sending uses
-`lode_conversation_send`. With no Host list, continue from existing records.
+no caller, route, environment or selection and authorize no message or
+assignment. Live peers and their send addresses come from
+`lode_conversation_list`; sending uses `lode_conversation_send`. With no Host
+list, continue from existing records.
 
 **Read saved work.** Search ranks lexical evidence; it does not judge relevance
 or sufficiency. Saved reasons, alternatives, observed and pending work and
@@ -131,9 +131,9 @@ sources before an effect.
 byte rows, not graph nodes or review proof. Follow the returned `exactRead` or
 `next` arguments yourself and check `coverage`, failures and unresolved typed
 dependencies: `metadata-bound` offers narrowing, `changed-scope` offers a
-restart, and exhaustion applies only to the observed range. Call again only with
-a changed bound or the returned restart arguments, and stop when no useful
-`next` remains; discovery completion is not a work prerequisite.
+restart, and exhaustion applies only to the observed range. Follow `next` pages
+as returned, and repeat a call only with changed arguments; stop when no
+useful `next` remains; discovery completion is not a work prerequisite.
 
 ## After integrated changes
 
@@ -171,6 +171,6 @@ At a meaningful completion boundary:
 uncertainty, keep valid historical evidence labelled, verify current sources and
 continue independent work. An old graph does not prove currentness; stop
 retrying an unchanged failure, and graph success is not a general completion
-gate. Details: [graph
-discovery](../../../docs/graph-discovery.md#maintain-evidence-after-integrated-changes).
+gate. Details:
+[graph discovery](../../../docs/graph-discovery.md#maintain-evidence-after-integrated-changes).
 This is completion guidance, not an automatic Host lifecycle hook.
