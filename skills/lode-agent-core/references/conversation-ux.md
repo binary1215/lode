@@ -33,14 +33,14 @@ is absent or a layer fails, and check the current sources and your authority
 before an effect.
 
 Use separate logical Sessions when work needs its own progress and recovery.
-Route each request explicitly without switching the default Session. A
-restored earlier step does not undo a common cancellation, and a scope change in
+Route each request explicitly without switching the default Session, and keep
+the common goal, constraints and cancellations visible. A restored earlier step does not undo a common cancellation, and a scope change in
 one Session does not redirect another. The user maintains no Session IDs.
 
 ## Agreement and implementation
 
 - Reuse a concrete user agreement that still holds for the current request,
-  constraints and cancellations.
+  constraints and cancellations, without asking again only to record it.
 - Ask only about an unresolved, material choice. Small exact fixes proceed
   directly; analysis or proposal requests stay read-only.
 - Investigation and preparation stay within current authority, and
@@ -54,8 +54,8 @@ one Session does not redirect another. The user maintains no Session IDs.
   with its delta, impact and options.
 
 **Authority.** Recovered agreements are reconciled with current requests and
-cancellations and do not authorize execution by themselves. Summaries, reviewer
-assent, model inference and keywords create no user authority. A short reply
+cancellations and do not authorize execution by themselves. Summaries, evidence,
+reviewer assent, model inference and keywords create no user authority. A short reply
 counts only when it clearly answers a concrete proposal and scope. A new or
 changed protected target needs the current user decision described in
 [Decision presentation](#decision-presentation).
@@ -72,8 +72,9 @@ reconcile uncertain ones rather than replaying work to repair records.
    the Host's own delegation tools with a short brief and an ownership boundary.
    Ordinary parallel work needs no managed worker or wave.
 2. When a contribution fails, keep its usable evidence and continue independent
-   work. Redo the unfinished part only after confirming it left no effects; an
-   unknown side effect is reconciled, not replayed.
+   work. Redo the unfinished part only after confirming it never started or left
+   no effects, and disclose missing evidence; an unknown side effect is
+   reconciled, not replayed.
 3. Integrate current results, keep intervening user changes, and report the
    combined outcome and its limits.
 
@@ -95,19 +96,21 @@ A `.lode/` folder does not prove that a restorable checkpoint exists. Recovery
 readiness has three states:
 
 - **no current checkpoint:** continue ordinary Session work;
-- **verified current checkpoint:** read the restore projection before continuing;
+- **verified current checkpoint:** read the P2 restore projection before continuing;
 - **attention required:** disclose the exact recovery failure; direction is not
   rebuilt from a summary, transcript, graph, Capsule or message.
 
-Entry is read-only: it consumes no continuation token and rewrites no
-checkpoint. With a trusted Host lifecycle event, Lode calls the lifecycle step
-itself; the user supplies no event, epoch, turn or token fields. A new user
+Entry stays read-only: leave continuation tokens, provider sessions and
+checkpoint fields untouched to make entry smoother. Only when the managed
+lifecycle is chosen and a trusted Host lifecycle event exists does Lode call the
+lifecycle step ([recovery workflow](recovery-workflow.md)); the user supplies no
+event, epoch, turn or token fields. A new user
 request supersedes a prepared continuation for future work only.
 
 **Diagnosis.** When entry reports recovery attention, or the user asks why
 recovery is unavailable, call `lode_checkpoint_diagnose` and present its one
 bounded reason and next Lode action. Treat `observation-changed-retry` as a
-request for a fresh read.
+request for a fresh read, not permission to merge observations.
 
 **Publishing direction.** Persist only when direction materially changes, a
 verified stage completes, work starts failing or waiting, the task completes, or
@@ -154,25 +157,32 @@ product success.
 - **Entry and status** are quiet: one line unless the user asks or a real
   exception exists, which names its owner, reason, operation and next action.
   `userDecisionRequired` means a real protected decision; `headActionRequired`
-  means Lode acts. Neither blocks ordinary work, and an optional Product review
-  (`when-product-governance-is-in-scope`) is a notice.
+  means Lode acts. Neither blocks ordinary work, and the Attention and
+  presentation projections create no queue, authority or decision. An optional
+  Product review (`when-product-governance-is-in-scope`) is a notice; the
+  explicit Product operation presents its own review card.
 - **Metric comparisons:** lead with the number, then the collection conditions
   that differ or are unknown; no normalization or causality is established.
 - **Delivery state:** lead with the environment summary and say "observed
   targets"; show target detail for mixed, failed, rolled-back or unknown state.
+  A failed `lastAttempt` beside a known current revision is evidence, not a
+  contradiction or an approval gate.
 
 ## Optional product evidence
 
 Read only the part the current outcome needs. When an optional tool is not in
 the default list, inspect it with `lode_tools_discover` and call its returned
 `invokeWith` route; the operation still enforces its own checks. In every path
-below, the user supplies ordinary language, not IDs, digests or JSON, and an
-explicit user disposition is what changes Product Canon.
+below, the user supplies ordinary language, not IDs, digests or JSON. Proposals,
+model agreement and tool success change no Product Canon and create no reviewed
+relationship; only the path's review call after an explicit user disposition
+can.
 
 - **Observations** ([adapters](../../../docs/observation-adapters.md)): persist
   external facts only for a durable cross-Run, audit, handoff or context-loss
   need. Call `lode_observation` (`prepare`) for the one exact `typeKey`; reuse a
-  sufficient record via `lode_observation` (`read`) or (`query`); otherwise call
+  sufficient record via `lode_observation` (`read`), page exact IDs with
+  (`query`) and use (`sources`) only for paging or diagnosis; otherwise call
   (`collect_source`) with a configured source, or disclose the adapter gap and
   continue. Cite a record through an EvidenceNeed with exact `observationIds`.
   An adapter payload creates no Signal, candidate, decision or recovery
@@ -181,7 +191,7 @@ explicit user disposition is what changes Product Canon.
   `lode_product` (`policy_propose`) with exact Feature or FeatureGroup
   applications, present one card, and call (`policy_review`) only after the user
   accepts or rejects that exact candidate.
-- **Metrics** ([operating loop](../../../docs/product-operating-loop.md)):
+- **Metrics** ([metrics](../../../docs/observation-adapters.md#metric-evidence-workflow)):
   report each collection condition as `same`, `different` or `unknown`; an
   assessment is a ProductHypothesis, and a follow-up is `lode_product`
   (`initiative_propose`) citing it.
@@ -192,8 +202,11 @@ explicit user disposition is what changes Product Canon.
 - **Conformance** ([reconciliation](../../../docs/conformance-reconciliation.md)):
   `lode_conformance` (`prepare`), then your own semantic comparison cited with
   exact anchors in (`propose`); read (`queue`) in pages at work boundaries. Lode
-  may acknowledge or defer a Finding; closing or dismissing one needs the user's
-  disposition through (`disposition`). A Finding is evidence, not a violation.
+  may acknowledge or defer a Finding itself with `actor: "head"` and no user
+  confirmation, and never records or supersedes a user disposition. Closing or
+  dismissing one needs the user's disposition, then (`disposition`) with
+  `confirm_user_disposition: true`; Lode may submit a fresh resolution with
+  (`resolution_propose`). A Finding is evidence, not a violation.
 - **Feature mapping** ([mapping](../../../docs/feature-mapping.md)):
   `lode_feature_mapping` (`propose`) with exact Product and source or test node
   identities, not names; (`review`) with `confirm_user_review: true` only after
