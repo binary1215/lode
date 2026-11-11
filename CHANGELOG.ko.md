@@ -9,6 +9,22 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.114 — 게시 결과는 별도 확인
+
+- MCP에서 Host가 검증한 호출자가 `lode_conversation_enter`(준비 완료)나
+  `lode_project_initialize_or_resume`으로 진입하면, `expected_recovery_basis_id`
+  없이 `lode_checkpoint_sync` 한 번으로 복구 방향을 저장합니다. 진입 뒤 첫
+  저장에 `lode_checkpoint_basis`가 더는 필요하지 않습니다. 서버는 그 진입 때
+  읽은 basis를 메모리에만 보관하며 결과에는 넣지 않습니다.
+  - `conflict`나 `deferred` 결과는 이를 버립니다. 호출자 자신의 방향 갱신이나
+    Run·리뷰 변경은 다음의 id 없는 저장을 충돌시키므로,
+    `lode_checkpoint_basis`를 읽거나 다시 진입한 뒤 방향을 새로 도출합니다.
+- 보관한 복구 basis는 더 이상 1시간 뒤에 만료되지 않고, 크기 제한(1024개)만
+  남습니다. 더는 현재 값이 아닌 basis는 사용할 때 충돌로 드러납니다.
+- 보관 basis는 네이티브 브리지만, 요청 하나 단위로 공급할 수 있습니다.
+  임베더가 `dispatch()`에 넘긴 `recoveryBasisMemory` 옵션은 브리지 유무와
+  관계없이 무시됩니다.
+
 ## 0.3.0-beta.113 — 게시 결과는 별도 확인
 
 - MCP에서 Host가 검증한 호출자는 `lode_checkpoint_basis`나 `created` 동기화
