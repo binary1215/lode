@@ -1,4 +1,5 @@
 import { formatForVerifiedOwner, familyFormatForOriginal, resolveProjectStorage } from "../storage/project-storage-format.mjs";
+import { recordedRootSpelling } from "../storage/project-root-spelling.mjs";
 import { sha256Hex as sha } from "../core/digest.mjs";
 const sessionIdOf = (record) => {
   const format = familyFormatForOriginal({ sessionIdentity: true }, record);
@@ -360,7 +361,8 @@ function ownCodexEdges(event, caller, root) {
     meta.id !== caller.nativeSessionId ||
     !nativeId(meta.cli_version) ||
     typeof meta.cwd !== "string" ||
-    fs.realpathSync(meta.cwd) !== fs.realpathSync(root)
+    // The transcript keeps the Host cwd; it may differ from the recorded root only in drive-letter case.
+    fs.realpathSync(recordedRootSpelling(meta.cwd)) !== fs.realpathSync(root)
   )
     return [];
   return [

@@ -6,11 +6,12 @@ import test from "node:test";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
 import { createNativeSessionHostBridge } from "../scripts/lib/session/session-native-host.mjs";
 import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session/session-host-request.mjs";
-import { projectNativeObservations } from "../scripts/lib/session/native-session-observations.mjs";
+import { createNativeObservationStore, projectNativeObservations } from "../scripts/lib/session/native-session-observations.mjs";
 import { prepareUserPromptReference } from "../scripts/lib/session/user-prompt-reference.mjs";
 import { withRecordedCwd } from "../scripts/lib/storage/project-root-spelling.mjs";
 import { runSessionHostHook, sessionStartContext } from "../scripts/session-host-hook.mjs";
 import plugin from "../scripts/opencode-plugin.mjs";
+import { deliverQueuedOpenCode, registerOpenCodePresence, writeOpenCodeCallerTicket } from "../scripts/lib/session/conversation-messaging.mjs";
 
 // The root a Host hands to its hooks (Claude/Codex `cwd`, OpenCode `directory`,
 // the `${cwd}` the Claude PreToolUse template passes as native_project_root)
@@ -174,4 +175,38 @@ test("a Project recorded with a lower-case drive letter keeps today's rule for h
   assert.doesNotMatch(await start(root), /host_context_unavailable/);
   // The upper-case spelling is never looked up, so it is the relocation it was before.
   assert.match(await start(root[0].toUpperCase() + root.slice(1)), /PROJECT_RELOCATION_AVAILABLE/);
+});
+
+test("Codex fork and parent links survive a lower-case cwd in the hook and in the transcript header", onWindows, async (t) => {
+  const { base, root, environment } = fixture(t);
+  const transcript = path.join(base, "child.jsonl");
+  fs.writeFileSync(
+    transcript,
+    JSON.stringify({
+      timestamp: "2026-11-12T00:00:00Z",
+      type: "session_meta",
+      payload: { id: "child", session_id: "child", cwd: lower(root), cli_version: "0.0.0", source: "cli", forked_from_id: "parent" },
+    }) + "\n",
+  );
+  await runSessionHostHook({
+    runtime: "codex",
+    observeOnly: true,
+    environment,
+    event: { hook_event_name: "SessionStart", source: "fork", cwd: lower(root), session_id: "child", transcript_path: transcript },
+  });
+  const caller = { runtime: "codex", nativeSessionId: "child", agentId: null };
+  const rows = createNativeObservationStore({ environment }).read({ root, caller }).rows;
+  assert.deepEqual(
+    rows.filter((row) => row.observation.kind === "edge").map((row) => row.observation.edge.relation),
+    ["native-fork"],
+  );
+});
+
+test("OpenCode messaging: a lower-case session directory registers presence, gets a caller ticket and is delivered to", onWindows, async (t) => {
+  const { root, environment } = fixture(t, ["opencode"]);
+  const session = { id: "ses_lower", directory: lower(root) };
+  assert.ok(registerOpenCodePresence({ root, session, client: {}, environment }), "presence registered");
+  assert.ok(writeOpenCodeCallerTicket({ root, session, args: { body: "x" }, environment }), "caller ticket written");
+  // Delivery opens the recorded Project; the OpenCode client keeps the Host directory.
+  assert.deepEqual(await deliverQueuedOpenCode({ root, client: {}, directory: lower(root), environment }), []);
 });
