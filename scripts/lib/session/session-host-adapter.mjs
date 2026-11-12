@@ -425,12 +425,9 @@ export function createSessionHostAdapter({
       } catch (error) {
         // Same narrow Project-only path as MCP; no default Session is inspected
         // and then hidden. A damaged common original remains an error.
-        const singleSessionEntry = runtime === "claude" && absentLoss && error.code === "SESSION_SELECTION_LOST" && projectHasSingleSession(root);
-        return sessionSelectionUnresolved(root, {
-          includeProjectFacts: true,
-          reasonCode: singleSessionEntry ? "SINGLE_SESSION_ENTRY_AVAILABLE" : error.code || "HOST_BINDING_UNAVAILABLE",
-          singleSessionEntry,
-        });
+        if (runtime === "claude" && absentLoss && error.code === "SESSION_SELECTION_LOST" && projectHasSingleSession(root))
+          return sessionSelectionUnresolved(root, { includeProjectFacts: true, reasonCode: "SINGLE_SESSION_ENTRY_AVAILABLE", singleSessionEntry: true });
+        return sessionSelectionUnresolved(root, { includeProjectFacts: true, reasonCode: error.code || "HOST_BINDING_UNAVAILABLE" });
       }
     },
   });

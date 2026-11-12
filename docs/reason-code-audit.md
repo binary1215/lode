@@ -1,6 +1,7 @@
 # Reason code audit
 
-Surveyed: 2026-11-12, on 0.3.0-beta.115 (`main` b466613). The script does not
+Surveyed: 2026-11-12, on 0.3.0-beta.115 (`main` b466613). The summary and area
+counts were re-run for 0.3.0-beta.118, which adds two codes. The script does not
 count this report itself.
 
 This audit counts, for every reason code in `REASON_CODES`
@@ -38,17 +39,17 @@ candidate to check, not a proven unused one.
 
 | Measure | Codes |
 | --- | --- |
-| Listed in `REASON_CODES` | 2,721 |
+| Listed in `REASON_CODES` | 2,723 |
 | Consumed in shipped code or Go | 356 |
 | — compared directly | 185 |
 | — covered by a prefix branch | 20 |
 | — only keyed in a map | 5 |
 | — only listed in an array or `Set` | 145 |
 | — named in Go sources | 17 |
-| Documented in English docs or skills | 28 (8 in skills) |
-| Asserted by tests or verifiers | 832 |
-| **Quiet** | **2,351** (86%) |
-| — quiet but asserted by a test | 618 |
+| Documented in English docs or skills | 30 (9 in skills) |
+| Asserted by tests or verifiers | 834 |
+| **Quiet** | **2,352** (86%) |
+| — quiet but asserted by a test | 619 |
 | — quiet and never asserted | 1,733 |
 | With a legacy `HEAD_*` spelling still carried | 121 |
 
@@ -74,14 +75,14 @@ The area is the code's first word. Areas with at least 20 codes:
 | `INVALID_*` | 576 | 60 | 4 | 515 | 100 |
 | `NATIVE_*` | 252 | 40 | 3 | 209 | 61 |
 | `CODEX_*` | 180 | 13 | 0 | 167 | 69 |
-| `PROJECT_*` | 137 | 21 | 3 | 115 | 28 |
+| `PROJECT_*` | 138 | 21 | 3 | 116 | 29 |
 | `RUNTIME_*` | 92 | 10 | 1 | 82 | 29 |
 | `ARCADEDB_*` | 83 | 12 | 0 | 71 | 15 |
 | `DOCUMENT_*` | 78 | 5 | 1 | 72 | 9 |
 | `ONBOARDING_*` | 74 | 6 | 0 | 68 | 11 |
 | `PRODUCT_*` | 74 | 3 | 0 | 71 | 12 |
 | `WORKER_*` | 61 | 18 | 0 | 43 | 23 |
-| `SESSION_*` | 48 | 17 | 1 | 31 | 16 |
+| `SESSION_*` | 48 | 17 | 2 | 31 | 16 |
 | `SNAPSHOT_*` | 47 | 12 | 1 | 34 | 16 |
 | `SOURCE_*` | 45 | 23 | 0 | 22 | 7 |
 | `UNSUPPORTED_*` | 42 | 6 | 0 | 36 | 6 |
@@ -155,7 +156,7 @@ a separate response field for two minor versions.
    `PRODUCT_*_MISMATCH` → `PRODUCT_MISMATCH` and `CODEX_*_INVALID` →
    `CODEX_INVALID`. No test needs to change; only the registry list and the emit
    sites do.
-3. **Second candidates.** These are the 618 quiet codes that tests assert. They
+3. **Second candidates.** These are the 619 quiet codes that tests assert. They
    are the same kind of grouping, but each test assertion has to move to the area
    code or the old-code field.
 4. **`INVALID_*` (576).** This is the largest family and mostly input or record

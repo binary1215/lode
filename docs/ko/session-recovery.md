@@ -409,7 +409,11 @@ Code 호출은 Codex 스레드처럼 그 요청에 한해 그 Session으로 답�
 않습니다. SessionStart Hook은 여전히 아무것도 고르지 않고
 `reasonCode: SINGLE_SESSION_ENTRY_AVAILABLE`과 다음 호출 `lode_conversation_enter`를
 알려 주므로, 진입 한 번으로 저장된 방향이 돌아옵니다. Session이 둘 이상이거나 연결이
-lost, pending, corrupt 또는 로컬 미확인 상태이면 결과는 그대로입니다. 최근 시각이나 다른 호출자로부터
+lost, pending, corrupt 또는 로컬 미확인 상태이면 결과는 그대로입니다. 연결을 쓰지
+않으므로, 이렇게 답을 받은 대화는 Project에 Session이 하나 더 생기면(자신이
+`lode_session_create`를 했든 다른 대화가 했든) 다음 진입이나 저장이
+`session_selection_unresolved`(`SESSION_SELECTION_LOST`)가 되고, Session을 골라야
+이어집니다. 저장은 거절될 뿐 잃는 것은 없습니다. 최근 시각이나 다른 호출자로부터
 old→new native ID 연속성을 추정하지 않습니다. 합성 라우팅 검사는 실제 Claude
 `/clear`의 ID 변경이나 ID 간 자동 복원 성공을 의미하지 않습니다.
 
