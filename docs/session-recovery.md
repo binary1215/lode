@@ -80,8 +80,11 @@ Restore also returns `currentProjectDirection` from the current common P2 record
 Its goal, constraints, decisions and cancelled actions remain distinct from
 historical checkpoint fields: a past deploy step cannot revoke a later shared
 cancellation. `lode_project_direction_update` requires the exact read
-`expected_direction_id` and current user direction. Concurrent differences require
-reconciliation. Neither restore nor this direction record grants an execution
+`expected_direction_id` and current user direction. On MCP, a verified caller may
+omit it after its status, entry, init/resume or own update showed the current
+direction (a basis or save shows only its id); a direction conflict drops that
+held id, and with none held an omitted id means no current direction. Concurrent
+differences require reconciliation. Neither restore nor this direction record grants an execution
 authorization. An older valid record remains inspectable history, while a stale
 checkpoint cannot drive current effect execution merely by being readable.
 
@@ -232,8 +235,10 @@ that caller for the same Project and logical Session (from
 if it were passed. A verified caller that entered through this server therefore
 saves with one call. A `conflict` or `deferred` outcome drops it, and with no
 held basis the call is refused with `RECOVERY_BASIS_NOT_HELD`; read
-`lode_checkpoint_basis` after either. The caller's own direction update or a
-Run or review change also makes the next id-less save conflict. Unverified
+`lode_checkpoint_basis` (or re-enter) after either. The caller's own `updated`
+direction update re-arms each basis it holds whose only change is that update;
+another caller's change or a Run or review change makes the next id-less save
+conflict. Unverified
 callers and the CLI pass the id as before; the held value is in memory only.
 The sync result's
 `status` is the outcome with a `recovery_checkpoint_sync_` prefix, for example

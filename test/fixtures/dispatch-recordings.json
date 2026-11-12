@@ -6609,6 +6609,51 @@
    "tool": "lode_project_direction_update",
    "input": {
     "project_root": "<root>",
+    "direction": {
+     "goal": "sample-goal",
+     "constraints": [
+      "sample-constraints"
+     ],
+     "decisions": [
+      "sample-decisions"
+     ],
+     "cancelledActions": [
+      "sample-cancelledActions"
+     ]
+    }
+   },
+   "calls": [
+    {
+     "fn": "session-routing#updateProjectDirection",
+     "args": [
+      {
+       "root": "<root>",
+       "expectedDirectionId": "$undefined",
+       "input": {
+        "goal": "sample-goal",
+        "constraints": [
+         "sample-constraints"
+        ],
+        "decisions": [
+         "sample-decisions"
+        ],
+        "cancelledActions": [
+         "sample-cancelledActions"
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_project_direction_update",
+   "input": {
+    "project_root": "<root>",
     "expected_direction_id": "sample-expected_direction_id",
     "direction": {
      "goal": "sample-goal",
@@ -6630,6 +6675,52 @@
       {
        "root": "<root>",
        "expectedDirectionId": "sample-expected_direction_id",
+       "input": {
+        "goal": "sample-goal",
+        "constraints": [
+         "sample-constraints"
+        ],
+        "decisions": [
+         "sample-decisions"
+        ],
+        "cancelledActions": [
+         "sample-cancelledActions"
+        ]
+       }
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_project_direction_update",
+   "input": {
+    "project_root": "<root>",
+    "expected_direction_id": "",
+    "direction": {
+     "goal": "sample-goal",
+     "constraints": [
+      "sample-constraints"
+     ],
+     "decisions": [
+      "sample-decisions"
+     ],
+     "cancelledActions": [
+      "sample-cancelledActions"
+     ]
+    }
+   },
+   "calls": [
+    {
+     "fn": "session-routing#updateProjectDirection",
+     "args": [
+      {
+       "root": "<root>",
+       "expectedDirectionId": "",
        "input": {
         "goal": "sample-goal",
         "constraints": [

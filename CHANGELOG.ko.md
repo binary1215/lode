@@ -9,6 +9,25 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.115 — 게시 결과는 별도 확인
+
+- MCP에서 Host가 검증한 호출자는 자신의 결과가 현재 공통 방향을 보여 준 뒤에는
+  `lode_project_direction_update`의 `expected_direction_id`를 생략할 수 있습니다.
+  해당 결과는 `lode_project_status`, `lode_conversation_enter`,
+  `lode_project_initialize_or_resume`, 그리고 자신의 방향 갱신입니다. 서버는 그
+  방향 id를 호출자와 Project 단위로 메모리에만 보관합니다.
+  - `lode_checkpoint_basis`와 저장 성공 결과는 방향 id만 보여 주고 방향 내용은
+    보여 주지 않으므로 보관하지 않습니다. 방향 충돌은 보관된 id를 버리며,
+    보관된 것이 없으면 생략은 여전히 현재 방향 없음을 뜻합니다.
+  - 명시한 값(`null` 포함), 검증되지 않은 호출자, CLI는 그대로입니다.
+- 검증된 호출자 자신의 방향 갱신은 더 이상 다음의 id 없는
+  `lode_checkpoint_sync`를 충돌시키지 않습니다(0.3.0-beta.114의 동작을
+  바꿉니다). 보관한 basis 이후의 변경이 그 갱신뿐이면, 서버는 그 Project에서
+  해당 호출자가 가진 각 Session의 보관 basis를 메모리에서만 다시 맞춥니다. 그
+  사이에 다른 변경이 있으면 여전히 충돌입니다.
+- Claude Code에서 `PreToolUse` 헬퍼가 `lode_project_direction_update`에 대해서도
+  호출자 검증을 준비합니다. 준비에 실패하면 호출은 이전 버전과 같이 동작합니다.
+
 ## 0.3.0-beta.114 — 게시 결과는 별도 확인
 
 - MCP에서 Host가 검증한 호출자가 `lode_conversation_enter`(준비 완료)나

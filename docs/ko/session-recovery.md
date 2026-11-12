@@ -77,9 +77,12 @@ MCP `session_id` 또는 CLI `--session`은 요청 대상만 선택하며
 constraints, decisions, cancelledActions는 과거 checkpoint 필드와 구분합니다.
 과거 배포 단계가 더 최신인 공통 배포 취소를 되돌릴 수 없습니다.
 `lode_project_direction_update`는 정확한 조회 `expected_direction_id`와 현재
-사용자 방향을 요구하며 경합은 다시 읽고 조정합니다. 복구나 방향 기록은 실행
-authorization을 만들지 않습니다. 온전한 과거 자료는 탐색할 수 있지만 읽을 수
-있다는 이유만으로 현재 효과를 실행하지는 않습니다.
+사용자 방향을 요구하며 경합은 다시 읽고 조정합니다. MCP에서 검증된 호출자는 자신의
+상태·진입·초기화/재개·방향 갱신 결과가 현재 방향을 보여 준 뒤에는 이를 생략할 수
+있습니다(basis와 저장 결과는 id만 보여 주므로 해당하지 않습니다). 방향 충돌은
+보관된 id를 버리며, 보관된 것이 없으면 생략은 현재 방향 없음을 뜻합니다. 복구나 방향 기록은 실행 authorization을 만들지 않습니다. 온전한
+과거 자료는 탐색할 수 있지만 읽을 수 있다는 이유만으로 현재 효과를 실행하지는
+않습니다.
 
 검증된 Project에서 선택 Session을 잃어도 일반 작업과 공통 방향은 계속 사용할 수
 있습니다. Entry는 정확한 Project root를 넣은 기존 읽기 전용 `lode_session_list`의
@@ -210,8 +213,10 @@ lock 안에서 이 basis를 다시 구축합니다. basis는 동시성 증거이
 준비가 끝난 `lode_conversation_enter`·`lode_project_initialize_or_resume`)를, 넘겨받은
 것과 똑같이 사용합니다. 그래서 이 서버로 진입한 검증된 호출자는 한 번의 호출로
 저장합니다. `conflict`나 `deferred` 결과는 이를 버리며, 보관된 basis가 없으면
-`RECOVERY_BASIS_NOT_HELD`로 거부합니다. 두 경우 모두 `lode_checkpoint_basis`를 읽습니다.
-호출자 자신의 방향 갱신이나 Run·리뷰 변경도 다음의 id 없는 저장을 충돌시킵니다.
+`RECOVERY_BASIS_NOT_HELD`로 거부합니다. 두 경우 모두 `lode_checkpoint_basis`를
+읽거나 다시 진입합니다. 호출자 자신의 `updated` 방향 갱신은 그 갱신만 바뀐 보관
+basis를 다시 유효하게 하며, 다른 호출자의 변경이나 Run·리뷰 변경은 다음의 id 없는
+저장을 충돌시킵니다.
 검증되지 않은 호출자와 CLI는 전처럼 id를 넘기며, 보관 값은 메모리에만 있습니다.
 동기화 결과의 `status`는
 결과 이름 앞에 `recovery_checkpoint_sync_`를 붙인 값입니다. 예:

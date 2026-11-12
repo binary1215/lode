@@ -170,6 +170,35 @@ export function createNativeSessionHostBridge({
         });
         return reply(request);
       }
+      if (name === "lode_project_direction_update") {
+        // 4-D (c), best-effort: correlate this caller so the update can use and
+        // re-arm what is held for it. A failure leaves the call exactly as
+        // before: unverified, or refused for a guarded child as before.
+        try {
+          requestRegistry.prepare({
+            key: value.tool_use_id,
+            name: match.name,
+            arguments: original,
+            caller: {
+              runtime: "claude",
+              nativeSessionId: value.native_session_id,
+              agentId: value.native_agent_id || null,
+              outerToolName: value.outer_tool_name,
+              nativeProjectRoot:
+                typeof value.native_project_root === "string" && path.isAbsolute(value.native_project_root) && !value.native_project_root.includes("${")
+                  ? value.native_project_root
+                  : null,
+            },
+          });
+        } catch (error) {
+          const guarded =
+            value.native_agent_id &&
+            subagentWriteGuardEnabled(environment, { caller: { runtime: "claude", subagent: true, correlation: "exact-native-tool-use" } });
+          if (guarded) throw error;
+          if (value.native_agent_id) noteSubagentToolUse(value.tool_use_id);
+        }
+        return reply(request);
+      }
       const dependent = sessionCallRequiresBinding(name);
       let guardOnlyCorrelation = false;
       if (
@@ -400,6 +429,17 @@ export function createNativeSessionHostBridge({
       try {
         // Non-binding tools keep their previous result. The visible caller is
         // only a write-guard signal and does not select a Session.
+        if (semanticToolName(targetName) === "lode_project_direction_update" && caller.status === "known") {
+          // 4-D (c): a verified caller's direction update may use the direction
+          // id held for it and re-arms its held recovery bases. Session routing
+          // is unchanged; the view is valid for this request only.
+          const basisView = issueRecoveryBasisView(callerKey(caller));
+          try {
+            return await handler(request, { caller: visibleCaller(caller), hostEnvironment: environment, recoveryBasisMemory: basisView });
+          } finally {
+            issuedRecoveryBasisViews.delete(basisView);
+          }
+        }
         if (!sessionCallRequiresBinding(targetName)) return handler(request, { caller: visibleCaller(caller), hostEnvironment: environment });
         return await dispatchProjectRequest(request, handler, caller);
       } finally {

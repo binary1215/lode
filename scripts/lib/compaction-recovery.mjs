@@ -398,6 +398,13 @@ function recoveryCheckpointBasisFromInspection(inspected) {
   return { ...payload, basisId: `recovery-basis-${basisHash.slice(0, 24)}`, basisHash };
 }
 
+// 4-D (c): the id this exact basis payload would have with another Project
+// direction id. Internal only; no result carries it.
+export function recoveryBasisIdWithDirection(basis, directionId) {
+  const { basisId: _basisId, basisHash: _basisHash, ...payload } = basis;
+  return `recovery-basis-${digest(canonicalJson({ ...payload, currentProjectDirectionId: directionId })).slice(0, 24)}`;
+}
+
 export function inspectRecoveryCheckpointBasis({ root = "." } = {}) {
   const inspected = readyProject(root, "recovery checkpoint freshness is inspected", { readOnly: true });
   const basis = recoveryCheckpointBasisFromInspection(inspected);

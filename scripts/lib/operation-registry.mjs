@@ -5052,7 +5052,7 @@ export const OPERATIONS = Object.freeze([
     tool: {
       name: "lode_project_direction_update",
       description:
-        "Record a current user direction against the exact common-direction basis; identical retry reuses it. Lode conveys the user's scoped decision. Observed evidence, projected approval and model consensus cannot author direction or grant deployment/Canon authority.",
+        "Record a current user direction against the exact common-direction basis; identical retry reuses it. Lode conveys the user's scoped decision. Observed evidence, projected approval and model consensus cannot author direction or grant deployment/Canon authority. A Host-verified caller may omit expected_direction_id after its status, entry, init/resume or own update showed the current direction.",
       inputSchema: {
         type: "object",
         properties: {
@@ -5070,7 +5070,7 @@ export const OPERATIONS = Object.freeze([
             additionalProperties: false,
           },
         },
-        required: ["project_root", "expected_direction_id", "direction"],
+        required: ["project_root", "direction"],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
