@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { performance } from "node:perf_hooks";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { withLocalMutation } from "../storage/project-mutation-lock.mjs";
+import { withLocalMutation } from "../storage/local-mutation-lock.mjs";
 import { resolveProjectStorage, assertProjectStorageUnchanged } from "../storage/project-storage-format.mjs";
 import { classifySnapshotFileSystem } from "./snapshot-filesystem.mjs";
 import { sha256Hex } from "../core/digest.mjs";

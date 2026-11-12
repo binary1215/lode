@@ -101,6 +101,7 @@
     "incremental-refresh.mjs": "world",
     "lineage-moves.mjs": "world",
     "local-git-repository.mjs": "world",
+    "local-mutation-lock.mjs": "storage",
     "local-worker-host.mjs": "worker",
     "lode-artifact-composition.mjs": "core",
     "lode-core.mjs": "session",
