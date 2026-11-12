@@ -32,7 +32,7 @@ import { sessionCallRequiresBinding } from "./lib/session/session-routing.mjs";
 import { createNativeSessionHostBridge } from "./lib/session/session-native-host.mjs";
 import { SESSION_HOST_REQUEST_HELPER } from "./lib/session/session-host-request.mjs";
 import { assessSubagentStateWrite, subagentWriteGuardEnabled } from "./lib/session/subagent-write-guard.mjs";
-import { withRecordedProjectRoot } from "./lib/storage/project-root-spelling.mjs";
+import { withRecordedProjectRoot, withRequestSpellingRetry } from "./lib/storage/project-root-spelling.mjs";
 import fs from "node:fs";
 
 const protocolVersion = "2024-11-05";
@@ -306,6 +306,12 @@ async function dispatchSessionRequest(request, options = {}) {
   // A root that differs from the recorded one only in drive-letter case is the
   // same Project (Windows only; a read of project.json, never a write).
   request = withRecordedProjectRoot(request);
+  // A root that differs only in directory-name case is retried with the
+  // recorded spelling after its Project was not found (no read when found).
+  return await withRequestSpellingRetry(request, (spelled) => dispatchSpelledRequest(spelled, options));
+}
+
+async function dispatchSpelledRequest(request, options) {
   try {
     request = ungroupedRequest(request);
   } catch (error) {
