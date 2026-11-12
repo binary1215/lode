@@ -371,7 +371,9 @@ export function verifyDocumentChangeApplicationReceipt(document, review = null, 
       document.reviewDecisionHash !== review.reviewDecisionHash ||
       document.disposition !== review.disposition ||
       document.previousProductModelId !== review.reviewedProductModelId ||
-      document.resultingProductModelId !== (review.resultingProductModelId || review.reviewedProductModelId))
+      document.previousProductModelHash !== review.reviewedProductModelHash ||
+      document.resultingProductModelId !== (review.resultingProductModelId || review.reviewedProductModelId) ||
+      document.resultingProductModelHash !== (review.resultingProductModelHash || review.reviewedProductModelHash))
   ) {
     fail("Document-change application receipt does not match its ReviewDecision.", "DOCUMENT_CHANGE_APPLICATION_REVIEW_MISMATCH");
   }

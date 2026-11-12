@@ -35,6 +35,7 @@ import { readRepositorySourceScope, writeRepositorySourceScope } from "../world/
 import { withProjectMutation, withProjectMutationAsync } from "../storage/project-mutation-lock.mjs";
 import { historicalEntryForPath, readCommittedHistoricalArtifactBoundary } from "../world/historical-artifact-boundary-store.mjs";
 import { publishHistoricalContinuityReceipt } from "./historical-continuity.mjs";
+import { readOnboardingProductSuccessor } from "./onboarding-product-successor.mjs";
 import { sha256Hex } from "../core/digest.mjs";
 import { failWith } from "../core/errors.mjs";
 import { atomicWriteText as atomicWrite } from "../core/fs-atomic.mjs";
@@ -750,8 +751,16 @@ async function proposeOnboardingSemanticRefreshLocked({ root = ".", semanticProp
   if (!previousIsHistorical && previousState.candidateSetId) readOnboardingCandidateSet({ root: projectRoot, candidateSetId: previousState.candidateSetId });
   if (semanticProposal == null) fail("A fresh current Lode semantic proposal is required.", "ONBOARDING_SEMANTIC_REPROPOSAL_REQUIRED");
   const productCanon = readProductModelCanon({ storage: storageOwner, projectRoot });
-  if (productCanon.status !== "present" || productCanon.model.productModelId !== previousState.productModelId)
-    fail("Product Canon changed before semantic refresh.", "ONBOARDING_PRODUCT_CANON_DRIFT");
+  if (productCanon.status !== "present") fail("Product Canon changed before semantic refresh.", "ONBOARDING_PRODUCT_CANON_DRIFT");
+  if (productCanon.model.productModelId !== previousState.productModelId) {
+    const verified = await inspectOnboardingRecords(projectRoot, false);
+    if (
+      !verified.productCanonLineage ||
+      verified.productModel.productModelId !== productCanon.model.productModelId ||
+      verified.productModel.productModelHash !== productCanon.model.productModelHash
+    )
+      fail("Product Canon changed before semantic refresh.", "ONBOARDING_PRODUCT_CANON_DRIFT");
+  }
   let world;
   try {
     world = await inspectWorldModel({ root: projectRoot });
@@ -2369,10 +2378,29 @@ async function inspectOnboardingRecords(root, inspectWorld) {
     if (state.phase !== "ready" || !historicalReview)
       fail("Historical onboarding boundary does not cover a complete ready state.", "HISTORICAL_BOUNDARY_INCOMPLETE");
     const productCanon = readProductModelCanon({ storage: storageOwner, projectRoot });
-    if (productCanon.status !== "present" || productCanon.model.productModelId !== state.productModelId) {
+    if (productCanon.status !== "present") {
       fail("Historical boundary cannot replace current Product Canon validation.", "ONBOARDING_PRODUCT_CANON_DRIFT");
     }
-    const currentRevision = readProductRevision(projectRoot, state.productModelId, storageOwner).revision;
+    const baseRevision = readProductRevision(projectRoot, state.productModelId, storageOwner).revision;
+    let productCanonLineage = null;
+    if (productCanon.model.productModelId !== state.productModelId) {
+      const approval = historical.boundary.validatedHistoricalApproval;
+      if (
+        approval.resultingProductModelId !== state.productModelId ||
+        approval.candidateSetId !== state.candidateSetId ||
+        approval.reviewDecisionId !== latestReviewDecisionId
+      )
+        fail("Historical approval does not prove the onboarding base.", "ONBOARDING_PRODUCT_CANON_DRIFT");
+      productCanonLineage = await readOnboardingProductSuccessor({
+        root: projectRoot,
+        storage: storageOwner,
+        projectId: inspected.project.projectId,
+        state,
+        currentModel: productCanon.model,
+        baseRevision,
+      });
+    }
+    const currentRevision = productCanonLineage?.current.revision || baseRevision;
     if (currentRevision.productModelHash !== productCanon.model.productModelHash)
       fail("Current Product revision does not match Canon.", "ONBOARDING_PRODUCT_CANON_DRIFT");
     let world = null;
@@ -2409,7 +2437,8 @@ async function inspectOnboardingRecords(root, inspectWorld) {
         nextAction: "Use a fresh current semantic proposal only when product meaning should change.",
       },
       productModel: productCanon.model,
-      productModelRevisions: { current: currentRevision },
+      productModelRevisions: { current: currentRevision, ...(productCanonLineage ? { base: baseRevision } : {}) },
+      ...(productCanonLineage ? { productCanonLineage } : {}),
       worldModel: world,
       recovery: {
         nextAction: ["current", "not-inspected"].includes(world?.status) ? "continue" : "refresh_product_world",
@@ -2474,8 +2503,23 @@ async function inspectOnboardingRecords(root, inspectWorld) {
     },
     storageOwner,
   );
+  let productCanonLineage = null;
   if (productCanon.model.productModelId !== state.productModelId) {
-    fail("Onboarding state Product Model identity does not match current canon.", "ONBOARDING_PRODUCT_CANON_DRIFT");
+    if (state.phase !== "ready") fail("Onboarding state Product Model identity does not match current canon.", "ONBOARDING_PRODUCT_CANON_DRIFT");
+    const baseRevision = reviewDecision?.promotionAuthority ? readProductRevision(projectRoot, state.productModelId, storageOwner).revision : null;
+    if (
+      baseRevision &&
+      (reviewDecision.resultingProductModelId !== baseRevision.productModelId || reviewDecision.resultingProductModelHash !== baseRevision.productModelHash)
+    )
+      fail("Onboarding approval does not prove the original Product base.", "ONBOARDING_PRODUCT_CANON_DRIFT");
+    productCanonLineage = await readOnboardingProductSuccessor({
+      root: projectRoot,
+      storage: storageOwner,
+      projectId: inspected.project.projectId,
+      state,
+      currentModel: productCanon.model,
+      baseRevision,
+    });
   }
   const productModelRevisions = reviewDecision?.promotionAuthority
     ? {
@@ -2536,6 +2580,7 @@ async function inspectOnboardingRecords(root, inspectWorld) {
     },
     productModel: productCanon.model,
     productModelRevisions,
+    ...(productCanonLineage ? { productCanonLineage } : {}),
     worldModel: world,
     authority: {
       productCanon: "user-owned-project-canon",
