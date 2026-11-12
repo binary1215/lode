@@ -80,6 +80,7 @@ work logs are intentionally excluded from the distribution and are not runtime a
 - [Codex marketplace distribution](codex-marketplace.md)
 - [Claude Code marketplace distribution](claude-marketplace.md)
 - [Rule surface audit](rule-surface-audit.md)
+- [Reason code audit](reason-code-audit.md)
 - [MCP tool surface and deprecated names](mcp-surface.md)
 
 ## Historical design evidence
