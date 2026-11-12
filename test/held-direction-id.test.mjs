@@ -64,7 +64,10 @@ test("schema: expected_direction_id leaves required and stays declared; the desc
   const update = tools.find((tool) => tool.name === "lode_project_direction_update");
   assert.deepEqual(update.inputSchema.required, ["project_root", "direction"]);
   assert.deepEqual(update.inputSchema.properties.expected_direction_id, { type: ["string", "null"] });
-  assert.match(update.description, /Host-verified caller may omit expected_direction_id after its status, entry, basis, created save or own update/u);
+  assert.match(
+    update.description,
+    /Host-verified caller may omit expected_direction_id after its status, entry, init\/resume or own update showed the current direction\./u,
+  );
 });
 
 test("basis id with a substituted direction: the same direction gives the same id, another gives another", (t) => {
@@ -125,8 +128,41 @@ test("D1: a verified caller omits the direction id it holds; conflicts drop it; 
   assert.equal(heldA(), null, "the conflict dropped the held direction id");
   // Dropped: omission is back to its existing meaning until a result hands an id again.
   assert.equal(reason(await call("lode_project_direction_update", goal("mine"), "thread-A")), "PROJECT_DIRECTION_CONFLICT");
+  // A basis shows only the direction id, not the direction: it hands nothing.
   value(await call("lode_checkpoint_basis", {}, "thread-A"));
+  assert.equal(heldA(), null);
+  value(await call("lode_project_status", {}, "thread-A"));
   assert.equal(value(await call("lode_project_direction_update", goal("mine"), "thread-A")).status, "updated");
+});
+
+test("a direction never shown cannot be replaced: basis and created save hand no direction id (#66 review)", async (t) => {
+  const { root, call } = codexFixture(t);
+  const cancelled = (text, cancelledActions) => ({ direction: { goal: text, constraints: [], decisions: [], cancelledActions } });
+  // 1. B records d1. 2. A enters and sees d1.
+  const d1 = value(await call("lode_project_direction_update", { expected_direction_id: null, ...cancelled("G1", []) }, "thread-B"));
+  assert.equal(value(await call("lode_conversation_enter", {}, "thread-A")).status, "conversation_ready");
+  // 3. B records d2 with a shared cancellation.
+  const d2 = value(
+    await call("lode_project_direction_update", { expected_direction_id: d1.direction.directionId, ...cancelled("G2", ["deploy"]) }, "thread-B"),
+  );
+  // 4. A's id-less save conflicts. 5. A reads the basis: it carries d2's id only.
+  assert.equal(value(await call("lode_checkpoint_sync", direction, "thread-A")).outcome, "conflict");
+  const basis = value(await call("lode_checkpoint_basis", {}, "thread-A"));
+  assert.equal(basis.basis.currentProjectDirectionId, d2.direction.directionId);
+  assert.doesNotMatch(JSON.stringify(basis), /deploy/u);
+  // A created save also shows only the id.
+  assert.equal(value(await call("lode_checkpoint_sync", direction, "thread-A")).outcome, "created");
+  // 6. A's id-less update would revoke a cancellation it was never shown: conflict, nothing written.
+  const before = snapshot(root);
+  assert.equal(reason(await call("lode_project_direction_update", cancelled("G-A", []), "thread-A")), "PROJECT_DIRECTION_CONFLICT");
+  assert.deepEqual(snapshot(root), before);
+  // A status read shows d2 with the cancellation; then the omitted id works.
+  const status = value(await call("lode_project_status", {}, "thread-A"));
+  assert.equal(status.currentProjectDirection.directionId, d2.direction.directionId);
+  assert.match(JSON.stringify(status.currentProjectDirection), /"cancelledActions":\["deploy"\]/u);
+  const mine = value(await call("lode_project_direction_update", cancelled("G-A", ["deploy"]), "thread-A"));
+  assert.equal(mine.status, "updated");
+  assert.equal(mine.direction.previousDirectionId, d2.direction.directionId);
 });
 
 test("held, own update, id-less sync: created in one call, exactly as an explicit-id sync with the post-update basis", async (t) => {
@@ -286,6 +322,7 @@ test("Claude: with hook preparation the update re-arms; without it, or when prep
   assert.equal(value(await call("lode_checkpoint_sync", direction, "sync-2")).outcome, "conflict");
   // With preparation: verified, it may omit the held direction id, and it re-arms.
   value(await call("lode_checkpoint_basis", {}, "basis-3"));
+  value(await call("lode_project_status", {}, "status-3"));
   assert.equal(value(await call("lode_project_direction_update", goal("i"), "update-3")).status, "updated");
   assert.equal(value(await call("lode_checkpoint_sync", direction, "sync-3")).outcome, "created");
 });

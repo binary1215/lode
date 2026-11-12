@@ -530,20 +530,20 @@ function heldDirectionCall(name, args, memory) {
   return held ? { ...args, expected_direction_id: held } : args;
 }
 
-// The results that hand a verified caller the current Project direction id.
+// The results that hand a verified caller the current Project direction id:
+// only those that also show the direction itself (goal, constraints,
+// decisions, cancelled actions). A basis or a created sync carries the id
+// alone, so holding it there would let the caller replace a direction, and a
+// later shared cancellation, that it was never shown.
 function rememberDirection(name, args, value, memory) {
   const directionId =
     name === "lode_project_direction_update"
       ? ["updated", "reused"].includes(value.status) && value.direction?.directionId
-      : name === "lode_checkpoint_basis"
-        ? value.basis?.currentProjectDirectionId
-        : name === "lode_checkpoint_sync"
-          ? value.outcome === "created" && value.resultingBasis?.currentProjectDirectionId
-          : name === "lode_conversation_enter"
-            ? value.projectStatus?.currentProjectDirection?.directionId
-            : name === "lode_project_status" || name === "lode_project_initialize_or_resume"
-              ? value.currentProjectDirection?.directionId
-              : null;
+      : name === "lode_conversation_enter"
+        ? value.projectStatus?.currentProjectDirection?.directionId
+        : name === "lode_project_status" || name === "lode_project_initialize_or_resume"
+          ? value.currentProjectDirection?.directionId
+          : null;
   if (typeof directionId === "string") memory.holdDirection(args.project_root, directionId);
 }
 
