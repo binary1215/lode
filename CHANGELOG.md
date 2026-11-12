@@ -11,6 +11,24 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.117 — publication tracked separately
+
+- On Windows, a Host that hands Lode a project folder with a lower-case drive
+  letter now reaches the Project recorded with the upper-case one. This covers
+  the Claude Code and Codex hook `cwd` (session start context, prompt, stop and
+  compaction observations, Codex fork links), OpenCode's `directory` (context,
+  observations, conversation messaging) and the `native_project_root` the
+  Claude Code tool hook passes. Nothing stored is rewritten, and a moved
+  Project is still reported as relocated.
+  - Directory-name case is unchanged, and a folder that is not a Project yet is
+    still compared by the spelling it was given.
+- New `scripts/audit-metrics.mjs` prints the rule-surface numbers: always-read
+  instruction size, prohibition phrases, tool counts, `tools/list` size, and
+  the calls for save, resume and delegation. It prints only and sets no limits.
+- `docs/rule-surface-audit.md` and `docs/original-head-core-comparison.md` are
+  rewritten for the current state. The comparison is against the current
+  original repository and records what Lode added and why.
+
 ## 0.3.0-beta.116 — publication tracked separately
 
 - On Windows, an MCP `project_root` or CLI root whose drive letter is
