@@ -1,6 +1,6 @@
 # Rule surface audit
 
-Measured: 2026-11-12 on `main` commit `b85e14b` (0.3.0-beta.116).
+Measured: 2026-11-13 for 0.3.0-beta.118: `main` commit `68d41b8` with the beta.118 change applied.
 
 This audit records how much text and how many calls Lode asks of a model, and
 which runtime rules remain. Every number below comes from
@@ -69,7 +69,7 @@ texts.
 
 | File | Characters | Prohibitions |
 | --- | ---: | ---: |
-| `skills/lode-agent-core/SKILL.md` | 11,380 | 15 |
+| `skills/lode-agent-core/SKILL.md` | 11,632 | 15 |
 | `skills/lode-agent-onboarding/SKILL.md` | 11,411 | 25 |
 | `skills/lode-conversation/SKILL.md` | 3,887 | 3 |
 | `references/authority-and-roles.md` | 4,496 | 11 |

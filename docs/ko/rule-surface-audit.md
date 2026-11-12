@@ -2,7 +2,7 @@
 
 # 규칙 표면 감사
 
-측정: 2026-11-12, `main` 커밋 `b85e14b` (0.3.0-beta.116).
+측정: 2026-11-13, 0.3.0-beta.118 기준(`main` 커밋 `68d41b8`에 beta.118 변경을 적용한 상태).
 
 이 감사는 Lode가 모델에게 요구하는 글의 양과 호출 수, 그리고 남아 있는 런타임
 규칙을 기록합니다. 아래 숫자는 표에 손으로 센 값이라고 적힌 경우를 빼면 모두 그
@@ -66,7 +66,7 @@
 
 | 파일 | 문자 수 | 금지 표현 |
 | --- | ---: | ---: |
-| `skills/lode-agent-core/SKILL.md` | 11,380 | 15 |
+| `skills/lode-agent-core/SKILL.md` | 11,632 | 15 |
 | `skills/lode-agent-onboarding/SKILL.md` | 11,411 | 25 |
 | `skills/lode-conversation/SKILL.md` | 3,887 | 3 |
 | `references/authority-and-roles.md` | 4,496 | 11 |
