@@ -11,6 +11,27 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.115 — publication tracked separately
+
+- On MCP, a caller the Host has verified may omit `expected_direction_id` on
+  `lode_project_direction_update` once one of its results has shown it the
+  current common direction: `lode_project_status`, `lode_conversation_enter`,
+  `lode_project_initialize_or_resume`, or its own direction update. The server
+  holds that direction id per caller and Project, in memory only.
+  - `lode_checkpoint_basis` and a created save show only the direction id, not
+    the direction, so they do not set it. A direction conflict drops it, and
+    with nothing held an omitted id still means no current direction.
+  - Explicit values (including `null`), unverified callers and the CLI are
+    unchanged.
+- A verified caller's own direction update no longer makes its next id-less
+  `lode_checkpoint_sync` conflict, which replaces the 0.3.0-beta.114 behaviour.
+  When that update is the only change since a held basis, the server re-arms
+  the held basis of each of that caller's Sessions in the Project, in memory
+  only. Any other change in between is still a conflict.
+- In Claude Code, the `PreToolUse` helper now also prepares caller
+  verification for `lode_project_direction_update`. It is best-effort: when
+  preparation fails, the call behaves as in earlier versions.
+
 ## 0.3.0-beta.114 — publication tracked separately
 
 - On MCP, a caller the Host has verified that enters through
