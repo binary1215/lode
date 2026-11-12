@@ -2,55 +2,222 @@
 
 # 규칙 표면 감사
 
-검토일: 2026-08-27
+측정: 2026-11-12, `main` 커밋 `b85e14b` (0.3.0-beta.116).
 
-이 감사는 Lode Agent Core가 사용자가 볼 수 있는 결과나 권한 경계를 보호하는 규칙만 유지하는지 확인합니다. 규칙은 범위가 좁고, 구현상의 강제 지점과 관찰 가능한 실패가 있으며, 범위를 좁히거나 제거할 수 있는 조건이 있을 때만 유지됩니다.
+이 감사는 Lode가 모델에게 요구하는 글의 양과 호출 수, 그리고 남아 있는 런타임
+규칙을 기록합니다. 아래 숫자는 표에 손으로 센 값이라고 적힌 경우를 빼면 모두 그
+커밋에서 `node scripts/audit-metrics.mjs`로 얻은 값입니다. 전체 보고서는 `--json`을
+붙이면 나옵니다.
 
-## 유지되는 보편적 불변조건
+스크립트는 출력만 합니다. 한도가 없고, 어떤 값에도 실패 종료 코드를 내지 않습니다.
+한도를 넘으면 실패하는 CI 검사는 배제했습니다. 숫자는 판단의 근거일 뿐 판단을
+대신하지 않습니다. 스크립트는 저장소에 아무것도 쓰지 않습니다. 저장과 재개 흐름은
+시스템 임시 디렉터리 아래의 임시 프로젝트에서 프로세스 내 MCP 서버로 실행하고,
+끝나기 전에 지웁니다.
 
-| 불변조건 | 강제 지점 | 관찰 가능한 실패 | 범위 축소 또는 제거 조건 |
+## 항상 읽히는 지침
+
+모델이 요청하지 않아도 모든 세션에서 받는 글입니다.
+
+| 출처 | 전달 방식 | 문자 수 | 금지 표현 |
+| --- | --- | ---: | ---: |
+| 진입 문단(`coreEntryGuidance`) | MCP `initialize` instructions | 822 | 1 |
+| SessionStart 맥락, 새 core 프로젝트 | Claude Code와 Codex Hook `additionalContext` | 1,857 | 2 |
+| `lode-agent-core` Skill 설명 | Skill 목록 | 342 | 0 |
+| `lode-agent-onboarding` Skill 설명 | Skill 목록 | 408 | 1 |
+| `lode-conversation` Skill 설명 | Skill 목록 | 219 | 0 |
+| 프로젝트 지침(`lode-instructions.md`) | 루트 `CLAUDE.md` / `AGENTS.md` / `opencode.json`, 쓴 경우에만 | 2,301 | 1 |
+
+| 합계 | 문자 수 | 금지 표현 |
+| --- | ---: | ---: |
+| 기본(앞의 다섯 행) | 3,648 | 4 |
+| 기본, 진입 문단을 한 번만 셈 | 2,826 | |
+| 루트 지침 파일 포함(여섯 행 전부) | 5,949 | 5 |
+| 루트 지침 파일 포함, 진입 문단을 한 번만 셈 | 4,305 | |
+
+참고:
+
+- 초기화는 기본으로 루트 지침 파일을 쓰지 않습니다. 새 core 프로젝트에서는 Claude,
+  Codex, OpenCode 지침 연동이 모두 `withheld`를 보고합니다. 선택한
+  프로젝트(`write_root_instruction_files`)는 생성된 `lode-instructions.md`와 같은
+  `CLAUDE.md`와 `AGENTS.md`를 받습니다.
+- 진입 문단은 SessionStart 맥락과 프로젝트 지침 안에 다시 들어 있습니다. "한 번만
+  셈" 행은 그 반복을 뺀 값입니다.
+- SessionStart 맥락은 기록된 방향이 늘면 커집니다. 저장을 한 번 한 뒤에는 3,842자
+  였습니다. 프로젝트 경로가 들어가므로 길이는 경로 길이에 따라 달라집니다.
+- 기본 도구 목록도 세션마다 전달됩니다. 아래 도구 표면에서 따로 잽니다.
+
+## 금지 표현
+
+스크립트는 `never`, `do not`, `must not`, `cannot`을 셉니다. 전체 글에서 대소문자를
+가리지 않고 단어 단위로 맞춥니다. 0.3.0-beta.109와 0.3.0-beta.110 측정이 쓴 목록과
+같습니다(변경 기록 참고). "must"나 "forbidden" 같은 다른 강한 낱말은 세지 않습니다.
+
+| 파일 | 문자 수 | 금지 표현 |
+| --- | ---: | ---: |
+| `skills/lode-agent-core/SKILL.md` | 11,380 | 15 |
+| `skills/lode-agent-onboarding/SKILL.md` | 11,411 | 25 |
+| `skills/lode-conversation/SKILL.md` | 3,887 | 3 |
+| `references/authority-and-roles.md` | 4,496 | 11 |
+| `references/context-compiler.md` | 10,744 | 16 |
+| `references/context-workflow.md` | 2,115 | 2 |
+| `references/conversation-ux.md` | 11,972 | 6 |
+| `references/project-discovery.md` | 10,487 | 4 |
+| `references/recovery-workflow.md` | 10,350 | 4 |
+| `references/runtime-composition.md` | 13,539 | 8 |
+
+4-C 단계에서 다시 쓴 네 참조(conversation-ux, recovery-workflow,
+runtime-composition, project-discovery)는 합계 46,348자, 금지 표현 22개입니다.
+파일별 개수는 4-C 결과(6, 4, 8, 4)와 같습니다. 문자 합계가 당시 기록한 44,905보다
+큰 것은 0.3.0-beta.111에서 `recovery-workflow.md`가 8,907자에서 10,350자로 늘었기
+때문입니다.
+
+## 도구 표면
+
+| 표면 | 도구 수 |
+| --- | ---: |
+| 기본 `tools/list` | 22 |
+| `managed-maintenance` 서버 `tools/list` | 53 |
+| 목록 카탈로그(`lode_tools_discover`로 도달, 19개는 기본 목록에도 있음) | 50 |
+| 사용 중단 이름을 포함한 모든 operation | 143 |
+
+기본 `tools/list` 결과는 JSON 29,201자입니다(UTF-8 29,201바이트, 모두 ASCII).
+도구 스키마를 미루는 Host는 모델에게 이보다 적게 보낼 수 있습니다. 스크립트는
+서버가 돌려주는 것을 잽니다.
+
+## 저장, 재개, 위임 호출 수
+
+저장과 재개는 스크립트로 잽니다. 스크립트는 각 흐름을 임시 core 프로젝트에서
+실행하고, 저장이 `created`를 돌려주는지, 재개가 저장한 목적을 돌려주는지 확인합니다.
+
+| 작업 | 호출자 | Lode 호출 | 순서 |
+| --- | --- | ---: | --- |
+| 저장 | 검증되지 않은 MCP 호출자 또는 CLI | 2 | `lode_checkpoint_basis` 다음 `lode_checkpoint_sync` |
+| 저장 | Host가 검증한 호출자, 진입 후 | 1 | `lode_checkpoint_sync` |
+| 재개 | 새 대화, 모든 MCP 호출자 | 1 | `lode_conversation_enter` |
+| 재개 | 압축 뒤 같은 Host 대화, SessionStart Hook 사용 | 0 | Hook이 저장된 방향을 전달 |
+| 재개 | 아직 Session에 연결되지 않은 새 Host 대화 | 1 | Hook은 방향 안내만 줌, 이어서 `lode_conversation_enter` |
+
+위임은 문서화된 경로를 손으로 센 값입니다. worker 실행에는 모델 제공자가 필요해서
+스크립트로 재지 않습니다. 4-E 단계(가벼운 managed worker 경로)는 만들지 않았으므로
+지금의 숫자입니다.
+
+| 경로 | Lode 호출 | Host 호출 | 출처 |
+| --- | ---: | --- | --- |
+| 일반 Host 위임(기본) | 0 | worker당 1 | [runtime composition](../../skills/lode-agent-core/references/runtime-composition.md) |
+| managed worker, 시작부터 고정된 patch까지 | 최소 4 | 0 | [worker 통합](worker-context-integration.md) |
+| managed worker, 고정된 patch부터 통합된 Run 결과까지 | 4 | 0 | [worker 통합](worker-context-integration.md) |
+
+managed 시작은 `lode_bounded_worker`(prepare), `lode_bounded_worker`(start), 작업이
+끝날 때까지 한 번 이상의 `lode_bounded_worker_job_status`, 그리고
+`lode_bounded_worker_job`(patch)입니다. 통합은 `lode_worker_integration`의 prepare,
+apply, prepare-result, publish-result입니다. Run을 여는 호출과 이후 검토는 세지
+않습니다.
+
+## 이력
+
+아래 이전 값은 변경 기록과 설계 기록에서 왔습니다. 이 스크립트가 아니라 당시에 잰
+값입니다.
+
+| 변경 | 전 | 후 | 릴리스와 PR |
+| --- | ---: | ---: | --- |
+| 항상 로드되는 지침(`lode-instructions.md`), 문자 수 | 8,381 | 2,301 | 0.3.0-beta.109, #54 |
+| 기본 `tools/list` | 23 | 22 | 0.3.0-beta.106, #51 |
+| 목록 카탈로그 | 130 | 50 | 0.3.0-beta.108, #53 |
+| 4-C 참조 묶음, 문자 수 | 68,835 | 44,905 | 0.3.0-beta.110, #59 |
+| 4-C 참조 묶음, 금지 표현 | 138 | 22 | 0.3.0-beta.110, #59 |
+
+## 런타임 규칙
+
+런타임 규칙은 사용자가 볼 수 있는 결과나 권한 경계를 보호할 때만 남습니다. 남은
+규칙마다 좁은 범위, 코드가 강제하는 지점, 관찰할 수 있는 실패, 좁히거나 없앨 수
+있는 조건이 있습니다.
+
+### 유지되는 불변조건
+
+| 불변조건 | 강제 지점 | 관찰 가능한 실패 | 축소 또는 제거 조건 |
 | --- | --- | --- | --- |
-| Canon, 증거, 후보 및 프로젝션은 서로를 사칭하지 않음 | 아티팩트 검증기와 명시적 ReviewDecision 전이 | 다이제스트/권한 불일치 또는 후보가 승격되지 않은 상태로 남음 | 영향을 받는 모든 아티팩트가 하나의 권한 클래스가 되는 경우에만 제거할 수 있으나, 이는 계획되어 있지 않음 |
-| 실행 또는 변경 작업은 정확한 프로젝트와 소유된 프로세스/경로에 결속됨 | 프로젝트 펜스, 호출자 펜스, 안전한 루트 검사, 네이티브 슈퍼바이저 | 시작 전 거부 또는 제한된 정리 영수증 | 읽기 전용 Observe 경로는 이미 실행 전용 펜스를 생략함 |
-| 의미론적 식별자는 콘텐츠에서 파생되며 최신성을 검증할 수 있음 | 정규 해싱, 스냅샷 포인터, 어댑터 검증 | 오래되거나 변조된 식별자 거부 | 운영 타이밍과 물리적 어댑터 식별자는 이미 제외됨 |
-| 자격 증명과 원시 공급자 트랜스크립트는 운영 정보이며 비정본으로 유지됨 | 환경 필터, 제한된 임시 스트림, 트랜스크립트를 포함하지 않는 영수증 | 비밀을 영속화하지 않는 누락된 capability/credential 진단 | 공급자가 자체 인증 저장소를 유지하는 동안에는 더 광범위한 규칙이 필요하지 않음 |
-| 선택적 Git, GraphDB, 네이티브 가속 및 문서 호스트는 고유한 권한이 될 수 없음 | 어댑터 계약과 재구축 가능한 내장 아티팩트 | 공개된 fallback 또는 어댑터 로컬 실패 | 해당 어댑터를 선택하지 않으면 어댑터 검사가 사라짐 |
+| Canon, 증거, 후보, projection은 서로 분리된 채로 남음 | artifact 검증기와 명시적 ReviewDecision 전이 | digest 또는 권한 불일치, 승격되지 않은 후보 | 영향받는 artifact가 모두 한 권한 등급이 될 때만, 계획 없음 |
+| 실행하거나 바꾸는 작업은 정확한 프로젝트와 소유한 프로세스 또는 경로에 묶임 | 프로젝트 fence, 호출자 fence, 안전 루트 검사, native supervisor | 시작 전 거절 또는 제한된 정리 영수증 | 읽기 전용 경로는 이미 실행 전용 fence를 생략 |
+| 의미 식별자는 내용에서 파생되고 최신성을 확인할 수 있음 | 정규 해시, snapshot 포인터, 어댑터 검증 | 오래되었거나 변조된 식별자 거절 | 시간과 물리 어댑터 식별자는 이미 제외 |
+| 자격 증명과 원시 제공자 transcript는 운영 데이터로 남고 정규 데이터가 아님 | 환경 필터, 제한된 임시 스트림, transcript 없는 영수증 | 비밀을 저장하지 않고 누락된 자격 증명을 보고 | 제공자가 자기 인증 저장소를 유지하는 동안 필요 없음 |
+| Git, GraphDB, native 가속, 문서 호스트는 선택 사항이며 유일한 권한이 되지 않음 | 어댑터 계약과 다시 만들 수 있는 내장 artifact | 공개된 fallback 또는 어댑터 내부 실패 | 그 어댑터를 고르지 않으면 어댑터 검사도 사라짐 |
+| 거절된 동작은 보고하고 다른 길로 다시 시도하지 않으며, 결과를 모르는 동작은 반복하지 않음 | 진입 문단, lease 소비 영수증, 최대 한 번 worker lease | 결과에 거절 또는 알 수 없는 결과가 나타남 | 계획 없음 |
 
-## lane 범위 규칙
+### 위험 경로별 규칙
 
-| lane | 유지되는 규칙 | 의도적으로 두지 않은 규칙 |
+| 경로 | 유지되는 규칙 | 일부러 두지 않은 규칙 |
 | --- | --- | --- |
-| Observe | 제한된 읽기, 최신성, 권한 공개 | 기본적으로 WholePlan, Capsule, Run, lease 또는 검토 없음 |
-| Session | 정확한 요청 다이제스트, 프로젝트/워크스페이스 범위, 되돌릴 수 있는 로컬 작업, 제한된 일회성 lease/result | ExecutionContract, 활성 Run, Product Canon 변경 또는 Fresh Lode 검토 없음 |
-| Run | 수락된 WholePlan, ExecutionContract, ContextCapsule, 정확한 Run, 제한된 executor, ResultPacket, Fresh Lode 검토 | 공급자 세션 식별자 또는 자동 Canon 승격 없음 |
-| Authority | Run 제어와 영향받는 경계에서의 명시적인 사용자 소유 결정 | capability, 그래프 구체화, 문서 편집 또는 모델 출력에서 암시되는 승인 없음 |
+| Observe | 제한된 읽기, 최신성, 권한 공개 | 기본으로 WholePlan, Capsule, Run, lease, 검토 없음 |
+| Session | 정확한 요청 digest, 프로젝트 범위, 되돌릴 수 있는 로컬 동작, 제한된 일회성 lease와 결과 | ExecutionContract, 활성 Run, Product Canon 변경, Fresh Lode 검토 없음 |
+| Run | 수락된 WholePlan, ExecutionContract, ContextCapsule, 정확한 Run, 제한된 실행기, ResultPacket, Fresh Lode 검토 | 제공자 세션 식별자 없음, 자동 Canon 승격 없음 |
+| Authority | Run 통제와 영향받는 경계에서의 사용자의 명시적 결정 | 기능, 그래프 생성, 문서 편집, 모델 출력으로 암시되는 승인 없음 |
 
-## 서브시스템 및 어댑터 로컬 규칙
+항상 로드되는 지침은 Run을 여는 때를 밝힙니다. 지속적인 소유, 중단 뒤 복구, 결과를
+모르는 효과 추적, 중복 통합 방지가 필요할 때입니다. 그 밖에는 직접 작업합니다.
 
-- Project/Session 초기화만으로는 Product 온보딩, 저장소 인덱싱, Graph, Capsule 또는 ReviewDecision 장치가 필요하지 않습니다. `core` 프로필이 공개 기본값이며, 온보딩 입력은 `product` 프로필을 명시적으로 선택해야 합니다.
-- 온보딩에만 증거와 연결된 후보 및 Product Canon 부트스트랩 전의 명시적 일괄 ReviewDecision이 필요합니다.
-- Graph 및 문서 어댑터에만 재구축 가능성, 스냅샷 동등성, 오래되거나 변조된 상태의 거부 및 promotion authority 부재가 필요합니다.
-- 네이티브 컴퓨팅에만 매니페스트 무결성과 JavaScript 참조에 대한 의미론적 동등성이 필요합니다. 네이티브 컴퓨팅이 없거나 작업을 지원하지 않으면 공개된 JavaScript fallback이 사용됩니다.
-- 배포에만 소유된 경로, 불변 릴리스 식별자, 검증된 네이티브 패키지, 복구 가능한 포인터 변경 및 프로젝트 상태 보존이 필요합니다.
-- Codex에만 협상된 고정 `exec` 옵션과 이식 가능한 출력 스키마가 필요합니다. OpenCode에만 `run --format json --pure`, permission/privacy 오버레이 및 이벤트 코덱이 필요합니다. 사용자의 전역 OpenCode 공급자 설정과 인증이 권한 있는 설정으로 유지됩니다.
-- Windows Job Objects와 POSIX 프로세스 그룹은 동일한 공급자 자손 프로세스 정리 결과를 위한 호스트 로컬 메커니즘이지, 추가적인 의미론적 규칙이 아닙니다.
+### 하위 시스템과 어댑터 규칙
 
-## 보류된 선택적 capability
+- 초기화만으로는 Product 온보딩, 저장소 색인, Graph, Capsule, ReviewDecision이
+  필요하지 않습니다. 기본은 `core` 프로필이며, 온보딩은 `product` 프로필을
+  명시적으로 골라야 합니다.
+- 온보딩만 Product Canon 부트스트랩 전에 증거가 연결된 후보와 명시적 일괄
+  ReviewDecision을 요구합니다.
+- Graph와 문서 어댑터만 재구축 가능성, snapshot 일치, 오래됨과 변조 거절, 승격 권한
+  없음을 요구합니다.
+- Native 계산만 manifest 무결성과 JavaScript 기준 구현과 같은 결과를 요구합니다.
+  없을 때는 JavaScript fallback을 공개합니다.
+- 배포만 소유 경로, 변경 불가 릴리스 식별자, 검증된 native 패키지, 복구 가능한
+  포인터 변경, 프로젝트 상태 보존을 요구합니다.
+- Codex만 고정된 `exec` 옵션과 이식 가능한 출력 스키마를 요구합니다. OpenCode만
+  `run --format json --pure`, 권한과 개인정보 overlay, 이벤트 codec을 요구합니다.
+  사용자의 OpenCode 제공자 설정과 인증이 계속 기준입니다.
+- 검증된 호출자의 id 없는 저장은 서버가 그 호출자를 위해 메모리에 들고 있는 복구
+  기준을 씁니다. 명시적 id, 검증되지 않은 호출자, CLI는 두 번 호출하는 저장을
+  유지합니다.
+- Windows Job Object와 POSIX 프로세스 그룹은 제공자 하위 프로세스를 정리하는 호스트
+  로컬 방법입니다. 추가 의미 규칙이 아닙니다.
 
-범용 공급자 세션 resume/stream, 더 광범위한 프로세스 호스트 제어, 자동 DAG 병합/충돌 해결, Obsidian/Notion 게시 및 OpenAI 범용 플러그인 디렉터리 게시는 선택 사항으로 남습니다. P2 우선의 정확한 선택적 Lode attachment, 제한된 worker ownership/wait, 역할 메시징, WorkspaceHost 통합 및 정확히 소유된 일회성 interrupt/close는 보편적 전제 조건이 아니라 활성화된 범위 지정 capability입니다.
-이 기능들이 없어도 설치, 온보딩, 그래프 복구, Context, Session, Run, 공급자 교체 또는 Git/GraphDB 없는 Core 작동은 차단되지 않습니다.
+### 선택 기능
 
-## 제거되거나 범위가 축소된 규칙
+일반 제공자 세션 재개와 스트리밍, 더 넓은 프로세스 호스트 제어, 의존 작업의 자동
+병합과 충돌 해결, Obsidian이나 Notion 게시, OpenAI 플러그인 디렉터리 게시는 선택
+사항이며 만들지 않았습니다. 선택적 정확한 Lode 연결, 제한된 worker 소유와 대기,
+같은 Project 대화 메시징(`lode_conversation_list`, `lode_conversation_send`),
+정확히 소유한 일회성 중단과 종료는 동작하지만 범위가 정해져 있습니다. 이들 중
+어느 것도 설치, 온보딩, 그래프 복구, Context, Session, Run, 제공자 교체, Git이나
+GraphDB 없는 core 동작의 전제 조건이 아닙니다.
 
-- 모든 작업을 WholePlan, Capsule, Run 및 Fresh Lode를 통해 라우팅해야 한다는 요구를 제거했습니다. 이제 위험 비례 lane이 그 비용을 담당합니다.
-- 보편적 초기화 경로에서 Product/World/Graph 온보딩을 제거했습니다. 선택적 product 프로필이 그 비용과 검토 게이트를 담당합니다.
-- 의미론적 식별자, 복구 및 온보딩 전제 조건에서 Git 커밋/결정 마커와 GraphDB 가용성을 제거했습니다.
-- Lode Project, Session 및 Run 식별자에서 공급자 세션 식별자를 제거했습니다.
-- 어댑터가 소유하던 OpenCode OpenAI 호환 공급자 preset, endpoint 정규화 및 환경별 OpenAI/LiteLLM 가정을 제거했습니다. 대신 OpenCode는 사용자가 결정한 전역 설정을 읽습니다.
-- 고정된 모델 호출 횟수를 성공 기준에서 제거했습니다. 의도적인 opt-in과 제한된 리소스가 관련 제어로 남습니다.
-- 외부 보안 소프트웨어가 일으키는 Bun crash를 어댑터/모델/인증 실패 추론에서 제거했습니다.
-- 중복된 native-supervisor 보류와 package/MCP 버전 출처를 제거했습니다. 하나의 구현 경계와 패키지 메타데이터만 남습니다.
+### 제거하거나 좁힌 규칙
 
-## 판정
+- 작업이 더 이상 WholePlan, Capsule, Run, Fresh Lode를 거칠 필요가 없습니다. 위험
+  경로가 그 비용을 맡습니다.
+- Product, World, Graph 온보딩이 기본 초기화 경로에서 빠졌습니다.
+- Git 커밋, 결정 표식, GraphDB 사용 가능 여부는 더 이상 의미 식별자, 복구, 온보딩의
+  일부가 아닙니다.
+- 제공자 세션 식별자는 더 이상 Project, Session, Run 식별자의 일부가 아닙니다.
+- OpenCode 어댑터는 더 이상 자체 제공자 preset이나 endpoint 규칙을 갖지 않고,
+  사용자가 확정한 설정을 읽습니다.
+- 고정된 모델 호출 수는 성공 기준이 아닙니다.
+- 역할 메일과 export 전달 장치는 제거했습니다. 대화 메시징은 Host의 살아 있는
+  대화를 씁니다.
+- 테스트는 더 이상 지침, 문서, Skill, 도구 설명의 문구를 고정하지
+  않습니다(0.3.0-beta.107). 구조 검사는 남아 있습니다.
+- 한 절차에만 해당하는 지침은 더 이상 항상 로드되지 않습니다(0.3.0-beta.109).
+  Skill과 그 참조에 남아 있습니다.
+- native Hook 도우미 `lode_session_host_request_prepare`는 더 이상 목록에 나오지
+  않습니다(0.3.0-beta.106).
 
-공개 수직 경로에는 단지 어떤 서브시스템이 지원한다는 이유만으로 존재하는 미해결 전역 규칙이 없습니다. 남아 있는 필수 규칙은 권한 분리, 자격 증명/개인정보 보호, 정확한 범위/식별자, 복구 가능성 또는 프로세스 소유권에 대응합니다. 선택적 어댑터 capability는 범위 안에 머물며 Core 게이트가 되지 않습니다. 새로운 필수 규칙이 제안될 때마다 이 감사를 다시 실행하고, 동일한 변경에 강제 지점, 관찰 가능한 실패 및 제거 조건을 요구합니다.
+## 재지 않은 것
+
+- 특정 Host가 기본 도구 목록 가운데 실제로 모델 앞에 놓는 양.
+- 토큰 수. 모든 크기는 문자 수나 UTF-8 바이트입니다.
+- 스크립트로 잰 위임 호출 수, 그리고 글 크기가 모델 품질에 주는 영향.
+
+## 결론
+
+기본으로 항상 읽히는 글은 3,648자이고 금지 표현은 4개입니다. 남은 런타임 규칙은
+권한 분리, 자격 증명과 개인정보 보호, 정확한 범위와 식별자, 복구 가능성, 프로세스
+소유 가운데 하나에 대응합니다. 선택 어댑터는 범위 안에 머뭅니다. 새 필수 규칙을
+제안할 때는 `node scripts/audit-metrics.mjs`를 다시 실행하고, 같은 변경에서 그
+규칙의 강제 지점, 관찰 가능한 실패, 제거 조건을 밝힙니다.
