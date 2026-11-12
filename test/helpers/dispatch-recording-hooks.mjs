@@ -12,12 +12,17 @@ const DISPATCH_MODULES = new Set(
   ["scripts/mcp-server.mjs", "scripts/lode.mjs", "scripts/lib/session/operation-registry.mjs", "scripts/lib/session/dispatch-adapters.mjs"].map((file) => pathToFileURL(path.join(pluginRoot, file)).href),
 );
 const RECORD = "lode-dispatch-record";
+// The core helper primitives are never recorded; every other module, the core
+// layer's contracts included, is.
+const CORE_HELPERS = new Set(
+  ["canonical-json", "digest", "errors", "fs-atomic", "path-safety"].map((name) => pathToFileURL(path.join(pluginRoot, "scripts/lib/core", `${name}.mjs`)).href),
+);
 
 export async function resolve(specifier, context, nextResolve) {
   const resolved = await nextResolve(specifier, context);
   const parent = context.parentURL?.split("?")[0];
   if (!parent || !DISPATCH_MODULES.has(parent)) return resolved;
-  if (!resolved.url.startsWith(libUrl) || DISPATCH_MODULES.has(resolved.url) || resolved.url.startsWith(`${libUrl}core/`)) return resolved;
+  if (!resolved.url.startsWith(libUrl) || DISPATCH_MODULES.has(resolved.url) || CORE_HELPERS.has(resolved.url)) return resolved;
   return { ...resolved, url: `${resolved.url}?${RECORD}`, shortCircuit: true };
 }
 

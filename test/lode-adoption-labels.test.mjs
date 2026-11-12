@@ -25,7 +25,7 @@ test("current CLI input diagnostics use Lode while protected wire identities sta
   } finally { assert.equal(path.dirname(root), fs.realpathSync(os.tmpdir())); fs.rmSync(root, { recursive: true, force: true }); }
 });
 test("the twelve accepted current display labels use Lode and keep compatibility error codes", () => {
-  const files = ["scripts/lode.mjs", "scripts/mcp-server.mjs", ...["distribution-lifecycle", "compaction-recovery", "context-compiler", "execution-lineage", "project-mutation-lock", "runtime-invocation-lifecycle", "session-routing", "world-model", "operation-registry"].map(name => `scripts/lib/${name}.mjs`)];
+  const files = ["scripts/lode.mjs", "scripts/mcp-server.mjs", ...["distribution/distribution-lifecycle", "session/compaction-recovery", "session/context-compiler", "runtime/execution-lineage", "storage/project-mutation-lock", "runtime/runtime-invocation-lifecycle", "session/session-routing", "world/world-model", "session/operation-registry"].map(name => `scripts/lib/${name}.mjs`)];
   const text = files.map(file => fs.readFileSync(path.join(source, file), "utf8")).join("\n");
   assert.doesNotMatch(text, /HEAD Agent Core/);
   assert.equal((text.match(/Lode Agent Core/g) || []).length, 12);

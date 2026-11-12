@@ -11,7 +11,13 @@ import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-f
 // Optional source override runs these same synthetic cases against the frozen
 // pre-patch source; it never executes a real provider or changes that source.
 const pluginRoot = process.env.HEAD_DIRECTION_TEST_SOURCE || path.resolve(import.meta.dirname, "..");
-const load = (name) => import(pathToFileURL(path.join(pluginRoot, "scripts/lib", name)));
+// The layer directory comes from scripts/lib-layers.json; a source tree from
+// before the layer move keeps its modules directly in scripts/lib.
+const layers = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../scripts/lib-layers.json"), "utf8"));
+const load = (name) => {
+  const layered = path.join(pluginRoot, "scripts/lib", layers.pinned.includes(name) ? name : path.join(layers.modules[name], name));
+  return import(pathToFileURL(fs.existsSync(layered) ? layered : path.join(pluginRoot, "scripts/lib", name)));
+};
 const { initializeProject, inspectProject } = await load("head-core.mjs");
 const { readProjectDirection, readProjectDirectionRevision, updateProjectDirection,
   assertProjectActionsCurrent, assertAuthorizationProjectDirection } = await load("project-direction.mjs");

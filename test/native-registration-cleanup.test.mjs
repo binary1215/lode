@@ -65,7 +65,7 @@ for (const [name, settings, expected] of [
       resolve(specifier, context, next) {
         if (
           context.parentURL === owner.href &&
-          specifier === "./runtime-process-supervisor.mjs"
+          specifier === "../runtime/runtime-process-supervisor.mjs"
         )
           return { url: fake.href, shortCircuit: true };
         return next(specifier, context);

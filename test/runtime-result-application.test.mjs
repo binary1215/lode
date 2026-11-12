@@ -291,7 +291,8 @@ test("wave guidance separates seal readiness, wait cancellation, member failure 
 
 test("public detached job survives its CLI frontend and reconciles one lease without relaunch", { skip: process.platform !== "win32" }, async (t) => {
   const f = await fixture(t, { withWrite: true });
-  const moduleUrl = (file) => pathToFileURL(path.join(pluginRoot, "scripts", "lib", file)).href;
+  const layers = JSON.parse(fs.readFileSync(path.join(pluginRoot, "scripts", "lib-layers.json"), "utf8"));
+  const moduleUrl = (file) => pathToFileURL(path.join(pluginRoot, "scripts", "lib", layers.modules[file], file)).href;
   const runnerFile = path.join(path.dirname(f.root), "synthetic-job-runner.mjs");
   const providerFixture = `
     process.stdin.resume();

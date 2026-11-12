@@ -16,14 +16,17 @@ import { validateInstructionIntegration } from "../scripts/lib/storage/project-i
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const libRoot = path.join(pluginRoot, "scripts/lib");
 
+// The core helper modules define these primitives; every other scripts/lib
+// module, in any layer directory (core included), must use them.
+const CORE_HELPERS = new Set(["canonical-json.mjs", "digest.mjs", "errors.mjs", "fs-atomic.mjs", "path-safety.mjs"].map((name) => path.join(libRoot, "core", name)));
+
 function libSources() {
   const files = [];
   (function walk(directory) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const file = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        if (file !== path.join(libRoot, "core")) walk(file);
-      } else if (entry.name.endsWith(".mjs")) files.push(file);
+      if (entry.isDirectory()) walk(file);
+      else if (entry.name.endsWith(".mjs") && !CORE_HELPERS.has(file)) files.push(file);
     }
   })(libRoot);
   return files;
@@ -58,11 +61,11 @@ test("scripts/lib outside core uses the core digest, rename and digest-helper pr
   }
   assert.deepEqual(violations, []);
   // The exemption stays exact: the launcher still embeds sha256 and the file has no other raw hash.
-  const lifecycle = fs.readFileSync(path.join(libRoot, "distribution-lifecycle.mjs"), "utf8");
+  const lifecycle = fs.readFileSync(path.join(libRoot, "distribution", "distribution-lifecycle.mjs"), "utf8");
   assert.match(lifecycle, /sha256\.toString\(\)/);
   assert.equal(inCode(lifecycle, /createHash\(/g).length, 1);
   // The embedded fixture script keeps its own node:crypto hash.
-  const lifecycleRuntime = fs.readFileSync(path.join(libRoot, "runtime-invocation-lifecycle.mjs"), "utf8");
+  const lifecycleRuntime = fs.readFileSync(path.join(libRoot, "runtime", "runtime-invocation-lifecycle.mjs"), "utf8");
   assert.match(lifecycleRuntime, /const inputDigest = crypto\.createHash\('sha256'\)\.update\(input\)\.digest\('hex'\);/);
 });
 
